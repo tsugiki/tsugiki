@@ -1,6 +1,8 @@
 <script lang="ts">
   // HTML written by strangers, as GitHub rendered it. The content security policy stops anything in it from
-  // running or loading (ADR 0005), and this keeps it from taking the window away from Tsugiki.
+  // running, and from loading anything but images from GitHub's image hosts (ADR 0005, #761). A `<picture>`
+  // picks its source by `prefers-color-scheme`, which follows the window as it turns to the theme's side.
+  // This keeps the HTML from taking the window away from Tsugiki.
   let { html, onlink }: { html: string; onlink: (address: string) => void } = $props();
 
   /**

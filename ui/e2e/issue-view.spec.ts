@@ -369,6 +369,95 @@ test("the content security policy stops what a description tries to run or load"
   expect(asked).toEqual([]);
 });
 
+/** GitHub's image hosts, as its rendered HTML names them (#761). */
+const camo = "https://camo.githubusercontent.com";
+const codspeedDark = `${camo}/1790/636f6473706565642d6461726b`;
+const codspeedLight = `${camo}/c88a/636f6473706565642d6c69676874`;
+/** CodSpeed's button as GitHub renders it: a source for each side, each through camo. */
+const codspeedButton =
+  "<picture>" +
+  `<source media="(prefers-color-scheme: dark)" srcset="${codspeedDark}" ` +
+  'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-dark.svg">' +
+  `<source media="(prefers-color-scheme: light)" srcset="${codspeedLight}" ` +
+  'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-light.svg">' +
+  `<img alt="Open in CodSpeed" src="${codspeedLight}" width="169" height="32" ` +
+  'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-light.svg">' +
+  "</picture>";
+
+/** Answers each image GitHub's hosts are asked for with a small picture, and keeps each address the content
+ * security policy refused, with the directive that refused it, in the page's `refused`. */
+const serveGithubImages = async (page: Page) => {
+  await page.addInitScript(() => {
+    const refused: string[] = [];
+    Object.assign(window, { refused });
+    document.addEventListener("securitypolicyviolation", (e) => {
+      refused.push(`${e.effectiveDirective} ${e.blockedURI}`);
+    });
+  });
+  await page.route(
+    /^https:\/\/(camo|user-images|private-user-images)\.githubusercontent\.com\/|^https:\/\/github\.githubassets\.com\//,
+    (route) =>
+      route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"></svg>',
+      }),
+  );
+};
+
+/** The addresses the content security policy refused, as `serveGithubImages` keeps them. */
+const refused = (page: Page) => page.evaluate(() => (window as unknown as { refused: string[] }).refused);
+
+/** Whether the image `alt` names has loaded. */
+const loaded = (page: Page, alt: string) =>
+  page.getByAltText(alt).evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0);
+
+test("a description shows the images GitHub's image hosts serve, and loads no other host's", async ({
+  page,
+}) => {
+  await serveUnderTauriCsp(page);
+  await mockCore(
+    page,
+    answers(
+      `<p><img alt="Dependabot compatibility score" src="${camo}/f3d2/6465706" style="max-width: 100%;"></p>` +
+        '<p><img class="emoji" alt=":shipit:" src="https://github.githubassets.com/images/icons/emoji/shipit.png"' +
+        ' height="20" width="20" align="absmiddle"></p>' +
+        '<p><img alt="an older upload" src="https://user-images.githubusercontent.com/1/2-a1b2.png"></p>' +
+        '<p><img alt="an upload" src="https://private-user-images.githubusercontent.com/1/3-c3d4.png?jwt=x"></p>' +
+        '<p><img alt="a stranger" src="https://codspeed.io/pr-report/open-in-codspeed-light.svg"></p>',
+    ),
+  );
+  await serveGithubImages(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  for (const alt of ["Dependabot compatibility score", ":shipit:", "an older upload", "an upload"]) {
+    await expect.poll(() => loaded(page, alt), alt).toBe(true);
+  }
+  await expect
+    .poll(() => refused(page))
+    .toEqual(["img-src https://codspeed.io/pr-report/open-in-codspeed-light.svg"]);
+  expect(await loaded(page, "a stranger")).toBe(false);
+});
+
+test("CodSpeed's button shows the variant of the theme's side", async ({ page }) => {
+  await serveUnderTauriCsp(page);
+  await mockCore(page, answers(codspeedButton));
+  await serveGithubImages(page);
+  // The window turns to the side of the theme in force, and the webview's media query with it.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const button = page.getByAltText("Open in CodSpeed");
+
+  await expect.poll(() => loaded(page, "Open in CodSpeed")).toBe(true);
+  await expect.poll(() => button.evaluate((image: HTMLImageElement) => image.currentSrc)).toBe(codspeedDark);
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(() => button.evaluate((image: HTMLImageElement) => image.currentSrc)).toBe(codspeedLight);
+  await expect.poll(() => loaded(page, "Open in CodSpeed")).toBe(true);
+  expect(await refused(page)).toEqual([]);
+});
+
 test("the edges between the panes drag, a double-click resets one, and the list gives way first", async ({
   page,
 }) => {

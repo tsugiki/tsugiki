@@ -91,7 +91,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       - A PR's state words are 11.5 px, joined by a muted "·": a Review request in the accent colour at
         weight 600, failed CI in the danger colour and passed CI in green.
       - In a description or comment, code sits on the panel colour, a quote has a muted line on its left,
-        images keep inside the pane and emoji images are as tall as the text.
+        images keep inside the pane and emoji images are as tall as the text. Images show from the hosts
+        GitHub serves them from, and from no other ([ADR 0005](../adr/0005-token-stays-in-the-rust-core.md)):
+        badges and other third-party images through camo, custom emoji and uploads. An image with a variant
+        for each side, such as CodSpeed's button, shows the one for the side of the theme in force.
       - The tabs are 12 px, with the open one underlined in the accent colour.
 
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait

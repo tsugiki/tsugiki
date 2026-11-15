@@ -79,6 +79,12 @@ mattered, both in code a fix had added, and each third round found cleanups and 
 wave 5, #686's third round, run because round 2 had rebuilt round 1's mechanism, found a break the rebuild
 brought in.
 
+If a round finds flags that fall out of step with each other, ask the builder to replace them with one value
+whose variants carry their data, and send no fix for each case. In wave 7 of 0.3.2, #757's
+theme preview gained flags in rounds 1 and 2, and round 3 found four ways they fell out of step, such as a
+window left on the wrong side. The builder made them one value (off, on, ending), and round 4 traced every
+transition and found only narrow timing cases.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time: each runs the
 full vitest and `rust-coverage`, which AGENTS.md leaves to CI outside a wave. In a wave a CI round trip
 costs more, and in 0.3.1 two of three first pushes failed coverage without them. `just preflight` runs no

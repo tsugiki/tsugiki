@@ -6,7 +6,7 @@ import {
   commands,
   type SettingsChanges_Deserialize,
 } from "$lib/data/bindings";
-import { ask } from "./answer";
+import { type Answer, ask } from "./answer";
 import type { LanguageServerSettings, LoadedSettings, Settings, SettingsState } from "./settings.svelte";
 import { isMode, SIDE_KEYS, type ThemeKind, type ThemeState, themePick } from "./theme.svelte";
 
@@ -29,13 +29,13 @@ interface Saved {
 
 /** The keys of `[appearance]` that differ in `now` from `then`, which Apply saves, or nothing if none do. A
  * key the dialog left keeps what the file says, such as a mode from before or a name no Theme has. A mode
- * isn't a pick, so it never goes: the Theme row offers only the file's own, which is no change. */
+ * never goes: the Theme row offers only the file's own, which is no change, and the core refuses one. */
 const appearanceChanges = (
   now: AppearanceSettings,
   then: AppearanceSettings,
 ): AppearanceChanges_Deserialize | undefined => {
   const changes: AppearanceChanges_Deserialize = {
-    ...(now.theme !== then.theme && !isMode(now.theme) && { theme: themePick(now.theme) }),
+    ...(now.theme !== then.theme && { theme: themePick(now.theme) }),
     ...(now.light_theme !== then.light_theme && { light_theme: now.light_theme }),
     ...(now.dark_theme !== then.dark_theme && { dark_theme: now.dark_theme }),
   };
@@ -190,11 +190,19 @@ export class SettingsDialog {
     if (this.applying) return false;
     const changes = $state.snapshot(this.changes);
     if (Object.keys(changes).length === 0) return this.#close();
+    // The values Apply saves, whose themes the window keeps: the rows are off until it's done.
+    const current = this.current;
+    const saved = changes.appearance && current ? $state.snapshot(current.appearance) : undefined;
     this.applying = true;
-    const answer = await ask(commands.applySettings(changes));
-    const unshown =
-      answer.status === "ok" ? await this.#theme.endPreview(changes.appearance !== undefined) : undefined;
-    this.applying = false;
+    let answer: Answer<LoadedSettings>;
+    let unshown: string | undefined;
+    try {
+      // A broken call answers as a refusal, so Cancel and Esc work again after it.
+      answer = await ask(Promise.resolve().then(() => commands.applySettings(changes)));
+      unshown = answer.status === "ok" ? await this.#theme.endPreview(saved) : undefined;
+    } finally {
+      this.applying = false;
+    }
     if (answer.status === "error") {
       this.problem = `Tsugiki can't save the settings: ${answer.error.message}`;
       return false;
@@ -226,7 +234,7 @@ export class SettingsDialog {
    * made the dialog's the theme in force. */
   #close(): true {
     this.#settings.preview(false);
-    void this.#theme.endPreview(false);
+    void this.#theme.endPreview();
     return true;
   }
 }

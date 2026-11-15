@@ -664,6 +664,46 @@ describe("Settings › General's Appearance", () => {
     expect(button("OK")).toBeTruthy();
   });
 
+  it("turns the rows off while Apply saves, so the window keeps the themes of what it saved", async () => {
+    const saving = Promise.withResolvers<ReturnType<typeof ok<LoadedSettings>>>();
+    core.applySettings.mockReturnValue(saving.promise);
+    const onclose = vi.fn();
+    await opened(onclose);
+    await choose("Theme", "Gruvbox Dark Hard");
+    await vi.waitFor(() => {
+      expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    });
+
+    await fireEvent.click(button("Apply"));
+    expect(select("Theme").disabled).toBe(true);
+    expect(select("Light theme").disabled).toBe(true);
+    expect(select("Dark theme").disabled).toBe(true);
+
+    const saved = settingsWith((settings) => (settings.appearance.theme = "Gruvbox Dark Hard"));
+    core.themes.mockImplementation(async () => previewOf(saved.appearance));
+    saving.resolve(ok(loaded(saved)));
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+    expect(theme.themes?.theme).toEqual({ kind: "named", name: "Gruvbox Dark Hard", side: "dark" });
+  });
+
+  it("lets Cancel close after an Apply whose call throws", async () => {
+    core.applySettings.mockImplementation(() => {
+      throw new Error("no IPC");
+    });
+    const onclose = vi.fn();
+    await opened(onclose);
+    await choose("Theme", "Gruvbox Dark Hard");
+    await fireEvent.click(button("Apply"));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Tsugiki can't save the settings: Error: no IPC",
+    );
+    await fireEvent.click(button("Cancel"));
+    expect(onclose).toHaveBeenCalledOnce();
+  });
+
   it("says why it can't offer the themes when the window never got them", async () => {
     core.themes.mockResolvedValue(refused("Tsugiki can't read themes: access denied"));
     theme = new ThemeState(LIGHT_SIDE);

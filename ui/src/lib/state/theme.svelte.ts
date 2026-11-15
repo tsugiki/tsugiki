@@ -34,6 +34,10 @@ export const isMode = (theme: string): theme is ThemeKind => theme === "light" |
 export const themePick = (theme: "system" | ThemeName): ThemePick =>
   theme === "system" ? { kind: "system" } : { kind: "named", name: theme };
 
+/** Whether `one` and `other` hold the same `[appearance]`. */
+const sameAppearance = (one: AppearanceSettings, other: AppearanceSettings) =>
+  one.theme === other.theme && one.light_theme === other.light_theme && one.dark_theme === other.dark_theme;
+
 /** The theme `themes` chose for side `kind`, which following the system shows on that side. */
 const chosenIn = (themes: Themes | undefined, kind: ThemeKind): ThemeView | undefined => {
   const name = themes?.[kind].chosen;
@@ -85,13 +89,20 @@ export class ThemeState {
   /** The themes the core worked out for the `[appearance]` the Settings dialog shows, which the window shows
    * under the picker's preview and over the theme in force (#757). */
   #settingsThemes = $state<Themes>();
-  /** Whether the Settings dialog shows its `[appearance]` on the window, which then keeps to the side of what
-   * the dialog shows: a load leaves the window's side alone until the dialog stops. */
+  /** The `[appearance]` the core worked out `#settingsThemes` for. */
+  #settingsShown: AppearanceSettings | undefined;
+  /** Whether the dialog has asked to show its `[appearance]` since it last stopped. */
+  #previewAsked = false;
+  /** Whether the window shows the dialog's themes, or turns to them, which keeps it to their side: a load
+   * leaves the window's side alone until the dialog stops. */
   #previewing = false;
-  /** The count of the dialog's asks, so only the last one asked shows. */
+  /** The values the dialog asked to show that no ask has taken yet: only the latest wait. */
+  #wanted: AppearanceSettings | undefined;
+  /** The dialog's asks on their way, one at a time, until none wait. It never rejects. */
+  #showing: Promise<void> | undefined;
+  /** The count of the dialog's changes, and of its stops, so an answer for values changed since doesn't
+   * show. */
   #previews = 0;
-  /** The dialog's last ask, which gives the themes it showed, or nothing if it showed none. */
-  #lastPreview = Promise.resolve<Themes | undefined>(undefined);
   /** The side in use: the one the settings keep, or else the one Windows is on. */
   side: ThemeKind = $derived(this.#sideOf(this.themes));
   /** The theme in force, once the core has sent them: the named one, or else the chosen one of the side in
@@ -123,17 +134,23 @@ export class ThemeState {
    * time, so this is also Reload themes (#519). Of loads that cross, the one asked last shows. Themes that
    * don't come keep the page on the themes it had, and the window on their side. It asks once the saves
    * picked before it have answered. */
-  async load() {
+  async load(): Promise<void> {
+    await this.#load();
+  }
+
+  /** Loads as `load` says, and gives why the core refused this load's own ask, if it did. */
+  async #load(): Promise<string | undefined> {
     const asked = ++this.#loads;
     const picks = this.#picks;
     await this.#saves;
     const answer = await ask(commands.themes());
-    if (asked !== this.#loads) return;
+    const refused = answer.status === "ok" ? undefined : answer.error.message;
+    if (asked !== this.#loads) return refused;
     if (answer.status !== "ok") {
       this.error = answer.error.message;
       // A load asked before this one may have turned the window before this one was asked.
       if (this.themes) this.#take(await this.#turnInForce(this.themes.theme));
-      return;
+      return refused;
     }
     const data = answer.data;
     // The core may have read the settings before the save of a pick made since, so the theme on the window
@@ -145,58 +162,76 @@ export class ThemeState {
     if (this.#picks === picks) this.#saved = data.theme;
     keepPicks();
     this.#take(await this.#turnInForce(data.theme));
-    if (asked !== this.#loads) return;
+    if (asked !== this.#loads) return undefined;
     keepPicks();
     this.themes = data;
     this.error = undefined;
+    return undefined;
   }
 
   /** Shows the `[appearance]` the Settings dialog shows, `appearance`, on the window, as the core works out
    * the themes it gives, and turns the window to the side of the theme it shows (#757). Following the
-   * system, the window then says the side the system is on. Of asks that cross, the one asked last shows.
-   * One the core refuses leaves the window as it was, and `previewProblem` says why. */
+   * system, the window then says the side the system is on. One ask goes at a time: values changed while
+   * it's on its way wait, and only the latest are asked next, as each ask reads the `themes` folder. An
+   * answer for values changed since doesn't show. One the core refuses leaves the window as it was, and
+   * `previewProblem` says why. It answers once no values wait. */
   previewSettings(appearance: AppearanceSettings): Promise<void> {
-    this.#previewing = true;
-    const shown = this.#showSettings(appearance, ++this.#previews);
-    this.#lastPreview = shown;
-    return shown.then(() => {});
+    this.#previewAsked = true;
+    this.#previews += 1;
+    this.#wanted = appearance;
+    this.#showing ??= this.#showWanted().then(() => {
+      this.#showing = undefined;
+    });
+    return this.#showing;
   }
 
-  async #showSettings(appearance: AppearanceSettings, asked: number): Promise<Themes | undefined> {
-    const answer = await ask(commands.previewThemes(appearance));
-    if (asked !== this.#previews) return undefined;
-    if (answer.status !== "ok") {
-      this.previewProblem = `Tsugiki can't show the theme: ${answer.error.message}`;
-      return undefined;
+  async #showWanted(): Promise<void> {
+    while (this.#wanted !== undefined) {
+      const appearance = this.#wanted;
+      this.#wanted = undefined;
+      const asked = this.#previews;
+      // A broken call answers as a refusal, so the asks go on.
+      const answer = await ask<Themes>(Promise.resolve().then(() => commands.previewThemes(appearance)));
+      if (asked !== this.#previews) continue;
+      if (answer.status !== "ok") {
+        this.previewProblem = `Tsugiki can't show the theme: ${answer.error.message}`;
+        continue;
+      }
+      this.#previewing = true;
+      const side = await this.#turn(answer.data.theme);
+      if (asked !== this.#previews) continue;
+      this.#take(side);
+      this.previewProblem = undefined;
+      this.#settingsThemes = answer.data;
+      this.#settingsShown = appearance;
     }
-    const side = await this.#turn(answer.data.theme);
-    if (asked !== this.#previews) return undefined;
-    this.#take(side);
-    this.previewProblem = undefined;
-    this.#settingsThemes = answer.data;
-    return answer.data;
   }
 
   /** Stops showing the Settings dialog's `[appearance]`. Once Apply has `saved` it, the window keeps the
-   * themes the dialog's last ask showed, which the core worked out from what the file now holds, and reads
-   * them again for the files' problems. Without that answer it reads them now, and gives why it couldn't.
-   * Otherwise the window goes back to the theme in force and its side. */
-  async endPreview(saved: boolean): Promise<string | undefined> {
-    if (!this.#previewing) return undefined;
-    const last = saved ? await this.#lastPreview : undefined;
+   * themes the core worked out for those values, waiting for the ask on its way, and reads them again for
+   * the files' problems. Without them it reads them now, and gives why the core refused that read. Otherwise
+   * the window goes back to the theme in force and its side. */
+  async endPreview(saved?: AppearanceSettings): Promise<string | undefined> {
+    if (!this.#previewAsked) return undefined;
+    if (saved) await this.#showing;
+    const kept = saved && this.#settingsShown && sameAppearance(this.#settingsShown, saved);
+    const themes = kept ? this.#settingsThemes : undefined;
+    this.#previewAsked = false;
     this.#previewing = false;
     this.#previews += 1;
+    this.#wanted = undefined;
     this.#settingsThemes = undefined;
+    this.#settingsShown = undefined;
     this.previewProblem = undefined;
-    if (last) {
-      this.themes = last;
-      this.#saved = last.theme;
+    if (themes) {
+      this.themes = themes;
+      this.#saved = themes.theme;
       void this.load();
       return undefined;
     }
     if (saved) {
-      await this.load();
-      return this.error && `Tsugiki saved the settings, but can't show the theme: ${this.error}`;
+      const refused = await this.#load();
+      return refused && `Tsugiki saved the settings, but can't show the theme: ${refused}`;
     }
     if (this.themes) this.#take(await this.#turn(this.themes.theme));
     return undefined;

@@ -14,6 +14,9 @@
   const names = $derived({ light: dialog.themeNames("light"), dark: dialog.themeNames("dark") });
   /** Whether the Appearance rows wait: for the files, or for the window's themes. */
   const waiting = $derived(appearance === undefined || names.light === undefined || names.dark === undefined);
+  /** Whether the Appearance rows are off: while they wait, and while Apply saves what they say, so the window
+   * keeps the themes of what it saved. */
+  const off = $derived(waiting || dialog.applying);
   /** The file's `theme`, when the Theme row doesn't offer it otherwise. */
   const heldTheme = $derived(dialog.held("theme"));
   /** The id of each side's select, which its label names. */
@@ -61,7 +64,7 @@
     <select
       id={IDS[side]}
       value={appearance?.[key]}
-      disabled={waiting}
+      disabled={off}
       onchange={pick((appearance, name) => {
         appearance[key] = name;
       })}
@@ -87,7 +90,7 @@
   <select
     id="settings-theme"
     value={appearance?.theme}
-    disabled={waiting}
+    disabled={off}
     onchange={pick((appearance, theme) => {
       appearance.theme = theme;
     })}

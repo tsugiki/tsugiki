@@ -88,8 +88,7 @@ impl ThemeChoice {
     /// take: written to the file, they would read back as following the system or as a mode (#757).
     pub fn named(name: ThemeName) -> Result<Self, Error> {
         if Self::reserves(name.as_str()) {
-            let message = format!("No theme is named {:?}.", name.as_str());
-            return Err(Error::new(ErrorKind::NotFound, &message));
+            return Err(no_theme_named(&name));
         }
         Ok(Self::Theme(name))
     }
@@ -98,6 +97,12 @@ impl ThemeChoice {
     fn reserves(name: &str) -> bool {
         name == Self::SYSTEM || ThemeKind::parse(name).is_some()
     }
+}
+
+/// The refusal of a pick of `name`, which no theme that can be used has, or may have.
+fn no_theme_named(name: &ThemeName) -> Error {
+    let message = format!("No theme is named {:?}.", name.as_str());
+    Error::new(ErrorKind::NotFound, &message)
 }
 
 /// A built-in theme for the light side: `[appearance] light_theme` in `settings.toml`, by its name.
@@ -859,10 +864,9 @@ impl ThemeLibrary {
             ThemePick::Named { name } => name,
         };
         if self.usable.iter().any(|theme| theme.name == name.as_str()) {
-            Ok(ThemeChoice::Theme(name))
+            ThemeChoice::named(name)
         } else {
-            let message = format!("No theme is named {:?}.", name.as_str());
-            Err(Error::new(ErrorKind::NotFound, &message))
+            Err(no_theme_named(&name))
         }
     }
 

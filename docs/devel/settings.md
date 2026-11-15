@@ -36,13 +36,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Theme picked by `system`, `light` or `dark`. A change shows on the window at once, title bar included:
   `preview_themes` works out the Themes the rows give by the rules `themes` goes by for the file, and the
   window turns to their side, so Follow system shows the side the system is on, not the side a Theme kept
-  the window on. Apply keeps those Themes in force and reads the themes again for the files' problems. If
-  the window has none to keep, Apply reads them, and stays open with why when it can't. Cancel turns the
-  window back. When the window has no themes at all, the rows stay off and say why. Status bar has Show the
-  status bar, and says that problems and being offline still show when it's off. Updates has Check for new
-  versions (`[releases] check`), the one setting that still needs a restart, so it says "Takes effect at the
-  next start" under its row. Both live in `settings.toml`. Repositories, each Repository's page and Sync say
-  "Nothing to set here yet." for now.
+  the window on. The window sends one `preview_themes` at a time, and the next carries the rows' latest
+  values. The rows are off while Apply saves, which keeps the Themes of the values it saved in force and
+  reads the themes again for the files' problems. If the window has none to keep, Apply reads them, and
+  stays open with why when it can't. Cancel turns the window back. When the window has no themes at all,
+  the rows stay off and say why. Status bar has Show the status bar, and says that problems and being
+  offline still show when it's off. Updates has Check for new versions (`[releases] check`), the one setting
+  that still needs a restart, so it says "Takes effect at the next start" under its row. Both live in
+  `settings.toml`. Repositories, each Repository's page and Sync say "Nothing to set here yet." for now.
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps
   ([keyboard.md](keyboard.md)).
 - Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle

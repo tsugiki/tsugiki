@@ -17,6 +17,7 @@ const APPEARANCE = {
 beforeEach(() => {
   vi.mocked(commands.turnWindow).mockReset().mockResolvedValue(null);
   vi.mocked(commands.saveTheme).mockReset().mockResolvedValue({ status: "ok", data: null });
+  vi.mocked(commands.previewThemes).mockReset();
 });
 
 /** A theme of side `kind` named `name`, with background `bg`. */
@@ -412,7 +413,7 @@ describe("ThemeState", () => {
     expect(state.shown?.name).toBe("VS Code Light Modern");
     state.preview = undefined;
 
-    expect(await state.endPreview(false)).toBeUndefined();
+    expect(await state.endPreview()).toBeUndefined();
     expect(state.shown?.name).toBe("VS Code Light Modern");
     expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
   });
@@ -442,13 +443,13 @@ describe("ThemeState", () => {
     expect(state.shown?.name).toBe("Gruvbox Dark Hard");
     const turns = vi.mocked(commands.turnWindow).mock.calls.length;
 
-    expect(await state.endPreview(false)).toBeUndefined();
+    expect(await state.endPreview()).toBeUndefined();
 
     expect(state.shown).toBeUndefined();
     expect(vi.mocked(commands.turnWindow).mock.calls.length).toBe(turns);
   });
 
-  it("shows only the last of the dialog's asks that cross", async () => {
+  it("asks for one change at a time, then only for the latest, and shows no answer for values changed since", async () => {
     const state = await loaded(THEMES, false);
     const first = Promise.withResolvers<{ status: "ok"; data: Themes }>();
     vi.mocked(commands.previewThemes).mockReturnValueOnce(first.promise);
@@ -456,9 +457,14 @@ describe("ThemeState", () => {
       status: "ok",
       data: { ...structuredClone(THEMES), theme: NAMED_DARK },
     });
+    const lightHard = { ...APPEARANCE, theme: "Gruvbox Light Hard" };
 
-    const asked = state.previewSettings(APPEARANCE);
-    await state.previewSettings(APPEARANCE);
+    const asked = state.previewSettings(lightHard);
+    void state.previewSettings({ ...APPEARANCE, theme: "system" });
+    void state.previewSettings(APPEARANCE);
+    await vi.waitFor(() => {
+      expect(commands.previewThemes).toHaveBeenCalledOnce();
+    });
     first.resolve({
       status: "ok",
       data: {
@@ -468,7 +474,86 @@ describe("ThemeState", () => {
     });
     await asked;
 
+    expect(commands.previewThemes).toHaveBeenCalledTimes(2);
+    expect(commands.previewThemes).toHaveBeenLastCalledWith(APPEARANCE);
     expect(state.shown?.name).toBe("Gruvbox Dark Hard");
+    expect(commands.turnWindow).not.toHaveBeenCalledWith("light");
+  });
+
+  it("goes on asking after a call that throws", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockImplementationOnce(() => {
+      throw new Error("no IPC");
+    });
+
+    await state.previewSettings(APPEARANCE);
+
+    expect(state.previewProblem).toBe("Tsugiki can't show the theme: Error: no IPC");
+    expect(await state.endPreview(APPEARANCE)).toBeUndefined();
+  });
+
+  it("turns the window with a load while the dialog has no themes to show", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "access denied" },
+    });
+    await state.previewSettings(APPEARANCE);
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "ok",
+      data: { ...structuredClone(THEMES), theme: NAMED_DARK },
+    });
+
+    await state.load();
+
+    expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
+    expect(state.shown?.name).toBe("Gruvbox Dark Hard");
+  });
+
+  it("keeps only the themes of the values Apply saved, and reads the themes for others", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "ok",
+      data: { ...structuredClone(THEMES), theme: NAMED_DARK },
+    });
+    await state.previewSettings(APPEARANCE);
+    const asked = vi.mocked(commands.themes).mock.calls.length;
+
+    expect(await state.endPreview({ ...APPEARANCE, theme: "system" })).toBeUndefined();
+
+    expect(vi.mocked(commands.themes).mock.calls.length).toBe(asked + 1);
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(state.shown?.name).toBe("VS Code Light Modern");
+  });
+
+  it("answers Apply with its own read of the themes, not one an older load left", async () => {
+    vi.mocked(commands.themes).mockResolvedValueOnce({
+      status: "error",
+      error: { kind: "internal", message: "an old refusal" },
+    });
+    const state = new ThemeState(sides(false).query);
+    await state.load();
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "access denied" },
+    });
+    await state.previewSettings(APPEARANCE);
+    const own = Promise.withResolvers<{ status: "ok"; data: Themes }>();
+    vi.mocked(commands.themes).mockReturnValueOnce(own.promise);
+    vi.mocked(commands.themes).mockReturnValueOnce(new Promise(() => {}));
+
+    const ending = state.endPreview(APPEARANCE);
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(2);
+    });
+    void state.load();
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(3);
+    });
+    own.resolve({ status: "ok", data: structuredClone(THEMES) });
+
+    expect(await ending).toBeUndefined();
+    expect(state.error).toBe("an old refusal");
   });
 
   it("leaves the window's side to the Settings dialog while a load answers", async () => {
@@ -494,7 +579,7 @@ describe("ThemeState", () => {
     const reading = Promise.withResolvers<{ status: "ok"; data: Themes }>();
     vi.mocked(commands.themes).mockReturnValue(reading.promise);
 
-    expect(await state.endPreview(true)).toBeUndefined();
+    expect(await state.endPreview(APPEARANCE)).toBeUndefined();
 
     expect(state.themes?.theme).toEqual(NAMED_DARK);
     expect(state.current?.name).toBe("Gruvbox Dark Hard");
@@ -521,11 +606,11 @@ describe("ThemeState", () => {
       error: { kind: "internal", message: "access denied" },
     });
 
-    expect(await state.endPreview(true)).toBe(
+    expect(await state.endPreview(APPEARANCE)).toBe(
       "Tsugiki saved the settings, but can't show the theme: access denied",
     );
     expect(state.previewProblem).toBeUndefined();
-    expect(await state.endPreview(true)).toBeUndefined();
+    expect(await state.endPreview(APPEARANCE)).toBeUndefined();
   });
 
   it("follows the system with the chosen theme of the side Windows is on", async () => {

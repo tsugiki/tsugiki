@@ -107,6 +107,11 @@ A diff takes a third path, because it is too big to send whole
 and keeps the rows. The Files tab asks for the rows near what it shows, and for their highlighting from the
 Highlighter.
 
+Keys take a fourth path, fixed when the app is built. `core/src/keys.rs` lists each action the user can
+bind, with its default key and where it works, and `npm run bindings` writes that table to
+`ui/src/lib/data/keymap.ts`, a file apart from `bindings.ts`, which the UI's tests mock whole. Screens bind
+actions, and `ui/src/lib/state/keymap.ts` finds the action on a key.
+
 ## Where the data lives
 
 - **What GitHub says**, and the user's own state such as Last seen, is in one SQLite file, `tsugiki.db`
@@ -156,5 +161,5 @@ The smaller ones say what they do in their first `//!` line.
   window before it shows.
 - The UI's state files have Vitest tests beside them, with the bindings mocked. `ui/e2e/` runs the built UI
   in Chromium and WebKit with Playwright, with Tauri's IPC mocked in `ui/e2e/mock-core.ts`.
-- `just stale-bindings` fails when `bindings.ts` no longer matches the Rust commands. `just bindings`
-  writes it again.
+- `just stale-bindings` fails when `bindings.ts` no longer matches the Rust commands, or `keymap.ts` the
+  core's key table. `just bindings` writes both again.

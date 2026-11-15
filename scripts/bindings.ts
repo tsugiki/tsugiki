@@ -1,4 +1,5 @@
-// Regenerates the UI's TypeScript bindings from the Rust commands (ADR 0008).
+// Regenerates the UI's TypeScript bindings from the Rust commands (ADR 0008), and its key table from the
+// core's (#548).
 // `cargo test` fails while the committed bindings are out of date; this rewrites them.
 import { spawnSync } from "node:child_process";
 

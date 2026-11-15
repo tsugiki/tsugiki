@@ -105,12 +105,12 @@
   const chord = new ChordWait(os);
   const guard = keyGuard(
     {
-      "ctrl+shift+p": () => {
+      command_palette: () => {
         if (!dialogOpen) paletteOpen = true;
       },
-      "ctrl+r": openPicker,
-      "ctrl+,": openSettings,
-      "ctrl+shift+h": () => {
+      switch_repository: openPicker,
+      open_settings: openSettings,
+      toggle_hud: () => {
         hud.toggle();
       },
     },
@@ -118,13 +118,14 @@
   );
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
    * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. The
-   * screen says what most do, `Ctrl+K T` opens the theme picker and `Ctrl+K R` reads the themes again. */
+   * screen says what most do, Pick a Theme opens the theme picker and Reload Themes reads the themes
+   * again. */
   const readKey = (e: KeyboardEvent) => {
     const canStart = home.current?.screen === "repository" && keysActive;
     const bindings = {
       ...repositoryHome?.chordBindings(),
-      "ctrl+k t": openThemePicker,
-      "ctrl+k r": reloadThemes,
+      pick_theme: openThemePicker,
+      reload_themes: reloadThemes,
     };
     if (!chord.read(e, canStart, bindings)) guard(e);
   };

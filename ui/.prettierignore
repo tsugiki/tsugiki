@@ -4,3 +4,4 @@ test-results/
 coverage/
 node_modules/
 src/lib/data/bindings.ts
+src/lib/data/keymap.ts

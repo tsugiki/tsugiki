@@ -83,6 +83,12 @@ const LAYERS: &[Layer] = &[
         why: "Logs the budgets the window misses, from its timings alone.",
     },
     Layer {
+        module: "keys",
+        uses: &[],
+        why: "Lists each action the user can bind, with its default key and where it works, for the window and \
+              the settings.",
+    },
+    Layer {
         module: "launch",
         uses: &["build"],
         why: "Reads a link for this build, so a development build leaves an installed one's links alone.",

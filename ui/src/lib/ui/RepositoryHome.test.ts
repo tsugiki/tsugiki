@@ -5,7 +5,7 @@ import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
-import type { ChordBindings } from "./keys";
+import type { Bindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
@@ -1169,7 +1169,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   const pressed = () =>
     screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed");
   // The Conversation tab shows no files to switch.
-  component.chordBindings()["ctrl+k o"]?.();
+  component.chordBindings().toggle_files_mode?.();
   expect([command("View: All Files"), command("View: One File at a Time")]).toEqual([undefined, undefined]);
   await fireEvent.click(tab);
   // The tab reads the diff the first time it shows.
@@ -1183,7 +1183,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
     "false",
     "View: One File at a Time",
   ]);
-  component.chordBindings()["ctrl+k o"]?.();
+  component.chordBindings().toggle_files_mode?.();
   await tick();
   expect(pressed()).toBe("true");
 });
@@ -1210,14 +1210,14 @@ it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palet
   const command = () =>
     component.paletteCommands().find((found) => found.title === "View: Unfold Unchanged Files");
   // The Conversation tab shows no files to unfold.
-  component.chordBindings()["ctrl+k j"]?.();
+  component.chordBindings().unfold_unchanged?.();
   expect(command()).toBeUndefined();
   await fireEvent.click(tab);
   await screen.findByRole("region", { name: "Diff" });
 
   expect(command()?.note).toBe("Ctrl+K J");
   command()?.run();
-  component.chordBindings()["ctrl+k j"]?.();
+  component.chordBindings().unfold_unchanged?.();
   expect(unfold).toHaveBeenCalledTimes(2);
   // Once no unchanged file is folded, the palette has nothing to offer.
   folded.mockReturnValue(0);
@@ -2826,8 +2826,8 @@ it("names the view over the list, and switches its order, which the list asks fo
 });
 
 /** Presses Ctrl+K Z, which the page hands the screen once the chord ends. */
-const detailOnly = async (component: { chordBindings: () => ChordBindings }) => {
-  component.chordBindings()["ctrl+k z"]?.();
+const detailOnly = async (component: { chordBindings: () => Bindings }) => {
+  component.chordBindings().toggle_detail_only?.();
   await tick();
 };
 

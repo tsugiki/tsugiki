@@ -10,6 +10,7 @@
      (#447). A breadcrumb before the symbol then names that, and a click on a crumb brings it back. -->
 
 <script lang="ts">
+  import { actionOn } from "$lib/state/keymap";
   import { peekWords, type Peek, type PeekWords } from "$lib/state/peek";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
   import { currentOs, keyName } from "./keys";
@@ -75,11 +76,12 @@
    * go to the hit shown (#446). The diff's keys never hear them. */
   function moveByKey(e: KeyboardEvent, shown: number) {
     const key = keyName(e, currentOs());
-    if (key !== "arrowdown" && key !== "arrowup" && key !== "enter" && key !== "f12") return;
+    const opens = key === "enter" || actionOn(key) === "go_to_definition";
+    if (key !== "arrowdown" && key !== "arrowup" && !opens) return;
     e.preventDefault();
     e.stopPropagation();
     // A held key would go again and again.
-    if (key === "enter" || key === "f12") {
+    if (opens) {
       if (!e.repeat) onopen();
       return;
     }

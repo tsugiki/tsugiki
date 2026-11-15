@@ -1,12 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { commands } from "$lib/data/bindings";
-import { type QuickOpenItem, QuickOpenState } from "./quick-open.svelte";
+import { commands, type TitledItem_Serialize } from "$lib/data/bindings";
+import { QuickOpenState } from "./quick-open.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { quickOpen: vi.fn() } }));
 
 const core = vi.mocked(commands);
 
-const item = (number: number): QuickOpenItem => ({
+const item = (number: number): TitledItem_Serialize => ({
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
@@ -27,8 +27,9 @@ it("asks the core about the open Repository, and holds its answer with the text 
   expect(search.answer).toEqual({ typed: "7", found: [item(7)] });
 });
 
-it("asks one search at a time, then only the latest text typed while it ran", async () => {
-  const answers: ((found: QuickOpenItem[]) => void)[] = [];
+/** The answers to the searches the core is asked, which each test gives in its own time. */
+function heldAnswers() {
+  const answers: ((found: TitledItem_Serialize[]) => void)[] = [];
   core.quickOpen.mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -37,6 +38,11 @@ it("asks one search at a time, then only the latest text typed while it ran", as
         });
       }),
   );
+  return answers;
+}
+
+it("asks one search at a time, then only the latest text typed while it ran", async () => {
+  const answers = heldAnswers();
   const search = new QuickOpenState("python/cpython");
   const first = search.find("1");
   void search.find("12");
@@ -63,6 +69,33 @@ it("asks one search at a time, then only the latest text typed while it ran", as
   core.quickOpen.mockResolvedValue({ status: "ok", data: [] });
   await search.find("1234");
   expect(search.answer).toEqual({ typed: "1234", found: [] });
+});
+
+it("asks nothing more when the text typed meanwhile is back to the one under way", async () => {
+  const answers = heldAnswers();
+  const search = new QuickOpenState("python/cpython");
+  const first = search.find("1");
+  void search.find("12");
+  void search.find("1");
+
+  answers[0]?.([item(1)]);
+  await first;
+
+  expect(core.quickOpen.mock.calls).toEqual([["python/cpython", "1"]]);
+  expect(search.answer).toEqual({ typed: "1", found: [item(1)] });
+});
+
+it("drops the text waiting for the search under way once it stops", async () => {
+  const answers = heldAnswers();
+  const search = new QuickOpenState("python/cpython");
+  const first = search.find("1");
+  void search.find("12");
+
+  search.stop();
+  answers[0]?.([item(1)]);
+  await first;
+
+  expect(core.quickOpen.mock.calls).toEqual([["python/cpython", "1"]]);
 });
 
 it("says why the core couldn't search", async () => {

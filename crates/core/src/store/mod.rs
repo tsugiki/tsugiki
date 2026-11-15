@@ -550,7 +550,9 @@ pub struct WorkFacts {
     pub reviews: ReviewFacts,
 }
 
-/// An Issue or a PR as quick open reads it and lists it.
+/// An Issue or a PR as quick open reads it and lists it. Quick open hands it to the window as it is, so a
+/// field added here reaches the window unless it is skipped, as `updated_at` is; a test of quick open pins
+/// what the window gets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct TitledItem {
     pub number: u32,

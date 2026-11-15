@@ -1557,6 +1557,41 @@ const arrowTitle = (way: -1 | 1 = -1) =>
     .getByRole("button", { name: way < 0 ? "Back" : "Forward" })
     .getAttribute("title");
 
+it("closes the file view over the PR on show when quick open picks that PR, on the same tab, and records it", async () => {
+  const view = eggsView();
+  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
+    this.openFileView(view);
+    return Promise.resolve();
+  });
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  await screen.findByRole("region", { name: "Diff" });
+  await press("F12");
+  await screen.findByRole("region", { name: "File view" });
+
+  component.openFound("pull_request", 160662);
+  await settled();
+
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(screen.getByRole("tab", { selected: true }).textContent).toBe("Files");
+  expect(document.activeElement).toBe(treeRow);
+  // The pick is the history's latest place, so Back goes to the file view it closed.
+  expect(arrowTitle()).toMatch(/^Back to Lib\/eggs\.py /);
+});
+
 it("goes back to the diff with Alt+← from the file view, and forward to the file view, each as it was", async () => {
   const { diff, view, opened } = await goIntoFileView();
   const row = document.querySelector('[data-item="112564#160662"]');

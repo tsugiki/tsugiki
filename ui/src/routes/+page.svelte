@@ -445,6 +445,7 @@
     onrun={(command) => void recentCommands.ran(command)}
     onclose={() => {
       paletteText = undefined;
+      quickOpen?.stop();
       quickOpen = undefined;
     }}
   />

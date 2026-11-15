@@ -59,22 +59,27 @@ const fits = (value: string) => {
 };
 
 /** The opening tag of each element in `source`'s markup whose test id ends in `-scrim`. A tag runs to the
- * first `>` outside quotes and `{…}`, so an arrow function in a handler doesn't end it. */
+ * first `>` outside quotes and `{…}`, so an arrow function in a handler doesn't end it. A `<` inside the
+ * `<script>` or `<style>` block starts no tag. */
 const scrimTags = (source: string) => {
-  const markup = source.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, "");
-  return [...markup.matchAll(/<[a-zA-Z]/g)]
+  const blocks = [...source.matchAll(/<(script|style)\b[\s\S]*?<\/\1>/g)].map(({ index, 0: block }) => [
+    index,
+    index + block.length,
+  ]);
+  return [...source.matchAll(/<[a-zA-Z]/g)]
+    .filter(({ index }) => !blocks.some(([start = 0, end = 0]) => index >= start && index < end))
     .map(({ index }) => {
       let depth = 0;
       let quote = "";
-      for (let i = index + 1; i < markup.length; i++) {
-        const c = markup[i];
+      for (let i = index + 1; i < source.length; i++) {
+        const c = source[i];
         if (quote) quote = c === quote ? "" : quote;
         else if (c === '"' || c === "'" || c === "`") quote = c;
         else if (c === "{") depth++;
         else if (c === "}") depth--;
-        else if (c === ">" && depth === 0) return markup.slice(index, i + 1);
+        else if (c === ">" && depth === 0) return source.slice(index, i + 1);
       }
-      return markup.slice(index);
+      return source.slice(index);
     })
     .filter((tag) => /\bdata-testid="[\w-]+-scrim"/.test(tag));
 };
@@ -91,7 +96,7 @@ it("reads each z-index as written, and finds each scrim's tag", () => {
   ).toEqual(["2", "30", "20", "var(--layer-hud)", "String(z)", "5"]);
   expect(
     scrimTags(
-      '<script>if (a<b) x();</script>\n<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>\n<div data-testid="b">',
+      '<script>const t = `<p data-testid="t-scrim">`;</script>\n<style>a<b[data-testid="s-scrim"] {}</style>\n<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>\n<div data-testid="b">',
     ),
   ).toEqual(['<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>']);
   expect(hasScrimClass('<div class="scrim wide">')).toBe(true);

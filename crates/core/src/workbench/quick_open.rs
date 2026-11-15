@@ -6,6 +6,8 @@
 
 use std::cmp::Reverse;
 
+use serde::Serialize;
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
@@ -17,14 +19,35 @@ use crate::store::{StoreReader, TitledItem, TitledKind};
 /// How many items quick open lists at most: enough to pick from, and few enough to fit the window.
 pub const LISTED: usize = 20;
 
-/// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most. This
-/// reads the database and never asks GitHub.
+/// What quick open finds for a text: the item the text names by its number, apart, so the window can put it
+/// ahead of the files of the PR on show (#558), and the other items.
+#[derive(Debug, PartialEq, Eq, Serialize, Type)]
+pub struct QuickOpenFound {
+    /// The Issue or PR whose number the whole text names, if the cache holds it.
+    pub named: Option<TitledItem>,
+    /// The items whose titles hold every word typed: the open first, then the newest.
+    pub others: Vec<TitledItem>,
+}
+
+/// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most in all.
+/// This reads the database and never asks GitHub.
 pub fn find(
     reader: &StoreReader,
     repository: &RepositoryName,
     typed: &str,
-) -> Result<Vec<TitledItem>, Error> {
-    Ok(best(reader.titled_items(repository)?, &Typed::parse(typed)))
+) -> Result<QuickOpenFound, Error> {
+    let typed = Typed::parse(typed);
+    let mut found: Vec<TitledItem> = reader
+        .titled_items(repository)?
+        .into_iter()
+        .filter(|item| typed.finds(item))
+        .collect();
+    let named = typed
+        .number
+        .and_then(|number| found.iter().position(|item| item.number == number))
+        .map(|at| found.swap_remove(at));
+    let others = best(found, LISTED - usize::from(named.is_some()));
+    Ok(QuickOpenFound { named, others })
 }
 
 /// What the user typed, read for the search.
@@ -65,27 +88,25 @@ impl Typed {
         let title = item.title.to_lowercase();
         self.words.iter().all(|word| title.contains(word.as_str()))
     }
-
-    /// Where `item` comes in the list, lowest first: the numbered item, then the open ones, the newest first.
-    fn rank(&self, item: &TitledItem) -> (bool, bool, Reverse<OffsetDateTime>, Reverse<u32>) {
-        (
-            self.number != Some(item.number),
-            !is_open(item.kind),
-            Reverse(item.updated_at),
-            Reverse(item.number),
-        )
-    }
 }
 
-/// The items of `all` that `typed` finds, best first, `LISTED` at most. Only those `LISTED` get sorted.
-fn best(all: Vec<TitledItem>, typed: &Typed) -> Vec<TitledItem> {
-    let mut found: Vec<TitledItem> = all.into_iter().filter(|item| typed.finds(item)).collect();
-    if found.len() > LISTED {
-        let (listed, _, _) = found.select_nth_unstable_by_key(LISTED, |item| typed.rank(item));
-        listed.sort_unstable_by_key(|item| typed.rank(item));
-        found.truncate(LISTED);
+/// Where `item` comes in the list, lowest first: the open ones, the newest first.
+fn rank(item: &TitledItem) -> (bool, Reverse<OffsetDateTime>, Reverse<u32>) {
+    (
+        !is_open(item.kind),
+        Reverse(item.updated_at),
+        Reverse(item.number),
+    )
+}
+
+/// The best of `found`, `listed` at most, best first. Only those `listed` get sorted.
+fn best(mut found: Vec<TitledItem>, listed: usize) -> Vec<TitledItem> {
+    if found.len() > listed {
+        let (best, _, _) = found.select_nth_unstable_by_key(listed, rank);
+        best.sort_unstable_by_key(rank);
+        found.truncate(listed);
     } else {
-        found.sort_unstable_by_key(|item| typed.rank(item));
+        found.sort_unstable_by_key(rank);
     }
     found
 }

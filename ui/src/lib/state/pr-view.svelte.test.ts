@@ -251,6 +251,17 @@ describe("PrViewState", () => {
     state.stop();
   });
 
+  it("opens a file quick open found on the Files tab", () => {
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
+    const opened = vi.spyOn(state.files, "openPath").mockReturnValue();
+
+    state.openFile("Lib/os.py");
+
+    expect(state.tab).toBe("files");
+    expect(opened).toHaveBeenCalledWith("Lib/os.py");
+    state.stop();
+  });
+
   it("asks the Files tab for the diff again when the rail's Search finds no checkout of it", async () => {
     const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     const asked = vi.spyOn(state.files, "ask").mockResolvedValue();

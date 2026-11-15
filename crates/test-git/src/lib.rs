@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
-use std::{fs, io, thread};
+use std::{fs, io, iter, thread};
 
 /// The author of each commit a test makes, so a commit needs no git config on the machine.
 const AUTHOR: [&str; 4] = [
@@ -176,17 +176,18 @@ const HELD: [i32; 0] = [];
 /// folder still held, fails the test.
 fn remove(path: &Path) {
     let give_up = Instant::now() + HELD_FOR;
-    let mut pause = Duration::ZERO;
-    let (removed, held) = loop {
-        thread::sleep(pause);
-        pause = TRY_AGAIN;
-        let removed = remove_once(path);
-        let code = removed.as_ref().err().and_then(io::Error::raw_os_error);
-        let held = matches!(code, Some(code) if HELD.contains(&code));
-        if !held || Instant::now() >= give_up {
-            break (removed, held);
-        }
-    };
+    // No line here runs only on a second try, which macOS never makes.
+    let pauses = iter::once(Duration::ZERO).chain(iter::repeat(TRY_AGAIN));
+    let (removed, held) = pauses
+        .map(|pause| {
+            thread::sleep(pause);
+            let removed = remove_once(path);
+            let code = removed.as_ref().err().and_then(io::Error::raw_os_error);
+            let held = matches!(code, Some(code) if HELD.contains(&code));
+            (removed, held)
+        })
+        .find(|(_, held)| !held || Instant::now() >= give_up)
+        .unwrap();
     let still_held = format!(
         ", which a process that works in it, such as a git, a language server or an open store, still \
          held after {} seconds",

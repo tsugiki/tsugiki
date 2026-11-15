@@ -95,11 +95,11 @@ export const commands = {
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**
 	 *  Turns the window that asks to `side`, its title bar and native controls with it, or back to following
-	 *  the system with none (#755). The page asks after each `themes` answer it takes, for the side of the theme
-	 *  it then shows, so the window and the page agree whichever answer came last. Back to the system, it says
-	 *  the side the window is on, or none if the window can't say.
+	 *  the system with none (#755). The page asks for the side of the theme it is about to show, once it has the
+	 *  `themes` answer, and sends the next ask only after this one answers. Back to the system, it says the side
+	 *  the window is on, or none if the window can't say.
 	 * 
-	 *  It doesn't wait, so Tauri runs it on the main thread, in the order the page asks.
+	 *  It doesn't wait, so Tauri runs it on the main thread, where the window's theme is read at once.
 	 */
 	turnWindow: (side: ThemeKind | null) => __TAURI_INVOKE<ThemeKind | null>("turn_window", { side }),
 	/**  What the window opens on. */

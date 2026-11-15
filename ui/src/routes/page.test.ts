@@ -1005,6 +1005,17 @@ describe("the theme picker", () => {
     expect(bg()).toBe("#1f1f1f");
   });
 
+  it("says in the status bar why the title bar couldn't turn, and shows the theme all the same", async () => {
+    core.turnWindow.mockRejectedValue(new Error("the window has gone"));
+    await opened();
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain(
+        "Tsugiki can't turn its title bar to the theme's side: Error: the window has gone",
+      );
+    });
+  });
+
   /** The core's answer from now on: THEMES with a dark theme file named `name`, and `problems`. */
   const withFile = (name: string, problems: string[] = []) => {
     const file = { name, kind: "dark", tokens: [{ property: "--bg", value: "#002b36" }] };

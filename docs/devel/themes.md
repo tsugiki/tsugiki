@@ -33,11 +33,13 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   then a `theme` follows the system, and a side shows its default, and the status bar says so, with the file
   and the line for `theme`. Tsugiki reads `settings.toml` at start and as the Settings dialog opens, and the
   window takes the Theme when it asks for its themes: at start, when the picker opens, and on Reload themes.
-  After each answer it takes, the page asks `turn_window` to turn the window to the side of the Theme it
-  shows, so the title bar and the page end on the same answer even when two asks cross, and a failed ask
-  leaves both as they were. `set_theme` keeps the page's `prefers-color-scheme` on the side kept too, so
+  Of asks that cross, the page keeps the answer to the one it asked last. It asks `turn_window` to turn the
+  window to the side of that answer's Theme, one turn at a time and none to the side asked last, and shows
+  the Theme once the window has answered. So the title bar and the page show the same answer, and a failed
+  ask leaves both as they were. `set_theme` keeps the page's `prefers-color-scheme` on the side kept too, so
   when the window follows the system again, `turn_window` says which side the window is on. The page takes
-  it unless its media query has heard of a change since it asked.
+  it unless its media query has heard the system change sides since it asked: an event that reports the
+  side kept may be the webview catching up, and doesn't count.
 - `Ctrl+K T`, or Pick a Theme in the command palette, opens the theme picker in the palette, as VS Code's
   `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518)). It lists the Themes of the
   side in use, opens on the one in force and marks it "chosen". Each Theme the list moves to shows on the

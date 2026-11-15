@@ -232,6 +232,7 @@
     ...settings.problems,
     ...theme.problems,
     ...(theme.problem === undefined ? [] : [theme.problem]),
+    ...(theme.turnProblem === undefined ? [] : [theme.turnProblem]),
   ]}
   {lastSync}
   syncActivity={status.syncActivity}

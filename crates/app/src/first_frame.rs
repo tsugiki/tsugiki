@@ -8,12 +8,19 @@ use tauri::Theme;
 use tauri::window::Color;
 use tsugiki_core::theme::{ThemeKind, Themes};
 
+/// The side of Tauri's `theme`. Tauri may add themes, and one it adds reads as light.
+fn kind(theme: Theme) -> ThemeKind {
+    match theme {
+        Theme::Dark => ThemeKind::Dark,
+        Theme::Light | _ => ThemeKind::Light,
+    }
+}
+
 /// The side the system is on, as `theme` gives it. One it can't tell reads as light, the side Windows
 /// starts on.
 fn side(theme: tauri::Result<Theme>) -> ThemeKind {
     match theme {
-        Ok(Theme::Dark) => ThemeKind::Dark,
-        Ok(_) => ThemeKind::Light,
+        Ok(theme) => kind(theme),
         Err(cause) => {
             log::warn!(
                 "Tsugiki can't tell which side the system is on, so it takes the light side: {cause}"
@@ -86,8 +93,7 @@ pub fn turn_window(side: Option<ThemeKind>, window: &ThemedWindow<'_>) -> Option
         return None;
     }
     match (window.theme)() {
-        Ok(Theme::Dark) => Some(ThemeKind::Dark),
-        Ok(_) => Some(ThemeKind::Light),
+        Ok(theme) => Some(kind(theme)),
         Err(cause) => {
             log::warn!("Tsugiki can't tell which side its window turned back to: {cause}");
             None

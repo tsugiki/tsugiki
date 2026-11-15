@@ -26,6 +26,8 @@ const GRUVBOX_LIGHT = view("Gruvbox Light Hard", "light", "#f9f5d7");
 const DARK_MODERN = view("VS Code Dark Modern", "dark", "#1f1f1f");
 const GRUVBOX_DARK = view("Gruvbox Dark Hard", "dark", "#1d2021");
 
+const NAMED_DARK = { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } as const;
+
 const THEMES: Themes = {
   theme: { kind: "system" },
   light: { chosen: "VS Code Light Modern", all: [LIGHT_MODERN, GRUVBOX_LIGHT], failed: [] },
@@ -168,7 +170,60 @@ describe("ThemeState", () => {
     expect(state.current?.name).toBe("VS Code Dark Modern");
   });
 
-  it("leaves the window and the page on the theme of the answer that came last when two cross", async () => {
+  it("takes the side the window said back on Windows' side though the webview catches up late", async () => {
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, theme: NAMED_DARK } });
+    const { query, turn } = sides(false);
+    const state = new ThemeState(query);
+    await state.load();
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    let said: (side: "light") => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        said = resolve;
+      }),
+    );
+
+    const reload = state.load();
+    await vi.waitFor(() => expect(commands.turnWindow).toHaveBeenLastCalledWith(null));
+    // The webview reports the dark side the window was kept on only now.
+    turn(true);
+    said("light");
+    await reload;
+
+    expect(state.dark).toBe(false);
+    expect(state.current?.name).toBe("VS Code Light Modern");
+  });
+
+  it("shows the themes only once the window said its side, so the page doesn't flash the side kept", async () => {
+    const state = await loaded({ ...THEMES, theme: NAMED_DARK }, true);
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+    let said: (side: "light") => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        said = resolve;
+      }),
+    );
+
+    const reload = state.load();
+    await vi.waitFor(() => expect(commands.turnWindow).toHaveBeenLastCalledWith(null));
+    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    said("light");
+    await reload;
+
+    expect(state.current?.name).toBe("VS Code Light Modern");
+  });
+
+  it("asks the window to turn only when the side changes", async () => {
+    const state = await loaded(THEMES, false);
+    await state.load();
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, theme: NAMED_DARK } });
+    await state.load();
+    await state.load();
+
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"]]);
+  });
+
+  it("shows the load asked last when two cross, on the page and in the window", async () => {
     const state = await loaded(THEMES, false);
     let first: (themes: { status: "ok"; data: Themes }) => void = () => {};
     vi.mocked(commands.themes)
@@ -177,19 +232,71 @@ describe("ThemeState", () => {
           first = resolve;
         }),
       )
-      .mockResolvedValueOnce({
-        status: "ok",
-        data: { ...THEMES, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
-      });
+      .mockResolvedValueOnce({ status: "ok", data: { ...THEMES, theme: NAMED_DARK } });
 
     const older = state.load();
     await state.load();
-    expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
-    first({ status: "ok", data: structuredClone(THEMES) });
+    first({ status: "ok", data: { ...THEMES, theme: { kind: "side", side: "light" } } });
     await older;
 
+    expect(state.themes?.theme).toEqual(NAMED_DARK);
+    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"]]);
+  });
+
+  it("sends each turn only once the one before it answered", async () => {
+    const state = await loaded(THEMES, false);
+    let said: (side: null) => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        said = resolve;
+      }),
+    );
+    vi.mocked(commands.themes).mockResolvedValueOnce({
+      status: "ok",
+      data: { ...THEMES, theme: NAMED_DARK },
+    });
+
+    const older = state.load();
+    await vi.waitFor(() => expect(commands.turnWindow).toHaveBeenLastCalledWith("dark"));
+    vi.mocked(commands.themes).mockResolvedValueOnce({ status: "ok", data: structuredClone(THEMES) });
+    const newer = state.load();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(commands.turnWindow).toHaveBeenCalledTimes(2);
+    said(null);
+    await older;
+    await newer;
+
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"], [null]]);
     expect(state.themes?.theme).toEqual({ kind: "system" });
-    expect(state.current?.name).toBe("VS Code Light Modern");
+  });
+
+  it("turns the window back to the page's theme when a load fails after one it dropped had turned it", async () => {
+    const state = await loaded(THEMES, false);
+    let said: (side: null) => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        said = resolve;
+      }),
+    );
+    vi.mocked(commands.themes).mockResolvedValueOnce({
+      status: "ok",
+      data: { ...THEMES, theme: NAMED_DARK },
+    });
+
+    const dropped = state.load();
+    await vi.waitFor(() => expect(commands.turnWindow).toHaveBeenLastCalledWith("dark"));
+    vi.mocked(commands.themes).mockResolvedValueOnce({
+      status: "error",
+      error: { kind: "internal", message: "The themes folder can't be read" },
+    });
+    const failed = state.load();
+    said(null);
+    await dropped;
+    await failed;
+
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(state.error).toBe("The themes folder can't be read");
     expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
   });
 
@@ -208,12 +315,20 @@ describe("ThemeState", () => {
     expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([["dark"]]);
   });
 
-  it("goes on with the media query when the window can't be reached", async () => {
+  it("says why the window can't turn, goes on with the media query, and asks again on the next load", async () => {
     vi.mocked(commands.turnWindow).mockRejectedValueOnce(new Error("the window has gone"));
     const state = await loaded(THEMES, true);
 
     expect(state.dark).toBe(true);
     expect(state.current?.name).toBe("VS Code Dark Modern");
+    expect(state.turnProblem).toBe(
+      "Tsugiki can't turn its title bar to the theme's side: Error: the window has gone",
+    );
+
+    await state.load();
+
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], [null]]);
+    expect(state.turnProblem).toBeUndefined();
   });
 
   it("holds the core's refusal and shows no theme", async () => {

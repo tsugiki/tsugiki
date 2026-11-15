@@ -28,11 +28,24 @@ export class ThemeState {
   preview = $state<ThemeView>();
   /** Why the last choice couldn't be saved, until one is. */
   problem = $state<string>();
+  /** Why the window's title bar couldn't turn to the side of the theme in force, until a turn works. */
+  turnProblem = $state<string>();
   /** How many choices have been made, so a load that crossed one keeps it. */
   #choices = 0;
   /** How many saves are on their way, which a load may have read the settings before. */
   #saving = 0;
-  /** The count of side changes the media query has heard, so a side the window said before one doesn't undo
+  /** The count of loads asked, so only the last one asked shows: one asked later read settings no older. */
+  #loads = 0;
+  /** The window's turns, one after the other, so each reaches the window after the one before it. */
+  #turning = Promise.resolve<unknown>(undefined);
+  /** The side the last turn asked for, `null` to follow Windows, or `undefined` when the page doesn't know
+   * the window's side: before the first turn, as the window may have started on a side the settings keep,
+   * and after a turn that failed. */
+  #asked: ThemeKind | null | undefined = undefined;
+  /** The media query's `matches` for the side kept before a turn back to Windows, which the webview may
+   * report late. An event that reports the other side can't be the webview catching up. */
+  #kept: boolean | undefined;
+  /** The count of media events that report Windows' side, so a side the window said before one doesn't undo
    * it. */
   #heard = 0;
   /** The side in use: the one the settings keep, or else the one Windows is on. */
@@ -54,7 +67,7 @@ export class ThemeState {
   constructor(query: DarkQuery) {
     this.dark = query.matches;
     query.addEventListener("change", (e) => {
-      this.#heard += 1;
+      if (e.matches !== this.#kept) this.#heard += 1;
       this.dark = e.matches;
     });
   }
@@ -62,38 +75,66 @@ export class ThemeState {
   /** What is wrong with the user's theme files, in words for the status bar (#519). */
   problems: readonly string[] = $derived(this.themes?.problems ?? []);
 
-  /** Asks the core for the themes, then turns the window to the side of the theme in force. The core reads
-   * the `themes` folder each time, so this is also Reload themes (#519). Themes that don't come keep the
-   * window on the side it was on, as the page keeps the themes it had. */
+  /** Asks the core for the themes, turns the window to the side of the theme in force, and then shows them,
+   * so the page shows the theme with the side the window said. The core reads the `themes` folder each
+   * time, so this is also Reload themes (#519). Of loads that cross, the one asked last shows. Themes that
+   * don't come keep the page on the themes it had, and the window on their side. */
   async load() {
+    const asked = ++this.#loads;
     const choices = this.#choices;
     const answer = await ask(commands.themes());
-    if (answer.status === "ok") {
-      // The core may have read the settings before a choice made since, or before a save that is on its
-      // way, so the choices on the window stand.
-      if (this.themes && (this.#choices !== choices || this.#saving > 0)) {
-        answer.data.light.chosen = this.themes.light.chosen;
-        answer.data.dark.chosen = this.themes.dark.chosen;
-      }
-      this.themes = answer.data;
-      this.error = undefined;
-      await this.#turn(answer.data.theme);
-    } else {
+    if (asked !== this.#loads) return;
+    if (answer.status !== "ok") {
       this.error = answer.error.message;
+      // A load asked before this one may have turned the window before this one was asked.
+      if (this.themes) this.#take(await this.#turn(this.themes.theme));
+      return;
     }
+    this.#take(await this.#turn(answer.data.theme));
+    if (asked !== this.#loads) return;
+    // The core may have read the settings before a choice made since, or before a save that is on its way,
+    // so the choices on the window stand.
+    if (this.themes && (this.#choices !== choices || this.#saving > 0)) {
+      answer.data.light.chosen = this.themes.light.chosen;
+      answer.data.dark.chosen = this.themes.dark.chosen;
+    }
+    this.themes = answer.data;
+    this.error = undefined;
   }
 
-  /** Turns the window to the side `theme` keeps, its title bar with it, or back to following Windows. The
-   * page asks after each answer it takes, so the window ends on the side of the last, as the page does.
-   * Back to Windows, the window says the side it is on, which the media query hears of only a moment later:
-   * a theme that kept the window on one side kept the query there too. */
-  async #turn(theme: ThemeInForce) {
+  /** Takes `side` as the one Windows is on, when the window said it. */
+  #take(side: ThemeKind | undefined) {
+    if (side) this.dark = side === "dark";
+  }
+
+  /** Turns the window to the side `theme` keeps, its title bar with it, or back to following Windows, once
+   * the turns asked before have answered. Back to Windows, it gives the side the window said it is on. */
+  #turn(theme: ThemeInForce): Promise<ThemeKind | undefined> {
+    const side = theme.kind === "system" ? null : theme.side;
+    const turned = this.#turning.then(() => this.#turnNow(side));
+    this.#turning = turned;
+    return turned;
+  }
+
+  /** Turns the window to `side`, unless the last turn asked for it already. Back to Windows, the window says
+   * the side it is on, which the media query hears of only a moment later, as a theme that kept the window
+   * on one side kept the query there too. The side it said is given unless the query has heard Windows
+   * change sides since. */
+  async #turnNow(side: ThemeKind | null): Promise<ThemeKind | undefined> {
+    const before = this.#asked;
+    if (side === before) return undefined;
+    this.#asked = side;
+    this.#kept = side === null && before ? before === "dark" : undefined;
     const heard = this.#heard;
     try {
-      const side = await commands.turnWindow(theme.kind === "system" ? null : theme.side);
-      if (side && this.#heard === heard) this.dark = side === "dark";
-    } catch {
-      // A window that can't be reached keeps its side, and the page goes on with its media query.
+      const said = await commands.turnWindow(side);
+      this.turnProblem = undefined;
+      return said !== null && this.#heard === heard ? said : undefined;
+    } catch (e) {
+      // The window may not have turned, so the next turn goes whatever it asks for.
+      this.#asked = undefined;
+      this.turnProblem = `Tsugiki can't turn its title bar to the theme's side: ${String(e)}`;
+      return undefined;
     }
   }
 

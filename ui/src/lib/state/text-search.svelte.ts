@@ -16,9 +16,11 @@ import {
   type Query,
   type SearchId,
   type SearchState,
+  type Unfetched,
 } from "$lib/data/bindings";
+import { type DiffEnds, diffKey } from "./diff-ends";
 
-export type { FileHits, LineHit, SearchState };
+export type { DiffEnds, FileHits, LineHit, SearchState };
 
 /** How long the keys pause before the query runs, in milliseconds. */
 export const SEARCH_PAUSE = 250;
@@ -31,9 +33,6 @@ export type SearchOption = "case" | "words" | "regex";
 export type SearchRow =
   | { kind: "file"; file: FileHits; matches: number; folded: boolean }
   | { kind: "line"; file: FileHits; hit: LineHit };
-
-/** The ends of a diff: its merge base and its head. */
-export type DiffEnds = { base: string; head: string };
 
 /** A match to open: the file's path and the line's number at the head of the diff the query searched. */
 export type Match = { path: string; line: number; ends: DiffEnds };
@@ -48,12 +47,16 @@ export type SearchDiff =
   | { kind: "absent" }
   | { kind: "failed" };
 
-/** What the Files tab's diff, `view`, and the problem its last read had, `error`, give the search to run
- * on. */
-export function searchDiff(view: PrFiles | null | undefined, error: string | undefined): SearchDiff {
+/** What the Files tab's diff, `view`, gives the search to run on, with the problem its last read had,
+ * `error`, and why the mirror stopped fetching the PR's head without it, `unfetched`. */
+export function searchDiff(
+  view: PrFiles | null | undefined,
+  error: string | undefined,
+  unfetched: Unfetched | undefined,
+): SearchDiff {
   if (view?.state === "ready") return { kind: "ready", base: view.base, head: view.head };
   if (view === null) return { kind: "absent" };
-  if (error !== undefined) return { kind: "failed" };
+  if (error !== undefined || unfetched !== undefined) return { kind: "failed" };
   return view?.state === "asking" ? { kind: "asking" } : { kind: "loading" };
 }
 
@@ -135,7 +138,7 @@ export class TextSearchState {
   /** Hears what the search can run on, `diff`: the query runs again on a diff with other ends, and says why
    * it waits while there is none. */
   follow(diff: SearchDiff) {
-    if (sameDiff(diff, this.#diff)) return;
+    if (keyOf(diff) === keyOf(this.#diff)) return;
     this.#diff = diff;
     void this.#run();
   }
@@ -273,8 +276,12 @@ export class TextSearchState {
     };
     const ends = { base: diff.base, head: diff.head };
     // The listener is in place before the query goes, so nothing the core says of it is missed. A newer
-    // query asked meanwhile goes in place of this one, which then asks nothing.
-    if (!(await this.#listen()) || asked !== this.#asked) return;
+    // query asked meanwhile goes in place of this one, which then asks nothing. Whatever stops it here
+    // cancels the query before it, as nothing else knows of that one any more.
+    if (!(await this.#listen()) || asked !== this.#asked) {
+      this.#cancel(before);
+      return;
+    }
     const answer = await commands.textSearch({ repository: this.#repository, ...ends, query }).catch(problem);
     const running = answer.status === "ok" && answer.data.kind === "running" ? answer.data.id : undefined;
     if (asked !== this.#asked) {
@@ -359,12 +366,8 @@ const UNREADY: Record<Exclude<SearchDiff["kind"], "ready">, string> = {
   failed: "The PR's diff didn't load, so there's nothing to search. The Files tab says why.",
 };
 
-/** Whether `one` and `other` give the search the same thing to run on. */
-function sameDiff(one: SearchDiff, other: SearchDiff): boolean {
-  if (one.kind === "ready" && other.kind === "ready")
-    return one.base === other.base && one.head === other.head;
-  return one.kind === other.kind;
-}
+/** What tells what the search runs on from anything else: the diff's key, or why there is no diff. */
+const keyOf = (diff: SearchDiff): string => (diff.kind === "ready" ? diffKey(diff) : diff.kind);
 
 /** The line's number of a line's row, or nothing for a file's. */
 const lineOf = (row: SearchRow): number | undefined => (row.kind === "line" ? row.hit.line : undefined);

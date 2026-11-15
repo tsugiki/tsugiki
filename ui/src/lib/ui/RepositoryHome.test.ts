@@ -1313,29 +1313,43 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   await searchKey();
   await tick();
   const fromSelection = [railTab(), box().value, document.activeElement === box()];
-  // Again with Search on show, it only focuses the box and leaves the rail open: what the box holds stays,
-  // whatever is selected.
+  // Again with Search on show, a selection on one line outside the box goes in, as in VS Code, and the
+  // rail stays open.
   box().blur();
   selected("gc_collect");
-  await fireEvent.keyDown(box(), { key: "F", ctrlKey: true, shiftKey: true });
+  await searchKey();
   await tick();
   const again = [railTab(), box().value, document.activeElement === box()];
+  // While the box has the focus, the selection is the box's own text, which stays as the user typed it.
+  await fireEvent.input(box(), { target: { value: "gc_.*" } });
+  box().focus();
+  selected("gc_");
+  await fireEvent.keyDown(box(), { key: "F", ctrlKey: true, shiftKey: true });
+  await tick();
+  const typed = box().value;
   const railOnFiles = () =>
     component
       .paletteCommands()
       .find((found) => found.title === "View: Files in the Rail")
       ?.run();
   // On the Files tab the word picked in the diff goes in, as a selection over two lines puts nothing in
-  // the box, or else the word picked in the file view over the diff.
+  // the box, but only while Search isn't on show: then the box keeps its query.
   railOnFiles();
+  box().blur();
   selected("two\nlines");
   await fireEvent.click(document.getElementById("pr-tab-files") as HTMLElement);
   picked.mockReturnValue({ word: "gc_list" } as never);
   command()?.run();
   await tick();
   const fromDiff = box().value;
-  // A window with no selection at all, as one with no browsing context, has none to give.
+  picked.mockReturnValue({ word: "gc_freeze" } as never);
+  command()?.run();
+  await tick();
+  const kept = box().value;
+  // The word picked in the file view over the diff goes in too. A window with no selection at all, as one
+  // with no browsing context, has none to give.
   railOnFiles();
+  box().blur();
   selection.mockReturnValue(null);
   inView.mockReturnValue({ code: { pick: { word: "visit" } } } as never);
   command()?.run();
@@ -1343,8 +1357,13 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
 
   expect(before).toEqual([undefined, null]);
   expect(fromSelection).toEqual(["Search", "gc_debug", true]);
-  expect(again).toEqual(["Search", "gc_debug", true]);
-  expect([fromDiff, box().value, command()?.note]).toEqual(["gc_list", "visit", "Ctrl+Shift+F"]);
+  expect([again, typed]).toEqual([["Search", "gc_collect", true], "gc_.*"]);
+  expect([fromDiff, kept, box().value, command()?.note]).toEqual([
+    "gc_list",
+    "gc_list",
+    "visit",
+    "Ctrl+Shift+F",
+  ]);
   await vi.waitFor(() => {
     expect(core.textSearch).toHaveBeenCalledWith({
       repository: "python/cpython",

@@ -195,18 +195,21 @@ it("gives the search the Files tab's diff once it is ready, or why there is none
   const ready = { state: "ready", base: "b0", head: "abc" } as PrFiles;
 
   expect([
-    searchDiff(ready, "a chunk didn't come"),
-    searchDiff(undefined, undefined),
-    searchDiff({ state: "fetching" }, undefined),
-    searchDiff({ state: "asking" }, undefined),
-    searchDiff(null, undefined),
-    searchDiff(undefined, "no network"),
+    searchDiff(ready, "a chunk didn't come", undefined),
+    searchDiff(undefined, undefined, undefined),
+    searchDiff({ state: "fetching" }, undefined, undefined),
+    searchDiff({ state: "asking" }, undefined, undefined),
+    searchDiff(null, undefined, undefined),
+    searchDiff(undefined, "no network", undefined),
+    // The mirror stopped fetching the PR's head without it, so the diff won't come on its own.
+    searchDiff({ state: "fetching" }, undefined, { kind: "not_on_github" }),
   ]).toEqual([
     READY,
     { kind: "loading" },
     { kind: "loading" },
     { kind: "asking" },
     { kind: "absent" },
+    { kind: "failed" },
     { kind: "failed" },
   ]);
 });
@@ -257,6 +260,26 @@ it("cancels the query an empty box, a bad query, a newer query's late answer or 
 
   // The second query, 2, ran until the bad one; the late answer, 7, came after the next, 3.
   expect(cancelled()).toEqual([1, 2, 7, 3]);
+});
+
+it("cancels the query before one that a newer one, or the view's end, stops on its way to the core", async () => {
+  const overtaken = ready();
+  overtaken.seed("spam");
+  await settled();
+  overtaken.seed("eggs");
+  overtaken.seed("");
+  await settled();
+  const byNewer = cancelled();
+  core.textSearchCancel.mockClear();
+  const stopped = ready();
+  stopped.seed("spam");
+  await settled();
+  stopped.seed("eggs");
+  stopped.stop();
+  await settled();
+
+  expect([byNewer, cancelled()]).toEqual([[1], [1]]);
+  expect(core.textSearch).toHaveBeenCalledTimes(2);
 });
 
 it("sends nothing of a query a newer one replaced while the listener was on its way", async () => {

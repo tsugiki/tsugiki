@@ -164,16 +164,37 @@ fn a_query_with_no_checkout_says_so() {
 }
 
 #[test]
-fn a_query_moves_the_checkout_to_its_diff_and_searches_none_of_another() {
+fn a_query_searches_none_of_a_checkout_at_another_diff() {
     let fixture = pr("search-owner-elsewhere");
     let (search, heard, _) = started();
     let id = search
         .search(repository(), ends(1), &query("spam"))
         .unwrap();
-    // A newer move took the checkout to another diff, the fixture's, while the query waited.
+    // The checkout went to another diff, the fixture's, while the query waited.
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
-    assert_eq!(heard.look_ups(), [(repository(), ends(1))]);
+}
+
+#[test]
+fn queries_on_older_and_newer_diffs_move_no_checkout_whatever_order_their_threads_run_in() {
+    let fixture = pr("search-owner-overtaken");
+    let (search, heard, _) = started();
+    // A query on the diff before, then one on the diff the PR now shows, whose threads ask for the
+    // checkout in either order.
+    let _older = search
+        .search(repository(), ends(1), &query("spam"))
+        .unwrap();
+    let older_reply = asked(&heard);
+    let newer = search_in(&search, &fixture, "eggs");
+    let newer_reply = asked(&heard);
+    newer_reply.send(Some(fixture.checkout.clone())).unwrap();
+    older_reply.send(Some(fixture.checkout.clone())).unwrap();
+    let (files, end, _) = ended(&search, newer);
+    assert_eq!(
+        (files, end),
+        (vec![("b.py".to_owned(), vec![2])], End::Done)
+    );
+    assert!(heard.look_ups().is_empty());
 }
 
 #[test]

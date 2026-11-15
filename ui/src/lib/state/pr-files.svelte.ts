@@ -56,6 +56,7 @@ import {
   type Shown,
   type ThreadAnchor,
 } from "./diff-layout";
+import { type DiffEnds, diffKey } from "./diff-ends";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { diffShows, FileView, inRepository, type RepositoryHit, type ViewLine } from "./file-view.svelte";
 import { HitCode, type CodePick } from "./hit-code.svelte";
@@ -1122,13 +1123,14 @@ export class PrFilesState {
    * found a match (#686), as Go to definition goes to a single hit: to its line in a file the diff shows
    * lines of, opening the lines around it if no hunk shows it, and handing the diff the focus, and to the
    * file view of any other file, at the base for a file the PR doesn't touch, as a lookup names one. The
-   * file view on show lands on the line if it shows that file at that commit. A line the core can't find,
-   * or whose lines don't come, is said over the diff for a moment, and so is a match the search found in an
-   * older diff. A newer diff by then leaves it be. */
-  async openMatch(path: string, line: number, ends: { base: string; head: string }) {
+   * file view on show lands on the line if it shows that file at that commit, and a peek in it closes, as
+   * Go to definition's landing there closes it. A line the core can't find, or whose lines don't come, is
+   * said over the diff for a moment, and so is a match the search found in an older diff. A newer diff by
+   * then leaves it be. */
+  async openMatch(path: string, line: number, ends: DiffEnds) {
     const view = this.view;
     if (view?.state !== "ready") return;
-    if (view.base !== ends.base || view.head !== ends.head) {
+    if (diffKey(view) !== diffKey(ends)) {
       this.#say("The search ran on an older diff of the PR, and runs again on this one.", NOTICE_MS);
       return;
     }
@@ -1138,6 +1140,7 @@ export class PrFilesState {
       : { kind: "repository" as const, path, side: "base" as const, commit: view.base };
     const open = this.#fileView;
     if (open?.place.path === path && open.place.commit === place.commit) {
+      this.#dropPeek();
       open.land(line, 0);
       this.viewWantsFocus = true;
       return;
@@ -1708,7 +1711,7 @@ export class PrFilesState {
 
   /** The commits the diff `view` shows runs between, or nothing if it shows none. */
   #diff(view: PrFiles | null | undefined): string | undefined {
-    return view?.state === "ready" ? `${view.base}..${view.head}` : undefined;
+    return view?.state === "ready" ? diffKey(view) : undefined;
   }
 
   /** What a command answered, or undefined after saying why it failed. */

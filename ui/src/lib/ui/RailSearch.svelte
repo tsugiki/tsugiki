@@ -19,7 +19,7 @@
 
   const search = $derived(pr.search);
   /** What the search can run on: the ends of the diff the Files tab shows, or why there are none yet. */
-  const diff = $derived(searchDiff(pr.files.view, pr.files.error));
+  const diff = $derived(searchDiff(pr.files.view, pr.files.error, pr.files.unfetched));
 
   let list = $state<HTMLElement | null>(null);
   let scrollTop = $state(0);
@@ -172,6 +172,7 @@
     <input
       type="text"
       aria-label="Search the PR's code"
+      data-rail-search
       placeholder="Search"
       spellcheck="false"
       value={search.text}

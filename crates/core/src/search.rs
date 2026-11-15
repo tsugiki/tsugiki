@@ -3,10 +3,11 @@
 //! It runs on ripgrep's crates. It reads the **Lookup checkout** for the files the PR doesn't change and its
 //! added files, and the PR's head from the **Mirror** for the files it changes, and leaves out the files it
 //! deletes. It needs nothing but the Mirror and the checkout, so it works offline at any commit the Mirror
-//! holds. Each query names the ends of the diff it searches, and asks the checkout to move there, as opening
-//! the PR does. A query that arrives while the checkout moves waits for the move: `git grep` could answer
+//! holds. Each query names the ends of the diff it searches. Opening the PR moves the checkout there, and a
+//! query never does: two queries on their own threads would send their moves in either order, and the last
+//! would win. A query that arrives while the checkout moves waits for the move: `git grep` could answer
 //! sooner, but its idea of a regex and of a word differ from ripgrep's, so a query would match differently
-//! by timing. A checkout that a newer move took to another diff has nothing of the query's to search.
+//! by timing. A checkout at another diff has nothing of the query's to search.
 //!
 //! One thread owns what the window reads, a [`SearchState`]. Each query runs on threads of its own, which
 //! send it what they find, and a newer query cancels the one running.
@@ -144,8 +145,8 @@ pub enum SearchState {
     /// The query waits for the Lookup checkout to move to the PR.
     Waiting { id: SearchId },
     /// No move has put the Repository's Lookup checkout at the query's diff: none has put it anywhere, the
-    /// last one failed, a newer one took it to another diff, or the Mirror worker has stopped. So there is
-    /// nothing to search.
+    /// last one failed, it went to another diff, or the Mirror worker has stopped. So there is nothing to
+    /// search.
     NoCheckout { id: SearchId },
     /// git couldn't list or read the PR's files, which the log says more of.
     Failed { id: SearchId },
@@ -431,8 +432,8 @@ pub fn search_checkout(
     Ok((files, End::from(outcome)))
 }
 
-/// Runs query `asked` in its Repository's Lookup checkout, once the checkout has moved to the query's diff,
-/// and sends the owner word of it. A query cancelled while it waited sends nothing more.
+/// Runs query `asked` in its Repository's Lookup checkout, once the checkout has stopped moving, if it holds
+/// the query's diff, and sends the owner word of it. A query cancelled while it waited sends nothing more.
 fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: &Sender<Message>) {
     let Asked {
         id,
@@ -444,8 +445,6 @@ fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: 
     let tell = |word| {
         let _unheard = owner.send(Message::Word(*id, word));
     };
-    // A checkout at the diff already, or moving there, moves nowhere.
-    requests.look_up(repository.clone(), at.clone());
     let answer = requests.ask_lookup_checkout(repository.clone());
     let checkout = match answer.recv_timeout(WAIT_UNSAID) {
         Err(RecvTimeoutError::Timeout) => {

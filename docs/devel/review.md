@@ -51,10 +51,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     the diff the Files tab shows, as the core's text search does ([definitions.md](definitions.md)).
     `Ctrl+Shift+F` and "View: Search in the Rail" open the rail on it with the focus in its query box,
     filled with the text selected on one line, or else the word picked in the diff or the file view.
-    Pressed again with Search on show, the key only focuses the box, and leaves the query in it. The box
-    has three toggles, match case, whole word and regex, on `Alt+C`, `Alt+W` and `Alt+R` while it has the
-    focus, and it searches 250 ms after the last key. The tab reads the PR's diff on either of the PR's
-    tabs, as each query names the diff's base and head, and the core moves the checkout there. It searches
+    Pressed again with Search on show, the key focuses the box, and puts in it only text selected on one
+    line outside it, as in VS Code: the query the user typed stays otherwise. The box has three toggles,
+    match case, whole word and regex, on `Alt+C`, `Alt+W` and `Alt+R` while it has the focus, and it
+    searches 250 ms after the last key. The tab reads the PR's diff on either of the PR's tabs, as each
+    query names the diff's base and head, and searches the checkout that reading moved there. It searches
     again once a diff with another base or head shows, as a PR moved to another Target branch gets
     ([#211](https://github.com/tsugiki/tsugiki/issues/211)). A query nobody wants any more, as the box
     empties or the PR closes, stops.

@@ -409,22 +409,25 @@
 
   /** `Ctrl+Shift+F` or "View: Search in the Rail", which open the rail on Search in `view`, with the focus in
    * its box, as in VS Code (#686). The box takes the text selected on one line, or else the word picked in
-   * the Files tab on show. With Search on show the key only focuses the box, and the rail stays open: the
-   * query the user typed stays, and the box's own text, which the selection may then hold, isn't put back
-   * in it. */
+   * the Files tab on show. With Search on show it takes only a selection, and the rail stays open, so the
+   * query the user typed stays unless they selected other text. */
   function searchInRail(view: PrViewState) {
     const rail = panes.railState;
-    const seed = rail.open && rail.tab === "search" ? undefined : seedText();
+    const seed = seedText(rail.open && rail.tab === "search");
     if (seed !== undefined) view.search.seed(seed);
     view.search.wantsFocus = true;
     panes.railState.pick("search");
   }
 
-  /** The text selected on one line, or else the word picked in the file view or the diff of the Files tab
-   * on show, as `Ctrl+Shift+F` puts it in the Search box. */
-  function seedText(): string | undefined {
-    const selected = window.getSelection()?.toString() ?? "";
+  /** The text selected on one line, or else, unless `selectionOnly`, the word picked in the file view or
+   * the diff of the Files tab on show, as `Ctrl+Shift+F` puts it in the Search box. While the box has the
+   * focus, the selection is the box's own text, which goes nowhere. */
+  function seedText(selectionOnly: boolean): string | undefined {
+    const focused = document.activeElement;
+    const inBox = focused instanceof HTMLInputElement && focused.dataset.railSearch !== undefined;
+    const selected = inBox ? "" : (window.getSelection()?.toString() ?? "");
     if (selected !== "" && !selected.includes("\n")) return selected;
+    if (selectionOnly) return undefined;
     const tab = filesTab();
     return (tab?.fileView ? tab.fileView.code.pick : tab?.picked)?.word;
   }

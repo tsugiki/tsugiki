@@ -3770,17 +3770,22 @@ it("opens no match before the diff is ready", async () => {
   expect(core.pullRequestRow).not.toHaveBeenCalled();
 });
 
-it("lands on a match in the file view on show when it shows the match's file at that commit", async () => {
+it("lands on a match in the file view on show when it shows the match's file at that commit, and closes its peek", async () => {
   const files = await pickable();
   await files.openMatch("Lib/os.py", 12, MATCHED);
   const view = files.fileView;
+  if (view === undefined) throw new Error("no file view opened");
+  view.code.pick = { line: 12, word: "path", start: 0, end: 4, caret: 0 };
+  core.definitions.mockResolvedValueOnce(ok({ state: "not_set_up" }));
+  await files.peekDefinition();
+  const peeked = files.peek !== undefined;
   files.viewWantsFocus = false;
 
   await files.openMatch("Lib/os.py", 40, MATCHED);
 
   expect(files.fileView).toBe(view);
-  expect(view?.landing).toEqual({ line: 40 });
-  expect(files.viewWantsFocus).toBe(true);
+  expect(view.landing).toEqual({ line: 40 });
+  expect([peeked, files.peek, files.viewWantsFocus]).toEqual([true, undefined, true]);
 });
 
 it("says for a moment that a match the search found in an older diff waits for the search to run again", async () => {

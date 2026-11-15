@@ -19,6 +19,7 @@
   import { prIcon } from "./octicons";
   import PaneEdge from "./PaneEdge.svelte";
   import Rail from "./Rail.svelte";
+  import RailSearch from "./RailSearch.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
   import { ago, headline, staleReviewLine } from "./workbench-row";
@@ -71,6 +72,7 @@
    * #413's Review will, follows it. */
   const railTabs: Readonly<Record<RailTabId, RailTab>> = $derived({
     files: { ...RAIL_TABS.files, pane: filesPane },
+    search: { ...RAIL_TABS.search, pane: searchPane },
   });
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
   const railed = $derived(panes.railState.open && Boolean(pr.view));
@@ -139,6 +141,9 @@
 
 <!-- The rail's Files tab, which the tree of the PR's changed files fills (#604). -->
 {#snippet filesPane()}{/snippet}
+
+<!-- The rail's Search tab, over the PR's code (#686). -->
+{#snippet searchPane()}<RailSearch {pr} />{/snippet}
 
 <section
   bind:this={section}

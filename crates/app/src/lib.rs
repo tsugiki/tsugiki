@@ -38,6 +38,7 @@ use tsugiki_core::misses::Miss;
 use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
+use tsugiki_core::search::{Query, SearchId, SearchState, TextSearch};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
     CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
@@ -801,6 +802,62 @@ fn cancel_definitions(ticket: Ticket, work: State<'_, DiffWork>) {
     work.definitions.cancel(ticket);
 }
 
+/// What became of a query the window asked the text search for (#686).
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SearchAsked {
+    /// It runs, and the state answers it with `id`.
+    Running { id: SearchId },
+    /// It can't run, in the regex crate's words, and the query running goes on.
+    BadQuery { message: String },
+}
+
+/// A query over the code of a PR on screen, as the rail's Search asks it (#686).
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct CodeSearch {
+    repository: String,
+    /// The merge base the diff the Files tab shows starts from.
+    base: String,
+    /// The commit that diff ends at.
+    head: String,
+    query: Query,
+}
+
+/// Searches the code of the PR on screen for `asked`'s query, in place of the query running (#686), in the
+/// Lookup checkout once it holds the diff the query names. This never waits: the `text-search-changed`
+/// event says when to ask `text_search_state` what it found.
+#[tauri::command]
+#[specta::specta]
+fn text_search(asked: CodeSearch, search: State<'_, TextSearch>) -> Result<SearchAsked, Error> {
+    let repository = RepositoryName::parse(&asked.repository)?;
+    let at = LookupAt {
+        base: commit(&asked.base)?,
+        head: commit(&asked.head)?,
+    };
+    Ok(match search.search(repository, at, &asked.query) {
+        Ok(id) => SearchAsked::Running { id },
+        Err(bad) => SearchAsked::BadQuery {
+            message: bad.message,
+        },
+    })
+}
+
+/// What the latest query found, or why it found nothing, as the text search's thread last wrote it. This
+/// never waits.
+#[tauri::command]
+#[specta::specta]
+fn text_search_state(search: State<'_, TextSearch>) -> SearchState {
+    search.state()
+}
+
+/// Cancels query `id` while it runs, as the window wants nothing it finds any more: the box was emptied,
+/// the diff it searched went, or the PR closed. The state then goes back to idle.
+#[tauri::command]
+#[specta::specta]
+fn text_search_cancel(id: SearchId, search: State<'_, TextSearch>) {
+    search.cancel(id);
+}
+
 /// Where `lookup`'s word is defined. `hearing` holds the listeners to what the lookup waits for, as the
 /// peek says (#440), and to how the index of a server that answers while it builds it goes (#680).
 fn look_up_definition(
@@ -940,6 +997,11 @@ struct HeadsFetched(Change);
 #[derive(Clone, Serialize, Type, Event)]
 struct LanguageServersChanged(Vec<ServerRow>);
 
+/// Sent when what the latest text search found may have changed: it waits, runs, found more or ended
+/// (#686). The window then asks `text_search_state`.
+#[derive(Clone, Serialize, Type, Event)]
+struct TextSearchChanged;
+
 /// The PR heads that aren't in a Repository's mirror once the worker stopped fetching them, and why.
 #[derive(Clone, Serialize, Type)]
 struct FailedHeads {
@@ -1016,6 +1078,9 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::open_server_log,
             slow_commands::definition_code,
             slow_commands::definition_spans,
+            text_search,
+            text_search_state,
+            text_search_cancel,
             slow_commands::open_on_github,
             slow_commands::open_link
         ])
@@ -1033,7 +1098,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             NewVersionFound,
             HeadsFetched,
             HeadsFetchFailed,
-            LanguageServersChanged
+            LanguageServersChanged,
+            TextSearchChanged
         ])
 }
 

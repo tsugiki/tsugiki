@@ -66,9 +66,10 @@ it("puts a tab's count in its label", () => {
 });
 
 it("orders the tabs as written, and finds the tab an action opens", () => {
-  expect([RAIL_ORDER, RAIL_TAB_OF.toggle_rail_files, RAIL_TAB_OF.archive]).toEqual([
-    ["files"],
-    "files",
-    undefined,
-  ]);
+  expect([
+    RAIL_ORDER,
+    RAIL_TAB_OF.toggle_rail_files,
+    RAIL_TAB_OF.search_in_rail,
+    RAIL_TAB_OF.archive,
+  ]).toEqual([["files", "search"], "files", "search", undefined]);
 });

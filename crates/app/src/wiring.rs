@@ -13,6 +13,7 @@ use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::latest;
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::releases::{AskPublic, ReleaseCheck};
+use tsugiki_core::search::TextSearch;
 use tsugiki_core::session::{Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
@@ -22,7 +23,7 @@ use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, HeadsFetchFailed, HeadsFetched,
     LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
     MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
-    ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
+    ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged, TextSearchChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -174,6 +175,14 @@ pub(crate) fn connect_core<R: Runtime>(
         definitions: definitions.clone(),
     };
     assert!(app.manage(diffs), "only this manages the diffs");
+    let search_handle = app.clone();
+    // A window that starts listening too late asks `text_search_state`, which reads what the thread wrote
+    // before this.
+    let search = TextSearch::start(
+        mirrors.requests(),
+        Box::new(move || log_if_unsent(TextSearchChanged.emit(&search_handle))),
+    );
+    assert!(app.manage(search), "only this manages the text search");
     let requests = session.requests();
     // The mirrors start first, as the session's board hands them heads, so they learn here where the
     // patch-ids they read go.

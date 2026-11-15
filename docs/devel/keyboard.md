@@ -21,6 +21,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | All files ↔ one file at a time | `Ctrl+K O`, or the command palette |
 | Open the files unchanged since a Stale review | `Ctrl+K J`, or the command palette |
 | Show or hide the rail's Files | `Ctrl+K F`, or the command palette |
+| Search the PR's code in the rail | `Ctrl+Shift+F`, or the command palette |
 | Next / previous tab in the PR view | `Ctrl+PageDown` / `Ctrl+PageUp` |
 | Next / previous file in the Files tab | `Alt+PageDown` / `Alt+PageUp` |
 | Send comment | `Ctrl+Enter` |
@@ -52,6 +53,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   ([review.md](review.md)). Each of the rail's tabs has a key of its own that does the same. They work on
   either of the PR's tabs, and with the focus in the rail. ← → move between the rail's tabs while its tab
   row holds the focus, and Home and End go to the first and the last.
+- `Ctrl+Shift+F` opens the rail on Search with the focus in its query box, as in VS Code, and works in a
+  text box too. Pressed with Search on show, it focuses the box and leaves the rail open. In the box,
+  `Alt+C`, `Alt+W` and `Alt+R` turn match case, whole word and regex on or off, as VS Code's keys do. ↓
+  goes from the box to the results, where ↑ ↓ move through the rows, ← folds a file and → unfolds it,
+  and Enter opens the match. These keys belong to the box and the list, so `[keys]` can't remap them.
 - `Ctrl+K J` opens the files of a Stale review's Files tab that the Review left unchanged, as VS Code's
   `Ctrl+K Ctrl+J` unfolds all its regions.
 - `Ctrl+P` opens quick open, which finds the open Repository's Issues and PRs in the database. The user

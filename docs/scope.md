@@ -116,7 +116,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   header, Generated files collapsed from the start, and the NEWS entries on top.
 - One file at a time, as an option beside the whole list.
 - A rail on the right of both tabs, with tabs of its own, each opened by its button and key. Its Files tab,
-  which the Files button and `Ctrl+K F` open, holds the tree of the PR's files.
+  which the Files button and `Ctrl+K F` open, holds the tree of the PR's files. Its Search tab, on
+  `Ctrl+Shift+F`, searches the PR's code and opens a match in the diff or the file view.
 - On a **Stale review**, a line over both tabs that names the reviewed commit and counts the files changed
   since, with Review changes, which opens Files at the first of them. Their headers say "changed since your
   Review" or "whitespace only", and the files the Review left unchanged start collapsed, with one command to

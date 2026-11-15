@@ -111,6 +111,12 @@ export const KEYMAP = [
     "context": "anywhere"
   },
   {
+    "action": "search_in_rail",
+    "title": "Search in the Rail",
+    "key": "ctrl+shift+f",
+    "context": "anywhere"
+  },
+  {
     "action": "next_tab",
     "title": "Next Tab",
     "key": "ctrl+pagedown",

@@ -28,12 +28,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   move to a page, `F7` and `F8` go on from there.
 - A rail on the right of the PR view sits beside the Conversation and the Files tab
   ([#603](https://github.com/tsugiki/tsugiki/issues/603)). It has tabs
-  ([#727](https://github.com/tsugiki/tsugiki/issues/727)): Files for now, for the tree of the PR's changed
-  files ([#604](https://github.com/tsugiki/tsugiki/issues/604)), and Review and Search to come. Each tab
-  has a button at the right of the PR's tab row, a key and a palette command, which open the rail on that
-  tab: the Files button, `Ctrl+K F` and "View: Files in the Rail". The button or key of the tab on show
-  closes the rail, and so does × in its corner. It stays open, at its width and on its tab, from one of the
-  PR's tabs to the other and from PR to PR, until the user closes it or Tsugiki quits.
+  ([#727](https://github.com/tsugiki/tsugiki/issues/727)): Files, for the tree of the PR's changed files
+  ([#604](https://github.com/tsugiki/tsugiki/issues/604)), and Search, with Review to come between them.
+  Each tab has a button at the right of the PR's tab row, a key and a palette command, which open the rail
+  on that tab: the Files button, `Ctrl+K F` and "View: Files in the Rail". The button or key of the tab on
+  show closes the rail, and so does × in its corner, though Search's key focuses its box instead. It stays
+  open, at its width and on its tab, from one of the PR's tabs to the other and from PR to PR, until the
+  user closes it or Tsugiki quits.
   - A row of tabs at the top of the rail shows once it has two tabs or more. A click on a tab shows it, and
     a click on the tab on show closes the rail, though Enter or Space on it leaves the rail open, as the ARIA
     tabs pattern has them confirm the tab. ← → move between the tabs while the row holds the focus, and Home
@@ -46,6 +47,31 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - Esc in the rail gives the focus to the diff, or the file view over it, or the Conversation, and leaves
     the rail open. Closing the rail with the focus in it does the same, and from the Conversation, which the
     whole pane scrolls again, gives the focus to the button of the rail's tab that showed.
+  - Search ([#686](https://github.com/tsugiki/tsugiki/issues/686)) searches the PR's code at the head of
+    the diff the Files tab shows, as the core's text search does ([definitions.md](definitions.md)).
+    `Ctrl+Shift+F` and "View: Search in the Rail" open the rail on it with the focus in its query box,
+    filled with the text selected on one line, or else the word picked in the diff or the file view.
+    Pressed again with Search on show, the key focuses the box, and puts in it only text selected on one
+    line outside it, as in VS Code: the query the user typed stays otherwise. The box has three toggles,
+    match case, whole word and regex, on `Alt+C`, `Alt+W` and `Alt+R` while it has the focus, and it
+    searches 250 ms after the last key. The tab reads the PR's diff on either of the PR's tabs, as each
+    query names the diff's base and head, and searches the checkout that reading moved there. A query
+    that finds the checkout at another PR's diff reads the diff again, once, which moves it back. It
+    searches again once a diff with another base or head shows, as a PR moved to another Target branch
+    gets ([#211](https://github.com/tsugiki/tsugiki/issues/211)). A query nobody wants any more, as the
+    box empties or the PR closes, stops. A second press with text the box holds already runs nothing
+    again, so the folds and the cursor stay.
+  - A line under the box says "312 results in 41 files", "Stopped at 5,000 results", "Waiting for the
+    checkout…", why the diff the search needs isn't there, or the regex's error. A match opens only in
+    the diff it was found in. The results group by file: a row with the path, the count and a fold
+    arrow, then a row for each line with its number and text, each match marked. A Generated file's rows
+    are greyed and say so, as in the Files tab. The list draws only the rows on screen.
+  - A click or Enter on a match in a file the PR changes shows the Files tab at that line, as Go to
+    definition lands, opening the lines around it if no hunk shows it. In any other file it opens the file
+    view at the line, as Go to definition does, or lands on the line in the file view on show if it shows
+    that file. ↑ ↓ move through the rows, ← → fold and unfold a file, and Enter opens. The query, its
+    toggles and what it found stay while the PR's view lasts, so closing and reopening the rail keeps
+    them.
 - Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a
   short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs
   no API call. New line comments stay on lines of the diff, because GitHub's API accepts them only there; the

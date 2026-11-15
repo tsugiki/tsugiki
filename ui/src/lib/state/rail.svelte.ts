@@ -1,6 +1,6 @@
-// The tabs of the PR view's rail (#727), and which of them shows. Files is the first; #413 adds Review and
-// #686 Search. Each tab names what it is called and the action whose key, palette command and button open
-// the rail on it. PrDetail gives each what it draws, and a count where it has one.
+// The tabs of the PR view's rail (#727), and which of them shows: Files, then Search (#686); #413 adds
+// Review between them. Each tab names what it is called and the action whose key, palette command and
+// button open the rail on it. PrDetail gives each what it draws, and a count where it has one.
 import type { Snippet } from "svelte";
 import type { Action } from "./keymap.svelte";
 
@@ -11,6 +11,7 @@ export type RailTabSpec = { readonly name: string; readonly action: Action };
  * beside the PR's tabs show them. */
 export const RAIL_TABS = {
   files: { name: "Files", action: "toggle_rail_files" },
+  search: { name: "Search", action: "search_in_rail" },
 } as const satisfies Readonly<Record<string, RailTabSpec>>;
 
 export type RailTabId = keyof typeof RAIL_TABS;

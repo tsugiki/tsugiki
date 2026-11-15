@@ -42,6 +42,7 @@ const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "open_on_github",
   "toggle_diff_view",
   "find_in_diff",
+  "search_in_rail",
   "show_keys",
 ]);
 

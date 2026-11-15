@@ -426,6 +426,9 @@ it("offers Mark Seen in its header while the PR has New activity, and Mark Unsee
 
 const rail = () => screen.queryByRole("complementary", { name: "Rail" });
 const railButton = () => screen.getByRole("button", { name: "Files in the rail" });
+/** The PR's own tab `tab` and its panel, apart from the rail's tabs and pane. */
+const prTab = (tab: "conversation" | "files") => document.getElementById(`pr-tab-${tab}`) as HTMLElement;
+const prPanel = () => document.getElementById("pr-tab-panel") as HTMLElement;
 
 it("opens the rail from the Files button at the right of the tabs, and closes it on a second click", async () => {
   const panes = new PanesState();
@@ -434,7 +437,7 @@ it("opens the rail from the Files button at the right of the tabs, and closes it
 
   await fireEvent.click(railButton());
   const opened = [
-    within(rail() as HTMLElement).getByRole("heading").textContent,
+    within(rail() as HTMLElement).getByRole("tab", { selected: true }).textContent,
     railButton().getAttribute("aria-pressed"),
     railButton().title,
     panes.railState.open,
@@ -449,7 +452,8 @@ it("opens the rail from the Files button at the right of the tabs, and closes it
     false,
   ]);
   // The button stands beside the tabs, not among them.
-  expect(within(screen.getByRole("tablist")).queryByRole("button", { name: "Files in the rail" })).toBeNull();
+  const tabs = prTab("files").closest<HTMLElement>('[role="tablist"]') as HTMLElement;
+  expect(within(tabs).queryByRole("button", { name: "Files in the rail" })).toBeNull();
 });
 
 it("names the rail's key as [keys] gives it, and none while it has none", async () => {
@@ -472,7 +476,7 @@ it("closes the rail on ×, and gives the focus to the Files button, as the whole
   const panes = new PanesState();
   panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
-  const panel = screen.getByRole("tabpanel");
+  const panel = prPanel();
   const beside = [panel.tabIndex, panel.hasAttribute("data-scrolls")];
   const close = screen.getByRole("button", { name: "Close the rail" });
   const tooltip = close.title;
@@ -546,7 +550,7 @@ it("gives the focus to the Files button as a Conversation that held it stops scr
   close.focus();
   // Esc hands the focus to the Conversation beside the rail.
   await fireEvent.keyDown(close, { key: "Escape" });
-  const beside = document.activeElement === screen.getByRole("tabpanel");
+  const beside = document.activeElement === prPanel();
 
   panes.railState.toggle("files");
   await tick();
@@ -554,8 +558,8 @@ it("gives the focus to the Files button as a Conversation that held it stops scr
   // On the Files tab, where the tab doesn't scroll, the focus on the Conversation goes the same way.
   panes.railState.toggle("files");
   await tick();
-  screen.getByRole("tabpanel").focus();
-  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  prPanel().focus();
+  await fireEvent.click(prTab("files"));
   await tick();
 
   expect([beside, closed, document.activeElement]).toEqual([true, railButton(), railButton()]);
@@ -580,10 +584,7 @@ it("gives the focus back to the Conversation on Esc in the rail, which stays ope
   await fireEvent.keyDown(edge, { key: "Escape" });
   window.removeEventListener("keydown", heard);
 
-  expect([fromClose, document.activeElement]).toEqual([
-    screen.getByRole("tabpanel"),
-    screen.getByRole("tabpanel"),
-  ]);
+  expect([fromClose, document.activeElement]).toEqual([prPanel(), prPanel()]);
   expect([rail() !== null, heard.mock.calls.length]).toEqual([true, 1]);
 });
 
@@ -594,10 +595,10 @@ it("keeps the rail open, at its width, from the Conversation to the Files tab an
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const body = () => document.querySelector<HTMLElement>(".body") as HTMLElement;
 
-  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  await fireEvent.click(prTab("files"));
   const onFiles = [rail() !== null, body().style.getPropertyValue("--rail-width")];
   // The diff scrolls by itself, so the tab doesn't.
-  const panel = screen.getByRole("tabpanel");
+  const panel = prPanel();
   const scrolls = [panel.hasAttribute("tabindex"), panel.hasAttribute("data-scrolls")];
   await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
 

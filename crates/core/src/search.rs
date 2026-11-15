@@ -3,8 +3,12 @@
 //! It runs on ripgrep's crates. It reads the **Lookup checkout** for the files the PR doesn't change and its
 //! added files, and the PR's head from the **Mirror** for the files it changes, and leaves out the files it
 //! deletes. It needs nothing but the Mirror and the checkout, so it works offline at any commit the Mirror
-//! holds. A query that arrives while the checkout moves waits for the move: `git grep` could answer sooner,
-//! but its idea of a regex and of a word differ from ripgrep's, so a query would match differently by timing.
+//! holds. Each query names the ends of the diff it searches. The Files tab's read of that diff
+//! (`PrFiles::show`) moves the checkout there, and a query never does: two queries on their own threads
+//! would send their moves in either order, and the last would win. A query that arrives while the checkout
+//! moves waits for the move: `git grep` could answer sooner, but its idea of a regex and of a word differ
+//! from ripgrep's, so a query would match differently by timing. A checkout at another diff has nothing of
+//! the query's to search, and the window then reads the diff again.
 //!
 //! One thread owns what the window reads, a [`SearchState`]. Each query runs on threads of its own, which
 //! send it what they find, and a newer query cancels the one running.
@@ -18,12 +22,12 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use specta::Type;
 
 use crate::error::{Error, ErrorKind};
 use crate::latest::{self, LatestReader, LatestWriter};
-use crate::mirror::{LookupCheckout, MirrorRequests};
+use crate::mirror::{LookupAt, LookupCheckout, MirrorRequests};
 use crate::repository::RepositoryName;
 
 pub use engine::LONGEST_LINE;
@@ -126,20 +130,24 @@ pub struct MatchRange {
     pub end: u32,
 }
 
-/// Which query a [`SearchState`] answers, as [`TextSearch::search`] numbered it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+/// Which query a [`SearchState`] answers, as [`TextSearch::search`] numbered it, and which the window names
+/// to cancel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct SearchId(u32);
 
-/// What the window shows of the latest query.
-#[derive(Debug, Clone, Default)]
+/// What the window shows of the latest query. The window asks for it each time the thread says it may have
+/// changed, and shows it only while it answers the window's latest query.
+#[derive(Debug, Clone, Default, Serialize, Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum SearchState {
     /// No query has run since launch.
     #[default]
     Idle,
     /// The query waits for the Lookup checkout to move to the PR.
     Waiting { id: SearchId },
-    /// No move has put the Repository's Lookup checkout anywhere, the last one failed, or the Mirror worker
-    /// has stopped, so there is nothing to search.
+    /// No move has put the Repository's Lookup checkout at the query's diff: none has put it anywhere, the
+    /// last one failed, it went to another diff, or the Mirror worker has stopped. So there is nothing to
+    /// search.
     NoCheckout { id: SearchId },
     /// git couldn't list or read the PR's files, which the log says more of.
     Failed { id: SearchId },
@@ -148,10 +156,12 @@ pub enum SearchState {
 }
 
 /// What a query found.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Type)]
 pub struct Results {
     pub id: SearchId,
     /// The files that hold a match, by path. Each is shared, so a copy of the state copies no line.
+    #[serde(serialize_with = "shared_files")]
+    #[specta(type = Vec<FileHits>)]
     pub files: Vec<Arc<FileHits>>,
     /// The matches in `files`.
     pub matches: u32,
@@ -178,6 +188,12 @@ impl Results {
             self.files.insert(at, Arc::new(hits));
         }
     }
+}
+
+/// Writes the files `Results` shares as the files themselves, as serde writes an `Arc` only with a feature
+/// that would let it read one back as a copy.
+fn shared_files<S: Serializer>(files: &[Arc<FileHits>], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(files.iter().map(|file| &**file))
 }
 
 /// Whether a search has ended, and how.
@@ -230,20 +246,33 @@ impl TextSearch {
         }
     }
 
-    /// Searches `repository`'s open PR for `query`, in place of the query running, and gives the number
-    /// the state answers it with. A query that can't run returns why, and the one running goes on.
-    pub fn search(&self, repository: RepositoryName, query: &Query) -> Result<SearchId, BadQuery> {
+    /// Searches `repository`'s open PR, whose diff runs between the ends `at`, for `query`, in place of the
+    /// query running, and gives the number the state answers it with. A query that can't run returns why,
+    /// and the one running goes on.
+    pub fn search(
+        &self,
+        repository: RepositoryName,
+        at: LookupAt,
+        query: &Query,
+    ) -> Result<SearchId, BadQuery> {
         let matcher = engine::Matcher::new(query)?;
         let numbered = (self.numbered.fetch_add(1, Ordering::Relaxed)).saturating_add(1);
         let id = SearchId(u32::try_from(numbered).unwrap_or(u32::MAX));
         let asked = Asked {
             id,
             repository,
+            at,
             matcher,
         };
         // The thread ends only once this has gone, unless it panicked, and then no query can run.
         let _unheard = (self.messages).send(Message::Search(asked, self.messages.clone()));
         Ok(id)
+    }
+
+    /// Cancels query `id` while it runs, as nobody wants what it finds any more, and leaves the state idle.
+    /// A newer query, or one that has ended, goes on as it was.
+    pub fn cancel(&self, id: SearchId) {
+        let _unheard = self.messages.send(Message::Cancel(id));
     }
 
     /// What the latest query found, or why it found nothing.
@@ -253,16 +282,18 @@ impl TextSearch {
 }
 
 /// What reaches the text search's thread: a query from the window, with a sender for the threads that run
-/// it, and word from those threads.
+/// it, the window's cancel, and word from those threads.
 enum Message {
     Search(Asked, Sender<Message>),
+    Cancel(SearchId),
     Word(SearchId, Word),
 }
 
-/// A query the window asked for, numbered, in the Repository whose PR is open.
+/// A query the window asked for, numbered, in the Repository whose PR is open, at the ends of its diff.
 struct Asked {
     id: SearchId,
     repository: RepositoryName,
+    at: LookupAt,
     matcher: engine::Matcher,
 }
 
@@ -312,6 +343,12 @@ impl Owner {
     fn handle(&mut self, message: Message) {
         match message {
             Message::Search(asked, messages) => self.start(asked, messages),
+            Message::Cancel(id) => {
+                if (self.current.as_ref()).is_some_and(|current| current.id == id) {
+                    self.cancel();
+                    self.state = SearchState::Idle;
+                }
+            }
             // Word of a query that a newer one replaced, or that has ended, changes nothing.
             Message::Word(id, word) => {
                 if (self.current.as_ref()).is_some_and(|current| current.id == id) {
@@ -324,9 +361,7 @@ impl Owner {
     /// Cancels the query running, and runs this one on a thread of its own, which sends word through
     /// `messages`.
     fn start(&mut self, asked: Asked, messages: Sender<Message>) {
-        if let Some(current) = self.current.take() {
-            current.cancelled.store(true, Ordering::Relaxed);
-        }
+        self.cancel();
         let cancelled = Arc::new(AtomicBool::new(false));
         self.current = Some(Current {
             id: asked.id,
@@ -335,6 +370,13 @@ impl Owner {
         self.state = SearchState::Results(Results::nothing_yet(asked.id));
         let requests = self.requests.clone();
         let _ = thread::spawn(move || run(&asked, &requests, &cancelled, &messages));
+    }
+
+    /// Cancels the query running, if one is, whose word then changes nothing.
+    fn cancel(&mut self) {
+        if let Some(current) = self.current.take() {
+            current.cancelled.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Takes `word` of query `id`, the one running.
@@ -391,12 +433,13 @@ pub fn search_checkout(
     Ok((files, End::from(outcome)))
 }
 
-/// Runs query `asked` in its Repository's Lookup checkout, once the checkout has stopped moving, and sends
-/// the owner word of it. A query cancelled while it waited sends nothing more.
+/// Runs query `asked` in its Repository's Lookup checkout, once the checkout has stopped moving, if it holds
+/// the query's diff, and sends the owner word of it. A query cancelled while it waited sends nothing more.
 fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: &Sender<Message>) {
     let Asked {
         id,
         repository,
+        at,
         matcher,
     } = asked;
     // The owner has stopped only when the app quits, and then nobody reads what a search says.
@@ -415,7 +458,7 @@ fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: 
     if cancelled.load(Ordering::Relaxed) {
         return;
     }
-    let Some(checkout) = checkout else {
+    let Some(checkout) = checkout.filter(|checkout| checkout.at == *at) else {
         return tell(Word::Ended(Ending::NoCheckout));
     };
     tell(Word::Started);

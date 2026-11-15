@@ -385,6 +385,7 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
         &[Action::UnfoldUnchanged],
     ),
     ("Show or hide the rail's Files", &[Action::ToggleRailFiles]),
+    ("Search the PR's code in the rail", &[Action::SearchInRail]),
     (
         "Next / previous tab in the PR view",
         &[Action::NextTab, Action::PreviousTab],

@@ -43,17 +43,6 @@ impl Transport for Proxy {
     }
 }
 
-/// A failed run leaves its folder behind, and a later run can get the same process id.
-#[expect(
-    clippy::unwrap_used,
-    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
-)]
-fn clear_after_a_failed_run(folder: &Path) {
-    if folder.exists() {
-        fs::remove_dir_all(folder).unwrap();
-    }
-}
-
 /// A second `tsg` starts the logger and exits, so it must leave the running Tsugiki's log alone.
 #[expect(
     clippy::unwrap_used,
@@ -73,9 +62,7 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
 
 #[test]
 fn the_log_keeps_causes_and_hides_the_token_in_use() {
-    let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../../.temp/logfile-{}", std::process::id()));
-    clear_after_a_failed_run(&folder);
+    let folder = tsugiki_test_git::temp_path("logfile");
     let path = folder.join("tsugiki.log");
     logfile::start(path.clone());
     logfile::start(folder.join("a second start changes nothing.log"));
@@ -141,5 +128,4 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
         3,
         "the log, the folder in the way and the store's lock only"
     );
-    fs::remove_dir_all(folder).unwrap();
 }

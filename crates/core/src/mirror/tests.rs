@@ -14,6 +14,7 @@ use crate::github::CommitSha;
 use crate::github::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::status::Status;
+use crate::testing::TempPath;
 
 /// Longer than any of these tests should wait on a working git.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -51,6 +52,8 @@ fn download() -> Option<MirrorSource> {
 struct Place {
     folders: Folders,
     remotes: PathBuf,
+    /// The folder around both, which a test drops after the worker that works in it.
+    _root: TempPath,
 }
 
 impl Place {
@@ -67,6 +70,7 @@ impl Place {
                 logs: data,
             },
             remotes,
+            _root: root,
         }
     }
 

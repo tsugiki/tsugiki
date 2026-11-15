@@ -136,7 +136,6 @@ fn a_launcher_that_leaves_a_process_holding_its_output_gives_its_version_all_the
     let started = std::time::Instant::now();
     let checked = check(ServerName::Ty, &launcher);
     let took = started.elapsed();
-    std::fs::remove_dir_all(&folder).unwrap();
 
     let found = Found {
         version: Some("0.0.1".to_owned()),

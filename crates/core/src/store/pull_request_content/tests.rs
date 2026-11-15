@@ -1,5 +1,3 @@
-use std::fs;
-
 use time::OffsetDateTime;
 
 use super::super::*;
@@ -17,7 +15,7 @@ fn cpython() -> RepositoryName {
 
 #[test]
 fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read() {
-    let (path, folder) = temp_database("conversation-before-ids");
+    let (path, _folder) = temp_database("conversation-before-ids");
     let before = MIGRATIONS
         .iter()
         .position(|step| step.sql == super::DATABASE_IDS)
@@ -48,7 +46,6 @@ fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read()
     let (_, kept) = reader.pull_request_facts(&cpython(), 1).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     let kept = kept.unwrap();
     assert_eq!(kept.conversation.comments.len(), 1);
@@ -95,7 +92,7 @@ fn with_reviews(reviews: Vec<Review>) -> PullRequestContent {
 
 #[test]
 fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered() {
-    let (path, folder) = temp_database("reviewed-commits");
+    let (path, _folder) = temp_database("reviewed-commits");
     let store = Store::open(&path).unwrap();
     let none_yet = store.reviewed_commits(&cpython()).unwrap();
     store.remember_login(&Login::new("some-reviewer")).unwrap();
@@ -141,5 +138,4 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
     );
     assert_eq!(elsewhere, []);
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 }

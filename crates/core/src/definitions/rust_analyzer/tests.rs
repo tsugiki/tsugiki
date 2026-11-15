@@ -10,7 +10,6 @@ fn a_rust_analyzer_in_a_toolchain_runs_with_that_toolchain() {
     fs::create_dir_all(root.join("bin")).unwrap();
 
     let setup = setup(&root.join("bin").join("rust-analyzer.exe")).unwrap();
-    let _removed = fs::remove_dir_all(&root);
 
     let named = |name: &str| {
         (setup.env.iter())
@@ -18,7 +17,7 @@ fn a_rust_analyzer_in_a_toolchain_runs_with_that_toolchain() {
             .map(|(_, value)| PathBuf::from(value))
     };
     let bin = root.join("bin");
-    assert_eq!(named("RUSTUP_TOOLCHAIN"), Some(root.clone()));
+    assert_eq!(named("RUSTUP_TOOLCHAIN"), Some(root.to_path_buf()));
     assert_eq!(named("CARGO"), Some(bin.join(format!("cargo{EXE_SUFFIX}"))));
     assert_eq!(named("RUSTC"), Some(bin.join(format!("rustc{EXE_SUFFIX}"))));
     assert_eq!(named("RUSTUP_AUTO_INSTALL"), Some(PathBuf::from("0")));
@@ -40,7 +39,6 @@ fn a_rust_analyzer_outside_a_toolchain_doesn_t_start() {
 
     let refused = setup(&program).map(|_setup| ());
     let at_root = sysroot(Path::new("rust-analyzer.exe"));
-    let _removed = fs::remove_dir_all(&root);
 
     let message = format!(
         "{} isn't inside a Rust toolchain. Pick the rust-analyzer that `rustup which rust-analyzer` names.",

@@ -52,6 +52,10 @@ release:
 next:
     node scripts/next.ts
 
+# Draw the open tickets below each ticket named as a tree of blockers, or every open ticket with none named
+tree *tickets:
+    node scripts/print-tree.ts {{tickets}}
+
 # Run the app with hot reload
 dev:
     npm run dev

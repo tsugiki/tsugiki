@@ -14,6 +14,9 @@ or `npm run`, and CI calls the same npm scripts.
 | `worktrees.ts`        | `worktree.ts`                           | Its branch names, ticket titles and refusals                                         |
 | `next.ts`             | `just next`                             | Lists the open tickets of the release being built, each under its blockers           |
 | `tickets.ts`          | `next.ts`                               | The order and indent of those tickets: blockers first, then ready-for-agent          |
+| `print-tree.ts`       | `just tree`                             | Draws the open tickets below some tickets as a tree of their blockers                |
+| `tree.ts`             | `print-tree.ts`                         | Reads the open issues GitHub gives, and lays out that tree with each ticket's depth  |
+| `blockers.ts`         | `next.ts`, `tree.ts`                    | Reads an issue's open blockers from GitHub, here and in other repositories           |
 | `pr.ts`               | `ship.ts`, `next.ts`, `merged.ts`       | Their arguments, branch rules, failure summary, milestone order and merged check     |
 | `doc-width.ts`        | `just doc-width`                        | Fails on a line of Markdown, a comment or a docstring past 110 columns               |
 | `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts`        | Picks out the lines of a file that hold prose                                        |

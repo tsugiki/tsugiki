@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { type Ticket, ticketLines } from "./tickets.ts";
 
-function ticket(number: number, labels: string[] = [], openBlockers: number[] = []): Ticket {
-  return { number, title: `Ticket ${String(number)}`, labels, openBlockers };
+function ticket(
+  number: number,
+  labels: string[] = [],
+  openBlockers: number[] = [],
+  blockersElsewhere: string[] = [],
+): Ticket {
+  return { number, title: `Ticket ${String(number)}`, labels, openBlockers, blockersElsewhere };
 }
 
 const READY = ["ready-for-agent"];
@@ -86,6 +91,13 @@ describe("ticketLines", () => {
       "#6 Ticket 6 [bug]",
       "#5 Ticket 5 [ready-for-agent] blocked by #90",
       "#8 Ticket 8 [] blocked by #91",
+    ]);
+  });
+
+  it("names an open blocker in another repository, and puts its ticket last", () => {
+    expect(ticketLines([ticket(5, READY, [], ["other/repo#90"]), ticket(6)])).toEqual([
+      "#6 Ticket 6 []",
+      "#5 Ticket 5 [ready-for-agent] blocked by other/repo#90",
     ]);
   });
 

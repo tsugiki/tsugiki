@@ -9,14 +9,13 @@ const HEADER: &str = "// Generated from tsugiki-app's commands by `npm run bindi
 
 #[test]
 fn bindings_are_up_to_date() {
-    let temp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.temp");
-    std::fs::create_dir_all(&temp).expect("create .temp");
-    let fresh_path = temp.join(format!("bindings-{}.ts", std::process::id()));
+    let folder = tsugiki_test_git::temp_path("bindings");
+    std::fs::create_dir_all(&folder).expect("create the folder for the fresh bindings");
+    let fresh_path = folder.join("bindings.ts");
     tsugiki_app::specta_builder::<tauri::Wry>()
         .export(Typescript::default().header(HEADER), &fresh_path)
         .expect("export bindings");
     let fresh = std::fs::read_to_string(&fresh_path).expect("read fresh bindings");
-    std::fs::remove_file(&fresh_path).expect("remove the fresh bindings");
 
     let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ui/src/lib/data/bindings.ts");
     if std::env::var("TSUGIKI_UPDATE_BINDINGS").as_deref() == Ok("1") {

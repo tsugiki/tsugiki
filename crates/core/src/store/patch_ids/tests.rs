@@ -1,6 +1,3 @@
-use std::fs;
-use std::path::PathBuf;
-
 use time::OffsetDateTime;
 
 use super::*;
@@ -11,6 +8,7 @@ use crate::login::Login;
 use crate::patch_ids::PatchId;
 use crate::store::Store;
 use crate::store::testing::temp_database;
+use crate::testing::TempPath;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -89,8 +87,9 @@ fn reviewed_at(commit: &CommitSha) -> PullRequestContent {
     }
 }
 
-/// A store with the user signed in, and PR 1 reviewed at commit 1 and now at commit 2.
-fn store(name: &str) -> (Store, PathBuf) {
+/// The folder of a database, and a store of it with the user signed in, and PR 1 reviewed at commit 1 and
+/// now at commit 2. The folder comes first, so a pattern that binds both drops it last.
+fn store(name: &str) -> (TempPath, Store) {
     let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     store.remember_login(&me()).unwrap();
@@ -100,17 +99,18 @@ fn store(name: &str) -> (Store, PathBuf) {
     store
         .save_pull_request_content(&cpython(), 1, reviewed_at(&sha('1')))
         .unwrap();
-    (store, folder)
+    (folder, store)
 }
 
-fn finish(store: Store, folder: PathBuf) {
+/// Closes the database, then drops its folder.
+fn finish(store: Store, folder: TempPath) {
     store.close();
-    fs::remove_dir_all(folder).unwrap();
+    drop(folder);
 }
 
 #[test]
 fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read() {
-    let (store, folder) = store("patch-ids-both");
+    let (folder, store) = store("patch-ids-both");
     let unread = store.work_facts(&cpython()).unwrap().reviews;
     let reviewed = vec![file("Lib/ast.py", '1'), file("Python/clinic.h", 'f')];
     let head = vec![file("Lib/ast.py", '2')];
@@ -155,7 +155,7 @@ fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read(
 
 #[test]
 fn a_commit_with_nothing_to_diff_is_held_with_no_files() {
-    let (store, folder) = store("patch-ids-empty");
+    let (folder, store) = store("patch-ids-empty");
     let empty = CommitPatches {
         of: of(&sha('2'), "main"),
         files: vec![],
@@ -170,7 +170,7 @@ fn a_commit_with_nothing_to_diff_is_held_with_no_files() {
 
 #[test]
 fn reading_a_commit_again_replaces_what_was_held() {
-    let (store, folder) = store("patch-ids-again");
+    let (folder, store) = store("patch-ids-again");
     let first = CommitPatches {
         of: of(&sha('2'), "main"),
         files: vec![file("Lib/ast.py", '1'), file("Lib/os.py", '3')],
@@ -193,7 +193,7 @@ fn reading_a_commit_again_replaces_what_was_held() {
 
 #[test]
 fn patch_ids_against_another_branch_or_of_a_commit_no_check_compares_stay_out() {
-    let (store, folder) = store("patch-ids-other");
+    let (folder, store) = store("patch-ids-other");
     let elsewhere = [of(&sha('2'), "3.14"), of(&sha('3'), "main")].map(|of| CommitPatches {
         of,
         files: vec![file("Lib/ast.py", '1')],
@@ -232,7 +232,7 @@ fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
 
 #[test]
 fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
-    let (store, folder) = store("patch-ids-unchecked");
+    let (folder, store) = store("patch-ids-unchecked");
     let old_git = CantCheck::OldGit {
         version: "git version 2.38.1".to_owned(),
         needed: "2.39".to_owned(),
@@ -261,7 +261,7 @@ fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
 
 #[test]
 fn each_reason_comes_back_as_it_was_kept() {
-    let (store, folder) = store("patch-ids-reasons");
+    let (folder, store) = store("patch-ids-reasons");
     let reasons = [
         CantCheck::Broken,
         CantCheck::NoGit,
@@ -285,7 +285,7 @@ fn each_reason_comes_back_as_it_was_kept() {
 
 #[test]
 fn a_new_run_forgets_why_the_worker_couldnt_read_patch_ids() {
-    let (store, folder) = store("patch-ids-forget");
+    let (folder, store) = store("patch-ids-forget");
     store
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::Cloning)])
         .unwrap();
@@ -299,7 +299,7 @@ fn a_new_run_forgets_why_the_worker_couldnt_read_patch_ids() {
 
 #[test]
 fn a_reason_the_store_doesnt_know_fails_the_read() {
-    let (store, folder) = store("patch-ids-unknown-reason");
+    let (folder, store) = store("patch-ids-unknown-reason");
     store
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::NoGit)])
         .unwrap();
@@ -322,7 +322,7 @@ fn a_reason_the_store_doesnt_know_fails_the_read() {
 
 #[test]
 fn the_last_check_of_a_pr_brings_the_patch_ids_of_the_head_it_compared() {
-    let (store, folder) = store("patch-ids-last-check");
+    let (folder, store) = store("patch-ids-last-check");
     let earlier = CommitPatches {
         of: of(&sha('3'), "main"),
         files: vec![file("Lib/ast.py", '3')],
@@ -355,7 +355,7 @@ fn the_last_check_of_a_pr_brings_the_patch_ids_of_the_head_it_compared() {
 
 #[test]
 fn the_last_check_of_another_review_brings_no_patch_ids() {
-    let (store, folder) = store("patch-ids-last-other");
+    let (folder, store) = store("patch-ids-last-other");
     let earlier = CommitPatches {
         of: of(&sha('3'), "main"),
         files: vec![file("Lib/ast.py", '3')],

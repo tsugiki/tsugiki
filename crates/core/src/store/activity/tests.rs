@@ -7,7 +7,7 @@ use crate::store::testing::temp_database;
 
 #[test]
 fn a_file_from_before_new_activity_counts_from_its_last_sync() {
-    let (path, folder) = temp_database("activity-migrates");
+    let (path, _folder) = temp_database("activity-migrates");
     let repository = RepositoryName::parse("python/cpython").unwrap();
     let synced = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
     crate::store::open_with(&path, MIGRATIONS.split_at(9).0)
@@ -31,13 +31,12 @@ fn a_file_from_before_new_activity_counts_from_its_last_sync() {
     let started = first_sync(&reopened, &repository).unwrap();
     drop(reopened);
 
-    std::fs::remove_dir_all(folder).unwrap();
     assert_eq!(started, Some(synced));
 }
 
 #[test]
 fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
-    let (path, folder) = temp_database("activity-marked-unseen");
+    let (path, _folder) = temp_database("activity-marked-unseen");
     let repository = RepositoryName::parse("python/cpython").unwrap();
     let flagged = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
@@ -55,7 +54,6 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
     let after = store.work_facts(&repository).unwrap().activity;
 
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
     assert_eq!(restarted, BTreeMap::from([(7, flagged), (8, flagged)]));
     assert_eq!(after.marked_unseen, BTreeMap::from([(8, flagged)]));
     assert_eq!(after.last_seen, BTreeMap::new(), "nothing new to see");
@@ -63,7 +61,7 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
 
 #[test]
 fn a_kind_from_a_later_version_is_left_alone() {
-    let (path, folder) = temp_database("activity-later-kind");
+    let (path, _folder) = temp_database("activity-later-kind");
     let repository = RepositoryName::parse("python/cpython").unwrap();
     let store = Store::open(&path).unwrap();
     // This version has no way to write a kind it doesn't know.
@@ -83,7 +81,6 @@ fn a_kind_from_a_later_version_is_left_alone() {
     let read = store.activity(&repository, 1).unwrap();
 
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
     assert_eq!(read, []);
     assert_eq!(listed, BTreeMap::new());
 }

@@ -2,8 +2,8 @@ use super::*;
 use crate::github::RestPath;
 use crate::github::replay::Replayer;
 use crate::github::testing::Canned;
+use crate::testing::TempPath;
 use crate::token::{GhOutput, read_token};
-use std::path::PathBuf;
 
 const REQUEST: Request<'static> = Request {
     operation: "Op",
@@ -21,7 +21,7 @@ fn token() -> Token {
     .unwrap()
 }
 
-fn temp_dir(name: &str) -> PathBuf {
+fn temp_dir(name: &str) -> TempPath {
     crate::testing::temp_path(&format!("record-{name}"))
 }
 
@@ -58,7 +58,7 @@ fn a_failed_answer_leaves_the_recording_alone() {
             date: None,
             body: body.to_owned(),
         };
-        let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+        let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.to_path_buf());
         assert_eq!(recorder.post(&token(), &REQUEST).unwrap().status, status);
         assert!(!dir.exists(), "{status} {body}");
     }
@@ -68,12 +68,13 @@ fn a_failed_answer_leaves_the_recording_alone() {
 fn a_recording_replays_with_the_token_scrubbed() {
     let dir = temp_dir("roundtrip");
     let body = r#"{"data":{"note":"secret-token-value"}}"#;
-    let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.to_path_buf());
 
     let live = recorder.post(&token(), &REQUEST).unwrap();
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
     let on_disk = std::fs::read_to_string(dir.join("Op.json")).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
 
     assert_eq!(live.body, body, "the caller still gets the real answer");
     assert_eq!(replayed.status, 200);
@@ -86,7 +87,7 @@ fn a_recording_replays_with_the_token_scrubbed() {
 #[test]
 fn a_list_check_passes_through_and_records_nothing() {
     let dir = temp_dir("list-check");
-    let recorder = Recorder::new(Box::new(Canned(Ok(reply("{}")))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(reply("{}")))), dir.to_path_buf());
     let path = RestPath::parse("/repos/python/cpython/issues").unwrap();
     let asked = ConditionalGet {
         path: &path,
@@ -97,18 +98,18 @@ fn a_list_check_passes_through_and_records_nothing() {
 
     assert!(answer.is_err(), "`Canned` has no REST to pass on");
     assert!(!dir.join("Op.json").exists());
-    drop(std::fs::remove_dir_all(dir));
 }
 
 #[test]
 fn a_recording_doesnt_keep_who_made_it() {
     let dir = temp_dir("viewer");
     let body = r#"{"data":{"viewer":{"login":"whoever-recorded"}}}"#;
-    let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.to_path_buf());
 
     let live = recorder.post(&token(), &REQUEST).unwrap();
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
 
     assert_eq!(live.body, body, "the caller still gets the real answer");
     assert_eq!(replayed.body, r#"{"data":{"viewer":{"login":"octocat"}}}"#);
@@ -122,12 +123,13 @@ fn recorded(name: &str, bodies: [&str; 2]) -> String {
         .map(crate::github::testing::reply_ok)
         .collect();
     let (scripted, _requests) = crate::github::testing::Scripted::new(replies);
-    let recorder = Recorder::new(Box::new(scripted), dir.clone());
+    let recorder = Recorder::new(Box::new(scripted), dir.to_path_buf());
     for _ in bodies {
         let _ = recorder.post(&token(), &REQUEST).unwrap();
     }
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
     replayed.body
 }
 
@@ -219,11 +221,12 @@ fn a_recording_keeps_a_descriptions_words_only_off_the_default_branch() {
     };
     let nodes = json!({ "data": { "nodes": [null, on("main"), on("3.14"), { "body": "x" }] } });
     let answer = reply(&nodes.to_string());
-    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.to_path_buf());
 
     let live = recorder.post(&token(), &REQUEST).unwrap();
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
 
     let body: Value = serde_json::from_str(&replayed.body).unwrap();
     let bodies = |at: usize| body["data"]["nodes"][at]["body"].clone();
@@ -249,11 +252,12 @@ fn a_recording_keeps_a_bots_comments_and_only_the_length_of_a_persons() {
     ] } });
     let nodes = json!({ "data": { "nodes": [pr] } });
     let answer = reply(&nodes.to_string());
-    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.to_path_buf());
 
     drop(recorder.post(&token(), &REQUEST).unwrap());
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
 
     let body: Value = serde_json::from_str(&replayed.body).unwrap();
     let text =
@@ -281,11 +285,12 @@ fn a_recording_keeps_the_bots_and_web_flow_and_hides_people_in_a_timeline() {
     ] } });
     let nodes = json!({ "data": { "repository": { "list": { "nodes": [pr] } } } });
     let answer = reply(&nodes.to_string());
-    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.to_path_buf());
 
     drop(recorder.post(&token(), &REQUEST).unwrap());
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
 
     assert!(!replayed.body.contains("some-person"), "{}", replayed.body);
     assert!(!replayed.body.contains("A Real Name"), "{}", replayed.body);
@@ -308,11 +313,12 @@ fn recorded_pr(name: &str, answer: &Value) -> Value {
     let dir = temp_dir(name);
     let recorder = Recorder::new(
         Box::new(Canned(Ok(reply(&answer.to_string())))),
-        dir.clone(),
+        dir.to_path_buf(),
     );
     drop(recorder.post(&token(), &REQUEST).unwrap());
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
     serde_json::from_str(&replayed.body).unwrap()
 }
 
@@ -430,17 +436,21 @@ fn a_whole_string_that_is_a_known_login_gets_its_stand_in_in_any_field() {
 #[test]
 fn a_body_that_isnt_json_is_recorded_as_text() {
     let dir = temp_dir("text");
-    let recorder = Recorder::new(Box::new(Canned(Ok(reply("<html>")))), dir.clone());
+    let recorder = Recorder::new(Box::new(Canned(Ok(reply("<html>")))), dir.to_path_buf());
     let _ = recorder.post(&token(), &REQUEST).unwrap();
-    let replayed = Replayer::new(dir.clone()).post(&token(), &REQUEST).unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .post(&token(), &REQUEST)
+        .unwrap();
     assert_eq!(replayed.body, "<html>");
 }
 
 #[test]
 fn no_connection_records_nothing() {
     let dir = temp_dir("offline");
-    let recorder = Recorder::new(Box::new(Canned(Err(Unreachable::Offline))), dir.clone());
+    let recorder = Recorder::new(
+        Box::new(Canned(Err(Unreachable::Offline))),
+        dir.to_path_buf(),
+    );
     assert!(recorder.post(&token(), &REQUEST).is_err());
     assert!(!dir.exists());
 }

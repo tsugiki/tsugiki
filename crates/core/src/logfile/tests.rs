@@ -1,11 +1,13 @@
 use super::*;
+use crate::testing::TempPath;
 use crate::token::{GhOutput, read_token};
 
-/// A logger with its own folder, so tests don't share the process's one logger.
-fn temp_logger(name: &str) -> (Logger, PathBuf) {
+/// A folder, and a logger that writes in it, so tests don't share the process's one logger. The folder comes
+/// first, so a pattern that binds both drops it last.
+fn temp_logger(name: &str) -> (TempPath, Logger) {
     let folder = crate::testing::temp_path(&format!("log-{name}"));
     let logger = Logger::start(folder.join("tsugiki.log"));
-    (logger, folder)
+    (folder, logger)
 }
 
 fn say(logger: &Logger, level: Level, target: &str, text: &str) {
@@ -28,7 +30,7 @@ fn written(logger: &Logger, folder: &Path) -> String {
 
 #[test]
 fn a_line_says_when_how_bad_where_and_what() {
-    let (logger, folder) = temp_logger("line");
+    let (folder, logger) = temp_logger("line");
     say(
         &logger,
         Level::Warn,
@@ -43,12 +45,11 @@ fn a_line_says_when_how_bad_where_and_what() {
         "{file}"
     );
     assert!(file.starts_with("20"), "it starts with the year: {file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
-    let (logger, folder) = temp_logger("in-use");
+    let (folder, logger) = temp_logger("in-use");
     let token = read_token(|_| {
         Ok(GhOutput {
             success: true,
@@ -67,12 +68,11 @@ fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
 
     assert!(!file.contains("0123456789abcdef"), "{file}");
     assert!(file.contains("Bearer [token] refused"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn text_shaped_like_a_token_never_reaches_the_file() {
-    let (logger, folder) = temp_logger("shaped");
+    let (folder, logger) = temp_logger("shaped");
     for token in [
         "ghp_abc123",
         "gho_abc123",
@@ -94,12 +94,11 @@ fn text_shaped_like_a_token_never_reaches_the_file() {
     assert!(!file.contains("abc123"), "{file}");
     assert!(!file.contains("11ABC"), "{file}");
     assert!(file.contains("first [token], then [token]."), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_prefix_with_nothing_after_it_is_only_words() {
-    let (logger, folder) = temp_logger("prefix");
+    let (folder, logger) = temp_logger("prefix");
     say(
         &logger,
         Level::Warn,
@@ -110,24 +109,22 @@ fn a_prefix_with_nothing_after_it_is_only_words() {
     let file = written(&logger, &folder);
 
     assert!(file.contains("tokens start with ghp_ or gho_\n"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_token_cut_off_by_the_length_limit_still_doesnt_show() {
-    let (logger, folder) = temp_logger("cut");
+    let (folder, logger) = temp_logger("cut");
     let token = format!("ghp_{}", "a".repeat(MAX_LINE_CHARS * 2));
     say(&logger, Level::Warn, "tsugiki", &token);
 
     let file = written(&logger, &folder);
 
     assert!(!file.contains("aaaa"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_long_line_is_cut_on_a_character_and_the_next_line_still_starts_fresh() {
-    let (logger, folder) = temp_logger("long");
+    let (folder, logger) = temp_logger("long");
     say(
         &logger,
         Level::Warn,
@@ -146,7 +143,6 @@ fn a_long_line_is_cut_on_a_character_and_the_next_line_still_starts_fresh() {
         file.ends_with("tsugiki: the next one\n"),
         "the next line follows"
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 fn file_size(path: &Path) -> u64 {
@@ -155,7 +151,7 @@ fn file_size(path: &Path) -> u64 {
 
 #[test]
 fn the_file_and_the_one_before_it_stay_under_the_limit() {
-    let (logger, folder) = temp_logger("bounded");
+    let (folder, logger) = temp_logger("bounded");
     let line = "x".repeat(MAX_LINE_CHARS);
     let lines_for_three_files = usize::try_from(MAX_FILE_BYTES).unwrap() * 3 / MAX_LINE_CHARS;
     for number in 0..lines_for_three_files {
@@ -174,12 +170,11 @@ fn the_file_and_the_one_before_it_stay_under_the_limit() {
         2,
         "and no third file"
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_file_that_cant_be_moved_aside_makes_way_for_new_lines() {
-    let (logger, folder) = temp_logger("cant-move");
+    let (folder, logger) = temp_logger("cant-move");
     fs::create_dir_all(folder.join("tsugiki.log.1")).unwrap();
     let full = "x".repeat(usize::try_from(MAX_FILE_BYTES).unwrap());
     fs::write(folder.join("tsugiki.log"), &full).unwrap();
@@ -189,12 +184,11 @@ fn a_file_that_cant_be_moved_aside_makes_way_for_new_lines() {
     let file = written(&logger, &folder);
     assert!(file.ends_with("tsugiki: the newest line\n"), "{file}");
     assert!(file.len() < 100, "the old lines made way");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_line_the_same_as_the_last_isnt_written_again() {
-    let (logger, folder) = temp_logger("repeats");
+    let (folder, logger) = temp_logger("repeats");
     for text in ["offline", "offline", "offline", "a bad answer", "offline"] {
         say(&logger, Level::Warn, "tsugiki", text);
     }
@@ -206,7 +200,6 @@ fn a_line_the_same_as_the_last_isnt_written_again() {
         .map(|line| line.rsplit(": ").next().unwrap())
         .collect();
     assert_eq!(said, ["offline", "a bad answer", "offline"]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -217,13 +210,11 @@ fn a_folder_it_cant_create_loses_the_lines_and_nothing_else() {
 
     say(&logger, Level::Warn, "tsugiki", "this has nowhere to go");
     logger.flush();
-
-    fs::remove_file(blocker).unwrap();
 }
 
 #[test]
 fn libraries_only_write_what_is_wrong() {
-    let (logger, folder) = temp_logger("libraries");
+    let (folder, logger) = temp_logger("libraries");
     say(&logger, Level::Info, "ureq", "connected");
     say(&logger, Level::Warn, "rustls", "a bad certificate");
     say(&logger, Level::Info, "tsugiki_core", "started");
@@ -235,5 +226,4 @@ fn libraries_only_write_what_is_wrong() {
     assert!(file.contains("a bad certificate"), "{file}");
     assert!(file.contains("started"), "{file}");
     assert!(!file.contains("details"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }

@@ -21,12 +21,11 @@ fn a_new_database_gets_the_whole_schema_and_no_backup() {
     assert_eq!(user_version(&path), latest);
     assert!(has_table(&path, "viewer"));
     assert_eq!(backups(&folder), [""; 0]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_store_waits_a_moment_for_a_lock_that_is_letting_go() {
-    let (path, folder) = temp_database("letting-go");
+    let (path, _folder) = temp_database("letting-go");
     let first = open_with(&path, &[V1]).unwrap();
     let closing = thread::spawn(move || {
         thread::sleep(Duration::from_millis(200));
@@ -39,7 +38,6 @@ fn a_store_waits_a_moment_for_a_lock_that_is_letting_go() {
     let waited = started.elapsed();
     closing.join().unwrap();
     second.unwrap().close();
-    fs::remove_dir_all(folder).unwrap();
     assert!(waited >= Duration::from_millis(100), "{waited:?}");
 }
 
@@ -60,7 +58,6 @@ fn a_second_store_on_the_same_file_is_refused_and_leaves_it_alone() {
         2,
         "closing the first store lets go of the file"
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -69,34 +66,31 @@ fn the_folder_is_created_when_it_is_missing() {
     let path = folder.join("below").join("tsugiki.db");
     Store::open(&path).unwrap().close();
     assert!(path.exists());
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn the_database_runs_in_wal_mode() {
-    let (path, folder) = temp_database("wal");
+    let (path, _folder) = temp_database("wal");
     Store::open(&path).unwrap().close();
 
     let mode: String = Connection::open(&path)
         .unwrap()
         .pragma_query_value(None, "journal_mode", |row| row.get("journal_mode"))
         .unwrap();
-    fs::remove_dir_all(folder).unwrap();
     assert_eq!(mode, "wal");
 }
 
 #[test]
 fn nobody_is_remembered_at_first() {
-    let (path, folder) = temp_database("first");
+    let (path, _folder) = temp_database("first");
     let store = Store::open(&path).unwrap();
     assert_eq!(store.last_login().unwrap(), None);
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn the_login_survives_a_restart_and_the_newest_one_wins() {
-    let (path, folder) = temp_database("restart");
+    let (path, _folder) = temp_database("restart");
     let store = Store::open(&path).unwrap();
     store.remember_login(&Login::new("octocat")).unwrap();
     store.remember_login(&Login::new("hubot")).unwrap();
@@ -105,12 +99,11 @@ fn the_login_survives_a_restart_and_the_newest_one_wins() {
     let store = Store::open(&path).unwrap();
     assert_eq!(store.last_login().unwrap(), Some(Login::new("hubot")));
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_migration_reaches_the_file_while_the_store_is_still_open() {
-    let (path, folder) = temp_database("checkpoint");
+    let (path, _folder) = temp_database("checkpoint");
     open_with(&path, &[V1]).unwrap().close();
 
     // A crash or a force-kill skips closing the store, so what the header says can't wait for `close`.
@@ -118,16 +111,14 @@ fn a_migration_reaches_the_file_while_the_store_is_still_open() {
     assert_eq!(contents(&path), Contents::Database { version: 2 });
 
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_new_database_reaches_the_file_while_the_store_is_still_open() {
-    let (path, folder) = temp_database("checkpoint-new");
+    let (path, _folder) = temp_database("checkpoint-new");
     let store = open_with(&path, &[V1]).unwrap();
     assert_eq!(contents(&path), Contents::Database { version: 1 });
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -139,7 +130,6 @@ fn a_folder_that_cant_be_created_is_an_error() {
     let problem = Store::open(&path).err().unwrap();
 
     assert_eq!(problem.kind, ErrorKind::Internal);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -416,7 +406,7 @@ fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
 
 #[test]
 fn a_store_with_nothing_to_migrate_enforces_foreign_keys() {
-    let (path, folder) = temp_database("keys-enforced");
+    let (path, _folder) = temp_database("keys-enforced");
     open_with(&path, &[V1]).unwrap().close();
 
     let store = open_with(&path, &[V1]).unwrap();
@@ -427,7 +417,6 @@ fn a_store_with_nothing_to_migrate_enforces_foreign_keys() {
         .unwrap()
         .unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
     assert!(enforced);
 }
 

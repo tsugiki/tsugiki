@@ -36,9 +36,12 @@ fn failing(number: u32) -> PullRequestFacts {
     }
 }
 
-fn opened(name: &str) -> (Store, std::path::PathBuf, std::path::PathBuf) {
+/// The folder of a database, and a store of it. The folder comes first, so a pattern that binds them all
+/// drops it last.
+fn opened(name: &str) -> (crate::testing::TempPath, Store, std::path::PathBuf) {
     let (path, folder) = temp_database(&format!("failed-checks-{name}"));
-    (Store::open(&path).unwrap(), path, folder)
+    let store = Store::open(&path).unwrap();
+    (folder, store, path)
 }
 
 fn unread(store: &Store) -> Vec<u32> {
@@ -49,7 +52,7 @@ fn unread(store: &Store) -> Vec<u32> {
 
 #[test]
 fn only_the_users_open_prs_whose_ci_failed_are_worth_asking_about() {
-    let (store, _path, folder) = opened("which");
+    let (_folder, store, _path) = opened("which");
     store
         .save_pull_requests(
             &cpython(),
@@ -77,12 +80,11 @@ fn only_the_users_open_prs_whose_ci_failed_are_worth_asking_about() {
 
     assert_eq!(unread(&store), [1, 5]);
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn asking_once_is_enough_and_the_names_replace_the_last_ones() {
-    let (store, path, folder) = opened("once");
+    let (_folder, store, path) = opened("once");
     store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
@@ -103,12 +105,11 @@ fn asking_once_is_enough_and_the_names_replace_the_last_ones() {
     assert_eq!(facts.activity.failed_checks.get(&1), Some(&then));
     open.close();
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_pr_that_moved_while_failing_is_worth_asking_about_again() {
-    let (store, _path, folder) = opened("moved");
+    let (_folder, store, _path) = opened("moved");
     store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
@@ -127,12 +128,11 @@ fn a_pr_that_moved_while_failing_is_worth_asking_about_again() {
 
     assert_eq!(unread(&store), [1]);
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_later_failure_is_worth_asking_about_again() {
-    let (store, _path, folder) = opened("again");
+    let (_folder, store, _path) = opened("again");
     store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
@@ -154,5 +154,4 @@ fn a_later_failure_is_worth_asking_about_again() {
 
     assert_eq!(unread(&store), [1]);
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
 }

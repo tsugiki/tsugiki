@@ -1,7 +1,6 @@
 //! Test helpers for the sync: a harness and GitHub's answers.
 
 use std::fs;
-use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -16,6 +15,7 @@ use crate::repository::{RepositoryCounts, RepositoryName};
 use crate::repository_settings::RepositorySettings;
 use crate::store;
 use crate::store::{OpenReader, Store, StoreReader};
+use crate::testing::TempPath;
 use crate::token::Token;
 
 pub(super) const LOTS: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
@@ -219,7 +219,8 @@ pub(super) struct Harness {
     pub(super) open: OpenReader,
     pub(super) reader: StoreReader,
     pub(super) asked: Receiver<(String, Value)>,
-    pub(super) folder: PathBuf,
+    /// Dropped last, once `finish` has closed the database in it.
+    _folder: TempPath,
 }
 
 impl Harness {
@@ -238,7 +239,7 @@ impl Harness {
             open,
             reader,
             asked,
-            folder,
+            _folder: folder,
         }
     }
 
@@ -287,7 +288,6 @@ impl Harness {
     pub(super) fn finish(self) {
         self.open.close();
         self.store.close();
-        fs::remove_dir_all(self.folder).unwrap();
     }
 }
 

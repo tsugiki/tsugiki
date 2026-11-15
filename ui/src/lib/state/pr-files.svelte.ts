@@ -735,9 +735,38 @@ export class PrFilesState {
     if (to !== undefined) this.#show(to);
   }
 
-  /** Goes to the file at `file` among the diff's files, as the tree and quick open will. */
+  /** The paths of the files the diff changes, in its order, once it is ready. Undefined until the core first
+   * answers, or fails to, and none for any answer but a diff. */
+  get paths(): string[] | undefined {
+    const view = this.view;
+    if (view === undefined) return this.error === undefined ? undefined : [];
+    return view?.state === "ready" ? view.files.map((file) => file.path) : [];
+  }
+
+  /** Goes to the file at `file` among the diff's files, as the tree will. */
   showFile(file: number) {
     this.#show({ kind: "file", file });
+  }
+
+  /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
+   * file, and with all the files it scrolls to its header, opening the file if it is collapsed. The file
+   * view over the tab closes, as Back does, and its peek with it, whether the file opens or not, so the tab
+   * shows what it holds. A path the diff on show doesn't change, as after a sync moved the PR's head, is
+   * said over the diff for a moment. With no diff on show, as while a newer head is fetched, the tab says
+   * why itself. */
+  openPath(path: string) {
+    if (this.#fileView !== undefined) this.closeFileView();
+    this.#dropPeek();
+    const view = this.view;
+    if (view?.state !== "ready") return;
+    const file = view.files.findIndex((shown) => shown.path === path);
+    if (file === -1) {
+      this.#say(`The diff on show doesn't change ${path}.`, NOTICE_MS);
+      return;
+    }
+    if (this.collapsed(file)) this.toggle(file);
+    this.showFile(file);
+    this.diffWantsFocus = true;
   }
 
   /** Goes to the file at `path`, as a NEWS entry does, if the diff changes it. */

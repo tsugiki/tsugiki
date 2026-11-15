@@ -12,6 +12,8 @@ import {
   type DiffThread,
   type PrFiles,
 } from "./pr-files.svelte";
+import { FileView } from "./file-view.svelte";
+import type { HitCode } from "./hit-code.svelte";
 import { PanesState } from "./panes.svelte";
 import { PEEK_ID, PEEK_ROWS, type IndexNews, type Peek } from "./peek";
 import type { YourReview } from "./workbench.svelte";
@@ -1976,6 +1978,72 @@ it("shows a file by its path, as a NEWS entry asks, and nothing for a path the d
   files.showPath("Lib/old.py");
   files.showFile(7);
   expect([files.shown, files.jump]).toEqual([{ kind: "file", file: 1 }, undefined]);
+});
+
+it("opens a file by its path, as quick open asks, showing it from its top, opened, with the focus", async () => {
+  const files = await oneAtATime(changed());
+  const before = files.paths;
+
+  files.openPath("Python/generated.c.h");
+
+  expect(before).toEqual(["Lib/ast.py", "Python/generated.c.h"]);
+  expect([files.shown, files.jump, files.collapsed(1)]).toEqual([
+    { kind: "file", file: 1 },
+    { page: { kind: "file", file: 1 } },
+    false,
+  ]);
+  expect(files.diffWantsFocus).toBe(true);
+  // F7 goes on from the top of the file it opened.
+  expect(changes(files, 1, 1)).toEqual([{ row: 23 }]);
+});
+
+it("scrolls to the header of a file it opens with all the files, and closes the file view over them", async () => {
+  const files = await loaded(changed());
+  const view = new FileView({ kind: "repository", path: "Lib/eggs.py", side: "head", commit: "abc" }, 4, {
+    retry: () => {},
+  } as unknown as HitCode);
+  files.openFileView(view);
+
+  files.openPath("Lib/ast.py");
+
+  expect([files.fileView, files.jump]).toEqual([undefined, { page: { kind: "file", file: 0 } }]);
+});
+
+it("opens nothing for a path the diff doesn't change, which it says, nor before the diff is ready", async () => {
+  const waiting = await loaded();
+  const files = await loaded(changed());
+  waiting.openFileView(
+    new FileView({ kind: "repository", path: "Lib/eggs.py", side: "head", commit: "abc" }, 4, {
+      retry: () => {},
+    } as unknown as HitCode),
+  );
+  vi.useFakeTimers();
+
+  waiting.openPath("Lib/ast.py");
+  // The file view closes all the same, so the tab under it says why it has no diff.
+  expect(waiting.fileView).toBeUndefined();
+  files.openPath("Lib/old.py");
+  const said = [waiting.notice, files.notice];
+  vi.advanceTimersByTime(NOTICE_MS);
+
+  expect([waiting.paths, waiting.jump, files.jump, files.diffWantsFocus]).toEqual([
+    [],
+    undefined,
+    undefined,
+    false,
+  ]);
+  // The tab says itself why it has no diff yet.
+  expect(said).toEqual([undefined, "The diff on show doesn't change Lib/old.py."]);
+  expect(files.notice).toBeUndefined();
+});
+
+it("has no paths until the core first answers, and none once it fails to", async () => {
+  const unread = new PrFilesState("python/cpython", 11, new PanesState(), timer());
+  core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
+  const failed = new PrFilesState("python/cpython", 11, new PanesState(), timer());
+  await failed.load();
+
+  expect([unread.paths, failed.paths, failed.view]).toEqual([undefined, [], undefined]);
 });
 
 it("keeps the file on show when a newer diff comes, wherever that one lists it", async () => {

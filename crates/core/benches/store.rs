@@ -145,7 +145,10 @@ const TYPED: [&str; 3] = ["", "gh-200007", "fix thing"];
 fn quick_open(bencher: divan::Bencher<'_, '_>, typed: &str) {
     let held = Held::new("quick-open", FIRST_SYNC_PRS);
     let found = quick_open::find(&held.reader, &held.repository, typed).expect("the search");
-    assert!(!found.is_empty(), "the search finds items");
+    assert!(
+        found.named.is_some() || !found.others.is_empty(),
+        "the search finds items"
+    );
     bencher.bench(|| quick_open::find(&held.reader, &held.repository, typed));
     held.close();
 }

@@ -13,6 +13,9 @@
     /** What the command palette's history knows the row by where its title changes with what it does.
      * Without one it goes by its title. */
     id?: PaletteId;
+    /** What the palette tells the row from the others by, where two rows could share a title, as a file's
+     * path in quick open could match an Issue's headline. Without one it goes by its title. */
+    key?: string;
     /** Keeps the row out of the command palette's history, as a switch to a Repository. */
     history?: false;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
@@ -40,10 +43,19 @@
     mark?: string;
   }
 
-  /** Quick open's answer to a text typed: its rows, or why it has none. */
-  export type QuickOpenRows = { typed: string } & (
-    { rows: readonly PaletteCommand[]; problem?: never } | { rows?: never; problem: string }
-  );
+  /** Quick open's answer to a text typed: its rows, and why some couldn't be searched for. */
+  export interface QuickOpenRows {
+    typed: string;
+    rows: readonly PaletteCommand[];
+    problem?: string;
+    /** Whether some rows are still on their way, such as the files of a PR whose diff hasn't come. Enter
+     * waits for them, as it waits for the answer, unless the user picked one of the rows on show with the
+     * arrows, which stays picked as they come. */
+    pending?: boolean;
+  }
+
+  /** What the palette tells `row` from the others by. */
+  const keyOf = (row: PaletteCommand) => row.key ?? row.title;
 
   const COMMAND_WORDS: PaletteWords = {
     dialog: "Command palette",
@@ -60,6 +72,15 @@
     list: "Issues and PRs",
     none: "No Issue or PR matches",
   };
+
+  /** Quick open's words while a PR shows, whose files it finds too (#558). */
+  const FILES_QUICK_OPEN_WORDS: PaletteWords = {
+    dialog: "Quick open",
+    input: "File, Issue or PR",
+    placeholder: "Type part of a file's path, an Issue's or a PR's number, or title words; > for commands",
+    list: "Files, Issues and PRs",
+    none: "No file, Issue or PR matches",
+  };
 </script>
 
 <script lang="ts">
@@ -68,7 +89,8 @@
   // last first (#556). The Repository picker is the same quick pick with other words and rows.
   //
   // Given `find`, it is quick open too, as in VS Code (#557): a text that doesn't start with `>` asks `find`
-  // for the Issues and PRs it names, and lists the rows `found` brings back, in the order they come.
+  // for the Issues and PRs it names, and lists the rows `found` brings back, in the order they come. With
+  // `files`, those rows hold the files of the PR on show too (#558).
   import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
 
@@ -82,6 +104,7 @@
     text = "",
     find,
     found,
+    files = false,
   }: {
     commands: readonly PaletteCommand[];
     onclose: () => void;
@@ -100,16 +123,22 @@
     find?: ((typed: string) => unknown) | undefined;
     /** Quick open's latest answer. */
     found?: QuickOpenRows | undefined;
+    /** Whether quick open finds the files of the PR on show too, which its words then name. */
+    files?: boolean;
   } = $props();
 
   let typed = $state(untrack(() => text));
-  // The picked row goes by its title, so a list that changes while open, as Reload themes does, keeps the
-  // pick on the same row. No title, or one the list no longer holds, picks the first.
-  let pickedTitle = $state(untrack(() => (start === undefined ? undefined : commands[start]?.title)));
+  // The picked row goes by its key, its title unless it has one, so a list that changes while open, as
+  // Reload themes does, keeps the pick on the same row. No key, or one the list no longer holds, picks the
+  // first.
+  let pickedKey = $state(
+    untrack(() => {
+      const row = start === undefined ? undefined : commands[start];
+      return row && keyOf(row);
+    }),
+  );
   /** Whether the palette lists quick open's rows: it has quick open, and the text doesn't start with `>`. */
   const quick = $derived(find !== undefined && !typed.startsWith(">"));
-  /** Whether quick open's answer to the text in the box hasn't come yet. The last answer shows meanwhile. */
-  const waiting = $derived(quick && found?.typed !== typed);
   /** What the commands are filtered by: the text, after the `>` that marks the commands, if it has quick
    * open. */
   const filter = $derived(
@@ -131,7 +160,15 @@
       [],
     ),
   );
-  const shownWords = $derived(quick ? QUICK_OPEN_WORDS : words);
+  /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it while the rows
+   * still on their way could change which row is picked: unless the user picked one of the rows on show,
+   * the pick is the first row. The last answer shows meanwhile. */
+  const waiting = $derived(
+    quick &&
+      (found?.typed !== typed ||
+        (found.pending === true && !matching.some((row) => keyOf(row) === pickedKey))),
+  );
+  const shownWords = $derived(quick ? (files ? FILES_QUICK_OPEN_WORDS : QUICK_OPEN_WORDS) : words);
   // Each text quick open shows asks it once.
   $effect(() => {
     if (!quick) return;
@@ -153,14 +190,14 @@
   const picked = $derived(
     Math.max(
       0,
-      matching.findIndex((command) => command.title === pickedTitle),
+      matching.findIndex((command) => keyOf(command) === pickedKey),
     ),
   );
   const pickedCommand = $derived(matching[picked]);
-  // By its title, so rows built again as they were don't preview again, after a pick has run, say.
-  const shownTitle = $derived(pickedCommand?.title);
+  // By its key, so rows built again as they were don't preview again, after a pick has run, say.
+  const shownKey = $derived(pickedCommand && keyOf(pickedCommand));
   $effect(() => {
-    if (shownTitle !== undefined) untrack(() => pickedCommand?.preview?.());
+    if (shownKey !== undefined) untrack(() => pickedCommand?.preview?.());
   });
   let list = $state<HTMLElement>();
   /** The text typed, the pick, and the rows by their titles, as they were when the list last showed the
@@ -170,7 +207,7 @@
   // change, and not as the user scrolls away from it. Rows that come again as they were, as a reload brings
   // them, leave the list where it is.
   $effect(() => {
-    const now = JSON.stringify([typed, picked, matching.map((command) => command.title)]);
+    const now = JSON.stringify([typed, picked, matching.map(keyOf)]);
     if (now === placed) return;
     placed = now;
     untrack(keepPickInSight);
@@ -219,7 +256,8 @@
       // The user picks a row themselves now, which Enter then runs.
       enterWaits = false;
       const next = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
-      pickedTitle = matching[next]?.title;
+      const row = matching[next];
+      pickedKey = row && keyOf(row);
     } else if (e.key === "Enter") {
       // Closing hands the focus back, as to the Sidebar's button that opened the Repository picker, and
       // Chromium clicks a focused button on the keypress after this keydown, which would open it again.
@@ -256,7 +294,7 @@
       {@attach takeFocus}
       bind:value={typed}
       oninput={() => {
-        pickedTitle = undefined;
+        pickedKey = undefined;
         enterWaits = false;
       }}
       onkeydown={pick}
@@ -288,7 +326,7 @@
       <ul id="palette-commands" role="listbox" aria-label={shownWords.list} bind:this={list}>
         {#each sections as section (section.group ?? section.start)}
           {#if section.group === undefined}
-            {#each section.rows as command, i (command.title)}
+            {#each section.rows as command, i (keyOf(command))}
               {@render option(command, section.start + i)}
             {/each}
           {:else}
@@ -296,7 +334,7 @@
             <li class="group" role="group" aria-label={section.group}>
               <div class="heading" aria-hidden="true">{section.group}</div>
               <ul role="none">
-                {#each section.rows as command, i (command.title)}
+                {#each section.rows as command, i (keyOf(command))}
                   {@render option(command, section.start + i)}
                 {/each}
               </ul>
@@ -304,9 +342,12 @@
           {/if}
         {/each}
       </ul>
-    {:else if quick && found?.problem !== undefined}
-      <p id="palette-commands" role="alert">{found.problem}</p>
-    {:else if !waiting}
+    {/if}
+    <!-- Why some rows couldn't be searched for shows under the rows that could, as the files of the PR on
+         show need no search of the core's. -->
+    {#if quick && found?.problem !== undefined}
+      <p id={matching.length > 0 ? undefined : "palette-commands"} role="alert">{found.problem}</p>
+    {:else if matching.length === 0 && !waiting}
       <p id="palette-commands">{shownWords.none}</p>
     {/if}
   </div>

@@ -16,6 +16,7 @@
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
+  import type { ChangedFiles } from "$lib/state/quick-open.svelte";
   import type { TextSearchState } from "$lib/state/text-search.svelte";
   import { RAIL_ORDER, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
@@ -273,6 +274,22 @@
     // The PR on show keeps the line it opened from, so the pick finds it on show.
     const onShow = detail instanceof PrViewState && detail.number === number ? detail.line : undefined;
     open(onShow ?? workbench.stopFor(number, kind), "pick");
+  }
+
+  /** The files the PR on show changes, which quick open finds (#558), or nothing while no PR shows. Once
+   * another view takes the Detail pane, that PR has no files to list, read or open. */
+  export function changedFiles(): ChangedFiles | undefined {
+    if (!(detail instanceof PrViewState)) return undefined;
+    const pr = detail;
+    return {
+      load: () => {
+        if (detail === pr) pr.loadFiles();
+      },
+      paths: () => (detail === pr ? pr.files.paths : []),
+      open: (path) => {
+        if (detail === pr) pr.openFile(path);
+      },
+    };
   }
 
   /** Puts `next` in the Detail pane. The Issue view a PR in its tree came from stays, hidden, while that PR

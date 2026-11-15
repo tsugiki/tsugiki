@@ -98,6 +98,12 @@ export class PrViewState extends DetailState<PrView> {
     await this.files.openMatch(match.path, match.line, match.ends);
   }
 
+  /** Opens the file at `path`, which quick open found, in the Files tab, from its top (#558). */
+  openFile(path: string) {
+    this.tab = "files";
+    this.files.openPath(path);
+  }
+
   /** The line of the list the user opened this PR from. A PR that fixes two Issues has a line under each. */
   get line(): Stop {
     return { number: this.number, kind: "pull_request", issue: this.issue };

@@ -106,6 +106,9 @@
       const next = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
       pickedTitle = matching[next]?.title;
     } else if (e.key === "Enter") {
+      // Closing hands the focus back, as to the Sidebar's button that opened the Repository picker, and
+      // Chromium clicks a focused button on the keypress after this keydown, which would open it again.
+      e.preventDefault();
       if (pickedCommand) run(pickedCommand);
     }
   }

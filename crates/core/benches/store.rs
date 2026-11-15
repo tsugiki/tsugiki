@@ -22,6 +22,7 @@ use tsugiki_core::settings::ListOrder;
 use tsugiki_core::store::{self, FilterResults, OpenReader, Store, StoreReader};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_view::PrView;
+use tsugiki_core::workbench::quick_open;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 fn main() {
@@ -128,6 +129,24 @@ fn pr_view(bencher: divan::Bencher<'_, '_>) {
         .expect("a PR the store holds");
     assert!(shown.content.is_some());
     bencher.bench(|| PrView::read(&held.reader, &held.settings, VIEWED_PR));
+    held.close();
+}
+
+/// What the user types in quick open: nothing yet, an Issue's number, and two words that most PRs' titles
+/// hold, so the sort has plenty to order.
+const TYPED: [&str; 3] = ["", "gh-200007", "fix thing"];
+
+/// Quick open's search of every Issue and PR the store holds, as each key typed asks it (#557).
+#[divan::bench(args = TYPED)]
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark whose search found nothing would time a store that lost its items"
+)]
+fn quick_open(bencher: divan::Bencher<'_, '_>, typed: &str) {
+    let held = Held::new("quick-open", FIRST_SYNC_PRS);
+    let found = quick_open::find(&held.reader, &held.repository, typed).expect("the search");
+    assert!(!found.is_empty(), "the search finds items");
+    bencher.bench(|| quick_open::find(&held.reader, &held.repository, typed));
     held.close();
 }
 

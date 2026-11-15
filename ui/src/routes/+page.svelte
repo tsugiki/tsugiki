@@ -12,6 +12,7 @@
     startsChordOf,
   } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
+  import { type QuickOpenItem, QuickOpenState } from "$lib/state/quick-open.svelte";
   import { RecentCommands } from "$lib/state/recent-commands.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -24,9 +25,15 @@
   import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
   import { type Bindings, currentOs, isTextBox, keptByTextBox, keyGuard } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
+  import { headline } from "$lib/ui/workbench-row";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
-  import Palette, { type PaletteCommand, type PaletteWords } from "$lib/ui/Palette.svelte";
+  import { issueIcon, prIcon } from "$lib/ui/octicons";
+  import Palette, {
+    type PaletteCommand,
+    type PaletteWords,
+    type QuickOpenRows,
+  } from "$lib/ui/Palette.svelte";
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
   import Settings from "$lib/ui/Settings.svelte";
@@ -62,7 +69,11 @@
   hud.watchBrowser(globalThis.PerformanceObserver);
 
   let addOpen = $state(false);
-  let paletteOpen = $state(false);
+  /** What the palette's text box holds as it opens, while the palette is open: `>` for its commands, or
+   * nothing for quick open. */
+  let paletteText = $state<string>();
+  /** Quick open's search, a new one each time the palette opens on a Repository's screen. */
+  let quickOpen = $state<QuickOpenState>();
   let pickerOpen = $state(false);
   let themePickerOpen = $state(false);
   let settingsOpen = $state(false);
@@ -75,7 +86,7 @@
    * can still reach, does nothing. A command run from the palette runs once it has closed. */
   const dialogOpen = $derived(
     addOpen ||
-      paletteOpen ||
+      paletteText !== undefined ||
       pickerOpen ||
       themePickerOpen ||
       settingsOpen ||
@@ -91,6 +102,15 @@
    * key's `when` is `onRepository`. */
   const openPicker = () => {
     if (!dialogOpen) pickerOpen = true;
+  };
+  /** Opens the palette with `text` in its box, unless a dialog is open. On a Repository's screen it has
+   * quick open too, which searches that Repository (#557): `Ctrl+P` opens it with nothing typed, and
+   * `Ctrl+Shift+P` with the `>` that lists the commands. Elsewhere it lists only the commands, with no
+   * `>`. */
+  const openPalette = (text: "" | ">") => {
+    if (dialogOpen) return;
+    quickOpen = openName === undefined ? undefined : new QuickOpenState(openName);
+    paletteText = quickOpen === undefined ? "" : text;
   };
   /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
   let settingsAt = $state<ServerName>();
@@ -139,7 +159,17 @@
       "command_palette",
       {
         run: () => {
-          if (!dialogOpen) paletteOpen = true;
+          openPalette(">");
+        },
+      },
+    ],
+    // Quick open searches one Repository, so the Home page has none (#371).
+    [
+      "quick_open",
+      {
+        when: onRepository,
+        run: () => {
+          openPalette("");
         },
       },
     ],
@@ -292,6 +322,22 @@
   });
   /** The open Repository's screen, which adds its own commands to the palette. */
   let repositoryHome = $state<ReturnType<typeof RepositoryHome>>();
+  /** Quick open's row for `item`: its number and title, with what it is and its state beside them. It keeps
+   * out of the palette's history, which holds commands. */
+  const foundRow = (item: QuickOpenItem): PaletteCommand => ({
+    title: headline(item),
+    note: item.kind === "issue" ? (issueIcon(item.state)?.label ?? "Issue") : prIcon(item).label,
+    history: false,
+    run: () => {
+      repositoryHome?.openFound(item.kind, item.number);
+    },
+  });
+  /** Quick open's latest answer, as the palette's rows. */
+  const foundRows = $derived.by((): QuickOpenRows | undefined => {
+    const answer = quickOpen?.answer;
+    if (answer === undefined || "problem" in answer) return answer;
+    return { typed: answer.typed, rows: answer.found.map(foundRow) };
+  });
   /** The palette's commands: those the user ran, most recently run first, then the others in this order. */
   const commands: PaletteCommand[] = $derived(
     recentCommands.order<PaletteCommand>([
@@ -390,12 +436,16 @@
     }}
   />
 {/if}
-{#if paletteOpen}
+{#if paletteText !== undefined}
   <Palette
     {commands}
+    text={paletteText}
+    find={quickOpen?.find}
+    found={foundRows}
     onrun={(command) => void recentCommands.ran(command)}
     onclose={() => {
-      paletteOpen = false;
+      paletteText = undefined;
+      quickOpen = undefined;
     }}
   />
 {/if}

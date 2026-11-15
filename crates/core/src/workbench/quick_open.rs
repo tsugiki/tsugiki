@@ -1,0 +1,135 @@
+//! Quick open: the Issues and PRs of a Repository that hold what the user typed, best first (#557).
+//!
+//! The user types a number, as `123`, `#123` or `gh-123`, or words from a title. The item with that number
+//! comes first. Then come the items whose titles hold every word, in any case: the open ones first, then the
+//! most recently updated. Nothing typed lists every item in that order.
+
+use std::cmp::Reverse;
+
+use serde::Serialize;
+use specta::Type;
+
+use crate::error::Error;
+use crate::github::issues::IssueState;
+use crate::github::pull_requests::PrState;
+use crate::repository::RepositoryName;
+use crate::store::{StoreReader, TitledItem, TitledKind};
+
+/// How many items quick open lists at most: enough to pick from, and few enough to fit the window.
+pub const LISTED: usize = 20;
+
+/// An Issue or a PR that quick open lists.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum QuickOpenItem {
+    Issue {
+        number: u32,
+        title: String,
+        /// Nothing for an Issue stored before Tsugiki kept states.
+        state: Option<IssueState>,
+    },
+    PullRequest {
+        number: u32,
+        title: String,
+        state: PrState,
+        is_draft: bool,
+    },
+}
+
+/// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most. This
+/// reads the database and never asks GitHub.
+pub fn find(
+    reader: &StoreReader,
+    repository: &RepositoryName,
+    typed: &str,
+) -> Result<Vec<QuickOpenItem>, Error> {
+    Ok(best(reader.titled_items(repository)?, &Typed::parse(typed)))
+}
+
+/// What the user typed, read for the search.
+#[derive(Debug, PartialEq, Eq)]
+struct Typed {
+    /// The number the whole text names, if it names one.
+    number: Option<u32>,
+    /// Each word of the text, lowercased, which a title has to hold.
+    words: Vec<String>,
+}
+
+impl Typed {
+    fn parse(typed: &str) -> Self {
+        let text = typed.trim();
+        let digits = text
+            .strip_prefix('#')
+            .or_else(|| {
+                text.get(..3)
+                    .filter(|prefix| prefix.eq_ignore_ascii_case("gh-"))
+                    .and_then(|_| text.get(3..))
+            })
+            .unwrap_or(text);
+        let number = (!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| digits.parse().ok())
+            .flatten();
+        Self {
+            number,
+            words: text.split_whitespace().map(str::to_lowercase).collect(),
+        }
+    }
+
+    /// Whether `item` is the one the number names, or its title holds every word.
+    fn finds(&self, item: &TitledItem) -> bool {
+        if self.number == Some(item.number) {
+            return true;
+        }
+        let title = item.title.to_lowercase();
+        self.words.iter().all(|word| title.contains(word.as_str()))
+    }
+}
+
+/// The items of `all` that `typed` finds, best first, `LISTED` at most.
+fn best(all: Vec<TitledItem>, typed: &Typed) -> Vec<QuickOpenItem> {
+    let mut found: Vec<TitledItem> = all.into_iter().filter(|item| typed.finds(item)).collect();
+    found.sort_unstable_by_key(|item| {
+        (
+            typed.number != Some(item.number),
+            !is_open(item.kind),
+            Reverse(item.updated_at),
+            Reverse(item.number),
+        )
+    });
+    found.truncate(LISTED);
+    found.into_iter().map(QuickOpenItem::from).collect()
+}
+
+fn is_open(kind: TitledKind) -> bool {
+    match kind {
+        TitledKind::Issue(state) => state == Some(IssueState::Open),
+        TitledKind::PullRequest { state, .. } => state == PrState::Open,
+    }
+}
+
+impl From<TitledItem> for QuickOpenItem {
+    fn from(item: TitledItem) -> Self {
+        let TitledItem {
+            number,
+            title,
+            kind,
+            ..
+        } = item;
+        match kind {
+            TitledKind::Issue(state) => Self::Issue {
+                number,
+                title,
+                state,
+            },
+            TitledKind::PullRequest { state, is_draft } => Self::PullRequest {
+                number,
+                title,
+                state,
+                is_draft,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

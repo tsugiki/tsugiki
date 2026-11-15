@@ -1166,6 +1166,48 @@ it("names the views whose keys work where a press goes, for the `?` list", async
   expect(keysIn("diff").every((row) => here.works(row.action))).toBe(true);
 });
 
+it("opens what quick open found on its line, unfolded, which takes the focus, or one the list hasn't", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [{ ...standalone, attention: null }],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
+  });
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onadd: () => {},
+  });
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+
+  component.openFound("pull_request", 160662);
+  await tick();
+  const underIssue = screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(underIssue);
+  });
+  component.openFound("pull_request", 5);
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "#5 Alone" }));
+  });
+  const alone = document.activeElement;
+  component.openFound("issue", 99);
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+
+  expect(document.activeElement).toBe(alone);
+  expect(core.openPullRequest.mock.calls).toEqual([
+    ["python/cpython", 160662],
+    ["python/cpython", 5],
+  ]);
+  expect(core.openIssue).toHaveBeenCalledWith("python/cpython", 99);
+});
+
 it("lists for `?` only the keys that would run: the PR view's while a PR shows, a text box's in one", async () => {
   const { component, issueRow, treeRow } = await listing();
   const box = document.createElement("input");

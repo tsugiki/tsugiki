@@ -214,6 +214,11 @@ export const commands = {
 	 */
 	pullRequestRow: (line: DiffLine) => typedError<LineInDiff | null, Error_Serialize>(__TAURI_INVOKE("pull_request_row", { line })),
 	/**
+	 *  The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first. This
+	 *  waits on the database and never on GitHub (ADR 0018).
+	 */
+	quickOpen: (repository: string, typed: string) => typedError<QuickOpenItem_Serialize[], Error_Serialize>(__TAURI_INVOKE("quick_open", { repository, typed })),
+	/**
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
 	 *  commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:
@@ -2021,6 +2026,19 @@ export type PullRequestContent_Serialize = {
 	 */
 	earlier_reviews: number,
 } & IssueContent_Serialize;
+
+/**  An Issue or a PR that quick open lists. */
+export type QuickOpenItem = QuickOpenItem_Serialize | QuickOpenItem_Deserialize;
+
+/**  An Issue or a PR that quick open lists. */
+export type QuickOpenItem_Deserialize = { kind: "issue"; number: number; title: string; 
+/**  Nothing for an Issue stored before Tsugiki kept states. */
+state?: IssueState | null } | { kind: "pull_request"; number: number; title: string; state: PrState; is_draft: boolean };
+
+/**  An Issue or a PR that quick open lists. */
+export type QuickOpenItem_Serialize = { kind: "issue"; number: number; title: string; 
+/**  Nothing for an Issue stored before Tsugiki kept states. */
+state: IssueState | null } | { kind: "pull_request"; number: number; title: string; state: PrState; is_draft: boolean };
 
 /**
  *  Sent when a read of an Issue or a PR on screen fails, so a view still waiting for what it says can say

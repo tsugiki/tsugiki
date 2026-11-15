@@ -9,6 +9,7 @@ mod issues;
 mod links;
 pub mod pr_files;
 pub mod pr_view;
+pub mod quick_open;
 mod review_state;
 mod rows;
 

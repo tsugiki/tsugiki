@@ -37,6 +37,11 @@
     mark?: string;
   }
 
+  /** Quick open's answer to a text typed: its rows, or why it has none. */
+  export type QuickOpenRows = { typed: string } & (
+    { rows: readonly PaletteCommand[]; problem?: never } | { rows?: never; problem: string }
+  );
+
   const COMMAND_WORDS: PaletteWords = {
     dialog: "Command palette",
     input: "Command",
@@ -44,12 +49,23 @@
     list: "Commands",
     none: "No command matches",
   };
+
+  const QUICK_OPEN_WORDS: PaletteWords = {
+    dialog: "Quick open",
+    input: "Issue or PR",
+    placeholder: "Type an Issue's or a PR's number, or words from its title; > for commands",
+    list: "Issues and PRs",
+    none: "No Issue or PR matches",
+  };
 </script>
 
 <script lang="ts">
   // The command palette: it lists the commands that hold what the user typed, in the order it was given them,
   // and runs the one they pick. Each feature brings its own commands, and the page puts those the user ran
   // last first (#556). The Repository picker is the same quick pick with other words and rows.
+  //
+  // Given `find`, it is quick open too, as in VS Code (#557): a text that doesn't start with `>` asks `find`
+  // for the Issues and PRs it names, and lists the rows `found` brings back, in the order they come.
   import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
 
@@ -60,6 +76,9 @@
     onrun = () => {},
     words = COMMAND_WORDS,
     start,
+    text = "",
+    find,
+    found,
   }: {
     commands: readonly PaletteCommand[];
     onclose: () => void;
@@ -72,15 +91,48 @@
      * is first until the user moves it: the command palette's order can change while it's open, as the
      * history arrives. Typing picks the first. */
     start?: number;
+    /** What the text box holds when it opens, such as the `>` the command palette opens with. */
+    text?: string;
+    /** Asks quick open what a text typed finds. Without it, the palette has no quick open. */
+    find?: ((typed: string) => unknown) | undefined;
+    /** Quick open's latest answer. */
+    found?: QuickOpenRows | undefined;
   } = $props();
 
-  let typed = $state("");
+  let typed = $state(untrack(() => text));
   // The picked row goes by its title, so a list that changes while open, as Reload themes does, keeps the
   // pick on the same row. No title, or one the list no longer holds, picks the first.
   let pickedTitle = $state(untrack(() => (start === undefined ? undefined : commands[start]?.title)));
-  const matching = $derived(
-    commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
+  /** Whether the palette lists quick open's rows: it has quick open, and the text doesn't start with `>`. */
+  const quick = $derived(find !== undefined && !typed.startsWith(">"));
+  /** Whether quick open's answer to the text in the box hasn't come yet. The last answer shows meanwhile. */
+  const waiting = $derived(quick && found?.typed !== typed);
+  /** What the commands are filtered by: the text, after the `>` that marks the commands, if it has quick
+   * open. */
+  const filter = $derived(
+    (find !== undefined && typed.startsWith(">") ? typed.slice(1) : typed).trim().toLowerCase(),
   );
+  const matching = $derived(
+    quick ? (found?.rows ?? []) : commands.filter((command) => command.title.toLowerCase().includes(filter)),
+  );
+  const shownWords = $derived(quick ? QUICK_OPEN_WORDS : words);
+  // Each text quick open shows asks it once.
+  $effect(() => {
+    if (!quick) return;
+    const asked = typed;
+    untrack(() => find?.(asked));
+  });
+  /** Whether Enter came before quick open's answer to the text in the box, and runs the first row of that
+   * answer once it comes. A fast typist's `123` and Enter then opens #123, and not what `12` found. */
+  let enterWaits = $state(false);
+  $effect(() => {
+    if (enterWaits && !waiting) {
+      enterWaits = false;
+      untrack(() => {
+        if (pickedCommand) run(pickedCommand);
+      });
+    }
+  });
   const picked = $derived(
     Math.max(
       0,
@@ -122,7 +174,8 @@
       // Closing hands the focus back, as to the Sidebar's button that opened the Repository picker, and
       // Chromium clicks a focused button on the keypress after this keydown, which would open it again.
       e.preventDefault();
-      if (pickedCommand) run(pickedCommand);
+      if (waiting) enterWaits = true;
+      else if (pickedCommand) run(pickedCommand);
     }
   }
 
@@ -143,7 +196,7 @@
     class="palette"
     role="dialog"
     aria-modal="true"
-    aria-label={words.dialog}
+    aria-label={shownWords.dialog}
     tabindex="-1"
     onmousedown={(e) => {
       e.stopPropagation();
@@ -154,17 +207,18 @@
       bind:value={typed}
       oninput={() => {
         pickedTitle = undefined;
+        enterWaits = false;
       }}
       onkeydown={pick}
       role="combobox"
       aria-expanded={matching.length > 0}
       aria-controls="palette-commands"
       aria-activedescendant={matching.length > 0 ? `palette-command-${String(picked)}` : undefined}
-      aria-label={words.input}
-      placeholder={words.placeholder}
+      aria-label={shownWords.input}
+      placeholder={shownWords.placeholder}
     />
     {#if matching.length > 0}
-      <ul id="palette-commands" role="listbox" aria-label={words.list}>
+      <ul id="palette-commands" role="listbox" aria-label={shownWords.list}>
         {#each matching as command, i (command.title)}
           <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -183,8 +237,10 @@
           </li>
         {/each}
       </ul>
-    {:else}
-      <p id="palette-commands">{words.none}</p>
+    {:else if quick && found?.problem !== undefined}
+      <p id="palette-commands" role="alert">{found.problem}</p>
+    {:else if !waiting}
+      <p id="palette-commands">{shownWords.none}</p>
     {/if}
   </div>
 </div>

@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use rusqlite::named_params;
 
-use super::Connection;
 use super::columns::UnixTime;
+use super::{Connection, TitledItem, TitledKind};
 use super::{activity, pull_requests};
 use crate::github::activity::ItemActivity;
 use crate::github::issues::IssueFacts;
@@ -192,6 +192,26 @@ pub(super) fn numbers_without_state(
         row.get("number")
     });
     numbers?.collect()
+}
+
+/// The number, title, state and last update of each Issue of `repository`, which quick open searches.
+pub(super) fn read_titled(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<Vec<TitledItem>> {
+    let query = "SELECT number, title, updated_at, state FROM issues
+                 WHERE repository = :repository";
+    let mut statement = connection.prepare(query)?;
+    let titled = statement.query_map(named_params! { ":repository": repository }, |row| {
+        let UnixTime(updated_at) = row.get("updated_at")?;
+        Ok(TitledItem {
+            number: row.get("number")?,
+            title: row.get("title")?,
+            updated_at,
+            kind: TitledKind::Issue(row.get("state")?),
+        })
+    });
+    titled?.collect()
 }
 
 /// The Issues of `repository` that Tsugiki keeps.

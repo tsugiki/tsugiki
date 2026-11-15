@@ -31,6 +31,7 @@ use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
+use tsugiki_core::workbench::quick_open::QuickOpenItem;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 /// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load.
@@ -286,6 +287,18 @@ pub(crate) fn pull_request(
     reader: State<'_, StoreReader>,
 ) -> Result<Option<PrView>, Error> {
     crate::read_pull_request(repository, number, &owner, &reader)
+}
+
+/// The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first. This
+/// waits on the database and never on GitHub (ADR 0018).
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn quick_open(
+    repository: &str,
+    typed: &str,
+    reader: State<'_, StoreReader>,
+) -> Result<Vec<QuickOpenItem>, Error> {
+    crate::find_items(repository, typed, &reader)
 }
 
 /// Opens an Issue or a PR on GitHub in the system browser.

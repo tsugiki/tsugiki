@@ -54,7 +54,16 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   row holds the focus, and Home and End go to the first and the last.
 - `Ctrl+K J` opens the files of a Stale review's Files tab that the Review left unchanged, as VS Code's
   `Ctrl+K Ctrl+J` unfolds all its regions.
-- The command palette's quick open finds Issues, PRs, and files in the current PR.
+- `Ctrl+P` opens quick open, which finds the open Repository's Issues and PRs in the database, and files in
+  the PR on show. The user types a number, as `123`, `#123` or `gh-123`, or words from a title, and Enter
+  opens the item in the Detail pane, on its line in the Issue list if the view on show has one. The item
+  with that number comes first. Then come the items whose titles hold every word typed, in any case: the
+  open ones first, each group most recently updated first. So `gh-123` also finds the PRs whose titles name
+  Issue 123. Nothing typed lists every item in that order. Quick open lists 20 at most. An Enter pressed
+  before the answer to the text in the box opens the first item of that answer.
+- Quick open and the command palette share one box, as in VS Code: `>` in front lists the commands, and
+  `Ctrl+Shift+P` opens the box with `>` typed. Quick open searches one Repository, so on the Home page
+  `Ctrl+P` does nothing and the command palette has no `>` to delete.
 - `?` lists the keys that work where the focus is, each with its action's title and the key in force: the
   Issue list's while the list has the focus, the diff's while the Files tab shows its diff, then those that
   work anywhere. A key is listed only where it would run its action: Next Tab while a PR shows, and in a

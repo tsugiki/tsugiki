@@ -50,6 +50,7 @@ use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, LineInDiff, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
+use tsugiki_core::workbench::quick_open::{self, QuickOpenItem};
 use tsugiki_core::workbench::{SeenMark, Workbench, WorkbenchView};
 
 #[tauri::command]
@@ -554,6 +555,14 @@ fn read_pull_request(
     PrView::read(reader, &repository, number)
 }
 
+fn find_items(
+    repository: &str,
+    typed: &str,
+    reader: &StoreReader,
+) -> Result<Vec<QuickOpenItem>, Error> {
+    quick_open::find(reader, &RepositoryName::parse(repository)?, typed)
+}
+
 /// What the Files tab reads besides the database: where the mirrors are, the diff on show, the mirrors'
 /// worker, which fetches a head a mirror lacks, the highlighter, which parses the files, and the language
 /// servers.
@@ -1000,6 +1009,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
             slow_commands::pull_request_row,
+            slow_commands::quick_open,
             slow_commands::definitions,
             cancel_definitions,
             language_servers,

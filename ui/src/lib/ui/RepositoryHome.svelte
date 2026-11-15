@@ -262,6 +262,14 @@
     if (next instanceof PrViewState) showFileView(next, fileView);
   }
 
+  /** Opens the Issue or PR `number` that quick open found (#557), on its line in the list if the list has
+   * one, and moves the focus with the cursor, as going back does. An item the view on show leaves out has
+   * no line to take the focus, which stays where it was, as when the history goes to such an item. */
+  export function openFound(kind: Stop["kind"], number: number): void {
+    open(workbench.stopFor(number, kind));
+    focusCursor();
+  }
+
   /** Puts `next` in the Detail pane. The Issue view a PR in its tree came from stays, hidden, while that PR
    * is on show, and every other view stops. A view that couldn't read its Issue stops too, so going back
    * opens the Issue afresh. */

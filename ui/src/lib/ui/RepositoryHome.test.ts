@@ -2317,6 +2317,23 @@ it("marks from the palette the item as it is when the row runs, after a sync tha
   });
 });
 
+it("marks nothing from the palette once what Q would mark has gone before the row runs", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { component } = await listing();
+  // The cursor on a line, with nothing open.
+  await press("ArrowDown");
+  const rows = [paletteRow(component, "mark_seen"), paletteRow(component, "mark_unseen")];
+  // With the list hidden, Q marks the Detail pane's item, and nothing is open.
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+  await screen.findByText(/Nothing open/);
+  for (const row of rows) row?.run();
+  await tick();
+
+  expect(rows.every((row) => row !== undefined)).toBe(true);
+  expect(core.markSeen).not.toHaveBeenCalled();
+  expect(core.markUnseen).not.toHaveBeenCalled();
+});
+
 it("lists Q and Shift+Q on ? only while they have an item to mark", async () => {
   const { component, issueRow } = await listing();
   const works = () => {

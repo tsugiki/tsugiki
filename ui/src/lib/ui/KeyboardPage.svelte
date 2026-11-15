@@ -13,12 +13,15 @@
   const typed = $derived(query.trim().toLowerCase());
   const rows = $derived(keyTable().filter(matches));
 
-  /** Whether `row` holds what the box holds, in any case: in its title, its name in `[keys]`, or its key, by
-   * the name `[keys]` writes and the name the page shows, so "ctrl+k" finds Cmd+K M on macOS too, and "no
-   * key" finds the actions with none. */
+  /** Whether `row` holds what the box holds, in any case: in its title, its name in `[keys]`, its key, or the
+   * note on a key another action took. A key matches by the name `[keys]` writes and the name the page shows,
+   * so "ctrl+k" finds Cmd+K M on macOS too, and "no key" finds the actions with none. */
   function matches(row: Row): boolean {
     const key = row.key === null ? [] : [row.key];
-    return [row.title, row.action, label(row.key), ...key].some((text) => text.toLowerCase().includes(typed));
+    const lost = row.lost === null ? [] : [row.lost.key, lostWords(row.lost)];
+    return [row.title, row.action, label(row.key), ...key, ...lost].some((text) =>
+      text.toLowerCase().includes(typed),
+    );
   }
 
   /** A key as the page shows it, or "No key". */
@@ -30,11 +33,12 @@
   const remappedTip = ({ default: key }: Remap) => `Set in settings.toml's [keys]. Default: ${label(key)}`;
 
   /** Why a row has no key though it would have one: which action's line of `[keys]` took it. */
-  const lostWords = ({ key, to }: Lost) => `${label(key)} went to ${to.title}`;
+  const lostWords = ({ key, to }: Lost) => `${label(key)} went to ${to}`;
 
-  /** Esc in the box clears it, and closes the dialog only once the box is empty. */
+  /** Esc in the box clears it, and closes the dialog only once the box filters nothing. An Esc that cancels
+   * an input method's candidates leaves the box to the input method. */
   function clearOnEscape(e: KeyboardEvent) {
-    if (e.key !== "Escape" || query === "") return;
+    if (e.key !== "Escape" || e.isComposing || typed === "") return;
     query = "";
     e.stopPropagation();
   }

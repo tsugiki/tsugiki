@@ -15,10 +15,10 @@ export interface Remap {
 }
 
 /** A key an action would have, its default or the one `[keys]` gives it, which another action's line of
- * `[keys]` took: the key, and the action that has it now, which the Keyboard page names. */
+ * `[keys]` took: the key, and the title of the action that has it now, which the Keyboard page names. */
 export interface Lost {
   readonly key: string;
-  readonly to: { readonly action: Action; readonly title: string };
+  readonly to: string;
 }
 
 /** A row of the table: an action, its title and where its key works, with its key in force, null for none,
@@ -74,23 +74,23 @@ class Keymap {
    * that has it by default, which is left with no key, and of two remapped actions on one key the later in
    * the table keeps it, until #550 settles that as `[keys]` orders them. So no two rows share a key. */
   readonly rows: readonly Row[] = $derived.by(() => {
-    // The action each line of `[keys]` puts on its key, the later in the table where two share one.
+    // The action each line of `[keys]` puts on another key than its default, the later in the table where two
+    // share one. A line that gives an action its own default changes nothing, so it takes no key.
     const takers = new Map<string, Default>(
       KEYMAP.flatMap((row) => {
         const given = this.#remaps[row.action];
-        return given ? [[given, row]] : [];
+        return given && given !== row.key ? [[given, row]] : [];
       }),
     );
     return KEYMAP.map((row): Row => {
       const given = this.#remaps[row.action];
       const key = given === undefined ? row.key : given || null;
-      // A line that gives an action its own default changes nothing.
       const remapped = key === row.key ? null : { default: row.key };
       const taker = key === null ? undefined : takers.get(key);
-      if (key === null || taker === undefined || taker.action === row.action) {
+      if (key === null || taker === undefined || taker === row) {
         return { ...row, key, remapped, lost: null };
       }
-      return { ...row, key: null, remapped, lost: { key, to: { action: taker.action, title: taker.title } } };
+      return { ...row, key: null, remapped, lost: { key, to: taker.title } };
     });
   });
 

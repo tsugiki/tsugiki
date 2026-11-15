@@ -71,8 +71,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   a line that gives an action its own default isn't marked. An action whose key another action's line took,
   its default or the key its own line gives, shows No key and says which action has the key now. A box
   above the table filters its rows by what they hold, in any case: an action's title or its name in
-  `[keys]`, or its key as the page shows it, No key included, or as `[keys]` writes it, so "ctrl+k" finds
-  `Cmd+K M` on macOS. Esc in the box clears it, and closes Settings once the box is empty. The page says the
+  `[keys]`, its key as the page shows it, No key included, or as `[keys]` writes it, so "ctrl+k" finds
+  `Cmd+K M` on macOS, or the note on a key another action took. Esc in the box clears it, and closes
+  Settings once the box holds nothing but spaces; an Esc that cancels an input method's candidates leaves
+  the box alone. The page says the
   defaults follow VS Code, and that `Cmd` stands for `Ctrl` on macOS.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable

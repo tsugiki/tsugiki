@@ -110,6 +110,22 @@ it("clears the box on Esc, and lets Esc through to the dialog once the box is em
   await fireEvent.keyDown(box, { key: "a" });
   await fireEvent.keyDown(box, { key: "Escape" });
   expect(heard).toHaveBeenCalledTimes(2);
+  // A box of spaces filters nothing, so Esc goes through.
+  await filter("   ");
+  await fireEvent.keyDown(box, { key: "Escape" });
+  expect(heard).toHaveBeenCalledTimes(3);
+  window.removeEventListener("keydown", heard);
+});
+
+it("leaves the box to an input method whose candidates Esc cancels", async () => {
+  const heard = vi.fn();
+  window.addEventListener("keydown", heard);
+  render(KeyboardPage);
+  const box = screen.getByRole("searchbox", { name: "Filter keys" });
+  await filter("archive");
+
+  await fireEvent.keyDown(box, { key: "Escape", isComposing: true });
+  expect([box, heard.mock.calls.length]).toEqual([expect.objectContaining({ value: "archive" }), 1]);
   window.removeEventListener("keydown", heard);
 });
 
@@ -141,4 +157,14 @@ it("marks a remapped key a later remapped action took as lost to it", () => {
   expect(rowOf("Archive")).toEqual(["Archive", "No key remapped F7 went to Mute", "Issue list"]);
   expect(rowOf("Mute")).toEqual(["Mute", "F7 remapped", "Issue list"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "No key F7 went to Mute", "Diff"]);
+});
+
+it("finds a row by the key another action took from it, and by that action", async () => {
+  remapKeys({ archive: "f7" });
+  render(KeyboardPage);
+
+  await filter("f7");
+  expect(rows().map(([action]) => action)).toEqual(["Next Change", "Previous Change", "Archive"]);
+  await filter("went to archive");
+  expect(rows().map(([action]) => action)).toEqual(["Next Change"]);
 });

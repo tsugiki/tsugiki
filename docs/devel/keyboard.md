@@ -68,12 +68,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   titles name Issue 123. Nothing typed lists every item in that order. Quick open lists 20 at most. An
   Enter pressed before the answer to the text in the box opens the first item of that answer, unless the
   user types on or moves the pick first.
-- With a PR on show, quick open lists the files it changes before the Issues and PRs: those whose paths hold
-  every word typed, in any case, in the order the Files tab shows them, 20 at most. Nothing typed lists them
-  all. Opening quick open reads the PR's diff if the Files tab hasn't yet, and the files show once it is
-  ready. Enter opens the file in the Files tab from its top, opening it if it is collapsed: with all the files
-  the tab scrolls to its header, and one file at a time it shows that file. The file view over the tab
-  closes, and the diff takes the focus. With no PR on show, quick open lists no files.
+- With a PR on show, quick open lists the files it changes before the Issues and PRs, after only the item
+  with the number typed: the files whose paths hold every word typed, in any case, in the order the Files tab
+  shows them, 20 at most. Nothing typed, or a text that starts with `#`, lists no files, and reads no diff.
+  Other text reads the PR's diff if the Files tab hasn't yet, and an Enter pressed before the core first
+  answers that read waits for it, as it waits for the Issues and PRs. A diff that doesn't come at once, as
+  while its head is fetched, lists no files. The files show when the search of the Issues and PRs fails too,
+  above why it failed. Enter opens the file in the Files tab from its top, opening it if it is collapsed:
+  with all the files the tab scrolls to its header, and one file at a time it shows that file. The file view
+  over the tab closes, and the diff takes the focus. A file the diff no longer changes, as after a sync moved
+  the PR's head, is said over the diff for a moment. With no PR on show, or once the PR leaves the Detail
+  pane, quick open lists no files.
 - Quick open and the command palette share one box, as in VS Code: `>` in front lists the commands, and
   `Ctrl+Shift+P` opens the box with `>` typed. Quick open searches one Repository, so on the Home page
   `Ctrl+P` does nothing and the command palette has no `>` to delete.

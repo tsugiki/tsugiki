@@ -276,16 +276,16 @@
     open(onShow ?? workbench.stopFor(number, kind), "pick");
   }
 
-  /** The files the PR on show changes, which quick open finds (#558), or nothing while no PR shows. A file
-   * opens in the Files tab while that PR is still on show. */
+  /** The files the PR on show changes, which quick open finds (#558), or nothing while no PR shows. Once
+   * another view takes the Detail pane, that PR has no files to list, read or open. */
   export function changedFiles(): ChangedFiles | undefined {
     if (!(detail instanceof PrViewState)) return undefined;
     const pr = detail;
     return {
       load: () => {
-        pr.loadFiles();
+        if (detail === pr) pr.loadFiles();
       },
-      paths: () => pr.files.paths,
+      paths: () => (detail === pr ? pr.files.paths : []),
       open: (path) => {
         if (detail === pr) pr.openFile(path);
       },

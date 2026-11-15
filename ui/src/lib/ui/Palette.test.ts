@@ -449,11 +449,56 @@ describe("with quick open", () => {
     expect(screen.getByText("No Issue or PR matches")).toBeTruthy();
   });
 
-  it("says why it couldn't search", async () => {
+  it("says why it couldn't search, under the rows it found without the search", async () => {
     const { rerender } = withQuickOpen();
-    await rerender({ found: { typed: "", problem: "Tsugiki can't search the Issues and PRs: gone" } });
-    expect(screen.getByRole("alert").textContent).toBe("Tsugiki can't search the Issues and PRs: gone");
-    expect(titles()).toEqual([]);
+    const problem = "Tsugiki can't search the Issues and PRs: gone";
+    await rerender({ found: { typed: "", rows: [], problem } });
+    const alone = [screen.getByRole("alert").id, titles()];
+    const file = { title: "Lib/gc.py", run: () => {} };
+
+    await rerender({ found: { typed: "", rows: [file], problem } });
+
+    expect(alone).toEqual(["palette-commands", []]);
+    expect(titles()).toEqual(["Lib/gc.py"]);
+    expect([screen.getByRole("alert").textContent, screen.getByRole("alert").id]).toEqual([problem, ""]);
+  });
+
+  it("tells rows with one title apart by their keys", async () => {
+    const { ran, rerender } = withQuickOpen();
+    const row = (key: string) => ({
+      title: "#7 Same",
+      key,
+      run: () => {
+        ran.push(key);
+      },
+    });
+    await rerender({ found: { typed: "", rows: [row("file"), row("item")] } });
+    const input = screen.getByRole("combobox");
+
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    const selected = screen.getAllByRole("option").map((option) => option.getAttribute("aria-selected"));
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await tick();
+
+    expect(selected).toEqual(["false", "true"]);
+    expect(ran).toEqual(["item"]);
+  });
+
+  it("holds an Enter while some rows of the answer are still on their way, then runs the first row", async () => {
+    const { ran, rerender, answer } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    await rerender({
+      found: { typed: "", rows: [{ title: "#7 Older", run: () => ran.push("#7 Older") }], pending: true },
+    });
+    const none = screen.queryByText("No Issue or PR matches");
+
+    await fireEvent.keyDown(input, { key: "Enter" });
+    const early = [...ran];
+    await answer("", "Lib/gc.py", "#7 Older");
+    await tick();
+
+    expect([none, early]).toEqual([null, []]);
+    expect(ran).toEqual(["Lib/gc.py"]);
   });
 
   it("runs the first row of the answer to the text in the box on an Enter that came before it", async () => {

@@ -13,6 +13,9 @@
     /** What the command palette's history knows the row by where its title changes with what it does.
      * Without one it goes by its title. */
     id?: PaletteId;
+    /** What the palette tells the row from the others by, where two rows could share a title, as a file's
+     * path in quick open could match an Issue's headline. Without one it goes by its title. */
+    key?: string;
     /** Keeps the row out of the command palette's history, as a switch to a Repository. */
     history?: false;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
@@ -37,10 +40,18 @@
     mark?: string;
   }
 
-  /** Quick open's answer to a text typed: its rows, or why it has none. */
-  export type QuickOpenRows = { typed: string } & (
-    { rows: readonly PaletteCommand[]; problem?: never } | { rows?: never; problem: string }
-  );
+  /** Quick open's answer to a text typed: its rows, and why some couldn't be searched for. */
+  export interface QuickOpenRows {
+    typed: string;
+    rows: readonly PaletteCommand[];
+    problem?: string;
+    /** Whether some rows are still on their way, such as the files of a PR whose diff hasn't come: Enter
+     * waits for them, as it waits for the answer. */
+    pending?: boolean;
+  }
+
+  /** What the palette tells `row` from the others by. */
+  const keyOf = (row: PaletteCommand) => row.key ?? row.title;
 
   const COMMAND_WORDS: PaletteWords = {
     dialog: "Command palette",
@@ -113,13 +124,20 @@
   } = $props();
 
   let typed = $state(untrack(() => text));
-  // The picked row goes by its title, so a list that changes while open, as Reload themes does, keeps the
-  // pick on the same row. No title, or one the list no longer holds, picks the first.
-  let pickedTitle = $state(untrack(() => (start === undefined ? undefined : commands[start]?.title)));
+  // The picked row goes by its key, its title unless it has one, so a list that changes while open, as
+  // Reload themes does, keeps the pick on the same row. No key, or one the list no longer holds, picks the
+  // first.
+  let pickedKey = $state(
+    untrack(() => {
+      const row = start === undefined ? undefined : commands[start];
+      return row && keyOf(row);
+    }),
+  );
   /** Whether the palette lists quick open's rows: it has quick open, and the text doesn't start with `>`. */
   const quick = $derived(find !== undefined && !typed.startsWith(">"));
-  /** Whether quick open's answer to the text in the box hasn't come yet. The last answer shows meanwhile. */
-  const waiting = $derived(quick && found?.typed !== typed);
+  /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it. The last answer
+   * shows meanwhile. */
+  const waiting = $derived(quick && (found?.typed !== typed || found.pending === true));
   /** What the commands are filtered by: the text, after the `>` that marks the commands, if it has quick
    * open. */
   const filter = $derived(
@@ -150,14 +168,14 @@
   const picked = $derived(
     Math.max(
       0,
-      matching.findIndex((command) => command.title === pickedTitle),
+      matching.findIndex((command) => keyOf(command) === pickedKey),
     ),
   );
   const pickedCommand = $derived(matching[picked]);
-  // By its title, so rows built again as they were don't preview again, after a pick has run, say.
-  const shownTitle = $derived(pickedCommand?.title);
+  // By its key, so rows built again as they were don't preview again, after a pick has run, say.
+  const shownKey = $derived(pickedCommand && keyOf(pickedCommand));
   $effect(() => {
-    if (shownTitle !== undefined) untrack(() => pickedCommand?.preview?.());
+    if (shownKey !== undefined) untrack(() => pickedCommand?.preview?.());
   });
 
   /** Closes, and runs `command` once the palette has gone and handed the focus back, so the command finds
@@ -185,7 +203,8 @@
       // The user picks a row themselves now, which Enter then runs.
       enterWaits = false;
       const next = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
-      pickedTitle = matching[next]?.title;
+      const row = matching[next];
+      pickedKey = row && keyOf(row);
     } else if (e.key === "Enter") {
       // Closing hands the focus back, as to the Sidebar's button that opened the Repository picker, and
       // Chromium clicks a focused button on the keypress after this keydown, which would open it again.
@@ -222,7 +241,7 @@
       {@attach takeFocus}
       bind:value={typed}
       oninput={() => {
-        pickedTitle = undefined;
+        pickedKey = undefined;
         enterWaits = false;
       }}
       onkeydown={pick}
@@ -235,7 +254,7 @@
     />
     {#if matching.length > 0}
       <ul id="palette-commands" role="listbox" aria-label={shownWords.list}>
-        {#each matching as command, i (command.title)}
+        {#each matching as command, i (keyOf(command))}
           <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li
@@ -253,9 +272,12 @@
           </li>
         {/each}
       </ul>
-    {:else if quick && found?.problem !== undefined}
-      <p id="palette-commands" role="alert">{found.problem}</p>
-    {:else if !waiting}
+    {/if}
+    <!-- Why some rows couldn't be searched for shows under the rows that could, as the files of the PR on
+         show need no search of the core's. -->
+    {#if quick && found?.problem !== undefined}
+      <p id={matching.length > 0 ? undefined : "palette-commands"} role="alert">{found.problem}</p>
+    {:else if matching.length === 0 && !waiting}
       <p id="palette-commands">{shownWords.none}</p>
     {/if}
   </div>

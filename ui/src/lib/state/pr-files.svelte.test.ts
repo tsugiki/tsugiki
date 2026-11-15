@@ -2009,12 +2009,15 @@ it("scrolls to the header of a file it opens with all the files, and closes the 
   expect([files.fileView, files.jump]).toEqual([undefined, { page: { kind: "file", file: 0 } }]);
 });
 
-it("opens nothing for a path the diff doesn't change, nor before the diff is ready", async () => {
+it("opens nothing for a path the diff doesn't change, nor before the diff is ready, and says so", async () => {
   const waiting = await loaded();
   const files = await loaded(changed());
+  vi.useFakeTimers();
 
   waiting.openPath("Lib/ast.py");
   files.openPath("Lib/old.py");
+  const said = [waiting.notice, files.notice];
+  vi.advanceTimersByTime(NOTICE_MS);
 
   expect([waiting.paths, waiting.jump, files.jump, files.diffWantsFocus]).toEqual([
     [],
@@ -2022,6 +2025,20 @@ it("opens nothing for a path the diff doesn't change, nor before the diff is rea
     undefined,
     false,
   ]);
+  expect(said).toEqual([
+    "The diff on show doesn't change Lib/ast.py.",
+    "The diff on show doesn't change Lib/old.py.",
+  ]);
+  expect(files.notice).toBeUndefined();
+});
+
+it("has no paths until the core first answers, and none once it fails to", async () => {
+  const unread = new PrFilesState("python/cpython", 11, new PanesState(), timer());
+  core.pullRequestFiles.mockResolvedValue({ status: "error", error: { message: "The mirror has no main" } });
+  const failed = new PrFilesState("python/cpython", 11, new PanesState(), timer());
+  await failed.load();
+
+  expect([unread.paths, failed.paths, failed.view]).toEqual([undefined, [], undefined]);
 });
 
 it("keeps the file on show when a newer diff comes, wherever that one lists it", async () => {

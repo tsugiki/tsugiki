@@ -15,6 +15,7 @@
   import {
     type ChangedFiles,
     filesFound,
+    numberNamed,
     type QuickOpenItem,
     QuickOpenState,
   } from "$lib/state/quick-open.svelte";
@@ -332,6 +333,7 @@
    * out of the palette's history, which holds commands. */
   const foundRow = (item: QuickOpenItem): PaletteCommand => ({
     title: headline(item),
+    key: `item ${String(item.number)}`,
     note: item.kind === "issue" ? (issueIcon(item.state)?.label ?? "Issue") : prIcon(item).label,
     history: false,
     run: () => {
@@ -341,20 +343,37 @@
   /** Quick open's row for the file at `path` in the PR on show, which opens it in the Files tab (#558). */
   const fileRow = (files: ChangedFiles, path: string): PaletteCommand => ({
     title: path,
+    key: `file ${path}`,
     note: "File",
     history: false,
     run: () => {
       files.open(path);
     },
   });
-  /** Quick open's latest answer, as the palette's rows: the files of the PR on show that the text it answers
-   * finds, then the Issues and PRs. */
+  /** Quick open's rows for the files of the PR on show that `typed` finds, and whether its diff that holds
+   * them is still on its way. */
+  const fileRows = (files: ChangedFiles | undefined, typed: string) => {
+    if (files === undefined) return { rows: [], pending: false };
+    const paths = filesFound(files, typed);
+    return { rows: (paths ?? []).map((path) => fileRow(files, path)), pending: paths === undefined };
+  };
+  /** Quick open's latest answer, as the palette's rows: the Issue or PR the text names by its number, the
+   * files of the PR on show that the text finds, then the other Issues and PRs (#558). Files need no search
+   * of the core's, so they show when it fails too. */
   const foundRows = $derived.by((): QuickOpenRows | undefined => {
-    const answer = quickOpen?.answer;
-    if (answer === undefined || "problem" in answer) return answer;
-    const files = quickOpen?.files;
-    const fileRows = files ? filesFound(files, answer.typed).map((path) => fileRow(files, path)) : [];
-    return { typed: answer.typed, rows: [...fileRows, ...answer.found.map(foundRow)] };
+    const search = quickOpen;
+    const answer = search?.answer;
+    if (search === undefined || answer === undefined) return undefined;
+    const files = fileRows(search.files, answer.typed);
+    if ("problem" in answer) return { typed: answer.typed, ...files, problem: answer.problem };
+    const number = numberNamed(answer.typed);
+    const named = answer.found.filter((item) => item.number === number);
+    const others = answer.found.filter((item) => item.number !== number);
+    return {
+      typed: answer.typed,
+      rows: [...named.map(foundRow), ...files.rows, ...others.map(foundRow)],
+      pending: files.pending,
+    };
   });
   /** The palette's commands: those the user ran, most recently run first, then the others in this order. */
   const commands: PaletteCommand[] = $derived(

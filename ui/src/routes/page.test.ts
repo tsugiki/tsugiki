@@ -660,7 +660,7 @@ describe("quick open", () => {
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeTruthy();
   });
 
-  it("lists the files of the PR on show that the text holds first, and opens the one picked on its Files tab", async () => {
+  describe("with a PR on show", () => {
     const pr = {
       number: 70,
       title: "gh-7: Fix the crash",
@@ -674,25 +674,6 @@ describe("quick open", () => {
       your_review: { kind: "unreviewed" },
       seen: { mark: { numbers: [70], up_to: null }, state: "seen" },
     };
-    core.workbench.mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [{ kind: "standalone_pr", ...pr, backports: [], attention: null }],
-        quiet: [],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
-    const done = { status: "ok", data: null };
-    core.openPullRequest.mockResolvedValue(done);
-    core.fetchPullRequest.mockResolvedValue(done);
-    core.pullRequest.mockResolvedValue({
-      status: "ok",
-      data: { ...pr, content: null, shares_review_of: null },
-    });
-    core.mirrorsHeld.mockResolvedValue(false);
     const diffFile = (path: string, row: number) => ({
       path,
       old_path: null,
@@ -704,40 +685,133 @@ describe("quick open", () => {
       rest: null,
       pairs: [],
     });
-    core.pullRequestFiles.mockResolvedValue({
+    const diff = {
       status: "ok",
       data: {
         state: "ready",
         head: "abc",
         base: "base",
-        files: [diffFile("Lib/gc.py", 0), diffFile("Modules/gcmodule.c", 1), diffFile("Lib/os.py", 2)],
+        files: ["Lib/gc.py", "Modules/gcmodule.c", "Lib/test/test_70.py"].map(diffFile),
         rows: 3,
         news: [],
         threads: { kind: "shown", threads: [] },
       },
+    };
+    const textsOf = () => screen.getAllByRole("option").map((option) => option.textContent);
+
+    beforeEach(() => {
+      core.workbench.mockResolvedValue({
+        status: "ok",
+        data: {
+          items: [{ kind: "standalone_pr", ...pr, backports: [], attention: null }],
+          quiet: [],
+          count: 0,
+          review_requests: 0,
+          stale_reviews: 0,
+          filters: [],
+        },
+      });
+      const done = { status: "ok", data: null };
+      core.openPullRequest.mockResolvedValue(done);
+      core.fetchPullRequest.mockResolvedValue(done);
+      core.pullRequest.mockResolvedValue({
+        status: "ok",
+        data: { ...pr, content: null, shares_review_of: null },
+      });
+      core.mirrorsHeld.mockResolvedValue(false);
+      core.pullRequestFiles.mockResolvedValue(diff);
+      core.pullRequestRows.mockResolvedValue({ status: "ok", data: [] });
+      core.pullRequestSpans.mockResolvedValue({ status: "ok", data: [] });
     });
-    core.pullRequestRows.mockResolvedValue({ status: "ok", data: [] });
-    core.pullRequestSpans.mockResolvedValue({ status: "ok", data: [] });
-    render(Page);
-    await fireEvent.click(await screen.findByRole("button", { name: "#70 gh-7: Fix the crash" }));
-    await screen.findByRole("tab", { name: "Conversation", selected: true });
 
-    await ctrlP();
-    await fireEvent.input(box(), { target: { value: "GC" } });
-    await screen.findByRole("option", { name: /^Modules/ });
-    const rows = screen.getAllByRole("option").map((option) => option.textContent);
-    await fireEvent.keyDown(box(), { key: "ArrowDown" });
-    await fireEvent.keyDown(box(), { key: "Enter" });
+    /** The window with the PR on show on its Conversation tab, and quick open opened over it. */
+    const openOverPr = async () => {
+      render(Page);
+      await fireEvent.click(await screen.findByRole("button", { name: "#70 gh-7: Fix the crash" }));
+      await screen.findByRole("tab", { name: "Conversation", selected: true });
+      await ctrlP();
+    };
 
-    expect(rows).toEqual([
-      "Lib/gc.py · File",
-      "Modules/gcmodule.c · File",
-      "#7 It crashes · Open issue",
-      "#70 gh-7: Fix the crash · Draft PR",
-      "#700 It crashed long ago · Issue",
-    ]);
-    expect(await screen.findByRole("tab", { name: "Files", selected: true })).toBeTruthy();
-    expect(quickOpen()).toBeNull();
+    it("lists the files of the PR the text holds first, and opens the one picked on its Files tab", async () => {
+      await openOverPr();
+      await screen.findByRole("option", { name: /^#7 / });
+      const unread = [textsOf(), core.pullRequestFiles.mock.calls.length];
+
+      await fireEvent.input(box(), { target: { value: "GC" } });
+      await screen.findByRole("option", { name: /^Modules/ });
+      const rows = textsOf();
+      await fireEvent.keyDown(box(), { key: "ArrowDown" });
+      await fireEvent.keyDown(box(), { key: "Enter" });
+
+      // Nothing typed lists no files, and reads no diff.
+      expect(unread).toEqual([
+        [
+          "#7 It crashes · Open issue",
+          "#70 gh-7: Fix the crash · Draft PR",
+          "#700 It crashed long ago · Issue",
+        ],
+        0,
+      ]);
+      expect(rows).toEqual([
+        "Lib/gc.py · File",
+        "Modules/gcmodule.c · File",
+        "#7 It crashes · Open issue",
+        "#70 gh-7: Fix the crash · Draft PR",
+        "#700 It crashed long ago · Issue",
+      ]);
+      expect(await screen.findByRole("tab", { name: "Files", selected: true })).toBeTruthy();
+      expect(quickOpen()).toBeNull();
+    });
+
+    it("puts the item the text names by its number before the files", async () => {
+      await openOverPr();
+      await fireEvent.input(box(), { target: { value: "70" } });
+      await screen.findByRole("option", { name: /^Lib\/test/ });
+
+      expect(textsOf()).toEqual([
+        "#70 gh-7: Fix the crash · Draft PR",
+        "Lib/test/test_70.py · File",
+        "#7 It crashes · Open issue",
+        "#700 It crashed long ago · Issue",
+      ]);
+    });
+
+    it("lists the files when the core can't search, above why", async () => {
+      core.quickOpen.mockResolvedValue({ status: "error", error: { kind: "internal", message: "gone" } });
+      await openOverPr();
+      await fireEvent.input(box(), { target: { value: "gc" } });
+
+      await screen.findByRole("option", { name: /^Modules/ });
+
+      expect(textsOf()).toEqual(["Lib/gc.py · File", "Modules/gcmodule.c · File"]);
+      expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe(
+        "Tsugiki can't search the Issues and PRs: gone",
+      );
+    });
+
+    it("holds an Enter pressed before the diff comes, and opens the file it finds", async () => {
+      let answer: (diff: unknown) => void = () => {};
+      core.pullRequestFiles.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+      await openOverPr();
+      await fireEvent.input(box(), { target: { value: "gcmodule" } });
+      await vi.waitFor(() => {
+        expect(core.pullRequestFiles).toHaveBeenCalled();
+      });
+      await screen.findByRole("option", { name: /^#7 / });
+
+      await fireEvent.keyDown(box(), { key: "Enter" });
+      const early = quickOpen();
+      answer(diff);
+
+      expect(early).not.toBeNull();
+      expect(await screen.findByRole("tab", { name: "Files", selected: true })).toBeTruthy();
+      expect(quickOpen()).toBeNull();
+      expect(core.openIssue).not.toHaveBeenCalled();
+    });
   });
 
   it("says why the core couldn't search", async () => {

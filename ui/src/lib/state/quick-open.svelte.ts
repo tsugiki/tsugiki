@@ -11,29 +11,45 @@ export type QuickOpenItem = TitledItem_Serialize;
 /** The core's answer to one text typed: what it found, or why it couldn't search. */
 export type QuickOpenAnswer = { typed: string } & ({ found: QuickOpenItem[] } | { problem: string });
 
-/** The files the PR on show changes, which quick open finds (#558). */
+/** The files the PR on show as quick open opened changes, which quick open finds (#558). */
 export interface ChangedFiles {
-  /** Reads the PR's diff, unless the Files tab has read it, as the rail's Search does. */
+  /** Reads the PR's diff, unless it has been read, as the rail's Search does. */
   readonly load: () => void;
-  /** Their paths, in the order the Files tab shows them, once its diff is ready; none before. */
-  readonly paths: () => readonly string[];
-  /** Opens the file at `path` in the Files tab. */
+  /** Their paths, in the order the Files tab shows them, once its diff is ready. Undefined while the core
+   * hasn't answered the first read of the diff yet, and none for any other answer, or once the PR has left
+   * the Detail pane. */
+  readonly paths: () => readonly string[] | undefined;
+  /** Opens the file at `path` in the Files tab, while the PR is still on show. */
   readonly open: (path: string) => void;
 }
 
 /** The most files quick open lists, as many as the Issues and PRs the core lists. */
 export const FILES_LISTED = 20;
 
+/** Whether quick open looks for files for `typed`: a text with something in it that doesn't start with `#`,
+ * which names an Issue or a PR. Nothing typed lists the Issues and PRs alone, so a Ctrl+P for one of them
+ * reads no diff. */
+export function looksForFiles(typed: string): boolean {
+  const text = typed.trim();
+  return text !== "" && !text.startsWith("#");
+}
+
+/** The number `typed` names as a whole, as `123`, `#123` or `gh-123`, as the core reads it: the Issue or PR
+ * with that number comes first. */
+export function numberNamed(typed: string): number | undefined {
+  const digits = /^(?:#|gh-)?(\d+)$/i.exec(typed.trim())?.[1];
+  return digits === undefined ? undefined : Number(digits);
+}
+
 /** The paths of `files` that hold every word of `typed`, in any case, in the order the Files tab shows them,
- * `FILES_LISTED` at most. Nothing typed finds every file. */
-export function filesFound(files: ChangedFiles, typed: string): string[] {
-  const words = typed
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((word) => word !== "");
+ * `FILES_LISTED` at most, or undefined while the diff that holds them is on its way. None for a text quick
+ * open looks for no files for. */
+export function filesFound(files: ChangedFiles, typed: string): string[] | undefined {
+  if (!looksForFiles(typed)) return [];
+  const words = typed.toLowerCase().split(/\s+/);
   return files
     .paths()
-    .filter((path) => {
+    ?.filter((path) => {
       const lower = path.toLowerCase();
       return words.every((word) => lower.includes(word));
     })
@@ -42,7 +58,7 @@ export function filesFound(files: ChangedFiles, typed: string): string[] {
 
 export class QuickOpenState {
   readonly #repository: string;
-  /** The files of the PR on show, if a PR shows. */
+  /** The files of the PR on show as quick open opened, if a PR showed. */
   readonly files: ChangedFiles | undefined;
   /** The answer to the last search that came back. */
   answer = $state<QuickOpenAnswer>();
@@ -63,11 +79,11 @@ export class QuickOpenState {
    * the latest of those goes next, unless it is the text under way. Each answer shows as it comes. An
    * arrow, so the palette can call it on its own; it settles once the searches it started have answered.
    *
-   * A search reads the diff of the PR on show, unless it has been read, so a palette that only lists its
-   * commands reads none.
+   * A text that quick open looks for files for reads the diff of the PR on show, unless it has been read,
+   * so a Ctrl+P for an Issue or a PR, or the command palette, reads none.
    */
   readonly find = async (typed: string): Promise<void> => {
-    this.files?.load();
+    if (looksForFiles(typed)) this.files?.load();
     if (this.#searching !== undefined) {
       this.#next = typed === this.#searching ? undefined : typed;
       return;

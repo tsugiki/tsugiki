@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commands, type TitledItem_Serialize } from "$lib/data/bindings";
-import { FILES_LISTED, filesFound, QuickOpenState } from "./quick-open.svelte";
+import { FILES_LISTED, filesFound, looksForFiles, numberNamed, QuickOpenState } from "./quick-open.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { quickOpen: vi.fn() } }));
 
@@ -107,19 +107,40 @@ it("says why the core couldn't search", async () => {
   expect(search.answer).toEqual({ typed: "7", problem: "Tsugiki can't search the Issues and PRs: gone" });
 });
 
-/** The files of a PR on show, which hold `paths` and note each read of the diff. */
-const changedFiles = (paths: readonly string[]) => ({ load: vi.fn(), paths: () => paths, open: vi.fn() });
+/** The files of a PR on show, which hold `paths`, undefined while the diff is on its way, and note each read
+ * of the diff. */
+const changedFiles = (paths: readonly string[] | undefined) => ({
+  load: vi.fn(),
+  paths: () => paths,
+  open: vi.fn(),
+});
 
-it("reads the diff of the PR on show as it searches, and holds the PR's files", async () => {
+it("reads the diff of the PR on show only for a text that could find a file, and holds the PR's files", async () => {
   core.quickOpen.mockResolvedValue({ status: "ok", data: [] });
   const files = changedFiles(["Lib/ast.py"]);
   const search = new QuickOpenState("python/cpython", files);
+  await search.find("");
+  await search.find("  ");
+  await search.find("#7");
   const unread = files.load.mock.calls.length;
 
   await search.find("ast");
 
   expect([unread, files.load.mock.calls.length]).toEqual([0, 1]);
   expect(search.files).toBe(files);
+});
+
+it("reads the number a text names as the core does", () => {
+  const read = ["123", " #123 ", "GH-123", "gh-", "#", "12a", "gh-#1", "", "1 2"].map(numberNamed);
+
+  expect(read).toEqual([123, 123, 123, undefined, undefined, undefined, undefined, undefined, undefined]);
+});
+
+it("finds no files for nothing typed or a text that starts with `#`, and none yet while the diff comes", () => {
+  const files = changedFiles(["Lib/ast.py"]);
+
+  expect([filesFound(files, ""), filesFound(files, " "), filesFound(files, "#ast")]).toEqual([[], [], []]);
+  expect([looksForFiles("ast"), filesFound(changedFiles(undefined), "ast")]).toEqual([true, undefined]);
 });
 
 it("finds the paths that hold every word typed, in any case, in the order the Files tab shows them", () => {
@@ -137,11 +158,10 @@ it("finds the paths that hold every word typed, in any case, in the order the Fi
     "Doc/library/ast.rst",
   ]);
   expect(filesFound(files, " lib  .py ")).toEqual(["Lib/ast.py", "Lib/test/test_ast.py"]);
-  expect(filesFound(files, "#7")).toEqual([]);
 });
 
-it("finds every file for nothing typed, 20 at most", () => {
+it("finds 20 files at most", () => {
   const paths = Array.from({ length: FILES_LISTED + 5 }, (_, index) => `Lib/f${String(index)}.py`);
 
-  expect(filesFound(changedFiles(paths), "")).toEqual(paths.slice(0, FILES_LISTED));
+  expect(filesFound(changedFiles(paths), "lib")).toEqual(paths.slice(0, FILES_LISTED));
 });

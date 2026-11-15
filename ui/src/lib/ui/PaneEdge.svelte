@@ -3,7 +3,8 @@
   its left, which sizes the rail (#603), the edge under the Definition peek, which sizes it in diff rows
   (#458), or the edge atop the split one, which sizes it in pixels (#459). A drag or an arrow key moves it,
   between the size's own minimum and maximum and the minimums of the panes beside it, and a double-click
-  asks for the default size back.
+  asks for the default size back. A pane's edge may fold its pane to a strip instead, as the Sidebar's edge
+  folds it to icons (#587).
 -->
 <script lang="ts" module>
   /** What an edge sizes. A pane's edge stands between panes side by side and sizes the pane on its left, in
@@ -18,6 +19,12 @@
     | { kind: "before"; value: number; previousLeast: number }
     | { kind: "box"; value: number; unit: number }
     | { kind: "above"; value: number };
+
+  /** A pane that folds to a strip, as the Sidebar does to icons (#587). A drag that would make it narrower
+   * than `below` folds it, and a drag back past `below` unfolds it, at the size the drag reaches. An arrow
+   * key that would shrink it below its least size folds it, and one that grows the strip unfolds it at the
+   * size it kept. `onfold` folds the pane or unfolds it, and the edge then saves as after a resize. */
+  export type Fold = { folded: boolean; below: number; onfold: (folded: boolean) => void };
 </script>
 
 <script lang="ts">
@@ -32,6 +39,7 @@
     sizes,
     least,
     most,
+    fold,
     onresize,
     ondone,
     onreset,
@@ -41,6 +49,8 @@
     least: number;
     /** The most the size may get, even with room to spare. */
     most?: number;
+    /** The strip a pane's edge folds the pane to, for a pane that folds. */
+    fold?: Fold;
     /** Gives what the edge sizes the size `size`, already kept between the minimums. */
     onresize: (size: number) => void;
     /** Says a drag or a held key moved the edge to where the user wants it, so the size can be saved. */
@@ -94,8 +104,20 @@
   /** The pointer's place for event `e`, along the way the edge moves. */
   const along = (e: PointerEvent) => (vertical ? e.clientX : e.clientY);
 
-  /** Moves the edge so it gives size `size`, within its limits. */
+  /** Folds the pane to its strip, or unfolds it. */
+  function refold(folded: boolean) {
+    moved = true;
+    fold?.onfold(folded);
+  }
+
+  /** Moves the edge so it gives size `size`, within its limits. Below the size a foldable pane folds at, it
+   * folds the pane instead. */
   function resize(size: number, most: number) {
+    if (fold !== undefined) {
+      const folded = size < fold.below;
+      if (folded !== fold.folded) refold(folded);
+      if (folded) return;
+    }
     const next = Math.round(Math.min(most, Math.max(least, size)));
     if (next === sizes.value) return;
     moved = true;
@@ -139,6 +161,14 @@
     e.preventDefault();
     e.stopPropagation();
     const { size, most } = measure();
+    if (fold?.folded === true) {
+      if (key === more) refold(false);
+      return;
+    }
+    if (fold !== undefined && key === less && size <= least) {
+      refold(true);
+      return;
+    }
     const step = Math.max(1, Math.round(STEP / unit));
     resize(size + (key === more ? step : -step), most);
   }

@@ -145,6 +145,7 @@ const DEFAULT_LAYOUT = {
   split_peek: null,
   rail: null,
   sidebar_hidden: false,
+  sidebar_icons: false,
   list_hidden: false,
   detail_only_hid: null,
   order: "attention",
@@ -2908,7 +2909,8 @@ it("drags the Sidebar's edge between its minimum and maximum, saves where it sto
   const dragged = [home().style.getPropertyValue("--sidebar-width"), edge.getAttribute("aria-valuenow")];
   await fireEvent.pointerMove(edge, { clientX: 2000 });
   const widest = home().style.getPropertyValue("--sidebar-width");
-  await fireEvent.pointerMove(edge, { clientX: 0 });
+  // 130 px: under the least width, and short of where the Sidebar folds to icons.
+  await fireEvent.pointerMove(edge, { clientX: 230 });
   await fireEvent.pointerUp(edge);
   // After the drag, the pointer moves the edge no more, and the other button never does.
   await fireEvent.pointerMove(edge, { clientX: 340 });
@@ -3130,6 +3132,184 @@ it("moves the focus to the cursor's row when Ctrl+B hides the Sidebar it was in"
 
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(issueRow);
+  });
+});
+
+/** The Sidebar on show: "full", "icons", or null while it's hidden. */
+const sidebarShape = () => {
+  const sidebar = screen.queryByRole("navigation", { name: "Sidebar" });
+  return sidebar === null ? null : sidebar.classList.contains("icons") ? "icons" : "full";
+};
+
+it("shrinks the Sidebar to icons with «, and a click on an icon brings it back at its width on that view", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 260 });
+  const { issueRow } = await listing();
+  await vi.waitFor(() => {
+    expect(home().style.getPropertyValue("--sidebar-width")).toBe("260px");
+  });
+  await fireEvent.keyDown(window, { key: "ArrowDown" });
+  const fold = screen.getByRole("button", { name: "Sidebar as Icons" });
+  fold.focus();
+
+  await fireEvent.click(fold);
+  const icons = sidebarShape();
+  const edge = screen.getByRole("separator", { name: "Sidebar width" }).getAttribute("aria-valuenow");
+  // « goes with the full Sidebar, so the focus goes to the cursor's row.
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(issueRow);
+  });
+  await fireEvent.click(screen.getByRole("button", { name: "Stale reviews" }));
+
+  expect([icons, edge, sidebarShape()]).toEqual(["icons", "48", "full"]);
+  expect(home().style.getPropertyValue("--sidebar-width")).toBe("260px");
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "stale_reviews" });
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.lastCall).toEqual([{ ...DEFAULT_LAYOUT, sidebar: 260 }]);
+  });
+  expect(core.savePaneLayout).toHaveBeenCalledWith({ ...DEFAULT_LAYOUT, sidebar: 260, sidebar_icons: true });
+});
+
+it("brings back the full Sidebar on the view on show with a click on the Repository's initials", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_icons: true });
+  await listing();
+  await vi.waitFor(() => {
+    expect(sidebarShape()).toBe("icons");
+  });
+  const asked = core.workbench.mock.calls.length;
+
+  await fireEvent.click(screen.getByRole("button", { name: "Full Sidebar" }));
+
+  expect([sidebarShape(), core.workbench.mock.calls.length]).toEqual(["full", asked]);
+});
+
+it("brings the icons back with Ctrl+B twice when they were showing", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_icons: true });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: vi.fn() });
+  await vi.waitFor(() => {
+    expect(sidebarShape()).toBe("icons");
+  });
+
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+  const hidden = [sidebarShape(), screen.queryByRole("separator")];
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+
+  expect([hidden, sidebarShape()]).toEqual([[null, null], "icons"]);
+});
+
+it("offers the palette each shape of the Sidebar but the one on show, and both while it's hidden", async () => {
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onadd: vi.fn(),
+  });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+  const shapes = () =>
+    component
+      .paletteCommands()
+      .map((command) => command.title)
+      .filter((title) => title.includes("Sidebar"));
+  const command = (title: string) => component.paletteCommands().find((one) => one.title === title);
+  const full = shapes();
+
+  command("View: Sidebar as Icons")?.run();
+  await tick();
+  const icons = [sidebarShape(), shapes()];
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true });
+  const hidden = shapes();
+  command("View: Full Sidebar")?.run();
+  await tick();
+
+  expect([full, icons, hidden, sidebarShape()]).toEqual([
+    ["View: Sidebar as Icons"],
+    ["icons", ["View: Full Sidebar"]],
+    ["View: Sidebar as Icons", "View: Full Sidebar"],
+    "full",
+  ]);
+});
+
+it("folds the Sidebar to icons on a drag past its least width, and keeps the width it had for the full one", async () => {
+  laidOut(200, 600, 0);
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 300, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 260 });
+  await fireEvent.pointerMove(edge, { clientX: 225 });
+  const short = [sidebarShape(), home().style.getPropertyValue("--sidebar-width")];
+  await fireEvent.pointerMove(edge, { clientX: 219 });
+  const folded = [sidebarShape(), edge.getAttribute("aria-valuenow")];
+  // The same drag, back past where it folds, unfolds the Sidebar at the width it reaches.
+  await fireEvent.pointerMove(edge, { clientX: 250 });
+  const back = [sidebarShape(), home().style.getPropertyValue("--sidebar-width")];
+  await fireEvent.pointerMove(edge, { clientX: 100 });
+  await fireEvent.pointerUp(edge);
+
+  expect([short, folded, back]).toEqual([
+    ["full", "140px"],
+    ["icons", "48"],
+    ["full", "150px"],
+  ]);
+  expect([sidebarShape(), home().style.getPropertyValue("--sidebar-width")]).toEqual(["icons", "200px"]);
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls).toEqual([[{ ...DEFAULT_LAYOUT, sidebar_icons: true }]]);
+  });
+});
+
+it("folds the Sidebar with ← on its edge at its least width, and unfolds it with →", async () => {
+  laidOut(140, 600, 0);
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar: 140 });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: vi.fn() });
+  const edge = await screen.findByRole("separator", { name: "Sidebar width" });
+  await vi.waitFor(() => {
+    expect(edge.getAttribute("aria-valuenow")).toBe("140");
+  });
+
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyUp(edge, { key: "ArrowLeft" });
+  const folded = sidebarShape();
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyUp(edge, { key: "ArrowLeft" });
+  const still = sidebarShape();
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  await fireEvent.keyUp(edge, { key: "ArrowRight" });
+
+  expect([folded, still, sidebarShape(), edge.getAttribute("aria-valuenow")]).toEqual([
+    "icons",
+    "icons",
+    "full",
+    "140",
+  ]);
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls).toEqual([
+      [{ ...DEFAULT_LAYOUT, sidebar: 140, sidebar_icons: true }],
+      [{ ...DEFAULT_LAYOUT, sidebar: 140 }],
+    ]);
+  });
+});
+
+it("puts back the full Sidebar on Reset Layout", async () => {
+  core.paneLayout.mockResolvedValue({
+    ...DEFAULT_LAYOUT,
+    sidebar: 260,
+    sidebar_icons: true,
+    sidebar_hidden: true,
+  });
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onadd: vi.fn(),
+  });
+  await vi.waitFor(() => {
+    expect(core.paneLayout).toHaveBeenCalled();
+  });
+  await tick();
+
+  paletteRow(component, "reset_layout")?.run();
+
+  await vi.waitFor(() => {
+    expect(sidebarShape()).toBe("full");
   });
 });
 

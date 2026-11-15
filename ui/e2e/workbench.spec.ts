@@ -228,6 +228,45 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
 });
 
+test("a drag past the Sidebar's least width folds it to icons, and a click on one brings it back", async ({
+  page,
+}) => {
+  const whole = {
+    items: [review, own],
+    quiet: [],
+    count: 2,
+    review_requests: 0,
+    stale_reviews: 0,
+    filters: [mine],
+  };
+  await page.setViewportSize({ width: 1200, height: 600 });
+  await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  await expect(sidebar.getByRole("button", { name: "Workbench 2" })).toBeVisible();
+  const width = async () => (await sidebar.boundingBox())?.width ?? 0;
+  const edge = (await page.getByRole("separator", { name: "Sidebar width" }).boundingBox()) ?? { x: 0, y: 0 };
+
+  // From 200 px, 70 px left is past the least width and short of where it folds, and 90 px is past that.
+  await page.mouse.move(edge.x + 8, edge.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + 8 - 70, edge.y + 20, { steps: 4 });
+  const short = await width();
+  await page.mouse.move(edge.x + 8 - 90, edge.y + 20, { steps: 4 });
+  await page.mouse.up();
+  await expect(sidebar).toHaveClass(/icons/);
+  const strip = await width();
+  await expect(sidebar.getByRole("button", { name: "Workbench (2)" })).toHaveText("2");
+  await page.keyboard.press("ControlOrMeta+B");
+  await expect(sidebar).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+B");
+  await expect(sidebar).toHaveClass(/icons/);
+  await sidebar.getByRole("button", { name: "Mine (1)" }).click();
+
+  await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+  expect([short, strip, await width()]).toEqual([140, 48, 200]);
+});
+
 test("a change keeps the selected Filter and the place the user had scrolled to", async ({ page }) => {
   const many = Array.from({ length: 80 }, (_, at) => ({ ...own, number: 1000 + at }));
   const whole = { items: many, quiet: [], count: 80, review_requests: 0, stale_reviews: 0, filters: [mine] };

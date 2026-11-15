@@ -6,6 +6,7 @@
     repository,
     onpick,
     onsettings,
+    onicons,
     count,
     reviewRequests,
     staleReviews,
@@ -19,6 +20,8 @@
     onpick: () => void;
     /** Opens the Settings dialog. */
     onsettings: () => void;
+    /** Shrinks the Sidebar to a strip of icons, from « in its header (#587). */
+    onicons: () => void;
     count: number;
     reviewRequests: number;
     staleReviews: number;
@@ -40,6 +43,7 @@
       title={withKey("Settings", "open_settings", currentOs())}
       onclick={onsettings}>⚙</button
     >
+    <button class="fold" aria-label="Sidebar as Icons" title="Sidebar as Icons" onclick={onicons}>«</button>
   </div>
   <button aria-current={shown(selected.kind === "whole")} onclick={() => onselect({ kind: "whole" })}>
     <span>Workbench</span>
@@ -148,7 +152,8 @@
     white-space: nowrap;
   }
 
-  .settings {
+  .settings,
+  .fold {
     flex: none;
     color: var(--fg-muted);
   }

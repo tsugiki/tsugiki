@@ -26,6 +26,7 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       split_peek: null,
       rail: null,
       sidebar_hidden: false,
+      sidebar_icons: false,
       list_hidden: false,
       detail_only_hid: null,
       order: "attention",

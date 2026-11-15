@@ -8,9 +8,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   stops at that pane's end; the window itself doesn't scroll.
   - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command
     palette), then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. It can be
-    full, icons only, or hidden. Dragged narrow (or with « in its header) it keeps only icons with their
-    counts; clicking an icon brings the full Sidebar back and opens that view. `Ctrl+B` hides it and brings it
-    back as it was.
+    full, icons only, or hidden. « in its header, a drag of its edge below 120 px, or "View: Sidebar as
+    Icons" in the command palette shrinks it to a 48 px strip of icons; between 120 px and its least width,
+    140 px, the drag holds it at 140 px. The strip has the Repository's initials on top, then an icon for each
+    entry the full Sidebar lists, with its count as a badge and its name in the tooltip, and ⚙ at the bottom.
+    A click on an icon brings the full Sidebar back at the width it had and opens that view, and a click on
+    the initials, "View: Full Sidebar", or a drag of the strip's edge past 120 px brings it back on the view
+    on show. A double-click on the edge gives the full Sidebar its default width. `Ctrl+B` hides it and
+    brings it back as it was, full or icons. The strip is not the PR view's rail ([review.md](review.md)).
   - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail.
     **Standalone PRs** and **Dependency updates** are items of their own beside the Issues. Each item shows:
     - the people involved

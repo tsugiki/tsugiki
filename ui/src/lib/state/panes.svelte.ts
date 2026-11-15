@@ -1,9 +1,9 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
-// whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), the list's
-// order (#592), how many rows tall they dragged the Definition peek (#458), how many pixels tall they
-// dragged the split one (#459), and how wide they dragged the PR view's rail (#603). The core keeps the
-// layout in `machine.toml`, so it stays on this machine and isn't synced. Whether the rail shows, and on
-// which tab, lasts only the session.
+// whether the Sidebar (#234) and the list (#242) show, whether the Sidebar shows in full or as a strip of
+// icons (#587), which of them `Ctrl+K Z` hid (#246), the list's order (#592), how many rows tall they
+// dragged the Definition peek (#458), how many pixels tall they dragged the split one (#459), and how wide
+// they dragged the PR view's rail (#603). The core keeps the layout in `machine.toml`, so it stays on this
+// machine and isn't synced. Whether the rail shows, and on which tab, lasts only the session.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
 import { PEEK_ROWS } from "./peek";
 import { RAIL_ORDER, RailState, type RailTabId } from "./rail.svelte";
@@ -15,6 +15,11 @@ export const SIDEBAR_WIDTH = 200;
 /** The Sidebar's least and greatest widths. */
 export const SIDEBAR_LEAST = 140;
 export const SIDEBAR_MOST = 480;
+/** The width a drag of the Sidebar's edge folds it to icons below (#587), in CSS pixels. Between it and the
+ * least width the Sidebar keeps its least width, so a drag that stops a little short of it doesn't fold. */
+export const SIDEBAR_FOLD = 120;
+/** The width of the Sidebar as a strip of icons. */
+export const SIDEBAR_ICONS = 48;
 /** The Workbench list's least width. It gives way to the Detail pane in a narrow window. */
 export const LIST_LEAST = 280;
 /** The Detail pane's least width. */
@@ -59,6 +64,13 @@ export class PanesState {
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });
+  /** Whether the Sidebar shows as a strip of icons, hidden or not, nothing until the core or the user says.
+   * `Ctrl+B` brings it back the way this says. */
+  #sidebarIcons = $state<boolean | null>(null);
+  /** The Sidebar's width as its edge began to move it, which a drag that folds the Sidebar to icons puts
+   * back, so the full Sidebar comes back at the width it had before the drag. Undefined while the edge
+   * hasn't moved it since the last save, as each move of the edge ends with one. */
+  #sidebarBeforeEdge: number | null | undefined;
   /** The panes `Ctrl+K Z` hid, which it brings back next: null while it remembers none, and undefined until
    * the core or the user says. */
   #detailOnlyHid = $state<Panes | null | undefined>();
@@ -93,8 +105,18 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, peek, split_peek, rail, sidebar_hidden, list_hidden, detail_only_hid, order } =
-        await commands.paneLayout();
+      const {
+        sidebar,
+        list,
+        peek,
+        split_peek,
+        rail,
+        sidebar_hidden,
+        sidebar_icons,
+        list_hidden,
+        detail_only_hid,
+        order,
+      } = await commands.paneLayout();
       this.#order ??= order;
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
@@ -102,6 +124,7 @@ export class PanesState {
       this.splitPeek ??= split_peek === null ? null : Math.max(SPLIT_PEEK_LEAST, split_peek);
       this.rail ??= rail === null ? null : Math.min(RAIL_MOST, Math.max(RAIL_LEAST, rail));
       this.#hidden.sidebar ??= sidebar_hidden;
+      this.#sidebarIcons ??= sidebar_icons;
       this.#hidden.list ??= list_hidden;
       if (this.#detailOnlyHid === undefined) this.#detailOnlyHid = detail_only_hid;
     } catch (e) {
@@ -113,6 +136,37 @@ export class PanesState {
    * when it shows again. */
   hidden(pane: Pane): boolean {
     return this.#hidden[pane] ?? false;
+  }
+
+  /** Whether the Sidebar shows as a strip of icons, or will once `Ctrl+B` brings it back: in full until the
+   * core or the user says otherwise. */
+  get sidebarIcons(): boolean {
+    return this.#sidebarIcons ?? false;
+  }
+
+  /** Shows the Sidebar as icons or in full, at the width it had, from « in its header, a click on one of its
+   * icons, or the command palette, and saves that. A hidden Sidebar shows. `toggleDetailOnly` then forgets
+   * what it hid, as on `show`. */
+  showSidebar(icons: boolean): Promise<void> {
+    this.#sidebarIcons = icons;
+    this.#hidden.sidebar = false;
+    this.#detailOnlyHid = null;
+    return this.save();
+  }
+
+  /** Gives the full Sidebar width `width` as its edge moves, and remembers the width it had before, for a
+   * drag that goes on to fold it. */
+  resizeSidebar(width: number): void {
+    if (this.#sidebarBeforeEdge === undefined) this.#sidebarBeforeEdge = this.sidebar;
+    this.sidebar = width;
+  }
+
+  /** Folds the Sidebar to icons as a drag of its edge goes below `SIDEBAR_FOLD`, with the width it had
+   * before the drag kept for the full Sidebar, or unfolds it as the drag comes back. The edge saves once it
+   * stops. */
+  foldSidebar(icons: boolean): void {
+    if (icons && this.#sidebarBeforeEdge !== undefined) this.sidebar = this.#sidebarBeforeEdge;
+    this.#sidebarIcons = icons;
   }
 
   /** Why the layout couldn't be saved, or else read. */
@@ -172,15 +226,16 @@ export class PanesState {
   }
 
   /** Gives `pane` or the rail its default width, or the Definition peek, inline or split, its default height,
-   * again, and saves that. */
+   * again, and saves that. The Sidebar's default is the full Sidebar, so a strip of icons unfolds. */
   reset(pane: Pane | "rail" | "peek" | "splitPeek"): Promise<void> {
     this[pane] = null;
+    if (pane === "sidebar") this.#sidebarIcons = false;
     return this.save();
   }
 
   /** "Reset Layout": gives both panes and the rail their default widths and the Definition peek, inline and
-   * split, its default height, shows both panes, forgets what `Ctrl+K Z` hid, and saves that. It leaves the
-   * rail open or closed. */
+   * split, its default height, shows both panes, the Sidebar in full, forgets what `Ctrl+K Z` hid, and
+   * saves that. It leaves the rail open or closed. */
   resetLayout(): Promise<void> {
     this.sidebar = null;
     this.list = null;
@@ -188,13 +243,16 @@ export class PanesState {
     this.peek = null;
     this.splitPeek = null;
     this.#hidden.sidebar = false;
+    this.#sidebarIcons = false;
     this.#hidden.list = false;
     this.#detailOnlyHid = null;
     return this.save();
   }
 
-  /** Saves the layout in `machine.toml`, once the save before has finished. */
+  /** Saves the layout in `machine.toml`, once the save before has finished. The Sidebar's edge has then
+   * finished its move, so a later drag remembers the width it starts from afresh. */
   save(): Promise<void> {
+    this.#sidebarBeforeEdge = undefined;
     this.#saving = this.#saving.then(() => this.#send());
     return this.#saving;
   }
@@ -208,6 +266,7 @@ export class PanesState {
       split_peek: this.splitPeek,
       rail: this.rail,
       sidebar_hidden: this.hidden("sidebar"),
+      sidebar_icons: this.sidebarIcons,
       list_hidden: this.hidden("list"),
       detail_only_hid: this.#detailOnlyHid ?? null,
       order: this.order,

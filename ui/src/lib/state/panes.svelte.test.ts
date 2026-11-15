@@ -12,6 +12,7 @@ const DEFAULTS = {
   split_peek: null,
   rail: null,
   sidebar_hidden: false,
+  sidebar_icons: false,
   list_hidden: false,
   detail_only_hid: null,
   order: "attention" as const,
@@ -196,6 +197,7 @@ it("hides each pane and shows it again, saving each time with its width", async 
     peek: null,
     split_peek: null,
     rail: null,
+    sidebar_icons: false,
     detail_only_hid: null,
     order: "attention",
   };
@@ -289,6 +291,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     split_peek: 300,
     rail: 360,
     sidebar_hidden: true,
+    sidebar_icons: true,
     list_hidden: true,
     detail_only_hid: "list",
     order: "attention",
@@ -307,9 +310,10 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     panes.splitPeek,
     panes.rail,
     panes.hidden("sidebar"),
+    panes.sidebarIcons,
     panes.hidden("list"),
     panes.railState.open,
-  ]).toEqual([null, null, null, null, null, false, false, true]);
+  ]).toEqual([null, null, null, null, null, false, false, false, true]);
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });
 
@@ -467,4 +471,113 @@ it("says why it couldn't save, until a save works", async () => {
     "Tsugiki can't save the panes' layout: Error: no core",
     undefined,
   ]);
+});
+
+/** The Sidebar's state: full, icons or hidden, and whether a hidden one comes back as icons. */
+const sidebarOf = (panes: PanesState) => [panes.hidden("sidebar"), panes.sidebarIcons];
+
+it("shows the Sidebar in full until the core says it shows as icons", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240, sidebar_icons: true });
+  const panes = new PanesState();
+  const before = sidebarOf(panes);
+
+  await panes.load();
+
+  expect([before, sidebarOf(panes), panes.sidebar]).toEqual([[false, false], [false, true], 240]);
+});
+
+it("shows the Sidebar as icons and in full again, keeping its width, and saves each", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  panes.sidebar = 240;
+
+  await panes.showSidebar(true);
+  const icons = sidebarOf(panes);
+  await panes.showSidebar(false);
+
+  expect([icons, sidebarOf(panes), panes.sidebar]).toEqual([[false, true], [false, false], 240]);
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULTS, sidebar: 240, sidebar_icons: true }],
+    [{ ...DEFAULTS, sidebar: 240 }],
+  ]);
+});
+
+it("hides a Sidebar of icons and brings it back as icons, as Ctrl+B does twice", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar_icons: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.toggle("sidebar");
+  const hidden = sidebarOf(panes);
+  await panes.toggle("sidebar");
+
+  expect([hidden, sidebarOf(panes)]).toEqual([
+    [true, true],
+    [false, true],
+  ]);
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULTS, sidebar_hidden: true, sidebar_icons: true }],
+    [{ ...DEFAULTS, sidebar_icons: true }],
+  ]);
+});
+
+it.each([
+  ["as icons", true],
+  ["in full", false],
+])("shows a hidden Sidebar %s, and forgets what Ctrl+K Z hid", async (_, icons) => {
+  core.paneLayout.mockResolvedValue(DEFAULTS);
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+  await panes.toggleDetailOnly();
+
+  await panes.showSidebar(icons);
+
+  expect([sidebarOf(panes), panes.hidden("list")]).toEqual([[false, icons], true]);
+  expect(core.savePaneLayout.mock.lastCall).toEqual([
+    { ...DEFAULTS, list_hidden: true, sidebar_icons: icons },
+  ]);
+});
+
+it("folds the Sidebar by its edge back to the width it had before the drag, and saves once the drag stops", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+
+  panes.resizeSidebar(170);
+  panes.resizeSidebar(140);
+  panes.foldSidebar(true);
+  const folded = [panes.sidebarIcons, panes.sidebar];
+  panes.foldSidebar(false);
+  panes.resizeSidebar(150);
+  panes.foldSidebar(true);
+  const again = [panes.sidebarIcons, panes.sidebar];
+  await panes.save();
+  // A drag after the save starts from the width saved, and one that only folds keeps it.
+  panes.foldSidebar(false);
+  panes.resizeSidebar(300);
+  await panes.save();
+  panes.foldSidebar(true);
+
+  expect([folded, again, [panes.sidebarIcons, panes.sidebar]]).toEqual([
+    [true, null],
+    [true, null],
+    [true, 300],
+  ]);
+  expect(core.savePaneLayout.mock.calls).toEqual([
+    [{ ...DEFAULTS, sidebar_icons: true }],
+    [{ ...DEFAULTS, sidebar: 300 }],
+  ]);
+});
+
+it("unfolds a Sidebar of icons on a double-click on its edge, at its default width", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240, sidebar_icons: true });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  await panes.reset("sidebar");
+
+  expect([sidebarOf(panes), panes.sidebar]).toEqual([[false, false], null]);
+  expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });

@@ -9,6 +9,8 @@
     LIST_LEAST,
     type ListOrder,
     PanesState,
+    SIDEBAR_FOLD,
+    SIDEBAR_ICONS,
     SIDEBAR_LEAST,
     SIDEBAR_MOST,
     SIDEBAR_WIDTH,
@@ -51,6 +53,7 @@
   import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
+  import SidebarIcons from "./SidebarIcons.svelte";
   import StateIcon from "./StateIcon.svelte";
   import {
     ago,
@@ -329,11 +332,21 @@
     return stop && { kind: stop.kind, number: stop.number };
   }
 
-  /** Ctrl+B: hides the Sidebar, or brings it back at its width. Focus in the Sidebar moves to the cursor's
-   * row, so it doesn't fall out of the window with the Sidebar. */
-  async function toggleSidebarByKey() {
+  /** Ctrl+B: hides the Sidebar, or brings it back at its width, in full or as icons as it was. */
+  function toggleSidebarByKey() {
+    void reshapeSidebar(() => panes.toggle("sidebar"));
+  }
+
+  /** Shows the Sidebar as icons or in full, from «, the command palette, or the strip of icons (#587). */
+  function showSidebar(icons: boolean) {
+    void reshapeSidebar(() => panes.showSidebar(icons));
+  }
+
+  /** Changes how the Sidebar shows with `change`. Focus on a control of the Sidebar that goes, as « goes with
+   * the full Sidebar, moves to the cursor's row, so it doesn't fall out of the window. */
+  async function reshapeSidebar(change: () => Promise<void>) {
     const focused = document.activeElement;
-    void panes.toggle("sidebar");
+    void change();
     await tick();
     if (focused?.isConnected === false) focusCursor();
   }
@@ -561,7 +574,20 @@
           ]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
+      // Each shape but the one on show, so a hidden Sidebar offers both.
+      ...(panes.hidden("sidebar") || !panes.sidebarIcons
+        ? [{ title: "View: Sidebar as Icons", run: () => showSidebar(true) }]
+        : []),
+      ...(panes.hidden("sidebar") || panes.sidebarIcons
+        ? [{ title: "View: Full Sidebar", run: () => showSidebar(false) }]
+        : []),
     ];
+  }
+
+  /** A click on an icon of the strip: brings back the full Sidebar at its width, and shows `view`. */
+  function showViewInFull(view: WorkbenchView) {
+    showView(view);
+    showSidebar(false);
   }
 
   /** Shows `view` in the list, as a click on its line in the Sidebar does. */
@@ -698,7 +724,7 @@
    * time. */
   const SCREEN_ACTIONS: Partial<Record<Action, ScreenAction>> = {
     toggle_sidebar: () => (held) => {
-      if (!held) void toggleSidebarByKey();
+      if (!held) toggleSidebarByKey();
     },
     open_on_github: () => {
       const current = currentOnGitHub();
@@ -1035,27 +1061,56 @@
   bind:this={home}
 >
   {#if !panes.hidden("sidebar")}
-    <Sidebar
-      repository={name}
-      {onpick}
-      {onsettings}
-      count={workbench.count}
-      reviewRequests={workbench.reviewRequests}
-      staleReviews={workbench.staleReviews}
-      filters={workbench.filters}
-      selected={workbench.selected}
-      onselect={showView}
-    />
+    {#if panes.sidebarIcons}
+      <SidebarIcons
+        repository={name}
+        onfull={() => {
+          showSidebar(false);
+        }}
+        {onsettings}
+        count={workbench.count}
+        reviewRequests={workbench.reviewRequests}
+        staleReviews={workbench.staleReviews}
+        filters={workbench.filters}
+        selected={workbench.selected}
+        onselect={showViewInFull}
+      />
+    {:else}
+      <Sidebar
+        repository={name}
+        {onpick}
+        {onsettings}
+        onicons={() => {
+          showSidebar(true);
+        }}
+        count={workbench.count}
+        reviewRequests={workbench.reviewRequests}
+        staleReviews={workbench.staleReviews}
+        filters={workbench.filters}
+        selected={workbench.selected}
+        onselect={showView}
+      />
+    {/if}
+    <!-- One edge for both shapes, so a drag that folds the Sidebar to icons can go on to unfold it. -->
     <PaneEdge
       label="Sidebar width"
       sizes={{
         kind: "pane",
-        value: panes.sidebar ?? SIDEBAR_WIDTH,
+        value: panes.sidebarIcons ? SIDEBAR_ICONS : (panes.sidebar ?? SIDEBAR_WIDTH),
         nextLeast: panes.hidden("list") ? DETAIL_LEAST : LIST_LEAST + (detail ? DETAIL_LEAST : 0),
       }}
       least={SIDEBAR_LEAST}
       most={SIDEBAR_MOST}
-      onresize={(width) => (panes.sidebar = width)}
+      fold={{
+        folded: panes.sidebarIcons,
+        below: SIDEBAR_FOLD,
+        onfold: (icons) => {
+          panes.foldSidebar(icons);
+        },
+      }}
+      onresize={(width) => {
+        panes.resizeSidebar(width);
+      }}
       ondone={() => void panes.save()}
       onreset={() => void panes.reset("sidebar")}
     />

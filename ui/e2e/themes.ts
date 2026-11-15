@@ -1,4 +1,4 @@
-import type { AppearanceSettings, Themes, ThemeView } from "../src/lib/data/bindings.ts";
+import type { AppearanceSettings, Themes_Serialize as Themes, ThemeView } from "../src/lib/data/bindings.ts";
 
 /** `settings.toml`'s `[appearance]` with nothing set. */
 export const appearance: AppearanceSettings = {
@@ -49,7 +49,8 @@ const GRUVBOX_DARK: ThemeView = {
 
 /** The themes with VS Code Modern's chosen for each side, and Gruvbox Dark Hard to pick. */
 export const themes: Themes = {
-  mode: "system",
+  theme: { kind: "system" },
+  system: null,
   light: { chosen: LIGHT_MODERN.name, all: [LIGHT_MODERN], failed: [] },
   dark: { chosen: DARK_MODERN.name, all: [DARK_MODERN, GRUVBOX_DARK], failed: [] },
   problems: [],

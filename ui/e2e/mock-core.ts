@@ -40,7 +40,8 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       themes: {
         status: "ok",
         data: {
-          mode: "system",
+          theme: { kind: "system" },
+          system: null,
           light: { chosen: "Light", all: [{ name: "Light", kind: "light", tokens: [] }], failed: [] },
           dark: { chosen: "Dark", all: [{ name: "Dark", kind: "dark", tokens: [] }], failed: [] },
           problems: [],

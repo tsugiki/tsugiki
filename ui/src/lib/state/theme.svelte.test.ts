@@ -20,7 +20,8 @@ const DARK_MODERN = view("VS Code Dark Modern", "dark", "#1f1f1f");
 const GRUVBOX_DARK = view("Gruvbox Dark Hard", "dark", "#1d2021");
 
 const THEMES: Themes = {
-  mode: "system",
+  theme: { kind: "system" },
+  system: null,
   light: { chosen: "VS Code Light Modern", all: [LIGHT_MODERN, GRUVBOX_LIGHT], failed: [] },
   dark: { chosen: "VS Code Dark Modern", all: [DARK_MODERN, GRUVBOX_DARK], failed: [] },
   problems: [],
@@ -76,20 +77,46 @@ describe("ThemeState", () => {
     expect(state.current?.name).toBe("VS Code Light Modern");
   });
 
-  it("keeps the side Light or Dark mode names, whichever side Windows is on", async () => {
-    for (const [mode, name] of [
-      ["light", "VS Code Light Modern"],
-      ["dark", "VS Code Dark Modern"],
+  it("shows the theme the settings name, whichever side Windows is on", async () => {
+    for (const [side, name] of [
+      ["light", "Gruvbox Light Hard"],
+      ["dark", "Gruvbox Dark Hard"],
     ] as const) {
-      vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, mode } });
-      const { query, turn } = sides(mode === "light");
+      const theme = { kind: "named", name, side } as const;
+      vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, theme } });
+      const { query, turn } = sides(side === "light");
       const state = new ThemeState(query);
       await state.load();
-      expect(state.side, mode).toBe(mode);
-      expect(state.current?.name, mode).toBe(name);
-      turn(mode !== "light");
-      expect(state.current?.name, mode).toBe(name);
+      expect(state.side, name).toBe(side);
+      expect(state.current?.name, name).toBe(name);
+      turn(side !== "light");
+      expect(state.side, name).toBe(side);
+      expect(state.current?.name, name).toBe(name);
     }
+  });
+
+  it("shows a pick for the side a mode from before keeps at once", async () => {
+    vi.mocked(commands.saveTheme).mockResolvedValue({ status: "ok", data: null });
+    const state = await loaded({ ...THEMES, theme: { kind: "side", side: "dark" } }, false);
+    expect(state.side).toBe("dark");
+    expect(state.current?.name).toBe("VS Code Dark Modern");
+
+    await state.choose("dark", "Gruvbox Dark Hard");
+
+    expect(state.current?.name).toBe("Gruvbox Dark Hard");
+  });
+
+  it("takes the side the core says Windows is on, which the media query hears of later", async () => {
+    const state = await loaded(
+      { ...THEMES, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
+      true,
+    );
+    vi.mocked(commands.themes).mockResolvedValue({ status: "ok", data: { ...THEMES, system: "light" } });
+
+    await state.load();
+
+    expect(state.dark).toBe(false);
+    expect(state.current?.name).toBe("VS Code Light Modern");
   });
 
   it("holds the core's refusal and shows no theme", async () => {
@@ -159,7 +186,7 @@ describe("ThemeState", () => {
     ]);
     expect(state.current?.name).toBe("Gruvbox Dark Hard");
     expect(state.chosen("light")).toBe("Gruvbox Light Hard");
-    expect(state.themes?.mode).toBe("system");
+    expect(state.themes?.theme).toEqual({ kind: "system" });
     expect(state.problem).toBeUndefined();
   });
 

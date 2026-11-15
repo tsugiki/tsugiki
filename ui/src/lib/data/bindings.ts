@@ -85,13 +85,16 @@ export const commands = {
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
 	 *  Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for
-	 *  each side, and the mode they held when Tsugiki started (#517), which the title bar keeps. In System mode
-	 *  the window shows the chosen theme for the side Windows is on. The theme picker lists the others, and a
-	 *  theme it saved is the chosen one from then on (#518). The user's theme files come after the built-in ones,
-	 *  read again from the `themes` folder on each ask, so the window asks when it starts, when the picker opens
-	 *  and on Reload themes (#519). This waits on the folder, which may sit on a synced drive.
+	 *  each side, and the theme in force (#755). Following the system, the window shows the chosen theme for the
+	 *  side the system is on. The theme picker lists the others, and a theme it saved is the chosen one from
+	 *  then on (#518). The user's theme files come after the built-in ones, read again from the `themes` folder
+	 *  on each ask, so the window asks when it starts, when the picker opens and on Reload themes (#519). This
+	 *  waits on the folder, which may sit on a synced drive.
+	 * 
+	 *  The window that asks turns to the side of the theme in force, its title bar and native controls with
+	 *  it, so they match the page each time it takes its themes.
 	 */
-	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
+	themes: () => typedError<Themes_Serialize, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**  What the window opens on. */
 	home: () => __TAURI_INVOKE<Home_Serialize>("home"),
 	/**  Where the token comes from, for the Settings dialog's Account page (#429). */
@@ -308,17 +311,21 @@ export type Answer_Serialize =
 { state: "cancelled" };
 
 /**
- *  The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
- *  of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
- *  theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
- *  fails the file, as any other table does.
+ *  The `[appearance]` table: the theme the window shows, or "system" to follow the system to its light or
+ *  dark side, and the theme of each side, which following the system shows (#517, #755). A key Tsugiki
+ *  can't read takes its default, and `unread_problems` says why: a theme is too small a thing to lose the
+ *  rest of `settings.toml` over. An `appearance` that isn't a table fails the file, as any other table does.
  * 
  *  A theme's name may be a built-in theme's or a file's of the `themes` folder beside the settings file
  *  (#519). It stays as the user wrote it: the folder can change while Tsugiki runs, so the `themes` command
- *  checks it against the folder each time, and a name no theme has shows its side's default until one does.
+ *  checks it against the folder each time. A side's name no theme has shows the side's default until one
+ *  does, and a `theme` no theme has follows the system.
+ * 
+ *  `theme` goes to the file and to the UI as its text: `"system"` or a theme's name. A mode from a file
+ *  written before goes as the name its side holds, so a save writes that name in its place (#755).
  */
 export type AppearanceSettings = {
-	theme: ThemeMode,
+	theme: string,
 	light_theme: ThemeName,
 	dark_theme: ThemeName,
 };
@@ -2629,14 +2636,20 @@ export type SyncPart = "your_work" |
  */
 "refresh";
 
+/**  The theme the window shows, from `[appearance] theme` (#755). */
+export type ThemeInForce = 
+/**  The chosen theme of the side the system is on. A `theme` that names no usable theme gives this too. */
+{ kind: "system" } | 
+/**
+ *  The chosen theme of `side`, whatever the system says, from a mode a file written before held. A pick
+ *  for that side shows at once, as the file then names the theme picked.
+ */
+{ kind: "side"; side: ThemeKind } | 
+/**  The theme named, whatever the system says. */
+{ kind: "named"; name: ThemeName; side: ThemeKind };
+
 /**  Whether a theme is for Windows' light side or its dark side. Each theme is one or the other, not a pair. */
 export type ThemeKind = "light" | "dark";
-
-/**
- *  Whether the window follows Windows to its light or dark side, or keeps one side whatever Windows says:
- *  `[appearance] theme` in `settings.toml` (#517).
- */
-export type ThemeMode = "system" | "light" | "dark";
 
 /**
  *  A theme's name, as its file and `[appearance] light_theme` and `dark_theme` give it: a built-in theme's or
@@ -2655,12 +2668,47 @@ export type ThemeView = {
 };
 
 /**
- *  The themes of each side, and the mode. In System mode the window shows the chosen theme of the side
- *  Windows is on, and turns to the other when Windows does. Light and Dark show that side's chosen theme
- *  whatever Windows says. The theme picker lists the rest (#518).
+ *  The themes of each side, and the theme in force. Following the system, the window shows the chosen theme
+ *  of the side the system is on, and turns to the other when the system does. The theme picker lists the
+ *  rest (#518).
  */
-export type Themes = {
-	mode: ThemeMode,
+export type Themes = Themes_Serialize | Themes_Deserialize;
+
+/**
+ *  The themes of each side, and the theme in force. Following the system, the window shows the chosen theme
+ *  of the side the system is on, and turns to the other when the system does. The theme picker lists the
+ *  rest (#518).
+ */
+export type Themes_Deserialize = {
+	theme: ThemeInForce,
+	/**
+	 *  While the window follows the system, the side the system is on, as the window says once it has turned
+	 *  back to it. A theme that kept the window on one side kept the page's `prefers-color-scheme` there too,
+	 *  and the page hears of the change a moment later. The app sets it, as only the window can say.
+	 */
+	system?: ThemeKind | null,
+	light: SideThemes,
+	dark: SideThemes,
+	/**
+	 *  What is wrong with the files of the `themes` folder, in words for the status bar, each naming its file
+	 *  and, when the parser knows it, its line (#519).
+	 */
+	problems: string[],
+};
+
+/**
+ *  The themes of each side, and the theme in force. Following the system, the window shows the chosen theme
+ *  of the side the system is on, and turns to the other when the system does. The theme picker lists the
+ *  rest (#518).
+ */
+export type Themes_Serialize = {
+	theme: ThemeInForce,
+	/**
+	 *  While the window follows the system, the side the system is on, as the window says once it has turned
+	 *  back to it. A theme that kept the window on one side kept the page's `prefers-color-scheme` there too,
+	 *  and the page hears of the change a moment later. The app sets it, as only the window can say.
+	 */
+	system: ThemeKind | null,
 	light: SideThemes,
 	dark: SideThemes,
 	/**

@@ -41,7 +41,8 @@ const SETTINGS = {
 
 /** The themes the core sends unless a test says otherwise. */
 const THEMES = {
-  mode: "system",
+  theme: { kind: "system" },
+  system: null,
   light: {
     chosen: "Light",
     all: [{ name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] }],

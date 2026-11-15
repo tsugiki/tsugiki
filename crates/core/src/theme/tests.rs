@@ -39,7 +39,7 @@ fn four_themes_are_built_in_with_vs_codes_the_defaults() {
     );
     assert_eq!(LightTheme::default(), LightTheme::VsCodeLightModern);
     assert_eq!(DarkTheme::default(), DarkTheme::VsCodeDarkModern);
-    assert_eq!(ThemeMode::default(), ThemeMode::System);
+    assert_eq!(ThemeChoice::default(), ThemeChoice::System);
 }
 
 /// A `themes` folder in `.temp` holding `files`, each a file name and its text.
@@ -62,13 +62,26 @@ fn library_of(name: &str, files: &[(&str, &str)]) -> (ThemeLibrary, PathBuf) {
     (library, path)
 }
 
-/// The themes the library sends with the defaults chosen.
-fn sent(library: &ThemeLibrary) -> Themes {
+/// `choice` as the tests' settings file gives it.
+fn given(choice: &ThemeChoice) -> GivenTheme<'_> {
+    GivenTheme {
+        choice,
+        place: "settings.toml, line 2",
+    }
+}
+
+/// The themes the library sends showing `choice`, with the defaults chosen for each side.
+fn showing(library: &ThemeLibrary, choice: &ThemeChoice) -> Themes {
     library.themes(
-        ThemeMode::System,
+        given(choice),
         &ThemeName::default_of(ThemeKind::Light),
         &ThemeName::default_of(ThemeKind::Dark),
     )
+}
+
+/// The themes the library sends with the defaults chosen.
+fn sent(library: &ThemeLibrary) -> Themes {
+    showing(library, &ThemeChoice::System)
 }
 
 /// The value of `property` in the theme of side `kind` named `name`.
@@ -467,7 +480,7 @@ fn the_library_finds_a_theme_by_its_side_and_its_name() {
 fn a_chosen_theme_whose_file_has_gone_gives_way_to_the_default_and_says_so() {
     let (library, _) = library_of("themes-gone", &[]);
     let themes = library.themes(
-        ThemeMode::Dark,
+        given(&ThemeChoice::System),
         &ThemeName::new("Gruvbox Light Hard"),
         &ThemeName::new("Solarized Dark"),
     );
@@ -481,14 +494,136 @@ fn a_chosen_theme_whose_file_has_gone_gives_way_to_the_default_and_says_so() {
 }
 
 #[test]
-fn the_themes_sent_are_each_sides_built_in_ones_with_the_chosen_named_and_the_mode() {
+fn a_named_theme_is_in_force_with_its_side_whichever_side_is_chosen() {
+    let night = "name = \"Night\"\nkind = \"dark\"\n";
+    let (library, _) = library_of("themes-named", &[("night.toml", night)]);
+    let named = |name: &str| ThemeChoice::Theme(ThemeName::new(name));
+
+    let light = showing(&library, &named("Gruvbox Light Hard"));
+    let dark = showing(&library, &named("Night"));
+
+    let in_force = |name: &str, side| ThemeInForce::Named {
+        name: ThemeName::new(name),
+        side,
+    };
+    assert_eq!(
+        light.theme,
+        in_force("Gruvbox Light Hard", ThemeKind::Light)
+    );
+    assert_eq!(dark.theme, in_force("Night", ThemeKind::Dark));
+    assert_eq!(
+        light.light.chosen, "VS Code Light Modern",
+        "the side's choice stays"
+    );
+    assert_eq!(light.problems, Vec::<String>::new());
+    assert_eq!(
+        showing(&library, &ThemeChoice::System).theme,
+        ThemeInForce::System
+    );
+}
+
+/// The theme file may be mended, so the name stays in the settings, and until then the window follows the
+/// system (#755).
+#[test]
+fn a_named_theme_no_usable_theme_has_follows_the_system_and_says_where() {
+    let broken = "name = \"Dusk\"\nkind = \"dark\"\nextends = \"Dawn\"\n";
+    let (library, _) = library_of("themes-named-missing", &[("dusk.toml", broken)]);
+
+    let themes = showing(&library, &ThemeChoice::Theme(ThemeName::new("Dusk")));
+
+    assert_eq!(themes.theme, ThemeInForce::System);
+    assert_eq!(
+        themes.problems,
+        ["settings.toml, line 2: No theme is named \"Dusk\", so Tsugiki follows the system."]
+    );
+}
+
+#[test]
+fn theme_reads_system_a_name_or_the_mode_of_a_file_from_before() {
+    assert_eq!(ThemeChoice::read("system"), ThemeChoice::System);
+    assert_eq!(
+        ThemeChoice::read("light"),
+        ThemeChoice::Side(ThemeKind::Light)
+    );
+    assert_eq!(
+        ThemeChoice::read("dark"),
+        ThemeChoice::Side(ThemeKind::Dark)
+    );
+    assert_eq!(
+        ThemeChoice::read("Gruvbox Light Hard"),
+        ThemeChoice::Theme(ThemeName::new("Gruvbox Light Hard"))
+    );
+}
+
+/// The window turns to these at start, before the page reads the `themes` folder.
+#[test]
+fn the_side_kept_is_known_without_the_folder_for_a_mode_or_a_built_in_theme() {
+    let named = |name: &str| ThemeChoice::Theme(ThemeName::new(name)).known_side();
+
+    assert_eq!(ThemeChoice::System.known_side(), None);
+    let dark = ThemeChoice::Side(ThemeKind::Dark);
+    assert_eq!(dark.known_side(), Some(ThemeKind::Dark));
+    assert_eq!(named("Gruvbox Light Hard"), Some(ThemeKind::Light));
+    assert_eq!(named("VS Code Dark Modern"), Some(ThemeKind::Dark));
+    assert_eq!(named("Night"), None, "a file's side waits for the folder");
+}
+
+/// A mode from a file written before shows its side's chosen theme, so a pick for that side shows at once.
+#[test]
+fn a_mode_from_before_keeps_its_side_and_shows_the_sides_chosen_theme() {
+    let (library, _) = library_of("themes-mode", &[]);
+
+    let themes = showing(&library, &ThemeChoice::Side(ThemeKind::Dark));
+
+    let side = ThemeInForce::Side {
+        side: ThemeKind::Dark,
+    };
+    assert_eq!(themes.theme, side);
+    assert_eq!(themes.theme.side(), Some(ThemeKind::Dark));
+    assert_eq!(themes.dark.chosen, "VS Code Dark Modern");
+    assert_eq!(ThemeInForce::System.side(), None);
+}
+
+/// `theme` gives these names a meaning of its own, as a built-in theme takes its name.
+#[test]
+fn a_theme_file_cant_take_the_names_system_light_or_dark() {
+    let theme = |name: &str| format!("name = \"{name}\"\nkind = \"dark\"\n");
+    let (library, _) = library_of(
+        "themes-reserved",
+        &[
+            ("a.toml", &theme("system")),
+            ("b.toml", &theme("light")),
+            ("c.toml", &theme("dark")),
+            ("d.toml", &theme("Darkness")),
+        ],
+    );
+    let themes = sent(&library);
+
+    assert_eq!(
+        names(&themes.dark),
+        ["VS Code Dark Modern", "Gruvbox Dark Hard", "Darkness"]
+    );
+    let means = |name: &str| format!("theme = \"{name}\" in settings.toml means something else");
+    let (dark, light, system) = (means("dark"), means("light"), means("system"));
+    assert_eq!(
+        failed(&themes.dark),
+        [
+            ("dark", "c.toml", dark.as_str()),
+            ("light", "b.toml", light.as_str()),
+            ("system", "a.toml", system.as_str()),
+        ]
+    );
+}
+
+#[test]
+fn the_themes_sent_are_each_sides_built_in_ones_with_the_chosen_named() {
     let (library, _) = library_of("themes-built-in", &[]);
     let themes = library.themes(
-        ThemeMode::Dark,
+        given(&ThemeChoice::System),
         &ThemeName::new("Gruvbox Light Hard"),
         &ThemeName::new("Gruvbox Dark Hard"),
     );
-    assert_eq!(themes.mode, ThemeMode::Dark);
+    assert_eq!(themes.theme, ThemeInForce::System);
     assert_eq!(themes.light.chosen, "Gruvbox Light Hard");
     assert_eq!(themes.dark.chosen, "Gruvbox Dark Hard");
     // Each with its `bg`, in the order the picker lists them.

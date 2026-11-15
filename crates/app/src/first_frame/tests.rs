@@ -1,5 +1,8 @@
 use std::cell::RefCell;
 
+use tsugiki_core::settings::SettingsFiles;
+use tsugiki_core::theme::{ThemeInForce, ThemeName};
+
 use super::*;
 
 /// What `show_in` did to the window, in order.
@@ -87,27 +90,27 @@ fn a_window_that_wont_show_fails_the_start() {
 }
 
 #[test]
-fn system_mode_leaves_the_window_to_follow_the_system() {
-    assert_eq!(window_theme(ThemeMode::System), None);
+fn following_the_system_leaves_the_window_to_follow_the_system() {
+    assert_eq!(window_theme(None), None);
 }
 
 #[test]
-fn light_and_dark_keep_the_window_on_their_side_whatever_the_system_says() {
-    assert_eq!(window_theme(ThemeMode::Light), Some(Theme::Light));
-    assert_eq!(window_theme(ThemeMode::Dark), Some(Theme::Dark));
+fn a_side_kept_keeps_the_window_on_it_whatever_the_system_says() {
+    assert_eq!(window_theme(Some(ThemeKind::Light)), Some(Theme::Light));
+    assert_eq!(window_theme(Some(ThemeKind::Dark)), Some(Theme::Dark));
 }
 
 #[test]
-fn the_window_turns_to_the_side_the_mode_keeps() {
+fn the_window_turns_to_the_side_kept() {
     let asked = RefCell::new(Vec::new());
-    for mode in [ThemeMode::Dark, ThemeMode::System] {
-        turn(mode, &|theme| {
+    for side in [Some(ThemeKind::Dark), None] {
+        turn(side, &|theme| {
             asked.borrow_mut().push(theme);
             Ok(())
         });
     }
-    // A window that can't turn keeps the system's side, and the start goes on.
-    turn(ThemeMode::Light, &|theme| {
+    // A window that can't turn keeps the side it was on, and the page goes on.
+    turn(Some(ThemeKind::Light), &|theme| {
         asked.borrow_mut().push(theme);
         Err(tauri::Error::WindowNotFound)
     });
@@ -115,4 +118,50 @@ fn the_window_turns_to_the_side_the_mode_keeps() {
         asked.into_inner(),
         [Some(Theme::Dark), None, Some(Theme::Light)]
     );
+}
+
+/// What the `themes` command answers over `settings`, a settings file's text, on a window the system keeps
+/// on `system`, and each side the window was turned to.
+fn asked_themes(name: &str, settings: &str, system: Theme) -> (Themes, Vec<Option<Theme>>) {
+    let (folders, _root) = crate::tests::temp_folders(name);
+    std::fs::write(folders.settings_file(), settings).unwrap();
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
+    let turned = RefCell::new(Vec::new());
+    let window = ThemedWindow {
+        set_theme: &|theme| {
+            turned.borrow_mut().push(theme);
+            Ok(())
+        },
+        theme: &|| Ok(system),
+    };
+    let themes = themes(&owner, &window).unwrap();
+    (themes, turned.into_inner())
+}
+
+#[test]
+fn the_themes_command_turns_the_window_to_the_side_of_the_theme_in_force() {
+    let named = "[appearance]\ntheme = \"Gruvbox Dark Hard\"\n";
+    let (themes, turned) = asked_themes("themes-named", named, Theme::Light);
+
+    let in_force = ThemeInForce::Named {
+        name: ThemeName::new("Gruvbox Dark Hard"),
+        side: ThemeKind::Dark,
+    };
+    assert_eq!(themes.theme, in_force);
+    assert_eq!(turned, [Some(Theme::Dark)]);
+    assert_eq!(
+        themes.system, None,
+        "a window kept on one side can't say the system's"
+    );
+}
+
+/// The page's media query still reports the side a theme kept until the webview catches up, so the answer
+/// says the system's side.
+#[test]
+fn following_the_system_the_themes_command_says_the_side_the_system_is_on() {
+    let (themes, turned) = asked_themes("themes-system", "", Theme::Dark);
+
+    assert_eq!(themes.theme, ThemeInForce::System);
+    assert_eq!(turned, [None]);
+    assert_eq!(themes.system, Some(ThemeKind::Dark));
 }

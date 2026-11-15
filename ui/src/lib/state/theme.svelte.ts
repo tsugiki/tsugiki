@@ -1,17 +1,19 @@
 // The window's colours (#515). The core sends every theme of each side, light and dark, with the one chosen
-// for each side and the mode (#517). In System mode the window shows the chosen theme for the side Windows
-// is on, jumping to the other when Windows changes sides. Light and Dark show their side's theme whatever
-// Windows says. The theme picker previews a theme over the one in force, and saves a side's choice (#518).
+// for each side and the theme in force (#755). Following the system, the window shows the chosen theme for
+// the side Windows is on, jumping to the other when Windows changes sides. A theme the settings name shows
+// whatever Windows says, and so does the chosen theme of the side a mode from a file written before keeps.
+// The theme picker previews a theme over the one in force, and saves a side's choice (#518).
 import {
   commands,
   type FailedThemeView,
   type ThemeKind,
-  type Themes,
+  type Themes_Serialize,
   type ThemeView,
 } from "$lib/data/bindings";
 import { ask } from "./answer";
 
-export type { FailedThemeView, ThemeKind, Themes, ThemeView };
+export type { FailedThemeView, ThemeKind, ThemeView };
+export type Themes = Themes_Serialize;
 
 /** Says which side Windows is on: `matchMedia("(prefers-color-scheme: dark)")` in the window. */
 export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
@@ -30,14 +32,19 @@ export class ThemeState {
   #choices = 0;
   /** How many saves are on their way, which a load may have read the settings before. */
   #saving = 0;
-  /** The side in use: the one Windows is on in System mode, and otherwise the mode's. */
+  /** The side in use: the one the settings keep, or else the one Windows is on. */
   side: ThemeKind = $derived.by(() => {
-    const mode = this.themes?.mode ?? "system";
-    if (mode !== "system") return mode;
+    const theme = this.themes?.theme;
+    if (theme && theme.kind !== "system") return theme.side;
     return this.dark ? "dark" : "light";
   });
-  /** The theme in force, once the core has sent them: the chosen one of the side in use. */
-  current = $derived(this.themesOf(this.side).find((theme) => theme.name === this.chosen(this.side)));
+  /** The theme in force, once the core has sent them: the named one, or else the chosen one of the side in
+   * use. */
+  current = $derived.by(() => {
+    const theme = this.themes?.theme;
+    const name = theme?.kind === "named" ? theme.name : this.chosen(this.side);
+    return this.themesOf(this.side).find((one) => one.name === name);
+  });
   /** What the window shows: the preview, or else the theme in force. */
   shown = $derived(this.preview ?? this.current);
 
@@ -64,6 +71,9 @@ export class ThemeState {
         answer.data.dark.chosen = this.themes.dark.chosen;
       }
       this.themes = answer.data;
+      // A theme that kept the window on one side kept the media query there too, and the query hears that
+      // the window follows Windows again only after this answer.
+      if (answer.data.system) this.dark = answer.data.system === "dark";
       this.error = undefined;
     } else {
       this.error = answer.error.message;

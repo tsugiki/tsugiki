@@ -8,7 +8,8 @@ vi.mock("$lib/data/bindings", () => ({ commands: { themes: vi.fn(), saveTheme: v
 const view = (name: string, kind: "light" | "dark"): ThemeView => ({ name, kind, tokens: [] });
 
 const THEMES: Themes = {
-  mode: "system",
+  theme: { kind: "system" },
+  system: null,
   light: {
     chosen: "VS Code Light Modern",
     all: [view("VS Code Light Modern", "light"), view("Gruvbox Light Hard", "light")],
@@ -70,15 +71,16 @@ describe("ThemePicker", () => {
     expect(picker.start).toBe(1);
   });
 
-  it("lists the side the mode keeps, whichever side Windows is on", async () => {
-    const { picker } = await opened(true, { ...THEMES, mode: "light" });
+  it("lists the side of the theme the settings name, marked, whichever side Windows is on", async () => {
+    const named = { kind: "named", name: "Gruvbox Light Hard", side: "light" } as const;
+    const { picker } = await opened(true, { ...THEMES, theme: named });
     expect(titles(picker)).toEqual([
-      "VS Code Light Modern *",
-      "Gruvbox Light Hard",
+      "VS Code Light Modern",
+      "Gruvbox Light Hard *",
       "Reload themes",
       "Dark themes…",
     ]);
-    expect(picker.start).toBe(0);
+    expect(picker.start).toBe(1);
   });
 
   it("lists the theme files after the built-in themes, then each file that failed with its file and why", async () => {
@@ -157,7 +159,7 @@ describe("ThemePicker", () => {
     expect(picker.side).toBe("dark");
   });
 
-  it("saves a pick from the other side's list to that side, and leaves the mode and the theme in force", async () => {
+  it("saves a pick from the other side's list to that side, and leaves the theme in force", async () => {
     const { theme, picker } = await opened(true);
     picker.switchSide();
     picker.move(themeRow(picker, "Gruvbox Light Hard"));
@@ -167,7 +169,7 @@ describe("ThemePicker", () => {
 
     expect(commands.saveTheme).toHaveBeenCalledExactlyOnceWith("light", "Gruvbox Light Hard");
     expect(theme.chosen("light")).toBe("Gruvbox Light Hard");
-    expect(theme.themes?.mode).toBe("system");
+    expect(theme.themes?.theme).toEqual({ kind: "system" });
     expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
   });
 });

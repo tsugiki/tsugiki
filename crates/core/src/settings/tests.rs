@@ -4,7 +4,7 @@ use crate::filters::Filter;
 use crate::mirror::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
 use crate::testing::TempPath;
-use crate::theme::{ThemeKind, ThemeMode, ThemeName};
+use crate::theme::{ThemeChoice, ThemeKind, ThemeName};
 use time::format_description::well_known::Rfc3339;
 
 fn hidden() -> Settings {
@@ -12,7 +12,7 @@ fn hidden() -> Settings {
         status_bar: StatusBarSettings { visible: false },
         releases: ReleaseSettings { check: true },
         appearance: AppearanceSettings {
-            theme: ThemeMode::System,
+            theme: ThemeChoice::System,
             light_theme: ThemeName::new("VS Code Light Modern"),
             dark_theme: ThemeName::new("VS Code Dark Modern"),
         },
@@ -173,11 +173,11 @@ fn loaded_from(name: &str, text: &str) -> LoadedSettings {
 }
 
 #[test]
-fn appearance_picks_the_mode_and_a_theme_for_each_side() {
+fn appearance_names_the_theme_and_a_theme_for_each_side() {
     let text = r#"
 [appearance]
-theme = "dark"
-light_theme = "Gruvbox Light Hard"
+theme = "Gruvbox Light Hard"
+light_theme = "VS Code Light Modern"
 dark_theme = "Gruvbox Dark Hard"
 "#;
     let loaded = loaded_from("appearance", text);
@@ -185,8 +185,8 @@ dark_theme = "Gruvbox Dark Hard"
     assert_eq!(
         loaded.settings.appearance,
         AppearanceSettings {
-            theme: ThemeMode::Dark,
-            light_theme: named("Gruvbox Light Hard"),
+            theme: ThemeChoice::Theme(named("Gruvbox Light Hard")),
+            light_theme: named("VS Code Light Modern"),
             dark_theme: named("Gruvbox Dark Hard"),
         }
     );
@@ -195,26 +195,81 @@ dark_theme = "Gruvbox Dark Hard"
 
 #[test]
 fn an_appearance_key_left_out_takes_its_default() {
-    let loaded = loaded_from("appearance-part", "[appearance]\ntheme = \"light\"\n");
+    let loaded = loaded_from("appearance-part", "[appearance]\ntheme = \"system\"\n");
 
-    assert_eq!(
-        loaded.settings.appearance,
-        AppearanceSettings {
-            theme: ThemeMode::Light,
-            ..AppearanceSettings::default()
-        }
-    );
+    assert_eq!(loaded.settings.appearance, AppearanceSettings::default());
     assert_eq!(loaded.problems, Vec::<String>::new());
     assert_eq!(Settings::default().appearance, hidden().appearance);
 }
 
+/// A file from before #755 held a mode, which reads as the theme of its side.
 #[test]
-fn a_bad_mode_or_a_theme_name_that_isnt_a_string_keeps_its_default_and_is_reported() {
+fn a_mode_from_before_reads_as_the_theme_its_side_names() {
+    let text = "[appearance]\ntheme = \"dark\"\ndark_theme = \"Gruvbox Dark Hard\"\n";
+    let dark = loaded_from("appearance-dark-mode", text);
+    let light = loaded_from("appearance-light-mode", "[appearance]\ntheme = \"light\"\n");
+
+    let appearance = &dark.settings.appearance;
+    assert_eq!(appearance.theme, ThemeChoice::Side(ThemeKind::Dark));
+    assert_eq!(
+        light.settings.appearance.theme,
+        ThemeChoice::Side(ThemeKind::Light)
+    );
+    assert_eq!(dark.problems, Vec::<String>::new());
+    // The file and the UI get the name in its place.
+    let written = serde_json::to_value(appearance).unwrap();
+    assert_eq!(written["theme"], "Gruvbox Dark Hard");
+    let written = serde_json::to_value(&light.settings.appearance).unwrap();
+    assert_eq!(written["theme"], "VS Code Light Modern");
+}
+
+/// The name stays as written: the `themes` command checks it against the folder (#755).
+#[test]
+fn a_theme_name_no_theme_has_stays_as_written() {
+    let loaded = loaded_from("appearance-unknown", "[appearance]\ntheme = \"Dusk\"\n");
+
+    assert_eq!(
+        loaded.settings.appearance.theme,
+        ThemeChoice::Theme(named("Dusk"))
+    );
+    assert_eq!(loaded.problems, Vec::<String>::new());
+}
+
+#[test]
+fn the_view_says_where_the_settings_file_gives_theme() {
+    let (folders, _root) = temp_folders("appearance-place");
+    let file = folders.settings_file();
+    let given = "[releases]\ncheck = true\n\n[appearance]\ntheme = \"Dusk\"\n";
+
+    let none = SettingsFiles::load(folders.clone()).view().theme_place;
+    fs::write(&file, "").unwrap();
+    let left_out = SettingsFiles::load(folders.clone()).view().theme_place;
+    fs::write(&file, given).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let place = files.view().theme_place;
+    // The settings kept after a mistake came from text the file no longer holds.
+    fs::write(&file, format!("\n\n{given}[appearance\n")).unwrap();
+    files.reload();
+    let broken = files.view();
+
+    let path = file.display();
+    assert_eq!(none, path.to_string());
+    assert_eq!(left_out, path.to_string());
+    assert_eq!(place, format!("{path}, line 5"));
+    assert_eq!(
+        broken.loaded.settings.appearance.theme,
+        ThemeChoice::Theme(named("Dusk"))
+    );
+    assert_eq!(broken.theme_place, path.to_string());
+}
+
+#[test]
+fn a_theme_or_a_theme_name_that_isnt_a_string_keeps_its_default_and_is_reported() {
     let text = r#"[status_bar]
 visible = false
 
 [appearance]
-theme = "dusk"
+theme = 7
 light_theme = ["Gruvbox Light Hard"]
 dark_theme = 3
 "#;
@@ -233,7 +288,7 @@ dark_theme = 3
     assert_eq!(
         problems,
         [
-            r#", line 5: theme isn't "system", "light" or "dark", so Tsugiki follows the system."#,
+            r#", line 5: theme isn't "system" or a theme's name, so Tsugiki follows the system."#,
             ", line 6: light_theme isn't a theme's name, so Tsugiki uses VS Code Light Modern.",
             ", line 7: dark_theme isn't a theme's name, so Tsugiki uses VS Code Dark Modern.",
         ]
@@ -244,7 +299,7 @@ dark_theme = 3
 #[test]
 fn a_save_refuses_while_appearance_holds_a_value_tsugiki_cant_read() {
     let (folders, _root) = temp_folders("appearance-unread-save");
-    let before = "[appearance]\ntheme = \"Dark\"\n";
+    let before = "[appearance]\ntheme = false\n";
     fs::write(folders.settings_file(), before).unwrap();
 
     let refusal = SettingsFiles::load(folders.clone()).write(&hidden());
@@ -403,7 +458,7 @@ fn diff_peek_is_saved_only_when_it_isnt_inline() {
 fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
     let settings = Settings {
         appearance: AppearanceSettings {
-            theme: ThemeMode::Light,
+            theme: ThemeChoice::Theme(named("Gruvbox Dark Hard")),
             light_theme: named("Gruvbox Light Hard"),
             dark_theme: named("VS Code Dark Modern"),
         },
@@ -413,7 +468,59 @@ fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
 
     assert_eq!(
         after,
-        "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n"
+        "[appearance]\ntheme = \"Gruvbox Dark Hard\"\nlight_theme = \"Gruvbox Light Hard\"\n"
+    );
+}
+
+/// A file from before #755 held a mode, and the Settings dialog's Apply writes the name it read as.
+#[test]
+fn a_save_writes_the_name_a_mode_from_before_read_as() {
+    let before = "[appearance]\ntheme = \"light\" # by day\nlight_theme = \"Gruvbox Light Hard\"\n";
+    let (folders, _root) = temp_folders("appearance-mode-save");
+    fs::write(folders.settings_file(), before).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let settings = files.loaded().settings.clone();
+    files.write(&settings).unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "[appearance]\ntheme = \"Gruvbox Light Hard\" # by day\nlight_theme = \"Gruvbox Light Hard\"\n"
+    );
+}
+
+/// The theme picker saves one side's key, and a mode from before (#755) gives way to the name of the theme
+/// it shows after the pick, so the window shows what it would have.
+#[test]
+fn a_picked_theme_writes_the_name_a_mode_from_before_shows_after_it() {
+    let (folders, _root) = temp_folders("appearance-mode-picked");
+    let file = folders.settings_file();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    fs::write(&file, "[appearance]\ntheme = \"dark\"\n").unwrap();
+    files
+        .save_theme(ThemeKind::Dark, &named("Gruvbox Dark Hard"))
+        .unwrap();
+    let same_side = fs::read_to_string(&file).unwrap();
+    fs::write(
+        &file,
+        "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n",
+    )
+    .unwrap();
+    files
+        .save_theme(ThemeKind::Dark, &named("Gruvbox Dark Hard"))
+        .unwrap();
+    let other_side = fs::read_to_string(&file).unwrap();
+
+    assert_eq!(
+        same_side,
+        "[appearance]\ntheme = \"Gruvbox Dark Hard\"\ndark_theme = \"Gruvbox Dark Hard\"\n"
+    );
+    assert_eq!(
+        other_side,
+        "[appearance]\ntheme = \"Gruvbox Light Hard\"\nlight_theme = \"Gruvbox Light Hard\"\n\
+         dark_theme = \"Gruvbox Dark Hard\"\n"
     );
 }
 
@@ -422,7 +529,7 @@ fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
 #[test]
 fn a_picked_theme_is_saved_to_its_sides_key_alone() {
     let (folders, _root) = temp_folders("appearance-picked");
-    let before = "# Mine\n[releases]\ncheck = true\n\n[appearance]\ntheme = \"light\" # by day\n";
+    let before = "# Mine\n[releases]\ncheck = true\n\n[appearance]\ntheme = \"Gruvbox Light Hard\" # by day\n";
     fs::write(folders.settings_file(), before).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
@@ -447,7 +554,7 @@ fn a_picked_theme_is_saved_to_its_sides_key_alone() {
     assert_eq!(
         loaded,
         AppearanceSettings {
-            theme: ThemeMode::Light,
+            theme: ThemeChoice::Theme(named("Gruvbox Light Hard")),
             light_theme: named("VS Code Light Modern"),
             dark_theme: named("Gruvbox Dark Hard"),
         }

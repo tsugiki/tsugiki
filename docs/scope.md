@@ -68,8 +68,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   confirm and act at once. Each setting says where it is stored, and the rare setting that waits for a
   restart says so.
 - Two TOML files, one that travels between machines and one that stays, and a portable mode.
-- `[appearance]` in `settings.toml`: `theme` (System, Light or Dark), and `light_theme` and `dark_theme`,
-  the **Theme** of each side.
+- `[appearance]` in `settings.toml`: `theme`, the **Theme** the window shows or `"system"` to follow the
+  system, and `light_theme` and `dark_theme`, the **Theme** of each side that following the system shows.
 - A `themes` folder beside `settings.toml`, which holds the user's own **Themes**.
 - `[diff]` in `settings.toml`: `files`, whether each PR's Files tab opens on all its files or one at a
   time, and `peek`, whether the Definition peek opens under its line or split below the code.
@@ -77,8 +77,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 ### Themes ([themes.md](devel/themes.md))
 
 - A **Theme** for each side, light and dark, that colours the whole window and follows Windows when it
-  changes sides, unless the settings keep one side. VS Code's Light Modern and Dark Modern and Gruvbox's
-  Light Hard and Dark Hard are built in.
+  changes sides, unless the settings name one **Theme** to show. VS Code's Light Modern and Dark Modern and
+  Gruvbox's Light Hard and Dark Hard are built in.
 - A theme picker on `Ctrl+K T` that previews each **Theme** on the window and saves the one picked.
 - The user's own **Themes** as TOML files that set a few tokens and take the rest from another **Theme**,
   and Reload themes on `Ctrl+K R`.

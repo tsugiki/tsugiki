@@ -46,9 +46,10 @@ test("the theme picker previews a theme on the window, and Esc puts the old one 
   await expect.poll(() => colours(page)).toEqual(darkModern);
 });
 
-test("Light mode keeps the light theme while the system is dark", async ({ page }) => {
+test("A light theme the settings name shows while the system is dark", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
-  await mockCore(page, { themes: { status: "ok", data: { ...themes, mode: "light" } } });
+  const theme = { kind: "named", name: themes.light.chosen, side: "light" } as const;
+  await mockCore(page, { themes: { status: "ok", data: { ...themes, theme } } });
   await page.goto("/");
   await expect
     .poll(() => colours(page))

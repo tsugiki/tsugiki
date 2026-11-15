@@ -44,7 +44,6 @@ use tsugiki_core::settings::{
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::ThemeMode;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -343,9 +342,6 @@ fn fetch_issue(
 fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
     owner.view().loaded
 }
-
-/// The mode `settings.toml` held when Tsugiki started, which the window turned to (#517).
-struct StartMode(ThemeMode);
 
 /// What the window opens on.
 #[tauri::command]
@@ -949,7 +945,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_seen,
             mark_unseen,
             settings,
-            slow_commands::themes,
+            slow_commands::themes::<tauri::Wry>,
             home,
             token_source,
             pane_layout,

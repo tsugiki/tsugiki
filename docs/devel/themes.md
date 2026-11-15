@@ -118,10 +118,12 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
 
 - **Type.** The UI font is `system-ui, -apple-system, "Segoe UI", sans-serif` at 14 px. Code, SHAs and
   branches take `ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace`: a `<code>` or `<pre>`
-  does, and so does anything with the `mono` class. Text in the UI font inside code, such as a review
-  thread in the diff, takes the `sans` class. Descriptions, comments and other long text take the
-  `reading` class, a line height of 1.5. A key in `<kbd>` keeps the UI font. No component names a font
-  family of its own, and a test fails on one that does.
+  does, and so does anything with the `mono` class. Lines of code take 12 px from the `code-lines` class:
+  the diff's, and the file view's and the Definition peek's, so a file shows at one size wherever it is
+  drawn, and the line Go to definition lands on takes the `landed` class in all three. Text in the UI font
+  inside code, such as a review thread in the diff, takes the `sans` class. Descriptions, comments and
+  other long text take the `reading` class, a line height of 1.5. A key in `<kbd>` keeps the UI font. No
+  component names a font family of its own, and a test fails on one that does.
 - **Buttons.** A 1 px `border`, 4 px corners, `2px 8px` padding, `bg_chrome` behind, a tint of the text
   colour under the pointer, and half opacity when disabled. A button that reads as a link takes the `link`
   class: plain text, underlined under the pointer and with the focus.
@@ -166,7 +168,7 @@ A core test fails when this table and the built-in Themes disagree.
 | `add` | Added lines, as a tint | `#48a14d` | `#79740e` | `#2ea043` | `#b8bb26` |
 | `del` | Removed lines, as a tint | `#e51400` | `#9d0006` | `#f85149` | `#fb4934` |
 | `find` | The search's matches in the diff, as a tint | `#f8c94a` | `#d79921` | `#9e6a03` | `#d79921` |
-| `find_current` | The match the search is on | `#a8ac94` | `#d5c4a1` | `#515c6a` | `#665c54` |
+| `find_current` | The match the search is on, and as a tint, the line Go to definition lands on | `#a8ac94` | `#d5c4a1` | `#515c6a` | `#665c54` |
 | `find_current_fg` | The text of the match the search is on | `#3b3b3b` | `#282828` | `#cccccc` | `#fbf1c7` |
 | `attention` | The mark on a draft from the user's Pending review | `#bf8803` | `#b57614` | `#cca700` | `#fabd2f` |
 | `danger` | Errors, missed budgets in the HUD, failed CI and a Review that requests changes | `#e51400` | `#9d0006` | `#f14c4c` | `#fb4934` |

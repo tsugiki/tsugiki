@@ -32,6 +32,17 @@ samp,
   font-family: var(--mono);
 }
 
+/* Lines of code: the diff's rows, and the file view's and the Definition peek's lines, so a file shows at
+   one size wherever it is drawn (#754). */
+.code-lines {
+  font-size: 12px;
+}
+
+/* The line Go to definition lands on, in the diff, the file view and the Definition peek (#754). */
+.landed {
+  background: color-mix(in srgb, var(--find-current) 50%, transparent);
+}
+
 /* Prose inside something in the code font, such as a review thread in the diff. */
 .sans {
   font-family: var(--sans);

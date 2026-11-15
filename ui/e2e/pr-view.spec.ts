@@ -233,6 +233,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     },
   };
   await mockCore(page, {
+    themes: { status: "ok", data: themes },
     home: { screen: "repository", repository, others: [] as string[] },
     workbench: {
       status: "ok",
@@ -497,14 +498,26 @@ test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at it
   await page.keyboard.press("End");
   await page.keyboard.press("Enter");
   const diff = pane.getByRole("region", { name: "Diff" });
+  // The mark fades and goes, so its colour is read while it shows.
+  const landed = await diff
+    .locator(".mark")
+    .evaluate((mark) => getComputedStyle(mark).backgroundColor, undefined, { timeout: 1000 });
   await expect(diff).toBeFocused();
   await expect(pane.locator("#pr-tab-files")).toHaveAttribute("aria-selected", "true");
   await expect(rail).toBeVisible();
   // A click on the match in a file the PR doesn't change opens the file view at its line.
   await results.getByRole("treeitem").nth(1).click();
 
-  await expect(pane.getByRole("region", { name: "File view" })).toContainText("# more to come");
+  const view = pane.getByRole("region", { name: "File view" });
+  await expect(view).toContainText("# more to come");
   await expect(pane.getByRole("button", { name: "← Back to PR #10's diff" })).toBeVisible();
+  // The file view draws its code at the diff's size, and marks the line it landed on as the diff does
+  // (#754).
+  await expect(diff).toHaveCSS("font-size", "12px");
+  await expect(view.getByRole("region", { name: "Definition's code" })).toHaveCSS("font-size", "12px");
+  expect(landed).not.toBe("rgba(0, 0, 0, 0)");
+  await expect(view.locator(".line.landed")).toHaveText("12# more to come");
+  await expect(view.locator(".line.landed")).toHaveCSS("background-color", landed);
 });
 
 /** A new file at `path` whose header is row `row`, adding `added` lines, which together are taller than the

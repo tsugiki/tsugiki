@@ -126,3 +126,33 @@ it("puts each overlay on the scrim, and the performance HUD above it", () => {
   expect(tags.filter((tag) => !hasScrimClass(tag))).toEqual([]);
   expect(zIndices(sources["src/lib/ui/PerformanceHud.svelte"] ?? "")).toEqual(["var(--layer-hud)"]);
 });
+
+/** The body of each rule in `css` whose selector is `selector` alone, at the start of a line. */
+const rulesOf = (css: string, selector: string) =>
+  [...css.matchAll(/^[ \t]*([^{}\n]+?)\s*\{([^}]*)\}/gm)]
+    .filter((match) => match[1] === selector)
+    .map((match) => match[2] ?? "");
+
+it("finds a rule's body by its selector", () => {
+  expect(rulesOf(".a {\n  color: red;\n}\n  .a.b {\n  top: 0;\n}\n  .a {\n  left: 0;\n}", ".a")).toEqual([
+    "\n  color: red;\n",
+    "\n  left: 0;\n",
+  ]);
+});
+
+// The file view and the Definition peek drew their code at the window's 14px, and marked the line Go to
+// definition landed on in another colour than the diff's (#754). window.css now gives both, once.
+it("draws code at one size, and the line Go to definition lands on in one colour, from window.css", () => {
+  const diff = sources["src/lib/ui/DiffRows.svelte"] ?? "";
+  const peek = sources["src/lib/ui/PeekCode.svelte"] ?? "";
+  const styleOf = (source: string) => /<style>([\s\S]*)<\/style>/.exec(source)?.[1] ?? "";
+
+  expect(rulesOf(windowCss, ".code-lines")).toEqual([expect.stringContaining("font-size: 12px;")]);
+  expect(rulesOf(windowCss, ".landed")).toEqual([expect.stringContaining("var(--find-current)")]);
+  expect(diff).toContain('class="scroller mono code-lines"');
+  expect(peek).toContain('class="code mono code-lines"');
+  expect(diff).toContain('class={["mark landed"');
+  expect(peek).toContain('at === mark.line && "landed"');
+  expect([styleOf(diff), styleOf(peek)].filter((style) => style.includes("font-size"))).toEqual([]);
+  expect(rulesOf(styleOf(diff), ".mark").filter((body) => body.includes("background"))).toEqual([]);
+});

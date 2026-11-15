@@ -1,12 +1,13 @@
 <!-- The hit's code in the Definition peek (#439): its file with line numbers in the gutter, scrolled so the
-     hit's line sits a few rows from the top, and marked. It scrolls inside the peek, and draws only the rows
-     near what shows, asking the core for their lines as they come into view, highlighted as the diff's rows
-     are (#455). In the peek a click puts the caret on a word and a double-click selects it, as in the diff,
-     for `Alt+F12` to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls`
-     lets the Detail pane's ↑ and ↓ scroll it there. The file view picks words too, goes to a word's
-     definition on Ctrl+click, Cmd+click on macOS, and opens the Definition peek under one of its lines as an
-     inset, which pushes the lines after it down (#457), or split below it, which keeps the line it opened
-     under in view (#459). -->
+     hit's line sits a few rows from the top, and marked. It takes the diff's size and marks the line as the
+     diff does, from window.css (#754). It scrolls inside the peek, and draws only the rows near what shows,
+     asking the core for their lines as they come into view, highlighted as the diff's rows are (#455). In
+     the peek a click puts the caret on a word and a double-click selects it, as in the diff, for `Alt+F12`
+     to look it up (#447). The file view shows its file the same way (#453), and `data-scrolls` lets the
+     Detail pane's ↑ and ↓ scroll it there. The file view picks words too, goes to a word's definition on
+     Ctrl+click, Cmd+click on macOS, and opens the Definition peek under one of its lines as an inset, which
+     pushes the lines after it down (#457), or split below it, which keeps the line it opened under in view
+     (#459). -->
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import type { CodePick, HitCode } from "$lib/state/hit-code.svelte";
@@ -170,7 +171,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class="code mono"
+  class="code mono code-lines"
   role="region"
   aria-label="Definition's code"
   tabindex="0"
@@ -207,7 +208,7 @@
       {#each drawn as at (at)}
         {@const text = code.line(at)}
         <!-- prettier-ignore -->
-        <div class={["line", at === mark.line && "hit"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], code.pick?.line === at ? code.pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
+        <div class={["line", at === mark.line && "landed"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], code.pick?.line === at ? code.pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
       {/each}
       {#if inset !== undefined}
         <div class="inset" data-inset={id}>{@render inset.box(under * ROW, inset.peek, extra)}</div>
@@ -253,10 +254,6 @@
     line-height: 20px;
     white-space: pre;
     tab-size: 8;
-  }
-
-  .hit {
-    background: var(--find);
   }
 
   .number {

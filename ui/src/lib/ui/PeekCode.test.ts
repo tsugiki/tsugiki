@@ -61,7 +61,7 @@ it("paints each line's spans in the theme's syntax colours once they come", asyn
   render(PeekCode, { code, mark: hit });
 
   const hitLine = await vi.waitFor(() => {
-    const line = document.querySelector(".hit .text");
+    const line = document.querySelector(".landed .text");
     expect(line?.querySelector(".hl-function")).not.toBeNull();
     return line;
   });

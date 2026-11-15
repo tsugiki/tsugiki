@@ -47,11 +47,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   no settings, and reads the Repository's own.
 - ty drops its whole configuration over a version it doesn't know: ty 0.0.103 knows up to 3.15, and
   CPython's main branch says 3.16. Without `Lib`, a standard library name lands on typeshed's stub, and
-  from there in the Python on PATH. ty says so with an error in `window/showMessage`, and its text holds
-  serde's "unknown variant `3.16`". Tsugiki then answers `workspace/configuration` with `Lib` alone, and
-  has ty ask again by taking its workspace folder away and giving it back, as ty 0.0.103 ignores
-  `workspace/didChangeConfiguration`. It does this once for each ty it starts. A lookup in the moment
-  between the refusal and ty's second ask still gets the answer without `Lib`.
+  from there in the Python on PATH. ty says so with an error in `window/showMessage` that names
+  `ty.configuration` and the version, and Tsugiki looks for those two names alone. It then answers
+  `workspace/configuration` with `Lib` alone, and has ty ask again by taking its workspace folder away and
+  giving it back, as ty 0.0.103 ignores `workspace/didChangeConfiguration` and says it hears folder
+  changes. It does this once each time ty starts, and a new start meets the refusal again. A lookup in the
+  moment between the refusal and ty's second ask still gets the answer without `Lib`.
 - The PR's changed Python files open on ty with their text at the head, read from the **Mirror**, and stay
   open while ty runs. A lookup from a removed line first gives them their text at the base through
   `didChange`, and the next lookup from another line puts the head's back. A file the PR adds keeps its

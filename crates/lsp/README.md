@@ -15,9 +15,11 @@ this is the client they ask through.
 - Sends `initialize` with what the client can do and the server's own options, waits for the answer, then
   sends `initialized`. A started server offers nothing else until then, as LSP lets nothing reach a server
   first. The client answers the server's `workspace/configuration` from settings the caller gives it.
-- Logs each error the server shows with `window/showMessage`. An error that holds the text the caller
+- Logs each error the server shows with `window/showMessage`. An error that holds each text the caller
   names as the server refusing its settings switches the client to the caller's fallback settings, once.
-  The client then has the server ask again, by taking its workspace folder away and giving it back.
+  The client then has the server ask again, by taking its workspace folder away and giving it back, if
+  the server's answer to `initialize` says it hears folder changes. Otherwise it logs that the server gets
+  the fallback only if it asks again.
 - Opens documents with `didOpen`, sends each change as the full text with `didChange`, and closes them with
   `didClose`. It counts each document's versions.
 - Asks `textDocument/definition`, and returns the locations or links the server answers with.

@@ -75,13 +75,19 @@ pub struct Init {
 }
 
 /// Settings the client answers `workspace/configuration` from once the server refuses the first ones,
-/// which it says by showing an error that holds `refusal`. The client then has the server ask again, by
-/// taking its workspace folder away and giving it back: ty 0.0.103 has no handler for
-/// `workspace/didChangeConfiguration`. It does that once, whatever the server says next.
+/// which it says by showing an error that holds each text in `refusal`. The client then has the server ask
+/// again, by taking its workspace folder away and giving it back, if the server says it hears that: ty
+/// 0.0.103 has no handler for `workspace/didChangeConfiguration`. It does that once, whatever the server
+/// says next.
 #[derive(Clone, Debug)]
 pub struct Fallback {
-    pub refusal: String,
+    pub refusal: Vec<String>,
     pub settings: Value,
+}
+
+/// The workspace folders of a client that works in `root`, as LSP lists them.
+fn folders(root: &impl serde::Serialize) -> Value {
+    json!([{"uri": root, "name": root}])
 }
 
 /// A message a server sends the caller without being asked.
@@ -255,7 +261,7 @@ impl Starting {
             "processId": std::process::id(),
             "clientInfo": {"name": "Tsugiki", "version": env!("CARGO_PKG_VERSION")},
             "rootUri": root,
-            "workspaceFolders": [{"uri": root, "name": root}],
+            "workspaceFolders": folders(&root),
             "capabilities": {
                 "general": {"positionEncodings": ["utf-16"]},
                 "workspace": {"configuration": true, "workspaceFolders": true},
@@ -326,6 +332,7 @@ impl Server {
             root: None,
             settings: Value::Null,
             fallback: None,
+            hears_folder_changes: false,
             tail: Vec::new(),
             life: Life::Running,
         };
@@ -539,6 +546,8 @@ struct Owner {
     settings: Value,
     /// The settings to give the server if it refuses `settings`, until it has.
     fallback: Option<Fallback>,
+    /// Whether the server, initialized, said it hears `workspace/didChangeWorkspaceFolders`.
+    hears_folder_changes: bool,
     /// The end of the server's error output, at most [`TAIL_BYTES`].
     tail: Vec<u8>,
     life: Life,
@@ -675,6 +684,10 @@ impl Owner {
                 match then {
                     Some(Then::Initialized) => {
                         self.write(rpc::notification(Method::Initialized.name(), json!({})));
+                        let initialized =
+                            serde_json::from_value::<InitializeResult>(result.clone());
+                        self.hears_folder_changes =
+                            initialized.is_ok_and(|result| result.hears_folder_changes());
                     }
                     Some(Then::Exit) => {
                         self.write(rpc::notification(Method::Exit.name(), Value::Null));
@@ -711,7 +724,7 @@ impl Owner {
                     }),
                 }
             }
-            "workspace/workspaceFolders" => Ok(json!([{"uri": self.root, "name": self.root}])),
+            "workspace/workspaceFolders" => Ok(folders(&self.root)),
             // The client shows progress whoever starts it, and registers nothing.
             "window/workDoneProgress/create"
             | "client/registerCapability"
@@ -766,12 +779,21 @@ impl Owner {
             return;
         }
         log::warn!("A language server says: {}", shown.message);
-        let refused = |fallback: &mut Fallback| shown.message.contains(&fallback.refusal);
+        let refused = |fallback: &mut Fallback| {
+            (fallback.refusal.iter()).all(|text| shown.message.contains(text.as_str()))
+        };
         let Some(fallback) = self.fallback.take_if(refused) else {
             return;
         };
         self.settings = fallback.settings;
-        let folders = json!([{"uri": self.root, "name": self.root}]);
+        if self.life != Life::Running || !self.hears_folder_changes {
+            log::warn!(
+                "A language server refused its settings, and can't be told to ask for others: it gets them \
+                 only if it asks again"
+            );
+            return;
+        }
+        let folders = folders(&self.root);
         let changes = [
             json!({"added": [], "removed": folders}),
             json!({"added": folders, "removed": []}),

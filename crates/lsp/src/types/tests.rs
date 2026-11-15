@@ -3,8 +3,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{
-    Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, MessageKind, Position,
-    Progress, ProgressToken, Range, Severity, ShowMessage, Uri, WorkDone,
+    Definitions, Diagnostic, Diagnostics, InitializeResult, Language, Location, LocationLink,
+    MessageKind, Position, Progress, ProgressToken, Range, Severity, ShowMessage, Uri, WorkDone,
 };
 
 fn uri(text: &str) -> Uri {
@@ -211,6 +211,25 @@ fn each_severity_reads_from_its_number_and_no_other_does() {
         Severity::try_from(5).unwrap_err(),
         "5 isn't a diagnostic's severity"
     );
+}
+
+#[test]
+fn a_server_hears_folder_changes_when_it_says_so_with_true_or_a_registration_id() {
+    let hears = |folders: Value| {
+        let result = json!({"capabilities": {"workspace": {"workspaceFolders": folders}}});
+        serde_json::from_value::<InitializeResult>(result)
+            .unwrap()
+            .hears_folder_changes()
+    };
+
+    assert!(hears(
+        json!({"supported": true, "changeNotifications": true})
+    ));
+    assert!(hears(json!({"changeNotifications": "folders"})));
+    assert!(!hears(
+        json!({"supported": true, "changeNotifications": false})
+    ));
+    assert!(!hears(json!({"supported": true})));
 }
 
 #[test]

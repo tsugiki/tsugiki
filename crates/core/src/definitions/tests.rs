@@ -279,14 +279,21 @@ fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
         "def eggs(count):",
     )];
 
-    // ty asks for its settings again once it has refused them, which a lookup at once can beat.
+    // ty asks for its settings again once it has refused them, which a lookup at once can beat, and a
+    // lookup while its workspace comes back may fail.
     let until = Instant::now() + Duration::from_secs(5);
     let found = (0..)
-        .map(|_| hits(look(&mut owner, &eggs)))
-        .find(|found| *found == spam || Instant::now() > until)
+        .map(|_| {
+            thread::sleep(Duration::from_millis(50));
+            look(&mut owner, &eggs)
+        })
+        .find(|answer| {
+            let landed = matches!(answer, Ok(Answer::Found { hits }) if *hits == spam);
+            landed || Instant::now() > until
+        })
         .unwrap();
 
-    assert_eq!(found, spam);
+    assert_eq!(hits(found), spam);
 }
 
 #[test]

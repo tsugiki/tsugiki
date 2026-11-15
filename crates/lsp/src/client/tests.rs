@@ -213,17 +213,20 @@ fn show(fake: &mut Fake, kind: u8, message: &str) {
 #[test]
 fn a_server_that_refuses_the_settings_gets_the_fallback_once_and_asks_for_it_again() {
     let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
-    let fallback = Fallback {
-        refusal: "unknown variant `3.99`".to_owned(),
-        settings: json!({"ty": {"root": ["Lib"]}}),
-    };
-    let (_server, _events, mut fake) = initialized_with(settings.clone(), Some(fallback));
+    let folder_changes = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
+    let (_server, _events, mut fake) =
+        initialized_with(settings.clone(), Some(fallback()), folder_changes);
     let refusal =
         "Invalid `ty.configuration` options: unknown variant `3.99`, expected one of `3.15`";
 
-    // A warning, an error about something else, and a message that doesn't parse change nothing.
+    // A warning, an error that holds one text of the refusal and not the other, and a message that
+    // doesn't parse change nothing.
     show(&mut fake, 2, refusal);
-    show(&mut fake, 1, "Something else is wrong");
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: missing field `root`",
+    );
     show(&mut fake, 9, refusal);
     assert_eq!(ty_settings(&mut fake), settings["ty"]);
     show(&mut fake, 1, refusal);
@@ -242,6 +245,29 @@ fn a_server_that_refuses_the_settings_gets_the_fallback_once_and_asks_for_it_aga
     assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
     // Once: the next message the client writes after another refusal is its answer.
     show(&mut fake, 1, refusal);
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+/// A fallback for a server that refuses Python 3.99 in `ty.configuration`.
+fn fallback() -> Fallback {
+    Fallback {
+        refusal: vec!["ty.configuration".to_owned(), "`3.99`".to_owned()],
+        settings: json!({"ty": {"root": ["Lib"]}}),
+    }
+}
+
+#[test]
+fn a_server_that_doesn_t_hear_folder_changes_gets_the_fallback_when_it_next_asks_and_no_push() {
+    let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
+    let (_server, _events, mut fake) = initialized_with(settings, Some(fallback()), json!({}));
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+
+    // The next message the client writes is its answer, with nothing pushed before it.
     assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
 }
 

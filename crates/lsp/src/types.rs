@@ -165,11 +165,50 @@ pub struct ServerInfo {
     pub version: Option<String>,
 }
 
-/// The parts of the answer to `initialize` a caller reads.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// The parts of the answer to `initialize` the client reads.
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub(crate) struct InitializeResult {
     pub(crate) server_info: Option<ServerInfo>,
+    capabilities: ServerCapabilities,
+}
+
+impl InitializeResult {
+    /// Whether the server says it hears `workspace/didChangeWorkspaceFolders`.
+    pub(crate) fn hears_folder_changes(&self) -> bool {
+        let folders = &self.capabilities.workspace.workspace_folders;
+        match &folders.change_notifications {
+            Some(ChangeNotifications::Flag(hears)) => *hears,
+            Some(ChangeNotifications::Registration(id)) => !id.is_empty(),
+            None => false,
+        }
+    }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct ServerCapabilities {
+    workspace: WorkspaceCapabilities,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct WorkspaceCapabilities {
+    workspace_folders: FolderCapabilities,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct FolderCapabilities {
+    change_notifications: Option<ChangeNotifications>,
+}
+
+/// LSP's `changeNotifications`: a flag, or the id the server registers for the notification under.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ChangeNotifications {
+    Flag(bool),
+    Registration(String),
 }
 
 /// A language, by its LSP identifier, which a document is opened with.

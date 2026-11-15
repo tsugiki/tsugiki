@@ -81,6 +81,14 @@ it("shows a key two remapped actions share only by the one it runs", () => {
   expect(keysOf("Issue list").filter((key) => key.startsWith("X "))).toEqual(["X Mute"]);
 });
 
+it("keeps Tab inside, so the focus can't reach the page behind", async () => {
+  show([]);
+  const close = screen.getByRole("button", { name: "Close" });
+  close.focus();
+  const stayed = await fireEvent.keyDown(close, { key: "Tab" });
+  expect([stayed, document.activeElement]).toEqual([false, close]);
+});
+
 it("closes on Esc, Close and a press outside", async () => {
   const onclose = show([]);
   await fireEvent.keyDown(window, { key: "Escape" });

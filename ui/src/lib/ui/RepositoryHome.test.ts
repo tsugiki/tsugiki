@@ -1166,6 +1166,28 @@ it("names the views whose keys work where a press goes, for the `?` list", async
   expect(keysIn("diff").every((row) => here.works(row))).toBe(true);
 });
 
+it("lists for `?` only the keys that would run: the PR view's while a PR shows, a text box's in one", async () => {
+  const { component, issueRow, treeRow } = await listing();
+  const box = document.createElement("input");
+  document.body.append(box);
+  /** Whether each key that works anywhere would run for a press on `target`. */
+  const works = (target: EventTarget | null) => {
+    const here = component.keysHere(target);
+    return Object.fromEntries(keysIn("anywhere").map((row) => [row.action, here.works(row)]));
+  };
+  const inBox = works(box);
+  box.remove();
+  await fireEvent.click(issueRow);
+  const onIssue = works(document.body);
+  await fireEvent.click(treeRow);
+  await screen.findByRole("tab", { name: "Files" });
+
+  // The page decides on its own actions, such as Command Palette.
+  expect(inBox).toMatchObject({ toggle_sidebar: true, toggle_detail_only: false, command_palette: true });
+  expect(onIssue).toMatchObject({ next_tab: false, toggle_rail_files: false, toggle_detail_only: true });
+  expect(works(document.body)).toMatchObject({ next_tab: true, toggle_rail_files: true });
+});
+
 it("moves between a PR's files with Alt+PageDown and Alt+PageUp on its Files tab", async () => {
   const next = vi.spyOn(PrFilesState.prototype, "nextFile");
   const files = await onFiles();

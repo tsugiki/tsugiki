@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { actionOn, isChordStart, keyOf, keyTable, ownsKey, remapKeys, startsChordOf } from "./keymap.svelte";
+import {
+  actionOn,
+  chordFirst,
+  isChordStart,
+  keyOf,
+  keysIn,
+  keyTable,
+  ownsKey,
+  remapKeys,
+  startsChordOf,
+} from "./keymap.svelte";
 
 afterEach(() => {
   remapKeys({});
@@ -67,6 +77,25 @@ describe("the key table", () => {
       startsChordOf("ctrl+k", ["open_settings"]),
       startsChordOf("ctrl+k", ["pin"]),
     ]).toEqual([true, false, true]);
+  });
+
+  it("starts no chord on an action with no key or a key of one press", () => {
+    expect([startsChordOf("ctrl+k", ["reset_layout"]), startsChordOf("ctrl+shift", ["toggle_hud"])]).toEqual([
+      false,
+      false,
+    ]);
+  });
+
+  it("names a chord's first press", () => {
+    expect(chordFirst("ctrl+k z")).toBe("ctrl+k");
+  });
+
+  it("lists in a context only the keys that run their action, not one a chord's wait takes", () => {
+    remapKeys({ toggle_hud: "ctrl+k", archive: "x", mute: "x" });
+    const listed = [...keysIn("anywhere"), ...keysIn("issue_list")].map((row) => row.action);
+    expect(listed).toEqual(expect.arrayContaining(["mute", "pick_theme"]));
+    expect(listed).not.toContain("toggle_hud");
+    expect(listed).not.toContain("archive");
   });
 
   it("puts each default back once the remaps change again", () => {

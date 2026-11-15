@@ -1319,6 +1319,7 @@ describe("the key list", () => {
   /** The titles of the actions the list names. */
   const titles = () => screen.getAllByRole("definition").map((title) => title.textContent);
 
+  // Switch Repository has no Repository to switch from.
   it("lists only the page's own keys on onboarding, which has no Repository's screen", async () => {
     render(Page);
     await screen.findByText(/Your token comes from/);
@@ -1329,7 +1330,6 @@ describe("the key list", () => {
       "Command Palette",
       "Pick a Theme",
       "Reload Themes",
-      "Switch Repository",
       "Open Settings",
       "Show or Hide the Performance HUD",
       "List the View's Keys",

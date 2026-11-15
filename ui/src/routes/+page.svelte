@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
-  import { type Action, isChord, type KeyedRow, startsChordOf } from "$lib/state/keymap.svelte";
+  import { type Action, chordFirst, isChord, type KeyedRow, startsChordOf } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -13,14 +13,7 @@
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
   import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
-  import {
-    type Bindings,
-    currentOs,
-    isTextBox,
-    keyGuard,
-    typesInTextBox,
-    worksInTextBox,
-  } from "$lib/ui/keys";
+  import { type Bindings, currentOs, isTextBox, keyGuard, typesInTextBox } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
@@ -81,9 +74,11 @@
   const openAdd = () => {
     if (!dialogOpen) addOpen = true;
   };
+  /** Whether a Repository's screen shows. */
+  const onRepository = () => home.current?.screen === "repository";
   /** Opens the Repository picker, which only a Repository's screen has. */
   const openPicker = () => {
-    if (home.current?.screen === "repository" && !dialogOpen) pickerOpen = true;
+    if (onRepository() && !dialogOpen) pickerOpen = true;
   };
   /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
   let settingsAt = $state<ServerName>();
@@ -120,50 +115,91 @@
   const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
+  /** One of the page's actions: what its key runs, and `when` it can run at all, which the keys and the `?`
+   * list both ask. A dialog on top stops most of them too, as each says. */
+  interface PageAction {
+    when: () => boolean;
+    run: (e: KeyboardEvent) => void;
+  }
+  const always = () => true;
   /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549). */
-  const pageBindings: Bindings = {
-    command_palette: () => {
-      if (!dialogOpen) paletteOpen = true;
-    },
-    switch_repository: openPicker,
-    open_settings: openSettings,
-    toggle_hud: () => {
-      hud.toggle();
-    },
-    pick_theme: () => {
-      if (!dialogOpen) openThemePicker();
-    },
-    reload_themes: reloadThemes,
+  const PAGE_ACTIONS = new Map<Action, PageAction>([
+    [
+      "command_palette",
+      {
+        when: always,
+        run: () => {
+          if (!dialogOpen) paletteOpen = true;
+        },
+      },
+    ],
+    ["switch_repository", { when: onRepository, run: openPicker }],
+    ["open_settings", { when: always, run: openSettings }],
+    [
+      "toggle_hud",
+      {
+        when: always,
+        run: () => {
+          hud.toggle();
+        },
+      },
+    ],
+    [
+      "pick_theme",
+      {
+        when: always,
+        run: () => {
+          if (!dialogOpen) openThemePicker();
+        },
+      },
+    ],
+    ["reload_themes", { when: always, run: reloadThemes }],
     // The list shows the keys that work where the press went, so it asks before it takes the focus.
-    show_keys: (e) => {
-      if (!dialogOpen) keysHere = keysAt(e.target);
-    },
-  };
+    [
+      "show_keys",
+      {
+        when: always,
+        run: (e) => {
+          if (!dialogOpen) keysHere = keysAt(e.target);
+        },
+      },
+    ],
+  ]);
+  const pageBindings: Bindings = Object.fromEntries(
+    [...PAGE_ACTIONS].map(([action, { when, run }]) => [
+      action,
+      (e: KeyboardEvent) => {
+        if (when()) run(e);
+      },
+    ]),
+  );
   const guard = keyGuard(pageBindings, os);
-  const pageActions = Object.keys(pageBindings) as Action[];
+  const pageActions = [...PAGE_ACTIONS.keys()];
   /**
-   * Which keys work for a press on `target`, for the `?` list. Off a Repository's screen only the page's own
-   * do, and Open DevTools, which the webview opens itself. In a text box a key works only for an action that
-   * works there, and not when it types, nor a chord of the screen's, as `chordStart` has it. Open DevTools
-   * works only in a development build.
+   * Which keys work for a press on `target`, for the `?` list. The screen says which of its actions would
+   * run, and the page which of its own. Off a Repository's screen only the page's own work, and Open
+   * DevTools, which the webview opens itself, in a development build only. A text box keeps a key that
+   * types there, as the guard and `chordStart` leave it, and a chord of the screen's, which doesn't start
+   * there.
    */
   function keysAt(target: EventTarget | null): KeysHere {
     const onScreen = repositoryHome?.keysHere(target) ?? {
       views: [],
-      works: (row: KeyedRow) => pageActions.includes(row.action) || row.action === "open_devtools",
+      works: (row: KeyedRow) => PAGE_ACTIONS.has(row.action) || row.action === "open_devtools",
     };
     const inTextBox = isTextBox(target);
     const development = about.about?.build === "development";
-    const typesIn = (row: KeyedRow) =>
+    const keptByTextBox = (row: KeyedRow) =>
       isChord(row.key)
-        ? !pageActions.includes(row.action) || typesInTextBox(row.key.slice(0, row.key.indexOf(" ")))
+        ? !PAGE_ACTIONS.has(row.action) || typesInTextBox(chordFirst(row.key))
         : typesInTextBox(row.key);
     return {
       views: onScreen.views,
       works: (row) =>
         onScreen.works(row) &&
+        (PAGE_ACTIONS.get(row.action)?.when() ?? true) &&
         (development || row.action !== "open_devtools") &&
-        (!inTextBox || (worksInTextBox(row.action) && !typesIn(row))),
+        !(inTextBox && keptByTextBox(row)),
     };
   }
   const runPage: ChordRun = (action, e) => {

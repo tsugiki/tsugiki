@@ -567,20 +567,152 @@
     }
   }
 
-  /** The diff's actions that work in the file view over it, which looks up the word picked in it (#457). */
-  const IN_FILE_VIEW: ReadonlySet<Action> = new Set(["go_to_definition", "peek_definition"]);
+  /** What a press runs, handed the press. */
+  type Run = (e: KeyboardEvent) => void;
+
+  /** One of the screen's actions: `at` gives what a press on `target` runs, or undefined where the action
+   * can't run, and `inTextBox` lets it run in a text box, as long as its key types nothing there. The keys
+   * run what `at` gives, and the `?` list asks it, so the two can't disagree. */
+  interface ScreenAction {
+    at: (target: EventTarget | null) => Run | undefined;
+    inTextBox?: true;
+  }
+
+  /** Switches the tabs of the PR view on show, while one shows. */
+  const tabSwitch: ScreenAction["at"] = () => {
+    const view = detail instanceof PrViewState ? detail : undefined;
+    return (
+      view &&
+      ((e) => {
+        e.preventDefault();
+        view.switchTab();
+      })
+    );
+  };
+
+  /** Runs `step` on the Files tab's diff while it shows. The file view covers the diff, so the diff's keys
+   * wait until Back (#453). */
+  const onDiff =
+    (step: (files: PrFilesState) => void): ScreenAction["at"] =>
+    () => {
+      const files = shownFiles();
+      return (
+        files &&
+        ((e) => {
+          e.preventDefault();
+          step(files);
+        })
+      );
+    };
+
+  /** Runs `step` on the Files tab, with or without the file view over it, which looks up the word picked
+   * in it (#457). A held key would ask the language server again and again. */
+  const onTab =
+    (step: (tab: PrFilesState) => Promise<void>): ScreenAction["at"] =>
+    () => {
+      const tab = filesTab();
+      return (
+        tab &&
+        ((e) => {
+          e.preventDefault();
+          if (!e.repeat) void step(tab);
+        })
+      );
+    };
+
+  /** Marks the item `Q` and `Shift+Q` act on, while there is one. A held key would ask the core again and
+   * again. */
+  const marking =
+    (mark: (marked: Marked, target: EventTarget | null) => Promise<void>): ScreenAction["at"] =>
+    (target) => {
+      const marked = keyMarked(target);
+      return (
+        marked &&
+        ((e) => {
+          if (!e.repeat) void mark(marked, target);
+        })
+      );
+    };
+
+  /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block
+   * sideways. */
+  const folding =
+    (action: "unfold" | "fold"): ScreenAction["at"] =>
+    (target) =>
+      inList(target)
+        ? (e) => {
+            e.preventDefault();
+            foldByKey(action);
+          }
+        : undefined;
+
+  /** The screen's actions, each with what its key runs and when. A held key on Ctrl+B or Ctrl+Alt+B would
+   * flicker the pane and save the file each time. */
+  const SCREEN_ACTIONS: Partial<Record<Action, ScreenAction>> = {
+    toggle_sidebar: {
+      inTextBox: true,
+      at: () => (e) => {
+        if (!e.repeat) void toggleSidebarByKey();
+      },
+    },
+    open_on_github: {
+      inTextBox: true,
+      at: () => {
+        const current = currentOnGitHub();
+        return current && (() => void onGitHub(current));
+      },
+    },
+    toggle_diff_view: { inTextBox: true, at: onDiff(() => diffView.toggle()) },
+    find_in_diff: { inTextBox: true, at: onDiff((files) => files.openSearch()) },
+    toggle_detail_only: { at: () => () => void toggleDetailOnly() },
+    toggle_files_mode: { at: onDiff((files) => files.toggleMode()) },
+    unfold_unchanged: { at: onDiff((files) => files.unfoldUnchanged()) },
+    toggle_rail_files: { at: () => (showsPr() ? toggleRail : undefined) },
+    mark_seen: { at: marking((marked, target) => markSeen(marked, !forDetail(target))) },
+    mark_unseen: { at: marking((marked) => markUnseen(marked)) },
+    toggle_issue_list: {
+      at: () => (e) => {
+        if (!e.repeat) void toggleListByKey();
+      },
+    },
+    unfold: { at: folding("unfold") },
+    fold: { at: folding("fold") },
+    next_tab: { at: tabSwitch },
+    previous_tab: { at: tabSwitch },
+    next_file: { at: onDiff((files) => files.nextFile(1)) },
+    previous_file: { at: onDiff((files) => files.nextFile(-1)) },
+    next_thread: { at: onDiff((files) => files.nextThread(1)) },
+    previous_thread: { at: onDiff((files) => files.nextThread(-1)) },
+    next_change: { at: onDiff((files) => files.nextChange(1)) },
+    previous_change: { at: onDiff((files) => files.nextChange(-1)) },
+    peek_definition: { at: onTab((tab) => tab.peekDefinition()) },
+    go_to_definition: { at: onTab((tab) => tab.goToDefinition()) },
+    go_back: { at: () => (e) => goByKey(e, -1) },
+    go_forward: { at: () => (e) => goByKey(e, 1) },
+  };
+
+  function goByKey(e: KeyboardEvent, steps: -1 | 1) {
+    e.preventDefault();
+    goThrough(steps);
+  }
+
+  /** What `action` runs for a press on `target`, or undefined where it can't run, or isn't the screen's. */
+  function runnable(action: Action, target: EventTarget | null): Run | undefined {
+    const screenAction = SCREEN_ACTIONS[action];
+    if (screenAction === undefined || (isTextBox(target) && screenAction.inTextBox === undefined)) return;
+    return screenAction.at(target);
+  }
 
   /** Which keys of the screen work for a press on `target`, for the `?` list: the list's while the press
-   * goes to the list, as `inList` says, and the diff's while the Files tab shows, wherever the focus is. The
-   * file view over the diff keeps only its lookups. The page knows which keys a text box keeps. */
+   * goes to the list, as `inList` says, and the diff's while the Files tab shows. Of the screen's actions,
+   * those that would run; the page decides on its own. */
   export function keysHere(target: EventTarget | null): KeysHere {
     const views: View[] = [];
     if (inList(target)) views.push("issue_list");
     if (filesTab()) views.push("diff");
-    const covered = shownFiles() === undefined;
     return {
       views,
-      works: (row) => row.context !== "diff" || !covered || IN_FILE_VIEW.has(row.action),
+      works: (row) => !(row.action in SCREEN_ACTIONS) || runnable(row.action, target) !== undefined,
     };
   }
 
@@ -625,36 +757,11 @@
     // A key that types does so in a text box, whatever its action: `[keys]` may give Hide or Show the Sidebar
     // a plain key.
     if (key !== null && typesInTextBox(key) && isTextBox(e.target)) return;
-    if (action === "toggle_sidebar") {
-      // A held key would flicker the Sidebar and save the file each time.
-      if (!e.repeat) void toggleSidebarByKey();
-    } else if (action === "open_on_github") {
-      const current = currentOnGitHub();
-      if (current) void onGitHub(current);
-    } else if (action === "toggle_diff_view" && files) {
-      e.preventDefault();
-      diffView.toggle();
-    } else if (action === "find_in_diff" && files) {
-      files.openSearch();
+    const run = action && runnable(action, e.target);
+    if (run) {
+      run(e);
     } else if (isTextBox(e.target)) {
       return;
-    } else if (action === "toggle_detail_only") {
-      void toggleDetailOnly();
-    } else if (action === "toggle_files_mode") {
-      files?.toggleMode();
-    } else if (action === "unfold_unchanged") {
-      files?.unfoldUnchanged();
-    } else if (action === "toggle_rail_files") {
-      toggleRail();
-    } else if (action === "mark_seen" || action === "mark_unseen") {
-      // A held key would ask the core again and again.
-      if (e.repeat) return;
-      const marked = keyMarked(e.target);
-      if (action === "mark_seen") void markSeen(marked, !forDetail(e.target));
-      else void markUnseen(marked);
-    } else if (action === "toggle_issue_list") {
-      // A held key would flicker the list and save the file each time.
-      if (!e.repeat) void toggleListByKey();
     } else if (key === "enter" && e.repeat) {
       // Each opening asks GitHub, and a held key isn't more than one.
       e.preventDefault();
@@ -664,10 +771,6 @@
     } else if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       moveCursor(key === "arrowdown" ? 1 : -1);
-    } else if ((action === "unfold" || action === "fold") && inList(e.target)) {
-      // Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block sideways.
-      e.preventDefault();
-      foldByKey(action);
     } else if (
       key === "enter" &&
       e.target === document.body &&
@@ -693,28 +796,6 @@
       // A PR opened from a row of its own has nothing under it, so it stays on show.
       e.preventDefault();
       back(detail.issue);
-    } else if ((action === "next_tab" || action === "previous_tab") && detail instanceof PrViewState) {
-      e.preventDefault();
-      detail.switchTab();
-    } else if ((action === "next_file" || action === "previous_file") && files) {
-      e.preventDefault();
-      files.nextFile(action === "next_file" ? 1 : -1);
-    } else if ((action === "next_thread" || action === "previous_thread") && files) {
-      e.preventDefault();
-      files.nextThread(action === "next_thread" ? 1 : -1);
-    } else if ((action === "next_change" || action === "previous_change") && files) {
-      e.preventDefault();
-      files.nextChange(action === "next_change" ? 1 : -1);
-    } else if (action === "peek_definition" && tab) {
-      // A held key would ask ty again and again. The file view looks up the word picked in it (#457).
-      e.preventDefault();
-      if (!e.repeat) void tab.peekDefinition();
-    } else if (action === "go_to_definition" && tab) {
-      e.preventDefault();
-      if (!e.repeat) void tab.goToDefinition();
-    } else if (action === "go_back" || action === "go_forward") {
-      e.preventDefault();
-      goThrough(action === "go_back" ? -1 : 1);
     }
   }
 

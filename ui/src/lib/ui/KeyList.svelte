@@ -2,10 +2,10 @@
      the core's key table with the user's remaps. The view's own keys come first, then those that work
      anywhere. It closes on Esc, Close or a press outside, and gives the focus back. -->
 <script lang="ts" module>
-  import type { KeyedRow } from "$lib/state/keymap.svelte";
+  import type { Context, KeyedRow } from "$lib/state/keymap.svelte";
 
-  /** A view whose keys work only there, which the list names. */
-  export type View = "issue_list" | "diff";
+  /** A view whose keys work only there, which the list names. The composer has none to list yet. */
+  export type View = Exclude<Context, "anywhere" | "composer">;
 
   /** Which keys work where a press went: the views it went to, whose keys the list shows before those that
    * work anywhere, and whether each row's key runs its action there. */
@@ -17,7 +17,7 @@
 
 <script lang="ts">
   import { keysIn } from "$lib/state/keymap.svelte";
-  import { closeOnPress, takeFocus } from "./focus";
+  import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
   import { bindingLabel, currentOs } from "./keys";
 
   let { here, onclose }: { here: KeysHere; onclose: () => void } = $props();
@@ -53,6 +53,7 @@
     aria-label="Keys"
     tabindex="-1"
     {@attach takeFocus}
+    onkeydown={keepFocusIn}
     onmousedown={(e) => {
       e.stopPropagation();
     }}

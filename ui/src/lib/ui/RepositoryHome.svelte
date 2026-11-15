@@ -584,10 +584,11 @@
     ];
   }
 
-  /** A click on an icon of the strip: brings back the full Sidebar at its width, and shows `view`. */
+  /** A click on an icon of the strip: shows `view` in the list, as a click on its line in the full Sidebar
+   * does, and brings back the full Sidebar at its width, with one save for both. */
   function showViewInFull(view: WorkbenchView) {
-    showView(view);
-    showSidebar(false);
+    void workbench.select(view);
+    void reshapeSidebar(() => panes.showFullSidebarAndList());
   }
 
   /** Shows `view` in the list, as a click on its line in the Sidebar does. */
@@ -1096,7 +1097,7 @@
       label="Sidebar width"
       sizes={{
         kind: "pane",
-        value: panes.sidebarIcons ? SIDEBAR_ICONS : (panes.sidebar ?? SIDEBAR_WIDTH),
+        value: panes.sidebar ?? SIDEBAR_WIDTH,
         nextLeast: panes.hidden("list") ? DETAIL_LEAST : LIST_LEAST + (detail ? DETAIL_LEAST : 0),
       }}
       least={SIDEBAR_LEAST}
@@ -1104,13 +1105,12 @@
       fold={{
         folded: panes.sidebarIcons,
         below: SIDEBAR_FOLD,
+        strip: SIDEBAR_ICONS,
         onfold: (icons) => {
           panes.foldSidebar(icons);
         },
       }}
-      onresize={(width) => {
-        panes.resizeSidebar(width);
-      }}
+      onresize={(width) => (panes.sidebar = width)}
       ondone={() => void panes.save()}
       onreset={() => void panes.reset("sidebar")}
     />

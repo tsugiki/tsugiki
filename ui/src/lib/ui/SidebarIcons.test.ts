@@ -25,6 +25,9 @@ it.each([
   ["some-owner/gc-scope", "GS"],
   ["some-owner/pep_848.sim", "P8"],
   ["some-owner/x", "X"],
+  ["some-owner/.github", "GI"],
+  ["some-owner/_tools", "TO"],
+  ["some-owner/---", "--"],
 ])("takes the initials of %s from the name after its owner", (repository, letters) => {
   expect(initials(repository)).toBe(letters);
 });
@@ -84,6 +87,25 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
     [{ kind: "filter", query: mine.query }],
   ]);
   expect([onfull.mock.calls.length, onsettings.mock.calls.length]).toEqual([1, 1]);
+});
+
+it("says why a Filter's last search failed, and marks its icon with ! in place of its count", () => {
+  const cut = "GitHub stopped the search at 1000 results.";
+  render(SidebarIcons, {
+    ...strip,
+    filters: [
+      { ...mine, problem: cut },
+      { ...involved, problem: cut },
+    ],
+  });
+
+  const icons = [button(`Mine (3). ${cut}`), button(`Involved. ${cut}`)];
+
+  expect(icons.map((icon) => [icon.title, icon.querySelector(".badge.problem")?.textContent])).toEqual([
+    [`Mine\n${cut}`, "!"],
+    [`Involved\n${cut}`, "!"],
+  ]);
+  expect(icons.map((icon) => icon.querySelectorAll(".badge").length)).toEqual([1, 1]);
 });
 
 it("draws no rule over the Filters while there are none", () => {

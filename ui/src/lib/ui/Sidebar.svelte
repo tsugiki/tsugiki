@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { FilterLine, WorkbenchView } from "$lib/state/workbench.svelte";
   import { currentOs, withKey } from "./keys";
+  import { currentView } from "./sidebar-view";
 
   let {
     repository,
@@ -30,7 +31,8 @@
     onselect: (view: WorkbenchView) => void;
   } = $props();
 
-  const shown = (isShown: boolean) => (isShown ? "true" : undefined);
+  /** The `aria-current` of the line for `view`. */
+  const current = (view: WorkbenchView) => currentView(selected, view);
 </script>
 
 <nav aria-label="Sidebar">
@@ -45,20 +47,20 @@
     >
     <button class="fold" aria-label="Sidebar as Icons" title="Sidebar as Icons" onclick={onicons}>«</button>
   </div>
-  <button aria-current={shown(selected.kind === "whole")} onclick={() => onselect({ kind: "whole" })}>
+  <button aria-current={current({ kind: "whole" })} onclick={() => onselect({ kind: "whole" })}>
     <span>Workbench</span>
     <span>{count}</span>
   </button>
   <h2 class="small-heading">Built-in views</h2>
   <button
-    aria-current={shown(selected.kind === "review_requests")}
+    aria-current={current({ kind: "review_requests" })}
     onclick={() => onselect({ kind: "review_requests" })}
   >
     <span>Review requests</span>
     <span>{reviewRequests}</span>
   </button>
   <button
-    aria-current={shown(selected.kind === "stale_reviews")}
+    aria-current={current({ kind: "stale_reviews" })}
     onclick={() => onselect({ kind: "stale_reviews" })}
   >
     <span>Stale reviews</span>
@@ -70,7 +72,7 @@
   <!-- Two Filters may share a search, so a search can't be the key. -->
   {#each filters as filter, index (index)}
     <button
-      aria-current={shown(selected.kind === "filter" && selected.query === filter.query)}
+      aria-current={current({ kind: "filter", query: filter.query })}
       onclick={() => onselect({ kind: "filter", query: filter.query })}
     >
       <span>{filter.name}</span>

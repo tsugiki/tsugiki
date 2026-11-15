@@ -67,10 +67,11 @@ export class PanesState {
   /** Whether the Sidebar shows as a strip of icons, hidden or not, nothing until the core or the user says.
    * `Ctrl+B` brings it back the way this says. */
   #sidebarIcons = $state<boolean | null>(null);
-  /** The Sidebar's width as its edge began to move it, which a drag that folds the Sidebar to icons puts
-   * back, so the full Sidebar comes back at the width it had before the drag. Undefined while the edge
-   * hasn't moved it since the last save, as each move of the edge ends with one. */
-  #sidebarBeforeEdge: number | null | undefined;
+  /** The full Sidebar's width as `machine.toml` holds it: the width the core read, or the last one saved
+   * while the Sidebar showed in full, nothing for its default. The full Sidebar comes back at this width
+   * after a fold, however the fold came: a drag passes through narrower widths on its way to fold, and those
+   * are no width the user settled on. Undefined until the core answers or the layout is saved. */
+  #savedSidebar: number | null | undefined;
   /** The panes `Ctrl+K Z` hid, which it brings back next: null while it remembers none, and undefined until
    * the core or the user says. */
   #detailOnlyHid = $state<Panes | null | undefined>();
@@ -119,6 +120,7 @@ export class PanesState {
       } = await commands.paneLayout();
       this.#order ??= order;
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
+      if (this.#savedSidebar === undefined) this.#savedSidebar = this.sidebar;
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
       this.peek ??= peek === null ? null : Math.min(PEEK_MOST, Math.max(PEEK_LEAST, peek));
       this.splitPeek ??= split_peek === null ? null : Math.max(SPLIT_PEEK_LEAST, split_peek);
@@ -144,28 +146,32 @@ export class PanesState {
     return this.#sidebarIcons ?? false;
   }
 
-  /** Shows the Sidebar as icons or in full, at the width it had, from « in its header, a click on one of its
-   * icons, or the command palette, and saves that. A hidden Sidebar shows. `toggleDetailOnly` then forgets
-   * what it hid, as on `show`. */
+  /** Shows the Sidebar as icons or in full, at its saved width, from « in its header, the strip's initials,
+   * or the command palette, and saves that. A hidden Sidebar shows. `toggleDetailOnly` then forgets what it
+   * hid, as on `show`. */
   showSidebar(icons: boolean): Promise<void> {
-    this.#sidebarIcons = icons;
-    this.#hidden.sidebar = false;
-    this.#detailOnlyHid = null;
+    this.#shapeSidebar(icons);
     return this.save();
   }
 
-  /** Gives the full Sidebar width `width` as its edge moves, and remembers the width it had before, for a
-   * drag that goes on to fold it. */
-  resizeSidebar(width: number): void {
-    if (this.#sidebarBeforeEdge === undefined) this.#sidebarBeforeEdge = this.sidebar;
-    this.sidebar = width;
+  /** A click on an icon of the strip: shows the full Sidebar and the list, and saves that once. */
+  showFullSidebarAndList(): Promise<void> {
+    this.#shapeSidebar(false);
+    this.#hidden.list = false;
+    return this.save();
   }
 
-  /** Folds the Sidebar to icons as a drag of its edge goes below `SIDEBAR_FOLD`, with the width it had
-   * before the drag kept for the full Sidebar, or unfolds it as the drag comes back. The edge saves once it
+  #shapeSidebar(icons: boolean) {
+    this.foldSidebar(icons);
+    this.#hidden.sidebar = false;
+    this.#detailOnlyHid = null;
+  }
+
+  /** Folds the Sidebar to icons, as a drag of its edge below `SIDEBAR_FOLD` does, or unfolds it. Folding puts
+   * back the saved width for the full Sidebar, as the drag moved it on its way. The edge saves once it
    * stops. */
   foldSidebar(icons: boolean): void {
-    if (icons && this.#sidebarBeforeEdge !== undefined) this.sidebar = this.#sidebarBeforeEdge;
+    if (icons && this.#savedSidebar !== undefined) this.sidebar = this.#savedSidebar;
     this.#sidebarIcons = icons;
   }
 
@@ -249,10 +255,9 @@ export class PanesState {
     return this.save();
   }
 
-  /** Saves the layout in `machine.toml`, once the save before has finished. The Sidebar's edge has then
-   * finished its move, so a later drag remembers the width it starts from afresh. */
+  /** Saves the layout in `machine.toml`, once the save before has finished. */
   save(): Promise<void> {
-    this.#sidebarBeforeEdge = undefined;
+    if (!this.sidebarIcons) this.#savedSidebar = this.sidebar;
     this.#saving = this.#saving.then(() => this.#send());
     return this.#saving;
   }

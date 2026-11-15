@@ -23,8 +23,10 @@
   /** A pane that folds to a strip, as the Sidebar does to icons (#587). A drag that would make it narrower
    * than `below` folds it, and a drag back past `below` unfolds it, at the size the drag reaches. An arrow
    * key that would shrink it below its least size folds it, and one that grows the strip unfolds it at the
-   * size it kept. `onfold` folds the pane or unfolds it, and the edge then saves as after a resize. */
-  export type Fold = { folded: boolean; below: number; onfold: (folded: boolean) => void };
+   * size it kept. `onfold` folds the pane or unfolds it, and the edge then saves as after a resize. The
+   * strip is `strip` pixels wide, which a screen reader hears as the edge's value while the pane is folded,
+   * and as its least: the `value` of `sizes` stays the size the pane unfolds to. */
+  export type Fold = { folded: boolean; below: number; strip: number; onfold: (folded: boolean) => void };
 </script>
 
 <script lang="ts">
@@ -165,7 +167,8 @@
       if (key === more) refold(false);
       return;
     }
-    if (fold !== undefined && key === less && size <= least) {
+    // Rounded, as the resize rounds: at a fractional scale the pane may measure a hair over its least.
+    if (fold !== undefined && key === less && Math.round(size) <= least) {
       refold(true);
       return;
     }
@@ -182,8 +185,8 @@
   role="separator"
   aria-orientation={orientation}
   aria-label={label}
-  aria-valuenow={sizes.value}
-  aria-valuemin={least}
+  aria-valuenow={fold?.folded === true ? fold.strip : sizes.value}
+  aria-valuemin={fold?.strip ?? least}
   aria-valuemax={most}
   tabindex="0"
   {onpointerdown}

@@ -6,17 +6,17 @@
 -->
 <script lang="ts" module>
   /** The Repository's initials atop the strip, from the part of `repository` after its owner: the first
-   * letters of its first two words, or its first two letters when it has one word. */
+   * letters of its first two words, or the first two letters of its one word, so `.github` gives "GI". A
+   * name of only marks has no words, and gives its first two marks. */
   export function initials(repository: string): string {
     const name = repository.slice(repository.indexOf("/") + 1);
-    const words = name.split(/[-_.\s]+/).filter((word) => word !== "");
+    const [first, second] = name.split(/[-_.\s]+/).filter((word) => word !== "");
     const letters =
-      words.length > 1
-        ? words
-            .slice(0, 2)
-            .map((word) => word.charAt(0))
-            .join("")
-        : name.slice(0, 2);
+      first === undefined
+        ? name.slice(0, 2)
+        : second === undefined
+          ? first.slice(0, 2)
+          : first.charAt(0) + second.charAt(0);
     return letters.toUpperCase();
   }
 
@@ -28,6 +28,7 @@
 <script lang="ts">
   import type { FilterLine, WorkbenchView } from "$lib/state/workbench.svelte";
   import { currentOs, withKey } from "./keys";
+  import { currentView } from "./sidebar-view";
 
   let {
     repository,
@@ -62,24 +63,27 @@
     stale_reviews: "M2 8a6 6 0 1 0 12 0 6 6 0 1 0-12 0M8 4.5V8l2.5 1.5",
     filter: "M2 3h12L9.5 8.5V13l-3 1.5V8.5z",
   };
-
-  const shown = (isShown: boolean) => (isShown ? "true" : undefined);
 </script>
 
-<!-- One entry: its icon, with its count as a badge, and its name for the tooltip and a screen reader. -->
-{#snippet entry(icon: string, name: string, entryCount: number, view: WorkbenchView, current: boolean)}
+<!-- One entry: its icon, with its count as a badge, and its name for the tooltip and a screen reader. A
+     Filter whose last search failed says why there too, as the full Sidebar does under its line, and marks
+     its icon with ! in the danger colour in place of the count, which may be short. -->
+{#snippet entry(icon: string, name: string, entryCount: number, view: WorkbenchView, problem?: string | null)}
   {@const words = badge(entryCount)}
+  {@const counted = words === undefined ? name : `${name} (${String(entryCount)})`}
   <button
     class="entry"
-    aria-current={shown(current)}
-    aria-label={words === undefined ? name : `${name} (${String(entryCount)})`}
-    title={name}
+    aria-current={currentView(selected, view)}
+    aria-label={problem ? `${counted}. ${problem}` : counted}
+    title={problem ? `${name}\n${problem}` : name}
     onclick={() => {
       onselect(view);
     }}
   >
     <svg viewBox="0 0 16 16" aria-hidden="true"><path d={icon} /></svg>
-    {#if words !== undefined}
+    {#if problem}
+      <span class="badge problem">!</span>
+    {:else if words !== undefined}
       <span class="badge">{words}</span>
     {/if}
   </button>
@@ -89,22 +93,10 @@
   <button class="initials mono" aria-label="Full Sidebar" title={repository} onclick={onfull}
     >{initials(repository)}</button
   >
-  {@render entry(ICONS.workbench, "Workbench", count, { kind: "whole" }, selected.kind === "whole")}
+  {@render entry(ICONS.workbench, "Workbench", count, { kind: "whole" })}
   <span class="rule"></span>
-  {@render entry(
-    ICONS.review_requests,
-    "Review requests",
-    reviewRequests,
-    { kind: "review_requests" },
-    selected.kind === "review_requests",
-  )}
-  {@render entry(
-    ICONS.stale_reviews,
-    "Stale reviews",
-    staleReviews,
-    { kind: "stale_reviews" },
-    selected.kind === "stale_reviews",
-  )}
+  {@render entry(ICONS.review_requests, "Review requests", reviewRequests, { kind: "review_requests" })}
+  {@render entry(ICONS.stale_reviews, "Stale reviews", staleReviews, { kind: "stale_reviews" })}
   {#if filters.length > 0}
     <span class="rule"></span>
   {/if}
@@ -115,7 +107,7 @@
       filter.name,
       filter.count,
       { kind: "filter", query: filter.query },
-      selected.kind === "filter" && selected.query === filter.query,
+      filter.problem,
     )}
   {/each}
   <span class="grow"></span>
@@ -203,6 +195,10 @@
     line-height: 13px;
     color: var(--bg);
     background: var(--accent);
+  }
+
+  .badge.problem {
+    background: var(--danger);
   }
 
   .initials {

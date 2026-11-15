@@ -111,6 +111,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     a dim tint, once the focus moves away. The palette or a dialog on top, or another app in front, leaves
     every pane inactive. No ring goes round a whole pane.
 
+    The palette and each dialog cover every pane, its sticky bars and icons included, under a dim scrim. A
+    press on the scrim closes the palette or the dialog and doesn't reach the pane under it.
+
     The edges between the panes can be dragged; a double-click puts the default back. The Issue list has a
     minimum width, and so does the Detail pane, so in a narrow window the Issue list gives way first.
 

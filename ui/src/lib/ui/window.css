@@ -5,6 +5,11 @@
 :root {
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
+  /* The layers that stack over the panes, where a sticky bar or an icon takes a z-index under 10 (#703):
+     the command palette and the dialogs, then the performance HUD, which stays usable over them. A test in
+     window.test.ts fails on any other z-index of 10 or more. */
+  --layer-overlay: 10;
+  --layer-hud: 20;
 }
 
 /* The window doesn't scroll (#619): the screen takes the room above the status bar, and each pane in it
@@ -107,6 +112,15 @@ kbd {
   white-space: nowrap;
   border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
   border-radius: 999px;
+}
+
+/* The scrim under the command palette and each dialog, which holds the box and closes it on a press. It
+   takes the overlay layer, over every pane (#703). */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  background: var(--backdrop);
 }
 
 /* The Theme's syntax colours, wherever code is highlighted: the diff's rows, a thread's code, and the

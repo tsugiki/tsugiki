@@ -151,12 +151,6 @@
 </div>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--backdrop);
-  }
-
   .dialog {
     display: flex;
     flex-direction: column;

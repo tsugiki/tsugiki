@@ -2012,9 +2012,16 @@ it("scrolls to the header of a file it opens with all the files, and closes the 
 it("opens nothing for a path the diff doesn't change, which it says, nor before the diff is ready", async () => {
   const waiting = await loaded();
   const files = await loaded(changed());
+  waiting.openFileView(
+    new FileView({ kind: "repository", path: "Lib/eggs.py", side: "head", commit: "abc" }, 4, {
+      retry: () => {},
+    } as unknown as HitCode),
+  );
   vi.useFakeTimers();
 
   waiting.openPath("Lib/ast.py");
+  // The file view closes all the same, so the tab under it says why it has no diff.
+  expect(waiting.fileView).toBeUndefined();
   files.openPath("Lib/old.py");
   const said = [waiting.notice, files.notice];
   vi.advanceTimersByTime(NOTICE_MS);

@@ -73,13 +73,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   shows them, 20 at most. Nothing typed, or a text that starts with `#`, lists no files, and reads no diff.
   Other text reads the PR's diff if the Files tab hasn't yet, and an Enter pressed before the core first
   answers that read waits for it, as it waits for the Issues and PRs, unless the item with the number typed
-  heads the list or the user picked a row with the arrows. A diff that doesn't come at once, as
-  while its head is fetched, lists no files. The files show when the search of the Issues and PRs fails too,
-  above why it failed. Enter opens the file in the Files tab from its top, opening it if it is collapsed:
-  with all the files the tab scrolls to its header, and one file at a time it shows that file. The file view
-  over the tab closes, and the diff takes the focus. A file the diff no longer changes, as after a sync moved
-  the PR's head, is said over the diff for a moment. With no PR on show, or once the PR leaves the Detail
-  pane, quick open lists no files.
+  heads the list or the user picked one of the rows on show with the arrows. A diff that doesn't come at
+  once, as while its head is fetched, lists no files. The files show when the search of the Issues and PRs
+  fails too, above why it failed. Enter opens the file in the Files tab from its top, opening it if it is
+  collapsed: with all the files the tab scrolls to its header, and one file at a time it shows that file. The
+  file view over the tab closes, and the diff takes the focus. A file the diff no longer changes, as after a
+  sync moved the PR's head, is said over the diff for a moment. With no PR on show, or once the PR leaves the
+  Detail pane, quick open lists no files.
 - Quick open and the command palette share one box, as in VS Code: `>` in front lists the commands, and
   `Ctrl+Shift+P` opens the box with `>` typed. Quick open searches one Repository, so on the Home page
   `Ctrl+P` does nothing and the command palette has no `>` to delete.

@@ -488,13 +488,34 @@ describe("with quick open", () => {
     const { ran, rerender } = withQuickOpen();
     const input = screen.getByRole("combobox");
     const row = (title: string) => ({ title, run: () => ran.push(title) });
-    await rerender({ found: { typed: "", rows: [row("#7 Older"), row("#9 Newest")], pending: true } });
+    await fireEvent.input(input, { target: { value: "crash" } });
+    await rerender({ found: { typed: "crash", rows: [row("#7 Older"), row("#9 Newest")], pending: true } });
 
     await fireEvent.keyDown(input, { key: "ArrowDown" });
     await fireEvent.keyDown(input, { key: "Enter" });
     await tick();
 
     expect(ran).toEqual(["#9 Newest"]);
+  });
+
+  it("holds an Enter while rows are on their way if the row picked was one of an older answer", async () => {
+    const { ran, rerender, answer } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    const row = (title: string) => ({ title, run: () => ran.push(title) });
+    await fireEvent.input(input, { target: { value: "7" } });
+    await answer("7", "#7 Older", "#77 Other");
+    await fireEvent.input(input, { target: { value: "70" } });
+    // The pick moves among the rows of `7`, which show until the answer to `70` comes.
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await rerender({ found: { typed: "70", rows: [row("#7 Older")], pending: true } });
+
+    await fireEvent.keyDown(input, { key: "Enter" });
+    const early = [...ran];
+    await answer("70", "Lib/test_70.py", "#7 Older");
+    await tick();
+
+    expect(early).toEqual([]);
+    expect(ran).toEqual(["Lib/test_70.py"]);
   });
 
   it("holds an Enter while some rows of the answer are still on their way, then runs the first row", async () => {

@@ -37,11 +37,16 @@ pub fn find(
     typed: &str,
 ) -> Result<QuickOpenFound, Error> {
     let typed = Typed::parse(typed);
-    let mut others = best(reader.titled_items(repository)?, &typed);
-    let named = match others.first() {
-        Some(first) if typed.number == Some(first.number) => Some(others.remove(0)),
-        _ => None,
-    };
+    let mut found: Vec<TitledItem> = reader
+        .titled_items(repository)?
+        .into_iter()
+        .filter(|item| typed.finds(item))
+        .collect();
+    let named = typed
+        .number
+        .and_then(|number| found.iter().position(|item| item.number == number))
+        .map(|at| found.swap_remove(at));
+    let others = best(found, LISTED - usize::from(named.is_some()));
     Ok(QuickOpenFound { named, others })
 }
 
@@ -83,27 +88,25 @@ impl Typed {
         let title = item.title.to_lowercase();
         self.words.iter().all(|word| title.contains(word.as_str()))
     }
-
-    /// Where `item` comes in the list, lowest first: the numbered item, then the open ones, the newest first.
-    fn rank(&self, item: &TitledItem) -> (bool, bool, Reverse<OffsetDateTime>, Reverse<u32>) {
-        (
-            self.number != Some(item.number),
-            !is_open(item.kind),
-            Reverse(item.updated_at),
-            Reverse(item.number),
-        )
-    }
 }
 
-/// The items of `all` that `typed` finds, best first, `LISTED` at most. Only those `LISTED` get sorted.
-fn best(all: Vec<TitledItem>, typed: &Typed) -> Vec<TitledItem> {
-    let mut found: Vec<TitledItem> = all.into_iter().filter(|item| typed.finds(item)).collect();
-    if found.len() > LISTED {
-        let (listed, _, _) = found.select_nth_unstable_by_key(LISTED, |item| typed.rank(item));
-        listed.sort_unstable_by_key(|item| typed.rank(item));
-        found.truncate(LISTED);
+/// Where `item` comes in the list, lowest first: the open ones, the newest first.
+fn rank(item: &TitledItem) -> (bool, Reverse<OffsetDateTime>, Reverse<u32>) {
+    (
+        !is_open(item.kind),
+        Reverse(item.updated_at),
+        Reverse(item.number),
+    )
+}
+
+/// The best of `found`, `listed` at most, best first. Only those `listed` get sorted.
+fn best(mut found: Vec<TitledItem>, listed: usize) -> Vec<TitledItem> {
+    if found.len() > listed {
+        let (best, _, _) = found.select_nth_unstable_by_key(listed, rank);
+        best.sort_unstable_by_key(rank);
+        found.truncate(listed);
     } else {
-        found.sort_unstable_by_key(|item| typed.rank(item));
+        found.sort_unstable_by_key(rank);
     }
     found
 }

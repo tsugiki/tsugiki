@@ -370,7 +370,7 @@
     return {
       typed: answer.typed,
       rows: [...(named ? [foundRow(named)] : []), ...files.rows, ...others.map(foundRow)],
-      pending: named === null && files.pending,
+      pending: !named && files.pending,
     };
   });
   /** The palette's commands: those the user ran, most recently run first, then the others in this order. */

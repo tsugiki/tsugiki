@@ -45,8 +45,9 @@
     typed: string;
     rows: readonly PaletteCommand[];
     problem?: string;
-    /** Whether some rows are still on their way, such as the files of a PR whose diff hasn't come: Enter
-     * waits for them, as it waits for the answer. */
+    /** Whether some rows are still on their way, such as the files of a PR whose diff hasn't come. Enter
+     * waits for them, as it waits for the answer, unless the user picked one of the rows on show with the
+     * arrows, which stays picked as they come. */
     pending?: boolean;
   }
 
@@ -135,12 +136,6 @@
   );
   /** Whether the palette lists quick open's rows: it has quick open, and the text doesn't start with `>`. */
   const quick = $derived(find !== undefined && !typed.startsWith(">"));
-  /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it while the rows
-   * still on their way could change which row is first. A row the user picked stays picked as they come.
-   * The last answer shows meanwhile. */
-  const waiting = $derived(
-    quick && (found?.typed !== typed || (found.pending === true && pickedKey === undefined)),
-  );
   /** What the commands are filtered by: the text, after the `>` that marks the commands, if it has quick
    * open. */
   const filter = $derived(
@@ -148,6 +143,14 @@
   );
   const matching = $derived(
     quick ? (found?.rows ?? []) : commands.filter((command) => command.title.toLowerCase().includes(filter)),
+  );
+  /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it while the rows
+   * still on their way could change which row is picked: unless the user picked one of the rows on show,
+   * the pick is the first row. The last answer shows meanwhile. */
+  const waiting = $derived(
+    quick &&
+      (found?.typed !== typed ||
+        (found.pending === true && !matching.some((row) => keyOf(row) === pickedKey))),
   );
   const shownWords = $derived(quick ? (files ? FILES_QUICK_OPEN_WORDS : QUICK_OPEN_WORDS) : words);
   // Each text quick open shows asks it once.

@@ -24,25 +24,23 @@ fn titled_pr(number: u32, title: &str, state: PrState, seconds: i64) -> PullRequ
 }
 
 /// What quick open finds for each of `typed` in a store that holds `pull_requests` and `issues`, as the
-/// numbers it lists, the one the text names first.
+/// number of the item the text names, if it names one the store holds, and the numbers of the others.
 fn numbers_found(
     name: &str,
     pull_requests: Vec<PullRequestFacts>,
     issues: Vec<IssueFacts>,
     typed: &[&str],
-) -> Vec<Vec<u32>> {
+) -> Vec<(Option<u32>, Vec<u32>)> {
     let world = ViewWorld::new(name);
     world.has(pull_requests, issues);
     let found = typed
         .iter()
         .map(|typed| {
             let found = find(&world.reader, &cpython().name, typed).unwrap();
-            found
-                .named
-                .iter()
-                .chain(&found.others)
-                .map(|item| item.number)
-                .collect()
+            (
+                found.named.map(|item| item.number),
+                found.others.iter().map(|item| item.number).collect(),
+            )
         })
         .collect();
     world.finish();
@@ -50,10 +48,11 @@ fn numbers_found(
 }
 
 #[test]
-fn a_number_puts_its_item_first_in_any_of_its_spellings() {
+fn a_number_names_its_item_apart_in_any_of_its_spellings() {
     let pull_requests = vec![
         titled_pr(100, "gh-12: Fix the crash", PrState::Open, 50),
         titled_pr(101, "Speed up 12 things", PrState::Merged, 60),
+        titled_pr(102, "gh-8: Fix it", PrState::Open, 70),
     ];
     let issues = vec![
         titled_issue(12, "It crashes", 1),
@@ -64,20 +63,40 @@ fn a_number_puts_its_item_first_in_any_of_its_spellings() {
         "quick-open-number",
         pull_requests,
         issues,
-        &["12", "#12", "gh-12", " GH-12 ", "100"],
+        &["12", "#12", "gh-12", " GH-12 ", "100", "gh-8", "#8"],
     );
 
-    // A title that holds what was typed follows the item it names: the open first, then the newest.
+    // A title that holds what was typed follows the item it names: the open first, then the newest. A
+    // number the cache holds no item of names none, though a title holds it.
     assert_eq!(
         found,
         [
-            vec![12, 100, 101],
-            vec![12],
-            vec![12, 100],
-            vec![12, 100],
-            vec![100]
+            (Some(12), vec![100, 101]),
+            (Some(12), vec![]),
+            (Some(12), vec![100]),
+            (Some(12), vec![100]),
+            (Some(100), vec![]),
+            (None, vec![102]),
+            (None, vec![]),
         ]
     );
+}
+
+#[test]
+fn the_item_a_number_names_counts_among_the_listed_count() {
+    let pull_requests: Vec<PullRequestFacts> = (21..=50)
+        .map(|number| titled_pr(number, "gh-5: Fix it", PrState::Open, i64::from(number)))
+        .collect();
+
+    let found = numbers_found(
+        "quick-open-number-listed",
+        pull_requests,
+        vec![titled_issue(5, "It broke", 1)],
+        &["gh-5"],
+    );
+
+    let newest: Vec<u32> = (32..=50).rev().collect();
+    assert_eq!(found, [(Some(5), newest)]);
 }
 
 #[test]
@@ -96,7 +115,16 @@ fn title_words_find_the_titles_that_hold_each_of_them_in_any_case() {
         &["crash gc", "CRASH", "ünicode", "parser crash", "#parser"],
     );
 
-    assert_eq!(found, [vec![2, 1], vec![4, 2, 1], vec![4], vec![], vec![]]);
+    assert_eq!(
+        found,
+        [
+            (None, vec![2, 1]),
+            (None, vec![4, 2, 1]),
+            (None, vec![4]),
+            (None, vec![]),
+            (None, vec![])
+        ]
+    );
 }
 
 #[test]
@@ -132,7 +160,7 @@ fn nothing_typed_lists_the_open_items_first_and_the_newest_first_at_most_the_lis
         .chain((8..=25).rev())
         .take(LISTED)
         .collect();
-    assert_eq!(found, [expected.clone(), expected]);
+    assert_eq!(found, [(None, expected.clone()), (None, expected)]);
 }
 
 #[test]

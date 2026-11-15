@@ -68,6 +68,35 @@ export function notesFor(changelog: string, version: string): string {
   );
 }
 
+/**
+ * What each release page says after its notes: which file is for which system, and how to check one. It
+ * names the files by extension, so it stays right when Tauri or `portable-zip.ts` changes a name. The command
+ * is the README's, as a test checks.
+ */
+const DOWNLOADS = [
+  "## Download",
+  "",
+  "- Windows: the `.zip`",
+  "- macOS on Apple Silicon: the `.dmg`",
+  "",
+  "## Checking a download",
+  "",
+  "These files aren't code-signed, so Windows and macOS warn you when you open one. Each file has an",
+  "attestation, which shows that Tsugiki's release workflow built it from this release's commit. Check it",
+  "with the [GitHub CLI](https://cli.github.com/):",
+  "",
+  "```",
+  "gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml",
+  "```",
+  "",
+  "If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and open an issue.",
+].join("\n");
+
+/** The text of a release page: the changelog's `notes`, then how to pick and check a download. */
+export function releasePage(notes: string): string {
+  return `${notes}\n\n${DOWNLOADS}`;
+}
+
 /** The notes of the version Cargo.toml says, or of the work so far when nothing has been released. */
 export function notesOfWorkspace(cargoToml: string, changelog: string): string {
   const version = workspaceVersion(cargoToml);

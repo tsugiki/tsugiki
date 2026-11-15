@@ -1,3 +1,5 @@
+import type { RailTabId } from "$lib/state/rail.svelte";
+
 /** For a dialog's first field, or a dialog with none, as an attachment: takes the focus, and gives it back
  * when the element goes. */
 export function takeFocus(element: HTMLElement) {
@@ -13,12 +15,13 @@ export function takeFocus(element: HTMLElement) {
 /** Gives the focus to what the PR view's rail sits beside, in the PR view `pane` (#603): the diff on the
  * Files tab, or the file view over it, or the Conversation while it scrolls by itself beside the rail. With
  * neither, as once the rail has closed over the Conversation, which the whole pane scrolls again, or before
- * the diff has come, the focus goes to the button that opens the rail. */
-export function focusBesideRail(pane: Element | null | undefined) {
+ * the diff has come, the focus goes to the button of the rail's `tab`, the one it shows or last showed. */
+export function focusBesideRail(pane: Element | null | undefined, tab: RailTabId) {
   const scroller = scrollerIn(pane);
   // The rail's own scrollers come after the tab's, and don't count.
   const beside = scroller?.closest("[data-rail]") === null ? scroller : undefined;
-  (beside ?? pane?.querySelector<HTMLElement>("[data-opens-rail]"))?.focus({ preventScroll: true });
+  const button = pane?.querySelector<HTMLElement>(`[data-opens-rail="${tab}"]`);
+  (beside ?? button)?.focus({ preventScroll: true });
 }
 
 /** The first region in `pane` that scrolls by itself, which `data-scrolls` marks, such as the diff or the

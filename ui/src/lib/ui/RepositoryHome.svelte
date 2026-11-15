@@ -16,6 +16,7 @@
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
+  import { RAIL_ORDER, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -396,10 +397,11 @@
    * command wait for it, as the PR view's button does by coming with the tabs. */
   const showsPr = () => detail instanceof PrViewState && Boolean(detail.view);
 
-  /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). The rail hands on the
-   * focus it holds as it goes. The key and the palette offer it only while `showsPr` says so. */
-  function toggleRail() {
-    panes.toggleRail();
+  /** A rail tab's key or palette command, as `Ctrl+K F` is Files': opens the rail beside the tabs of the PR
+   * on show on `tab`, or closes it while it shows `tab` (#603, #727). The rail hands on the focus it holds as
+   * it goes. The key and the palette offer it only while `showsPr` says so. */
+  function toggleRail(tab: RailTabId) {
+    panes.railState.toggle(tab);
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
@@ -492,13 +494,13 @@
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       ...(showsPr()
-        ? [
-            {
-              title: "View: Files in the Rail",
-              note: actionLabel("toggle_rail_files", currentOs()),
-              run: toggleRail,
+        ? RAIL_ORDER.map((id) => ({
+            title: `View: ${RAIL_TABS[id].name} in the Rail`,
+            note: actionLabel(RAIL_TABS[id].action, currentOs()),
+            run: () => {
+              toggleRail(id);
             },
-          ]
+          }))
         : []),
       ...filesCommands(),
     ];
@@ -655,7 +657,18 @@
     toggle_detail_only: () => () => void toggleDetailOnly(),
     toggle_files_mode: onDiff((files) => files.toggleMode()),
     unfold_unchanged: onDiff((files) => files.unfoldUnchanged()),
-    toggle_rail_files: () => (showsPr() ? toggleRail : undefined),
+    // Each rail tab's key, as Ctrl+K F is Files', while a PR shows (#727).
+    ...Object.fromEntries(
+      RAIL_ORDER.map((id): [Action, ScreenAction] => [
+        RAIL_TABS[id].action,
+        () =>
+          showsPr()
+            ? () => {
+                toggleRail(id);
+              }
+            : undefined,
+      ]),
+    ),
     mark_seen: marking((marked, target) => markSeen(marked, !forDetail(target))),
     mark_unseen: marking((marked) => markUnseen(marked)),
     toggle_issue_list: () => (e) => {

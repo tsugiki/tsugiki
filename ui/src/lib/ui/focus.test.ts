@@ -61,11 +61,14 @@ describe("keepFocusIn", () => {
 });
 
 describe("focusBesideRail", () => {
-  /** A PR view in the page, with `panel` as its tab's HTML, and the button that opens the rail. */
+  /** A PR view in the page, with `panel` as its tab's HTML, and the buttons that open the rail on its tabs,
+   * Files second. */
   function paneOf(panel: string, scrolls = false) {
     const pane = document.createElement("section");
     const attributes = scrolls ? ' tabindex="0" data-scrolls' : "";
-    pane.innerHTML = `<button data-opens-rail>Files</button><div role="tabpanel"${attributes}>${panel}</div>`;
+    const buttons =
+      '<button data-opens-rail="review">Review</button><button data-opens-rail="files">Files</button>';
+    pane.innerHTML = `${buttons}<div role="tabpanel"${attributes}>${panel}</div>`;
     document.body.append(pane);
     return pane;
   }
@@ -74,23 +77,23 @@ describe("focusBesideRail", () => {
 
   it("gives the focus to the diff, or the file view over it, which leaves the diff inert", () => {
     const diff = '<div aria-label="Diff" tabindex="0" data-scrolls></div>';
-    focusBesideRail(paneOf(diff));
+    focusBesideRail(paneOf(diff), "files");
     const toDiff = focusedName();
     document.body.innerHTML = "";
     const covered = `<div inert>${diff}</div><div aria-label="File view" tabindex="0" data-scrolls></div>`;
 
-    focusBesideRail(paneOf(covered));
+    focusBesideRail(paneOf(covered), "files");
 
     expect([toDiff, focusedName()]).toEqual(["Diff", "File view"]);
   });
 
-  it("gives the focus to the Conversation while it scrolls beside the rail, and else to the Files button", () => {
+  it("gives the focus to the Conversation while it scrolls beside the rail, and else to the button of the rail's tab", () => {
     const pane = paneOf("<p>The description</p>", true);
-    focusBesideRail(pane);
+    focusBesideRail(pane, "files");
     const beside = document.activeElement;
     document.body.innerHTML = "";
 
-    focusBesideRail(paneOf("<p>The description</p>"));
+    focusBesideRail(paneOf("<p>The description</p>"), "files");
 
     expect([beside, focusedName()]).toEqual([pane.querySelector('[role="tabpanel"]'), "Files"]);
   });
@@ -102,13 +105,13 @@ describe("focusBesideRail", () => {
       '<aside data-rail><div tabindex="0" data-scrolls>Tree</div></aside>',
     );
 
-    focusBesideRail(pane);
+    focusBesideRail(pane, "files");
 
     expect(focusedName()).toBe("Files");
   });
 
   it("does nothing without a PR view", () => {
-    focusBesideRail(undefined);
+    focusBesideRail(undefined, "files");
     expect(document.activeElement).toBe(document.body);
   });
 });

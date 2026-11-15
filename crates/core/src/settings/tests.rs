@@ -4,7 +4,7 @@ use crate::filters::Filter;
 use crate::mirror::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
 use crate::testing::TempPath;
-use crate::theme::{ThemeChoice, ThemeKind, ThemeName};
+use crate::theme::{ThemeChoice, ThemeInForce, ThemeKind, ThemeName, ThemePick};
 use time::format_description::well_known::Rfc3339;
 
 fn hidden() -> Settings {
@@ -724,6 +724,171 @@ fn apply_keeps_a_hand_edit_made_while_the_dialog_was_open_to_what_it_didnt_chang
     assert_eq!(settings.diff.files, DiffFiles::One);
     assert!(!settings.releases.check);
     assert!(settings.status_bar.visible);
+}
+
+#[test]
+fn apply_saves_a_changed_light_theme_and_leaves_theme_alone() {
+    let (folders, _root) = temp_folders("apply-light-theme");
+    let text =
+        "[appearance]\ntheme = \"dark\" # From before.\ndark_theme = \"Gruvbox Dark Hard\"\n";
+    fs::write(folders.settings_file(), text).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let applied = files.apply(SettingsChanges {
+        appearance: Some(AppearanceChanges {
+            light_theme: Some(named("Gruvbox Light Hard")),
+            ..AppearanceChanges::default()
+        }),
+        ..SettingsChanges::default()
+    });
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    applied.unwrap();
+    assert_eq!(
+        after,
+        "[appearance]\ntheme = \"dark\" # From before.\ndark_theme = \"Gruvbox Dark Hard\"\nlight_theme = \"Gruvbox Light Hard\"\n"
+    );
+    let appearance = &files.loaded().settings.appearance;
+    assert_eq!(appearance.theme, ThemeChoice::Side(ThemeKind::Dark));
+    assert_eq!(appearance.light_theme, named("Gruvbox Light Hard"));
+}
+
+#[test]
+fn apply_saves_a_changed_dark_theme() {
+    let (folders, _root) = temp_folders("apply-dark-theme");
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files
+        .apply(SettingsChanges {
+            appearance: Some(AppearanceChanges {
+                dark_theme: Some(named("Gruvbox Dark Hard")),
+                ..AppearanceChanges::default()
+            }),
+            ..SettingsChanges::default()
+        })
+        .unwrap();
+
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    assert_eq!(after, "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n");
+    let appearance = &files.loaded().settings.appearance;
+    assert_eq!(appearance.dark_theme, named("Gruvbox Dark Hard"));
+    assert_eq!(appearance.theme, ThemeChoice::System);
+}
+
+#[test]
+fn apply_saves_the_theme_picked_and_takes_following_the_system_out_of_the_file() {
+    let (folders, _root) = temp_folders("apply-theme");
+    let mut files = SettingsFiles::load(folders.clone());
+    let pick = |theme| AppearanceChanges {
+        theme: Some(theme),
+        ..AppearanceChanges::default()
+    };
+
+    files
+        .apply(SettingsChanges {
+            appearance: Some(pick(ThemePick::Named {
+                name: named("Gruvbox Dark Hard"),
+            })),
+            ..SettingsChanges::default()
+        })
+        .unwrap();
+    let named_after = fs::read_to_string(folders.settings_file()).unwrap();
+    files
+        .apply(SettingsChanges {
+            appearance: Some(pick(ThemePick::System)),
+            ..SettingsChanges::default()
+        })
+        .unwrap();
+    let system_after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(named_after, "[appearance]\ntheme = \"Gruvbox Dark Hard\"\n");
+    assert_eq!(system_after, "");
+    assert_eq!(
+        files.loaded().settings.appearance.theme,
+        ThemeChoice::System
+    );
+}
+
+#[test]
+fn apply_refuses_a_theme_picked_by_a_name_theme_reads_otherwise_and_saves_nothing() {
+    for name in ["system", "light", "dark"] {
+        let (folders, _root) = temp_folders(&format!("apply-reserved-{name}"));
+        let mut files = SettingsFiles::load(folders.clone());
+
+        let applied = files.apply(SettingsChanges {
+            status_bar: Some(StatusBarSettings { visible: false }),
+            appearance: Some(AppearanceChanges {
+                theme: Some(ThemePick::Named { name: named(name) }),
+                ..AppearanceChanges::default()
+            }),
+            ..SettingsChanges::default()
+        });
+
+        let error = applied.unwrap_err();
+        assert_eq!(error.kind, ErrorKind::NotFound, "{name}");
+        assert_eq!(
+            error.message,
+            format!("No theme is named {name:?}."),
+            "{name}"
+        );
+        assert!(!folders.settings_file().exists(), "{name}");
+    }
+}
+
+#[test]
+fn a_view_s_themes_show_the_appearance_asked_for_by_the_rules_the_file_s_go_by() {
+    let (folders, _root) = temp_folders("view-themes");
+    fs::write(
+        folders.settings_file(),
+        "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n",
+    )
+    .unwrap();
+    let view = SettingsFiles::load(folders).view();
+    let preview = AppearanceSettings {
+        theme: ThemeChoice::Theme(named("Gruvbox Light Hard")),
+        light_theme: named("Solarized Light"),
+        dark_theme: named("VS Code Dark Modern"),
+    };
+
+    let from_file = view.themes(&view.loaded.settings.appearance).unwrap();
+    let previewed = view.themes(&preview).unwrap();
+
+    assert_eq!(from_file.theme, ThemeInForce::System);
+    assert_eq!(from_file.dark.chosen, "Gruvbox Dark Hard");
+    assert_eq!(
+        previewed.theme,
+        ThemeInForce::Named {
+            name: named("Gruvbox Light Hard"),
+            side: ThemeKind::Light,
+        }
+    );
+    assert_eq!(previewed.light.chosen, "VS Code Light Modern");
+    assert_eq!(previewed.dark.chosen, "VS Code Dark Modern");
+}
+
+#[test]
+fn apply_of_another_change_keeps_a_side_s_name_no_theme_has() {
+    let (folders, _root) = temp_folders("apply-keeps-missing-theme");
+    let text = "[appearance]\ndark_theme = \"Solarized Dark\"\n";
+    fs::write(folders.settings_file(), text).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let applied = files.apply(SettingsChanges {
+        appearance: Some(AppearanceChanges {
+            theme: Some(ThemePick::Named {
+                name: named("Gruvbox Light Hard"),
+            }),
+            ..AppearanceChanges::default()
+        }),
+        ..SettingsChanges::default()
+    });
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    applied.unwrap();
+    assert_eq!(
+        after,
+        "[appearance]\ndark_theme = \"Solarized Dark\"\ntheme = \"Gruvbox Light Hard\"\n"
+    );
 }
 
 #[test]

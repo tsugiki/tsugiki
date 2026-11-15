@@ -35,8 +35,9 @@ pub enum ThemeChoice {
     #[default]
     System,
     /// `"light"` or `"dark"`, a mode from a file written before (#517): the Theme `light_theme` or
-    /// `dark_theme` names. A pick in the theme picker writes its own choice in its place (#756). Any other
-    /// save keeps the mode, as only the `themes` folder can say which Theme the side's name gives.
+    /// `dark_theme` names. A pick in the theme picker, or in Settings › General's Theme, writes its own
+    /// choice in its place (#756, #757). Any other save keeps the mode, as only the `themes` folder can say
+    /// which Theme the side's name gives.
     Side(ThemeKind),
     Theme(ThemeName),
 }
@@ -83,10 +84,25 @@ impl ThemeChoice {
         }
     }
 
+    /// The choice that shows the Theme `name`. It refuses `system`, `light` and `dark`, which no Theme may
+    /// take: written to the file, they would read back as following the system or as a mode (#757).
+    pub fn named(name: ThemeName) -> Result<Self, Error> {
+        if Self::reserves(name.as_str()) {
+            return Err(no_theme_named(&name));
+        }
+        Ok(Self::Theme(name))
+    }
+
     /// Whether `[appearance] theme` gives `name` a meaning of its own, so no Theme may take it.
     fn reserves(name: &str) -> bool {
         name == Self::SYSTEM || ThemeKind::parse(name).is_some()
     }
+}
+
+/// The refusal of a pick of `name`, which no theme that can be used has, or may have.
+fn no_theme_named(name: &ThemeName) -> Error {
+    let message = format!("No theme is named {:?}.", name.as_str());
+    Error::new(ErrorKind::NotFound, &message)
 }
 
 /// A built-in theme for the light side: `[appearance] light_theme` in `settings.toml`, by its name.
@@ -675,7 +691,8 @@ pub struct GivenTheme<'a> {
 }
 
 /// The theme picker's pick for `[appearance] theme` (#756): follow the system, or show the Theme named, which
-/// `ThemeLibrary::choice` checks against the `themes` folder before it's saved.
+/// `ThemeLibrary::choice` checks against the `themes` folder before it's saved. Settings › General's Theme
+/// picks one too (#757).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ThemePick {
@@ -847,10 +864,11 @@ impl ThemeLibrary {
             ThemePick::Named { name } => name,
         };
         if self.usable.iter().any(|theme| theme.name == name.as_str()) {
+            // No Theme that can be used has a reserved name: `resolve` fails a file that takes one
+            // (`ReservedName`), and no built-in name is reserved. So `ThemeChoice::named` would never refuse.
             Ok(ThemeChoice::Theme(name))
         } else {
-            let message = format!("No theme is named {:?}.", name.as_str());
-            Err(Error::new(ErrorKind::NotFound, &message))
+            Err(no_theme_named(&name))
         }
     }
 

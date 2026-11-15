@@ -94,6 +94,12 @@ export const commands = {
 	 */
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**
+	 *  The themes `themes` would answer with were `[appearance]` to hold `appearance`, worked out by the same
+	 *  rules, so Settings › General shows its rows on the window as Apply will (#757). This waits on the
+	 *  `themes` folder, as `themes` does.
+	 */
+	previewThemes: (appearance: AppearanceSettings) => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("preview_themes", { appearance })),
+	/**
 	 *  Turns the window that asks to `side`, its title bar and native controls with it, or back to following
 	 *  the system with none (#755). The page asks for the side of the theme it is about to show, once it has the
 	 *  `themes` answer, and sends the next ask only after this one answers. Back to the system, it says the side
@@ -355,6 +361,52 @@ export type Answer_Serialize =
 { state: "no_server" } | 
 /**  A newer lookup, or the user, cancelled it before the server answered. */
 { state: "cancelled" };
+
+/**
+ *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+ *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+ *  name no Theme has, which the dialog shows but can't pick.
+ * 
+ *  A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+ *  dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+ *  any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  system, a side shows its default, and the status bar says so.
+ */
+export type AppearanceChanges = AppearanceChanges_Serialize | AppearanceChanges_Deserialize;
+
+/**
+ *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+ *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+ *  name no Theme has, which the dialog shows but can't pick.
+ * 
+ *  A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+ *  dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+ *  any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  system, a side shows its default, and the status bar says so.
+ */
+export type AppearanceChanges_Deserialize = {
+	/**  Follow the system, or show the Theme named. */
+	theme?: ThemePick | null,
+	light_theme?: ThemeName | null,
+	dark_theme?: ThemeName | null,
+};
+
+/**
+ *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
+ *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
+ *  name no Theme has, which the dialog shows but can't pick.
+ * 
+ *  A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+ *  dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+ *  any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  system, a side shows its default, and the status bar says so.
+ */
+export type AppearanceChanges_Serialize = {
+	/**  Follow the system, or show the Theme named. */
+	theme: ThemePick | null,
+	light_theme: ThemeName | null,
+	dark_theme: ThemeName | null,
+};
 
 /**
  *  The `[appearance]` table: the theme the window shows, or "system" to follow the system to its light or
@@ -2675,6 +2727,8 @@ export type SettingsChanges = SettingsChanges_Serialize | SettingsChanges_Deseri
 export type SettingsChanges_Deserialize = {
 	status_bar?: StatusBarSettings_Deserialize | null,
 	releases?: ReleaseSettings_Deserialize | null,
+	/**  The keys of `[appearance]` Settings › General changed (#757). */
+	appearance?: AppearanceChanges_Deserialize | null,
 	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
 	language_servers?: LanguageServerSettings_Deserialize | null,
 };
@@ -2686,6 +2740,8 @@ export type SettingsChanges_Deserialize = {
 export type SettingsChanges_Serialize = {
 	status_bar: StatusBarSettings_Serialize | null,
 	releases: ReleaseSettings_Serialize | null,
+	/**  The keys of `[appearance]` Settings › General changed (#757). */
+	appearance: AppearanceChanges_Serialize | null,
 	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
 	language_servers: LanguageServerSettings_Serialize | null,
 };
@@ -2924,7 +2980,8 @@ export type ThemeName = string;
 
 /**
  *  The theme picker's pick for `[appearance] theme` (#756): follow the system, or show the Theme named, which
- *  `ThemeLibrary::choice` checks against the `themes` folder before it's saved.
+ *  `ThemeLibrary::choice` checks against the `themes` folder before it's saved. Settings › General's Theme
+ *  picks one too (#757).
  */
 export type ThemePick = { kind: "system" } | { kind: "named"; name: ThemeName };
 

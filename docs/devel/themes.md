@@ -24,7 +24,8 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   VS Code spreads it over `workbench.colorTheme` and `window.autoDetectColorScheme`, so the file can't follow
   the system and name a Theme as well. `"light"` and `"dark"`, from files written before
   ([#755](https://github.com/tsugiki/tsugiki/issues/755)), show the Theme in `light_theme` or `dark_theme`,
-  and a pick in the theme picker writes its own choice in their place. Any other save keeps the mode, since
+  and a pick in the theme picker or in Settings' Theme row writes its own choice in their place
+  ([settings.md](settings.md)). Any other save keeps the mode, since
   the side's name may be one no Theme has, and writing it would turn the window to the system's side. A key
   left out takes its default:
   `"system"`, VS Code Light Modern and VS Code Dark Modern. A value that isn't text keeps that key's default,

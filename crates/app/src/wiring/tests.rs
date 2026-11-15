@@ -415,6 +415,32 @@ fn themes_answers_with_the_theme_in_force_and_the_theme_of_each_side_the_setting
     assert_eq!(answer["dark"]["all"][1]["tokens"][0]["value"], "#1d2021");
 }
 
+/// Settings › General shows its `[appearance]` on the window before Apply saves it, worked out by the
+/// rules the file's goes by, and the file stays as it was (#757).
+#[test]
+fn preview_themes_answers_with_the_themes_an_appearance_would_show_and_saves_nothing() {
+    let (folders, _root) = temp_folders("wired-preview-themes");
+    let file = folders.settings_file();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let appearance = json!({
+        "theme": "Gruvbox Dark Hard",
+        "light_theme": "Gruvbox Light Hard",
+        "dark_theme": "Solarized Dark",
+    });
+    let answer = wired.ask("preview_themes", json!({ "appearance": appearance }));
+    drop(wired.stop());
+
+    let answer = answer.unwrap();
+    assert_eq!(
+        answer["theme"],
+        json!({ "kind": "named", "name": "Gruvbox Dark Hard", "side": "dark" })
+    );
+    assert_eq!(answer["light"]["chosen"], "Gruvbox Light Hard");
+    assert_eq!(answer["dark"]["chosen"], "VS Code Dark Modern");
+    assert!(!file.exists());
+}
+
 /// The name stays in the file, as a theme file may be mended, and the window follows the system until then
 /// (#755).
 #[test]

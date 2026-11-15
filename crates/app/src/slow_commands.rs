@@ -26,7 +26,7 @@ use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::{GivenTheme, ThemeLibrary, ThemePick, Themes};
+use tsugiki_core::theme::{ThemeLibrary, ThemePick, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
@@ -185,17 +185,19 @@ pub(crate) fn remember_command(
 #[specta::specta]
 pub(crate) fn themes(owner: State<'_, SettingsOwner>) -> Result<Themes, Error> {
     let view = owner.view();
-    let AppearanceSettings {
-        theme,
-        light_theme,
-        dark_theme,
-    } = &view.loaded.settings.appearance;
-    let library = ThemeLibrary::read(&view.themes_folder)?;
-    let given = GivenTheme {
-        choice: theme,
-        place: &view.theme_place,
-    };
-    Ok(library.themes(given, light_theme, dark_theme))
+    view.themes(&view.loaded.settings.appearance)
+}
+
+/// The themes `themes` would answer with were `[appearance]` to hold `appearance`, worked out by the same
+/// rules, so Settings › General shows its rows on the window as Apply will (#757). This waits on the
+/// `themes` folder, as `themes` does.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn preview_themes(
+    appearance: AppearanceSettings,
+    owner: State<'_, SettingsOwner>,
+) -> Result<Themes, Error> {
+    owner.view().themes(&appearance)
 }
 
 /// Saves the theme picker's choice to `[appearance] theme` in `settings.toml`, without Settings' Apply (#518,

@@ -101,7 +101,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     unless it belongs to what Esc closes, like the search box. Esc gives the focus to whatever lay under the
     thing it closed: going back from the file view moves it to the diff, and going back from a PR moves the
     cursor and the focus to the Issue's row, or to the Detail pane while the Issue list is hidden. Esc leaves
-    the panes as they are.
+    the panes as they are. Esc in the PR view's rail closes nothing: it gives the focus to the diff or the
+    Conversation beside the rail ([review.md](review.md)).
 
     The pane that holds the keyboard focus, the Issue list or the Detail pane, shows a 2 px line in the
     Theme's focus colour along its top edge, as VS Code does, so the user can tell where ↑ ↓ go. With the
@@ -124,13 +125,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     The status bar stays, and the Issue list's rules for a hidden list apply. Bringing the panes back puts
     the focus where bringing back the list does; with the Sidebar alone, the focus stays in the Detail pane.
 
-    Pane sizes, the Definition peek's height, inline and split ([definitions.md](definitions.md)), the
-    Sidebar's state, whether the Issue list shows and what `Ctrl+K Z` remembers belong to the machine, like
-    the window's position, and are not synced.
+    Pane sizes, the width of the PR view's rail ([review.md](review.md)), the Definition peek's height,
+    inline and split ([definitions.md](definitions.md)), the Sidebar's state, whether the Issue list shows
+    and what `Ctrl+K Z` remembers belong to the machine, like the window's position, and are not synced.
+    Whether the rail is open lasts only until Tsugiki quits.
 
     "Reset Layout" in the command palette puts all of that back to the defaults at once, without asking: both
-    pane sizes, the peek's 18 rows and the split peek's 42%, the Sidebar full and on show, the Issue list on
-    show, and nothing remembered by `Ctrl+K Z`.
+    pane sizes, the rail's 280 px, the peek's 18 rows and the split peek's 42%, the Sidebar full and on show,
+    the Issue list on show, and nothing remembered by `Ctrl+K Z`. It leaves the rail open or closed.
     The status bar, the list's footer, zoom, the diff view, the performance HUD and the window stay as they
     are. It has no key until the user gives it one.
   - **Look** of the Sidebar and the Issue list, which the prototype settled. The colours come from the

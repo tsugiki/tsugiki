@@ -21,6 +21,9 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
     const panes = {
       sidebar: null,
       list: null,
+      peek: null,
+      split_peek: null,
+      rail: null,
       sidebar_hidden: false,
       list_hidden: false,
       detail_only_hid: null,

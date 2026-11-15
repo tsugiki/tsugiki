@@ -1733,10 +1733,10 @@ export type Pair = {
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
  *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
  *  bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
- *  (#458), and how many pixels tall they dragged the split one (#459). All of it stays on this machine, like
- *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
- *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
- *  over.
+ *  (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
+ *  rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
+ *  default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
+ *  is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
 
@@ -1744,10 +1744,10 @@ export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
  *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
  *  bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
- *  (#458), and how many pixels tall they dragged the split one (#459). All of it stays on this machine, like
- *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
- *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
- *  over.
+ *  (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
+ *  rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
+ *  default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
+ *  is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout_Deserialize = {
 	sidebar?: number | null,
@@ -1759,6 +1759,11 @@ export type PaneLayout_Deserialize = {
 	 *  code above it, the diff's or the file view's (#459).
 	 */
 	split_peek?: number | null,
+	/**
+	 *  The width of the rail beside the PR's Conversation and Files tabs in CSS pixels, or nothing for its
+	 *  280 (#603).
+	 */
+	rail?: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden?: boolean,
 	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
@@ -1777,10 +1782,10 @@ export type PaneLayout_Deserialize = {
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
  *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
  *  bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
- *  (#458), and how many pixels tall they dragged the split one (#459). All of it stays on this machine, like
- *  the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
- *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
- *  over.
+ *  (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
+ *  rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
+ *  default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
+ *  is too small a thing to lose the rest of `machine.toml` over.
  */
 export type PaneLayout_Serialize = {
 	sidebar: number | null,
@@ -1792,6 +1797,11 @@ export type PaneLayout_Serialize = {
 	 *  code above it, the diff's or the file view's (#459).
 	 */
 	split_peek: number | null,
+	/**
+	 *  The width of the rail beside the PR's Conversation and Files tabs in CSS pixels, or nothing for its
+	 *  280 (#603).
+	 */
+	rail: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden: boolean,
 	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */

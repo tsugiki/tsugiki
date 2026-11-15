@@ -10,6 +10,7 @@ const DEFAULTS = {
   list: null,
   peek: null,
   split_peek: null,
+  rail: null,
   sidebar_hidden: false,
   list_hidden: false,
   detail_only_hid: null,
@@ -45,18 +46,35 @@ it("keeps sizes written by hand within each one's limits", async () => {
     list: 3,
     peek: 1000,
     split_peek: 9000,
+    rail: 5000,
   });
   await panes.load();
-  const wide = [panes.sidebar, panes.list, panes.peek, panes.splitPeek];
+  const wide = [panes.sidebar, panes.list, panes.peek, panes.splitPeek, panes.rail];
   const again = new PanesState();
-  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3, peek: 1, split_peek: 20 });
+  core.paneLayout.mockResolvedValueOnce({ ...DEFAULTS, sidebar: 3, peek: 1, split_peek: 20, rail: 10 });
 
   await again.load();
 
-  expect([wide, [again.sidebar, again.list, again.peek, again.splitPeek]]).toEqual([
-    [480, 280, 60, 9000],
-    [140, null, 5, 160],
+  expect([wide, [again.sidebar, again.list, again.peek, again.splitPeek, again.rail]]).toEqual([
+    [480, 280, 60, 9000, 640],
+    [140, null, 5, 160, 200],
   ]);
+});
+
+it("keeps the rail's width with the panes, and leaves out whether the rail shows", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, rail: 360 });
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+  const read = [panes.rail, panes.railOpen];
+  panes.railOpen = true;
+  panes.rail = 400;
+
+  await panes.save();
+  await panes.reset("rail");
+
+  expect([read, panes.rail, panes.railOpen]).toEqual([[360, false], null, true]);
+  expect(core.savePaneLayout.mock.calls).toEqual([[{ ...DEFAULTS, rail: 400 }], [DEFAULTS]]);
 });
 
 it("keeps the split peek's height with the panes, and gives its 42% of the room back on a reset", async () => {
@@ -177,6 +195,7 @@ it("hides each pane and shows it again, saving each time with its width", async 
     list: 500,
     peek: null,
     split_peek: null,
+    rail: null,
     detail_only_hid: null,
     order: "attention",
   };
@@ -268,6 +287,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     list: 500,
     peek: 30,
     split_peek: 300,
+    rail: 360,
     sidebar_hidden: true,
     list_hidden: true,
     detail_only_hid: "list",
@@ -276,6 +296,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   await panes.load();
+  panes.railOpen = true;
 
   await panes.resetLayout();
 
@@ -284,9 +305,11 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     panes.list,
     panes.peek,
     panes.splitPeek,
+    panes.rail,
     panes.hidden("sidebar"),
     panes.hidden("list"),
-  ]).toEqual([null, null, null, null, false, false]);
+    panes.railOpen,
+  ]).toEqual([null, null, null, null, null, false, false, true]);
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });
 

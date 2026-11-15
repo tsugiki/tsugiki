@@ -88,9 +88,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   line sits 3 rows from the top, and marked. A file of the Repository comes from the **Mirror** at the hit's
   commit, so a hit in a file the PR changes, found at the head, shows the head's text. A file outside it
   comes from disk, and only one a server named in a hit can be read. The code is highlighted as the diff
-  is, so a file the PR changes looks as it does in the diff (see "Highlighting a hit's file"). The peek
-  takes 18 rows while it looks up or shows code, and 2 when it only has words to say. Its code scrolls
-  inside it, so the diff's rows after it stay where they are.
+  is, at the diff's size, and the hit's line takes the colour the diff marks a landing in, so a file the PR
+  changes looks as it does in the diff (see "Highlighting a hit's file"). The peek takes 18 rows while it
+  looks up or shows code, and 2 when it only has words to say. Its code scrolls inside it, so the diff's
+  rows after it stay where they are.
 - The user drags the peek's bottom edge, a whole row at a time, between 5 rows and 60, or moves it with ↑
   and ↓ while it has the focus (#458). A double-click on it puts the 18 rows back, as on the pane edges.
   The height is saved with the pane sizes in `machine.toml` ([layout.md](layout.md)), so the next peek
@@ -194,8 +195,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   and Read-only. The hit's line sits 3 rows from the top, and the view marks it.
 - The file view shows the peek's code: the window asks the core for 200 lines at a time near the rows that
   show, read from the **Mirror** at the hit's commit, so `Objects/unicodeobject.c` opens without waiting for
-  all of it, and it works offline at any commit the Mirror holds. Its lines are highlighted as the peek's
-  are.
+  all of it, and it works offline at any commit the Mirror holds. Its lines are highlighted, sized and
+  marked as the peek's are, with one column of line numbers, as a whole file has one side.
 - The file view takes the focus, so the keys scroll it, and a file it can't read says why inside it, where
   the focus stays. The diff stays drawn under it, inert, and its
   keys wait: Back returns to the Files tab scrolled where it was, with the focus in the diff, and so does

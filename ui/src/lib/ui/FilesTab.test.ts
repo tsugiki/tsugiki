@@ -1531,6 +1531,9 @@ it("goes to the definition on a Ctrl+click, and marks the whole line it lands on
   expect(files.picked).toMatchObject({ word: "Notes", line: 1 });
   expect(mark()?.style.top).toBe(rowAt("2+new line")?.style.top);
   expect(mark()?.className).toMatch(/^mark\b/);
+  // The diff's code takes window.css's size, and the mark its colour, which only a mark inside code takes.
+  expect(screen.getByRole("region", { name: "Diff" }).classList).toContain("code-lines");
+  expect(mark()?.matches(".code-lines .landed")).toBe(true);
   expect(mark()?.classList).not.toContain("head");
   // Once faded the mark goes, so the line isn't marked again when it shows again.
   await fireEvent.animationEnd(mark() as HTMLElement);
@@ -1614,9 +1617,12 @@ it("opens a file the PR doesn't change read-only at the hit's commit, and Back r
   const view = await vi.waitFor(() => screen.getByRole("region", { name: "File view" }));
   const code = screen.getByRole("region", { name: "Definition's code" });
   await vi.waitFor(() => {
-    expect(view.querySelector(".hit")?.textContent).toBe("900line 900");
+    expect(view.querySelector(".landed")?.textContent).toBe("900line 900");
   });
-  expect(view.querySelector(".hit .hl-keyword")?.textContent).toBe("line");
+  expect(view.querySelector(".landed .hl-keyword")?.textContent).toBe("line");
+  // The code takes the diff's size and its landed line the diff's colour, from window.css (#754).
+  expect(code.classList).toContain("code-lines");
+  expect(view.querySelector(".landed")?.matches(".code-lines .landed")).toBe(true);
 
   expect(view.querySelector(".header")?.textContent.replace(/\s+/g, " ").trim()).toBe(
     "← Back to PR #11's diff Objects/unicodeobject.c at fedcba9 · the PR's base of PR #11 Read-only",
@@ -1767,7 +1773,7 @@ it("scrolls to a definition in the file view's own file and marks it, each time 
 
   await files.goToDefinition();
   await vi.waitFor(() => {
-    expect(view.querySelector(".hit")?.textContent).toBe("120line 120");
+    expect(view.querySelector(".landed")?.textContent).toBe("120line 120");
   });
   const landed = code.scrollTop;
   code.scrollTop = 0;
@@ -1778,7 +1784,7 @@ it("scrolls to a definition in the file view's own file and marks it, each time 
 
   // The line sits three rows from the top, though it is the one marked.
   expect([landed, code.scrollTop]).toEqual([(120 - 1 - 3) * 20, (120 - 1 - 3) * 20]);
-  expect(view.querySelectorAll(".hit")).toHaveLength(1);
+  expect(view.querySelectorAll(".landed")).toHaveLength(1);
   // The caret moves to the word the hit names, as its line has come by now, so the next F12 asks from it.
   expect(files.fileView?.code.pick).toMatchObject({ line: 120, word: "line", caret: 4 });
   await tick();
@@ -1929,7 +1935,7 @@ const rowAt = (text: string) =>
 /** The peek's code lines that show: each line's number and text, marked with `*` for the hit's. */
 const peekCode = () =>
   [...(peekBox()?.querySelectorAll<HTMLElement>(".line") ?? [])].map(
-    (line) => `${line.classList.contains("hit") ? "*" : ""}${line.textContent}`,
+    (line) => `${line.classList.contains("landed") ? "*" : ""}${line.textContent}`,
   );
 
 /** A file of `count` lines, line N of which reads `line N`, as the core reads a hit's file. */

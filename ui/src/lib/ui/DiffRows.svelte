@@ -369,7 +369,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-  class="scroller mono"
+  class="scroller mono code-lines"
   role="region"
   aria-label={sideBySide ? "Side-by-side diff" : "Diff"}
   tabindex="0"
@@ -575,7 +575,7 @@
            comes back to doesn't mark the line again. -->
       {#key diff.marked}
         <div
-          class={["mark", sideBySide && diff.marked?.side]}
+          class={["mark landed", sideBySide && diff.marked?.side]}
           style:top={`${String(markedPlace * ROW)}px`}
           onanimationend={() => {
             diff.marked = undefined;
@@ -592,7 +592,6 @@
     inset: 0;
     overflow: auto;
     overscroll-behavior: contain;
-    font-size: 12px;
   }
 
   .scroller:focus-visible {
@@ -611,14 +610,14 @@
     background: color-mix(in srgb, currentColor 4%, transparent);
   }
 
-  /* The line Go to definition landed on, which fades out. Side by side, only the half of its hit's side. */
+  /* The line Go to definition landed on, in window.css's `landed` colour, which fades out. Side by side,
+     only the half of its hit's side. */
   .mark {
     position: absolute;
     right: 0;
     left: 0;
     height: 20px;
     pointer-events: none;
-    background: color-mix(in srgb, var(--find-current) 50%, transparent);
     animation: fade 1.6s ease-out forwards;
   }
 

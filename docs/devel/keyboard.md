@@ -87,6 +87,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Issue list's while the list has the focus, the diff's while the Files tab shows its diff, then those that
   work anywhere. A key is listed only where it would run its action: Next Tab while a PR shows, and in a
   text box only the keys that work there. Esc closes the list, and in a text box `?` types.
+- The command palette lists each action of the key table that can run where the focus was as it opened, in
+  the table's order, each with its key in force on the right, remaps included, or no key. Running one does
+  what its key does there, once the palette has handed the focus back, and in a text box too, where the box
+  would keep the key. So the Issue list's palette has Unfold and Fold, and the diff's has Next Change and Find
+  in Diff. An action with nothing built behind it yet, such as Archive, isn't listed. A command the palette
+  had before keeps its title, such as Hide Sidebar, which turns into Show Sidebar, or View: Files in the Rail.
+  Mark Seen and Mark Unseen mark the item on show, as its header's button does. The commands that run no
+  action, such as Sort by Attention and a switch to each other Repository, come after the actions.
 - The command palette lists the commands the user ran at the top, newest first, then those never run, in
   their usual order. Typing filters the list by substring and keeps that order. `machine.toml` keeps the
   last 50 commands run, newest first, in `recent_commands` beside the recent Repositories, so the order

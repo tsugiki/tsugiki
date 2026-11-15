@@ -35,7 +35,7 @@
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import type { ScreenKeys, View } from "./KeyList.svelte";
-  import { type Action, actionOn } from "$lib/state/keymap.svelte";
+  import { type Action, actionOn, keyTable } from "$lib/state/keymap.svelte";
   import { actionLabel, currentOs, isTextBox, keptByTextBox, keyName, worksInTextBox } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction } from "./Palette.svelte";
@@ -461,20 +461,6 @@
     return (tab?.fileView ? tab.fileView.code.pick : tab?.picked)?.word;
   }
 
-  /** The palette's commands that open the rail on each of its tabs, while a PR shows its tabs. */
-  function railCommands(): PaletteAction[] {
-    const view = shownPr();
-    if (view === undefined) return [];
-    return RAIL_ORDER.map((id) => ({
-      title: `View: ${RAIL_TABS[id].name} in the Rail`,
-      note: actionLabel(RAIL_TABS[id].action, currentOs()),
-      run: () => {
-        if (id === "search") searchInRail(view);
-        else toggleRail(id);
-      },
-    }));
-  }
-
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
    * keys and commands wait until Back (#453). */
   function shownFiles(): PrFilesState | undefined {
@@ -487,82 +473,100 @@
     return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
   }
 
-  /** The palette's commands for the Files tab on show: the one that switches it to one file at a time, or
-   * back, and while files unchanged since the user's Stale review are folded, the one that opens them
-   * (#387). */
-  function filesCommands(): PaletteAction[] {
-    const files = shownFiles();
-    if (files === undefined) return [];
-    const unfold = {
-      title: "View: Unfold Unchanged Files",
-      note: actionLabel("unfold_unchanged", currentOs()),
-      run: () => {
-        files.unfoldUnchanged();
-      },
-    };
-    return [
-      {
-        title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
-        id: "toggle_files_mode",
-        note: actionLabel("toggle_files_mode", currentOs()),
-        run: () => {
-          files.toggleMode();
+  /**
+   * The palette's own command for each of the screen's actions that has one, or undefined while it can't
+   * run: its title changes with what it does, or the command had a title of its own before the key table
+   * (#555). Each of the screen's other actions gets a row that runs what its key runs, under the table's
+   * title.
+   *
+   * A pane command runs what its key runs. Mark Seen and Mark Unseen mark the item on show, as its header's
+   * button does, whatever has the focus. Each rail tab's command waits for a PR's tabs, as its button does by
+   * coming with them (#603, #727), and Unfold Unchanged Files waits for files unchanged since a Stale review
+   * to be folded (#387).
+   */
+  const COMMANDS: Partial<Record<Action, () => PaletteAction | undefined>> = {
+    toggle_sidebar: () => ({
+      title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
+      id: "toggle_sidebar",
+      run: () => void toggleSidebarByKey(),
+    }),
+    toggle_issue_list: () => ({
+      title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
+      id: "toggle_issue_list",
+      run: () => void toggleListByKey(),
+    }),
+    toggle_detail_only: () => ({
+      title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",
+      id: "toggle_detail_only",
+      run: () => void toggleDetailOnly(),
+    }),
+    mark_seen: () =>
+      detail?.view ? { title: "Mark Seen", run: () => void markSeen(detailMarked()) } : undefined,
+    mark_unseen: () =>
+      detail?.view ? { title: "Mark Unseen", run: () => void markUnseen(detailMarked()) } : undefined,
+    ...Object.fromEntries(
+      RAIL_ORDER.map((id): [Action, () => PaletteAction | undefined] => [
+        RAIL_TABS[id].action,
+        () => {
+          const view = shownPr();
+          return view
+            ? {
+                title: `View: ${RAIL_TABS[id].name} in the Rail`,
+                run: () => {
+                  if (id === "search") searchInRail(view);
+                  else toggleRail(id);
+                },
+              }
+            : undefined;
         },
-      },
-      ...(files.foldedUnchanged > 0 ? [unfold] : []),
-    ];
-  }
+      ]),
+    ),
+    toggle_files_mode: () => {
+      const files = shownFiles();
+      return files
+        ? {
+            title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
+            id: "toggle_files_mode",
+            run: () => {
+              files.toggleMode();
+            },
+          }
+        : undefined;
+    },
+    unfold_unchanged: () => {
+      const files = shownFiles();
+      return files && files.foldedUnchanged > 0
+        ? {
+            title: "View: Unfold Unchanged Files",
+            run: () => {
+              files.unfoldUnchanged();
+            },
+          }
+        : undefined;
+    },
+  };
 
-  /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The
-   * palette runs it once it has handed the focus back, so the focus goes where the key would put it. A
+  /**
+   * What this screen adds to the command palette while it shows, for the focus on `target`, where it was as
+   * the palette opened: a row for each of the screen's actions that can run there, in the key table's order,
+   * with the action's key on its right (#555), then the commands that run no action. A row runs what its key
+   * runs, once the palette has handed the focus back, so the focus goes where the key would put it. A
    * command whose title changes with what it does has an id, so the palette's history keeps one place for
-   * both titles. */
-  export function paletteCommands(): PaletteAction[] {
+   * both titles. The palette types nothing, so a row runs where a text box would keep its key.
+   */
+  export function paletteCommands(target: EventTarget | null = null): PaletteAction[] {
+    const actions = keyTable().flatMap(({ action, title }): PaletteAction[] => {
+      const own = COMMANDS[action];
+      if (own) {
+        const command = own();
+        return command ? [{ ...command, action }] : [];
+      }
+      const run = SCREEN_ACTIONS[action]?.(target);
+      // A press that no one made: it isn't held, and the browser has nothing to do on it.
+      return run ? [{ title, action, run: () => run(new KeyboardEvent("keydown")) }] : [];
+    });
     return [
-      {
-        title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
-        id: "toggle_sidebar",
-        run: () => void toggleSidebarByKey(),
-      },
-      {
-        title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
-        id: "toggle_issue_list",
-        run: () => void toggleListByKey(),
-      },
-      {
-        title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",
-        id: "toggle_detail_only",
-        run: () => void toggleDetailOnly(),
-      },
-      { title: "Reset Layout", run: () => void resetLayout() },
-      {
-        title: "Go Back",
-        note: actionLabel("go_back", currentOs()),
-        run: () => {
-          goThrough(-1);
-        },
-      },
-      {
-        title: "Go Forward",
-        note: actionLabel("go_forward", currentOs()),
-        run: () => {
-          goThrough(1);
-        },
-      },
-      ...(detail?.view
-        ? [
-            {
-              title: "Mark Seen",
-              note: actionLabel("mark_seen", currentOs()),
-              run: () => void markSeen(detailMarked()),
-            },
-            {
-              title: "Mark Unseen",
-              note: actionLabel("mark_unseen", currentOs()),
-              run: () => void markUnseen(detailMarked()),
-            },
-          ]
-        : []),
+      ...actions,
       panes.order === "attention"
         ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
         : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
@@ -576,8 +580,6 @@
           ]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
-      ...railCommands(),
-      ...filesCommands(),
     ];
   }
 
@@ -774,6 +776,8 @@
     go_to_definition: onTab((tab) => tab.goToDefinition()),
     go_back: () => (e) => goByKey(e, -1),
     go_forward: () => (e) => goByKey(e, 1),
+    // It has no key unless `[keys]` gives it one.
+    reset_layout: () => () => void resetLayout(),
   };
 
   function goByKey(e: KeyboardEvent, steps: -1 | 1) {

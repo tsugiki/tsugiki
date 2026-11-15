@@ -35,6 +35,7 @@
   import Onboarding from "$lib/ui/Onboarding.svelte";
   import { issueIcon, prIcon } from "$lib/ui/octicons";
   import Palette, {
+    type PaletteAction,
     type PaletteCommand,
     type PaletteWords,
     type QuickOpenRows,
@@ -77,6 +78,9 @@
   /** What the palette's text box holds as it opens, while the palette is open: `>` for its commands, or
    * nothing for quick open. */
   let paletteText = $state<string>();
+  /** The element that had the focus as the palette last opened, which the palette hands it back to as it
+   * closes, and lists the actions that can run on (#555). */
+  let paletteFrom = $state.raw<Element | null>(null);
   /** Quick open's search, a new one each time the palette opens on a Repository's screen. */
   let quickOpen = $state<QuickOpenState>();
   let pickerOpen = $state(false);
@@ -114,6 +118,7 @@
    * (#558). Elsewhere it lists only the commands, with no `>`. */
   const openPalette = (text: "" | ">") => {
     if (dialogOpen) return;
+    paletteFrom = document.activeElement;
     quickOpen =
       openName === undefined ? undefined : new QuickOpenState(openName, repositoryHome?.changedFiles());
     paletteText = quickOpen === undefined ? "" : text;
@@ -153,11 +158,12 @@
   const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
-  /** One of the page's actions: what its key runs, and `when` it can run at all, if not always, which the
-   * keys and the `?` list both ask. A dialog on top stops most of them too, as each says. */
+  /** One of the page's actions: what its key runs for a press on `target`, and `when` it can run at all, if
+   * not always, which the keys, the `?` list and the palette ask. A dialog on top stops most of them too, as
+   * each says. */
   interface PageAction {
     when?: () => boolean;
-    run: (e: KeyboardEvent) => void;
+    run: (target: EventTarget | null) => void;
   }
   /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549). */
   const PAGE_ACTIONS = new Map<Action, PageAction>([
@@ -202,8 +208,8 @@
     [
       "show_keys",
       {
-        run: (e) => {
-          if (!dialogOpen) keysHere = keysAt(e.target);
+        run: (target) => {
+          if (!dialogOpen) keysHere = keysAt(target);
         },
       },
     ],
@@ -214,7 +220,7 @@
     [...PAGE_ACTIONS].map(([action, { run }]) => [
       action,
       (e: KeyboardEvent) => {
-        if (pageCanRun(action)) run(e);
+        if (pageCanRun(action)) run(e.target);
       },
     ]),
   );
@@ -373,23 +379,41 @@
       pending: !named && files.pending,
     };
   });
-  /** The palette's commands: those the user ran, most recently run first, then the others in this order. */
+  /**
+   * The palette's row for each of the page's actions that can run, as the screen gives its own (#555): under
+   * the key table's title, running what its key runs where the focus was as the palette opened. The
+   * performance HUD's row is named for what it does. Open DevTools, which the webview opens on its key,
+   * shows in a development build only: the core says which build it is, so a development UI over a release
+   * core lists nothing that fails.
+   */
+  const pageCommands = (): PaletteAction[] =>
+    keyTable().flatMap(({ action, title }): PaletteAction[] => {
+      if (action === "toggle_hud") {
+        const hudTitle = hud.visible ? "Hide performance HUD" : "Show performance HUD";
+        return [{ title: hudTitle, id: action, action, run: () => void hud.toggle() }];
+      }
+      if (action === "open_devtools") {
+        return about.about?.build === "development" ? [{ title, action, run: openDevtools }] : [];
+      }
+      const page = PAGE_ACTIONS.get(action);
+      const from = paletteFrom;
+      return page && pageCanRun(action) ? [{ title, action, run: () => void page.run(from) }] : [];
+    });
+  /** Each action's place in the key table, by which the palette lists the rows that run one. */
+  const tablePlace = new Map(keyTable().map(({ action }, at) => [action, at]));
+  /** `rows` with those that run an action in the key table's order, and the others after them, in theirs. */
+  const inTableOrder = (rows: readonly PaletteAction[]) => {
+    const place = (row: PaletteAction) =>
+      (row.action === undefined ? undefined : tablePlace.get(row.action)) ?? tablePlace.size;
+    return rows.toSorted((one, other) => place(one) - place(other));
+  };
+  /** The palette's commands: those the user ran, most recently run first, then the others in their usual
+   * order: each action that can run where the focus was, in the key table's order, then the screen's
+   * commands that run no action, then a switch to each other Repository. */
   const commands: PaletteCommand[] = $derived(
     recentCommands.order<PaletteCommand>([
-      ...(repositoryHome?.paletteCommands() ?? []),
+      ...inTableOrder([...(repositoryHome?.paletteCommands(paletteFrom) ?? []), ...pageCommands()]),
       ...switchRows("Repository: "),
-      { title: "Open Settings", run: openSettings },
-      { title: "Pick a Theme", run: openThemePicker },
-      { title: "Reload Themes", run: reloadThemes },
-      {
-        title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
-        id: "toggle_hud",
-        run: () => {
-          hud.toggle();
-        },
-      },
-      // The core says which build it is, so a development UI over a release core lists nothing that fails.
-      ...(about.about?.build === "development" ? [{ title: "Open DevTools", run: openDevtools }] : []),
     ]),
   );
 </script>

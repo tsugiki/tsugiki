@@ -39,6 +39,26 @@ it("lists its commands, with the first one picked", () => {
   expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual(["true", "false"]);
 });
 
+it("shows the key of a row's action on its right, out of the row's name, and none for an action with no key", () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  const run = () => {};
+  render(Palette, {
+    commands: [
+      { title: "Hide Sidebar", action: "toggle_sidebar", run },
+      { title: "Reset Layout", action: "reset_layout", run },
+      { title: "Sort by Attention", run },
+    ],
+    onclose: () => {},
+  });
+
+  const keys = screen
+    .getAllByRole("option")
+    .map((option) => option.querySelector("kbd")?.textContent ?? null);
+  expect(keys).toEqual(["Cmd+B", null, null]);
+  expect(screen.getByRole("option", { name: "Hide Sidebar", description: "Cmd+B" })).toBeTruthy();
+  expect(screen.getByRole("option", { name: "Reset Layout" }).getAttribute("aria-describedby")).toBeNull();
+});
+
 it("lists only the commands that hold what was typed, in any case", async () => {
   const { input } = withCommands();
   await fireEvent.input(input, { target: { value: "  hud" } });

@@ -1285,7 +1285,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   await screen.findByRole("region", { name: "Diff" });
   expect(pressed()).toBe("true");
 
-  expect(command("View: All Files")?.note).toBe("Ctrl+K O");
+  expect(command("View: All Files")?.action).toBe("toggle_files_mode");
   command("View: All Files")?.run();
   await tick();
   expect([pressed(), command("View: One File at a Time")?.title]).toEqual([
@@ -1316,12 +1316,12 @@ it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it
   command()?.run();
   await tick();
 
-  expect([before, closed, opened, rail(), command()?.note]).toEqual([
+  expect([before, closed, opened, rail(), command()?.action]).toEqual([
     undefined,
     null,
     true,
     null,
-    "Ctrl+K F",
+    "toggle_rail_files",
   ]);
 });
 
@@ -1417,11 +1417,11 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   expect(before).toEqual([undefined, null]);
   expect(fromSelection).toEqual(["Search", "gc_debug", true]);
   expect([again, rerun, typed]).toEqual([["Search", "gc_collect", true], 0, "gc_.*"]);
-  expect([fromDiff, kept, box().value, command()?.note]).toEqual([
+  expect([fromDiff, kept, box().value, command()?.action]).toEqual([
     "gc_list",
     "gc_list",
     "visit",
-    "Ctrl+Shift+F",
+    "search_in_rail",
   ]);
   await vi.waitFor(() => {
     expect(core.textSearch).toHaveBeenCalledWith({
@@ -1514,7 +1514,7 @@ it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palet
   await fireEvent.click(tab);
   await screen.findByRole("region", { name: "Diff" });
 
-  expect(command()?.note).toBe("Ctrl+K J");
+  expect(command()?.action).toBe("unfold_unchanged");
   command()?.run();
   component.runChord("unfold_unchanged", chordEnd());
   expect(unfold).toHaveBeenCalledTimes(2);
@@ -2130,7 +2130,7 @@ it("offers the palette Go Back and Go Forward, each with its key", async () => {
   await screen.findByRole("region", { name: "PR view" });
   const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
 
-  expect([command("Go Back")?.note, command("Go Forward")?.note]).toEqual(["Alt+←", "Alt+→"]);
+  expect([command("Go Back")?.action, command("Go Forward")?.action]).toEqual(["go_back", "go_forward"]);
   command("Go Back")?.run();
   expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
   command("Go Forward")?.run();
@@ -2301,7 +2301,10 @@ it("offers the palette Mark Seen and Mark Unseen on the item on show, each with 
   await fireEvent.click(issueRow);
   await screen.findByRole("button", { name: "Mark Seen" });
 
-  expect([command("Mark Seen")?.note, command("Mark Unseen")?.note]).toEqual(["Q", "Shift+Q"]);
+  expect([command("Mark Seen")?.action, command("Mark Unseen")?.action]).toEqual([
+    "mark_seen",
+    "mark_unseen",
+  ]);
   command("Mark Seen")?.run();
   command("Mark Unseen")?.run();
 
@@ -3160,9 +3163,9 @@ it("offers the palette a command that hides or shows the Issue list, named for w
       "Hide Sidebar",
       "Hide Issue List",
       "Show Only the Detail Pane",
-      "Reset Layout",
       "Go Back",
       "Go Forward",
+      "Reset Layout",
       "Sort by Last Update",
       "View: Stale Reviews",
     ],
@@ -3170,9 +3173,9 @@ it("offers the palette a command that hides or shows the Issue list, named for w
       "Hide Sidebar",
       "Show Issue List",
       "Show Only the Detail Pane",
-      "Reset Layout",
       "Go Back",
       "Go Forward",
+      "Reset Layout",
       "Sort by Last Update",
       "View: Stale Reviews",
     ],

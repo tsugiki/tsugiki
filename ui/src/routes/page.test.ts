@@ -155,6 +155,15 @@ const oneIssue = {
   },
 } as const;
 
+/** A palette row's text without the key on its right, which describes the row and stays out of its name. */
+const rowText = (option: HTMLElement) => {
+  const row = option.cloneNode(true) as HTMLElement;
+  row.querySelector("kbd")?.remove();
+  return row.textContent;
+};
+/** The text of each of the palette's rows, without their keys. */
+const rowTexts = () => screen.getAllByRole("option").map(rowText);
+
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
   document.title = "";
@@ -554,7 +563,7 @@ describe("Open DevTools", () => {
   /** Opens the palette and gives the title of each of its rows. */
   const paletteTitles = async () => {
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
-    return screen.getAllByRole("option").map((option) => option.textContent);
+    return rowTexts();
   };
 
   it("is in a development build's palette, and asks the core to open DevTools", async () => {
@@ -588,6 +597,71 @@ const pepsHome = { screen: "repository", repository: peps, others: [gcmon.name] 
 /** Each option's text, with the space before a row's "open" mark as a plain one. */
 const spaced = (option: HTMLElement) => option.textContent.replace(/\s/g, " ");
 const options = () => screen.getAllByRole("option").map(spaced);
+
+/** A Standalone PR, #70. */
+const pr = {
+  number: 70,
+  title: "gh-7: Fix the crash",
+  author: "some-author",
+  state: "OPEN",
+  is_draft: false,
+  target_branch: "main",
+  ci: null,
+  updated_at: "2026-11-04T10:00:00Z",
+  reasons: [],
+  your_review: { kind: "unreviewed" },
+  seen: { mark: { numbers: [70], up_to: null }, state: "seen" },
+};
+const diffFile = (path: string, row: number) => ({
+  path,
+  old_path: null,
+  change: { kind: "lines", added: 1, removed: 0 },
+  row,
+  columns: 4,
+  generated: false,
+  gaps: [],
+  rest: null,
+  pairs: [],
+});
+/** #70's diff, of three files. */
+const diff = {
+  status: "ok",
+  data: {
+    state: "ready",
+    head: "abc",
+    base: "base",
+    files: ["Lib/gc.py", "Modules/gcmodule.c", "Lib/test/test_70.py"].map(diffFile),
+    rows: 3,
+    news: [],
+    threads: { kind: "shown", threads: [] },
+  },
+};
+
+/** The core with #70 alone on the Workbench, its view and its diff. */
+function listOnePr() {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ kind: "standalone_pr", ...pr, backports: [], attention: null }],
+      quiet: [],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
+  });
+  const done = { status: "ok", data: null };
+  core.openPullRequest.mockResolvedValue(done);
+  core.fetchPullRequest.mockResolvedValue(done);
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: { ...pr, content: null, shares_review_of: null },
+  });
+  core.mirrorsHeld.mockResolvedValue(false);
+  core.pullRequestFiles.mockResolvedValue(diff);
+  core.pullRequestRows.mockResolvedValue({ status: "ok", data: [] });
+  core.pullRequestSpans.mockResolvedValue({ status: "ok", data: [] });
+}
 
 describe("quick open", () => {
   const ctrlP = () => fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
@@ -650,7 +724,7 @@ describe("quick open", () => {
     await screen.findByRole("button", { name: "#7 It crashes" });
     await ctrlP();
     await fireEvent.input(box(), { target: { value: ">settings" } });
-    const commands = screen.getAllByRole("option").map((option) => option.textContent);
+    const commands = rowTexts();
     await fireEvent.keyDown(window, { key: "Escape" });
 
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
@@ -661,68 +735,9 @@ describe("quick open", () => {
   });
 
   describe("with a PR on show", () => {
-    const pr = {
-      number: 70,
-      title: "gh-7: Fix the crash",
-      author: "some-author",
-      state: "OPEN",
-      is_draft: false,
-      target_branch: "main",
-      ci: null,
-      updated_at: "2026-11-04T10:00:00Z",
-      reasons: [],
-      your_review: { kind: "unreviewed" },
-      seen: { mark: { numbers: [70], up_to: null }, state: "seen" },
-    };
-    const diffFile = (path: string, row: number) => ({
-      path,
-      old_path: null,
-      change: { kind: "lines", added: 1, removed: 0 },
-      row,
-      columns: 4,
-      generated: false,
-      gaps: [],
-      rest: null,
-      pairs: [],
-    });
-    const diff = {
-      status: "ok",
-      data: {
-        state: "ready",
-        head: "abc",
-        base: "base",
-        files: ["Lib/gc.py", "Modules/gcmodule.c", "Lib/test/test_70.py"].map(diffFile),
-        rows: 3,
-        news: [],
-        threads: { kind: "shown", threads: [] },
-      },
-    };
     const textsOf = () => screen.getAllByRole("option").map((option) => option.textContent);
 
-    beforeEach(() => {
-      core.workbench.mockResolvedValue({
-        status: "ok",
-        data: {
-          items: [{ kind: "standalone_pr", ...pr, backports: [], attention: null }],
-          quiet: [],
-          count: 0,
-          review_requests: 0,
-          stale_reviews: 0,
-          filters: [],
-        },
-      });
-      const done = { status: "ok", data: null };
-      core.openPullRequest.mockResolvedValue(done);
-      core.fetchPullRequest.mockResolvedValue(done);
-      core.pullRequest.mockResolvedValue({
-        status: "ok",
-        data: { ...pr, content: null, shares_review_of: null },
-      });
-      core.mirrorsHeld.mockResolvedValue(false);
-      core.pullRequestFiles.mockResolvedValue(diff);
-      core.pullRequestRows.mockResolvedValue({ status: "ok", data: [] });
-      core.pullRequestSpans.mockResolvedValue({ status: "ok", data: [] });
-    });
+    beforeEach(listOnePr);
 
     /** The window with the PR on show on its Conversation tab, and quick open opened over it. */
     const openOverPr = async () => {
@@ -932,7 +947,7 @@ describe("the palette's order", () => {
   const palette = async () => {
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
   };
-  const titles = () => screen.getAllByRole("option").map((option) => option.textContent);
+  const titles = rowTexts;
 
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
@@ -952,11 +967,12 @@ describe("the palette's order", () => {
     const after = titles();
     await fireEvent.input(screen.getByRole("combobox", { name: "Command" }), { target: { value: ">re" } });
 
-    expect(before.slice(0, 2)).toEqual(["Hide Sidebar", "Hide Issue List"]);
-    expect(after.slice(0, 3)).toEqual(["Reset Layout", "Reload Themes", "Hide Sidebar"]);
+    expect(before.slice(0, 2)).toEqual(["Command Palette", "Quick Open"]);
+    expect(after.slice(0, 3)).toEqual(["Reset Layout", "Reload Themes", "Command Palette"]);
     expect(titles()).toEqual([
       "Reset Layout",
       "Reload Themes",
+      "Switch Repository",
       "View: Stale Reviews",
       "Repository: python/peps",
     ]);
@@ -970,7 +986,7 @@ describe("the palette's order", () => {
 
     await palette();
 
-    expect(titles().slice(0, 3)).toEqual(["Open Settings", "Show performance HUD", "Hide Sidebar"]);
+    expect(titles().slice(0, 3)).toEqual(["Open Settings", "Show performance HUD", "Command Palette"]);
   });
 
   it("says in the status bar why a command run can't be saved", async () => {
@@ -1020,6 +1036,159 @@ describe("the palette's order", () => {
     expect(listed).toEqual(["some-maintainer/gcmon open", "python/peps", "Add repository…"]);
     expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
     expect(core.rememberCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe("every action in the palette", () => {
+  const ctrlShiftP = () =>
+    fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  /** Each of the palette's rows: its text, and the key on its right, or null for none. */
+  const rows = () =>
+    screen
+      .getAllByRole("option")
+      .map((option) => [rowText(option), option.querySelector("kbd")?.textContent ?? null]);
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonHome);
+  });
+
+  afterEach(() => {
+    remapKeys({});
+  });
+
+  /** The page open on gcmon with the focus on #7's row. */
+  const onRow = async () => {
+    core.workbench.mockResolvedValue(oneIssue);
+    render(Page);
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+    await fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(row);
+    return row;
+  };
+
+  it("lists the actions that run in the Issue list, each with its key, in the key table's order", async () => {
+    await onRow();
+    await ctrlShiftP();
+    // The diff's actions wait for a Files tab, and the actions with nothing built behind them yet, such as
+    // Archive, for theirs.
+    expect(rows()).toEqual([
+      ["Command Palette", "Ctrl+Shift+P"],
+      ["Quick Open", "Ctrl+P"],
+      ["Hide Sidebar", "Ctrl+B"],
+      ["Hide Issue List", "Ctrl+Alt+B"],
+      ["Unfold an Issue's PRs", "→"],
+      ["Fold an Issue's PRs", "←"],
+      ["Show Only the Detail Pane", "Ctrl+K Z"],
+      ["Pick a Theme", "Ctrl+K T"],
+      ["Reload Themes", "Ctrl+K R"],
+      ["Go Back", "Alt+←"],
+      ["Go Forward", "Alt+→"],
+      ["Open on GitHub", "Ctrl+Shift+G"],
+      ["Switch Repository", "Ctrl+R"],
+      ["Reset Layout", null],
+      ["Open Settings", "Ctrl+,"],
+      ["Show performance HUD", "Ctrl+Shift+H"],
+      ["List the View's Keys", "?"],
+      ["Sort by Last Update", null],
+      ["View: Stale Reviews", null],
+    ]);
+  });
+
+  it("lists the diff's actions while the Files tab shows", async () => {
+    listOnePr();
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: "#70 gh-7: Fix the crash" }));
+    const files = await screen.findByRole("tab", { name: "Files" });
+    await fireEvent.click(files);
+    files.focus();
+    await screen.findByRole("tab", { name: "Files", selected: true });
+    await ctrlShiftP();
+    // The focus is in the Detail pane, so the list's ← and → have nothing to fold.
+    expect(rows()).toEqual([
+      ["Command Palette", "Ctrl+Shift+P"],
+      ["Quick Open", "Ctrl+P"],
+      ["Go to Definition", "F12"],
+      ["Peek Definition", "Alt+F12"],
+      ["Next Change", "F7"],
+      ["Previous Change", "Shift+F7"],
+      ["Next Comment Thread", "F8"],
+      ["Previous Comment Thread", "Shift+F8"],
+      ["Find in Diff", "Ctrl+F"],
+      ["Hide Sidebar", "Ctrl+B"],
+      ["Hide Issue List", "Ctrl+Alt+B"],
+      ["Show Only the Detail Pane", "Ctrl+K Z"],
+      ["Unified or Side by Side", "Ctrl+Alt+U"],
+      ["View: One File at a Time", "Ctrl+K O"],
+      ["View: Files in the Rail", "Ctrl+K F"],
+      ["View: Search in the Rail", "Ctrl+Shift+F"],
+      ["Next Tab", "Ctrl+PageDown"],
+      ["Previous Tab", "Ctrl+PageUp"],
+      ["Next File", "Alt+PageDown"],
+      ["Previous File", "Alt+PageUp"],
+      ["Pick a Theme", "Ctrl+K T"],
+      ["Reload Themes", "Ctrl+K R"],
+      ["Go Back", "Alt+←"],
+      ["Go Forward", "Alt+→"],
+      ["Open on GitHub", "Ctrl+Shift+G"],
+      ["Switch Repository", "Ctrl+R"],
+      ["Reset Layout", null],
+      ["Mark Seen", "Q"],
+      ["Mark Unseen", "Shift+Q"],
+      ["Open Settings", "Ctrl+,"],
+      ["Show performance HUD", "Ctrl+Shift+H"],
+      ["List the View's Keys", "?"],
+      ["Sort by Last Update", null],
+      ["View: Stale Reviews", null],
+    ]);
+  });
+
+  it("runs what the key runs, for the focus the palette hands back", async () => {
+    await onRow();
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "List the View's Keys" }));
+
+    // The palette has handed the focus back to the row by then, so the list names the Issue list's keys.
+    const keys = await screen.findByRole("dialog", { name: "Keys" });
+    expect(
+      within(keys)
+        .getAllByRole("region")
+        .map((section) => section.getAttribute("aria-label")),
+    ).toEqual(["Issue list", "Anywhere"]);
+  });
+
+  it("runs a diff's action, as its key does", async () => {
+    listOnePr();
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: "#70 gh-7: Fix the crash" }));
+    await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+    await screen.findByRole("tab", { name: "Files", selected: true });
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Find in Diff" }));
+
+    expect(await screen.findByRole("search", { name: "Find in the diff" })).toBeTruthy();
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Find" }));
+    });
+  });
+
+  it("names the key on each row to a screen reader, and shows a key remapped in [keys] by its new binding", async () => {
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { open_settings: "ctrl+k s", reset_layout: "ctrl+k l", quick_open: "" };
+    core.settings.mockResolvedValue(remapped);
+    await onRow();
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+k s")).toBe("open_settings");
+    });
+    await ctrlShiftP();
+
+    const keyOf = (title: string) => rows().find(([text]) => text === title)?.[1];
+    expect(["Open Settings", "Reset Layout", "Quick Open"].map(keyOf)).toEqual([
+      "Ctrl+K S",
+      "Ctrl+K L",
+      null,
+    ]);
+    expect(screen.getByRole("option", { name: "Open Settings", description: "Ctrl+K S" })).toBeTruthy();
   });
 });
 

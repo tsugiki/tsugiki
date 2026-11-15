@@ -118,12 +118,13 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
 
 - **Type.** The UI font is `system-ui, -apple-system, "Segoe UI", sans-serif` at 14 px. Code, SHAs and
   branches take `ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace`: a `<code>` or `<pre>`
-  does, and so does anything with the `mono` class. Lines of code take 12 px from the `code-lines` class:
-  the diff's, and the file view's and the Definition peek's, so a file shows at one size wherever it is
-  drawn, and the line Go to definition lands on takes the `landed` class in all three. Text in the UI font
-  inside code, such as a review thread in the diff, takes the `sans` class. Descriptions, comments and
-  other long text take the `reading` class, a line height of 1.5. A key in `<kbd>` keeps the UI font. No
-  component names a font family of its own, and a test fails on one that does.
+  does, and so does anything with the `mono` class. The diff and the code of the file view and the
+  Definition peek take 12 px from the `code-lines` class, so a file shows at one size wherever it is drawn.
+  A thread or a peek under one of their lines takes it too, and a peek split below them doesn't. The line Go
+  to definition lands on takes the `landed` class in all three. Text in the UI font inside code, such as a
+  review thread in the diff, takes the `sans` class. Descriptions, comments and other long text take the
+  `reading` class, a line height of 1.5. A key in `<kbd>` keeps the UI font. No component names a font
+  family of its own, and a test fails on one that does.
 - **Buttons.** A 1 px `border`, 4 px corners, `2px 8px` padding, `bg_chrome` behind, a tint of the text
   colour under the pointer, and half opacity when disabled. A button that reads as a link takes the `link`
   class: plain text, underlined under the pointer and with the focus.

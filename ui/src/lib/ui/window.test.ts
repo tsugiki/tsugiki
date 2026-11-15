@@ -117,8 +117,52 @@ it("keeps every z-index under the overlay layer, apart from the layers themselve
   expect(found).toEqual([]);
 });
 
+/** Each rule in `css` as its list of selectors and its body. A comment before a rule is left out of its
+ * selectors, and a rule nested in another, such as a keyframe's, reads as a rule of its own. */
+const rulesOf = (css: string) =>
+  [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)].map((match) => ({
+    selectors: (match[1] ?? "")
+      .split("*/")
+      .at(-1)
+      ?.split(",")
+      .map((selector) => selector.trim()),
+    body: match[2] ?? "",
+  }));
+
+/** The bodies of the rules in `css` with a selector that `wanted` takes. */
+const bodiesOf = (css: string, wanted: (selector: string) => boolean) =>
+  rulesOf(css)
+    .filter((rule) => rule.selectors?.some(wanted))
+    .map((rule) => rule.body);
+
+/** The class names `source`'s markup gives its elements: each word of a `class="…"`, and each word of the
+ * strings in a `class={[…]}`. */
+const classesOf = (source: string) =>
+  [...source.matchAll(/\bclass=(?:"([^"]*)"|\{\[([^\]]*)\]\})/g)].flatMap((match) =>
+    (match[1] ?? [...(match[2] ?? "").matchAll(/"([^"]*)"/g)].map((quoted) => quoted[1] ?? "").join(" "))
+      .split(/\s+/)
+      .filter(Boolean),
+  );
+
+it("reads a stylesheet's rules, and the classes of a component's markup", () => {
+  const css = "/* A note. */\n.a,\n.b.c {\n  top: 0;\n}\n\n@keyframes f {\n  to {\n    left: 0;\n  }\n}\n";
+
+  expect(rulesOf(css)).toEqual([
+    { selectors: [".a", ".b.c"], body: "\n  top: 0;\n" },
+    { selectors: ["@keyframes f"], body: "\n  to {\n    left: 0;\n  " },
+  ]);
+  expect(bodiesOf(css, (selector) => selector.startsWith(".b"))).toEqual(["\n  top: 0;\n"]);
+  expect(classesOf('<div class="a b" {id}>\n<p class={[\n  "c d",\n  on && "e",\n]} class:f={on}>')).toEqual([
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+  ]);
+});
+
 it("puts each overlay on the scrim, and the performance HUD above it", () => {
-  const scrimRule = /^\.scrim \{([^}]*)\}/m.exec(windowCss)?.[1] ?? "";
+  const scrimRule = bodiesOf(windowCss, (selector) => selector === ".scrim").join("");
   const tags = Object.values(sources).flatMap(scrimTags);
 
   expect(zIndices(scrimRule)).toEqual(["var(--layer-overlay)"]);
@@ -127,32 +171,24 @@ it("puts each overlay on the scrim, and the performance HUD above it", () => {
   expect(zIndices(sources["src/lib/ui/PerformanceHud.svelte"] ?? "")).toEqual(["var(--layer-hud)"]);
 });
 
-/** The body of each rule in `css` whose selector is `selector` alone, at the start of a line. */
-const rulesOf = (css: string, selector: string) =>
-  [...css.matchAll(/^[ \t]*([^{}\n]+?)\s*\{([^}]*)\}/gm)]
-    .filter((match) => match[1] === selector)
-    .map((match) => match[2] ?? "");
-
-it("finds a rule's body by its selector", () => {
-  expect(rulesOf(".a {\n  color: red;\n}\n  .a.b {\n  top: 0;\n}\n  .a {\n  left: 0;\n}", ".a")).toEqual([
-    "\n  color: red;\n",
-    "\n  left: 0;\n",
-  ]);
-});
-
 // The file view and the Definition peek drew their code at the window's 14px, and marked the line Go to
 // definition landed on in another colour than the diff's (#754). window.css now gives both, once.
 it("draws code at one size, and the line Go to definition lands on in one colour, from window.css", () => {
   const diff = sources["src/lib/ui/DiffRows.svelte"] ?? "";
   const peek = sources["src/lib/ui/PeekCode.svelte"] ?? "";
   const styleOf = (source: string) => /<style>([\s\S]*)<\/style>/.exec(source)?.[1] ?? "";
+  const marks = bodiesOf(styleOf(diff), (selector) => /^\.mark\b/.test(selector));
 
-  expect(rulesOf(windowCss, ".code-lines")).toEqual([expect.stringContaining("font-size: 12px;")]);
-  expect(rulesOf(windowCss, ".landed")).toEqual([expect.stringContaining("var(--find-current)")]);
-  expect(diff).toContain('class="scroller mono code-lines"');
-  expect(peek).toContain('class="code mono code-lines"');
-  expect(diff).toContain('class={["mark landed"');
-  expect(peek).toContain('at === mark.line && "landed"');
-  expect([styleOf(diff), styleOf(peek)].filter((style) => style.includes("font-size"))).toEqual([]);
-  expect(rulesOf(styleOf(diff), ".mark").filter((body) => body.includes("background"))).toEqual([]);
+  expect(bodiesOf(windowCss, (selector) => selector === ".code-lines")).toEqual([
+    expect.stringContaining("font-size: 12px;"),
+  ]);
+  expect(bodiesOf(windowCss, (selector) => selector === ".code-lines .landed")).toEqual([
+    expect.stringContaining("var(--find-current)"),
+  ]);
+  for (const source of [diff, peek]) {
+    expect(classesOf(source)).toEqual(expect.arrayContaining(["code-lines", "landed"]));
+    expect(styleOf(source)).not.toContain("font-size");
+  }
+  expect(marks.length).toBeGreaterThan(1);
+  expect(marks.filter((body) => body.includes("background"))).toEqual([]);
 });

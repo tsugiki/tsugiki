@@ -496,12 +496,16 @@ test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at it
   await page.keyboard.press("ArrowDown");
   await expect(results).toBeFocused();
   await page.keyboard.press("End");
+  // The mark on the line it lands on fades and goes. Held, it stays while the test reads its colour, on a
+  // slow runner too.
+  await page.evaluate(() => {
+    const hold = new CSSStyleSheet();
+    hold.replaceSync(".mark { animation-play-state: paused !important; }");
+    document.adoptedStyleSheets = [...document.adoptedStyleSheets, hold];
+  });
   await page.keyboard.press("Enter");
   const diff = pane.getByRole("region", { name: "Diff" });
-  // The mark fades and goes, so its colour is read while it shows.
-  const landed = await diff
-    .locator(".mark")
-    .evaluate((mark) => getComputedStyle(mark).backgroundColor, undefined, { timeout: 1000 });
+  const landed = await diff.locator(".mark").evaluate((mark) => getComputedStyle(mark).backgroundColor);
   await expect(diff).toBeFocused();
   await expect(pane.locator("#pr-tab-files")).toHaveAttribute("aria-selected", "true");
   await expect(rail).toBeVisible();

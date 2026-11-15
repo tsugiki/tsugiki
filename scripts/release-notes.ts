@@ -1,4 +1,5 @@
-// The rules a version has to meet before the release workflow builds anything (ADR 0012).
+// The rules a version has to meet before the release workflow builds anything (ADR 0012), and the text of the
+// release page it posts.
 
 /** The version Cargo.toml says until the first release, which no changelog section names. */
 const NEVER_RELEASED = "0.0.0";
@@ -71,19 +72,20 @@ export function notesFor(changelog: string, version: string): string {
 /**
  * What each release page says after its notes: which file is for which system, and how to check one. It
  * names the files by extension, so it stays right when Tauri or `portable-zip.ts` changes a name. The command
- * is the README's, as a test checks.
+ * is the README's, as a test checks. Each paragraph is one line, since GitHub breaks a release's lines where
+ * its body does. The headings sit at the level of the changelog's Added and Fixed.
  */
 const DOWNLOADS = [
-  "## Download",
+  "### Download",
   "",
   "- Windows: the `.zip`",
-  "- macOS on Apple Silicon: the `.dmg`",
+  "- Apple silicon Macs: the `.dmg`",
   "",
-  "## Checking a download",
+  "### Checking a download",
   "",
-  "These files aren't code-signed, so Windows and macOS warn you when you open one. Each file has an",
-  "attestation, which shows that Tsugiki's release workflow built it from this release's commit. Check it",
-  "with the [GitHub CLI](https://cli.github.com/):",
+  "These files aren't code-signed, so Windows and macOS warn you when you open one. Each file has an " +
+    "attestation, which shows that Tsugiki's release workflow built it. Check it with the " +
+    "[GitHub CLI](https://cli.github.com/):",
   "",
   "```",
   "gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml",

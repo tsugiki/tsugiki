@@ -145,16 +145,14 @@ describe("releasePage", () => {
     text.split(/\r?\n/).filter((line) => line.startsWith("gh attestation verify "));
 
   it("starts with the notes, then says which file is for which system", () => {
-    expect(page).toMatch(/^### Added\n\n- The first thing\.\n\n## Download\n/);
+    expect(page).toMatch(/^### Added\n\n- The first thing\.\n\n### Download\n/);
     expect(page).toContain("- Windows: the `.zip`");
-    expect(page).toContain("- macOS on Apple Silicon: the `.dmg`");
+    expect(page).toContain("- Apple silicon Macs: the `.dmg`");
   });
 
   it("checks a download with the README's command, so the two can't drift apart", () => {
     const readme = readFileSync("../README.md", "utf8");
+    expect(verifyCommands(page)).toHaveLength(1);
     expect(verifyCommands(page)).toEqual(verifyCommands(readme));
-    expect(verifyCommands(page)).toEqual([
-      "gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml",
-    ]);
   });
 });

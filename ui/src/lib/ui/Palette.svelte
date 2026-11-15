@@ -57,6 +57,15 @@
     list: "Issues and PRs",
     none: "No Issue or PR matches",
   };
+
+  /** Quick open's words while a PR shows, whose files it finds too (#558). */
+  const FILES_QUICK_OPEN_WORDS: PaletteWords = {
+    dialog: "Quick open",
+    input: "File, Issue or PR",
+    placeholder: "Type part of a file's path, an Issue's or a PR's number, or title words; > for commands",
+    list: "Files, Issues and PRs",
+    none: "No file, Issue or PR matches",
+  };
 </script>
 
 <script lang="ts">
@@ -65,7 +74,8 @@
   // last first (#556). The Repository picker is the same quick pick with other words and rows.
   //
   // Given `find`, it is quick open too, as in VS Code (#557): a text that doesn't start with `>` asks `find`
-  // for the Issues and PRs it names, and lists the rows `found` brings back, in the order they come.
+  // for the Issues and PRs it names, and lists the rows `found` brings back, in the order they come. With
+  // `files`, those rows hold the files of the PR on show too (#558).
   import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
 
@@ -79,6 +89,7 @@
     text = "",
     find,
     found,
+    files = false,
   }: {
     commands: readonly PaletteCommand[];
     onclose: () => void;
@@ -97,6 +108,8 @@
     find?: ((typed: string) => unknown) | undefined;
     /** Quick open's latest answer. */
     found?: QuickOpenRows | undefined;
+    /** Whether quick open finds the files of the PR on show too, which its words then name. */
+    files?: boolean;
   } = $props();
 
   let typed = $state(untrack(() => text));
@@ -115,7 +128,7 @@
   const matching = $derived(
     quick ? (found?.rows ?? []) : commands.filter((command) => command.title.toLowerCase().includes(filter)),
   );
-  const shownWords = $derived(quick ? QUICK_OPEN_WORDS : words);
+  const shownWords = $derived(quick ? (files ? FILES_QUICK_OPEN_WORDS : QUICK_OPEN_WORDS) : words);
   // Each text quick open shows asks it once.
   $effect(() => {
     if (!quick) return;

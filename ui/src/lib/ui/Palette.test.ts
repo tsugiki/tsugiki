@@ -400,6 +400,24 @@ describe("with quick open", () => {
     expect(screen.getByRole("combobox", { name: "Issue or PR" })).toBeTruthy();
   });
 
+  it("names the files of the PR on show in its box and list when it finds them too, and in its empty list", async () => {
+    const { answer, rerender } = withQuickOpen();
+    await rerender({ files: true });
+    await answer("", "Lib/ast.py", "#7 Older");
+    const named = [
+      screen.getByRole("combobox", { name: "File, Issue or PR" }).getAttribute("placeholder"),
+      screen.getByRole("listbox").getAttribute("aria-label"),
+    ];
+
+    await answer("");
+
+    expect(named).toEqual([
+      "Type part of a file's path, an Issue's or a PR's number, or title words; > for commands",
+      "Files, Issues and PRs",
+    ]);
+    expect(screen.getByText("No file, Issue or PR matches")).toBeTruthy();
+  });
+
   it("switches to the commands on `>`, which it doesn't ask about, and back once `>` goes", async () => {
     const { find, answer } = withQuickOpen();
     await answer("", "#9 Newest");

@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commands, type TitledItem_Serialize } from "$lib/data/bindings";
-import { QuickOpenState } from "./quick-open.svelte";
+import { FILES_LISTED, filesFound, QuickOpenState } from "./quick-open.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { quickOpen: vi.fn() } }));
 
@@ -105,4 +105,43 @@ it("says why the core couldn't search", async () => {
   await search.find("7");
 
   expect(search.answer).toEqual({ typed: "7", problem: "Tsugiki can't search the Issues and PRs: gone" });
+});
+
+/** The files of a PR on show, which hold `paths` and note each read of the diff. */
+const changedFiles = (paths: readonly string[]) => ({ load: vi.fn(), paths: () => paths, open: vi.fn() });
+
+it("reads the diff of the PR on show as it searches, and holds the PR's files", async () => {
+  core.quickOpen.mockResolvedValue({ status: "ok", data: [] });
+  const files = changedFiles(["Lib/ast.py"]);
+  const search = new QuickOpenState("python/cpython", files);
+  const unread = files.load.mock.calls.length;
+
+  await search.find("ast");
+
+  expect([unread, files.load.mock.calls.length]).toEqual([0, 1]);
+  expect(search.files).toBe(files);
+});
+
+it("finds the paths that hold every word typed, in any case, in the order the Files tab shows them", () => {
+  const files = changedFiles([
+    "Lib/ast.py",
+    "Lib/test/test_ast.py",
+    "Python/ast_opt.c",
+    "Doc/library/ast.rst",
+  ]);
+
+  expect(filesFound(files, "AST")).toEqual([
+    "Lib/ast.py",
+    "Lib/test/test_ast.py",
+    "Python/ast_opt.c",
+    "Doc/library/ast.rst",
+  ]);
+  expect(filesFound(files, " lib  .py ")).toEqual(["Lib/ast.py", "Lib/test/test_ast.py"]);
+  expect(filesFound(files, "#7")).toEqual([]);
+});
+
+it("finds every file for nothing typed, 20 at most", () => {
+  const paths = Array.from({ length: FILES_LISTED + 5 }, (_, index) => `Lib/f${String(index)}.py`);
+
+  expect(filesFound(changedFiles(paths), "")).toEqual(paths.slice(0, FILES_LISTED));
 });

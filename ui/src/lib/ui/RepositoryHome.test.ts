@@ -6,6 +6,7 @@ import type { HitCode } from "$lib/state/hit-code.svelte";
 import { type Action, keysIn, remapKeys } from "$lib/state/keymap.svelte";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
+import { PrViewState } from "$lib/state/pr-view.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
@@ -1704,6 +1705,29 @@ it("closes the file view over the PR on show when quick open picks that PR, on t
   expect(document.activeElement).toBe(treeRow);
   // The pick is the history's latest place, so Back goes to the file view it closed.
   expect(arrowTitle()).toMatch(/^Back to Lib\/eggs\.py /);
+});
+
+it("hands quick open the files of the PR on show, read only as it searches, which open while that PR shows", async () => {
+  core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
+  vi.spyOn(PrFilesState.prototype, "paths", "get").mockReturnValue(["Lib/gc.py"]);
+  const opened = vi.spyOn(PrViewState.prototype, "openFile").mockReturnValue();
+  const { component, prRow, treeRow } = await listing();
+  const onIssueList = component.changedFiles();
+  await fireEvent.click(prRow);
+  await screen.findByRole("tab", { name: "Files" });
+
+  const files = component.changedFiles();
+  const unread = core.pullRequestFiles.mock.calls.length;
+  files?.load();
+  await vi.waitFor(() => {
+    expect(core.pullRequestFiles).toHaveBeenCalledOnce();
+  });
+  files?.open("Lib/gc.py");
+  await fireEvent.click(treeRow);
+  files?.open("Lib/gc.py");
+
+  expect([onIssueList, unread, files?.paths()]).toEqual([undefined, 0, ["Lib/gc.py"]]);
+  expect(opened.mock.calls).toEqual([["Lib/gc.py"]]);
 });
 
 it("goes back to the diff with Alt+← from the file view, and forward to the file view, each as it was", async () => {

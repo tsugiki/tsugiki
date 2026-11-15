@@ -12,7 +12,12 @@
     startsChordOf,
   } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
-  import { type QuickOpenItem, QuickOpenState } from "$lib/state/quick-open.svelte";
+  import {
+    type ChangedFiles,
+    filesFound,
+    type QuickOpenItem,
+    QuickOpenState,
+  } from "$lib/state/quick-open.svelte";
   import { RecentCommands } from "$lib/state/recent-commands.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -105,11 +110,12 @@
   };
   /** Opens the palette with `text` in its box, unless a dialog is open. On a Repository's screen it has
    * quick open too, which searches that Repository (#557): `Ctrl+P` opens it with nothing typed, and
-   * `Ctrl+Shift+P` with the `>` that lists the commands. Elsewhere it lists only the commands, with no
-   * `>`. */
+   * `Ctrl+Shift+P` with the `>` that lists the commands. With a PR on show, quick open finds its files too
+   * (#558). Elsewhere it lists only the commands, with no `>`. */
   const openPalette = (text: "" | ">") => {
     if (dialogOpen) return;
-    quickOpen = openName === undefined ? undefined : new QuickOpenState(openName);
+    quickOpen =
+      openName === undefined ? undefined : new QuickOpenState(openName, repositoryHome?.changedFiles());
     paletteText = quickOpen === undefined ? "" : text;
   };
   /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
@@ -332,11 +338,23 @@
       repositoryHome?.openFound(item.kind, item.number);
     },
   });
-  /** Quick open's latest answer, as the palette's rows. */
+  /** Quick open's row for the file at `path` in the PR on show, which opens it in the Files tab (#558). */
+  const fileRow = (files: ChangedFiles, path: string): PaletteCommand => ({
+    title: path,
+    note: "File",
+    history: false,
+    run: () => {
+      files.open(path);
+    },
+  });
+  /** Quick open's latest answer, as the palette's rows: the files of the PR on show that the text it answers
+   * finds, then the Issues and PRs. */
   const foundRows = $derived.by((): QuickOpenRows | undefined => {
     const answer = quickOpen?.answer;
     if (answer === undefined || "problem" in answer) return answer;
-    return { typed: answer.typed, rows: answer.found.map(foundRow) };
+    const files = quickOpen?.files;
+    const fileRows = files ? filesFound(files, answer.typed).map((path) => fileRow(files, path)) : [];
+    return { typed: answer.typed, rows: [...fileRows, ...answer.found.map(foundRow)] };
   });
   /** The palette's commands: those the user ran, most recently run first, then the others in this order. */
   const commands: PaletteCommand[] = $derived(
@@ -442,6 +460,7 @@
     text={paletteText}
     find={quickOpen?.find}
     found={foundRows}
+    files={quickOpen?.files !== undefined}
     onrun={(command) => void recentCommands.ran(command)}
     onclose={() => {
       paletteText = undefined;

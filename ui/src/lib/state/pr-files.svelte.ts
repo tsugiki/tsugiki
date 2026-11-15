@@ -735,9 +735,30 @@ export class PrFilesState {
     if (to !== undefined) this.#show(to);
   }
 
-  /** Goes to the file at `file` among the diff's files, as the tree and quick open will. */
+  /** The paths of the files the diff changes, in its order, once it is ready; none before. */
+  get paths(): string[] {
+    const view = this.view;
+    return view?.state === "ready" ? view.files.map((file) => file.path) : [];
+  }
+
+  /** Goes to the file at `file` among the diff's files, as the tree will. */
   showFile(file: number) {
     this.#show({ kind: "file", file });
+  }
+
+  /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
+   * file, and with all the files it scrolls to its header, opening the file if it is collapsed. The file
+   * view over the tab closes, as Back does, and the diff takes the focus. A path the diff doesn't change
+   * goes nowhere. */
+  openPath(path: string) {
+    const view = this.view;
+    const file = view?.state === "ready" ? view.files.findIndex((shown) => shown.path === path) : -1;
+    if (file === -1) return;
+    if (this.#fileView !== undefined) this.closeFileView();
+    this.#dropPeek();
+    if (this.collapsed(file)) this.toggle(file);
+    this.showFile(file);
+    this.diffWantsFocus = true;
   }
 
   /** Goes to the file at `path`, as a NEWS entry does, if the diff changes it. */

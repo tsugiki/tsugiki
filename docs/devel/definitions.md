@@ -48,9 +48,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - There ty also gets the checkout's folder as `environment.python`. ty maps a standard library stub to its
   source in that Python's real stdlib, and without it ty takes the `python` on PATH, so the peek would land
   in the installed Python's `Lib`. We know this fixes Windows, where ty finds an installation's stdlib in
-  `Lib`. On macOS ty looks in `lib/pythonX.Y`, which the checkout lacks. On Windows, a Python whose stdlib
-  ty can't find leaves the other settings in force and the name still lands in the checkout's `Lib`, but
-  nobody has checked macOS.
+  `Lib`. On macOS ty looks in `lib/pythonX.Y`, which the checkout lacks. The tests that need
+  `environment.root` pass there, so ty keeps the other settings, but where a standard library name lands on
+  macOS is unchecked.
 - The PR's changed Python files open on ty with their text at the head, read from the **Mirror**, and stay
   open while ty runs. A lookup from a removed line first gives them their text at the base through
   `didChange`, and the next lookup from another line puts the head's back. A file the PR adds keeps its

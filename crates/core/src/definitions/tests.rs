@@ -47,7 +47,8 @@ class Shop:
 ";
 
 /// A PR in a Repository with CPython's layout: it changes `Tools/shop.py`, adds `Lib/added.py` and deletes
-/// `Lib/gone.py`.
+/// `Lib/gone.py`. A lookup in `Lib` needs ty's `environment.root`, so on macOS, where ty finds no stdlib in
+/// the checkout it gets as its Python, these tests show that ty keeps the rest of its settings.
 fn cpython(name: &str) -> Fixture {
     Fixture::new(
         name,
@@ -109,10 +110,16 @@ fn owner_of(sources: Sources) -> Owner {
 
 /// The servers' thread, run here, with the fixture's PR opened.
 fn opened(fixture: &Fixture) -> Owner {
+    opened_with(fixture, changed())
+}
+
+/// The servers' thread, run here, with the fixture's PR opened as one that changes the Python files at
+/// `changed`.
+fn opened_with(fixture: &Fixture, changed: Vec<String>) -> Owner {
     let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
     let pr = Pr {
         at: fixture.checkout.at.clone(),
-        changed: changed(),
+        changed,
     };
     owner.opened(&repository(), pr);
     owner
@@ -307,10 +314,10 @@ fn a_builtin_is_found_outside_the_repository() {
 }
 
 // ty maps a stub to its source in the real stdlib of the checkout, its Python. It looks for that stdlib in
-// `Lib` on Windows, and in `lib/pythonX.Y` on Unix, which the checkout lacks.
+// `Lib` on Windows, and in `lib/pythonX.Y` on macOS, which the checkout lacks.
 #[cfg(windows)]
 #[test]
-fn a_standard_library_name_lands_in_the_checkout_and_not_in_the_python_on_path() {
+fn a_standard_library_name_lands_in_the_checkout_and_not_in_another_python() {
     let test_spam = "Lib/test/test_spam.py";
     let line = "        self.assertFalse(0)";
     let at_head = format!(
@@ -321,20 +328,32 @@ fn a_standard_library_name_lands_in_the_checkout_and_not_in_the_python_on_path()
         "definitions-stdlib",
         &[
             ("Include/patchlevel.h", PATCHLEVEL),
-            // As in CPython, where ty finds the installation's `site-packages`.
-            ("Lib/site-packages/README.txt", ""),
             ("Lib/unittest/__init__.py", "from .case import TestCase\n"),
             ("Lib/unittest/case.py", case),
             (test_spam, "import unittest\n"),
         ],
         &[(test_spam, Some(&at_head))],
     );
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
-    let pr = Pr {
-        at: fixture.checkout.at.clone(),
-        changed: vec![test_spam.to_owned()],
-    };
-    owner.opened(&repository(), pr);
+    // Another Python, which a `.venv` in the checkout names. Left to itself ty takes it before the one on
+    // PATH, so the test fails without the checkout as ty's Python on any machine.
+    let other = fixture.checkout.folder.parent().unwrap().join("python");
+    let venv = fixture.checkout.folder.join(".venv");
+    let home = format!("home = {}\n", other.display());
+    for (path, text) in [
+        (other.join("python.exe"), ""),
+        (other.join("Lib/site-packages/README.txt"), ""),
+        (
+            other.join("Lib/unittest/__init__.py"),
+            "from .case import TestCase\n",
+        ),
+        (other.join("Lib/unittest/case.py"), case),
+        (venv.join("Lib/site-packages/README.txt"), ""),
+        (venv.join("pyvenv.cfg"), &home),
+    ] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    let mut owner = opened_with(&fixture, vec![test_spam.to_owned()]);
     let lookup = Lookup {
         repository: repository(),
         at: fixture.checkout.at.clone(),

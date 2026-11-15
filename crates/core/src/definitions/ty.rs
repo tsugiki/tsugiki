@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tsugiki_lsp::Language;
 
 use super::server::{Ready, Setup, Unopened};
@@ -33,16 +33,19 @@ pub(super) fn setup(folder: &Path) -> Setup {
 ///
 /// The checkout is ty's Python there too, or ty takes the `python` on PATH, and Go to definition maps a
 /// standard library stub to that Python's source. On Windows ty finds the checkout's stdlib in `Lib`. On
-/// Unix ty looks in `lib/pythonX.Y`, which the checkout lacks.
+/// macOS ty looks in `lib/pythonX.Y`, which the checkout lacks.
 fn settings(folder: &Path) -> Value {
     let Ok(header) = fs::read_to_string(folder.join(super::CPYTHON_MARK)) else {
         return json!({});
     };
-    let python = folder.display().to_string();
-    let environment = match python_version(&header) {
-        Some(version) => json!({"root": ["Lib"], "python": python, "python-version": version}),
-        None => json!({"root": ["Lib"], "python": python}),
-    };
+    // A path that isn't UTF-8 would reach ty changed, naming a folder that isn't there.
+    let python = folder.to_str().map(|python| ("python", json!(python)));
+    let version = python_version(&header).map(|version| ("python-version", json!(version)));
+    let environment: Map<String, Value> = [Some(("root", json!(["Lib"]))), python, version]
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect();
     json!({"ty": {"configuration": {"environment": environment}}})
 }
 

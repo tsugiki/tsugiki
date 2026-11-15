@@ -266,7 +266,10 @@
    * one, and moves the focus with the cursor, as going back does. An item the view on show leaves out has
    * no line to take the focus, which stays where it was, as when the history goes to such an item. */
   export function openFound(kind: Stop["kind"], number: number): void {
-    open(workbench.stopFor(number, kind));
+    // The PR on show stays on its tab and its line: a pick opens it and nothing more, where a click on its
+    // row would switch tabs.
+    if (detail instanceof PrViewState && detail.number === number) workbench.moveTo(detail.line);
+    else open(workbench.stopFor(number, kind));
     focusCursor();
   }
 

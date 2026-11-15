@@ -217,7 +217,7 @@ export const commands = {
 	 *  The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first. This
 	 *  waits on the database and never on GitHub (ADR 0018).
 	 */
-	quickOpen: (repository: string, typed: string) => typedError<QuickOpenItem_Serialize[], Error_Serialize>(__TAURI_INVOKE("quick_open", { repository, typed })),
+	quickOpen: (repository: string, typed: string) => typedError<TitledItem_Serialize[], Error_Serialize>(__TAURI_INVOKE("quick_open", { repository, typed })),
 	/**
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
@@ -2027,19 +2027,6 @@ export type PullRequestContent_Serialize = {
 	earlier_reviews: number,
 } & IssueContent_Serialize;
 
-/**  An Issue or a PR that quick open lists. */
-export type QuickOpenItem = QuickOpenItem_Serialize | QuickOpenItem_Deserialize;
-
-/**  An Issue or a PR that quick open lists. */
-export type QuickOpenItem_Deserialize = { kind: "issue"; number: number; title: string; 
-/**  Nothing for an Issue stored before Tsugiki kept states. */
-state?: IssueState | null } | { kind: "pull_request"; number: number; title: string; state: PrState; is_draft: boolean };
-
-/**  An Issue or a PR that quick open lists. */
-export type QuickOpenItem_Serialize = { kind: "issue"; number: number; title: string; 
-/**  Nothing for an Issue stored before Tsugiki kept states. */
-state: IssueState | null } | { kind: "pull_request"; number: number; title: string; state: PrState; is_draft: boolean };
-
 /**
  *  Sent when a read of an Issue or a PR on screen fails, so a view still waiting for what it says can say
  *  why (#189).
@@ -2823,6 +2810,34 @@ export type ThreadLine_Serialize = {
  *  core has taken it, or after it has answered, so a cancel names the lookup it means.
  */
 export type Ticket = number;
+
+/**  An Issue or a PR as quick open reads it and lists it. */
+export type TitledItem = TitledItem_Serialize | TitledItem_Deserialize;
+
+/**  An Issue or a PR as quick open reads it and lists it. */
+export type TitledItem_Deserialize = {
+	number: number,
+	title: string,
+} & TitledKind_Deserialize;
+
+/**  An Issue or a PR as quick open reads it and lists it. */
+export type TitledItem_Serialize = {
+	number: number,
+	title: string,
+} & TitledKind_Serialize;
+
+/**  Whether a `TitledItem` is an Issue or a PR, with its state. */
+export type TitledKind = TitledKind_Serialize | TitledKind_Deserialize;
+
+/**  Whether a `TitledItem` is an Issue or a PR, with its state. */
+export type TitledKind_Deserialize = { kind: "issue"; 
+/**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
+state?: IssueState | null } | { kind: "pull_request"; state: PrState; is_draft: boolean };
+
+/**  Whether a `TitledItem` is an Issue or a PR, with its state. */
+export type TitledKind_Serialize = { kind: "issue"; 
+/**  Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again. */
+state: IssueState | null } | { kind: "pull_request"; state: PrState; is_draft: boolean };
 
 /**  Where the token comes from. A personal access token joins this with the Account page (ADR 0004). */
 export type TokenSource = "gh";

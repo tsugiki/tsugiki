@@ -123,7 +123,8 @@
     untrack(() => find?.(asked));
   });
   /** Whether Enter came before quick open's answer to the text in the box, and runs the first row of that
-   * answer once it comes. A fast typist's `123` and Enter then opens #123, and not what `12` found. */
+   * answer once it comes. A fast typist's `123` and Enter then opens #123, and not what `12` found. Typing
+   * on or moving the pick forgets it. */
   let enterWaits = $state(false);
   $effect(() => {
     if (enterWaits && !waiting) {
@@ -168,6 +169,8 @@
   function pick(e: KeyboardEvent) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
+      // The user picks a row themselves now, which Enter then runs.
+      enterWaits = false;
       const next = Math.max(Math.min(picked + (e.key === "ArrowDown" ? 1 : -1), matching.length - 1), 0);
       pickedTitle = matching[next]?.title;
     } else if (e.key === "Enter") {

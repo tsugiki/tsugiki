@@ -37,17 +37,11 @@ fn numbers_found(
         .iter()
         .map(|typed| {
             let found = find(&world.reader, &cpython().name, typed).unwrap();
-            found.iter().map(number_of).collect()
+            found.iter().map(|item| item.number).collect()
         })
         .collect();
     world.finish();
     found
-}
-
-fn number_of(found: &QuickOpenItem) -> u32 {
-    match found {
-        QuickOpenItem::Issue { number, .. } | QuickOpenItem::PullRequest { number, .. } => *number,
-    }
 }
 
 #[test]
@@ -151,18 +145,38 @@ fn it_tells_an_issue_from_a_pr_with_its_state() {
     assert_eq!(
         found,
         [
-            QuickOpenItem::Issue {
+            TitledItem {
                 number: 8,
                 title: "It broke".to_owned(),
-                state: Some(IssueState::Open),
+                updated_at: at(1),
+                kind: TitledKind::Issue {
+                    state: Some(IssueState::Open),
+                },
             },
-            QuickOpenItem::PullRequest {
+            TitledItem {
                 number: 7,
                 title: "gh-8: Fix it".to_owned(),
-                state: PrState::Open,
-                is_draft: true,
+                updated_at: at(5),
+                kind: TitledKind::PullRequest {
+                    state: PrState::Open,
+                    is_draft: true,
+                },
             },
         ]
+    );
+    // The window gets each item's kind beside its number and title, and no time it doesn't show.
+    assert_eq!(
+        serde_json::to_value(&found).unwrap(),
+        serde_json::json!([
+            { "kind": "issue", "number": 8, "title": "It broke", "state": "OPEN" },
+            {
+                "kind": "pull_request",
+                "number": 7,
+                "title": "gh-8: Fix it",
+                "state": "OPEN",
+                "is_draft": true
+            },
+        ])
     );
 }
 

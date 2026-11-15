@@ -25,13 +25,12 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
-use tsugiki_core::store::StoreReader;
+use tsugiki_core::store::{StoreReader, TitledItem};
 use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
-use tsugiki_core::workbench::quick_open::QuickOpenItem;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 /// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load.
@@ -297,7 +296,7 @@ pub(crate) fn quick_open(
     repository: &str,
     typed: &str,
     reader: State<'_, StoreReader>,
-) -> Result<Vec<QuickOpenItem>, Error> {
+) -> Result<Vec<TitledItem>, Error> {
     crate::find_items(repository, typed, &reader)
 }
 

@@ -354,8 +354,14 @@ describe("keyGuard", () => {
     });
 
     it("lets Ctrl+Alt with a key that types type in a text box, unless its action works there", () => {
-      remapKeys({ archive: "ctrl+alt+q", toggle_sidebar: "ctrl+alt+s", command_palette: "ctrl+alt+p" });
+      remapKeys({
+        archive: "ctrl+alt+q",
+        toggle_sidebar: "ctrl+alt+s",
+        command_palette: "ctrl+alt+p",
+        quick_open: "ctrl+alt+o",
+      });
       expect(typesInTextBox("ctrl+alt+p")).toBe(false);
+      expect(typesInTextBox("ctrl+alt+o")).toBe(false);
       expect([
         typesInTextBox("ctrl+alt+q"),
         typesInTextBox("ctrl+alt+s"),

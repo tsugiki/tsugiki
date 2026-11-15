@@ -27,7 +27,7 @@ it("asks the core about the open Repository, and holds its answer with the text 
   expect(search.answer).toEqual({ typed: "7", found: [item(7)] });
 });
 
-it("shows each answer as it comes, but never an older text's over a newer one's", async () => {
+it("asks one search at a time, then only the latest text typed while it ran", async () => {
   const answers: ((found: QuickOpenItem[]) => void)[] = [];
   core.quickOpen.mockImplementation(
     () =>
@@ -39,21 +39,30 @@ it("shows each answer as it comes, but never an older text's over a newer one's"
   );
   const search = new QuickOpenState("python/cpython");
   const first = search.find("1");
-  const second = search.find("12");
-  const third = search.find("123");
+  void search.find("12");
+  void search.find("123");
+  const askedWhileRunning = core.quickOpen.mock.calls.length;
 
-  answers[1]?.([item(12)]);
-  await second;
-  const afterSecond = search.answer;
   answers[0]?.([item(1)]);
-  await first;
+  await vi.waitFor(() => {
+    expect(answers).toHaveLength(2);
+  });
   const afterFirst = search.answer;
-  answers[2]?.([item(123)]);
-  await third;
+  answers[1]?.([item(123)]);
+  await first;
 
-  expect(afterSecond).toEqual({ typed: "12", found: [item(12)] });
-  expect(afterFirst).toEqual(afterSecond);
+  expect(askedWhileRunning).toBe(1);
+  expect(afterFirst).toEqual({ typed: "1", found: [item(1)] });
+  expect(core.quickOpen.mock.calls).toEqual([
+    ["python/cpython", "1"],
+    ["python/cpython", "123"],
+  ]);
   expect(search.answer).toEqual({ typed: "123", found: [item(123)] });
+
+  // Once the searches have answered, the next text asks at once.
+  core.quickOpen.mockResolvedValue({ status: "ok", data: [] });
+  await search.find("1234");
+  expect(search.answer).toEqual({ typed: "1234", found: [] });
 });
 
 it("says why the core couldn't search", async () => {

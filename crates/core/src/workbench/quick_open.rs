@@ -6,8 +6,7 @@
 
 use std::cmp::Reverse;
 
-use serde::Serialize;
-use specta::Type;
+use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::github::issues::IssueState;
@@ -18,31 +17,13 @@ use crate::store::{StoreReader, TitledItem, TitledKind};
 /// How many items quick open lists at most: enough to pick from, and few enough to fit the window.
 pub const LISTED: usize = 20;
 
-/// An Issue or a PR that quick open lists.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum QuickOpenItem {
-    Issue {
-        number: u32,
-        title: String,
-        /// Nothing for an Issue stored before Tsugiki kept states.
-        state: Option<IssueState>,
-    },
-    PullRequest {
-        number: u32,
-        title: String,
-        state: PrState,
-        is_draft: bool,
-    },
-}
-
 /// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most. This
 /// reads the database and never asks GitHub.
 pub fn find(
     reader: &StoreReader,
     repository: &RepositoryName,
     typed: &str,
-) -> Result<Vec<QuickOpenItem>, Error> {
+) -> Result<Vec<TitledItem>, Error> {
     Ok(best(reader.titled_items(repository)?, &Typed::parse(typed)))
 }
 
@@ -75,59 +56,44 @@ impl Typed {
         }
     }
 
-    /// Whether `item` is the one the number names, or its title holds every word.
+    /// Whether `item` is the one the number names, or its title holds every word. Nothing typed finds every
+    /// item.
     fn finds(&self, item: &TitledItem) -> bool {
-        if self.number == Some(item.number) {
+        if self.words.is_empty() || self.number == Some(item.number) {
             return true;
         }
         let title = item.title.to_lowercase();
         self.words.iter().all(|word| title.contains(word.as_str()))
     }
-}
 
-/// The items of `all` that `typed` finds, best first, `LISTED` at most.
-fn best(all: Vec<TitledItem>, typed: &Typed) -> Vec<QuickOpenItem> {
-    let mut found: Vec<TitledItem> = all.into_iter().filter(|item| typed.finds(item)).collect();
-    found.sort_unstable_by_key(|item| {
+    /// Where `item` comes in the list, lowest first: the numbered item, then the open ones, the newest first.
+    fn rank(&self, item: &TitledItem) -> (bool, bool, Reverse<OffsetDateTime>, Reverse<u32>) {
         (
-            typed.number != Some(item.number),
+            self.number != Some(item.number),
             !is_open(item.kind),
             Reverse(item.updated_at),
             Reverse(item.number),
         )
-    });
-    found.truncate(LISTED);
-    found.into_iter().map(QuickOpenItem::from).collect()
+    }
+}
+
+/// The items of `all` that `typed` finds, best first, `LISTED` at most. Only those `LISTED` get sorted.
+fn best(all: Vec<TitledItem>, typed: &Typed) -> Vec<TitledItem> {
+    let mut found: Vec<TitledItem> = all.into_iter().filter(|item| typed.finds(item)).collect();
+    if found.len() > LISTED {
+        let (listed, _, _) = found.select_nth_unstable_by_key(LISTED, |item| typed.rank(item));
+        listed.sort_unstable_by_key(|item| typed.rank(item));
+        found.truncate(LISTED);
+    } else {
+        found.sort_unstable_by_key(|item| typed.rank(item));
+    }
+    found
 }
 
 fn is_open(kind: TitledKind) -> bool {
     match kind {
-        TitledKind::Issue(state) => state == Some(IssueState::Open),
+        TitledKind::Issue { state } => state == Some(IssueState::Open),
         TitledKind::PullRequest { state, .. } => state == PrState::Open,
-    }
-}
-
-impl From<TitledItem> for QuickOpenItem {
-    fn from(item: TitledItem) -> Self {
-        let TitledItem {
-            number,
-            title,
-            kind,
-            ..
-        } = item;
-        match kind {
-            TitledKind::Issue(state) => Self::Issue {
-                number,
-                title,
-                state,
-            },
-            TitledKind::PullRequest { state, is_draft } => Self::PullRequest {
-                number,
-                title,
-                state,
-                is_draft,
-            },
-        }
     }
 }
 

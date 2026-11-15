@@ -598,7 +598,6 @@ impl PullRequestColumns {
     }
 }
 
-/// Every PR of `repository`, whatever its state, the latest update first.
 /// The number, title, state and last update of each PR of `repository`, which quick open searches.
 pub(super) fn read_titled(
     connection: &Connection,
@@ -622,6 +621,7 @@ pub(super) fn read_titled(
     titled?.collect()
 }
 
+/// Every PR of `repository`, whatever its state, the latest update first.
 pub(super) fn read_all(
     connection: &Connection,
     repository: &RepositoryName,

@@ -29,6 +29,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rusqlite::{OpenFlags, OptionalExtension, Transaction, named_params};
+use serde::Serialize;
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
@@ -548,20 +550,27 @@ pub struct WorkFacts {
     pub reviews: ReviewFacts,
 }
 
-/// What quick open reads of an Issue or a PR.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An Issue or a PR as quick open reads it and lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct TitledItem {
     pub number: u32,
     pub title: String,
+    /// What quick open orders by, which the window doesn't show.
+    #[serde(skip)]
+    #[specta(skip)]
     pub updated_at: OffsetDateTime,
+    #[serde(flatten)]
     pub kind: TitledKind,
 }
 
 /// Whether a `TitledItem` is an Issue or a PR, with its state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TitledKind {
-    /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
-    Issue(Option<IssueState>),
+    Issue {
+        /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
+        state: Option<IssueState>,
+    },
     PullRequest {
         state: PrState,
         is_draft: bool,

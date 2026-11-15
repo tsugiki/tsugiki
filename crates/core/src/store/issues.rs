@@ -208,7 +208,9 @@ pub(super) fn read_titled(
             number: row.get("number")?,
             title: row.get("title")?,
             updated_at,
-            kind: TitledKind::Issue(row.get("state")?),
+            kind: TitledKind::Issue {
+                state: row.get("state")?,
+            },
         })
     });
     titled?.collect()

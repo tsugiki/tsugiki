@@ -465,6 +465,23 @@ describe("with quick open", () => {
     expect(screen.getByText("No Issue or PR matches")).toBeTruthy();
   });
 
+  it("forgets an early Enter once the user moves the pick", async () => {
+    const { ran, onclose, answer } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    await answer("", "#1 First", "#2 Second");
+    await fireEvent.input(input, { target: { value: "s" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await answer("s", "#2 Second", "#3 Third");
+    await tick();
+    const waited = [...ran];
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(waited).toEqual([]);
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(ran).toEqual(["#2 Second"]);
+  });
+
   it("forgets an early Enter once the user types on", async () => {
     const { ran, answer } = withQuickOpen();
     const input = screen.getByRole("combobox");

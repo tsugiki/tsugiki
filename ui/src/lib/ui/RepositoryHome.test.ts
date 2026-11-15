@@ -1192,6 +1192,13 @@ it("opens what quick open found on its line, unfolded, which takes the focus, or
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(underIssue);
   });
+  const tab = () => screen.getByRole("tab", { selected: true }).textContent;
+  await screen.findByRole("tab", { name: "Files" });
+  const opened = tab();
+  // Picking the PR on show leaves it on its tab, where a click on its row would switch.
+  component.openFound("pull_request", 160662);
+  await tick();
+  expect([opened, tab()]).toEqual(["Conversation", "Conversation"]);
   component.openFound("pull_request", 5);
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "#5 Alone" }));

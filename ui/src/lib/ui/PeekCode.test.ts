@@ -65,6 +65,8 @@ it("paints each line's spans in the theme's syntax colours once they come", asyn
     expect(line?.querySelector(".hl-function")).not.toBeNull();
     return line;
   });
+  // Marked in the diff's colour, which window.css gives a landed line inside code (#754).
+  expect(hitLine?.closest(".line")?.matches(".code-lines .landed")).toBe(true);
 
   const painted = [...(hitLine?.querySelectorAll("span") ?? [])].map((span) => [
     span.classList[0],

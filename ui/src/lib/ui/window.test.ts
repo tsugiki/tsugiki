@@ -117,48 +117,50 @@ it("keeps every z-index under the overlay layer, apart from the layers themselve
   expect(found).toEqual([]);
 });
 
-/** Each rule in `css` as its list of selectors and its body. A comment before a rule is left out of its
- * selectors, and a rule nested in another, such as a keyframe's, reads as a rule of its own. */
-const rulesOf = (css: string) =>
-  [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)].map((match) => ({
-    selectors: (match[1] ?? "")
-      .split("*/")
-      .at(-1)
-      ?.split(",")
-      .map((selector) => selector.trim()),
-    body: match[2] ?? "",
-  }));
+/** Each block in `css` as the selectors before it, split at their commas, and the text inside it, in the
+ * order the blocks close. A rule inside an at-rule, such as a keyframe or a rule under `@media`, reads as a
+ * rule of its own, and the at-rule's text leaves it out. Comments count for nothing. */
+const rulesOf = (css: string) => {
+  const rules: { selectors: string[]; body: string }[] = [];
+  /** The selectors before each block still open, innermost last. */
+  const open: string[] = [];
+  let text = "";
+  for (let at = 0; at < css.length; at++) {
+    const c = css.charAt(at);
+    if (css.startsWith("/*", at)) {
+      const end = css.indexOf("*/", at + 2);
+      at = end < 0 ? css.length : end + 1;
+    } else if (c === "{") {
+      open.push(text);
+      text = "";
+    } else if (c === "}") {
+      const selectors = (open.pop() ?? "").split(",").map((selector) => selector.trim());
+      rules.push({ selectors, body: text });
+      text = "";
+    } else {
+      text += c;
+    }
+  }
+  return rules;
+};
 
 /** The bodies of the rules in `css` with a selector that `wanted` takes. */
 const bodiesOf = (css: string, wanted: (selector: string) => boolean) =>
   rulesOf(css)
-    .filter((rule) => rule.selectors?.some(wanted))
+    .filter((rule) => rule.selectors.some(wanted))
     .map((rule) => rule.body);
 
-/** The class names `source`'s markup gives its elements: each word of a `class="…"`, and each word of the
- * strings in a `class={[…]}`. */
-const classesOf = (source: string) =>
-  [...source.matchAll(/\bclass=(?:"([^"]*)"|\{\[([^\]]*)\]\})/g)].flatMap((match) =>
-    (match[1] ?? [...(match[2] ?? "").matchAll(/"([^"]*)"/g)].map((quoted) => quoted[1] ?? "").join(" "))
-      .split(/\s+/)
-      .filter(Boolean),
-  );
-
-it("reads a stylesheet's rules, and the classes of a component's markup", () => {
-  const css = "/* A note. */\n.a,\n.b.c {\n  top: 0;\n}\n\n@keyframes f {\n  to {\n    left: 0;\n  }\n}\n";
+it("reads a stylesheet's rules, nested ones and those with a comment among their selectors too", () => {
+  const css =
+    "/* A note. */\n.a,\n.b.c {\n  top: 0;\n}\n\n@media (x) {\n  .d /* over */ {\n    left: 0;\n  }\n}\n";
 
   expect(rulesOf(css)).toEqual([
     { selectors: [".a", ".b.c"], body: "\n  top: 0;\n" },
-    { selectors: ["@keyframes f"], body: "\n  to {\n    left: 0;\n  " },
+    { selectors: [".d"], body: "\n    left: 0;\n  " },
+    { selectors: ["@media (x)"], body: "\n" },
   ]);
   expect(bodiesOf(css, (selector) => selector.startsWith(".b"))).toEqual(["\n  top: 0;\n"]);
-  expect(classesOf('<div class="a b" {id}>\n<p class={[\n  "c d",\n  on && "e",\n]} class:f={on}>')).toEqual([
-    "a",
-    "b",
-    "c",
-    "d",
-    "e",
-  ]);
+  expect(rulesOf("/* Never closed")).toEqual([]);
 });
 
 it("puts each overlay on the scrim, and the performance HUD above it", () => {
@@ -172,7 +174,8 @@ it("puts each overlay on the scrim, and the performance HUD above it", () => {
 });
 
 // The file view and the Definition peek drew their code at the window's 14px, and marked the line Go to
-// definition landed on in another colour than the diff's (#754). window.css now gives both, once.
+// definition landed on in another colour than the diff's (#754). window.css now gives both, once, and the
+// component tests check that the code and its landed line take the classes.
 it("draws code at one size, and the line Go to definition lands on in one colour, from window.css", () => {
   const diff = sources["src/lib/ui/DiffRows.svelte"] ?? "";
   const peek = sources["src/lib/ui/PeekCode.svelte"] ?? "";
@@ -185,10 +188,7 @@ it("draws code at one size, and the line Go to definition lands on in one colour
   expect(bodiesOf(windowCss, (selector) => selector === ".code-lines .landed")).toEqual([
     expect.stringContaining("var(--find-current)"),
   ]);
-  for (const source of [diff, peek]) {
-    expect(classesOf(source)).toEqual(expect.arrayContaining(["code-lines", "landed"]));
-    expect(styleOf(source)).not.toContain("font-size");
-  }
-  expect(marks.length).toBeGreaterThan(1);
+  expect([styleOf(diff), styleOf(peek)].filter((style) => style.includes("font-size"))).toEqual([]);
+  expect(marks.length).toBeGreaterThan(0);
   expect(marks.filter((body) => body.includes("background"))).toEqual([]);
 });

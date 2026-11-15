@@ -1531,6 +1531,9 @@ it("goes to the definition on a Ctrl+click, and marks the whole line it lands on
   expect(files.picked).toMatchObject({ word: "Notes", line: 1 });
   expect(mark()?.style.top).toBe(rowAt("2+new line")?.style.top);
   expect(mark()?.className).toMatch(/^mark\b/);
+  // The diff's code takes window.css's size, and the mark its colour, which only a mark inside code takes.
+  expect(screen.getByRole("region", { name: "Diff" }).classList).toContain("code-lines");
+  expect(mark()?.matches(".code-lines .landed")).toBe(true);
   expect(mark()?.classList).not.toContain("head");
   // Once faded the mark goes, so the line isn't marked again when it shows again.
   await fireEvent.animationEnd(mark() as HTMLElement);
@@ -1617,6 +1620,9 @@ it("opens a file the PR doesn't change read-only at the hit's commit, and Back r
     expect(view.querySelector(".landed")?.textContent).toBe("900line 900");
   });
   expect(view.querySelector(".landed .hl-keyword")?.textContent).toBe("line");
+  // The code takes the diff's size and its landed line the diff's colour, from window.css (#754).
+  expect(code.classList).toContain("code-lines");
+  expect(view.querySelector(".landed")?.matches(".code-lines .landed")).toBe(true);
 
   expect(view.querySelector(".header")?.textContent.replace(/\s+/g, " ").trim()).toBe(
     "← Back to PR #11's diff Objects/unicodeobject.c at fedcba9 · the PR's base of PR #11 Read-only",

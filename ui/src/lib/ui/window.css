@@ -39,8 +39,8 @@ samp,
   font-size: 12px;
 }
 
-/* The line Go to definition lands on, in the diff, the file view and the Definition peek (#754). Only lines
-   of code take it. */
+/* The line Go to definition lands on, in the diff, the file view and the Definition peek (#754): a `landed`
+   element inside code, which is the diff's mark over its line, and the line itself in the others. */
 .code-lines .landed {
   background: color-mix(in srgb, var(--find-current) 50%, transparent);
 }

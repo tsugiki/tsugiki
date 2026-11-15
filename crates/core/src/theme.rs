@@ -84,6 +84,16 @@ impl ThemeChoice {
         }
     }
 
+    /// The choice that shows the Theme `name`. It refuses `system`, `light` and `dark`, which no Theme may
+    /// take: written to the file, they would read back as following the system or as a mode (#757).
+    pub fn named(name: ThemeName) -> Result<Self, Error> {
+        if Self::reserves(name.as_str()) {
+            let message = format!("No theme is named {:?}.", name.as_str());
+            return Err(Error::new(ErrorKind::NotFound, &message));
+        }
+        Ok(Self::Theme(name))
+    }
+
     /// Whether `[appearance] theme` gives `name` a meaning of its own, so no Theme may take it.
     fn reserves(name: &str) -> bool {
         name == Self::SYSTEM || ThemeKind::parse(name).is_some()

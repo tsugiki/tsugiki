@@ -29,7 +29,9 @@ use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
-use crate::theme::{ThemeChoice, ThemeKind, ThemeName, ThemePick};
+use crate::theme::{
+    GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
+};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -146,10 +148,11 @@ pub struct SettingsChanges {
 }
 
 impl SettingsChanges {
-    /// `settings` with the changes to `settings.toml` made to them, or nothing if none change it.
-    fn made_to(&self, mut settings: Settings) -> Option<Settings> {
+    /// `settings` with the changes to `settings.toml` made to them, or nothing if none change it. It refuses
+    /// a Theme picked by a name `theme` reads otherwise.
+    fn made_to(&self, mut settings: Settings) -> Result<Option<Settings>, Error> {
         if self.status_bar.is_none() && self.releases.is_none() && self.appearance.is_none() {
-            return None;
+            return Ok(None);
         }
         if let Some(status_bar) = &self.status_bar {
             settings.status_bar = status_bar.clone();
@@ -158,9 +161,9 @@ impl SettingsChanges {
             settings.releases = releases.clone();
         }
         if let Some(appearance) = &self.appearance {
-            appearance.made_to(&mut settings.appearance);
+            appearance.made_to(&mut settings.appearance)?;
         }
-        Some(settings)
+        Ok(Some(settings))
     }
 }
 
@@ -168,8 +171,9 @@ impl SettingsChanges {
 /// others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
 /// name no Theme has, which the dialog shows but can't pick.
 ///
-/// The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
-/// check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+/// A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+/// dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+/// any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
 /// system, a side shows its default, and the status bar says so.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Type)]
 #[serde(default)]
@@ -181,11 +185,11 @@ pub struct AppearanceChanges {
 }
 
 impl AppearanceChanges {
-    fn made_to(&self, appearance: &mut AppearanceSettings) {
+    fn made_to(&self, appearance: &mut AppearanceSettings) -> Result<(), Error> {
         if let Some(pick) = &self.theme {
             appearance.theme = match pick {
                 ThemePick::System => ThemeChoice::System,
-                ThemePick::Named { name } => ThemeChoice::Theme(name.clone()),
+                ThemePick::Named { name } => ThemeChoice::named(name.clone())?,
             };
         }
         if let Some(name) = &self.light_theme {
@@ -194,6 +198,7 @@ impl AppearanceChanges {
         if let Some(name) = &self.dark_theme {
             appearance.dark_theme = name.clone();
         }
+        Ok(())
     }
 }
 
@@ -523,6 +528,20 @@ pub struct SettingsView {
     /// status bar to name when no theme has the name it gives (#755).
     pub theme_place: String,
     pub language_servers: LanguageServers,
+}
+
+impl SettingsView {
+    /// The themes for the window, from the built-in themes and the `themes` folder read now, showing what
+    /// `appearance` asks for: the file's `[appearance]`, or what Settings › General shows before Apply saves
+    /// it (#757). Both go by the same rules, so the dialog's preview is what Apply shows.
+    pub fn themes(&self, appearance: &AppearanceSettings) -> Result<Themes, Error> {
+        let library = ThemeLibrary::read(&self.themes_folder)?;
+        let given = GivenTheme {
+            choice: &appearance.theme,
+            place: &self.theme_place,
+        };
+        Ok(library.themes(given, &appearance.light_theme, &appearance.dark_theme))
+    }
 }
 
 /// A command of the command palette, by the id the window gives it. The window names its commands, so the
@@ -1011,7 +1030,7 @@ impl SettingsFiles {
         let servers = (changes.language_servers.as_ref())
             .map(|servers| Self::language_servers_edit(&machine, servers))
             .transpose()?;
-        if let Some(settings) = changes.made_to(self.loaded.settings.clone()) {
+        if let Some(settings) = changes.made_to(self.loaded.settings.clone())? {
             self.write(&settings)?;
         }
         if let Some(edit) = servers {

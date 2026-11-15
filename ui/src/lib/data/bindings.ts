@@ -94,6 +94,12 @@ export const commands = {
 	 */
 	themes: () => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("themes")),
 	/**
+	 *  The themes `themes` would answer with were `[appearance]` to hold `appearance`, worked out by the same
+	 *  rules, so Settings › General shows its rows on the window as Apply will (#757). This waits on the
+	 *  `themes` folder, as `themes` does.
+	 */
+	previewThemes: (appearance: AppearanceSettings) => typedError<Themes, Error_Serialize>(__TAURI_INVOKE("preview_themes", { appearance })),
+	/**
 	 *  Turns the window that asks to `side`, its title bar and native controls with it, or back to following
 	 *  the system with none (#755). The page asks for the side of the theme it is about to show, once it has the
 	 *  `themes` answer, and sends the next ask only after this one answers. Back to the system, it says the side
@@ -361,8 +367,9 @@ export type Answer_Serialize =
  *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
  *  name no Theme has, which the dialog shows but can't pick.
  * 
- *  The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
- *  check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+ *  dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+ *  any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
  *  system, a side shows its default, and the status bar says so.
  */
 export type AppearanceChanges = AppearanceChanges_Serialize | AppearanceChanges_Deserialize;
@@ -372,8 +379,9 @@ export type AppearanceChanges = AppearanceChanges_Serialize | AppearanceChanges_
  *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
  *  name no Theme has, which the dialog shows but can't pick.
  * 
- *  The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
- *  check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+ *  dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+ *  any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
  *  system, a side shows its default, and the status bar says so.
  */
 export type AppearanceChanges_Deserialize = {
@@ -388,8 +396,9 @@ export type AppearanceChanges_Deserialize = {
  *  others, so a key it left keeps what the file says then (#757). That keeps a mode from before (#755) and a
  *  name no Theme has, which the dialog shows but can't pick.
  * 
- *  The dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to
- *  check a name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
+ *  A Theme picked by `system`, `light` or `dark` is refused, as it would read back as something else. The
+ *  dialog lists only the Themes the window holds, so Apply doesn't read the `themes` folder again to check
+ *  any other name. One whose file has gone since then shows as a hand edit's would: a `theme` follows the
  *  system, a side shows its default, and the status bar says so.
  */
 export type AppearanceChanges_Serialize = {

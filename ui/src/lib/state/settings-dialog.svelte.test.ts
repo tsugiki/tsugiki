@@ -16,7 +16,8 @@ describe("SettingsDialog", () => {
     dialog.change(edit);
     dialog.changeAppearance(edit);
     expect(edit).not.toHaveBeenCalled();
-    expect(theme.previewAppearance).toBeUndefined();
+    expect(dialog.held("theme")).toBeUndefined();
+    expect(dialog.held("dark")).toBeUndefined();
     expect(dialog.changed).toBe(false);
     expect(dialog.repositories).toEqual([]);
     expect(await dialog.apply()).toBe(true);

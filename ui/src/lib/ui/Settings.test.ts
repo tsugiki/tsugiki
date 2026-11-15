@@ -20,6 +20,7 @@ const core = vi.hoisted(() => ({
   pickProgram: vi.fn(),
   openServerLog: vi.fn(),
   themes: vi.fn(),
+  previewThemes: vi.fn(),
   turnWindow: vi.fn(),
 }));
 /** The listener for the servers' rows, so a test can send it what the core would, and its stop. */
@@ -129,6 +130,18 @@ const THEMES: Themes = {
 };
 /** Windows on its light side, which says nothing when it changes. */
 const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;
+/** The themes the core works out for `appearance`, as `preview_themes` does for names the themes have: a
+ * theme the themes hold is named, and anything else follows the system. */
+const previewOf = (appearance: Values["appearance"]) => {
+  const themes = structuredClone(THEMES);
+  themes.light.chosen = appearance.light_theme;
+  themes.dark.chosen = appearance.dark_theme;
+  const side = (["light", "dark"] as const).find((kind) =>
+    themes[kind].all.some((one) => one.name === appearance.theme),
+  );
+  themes.theme = side ? { kind: "named", name: appearance.theme, side } : { kind: "system" };
+  return ok(themes);
+};
 
 /** The settings in force: the defaults, as the core read them at start. */
 let state: SettingsState;
@@ -173,6 +186,7 @@ beforeEach(async () => {
   );
   core.languageServers.mockResolvedValue(ROWS);
   core.themes.mockImplementation(async () => ok(structuredClone(THEMES)));
+  core.previewThemes.mockImplementation(async (appearance: Values["appearance"]) => previewOf(appearance));
   core.turnWindow.mockResolvedValue(null);
   state = new SettingsState();
   state.take(loaded(settingsWith()));
@@ -516,11 +530,22 @@ describe("Settings › General's Appearance", () => {
     expect(theme.shown?.name).toBe("VS Code Light Modern");
 
     await choose("Theme", "Gruvbox Dark Hard");
-    expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    await vi.waitFor(() => {
+      expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    });
+    expect(core.previewThemes).toHaveBeenLastCalledWith({
+      theme: "Gruvbox Dark Hard",
+      light_theme: "VS Code Light Modern",
+      dark_theme: "VS Code Dark Modern",
+    });
+    expect(core.turnWindow).toHaveBeenLastCalledWith("dark");
     expect(button("Apply")).toBeTruthy();
 
     await fireEvent.click(button("Cancel"));
     expect(onclose).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(core.turnWindow).toHaveBeenLastCalledWith(null);
+    });
     expect(theme.shown?.name).toBe("VS Code Light Modern");
     expect(state.settings?.appearance.theme).toBe("system");
     expect(core.applySettings).not.toHaveBeenCalled();
@@ -529,13 +554,45 @@ describe("Settings › General's Appearance", () => {
   it("shows a side's theme on the window at once while Follow system shows that side", async () => {
     await opened();
     await choose("Dark theme", "Gruvbox Dark Hard");
+    await vi.waitFor(() => {
+      expect(core.previewThemes).toHaveBeenCalledOnce();
+    });
     expect(theme.shown?.name).toBe("VS Code Light Modern");
 
     await choose("Light theme", "Gruvbox Light Hard");
-    expect(theme.shown?.name).toBe("Gruvbox Light Hard");
+    await vi.waitFor(() => {
+      expect(theme.shown?.name).toBe("Gruvbox Light Hard");
+    });
   });
 
-  it("saves a changed Light theme on Apply and leaves theme alone, then shows the themes the file gives", async () => {
+  it("shows Follow system on the side the system is on, not the side a theme kept the window on", async () => {
+    // The file names a dark theme, which keeps the window, and so the page's media query, dark.
+    let heard: ((e: { matches: boolean }) => void) | undefined;
+    const query = {
+      matches: false,
+      addEventListener: (_: string, listener: (e: { matches: boolean }) => void) => {
+        heard = listener;
+      },
+    } as unknown as DarkQuery;
+    const named = { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } as const;
+    core.themes.mockImplementation(async () => ok({ ...structuredClone(THEMES), theme: named }));
+    theme = new ThemeState(query);
+    await theme.load();
+    heard?.({ matches: true });
+    await openedOn((settings) => (settings.appearance.theme = "Gruvbox Dark Hard"));
+    expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    // Turned back to the system, the window says the system is light.
+    core.turnWindow.mockResolvedValue("light");
+
+    await choose("Theme", "system");
+
+    await vi.waitFor(() => {
+      expect(theme.shown?.name).toBe("VS Code Light Modern");
+    });
+    expect(core.turnWindow).toHaveBeenLastCalledWith(null);
+  });
+
+  it("saves a changed Light theme on Apply and leaves theme alone, and keeps showing it", async () => {
     core.applySettings.mockResolvedValue(
       ok(loaded(settingsWith((settings) => (settings.appearance.light_theme = "Gruvbox Light Hard")))),
     );
@@ -543,39 +600,80 @@ describe("Settings › General's Appearance", () => {
     await opened(onclose);
     const asked = core.themes.mock.calls.length;
     await choose("Light theme", "Gruvbox Light Hard");
+    const saved = settingsWith((settings) => (settings.appearance.light_theme = "Gruvbox Light Hard"));
+    core.themes.mockImplementation(async () => previewOf(saved.appearance));
     await fireEvent.click(button("Apply"));
 
     await vi.waitFor(() => {
       expect(onclose).toHaveBeenCalledOnce();
     });
     expect(core.applySettings).toHaveBeenCalledWith({ appearance: { light_theme: "Gruvbox Light Hard" } });
+    expect(theme.themes?.light.chosen).toBe("Gruvbox Light Hard");
+    expect(theme.shown?.name).toBe("Gruvbox Light Hard");
+    // It reads the themes again for the files' problems, with the line the file now gives.
     expect(core.themes.mock.calls.length).toBeGreaterThan(asked);
-    expect(theme.previewAppearance).toBeUndefined();
   });
 
-  it("waits for the window's themes before Apply closes, and shows the dialog's pick until then", async () => {
+  it("makes the theme it shows the theme in force on Apply, so a slow read of the themes doesn't take it back", async () => {
     core.applySettings.mockResolvedValue(
       ok(loaded(settingsWith((settings) => (settings.appearance.theme = "Gruvbox Dark Hard")))),
     );
     const onclose = vi.fn();
     await opened(onclose);
+    await choose("Theme", "Gruvbox Dark Hard");
+    await vi.waitFor(() => {
+      expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    });
     const themes = Promise.withResolvers<ReturnType<typeof ok<Themes>>>();
     core.themes.mockReturnValue(themes.promise);
-    await choose("Theme", "Gruvbox Dark Hard");
-    await fireEvent.click(button("Apply"));
-    await vi.waitFor(() => {
-      expect(core.themes).toHaveBeenCalled();
-    });
-    expect(onclose).not.toHaveBeenCalled();
-    expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
 
-    const named = { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } as const;
-    themes.resolve(ok({ ...structuredClone(THEMES), theme: named }));
+    await fireEvent.click(button("Apply"));
     await vi.waitFor(() => {
       expect(onclose).toHaveBeenCalledOnce();
     });
-    expect(theme.previewAppearance).toBeUndefined();
     expect(theme.shown?.name).toBe("Gruvbox Dark Hard");
+    expect(theme.themes?.theme).toEqual({ kind: "named", name: "Gruvbox Dark Hard", side: "dark" });
+
+    themes.resolve(ok({ ...structuredClone(THEMES), problems: ["night.toml: name isn't a theme's name"] }));
+    await vi.waitFor(() => {
+      expect(theme.problems).toEqual(["night.toml: name isn't a theme's name"]);
+    });
+  });
+
+  it("says why the window can't show a change, and stays open with why when Apply can't show it either", async () => {
+    core.previewThemes.mockResolvedValue(refused("Tsugiki can't read themes: access denied"));
+    core.applySettings.mockResolvedValue(
+      ok(loaded(settingsWith((settings) => (settings.appearance.theme = "Gruvbox Dark Hard")))),
+    );
+    const onclose = vi.fn();
+    await opened(onclose);
+    await choose("Theme", "Gruvbox Dark Hard");
+    const page = screen.getByRole("region", { name: "General" });
+    expect(
+      await within(page).findByText("Tsugiki can't show the theme: Tsugiki can't read themes: access denied"),
+    ).toBeTruthy();
+    expect(theme.shown?.name).toBe("VS Code Light Modern");
+    core.themes.mockResolvedValue(refused("Tsugiki can't read themes: access denied"));
+
+    await fireEvent.click(button("Apply"));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Tsugiki saved the settings, but can't show the theme: Tsugiki can't read themes: access denied",
+    );
+    expect(onclose).not.toHaveBeenCalled();
+    expect(button("OK")).toBeTruthy();
+  });
+
+  it("says why it can't offer the themes when the window never got them", async () => {
+    core.themes.mockResolvedValue(refused("Tsugiki can't read themes: access denied"));
+    theme = new ThemeState(LIGHT_SIDE);
+    await theme.load();
+    await opened();
+    const page = screen.getByRole("region", { name: "General" });
+    expect(
+      within(page).getByText("Tsugiki can't list the themes: Tsugiki can't read themes: access denied"),
+    ).toBeTruthy();
+    expect(select("Theme").disabled).toBe(true);
   });
 
   it("saves Follow system and a Theme as the theme picker's picks", async () => {
@@ -607,7 +705,26 @@ describe("Settings › General's Appearance", () => {
     expect(core.applySettings).toHaveBeenCalledWith({ status_bar: { visible: false } });
   });
 
-  it("shows a theme no Theme has as not found, and a mode from before as its side", async () => {
+  it("keeps offering what the file held after a change, so the user can go back to it", async () => {
+    await openedOn((settings) => {
+      settings.appearance.theme = "dark";
+      settings.appearance.dark_theme = "Solarized Dark";
+    });
+    await choose("Theme", "Gruvbox Light Hard");
+    await choose("Dark theme", "Gruvbox Dark Hard");
+    expect(chosen("Theme")).toBe("Gruvbox Light Hard");
+    expect(Array.from(select("Theme").options).map((option) => option.textContent)).toContain(
+      "Always the Dark theme",
+    );
+
+    await choose("Theme", "dark");
+    await choose("Dark theme", "Solarized Dark");
+    expect(chosen("Theme")).toBe("Always the Dark theme");
+    expect(chosen("Dark theme")).toBe("Solarized Dark (not found)");
+    expect(button("OK")).toBeTruthy();
+  });
+
+  it("shows a theme no Theme has as not found, and a mode from before as its side, which Apply never sends", async () => {
     for (const [held, words] of [
       ["Solarized Dark", "Solarized Dark (not found)"],
       ["dark", "Always the Dark theme"],
@@ -619,6 +736,38 @@ describe("Settings › General's Appearance", () => {
 
     await openedOn((settings) => (settings.appearance.theme = "light"));
     expect(chosen("Theme")).toBe("Always the Light theme");
+    await choose("Light theme", "Gruvbox Light Hard");
+    await fireEvent.click(button("Apply"));
+    expect(core.applySettings).toHaveBeenCalledWith({ appearance: { light_theme: "Gruvbox Light Hard" } });
+  });
+
+  it("says what a name the file holds is when it names a theme of the other side or a file that failed", async () => {
+    for (const [change, row, words] of [
+      [
+        (settings: Values) => (settings.appearance.light_theme = "Gruvbox Dark Hard"),
+        "Light theme",
+        "Gruvbox Dark Hard (a dark theme)",
+      ],
+      [
+        (settings: Values) => (settings.appearance.dark_theme = "VS Code Light Modern"),
+        "Dark theme",
+        "VS Code Light Modern (a light theme)",
+      ],
+      [
+        (settings: Values) => (settings.appearance.light_theme = "Broken Light"),
+        "Light theme",
+        "Broken Light (can't be used)",
+      ],
+      [
+        (settings: Values) => (settings.appearance.theme = "Broken Light"),
+        "Theme",
+        "Broken Light (can't be used)",
+      ],
+    ] as const) {
+      const rendered = await openedOn(change);
+      expect(chosen(row), words).toBe(words);
+      rendered.unmount();
+    }
   });
 
   it("waits for the window's themes before it offers any", async () => {

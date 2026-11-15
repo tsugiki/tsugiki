@@ -3,13 +3,15 @@
 // the side Windows is on, jumping to the other when Windows changes sides. A theme the settings name shows
 // whatever Windows says, and so does the chosen theme of the side a mode from a file written before keeps.
 // The theme picker previews a theme over the one in force, and saves the theme in force (#518, #756). The
-// Settings dialog previews the `[appearance]` it shows, and its Apply saves it (#757).
+// Settings dialog shows its `[appearance]` on the window as the core works out the themes it gives, title
+// bar included, and its Apply saves it (#757).
 import {
   type AppearanceSettings,
   commands,
   type FailedThemeView,
   type ThemeInForce,
   type ThemeKind,
+  type ThemeName,
   type ThemePick,
   type Themes,
   type ThemeView,
@@ -17,6 +19,26 @@ import {
 import { ask } from "./answer";
 
 export type { AppearanceSettings, FailedThemeView, ThemeKind, Themes, ThemeView };
+
+/** The key of `[appearance]` that holds the theme chosen for each side. */
+export const SIDE_KEYS = { light: "light_theme", dark: "dark_theme" } as const satisfies Record<
+  ThemeKind,
+  keyof AppearanceSettings
+>;
+
+/** Whether `theme`, as `[appearance] theme` holds it, is a mode from a file written before (#755), which
+ * shows the chosen theme of its side. Only a hand edit writes one. */
+export const isMode = (theme: string): theme is ThemeKind => theme === "light" || theme === "dark";
+
+/** The pick that saves `theme` to `[appearance] theme`: following the system, or the theme named. */
+export const themePick = (theme: "system" | ThemeName): ThemePick =>
+  theme === "system" ? { kind: "system" } : { kind: "named", name: theme };
+
+/** The theme `themes` chose for side `kind`, which following the system shows on that side. */
+const chosenIn = (themes: Themes | undefined, kind: ThemeKind): ThemeView | undefined => {
+  const name = themes?.[kind].chosen;
+  return themes?.[kind].all.find((one) => one.name === name);
+};
 
 /** Says which side Windows is on: `matchMedia("(prefers-color-scheme: dark)")` in the window. */
 export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
@@ -29,9 +51,9 @@ export class ThemeState {
   dark = $state(false);
   /** A theme the picker shows on the window for now, over the one in force. */
   preview = $state<ThemeView>();
-  /** The `[appearance]` the Settings dialog shows on the window while it's open, under the picker's preview
-   * and over the theme in force (#757). */
-  previewAppearance = $state.raw<AppearanceSettings>();
+  /** Why the window can't show the `[appearance]` the Settings dialog shows, until it can or the dialog stops
+   * showing it. */
+  previewProblem = $state<string>();
   /** Why the last pick couldn't be saved, until one is. */
   problem = $state<string>();
   /** Why the window's title bar couldn't turn to the side of the theme in force, until a turn works. */
@@ -60,29 +82,29 @@ export class ThemeState {
   /** The count of media events that report Windows' side, so a side the window said before one doesn't undo
    * it. */
   #heard = 0;
+  /** The themes the core worked out for the `[appearance]` the Settings dialog shows, which the window shows
+   * under the picker's preview and over the theme in force (#757). */
+  #settingsThemes = $state<Themes>();
+  /** Whether the Settings dialog shows its `[appearance]` on the window, which then keeps to the side of what
+   * the dialog shows: a load leaves the window's side alone until the dialog stops. */
+  #previewing = false;
+  /** The count of the dialog's asks, so only the last one asked shows. */
+  #previews = 0;
+  /** The dialog's last ask, which gives the themes it showed, or nothing if it showed none. */
+  #lastPreview = Promise.resolve<Themes | undefined>(undefined);
   /** The side in use: the one the settings keep, or else the one Windows is on. */
-  side: ThemeKind = $derived.by(() => {
-    const theme = this.themes?.theme;
-    if (theme && theme.kind !== "system") return theme.side;
-    return this.dark ? "dark" : "light";
-  });
+  side: ThemeKind = $derived(this.#sideOf(this.themes));
   /** The theme in force, once the core has sent them: the named one, or else the chosen one of the side in
    * use. */
-  current = $derived.by(() => {
-    const theme = this.themes?.theme;
-    if (theme?.kind !== "named") return this.#chosenOf(this.side);
-    return this.themesOf(this.side).find((one) => one.name === theme.name);
-  });
+  current = $derived(this.#inForce(this.themes));
   /** The theme following the system shows: the chosen theme of the side Windows is on, as far as the page
    * knows. While a theme keeps the window on one side, the page hears that side, and learns Windows' own
    * only as the window turns back to it. */
-  following = $derived(this.#chosenOf(this.dark ? "dark" : "light"));
+  following = $derived(chosenIn(this.themes, this.dark ? "dark" : "light"));
   /** What the window shows: the picker's preview, or else the Settings dialog's, or else the theme in
    * force. */
   shown = $derived(
-    this.preview ??
-      (this.previewAppearance === undefined ? undefined : this.#showing(this.previewAppearance)) ??
-      this.current,
+    this.preview ?? (this.#settingsThemes && this.#inForce(this.#settingsThemes)) ?? this.current,
   );
 
   constructor(query: DarkQuery) {
@@ -110,7 +132,7 @@ export class ThemeState {
     if (answer.status !== "ok") {
       this.error = answer.error.message;
       // A load asked before this one may have turned the window before this one was asked.
-      if (this.themes) this.#take(await this.#turn(this.themes.theme));
+      if (this.themes) this.#take(await this.#turnInForce(this.themes.theme));
       return;
     }
     const data = answer.data;
@@ -122,11 +144,68 @@ export class ThemeState {
     };
     if (this.#picks === picks) this.#saved = data.theme;
     keepPicks();
-    this.#take(await this.#turn(data.theme));
+    this.#take(await this.#turnInForce(data.theme));
     if (asked !== this.#loads) return;
     keepPicks();
     this.themes = data;
     this.error = undefined;
+  }
+
+  /** Shows the `[appearance]` the Settings dialog shows, `appearance`, on the window, as the core works out
+   * the themes it gives, and turns the window to the side of the theme it shows (#757). Following the
+   * system, the window then says the side the system is on. Of asks that cross, the one asked last shows.
+   * One the core refuses leaves the window as it was, and `previewProblem` says why. */
+  previewSettings(appearance: AppearanceSettings): Promise<void> {
+    this.#previewing = true;
+    const shown = this.#showSettings(appearance, ++this.#previews);
+    this.#lastPreview = shown;
+    return shown.then(() => {});
+  }
+
+  async #showSettings(appearance: AppearanceSettings, asked: number): Promise<Themes | undefined> {
+    const answer = await ask(commands.previewThemes(appearance));
+    if (asked !== this.#previews) return undefined;
+    if (answer.status !== "ok") {
+      this.previewProblem = `Tsugiki can't show the theme: ${answer.error.message}`;
+      return undefined;
+    }
+    const side = await this.#turn(answer.data.theme);
+    if (asked !== this.#previews) return undefined;
+    this.#take(side);
+    this.previewProblem = undefined;
+    this.#settingsThemes = answer.data;
+    return answer.data;
+  }
+
+  /** Stops showing the Settings dialog's `[appearance]`. Once Apply has `saved` it, the window keeps the
+   * themes the dialog's last ask showed, which the core worked out from what the file now holds, and reads
+   * them again for the files' problems. Without that answer it reads them now, and gives why it couldn't.
+   * Otherwise the window goes back to the theme in force and its side. */
+  async endPreview(saved: boolean): Promise<string | undefined> {
+    if (!this.#previewing) return undefined;
+    const last = saved ? await this.#lastPreview : undefined;
+    this.#previewing = false;
+    this.#previews += 1;
+    this.#settingsThemes = undefined;
+    this.previewProblem = undefined;
+    if (last) {
+      this.themes = last;
+      this.#saved = last.theme;
+      void this.load();
+      return undefined;
+    }
+    if (saved) {
+      await this.load();
+      return this.error && `Tsugiki saved the settings, but can't show the theme: ${this.error}`;
+    }
+    if (this.themes) this.#take(await this.#turn(this.themes.theme));
+    return undefined;
+  }
+
+  /** Turns the window to the side of the theme in force, as `#turn` does, unless the Settings dialog shows
+   * its `[appearance]` on it, which keeps the window to the side of what it shows. */
+  #turnInForce(theme: ThemeInForce): Promise<ThemeKind | undefined> {
+    return this.#previewing ? Promise.resolve(undefined) : this.#turn(theme);
   }
 
   /** Takes `side` as the one Windows is on, when the window said it. */
@@ -175,23 +254,20 @@ export class ThemeState {
     return this.themes?.[kind].failed ?? [];
   }
 
-  /** The theme `appearance` shows, worked out as the core works out the theme in force from the file: a
-   * `theme` no theme has follows the system, and a side's name no theme of the side has gives what the core
-   * chose for the side, its default. A mode from before shows its side's chosen theme. */
-  #showing({ theme, light_theme, dark_theme }: AppearanceSettings): ThemeView | undefined {
-    const chosen = (side: ThemeKind) => {
-      const name = side === "light" ? light_theme : dark_theme;
-      return this.themesOf(side).find((one) => one.name === name) ?? this.#chosenOf(side);
-    };
-    if (theme === "light" || theme === "dark") return chosen(theme);
-    const named = [...this.themesOf("light"), ...this.themesOf("dark")].find((one) => one.name === theme);
-    return named ?? chosen(this.dark ? "dark" : "light");
+  /** The theme `themes` put in force: the named one, or else the chosen one of the side a mode keeps, or of
+   * the side Windows is on. */
+  #inForce(themes: Themes | undefined): ThemeView | undefined {
+    const side = this.#sideOf(themes);
+    if (themes?.theme.kind !== "named") return chosenIn(themes, side);
+    const { name } = themes.theme;
+    return themes[side].all.find((one) => one.name === name);
   }
 
-  /** The theme chosen for side `kind`, which following the system shows on that side. */
-  #chosenOf(kind: ThemeKind): ThemeView | undefined {
-    const name = this.themes?.[kind].chosen;
-    return this.themesOf(kind).find((one) => one.name === name);
+  /** The side `themes` put in force: the one a named theme or a mode keeps, or else the one Windows is on. */
+  #sideOf(themes: Themes | undefined): ThemeKind {
+    const theme = themes?.theme;
+    if (theme && theme.kind !== "system") return theme.side;
+    return this.dark ? "dark" : "light";
   }
 
   /** Makes `theme` the theme in force, or follows the system, and saves it to `settings.toml` at once,
@@ -201,13 +277,9 @@ export class ThemeState {
   async pick(theme: ThemeView | "system"): Promise<void> {
     if (!this.themes) return;
     const pick = ++this.#picks;
-    const [inForce, saved]: [ThemeInForce, ThemePick] =
-      theme === "system"
-        ? [{ kind: "system" }, { kind: "system" }]
-        : [
-            { kind: "named", name: theme.name, side: theme.kind },
-            { kind: "named", name: theme.name },
-          ];
+    const inForce: ThemeInForce =
+      theme === "system" ? { kind: "system" } : { kind: "named", name: theme.name, side: theme.kind };
+    const saved = themePick(theme === "system" ? theme : theme.name);
     this.themes.theme = inForce;
     // The side the window says it turned to counts when it says it, as Windows may change sides after.
     const turned = this.#turn(inForce).then((side) => {

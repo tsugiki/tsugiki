@@ -8,7 +8,7 @@ import {
 } from "$lib/data/bindings";
 import { ask } from "./answer";
 import type { LanguageServerSettings, LoadedSettings, Settings, SettingsState } from "./settings.svelte";
-import type { ThemeKind, ThemeState } from "./theme.svelte";
+import { isMode, SIDE_KEYS, type ThemeKind, type ThemeState, themePick } from "./theme.svelte";
 
 /** The pages of the dialog's left column, in its order. */
 export const SETTINGS_PAGES = ["General", "Account", "Repositories", "Sync", "Keyboard", "Advanced"] as const;
@@ -28,15 +28,14 @@ interface Saved {
 }
 
 /** The keys of `[appearance]` that differ in `now` from `then`, which Apply saves, or nothing if none do. A
- * key the dialog left keeps what the file says, such as a mode from before or a name no Theme has. */
+ * key the dialog left keeps what the file says, such as a mode from before or a name no Theme has. A mode
+ * isn't a pick, so it never goes: the Theme row offers only the file's own, which is no change. */
 const appearanceChanges = (
   now: AppearanceSettings,
   then: AppearanceSettings,
 ): AppearanceChanges_Deserialize | undefined => {
   const changes: AppearanceChanges_Deserialize = {
-    ...(now.theme !== then.theme && {
-      theme: now.theme === "system" ? { kind: "system" } : { kind: "named", name: now.theme },
-    }),
+    ...(now.theme !== then.theme && !isMode(now.theme) && { theme: themePick(now.theme) }),
     ...(now.light_theme !== then.light_theme && { light_theme: now.light_theme }),
     ...(now.dark_theme !== then.dark_theme && { dark_theme: now.dark_theme }),
   };
@@ -125,12 +124,44 @@ export class SettingsDialog {
     return this.#theme.themesOf(side).map((theme) => theme.name);
   }
 
-  /** Changes `[appearance]`, which the window shows at once. */
+  /** The value of `row`'s key as the file held it when the dialog read it, with the words for its option,
+   * when the row doesn't offer it otherwise: a mode from before in the Theme row, or a name no theme the
+   * row lists has. It stays among the row's options after a change, so the user can go back to it, and Apply
+   * over another change leaves it in the file. Unset when the row offers it, or before the files are read.
+   * While the window waits for its themes, it shows as it is. */
+  held(row: "theme" | ThemeKind): { value: string; words: string } | undefined {
+    const value = this.#before?.settings.appearance[row === "theme" ? row : SIDE_KEYS[row]];
+    if (value === undefined || (row === "theme" && value === "system")) return undefined;
+    const themes = this.#theme.themes;
+    if (themes === undefined) return { value, words: value };
+    const names = (side: ThemeKind) => themes[side].all.some((theme) => theme.name === value);
+    if (row === "theme") {
+      if (names("light") || names("dark")) return undefined;
+      if (isMode(value)) return { value, words: `Always the ${value === "light" ? "Light" : "Dark"} theme` };
+    } else {
+      if (names(row)) return undefined;
+      const other = row === "light" ? "dark" : "light";
+      if (names(other)) return { value, words: `${value} (a ${other} theme)` };
+    }
+    const failed = [...themes.light.failed, ...themes.dark.failed].some((theme) => theme.name === value);
+    return { value, words: `${value} (${failed ? "can't be used" : "not found"})` };
+  }
+
+  /** Why the Appearance rows can't list the themes, or the window can't show what they say, until it can. */
+  get themeProblem(): string | undefined {
+    const theme = this.#theme;
+    if (theme.themes === undefined && theme.error !== undefined) {
+      return `Tsugiki can't list the themes: ${theme.error}`;
+    }
+    return theme.previewProblem;
+  }
+
+  /** Changes `[appearance]`, which the window shows once the core has worked out the themes it gives. */
   changeAppearance(edit: (appearance: AppearanceSettings) => void) {
     const current = this.current;
     if (current === undefined) return;
     edit(current.appearance);
-    this.#theme.previewAppearance = $state.snapshot(current.appearance);
+    void this.#theme.previewSettings($state.snapshot(current.appearance));
   }
 
   /** Changes the language servers' settings, which take effect on Apply. */
@@ -152,21 +183,27 @@ export class SettingsDialog {
   /** Saves what changed, and says whether the dialog may close: with nothing changed it closes at once, as
    * OK, and a save the core refused keeps it open with why. A save that changed a language server keeps it
    * open too, so its row in Settings › Advanced can say what the core's check of it finds (#683). A save
-   * that changed `[appearance]` waits for the window to take the themes the file gives now, so the window
-   * turns its title bar to their side and doesn't flash the theme from before. */
+   * that changed `[appearance]` makes the themes the window shows for it the themes in force, so the window
+   * doesn't go back to the theme from before. If the window has none to show, it waits for them, and one
+   * that can't get them keeps the dialog open with why. */
   async apply(): Promise<boolean> {
     if (this.applying) return false;
     const changes = $state.snapshot(this.changes);
     if (Object.keys(changes).length === 0) return this.#close();
     this.applying = true;
     const answer = await ask(commands.applySettings(changes));
-    if (answer.status === "ok" && changes.appearance !== undefined) await this.#theme.load();
+    const unshown =
+      answer.status === "ok" ? await this.#theme.endPreview(changes.appearance !== undefined) : undefined;
     this.applying = false;
     if (answer.status === "error") {
       this.problem = `Tsugiki can't save the settings: ${answer.error.message}`;
       return false;
     }
-    this.#theme.previewAppearance = undefined;
+    if (unshown !== undefined) {
+      this.problem = unshown;
+      this.#take(answer.data);
+      return false;
+    }
     if (changes.language_servers === undefined) {
       this.#settings.take(answer.data);
       return this.#close();
@@ -185,10 +222,11 @@ export class SettingsDialog {
     this.#settings.take(loaded);
   }
 
-  /** Lets loads replace the settings again, and drops the window's preview of `[appearance]`. */
+  /** Lets loads replace the settings again, and puts the theme in force back on the window, unless Apply
+   * made the dialog's the theme in force. */
   #close(): true {
     this.#settings.preview(false);
-    this.#theme.previewAppearance = undefined;
+    void this.#theme.endPreview(false);
     return true;
   }
 }

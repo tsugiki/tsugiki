@@ -1045,6 +1045,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_unseen,
             settings,
             slow_commands::themes,
+            slow_commands::preview_themes,
             turn_window::<tauri::Wry>,
             home,
             token_source,

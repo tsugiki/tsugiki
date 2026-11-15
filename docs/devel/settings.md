@@ -27,12 +27,18 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   `workbench.preferredLightColorTheme` and `workbench.preferredDarkColorTheme` in its settings. Theme lists
   Follow system, then the light Themes, then the dark ones, as the theme picker lists them, and saves
   `theme`. Light theme and Dark theme list the Themes of their side, save `light_theme` and `dark_theme`,
-  and say under the row that Follow system shows them. The files that can't be used aren't listed. A name
-  the file holds that no Theme has shows in its row as "<name> (not found)", and a mode from a file written
-  before as "Always the Light theme" or "Always the Dark theme". Apply sends only the keys of `[appearance]`
-  that changed, so another change leaves such a value in the file, and so does a hand edit to another key.
-  A change shows on the window at once, as the theme picker's preview does, and Apply waits for the window
-  to take the Themes the file gives, which turns its title bar to their side. Status bar has Show the
+  and say under the row that Follow system shows them. The files that can't be used aren't listed. A value
+  the file holds that a row doesn't list shows as an option of its own: "<name> (not found)", "<name> (can't
+  be used)" for a file that failed, "<name> (a dark theme)" in Light theme, and a mode from a file written
+  before as "Always the Light theme" or "Always the Dark theme". It stays among the options after a
+  change, so the user can go back to it. Apply sends only the keys of `[appearance]` that changed, so
+  another change leaves such a value in the file, and so does a hand edit to another key, and it refuses a
+  Theme picked by `system`, `light` or `dark`. A change shows on the window at once, title bar included:
+  `preview_themes` works out the Themes the rows give by the rules `themes` goes by for the file, and the
+  window turns to their side, so Follow system shows the side the system is on, not the side a Theme kept
+  the window on. Apply keeps those Themes in force and reads the themes again for the files' problems. If
+  the window has none to keep, Apply reads them, and stays open with why when it can't. Cancel turns the
+  window back. When the window has no themes at all, the rows stay off and say why. Status bar has Show the
   status bar, and says that problems and being offline still show when it's off. Updates has Check for new
   versions (`[releases] check`), the one setting that still needs a restart, so it says "Takes effect at the
   next start" under its row. Both live in `settings.toml`. Repositories, each Repository's page and Sync say

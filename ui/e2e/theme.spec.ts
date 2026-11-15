@@ -83,6 +83,11 @@ test("Settings › General shows a dark Theme on the window before Apply, and Ca
     themes: { status: "ok", data: themes },
     settings: loaded,
     rereadSettings: { status: "ok", data: loaded },
+    // What the core works out for Gruvbox Dark Hard picked in the dialog.
+    previewThemes: {
+      status: "ok",
+      data: { ...themes, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
+    },
   });
   await page.goto("/");
   const lightModern = { background: "rgb(255, 255, 255)", text: "rgb(59, 59, 59)", scheme: "light" };

@@ -39,6 +39,12 @@ To build several tickets of a milestone at once, one background agent per ticket
 `.claude/skills/wave/`. `just worktree <n>` makes a worktree ready to build ticket n under `.temp/`, and
 `just worktree-remove <n>` deletes it, and its branch once the PR has merged.
 
+`just preflight` runs the gates a first push most often fails on, one at a time, and stops at the first that
+fails: `rustfmt`, `doc-width`, `typecheck`, then the full Vitest and Rust suites with their coverage gates.
+Coverage counts every file, so a change can fail it in a file it never touched. Run it before a wave's first
+push, where a CI round trip costs more. It takes less time than `just check`, and catches nothing that only
+macOS fails on.
+
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
 log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the
 `justfile`, `scripts/` or `.github/workflows/`. `just next` lists the open tickets of the release being built.

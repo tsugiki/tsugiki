@@ -24,13 +24,9 @@ sends you `/code-review` findings. Fix each, or decline it with the reason it do
 
 ### The pre-push gates
 
-Run them once the session says to; it lets one agent run them at a time. Run them one at a time, and fix
-what fails:
-
-1. `cargo fmt --all --check`
-2. `npm run vitest`, the full suite: CI's coverage gate wants 100% across the whole of it.
-3. `npm run rust-coverage`
-4. `just typecheck` and `just doc-width`
+Run `just preflight` once the session says to; it lets one agent run it at a time. It runs `rustfmt`,
+`doc-width`, `typecheck`, and the full Vitest and Rust suites, since CI's coverage gates want 100% across the
+whole of each, and stops at the first gate that fails. Fix it and rerun `just preflight` until it passes.
 
 Then read your diff for what only macOS's CI catches, as `AGENTS.md` says.
 

@@ -3,11 +3,26 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
-import { type Action, keysIn, remapKeys } from "$lib/state/keymap.svelte";
+import { type Action, keysIn, keyTable, remapKeys, type Row } from "$lib/state/keymap.svelte";
+import type { KeyTarget } from "./keys";
+import type { PaletteAction } from "./Palette.svelte";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
+
+/** What the page asks the screen for the palette's rows. */
+interface PaletteScreen {
+  paletteRow: (row: Row, at: KeyTarget) => PaletteAction | undefined;
+  keyTarget: (target: EventTarget | null) => KeyTarget;
+}
+
+/** The palette's row for `action` on `screen`, as the page asks for it, for the palette opened with the
+ * focus on `target`: on no control at all, which goes to the list, unless it says. */
+function paletteRow(screen: PaletteScreen, action: Action, target: EventTarget | null = document.body) {
+  const row = keyTable().find((one) => one.action === action);
+  return row && screen.paletteRow(row, screen.keyTarget(target));
+}
 
 const core = vi.hoisted(() => ({
   workbench: vi.fn(),
@@ -1157,7 +1172,7 @@ it("names the views whose keys work where a press goes, for the `?` list", async
     },
   );
   const { component, treeRow } = await listing();
-  const views = (target: EventTarget | null) => component.keysHere(target).views;
+  const views = (target: EventTarget | null) => component.keysHere(component.keyTarget(target)).views;
   const onList = [views(document.body), views(treeRow)];
   await fireEvent.click(treeRow);
   const detail = document.querySelector('[data-pane="detail"]');
@@ -1169,7 +1184,7 @@ it("names the views whose keys work where a press goes, for the `?` list", async
   expect([...onList, onConversation]).toEqual([["issue_list"], ["issue_list"], []]);
   // The diff's keys work from the list too, while the Files tab shows, every one of them.
   expect([views(detail), views(treeRow)]).toEqual([["diff"], ["issue_list", "diff"]]);
-  const here = component.keysHere(detail);
+  const here = component.keysHere(component.keyTarget(detail));
   expect(keysIn("diff").every((row) => here.works(row.action))).toBe(true);
 });
 
@@ -1228,7 +1243,7 @@ it("lists for `?` only the keys that would run: the PR view's while a PR shows, 
   document.body.append(box);
   /** Whether each key that works anywhere would run for a press on `target`. */
   const works = (target: EventTarget | null) => {
-    const here = component.keysHere(target);
+    const here = component.keysHere(component.keyTarget(target));
     return Object.fromEntries(keysIn("anywhere").map((row) => [row.action, here.works(row.action)]));
   };
   const inBox = works(box);
@@ -1274,24 +1289,21 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   const { component, treeRow } = await listing({ diffFiles: "one" });
   await fireEvent.click(treeRow);
   const tab = await screen.findByRole("tab", { name: "Files" });
-  const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
+  const command = () => paletteRow(component, "toggle_files_mode");
   const pressed = () =>
     screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed");
   // The Conversation tab shows no files to switch.
   component.runChord("toggle_files_mode", chordEnd());
-  expect([command("View: All Files"), command("View: One File at a Time")]).toEqual([undefined, undefined]);
+  expect(command()).toBeUndefined();
   await fireEvent.click(tab);
   // The tab reads the diff the first time it shows.
   await screen.findByRole("region", { name: "Diff" });
   expect(pressed()).toBe("true");
 
-  expect(command("View: All Files")?.action).toBe("toggle_files_mode");
-  command("View: All Files")?.run();
+  expect(command()?.title).toBe("View: All Files");
+  command()?.run();
   await tick();
-  expect([pressed(), command("View: One File at a Time")?.title]).toEqual([
-    "false",
-    "View: One File at a Time",
-  ]);
+  expect([pressed(), command()?.title]).toEqual(["false", "View: One File at a Time"]);
   component.runChord("toggle_files_mode", chordEnd());
   await tick();
   expect(pressed()).toBe("true");
@@ -1300,8 +1312,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
 it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it on either", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const { component, treeRow } = await listing();
-  const command = () =>
-    component.paletteCommands().find((found) => found.title === "View: Files in the Rail");
+  const command = () => paletteRow(component, "toggle_rail_files");
   const rail = () => screen.queryByRole("complementary", { name: "Rail" });
   // With no PR on show there is no rail to open.
   component.runChord("toggle_rail_files", chordEnd());
@@ -1316,12 +1327,12 @@ it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it
   command()?.run();
   await tick();
 
-  expect([before, closed, opened, rail(), command()?.action]).toEqual([
+  expect([before, closed, opened, rail(), command()?.title]).toEqual([
     undefined,
     null,
     true,
     null,
-    "toggle_rail_files",
+    "View: Files in the Rail",
   ]);
 });
 
@@ -1346,8 +1357,7 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   const picked = vi.spyOn(PrFilesState.prototype, "picked", "get");
   const inView = vi.spyOn(PrFilesState.prototype, "fileView", "get");
   const { component, treeRow } = await listing();
-  const command = () =>
-    component.paletteCommands().find((found) => found.title === "View: Search in the Rail");
+  const command = () => paletteRow(component, "search_in_rail");
   const searchKey = () => press("F", { ctrlKey: true, shiftKey: true });
   const box = () => screen.getByRole("textbox", { name: "Search the PR's code" }) as HTMLInputElement;
   const railTab = () =>
@@ -1386,11 +1396,7 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   await fireEvent.keyDown(box(), { key: "F", ctrlKey: true, shiftKey: true });
   await tick();
   const typed = box().value;
-  const railOnFiles = () =>
-    component
-      .paletteCommands()
-      .find((found) => found.title === "View: Files in the Rail")
-      ?.run();
+  const railOnFiles = () => paletteRow(component, "toggle_rail_files")?.run();
   // On the Files tab the word picked in the diff goes in, as a selection over two lines puts nothing in
   // the box, but only while Search isn't on show: then the box keeps its query.
   railOnFiles();
@@ -1417,11 +1423,11 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   expect(before).toEqual([undefined, null]);
   expect(fromSelection).toEqual(["Search", "gc_debug", true]);
   expect([again, rerun, typed]).toEqual([["Search", "gc_collect", true], 0, "gc_.*"]);
-  expect([fromDiff, kept, box().value, command()?.action]).toEqual([
+  expect([fromDiff, kept, box().value, command()?.title]).toEqual([
     "gc_list",
     "gc_list",
     "visit",
-    "search_in_rail",
+    "View: Search in the Rail",
   ]);
   await vi.waitFor(() => {
     expect(core.textSearch).toHaveBeenCalledWith({
@@ -1439,7 +1445,7 @@ it("offers no rail for a PR Tsugiki doesn't hold, which has no tabs to sit besid
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await screen.findByText("Tsugiki doesn't hold PR #160662.");
-  const offered = component.paletteCommands().some((found) => found.title === "View: Files in the Rail");
+  const offered = paletteRow(component, "toggle_rail_files") !== undefined;
 
   component.runChord("toggle_rail_files", chordEnd());
   core.pullRequest.mockResolvedValue({ status: "ok", data: { ...row, content: null } });
@@ -1449,7 +1455,7 @@ it("offers no rail for a PR Tsugiki doesn't hold, which has no tabs to sit besid
   expect(offered).toBe(false);
 
   expect(screen.queryByRole("complementary", { name: "Rail" })).toBeNull();
-  expect(component.paletteCommands().some((found) => found.title === "View: Files in the Rail")).toBe(true);
+  expect(paletteRow(component, "toggle_rail_files")?.title).toBe("View: Files in the Rail");
 });
 
 it("keeps the PR on show on Esc in the rail, gives the diff the focus, and gives it the focus as Ctrl+K F closes the rail from its edge", async () => {
@@ -1506,15 +1512,14 @@ it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palet
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   const tab = await screen.findByRole("tab", { name: "Files" });
-  const command = () =>
-    component.paletteCommands().find((found) => found.title === "View: Unfold Unchanged Files");
+  const command = () => paletteRow(component, "unfold_unchanged");
   // The Conversation tab shows no files to unfold.
   component.runChord("unfold_unchanged", chordEnd());
   expect(command()).toBeUndefined();
   await fireEvent.click(tab);
   await screen.findByRole("region", { name: "Diff" });
 
-  expect(command()?.action).toBe("unfold_unchanged");
+  expect(command()?.title).toBe("View: Unfold Unchanged Files");
   command()?.run();
   component.runChord("unfold_unchanged", chordEnd());
   expect(unfold).toHaveBeenCalledTimes(2);
@@ -1841,7 +1846,9 @@ it("leaves the diff's lookups alone of its keys for `?` while the file view cove
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
-  const here = component.keysHere(await screen.findByRole("region", { name: "File view" }));
+  const here = component.keysHere(
+    component.keyTarget(await screen.findByRole("region", { name: "File view" })),
+  );
   const works = Object.fromEntries(keysIn("diff").map((row) => [row.action, here.works(row.action)]));
 
   expect(here.views).toEqual(["diff"]);
@@ -2128,12 +2135,12 @@ it("offers the palette Go Back and Go Forward, each with its key", async () => {
   await fireEvent.click(issueRow);
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
-  const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
+  const command = (action: Action) => paletteRow(component, action);
 
-  expect([command("Go Back")?.action, command("Go Forward")?.action]).toEqual(["go_back", "go_forward"]);
-  command("Go Back")?.run();
+  expect([command("go_back")?.title, command("go_forward")?.title]).toEqual(["Go Back", "Go Forward"]);
+  command("go_back")?.run();
   expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
-  command("Go Forward")?.run();
+  command("go_forward")?.run();
   expect(await screen.findByRole("region", { name: "PR view" })).toBeTruthy();
 });
 
@@ -2234,10 +2241,8 @@ it("moves only the cursor to the next row once the palette's Mark Seen sends the
   await screen.findByRole("button", { name: "Mark Seen" });
   const before = document.activeElement;
 
-  component
-    .paletteCommands()
-    .find(({ title }) => title === "Mark Seen")
-    ?.run();
+  // The palette opened from the Detail pane, so Mark Seen marks the item on show, as Q does there.
+  paletteRow(component, "mark_seen", document.querySelector('[data-pane="detail"]'))?.run();
   await vi.waitFor(() => {
     expect(core.markSeen).toHaveBeenCalledOnce();
   });
@@ -2293,25 +2298,30 @@ it("lets Q and Shift+Q type in a text box", async () => {
   box.remove();
 });
 
-it("offers the palette Mark Seen and Mark Unseen on the item on show, each with its key", async () => {
-  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-  const { component, issueRow } = await listing();
-  const command = (title: string) => component.paletteCommands().find((found) => found.title === title);
-  expect(command("Mark Seen")).toBeUndefined();
-  await fireEvent.click(issueRow);
+it("marks from the palette what Q and Shift+Q mark where the focus was: the line under the cursor, or the Detail pane's item", async () => {
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: { ...row, seen: { mark: laterMark, state: "new_activity" }, content: null },
+  });
+  const { component, issueRow, treeRow } = await listing();
+  // With no line under the cursor and nothing on show, Q has nothing to mark.
+  const nothing = paletteRow(component, "mark_seen");
+  await fireEvent.click(treeRow);
+  const view = await screen.findByRole("region", { name: "PR view" });
   await screen.findByRole("button", { name: "Mark Seen" });
 
-  expect([command("Mark Seen")?.action, command("Mark Unseen")?.action]).toEqual([
-    "mark_seen",
-    "mark_unseen",
-  ]);
-  command("Mark Seen")?.run();
-  command("Mark Unseen")?.run();
+  paletteRow(component, "mark_seen", issueRow)?.run();
+  paletteRow(component, "mark_seen", view)?.run();
+  paletteRow(component, "mark_unseen", issueRow)?.run();
 
+  expect(nothing).toBeUndefined();
   await vi.waitFor(() => {
-    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662);
   });
-  expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.seen.mark);
+  expect(core.markSeen.mock.calls).toEqual([
+    ["python/cpython", row.seen.mark],
+    ["python/cpython", laterMark],
+  ]);
 });
 
 it("marks the item on show from its header's button, and says why the core refused", async () => {
@@ -3045,14 +3055,17 @@ it("offers the palette a command that hides or shows the Sidebar, named for what
     onadd: vi.fn(),
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
-  const [hide] = component.paletteCommands();
+  const hide = paletteRow(component, "toggle_sidebar");
 
   hide?.run();
   await vi.waitFor(() => {
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
-  expect([hide?.title, component.paletteCommands()[0]?.title]).toEqual(["Hide Sidebar", "Show Sidebar"]);
+  expect([hide?.title, paletteRow(component, "toggle_sidebar")?.title]).toEqual([
+    "Hide Sidebar",
+    "Show Sidebar",
+  ]);
 });
 
 it("moves the focus to the cursor's row when Ctrl+B hides the Sidebar it was in", async () => {
@@ -3147,39 +3160,16 @@ it("offers the palette a command that hides or shows the Issue list, named for w
     onadd: vi.fn(),
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
-  const titles = () => component.paletteCommands().map((command) => command.title);
-  const before = titles();
+  const command = () => paletteRow(component, "toggle_issue_list");
+  const before = command();
 
-  component
-    .paletteCommands()
-    .find((command) => command.title === "Hide Issue List")
-    ?.run();
+  before?.run();
   await vi.waitFor(() => {
     expect(repositoryName()).toBeNull();
   });
 
-  expect([before, titles()]).toEqual([
-    [
-      "Hide Sidebar",
-      "Hide Issue List",
-      "Show Only the Detail Pane",
-      "Go Back",
-      "Go Forward",
-      "Reset Layout",
-      "Sort by Last Update",
-      "View: Stale Reviews",
-    ],
-    [
-      "Hide Sidebar",
-      "Show Issue List",
-      "Show Only the Detail Pane",
-      "Go Back",
-      "Go Forward",
-      "Reset Layout",
-      "Sort by Last Update",
-      "View: Stale Reviews",
-    ],
-  ]);
+  expect([before?.title, command()?.title]).toEqual(["Hide Issue List", "Show Issue List"]);
+  expect([before?.id, command()?.id]).toEqual(["toggle_issue_list", "toggle_issue_list"]);
 });
 
 it("offers the palette Stale reviews, which shows the list with that view", async () => {
@@ -3190,18 +3180,15 @@ it("offers the palette Stale reviews, which shows the list with that view", asyn
     onadd: vi.fn(),
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
-  const run = (title: string) => {
-    component
-      .paletteCommands()
-      .find((command) => command.title === title)
-      ?.run();
-  };
-  run("Hide Issue List");
+  paletteRow(component, "toggle_issue_list")?.run();
   await vi.waitFor(() => {
     expect(repositoryName()).toBeNull();
   });
 
-  run("View: Stale Reviews");
+  component
+    .paletteCommands()
+    .find((command) => command.title === "View: Stale Reviews")
+    ?.run();
 
   expect(await screen.findByRole("heading", { name: "Stale reviews" })).toBeTruthy();
   expect(repositoryName()).not.toBeNull();
@@ -3331,14 +3318,17 @@ it("offers the palette Ctrl+K Z's command, named for what it does", async () => 
     onadd: vi.fn(),
   });
   await screen.findByRole("navigation", { name: "Sidebar" });
-  const command = (title: string) => component.paletteCommands().find((one) => one.title === title);
+  const command = () => paletteRow(component, "toggle_detail_only");
+  const only = command();
 
-  command("Show Only the Detail Pane")?.run();
+  only?.run();
   await vi.waitFor(() => {
     expect(sidebar()).toBeNull();
   });
   const hidden = repositoryName();
-  command("Show the Panes")?.run();
+  const panes = command();
+  panes?.run();
+  expect([only?.title, panes?.title]).toEqual(["Show Only the Detail Pane", "Show the Panes"]);
 
   await vi.waitFor(() => {
     expect(sidebar()).toBeTruthy();
@@ -3347,8 +3337,8 @@ it("offers the palette Ctrl+K Z's command, named for what it does", async () => 
 });
 
 /** Runs the palette's "Reset Layout". */
-const resetLayout = (component: { paletteCommands: () => { title: string; run: () => void }[] }) => {
-  const command = component.paletteCommands().find(({ title }) => title === "Reset Layout");
+const resetLayout = (component: PaletteScreen) => {
+  const command = paletteRow(component, "reset_layout");
   if (!command) throw new Error("The palette offers no Reset Layout");
   command.run();
 };

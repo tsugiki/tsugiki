@@ -9,6 +9,9 @@
   /** A row that runs. */
   export type PaletteAction = PaletteRow & { run: () => void; disabled?: false };
 
+  /** What a row is called: its title, and the id the history knows it by, if it has one. */
+  export type PaletteName = Pick<PaletteRow, "title" | "id">;
+
   interface PaletteRow {
     title: string;
     /** What the command palette's history knows the row by where its title changes with what it does.

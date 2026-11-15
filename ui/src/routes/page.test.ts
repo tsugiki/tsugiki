@@ -967,8 +967,8 @@ describe("the palette's order", () => {
     const after = titles();
     await fireEvent.input(screen.getByRole("combobox", { name: "Command" }), { target: { value: ">re" } });
 
-    expect(before.slice(0, 2)).toEqual(["Command Palette", "Quick Open"]);
-    expect(after.slice(0, 3)).toEqual(["Reset Layout", "Reload Themes", "Command Palette"]);
+    expect(before.slice(0, 2)).toEqual(["Hide Sidebar", "Hide Issue List"]);
+    expect(after.slice(0, 3)).toEqual(["Reset Layout", "Reload Themes", "Hide Sidebar"]);
     expect(titles()).toEqual([
       "Reset Layout",
       "Reload Themes",
@@ -986,7 +986,7 @@ describe("the palette's order", () => {
 
     await palette();
 
-    expect(titles().slice(0, 3)).toEqual(["Open Settings", "Show performance HUD", "Command Palette"]);
+    expect(titles().slice(0, 3)).toEqual(["Open Settings", "Show performance HUD", "Hide Sidebar"]);
   });
 
   it("says in the status bar why a command run can't be saved", async () => {
@@ -1071,10 +1071,8 @@ describe("every action in the palette", () => {
     await onRow();
     await ctrlShiftP();
     // The diff's actions wait for a Files tab, and the actions with nothing built behind them yet, such as
-    // Archive, for theirs.
+    // Archive, for theirs. The palette's own keys open the box it is.
     expect(rows()).toEqual([
-      ["Command Palette", "Ctrl+Shift+P"],
-      ["Quick Open", "Ctrl+P"],
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
       ["Unfold an Issue's PRs", "→"],
@@ -1106,8 +1104,6 @@ describe("every action in the palette", () => {
     await ctrlShiftP();
     // The focus is in the Detail pane, so the list's ← and → have nothing to fold.
     expect(rows()).toEqual([
-      ["Command Palette", "Ctrl+Shift+P"],
-      ["Quick Open", "Ctrl+P"],
       ["Go to Definition", "F12"],
       ["Peek Definition", "Alt+F12"],
       ["Next Change", "F7"],
@@ -1174,7 +1170,7 @@ describe("every action in the palette", () => {
 
   it("names the key on each row to a screen reader, and shows a key remapped in [keys] by its new binding", async () => {
     const remapped = structuredClone(SETTINGS);
-    remapped.settings.keys = { open_settings: "ctrl+k s", reset_layout: "ctrl+k l", quick_open: "" };
+    remapped.settings.keys = { open_settings: "ctrl+k s", reset_layout: "ctrl+k l", pick_theme: "" };
     core.settings.mockResolvedValue(remapped);
     await onRow();
     await vi.waitFor(() => {
@@ -1183,12 +1179,48 @@ describe("every action in the palette", () => {
     await ctrlShiftP();
 
     const keyOf = (title: string) => rows().find(([text]) => text === title)?.[1];
-    expect(["Open Settings", "Reset Layout", "Quick Open"].map(keyOf)).toEqual([
+    expect(["Open Settings", "Reset Layout", "Pick a Theme"].map(keyOf)).toEqual([
       "Ctrl+K S",
       "Ctrl+K L",
       null,
     ]);
     expect(screen.getByRole("option", { name: "Open Settings", description: "Ctrl+K S" })).toBeTruthy();
+  });
+
+  it("runs Reload Themes from the Issue list and from the Files tab, as Ctrl+K R does", async () => {
+    listOnePr();
+    render(Page);
+    const prRow = await screen.findByRole("button", { name: "#70 gh-7: Fix the crash" });
+    await vi.waitFor(() => {
+      expect(core.themes).toHaveBeenCalledOnce();
+    });
+    prRow.focus();
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Reload Themes" }));
+    await fireEvent.click(prRow);
+    const files = await screen.findByRole("tab", { name: "Files" });
+    await fireEvent.click(files);
+    files.focus();
+    await screen.findByRole("tab", { name: "Files", selected: true });
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Reload Themes" }));
+
+    await vi.waitFor(() => {
+      expect(core.themes).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  // The palette's rows are worked out again as what they show changes, here the performance HUD's title,
+  // and the row that had the focus may have left the page by then.
+  it("keeps the Issue list's actions once the row that had the focus has left the page", async () => {
+    const row = await onRow();
+    await ctrlShiftP();
+    row.remove();
+    await fireEvent.keyDown(window, { key: "H", code: "KeyH", ctrlKey: true, shiftKey: true });
+    const redrawn = rowTexts().includes("Hide performance HUD");
+    await fireEvent.input(screen.getByRole("combobox", { name: "Command" }), { target: { value: ">fold" } });
+
+    expect([redrawn, rowTexts()]).toEqual([true, ["Unfold an Issue's PRs", "Fold an Issue's PRs"]]);
   });
 });
 

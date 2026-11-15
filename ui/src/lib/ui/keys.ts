@@ -15,6 +15,14 @@ export { isChordStart } from "$lib/state/keymap.svelte";
 
 export type Os = "mac" | "other";
 
+/** Where a press went, as the keys, the `?` list and the command palette ask: into the Issue list, the
+ * Detail pane or neither, and whether into a text box. It is worked out from the press's target once, as the
+ * key comes or the palette opens, so it holds while the element that had the focus is drawn again. */
+export interface KeyTarget {
+  readonly pane: "list" | "detail" | null;
+  readonly textBox: boolean;
+}
+
 /** What each bound action does, handed the key press that ran it. The guard runs the action of a key, and
  * the wait for a chord's second key the action of a chord. */
 export type Bindings = Readonly<Partial<Record<Action, (e: KeyboardEvent) => void>>>;

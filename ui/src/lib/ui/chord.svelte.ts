@@ -1,6 +1,6 @@
 import { on } from "svelte/events";
 import { type Action, actionOn } from "$lib/state/keymap.svelte";
-import { type Bindings, chordName, isChordStart, isModifier, isTextBox, keyName, type Os } from "./keys";
+import { chordName, isChordStart, isModifier, keyName, type Os } from "./keys";
 
 /**
  * The event a chord's action sends to the focused element before the page runs the action. A part of the
@@ -26,15 +26,19 @@ export function takesChords(take: (action: Action) => boolean): (node: HTMLEleme
     });
 }
 
+/** What a chord's action runs, handed the action and the press that ended the chord. */
+export type ChordRun = (action: Action, e: KeyboardEvent) => void;
+
 /**
- * The wait for a chord's second key. `Ctrl+K` starts it, and the next key ends it: a bound one runs its
- * chord's action, and any other key, Esc included, does nothing else. A modifier pressed alone and a held
- * `Ctrl+K` leave it waiting. The page that owns it reads every key with it before anything else does, and
- * ends it at a click or when the window loses the focus.
+ * The wait for a chord's second key. A chord's first press, such as `Ctrl+K`, starts it, and the next key
+ * ends it: a bound one runs its chord's action, and any other key, Esc included, does nothing else. A
+ * modifier pressed alone and a held first press leave it waiting. The page that owns it reads every key with
+ * it before anything else does, and ends it at a click or when the window loses the focus.
  */
 export class ChordWait {
   readonly #os: Os;
-  #first = $state<string | null>(null);
+  /** The chord's first press, and what its action runs, as the page said where the chord started. */
+  #wait = $state.raw<{ readonly first: string; readonly run: ChordRun } | null>(null);
 
   constructor(os: Os) {
     this.#os = os;
@@ -42,25 +46,27 @@ export class ChordWait {
 
   /** The first key of the chord whose second key Tsugiki waits for, or null while it waits for none. */
   get first(): string | null {
-    return this.#first;
+    return this.#wait?.first ?? null;
   }
 
   /**
    * Reads key press `e`, which the wait then keeps from the browser and from every handler past the
    * window's capture phase, and says whether it did. The performance HUD, which listens in that phase too,
-   * still times it. `canStart` says whether a chord can start here: not under a dialog or the palette, nor
-   * on a screen with no chords. A chord never starts in a text box, which keeps its keys.
+   * still times it. At a chord's first press `start` says what the chord's action runs from where it
+   * started, or null where no chord starts.
    */
-  read(e: KeyboardEvent, canStart: boolean, bindings: Bindings): boolean {
+  read(e: KeyboardEvent, start: (first: string, e: KeyboardEvent) => ChordRun | null): boolean {
     const name = keyName(e, this.#os);
-    if (this.#first === null) {
-      if (name === null || !isChordStart(name) || !canStart || isTextBox(e.target)) return false;
-      this.#first = name;
+    if (this.#wait === null) {
+      const run = name === null || !isChordStart(name) ? null : start(name, e);
+      if (name === null || run === null) return false;
+      this.#wait = { first: name, run };
     } else if (!e.repeat && !(name === null && isModifier(e))) {
-      const action = actionOn(name === null ? null : chordName(this.#first, name));
-      this.#first = null;
+      const { first, run } = this.#wait;
+      const action = actionOn(name === null ? null : chordName(first, name));
+      this.#wait = null;
       const untaken = action !== undefined && (e.target?.dispatchEvent(new ChordAction(action)) ?? true);
-      if (untaken) bindings[action]?.(e);
+      if (untaken) run(action, e);
     }
     e.preventDefault();
     e.stopPropagation();
@@ -69,6 +75,6 @@ export class ChordWait {
 
   /** Ends the wait without running anything. */
   end(): void {
-    this.#first = null;
+    this.#wait = null;
   }
 }

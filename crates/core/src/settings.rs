@@ -24,7 +24,7 @@ use toml_edit::{
 
 use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
-use crate::keys::{Action, Remaps};
+use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
@@ -205,10 +205,6 @@ struct AppearanceRead {
     dark_theme: Option<Read<ThemeName>>,
 }
 
-/// A key of a table given a value Tsugiki can't read, and what Tsugiki does instead, in words for the status
-/// bar.
-type Unread = (String, String);
-
 impl AppearanceRead {
     /// The values, with each one Tsugiki can't read at its default, and the keys that held those.
     fn settle(self) -> (AppearanceSettings, Vec<Unread>) {
@@ -218,7 +214,10 @@ impl AppearanceRead {
             Some(Read::Given(text)) => ThemeChoice::read(&text),
             Some(Read::Other(_)) => {
                 let problem = r#"isn't "system" or a theme's name, so Tsugiki follows the system."#;
-                unread.push(("theme".to_owned(), problem.to_owned()));
+                unread.push(Unread {
+                    key: "theme".to_owned(),
+                    problem: problem.to_owned(),
+                });
                 ThemeChoice::System
             }
         };
@@ -230,7 +229,10 @@ impl AppearanceRead {
                 Some(Read::Other(_)) => {
                     let instead = default.as_str();
                     let problem = format!("isn't a theme's name, so Tsugiki uses {instead}.");
-                    unread.push((side_key(kind).to_owned(), problem));
+                    unread.push(Unread {
+                        key: side_key(kind).to_owned(),
+                        problem,
+                    });
                     default
                 }
             }
@@ -257,7 +259,10 @@ fn given_or_default<T: Default>(
         None => T::default(),
         Some(Read::Given(value)) => value,
         Some(Read::Other(_)) => {
-            unread.push((key.to_owned(), instead()));
+            unread.push(Unread {
+                key: key.to_owned(),
+                problem: instead(),
+            });
             T::default()
         }
     }
@@ -413,7 +418,7 @@ impl<'a> SettingsText<'a> {
     fn described(&self, table: &str, unread: &[Unread]) -> Vec<String> {
         unread
             .iter()
-            .map(|(key, problem)| format!("{}: {key} {problem}", self.place(table, key)))
+            .map(|Unread { key, problem }| format!("{}: {key} {problem}", self.place(table, key)))
             .collect()
     }
 

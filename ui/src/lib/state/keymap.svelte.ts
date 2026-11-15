@@ -1,7 +1,7 @@
 // The keys in force: the core's key table (#548), with the keys `[keys]` in settings.toml gives in place of
 // the defaults (#549). Screens bind actions, and find a key's action here. The core reads `[keys]`, and the
 // settings hand its remaps over each time they are read.
-import { KEYMAP } from "$lib/data/keymap";
+import { KEYMAP, SHIFTED } from "$lib/data/keymap";
 
 type Default = (typeof KEYMAP)[number];
 
@@ -17,12 +17,12 @@ export type Row = Omit<Default, "key"> & { readonly key: string | null };
 export type Remaps = Partial<Record<Action, string>>;
 
 /**
- * The actions whose keys the window's guard leaves alone. The bare ← and → that fold the Issue list: the
- * guard would take them from every text box, diff and pane edge, and the list acts on them only while it has
- * the focus. And Ctrl+Shift+I, on which WebView2 opens DevTools in a development build (ADR 0013), which the
- * core refuses to remap.
+ * The keys the window's guard leaves alone, whichever action has them. The bare ← and → that fold the Issue
+ * list by default: the guard would take them from every text box, diff and pane edge, and the list acts on
+ * them only while it has the focus. And Ctrl+Shift+I, on which WebView2 opens DevTools in a development build
+ * (ADR 0013), which the core lets no remap use.
  */
-const LEFT_ALONE: ReadonlySet<Action> = new Set(["unfold", "fold", "open_devtools"]);
+const LEFT_ALONE: ReadonlySet<string> = new Set(["arrowleft", "arrowright", "ctrl+shift+i"]);
 
 /** Whether `key`, named as `keyName` or `chordName` names it, is a chord: "ctrl+k z". */
 export function isChord(key: string): boolean {
@@ -32,23 +32,22 @@ export function isChord(key: string): boolean {
 class Keymap {
   #remaps = $state.raw<Remaps>({});
 
-  /** Every row, in the order the Keyboard page lists them. */
-  readonly rows: readonly Row[] = $derived(
-    KEYMAP.map((row) => {
+  /** Every row, in the order the Keyboard page lists them. A remapped action keeps its key over an action
+   * that has it by default, which is left with no key. */
+  readonly rows: readonly Row[] = $derived.by(() => {
+    const taken = new Set<string | null>(Object.values(this.#remaps));
+    return KEYMAP.map((row) => {
       const given = this.#remaps[row.action];
-      return given === undefined ? row : { ...row, key: given === "" ? null : given };
-    }),
-  );
+      if (given !== undefined) return { ...row, key: given === "" ? null : given };
+      return taken.has(row.key) ? { ...row, key: null } : row;
+    });
+  });
 
-  /** The action on each key. A remapped action keeps its key over a default one, which comes first so the
-   * remap overwrites it. Of two remapped actions on one key, the later in the table keeps it, until #550
+  /** The action on each key. Of two remapped actions on one key, the later in the table keeps it, until #550
    * settles that as `[keys]` orders them. */
   readonly #actionOn = $derived(
     new Map<string | null, Action>(
-      [
-        ...this.rows.filter((row) => this.#remaps[row.action] === undefined),
-        ...this.rows.filter((row) => this.#remaps[row.action] !== undefined),
-      ].flatMap((row) => (row.key === null ? [] : [[row.key, row.action]])),
+      this.rows.flatMap((row) => (row.key === null ? [] : [[row.key, row.action]])),
     ),
   );
 
@@ -70,7 +69,7 @@ class Keymap {
   readonly #owned: ReadonlySet<string> = $derived(
     new Set([
       ...this.rows.flatMap((row) =>
-        row.key === null || isChord(row.key) || LEFT_ALONE.has(row.action) ? [] : [row.key],
+        row.key === null || isChord(row.key) || LEFT_ALONE.has(row.key) ? [] : [row.key],
       ),
       ...this.#starts,
     ]),
@@ -125,6 +124,17 @@ export function keyOf(action: Action): string | null {
 /** Whether `name`, a press as `keyName` names it, starts a chord. */
 export function isChordStart(name: string): boolean {
   return keymap.isChordStart(name);
+}
+
+/** What Shift makes `key` type on a US keyboard, by the core's table: "?" for "/". The window names a key it
+ * placed by where it is with Shift by this, as the core suggests in a problem with `[keys]`. */
+export function shiftedOnUsKeyboard(key: string): string | undefined {
+  return SHIFTED[key];
+}
+
+/** Whether `first`, a press as `keyName` names it, starts the chord of one of `actions`. */
+export function startsChordOf(first: string, actions: Iterable<Action>): boolean {
+  return [...actions].some((action) => keyOf(action)?.startsWith(`${first} `) === true);
 }
 
 /** Whether the window's guard owns `name`, a press as `keyName` names it, and stops the browser for it. */

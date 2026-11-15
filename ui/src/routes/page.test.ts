@@ -920,12 +920,13 @@ describe("a chord", () => {
     expect(chord()).toBeNull();
   });
 
-  it("doesn't start on onboarding", async () => {
+  it("starts on onboarding for the page's own chords, as Ctrl+K T picks a theme there", async () => {
     core.home.mockResolvedValue(onboarding);
     render(Page);
     await screen.findByText(/Your token comes from/);
     await ctrlK();
-    expect(chord()).toBeNull();
+    await fireEvent.keyDown(document.body, { key: "t", code: "KeyT" });
+    expect(screen.queryByRole("dialog", { name: "Theme picker" })).toBeTruthy();
   });
 });
 
@@ -1293,5 +1294,27 @@ describe("keys remapped in [keys]", () => {
     expect([palette !== null, behind]).toEqual([true, null]);
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Theme picker" })).toBeTruthy();
+  });
+
+  it("runs the page's actions on a chord wherever their keys of one press work, and the screen's nowhere else", async () => {
+    core.home.mockResolvedValue(onboarding);
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { open_settings: "ctrl+k s", toggle_detail_only: "ctrl+j z" };
+    core.settings.mockResolvedValue(remapped);
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+k s")).toBe("open_settings");
+    });
+    const box = document.createElement("input");
+    document.body.append(box);
+
+    // A chord of the screen's starts no wait here, or Ctrl+K would end it, and S do nothing.
+    await fireEvent.keyDown(document.body, { key: "j", code: "KeyJ", ctrlKey: true });
+    await fireEvent.keyDown(box, { key: "k", code: "KeyK", ctrlKey: true });
+    await fireEvent.keyDown(box, { key: "s", code: "KeyS" });
+    box.remove();
+
+    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeTruthy();
   });
 });

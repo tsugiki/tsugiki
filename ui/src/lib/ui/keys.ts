@@ -2,7 +2,14 @@
 // for every key Tsugiki owns, so a key with no action yet can't print or reload instead. Only the wait for a
 // chord's second key comes first: the key that ends it goes to neither. The keys come from the core's key
 // table, with the user's remaps (#549), and screens bind actions, not keys (#548).
-import { type Action, actionOn, isChord, keyOf, ownsKey } from "$lib/state/keymap.svelte";
+import {
+  type Action,
+  actionOn,
+  isChord,
+  keyOf,
+  ownsKey,
+  shiftedOnUsKeyboard,
+} from "$lib/state/keymap.svelte";
 
 export { isChordStart } from "$lib/state/keymap.svelte";
 
@@ -21,9 +28,15 @@ export function chordName(first: string, second: string): string {
 }
 
 /** The actions whose key works in a text box though it holds Ctrl and Alt, which AltGr sends on Windows to
- * type: the Repository screen runs them before it leaves a text box its keys. Unified or Side by Side is one,
- * on Ctrl+Alt+U. */
+ * type: the page's own, which the guard runs, and those the Repository screen runs before it leaves a text
+ * box its keys. Unified or Side by Side is one, on Ctrl+Alt+U. */
 const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
+  "command_palette",
+  "switch_repository",
+  "open_settings",
+  "toggle_hud",
+  "pick_theme",
+  "reload_themes",
   "toggle_sidebar",
   "open_on_github",
   "toggle_diff_view",
@@ -58,32 +71,6 @@ const PUNCTUATION: Readonly<Record<string, string>> = {
   Minus: "-",
   Equal: "=",
   Backslash: "\\",
-};
-
-/** What Shift makes each key type on a US keyboard, whose places `characterAt` names keys by. The core
- * suggests the same in a problem with `[keys]`. */
-const SHIFTED: Readonly<Record<string, string>> = {
-  "1": "!",
-  "2": "@",
-  "3": "#",
-  "4": "$",
-  "5": "%",
-  "6": "^",
-  "7": "&",
-  "8": "*",
-  "9": "(",
-  "0": ")",
-  "-": "_",
-  "=": "+",
-  "[": "{",
-  "]": "}",
-  "\\": "|",
-  ";": ":",
-  "'": '"',
-  "`": "~",
-  ",": "<",
-  ".": ">",
-  "/": "?",
 };
 
 /** The Latin character at a physical key: "KeyP" is "p", "Digit0" is "0", "Comma" is ",". */
@@ -124,7 +111,7 @@ export function keyName(e: KeyboardEvent, os: Os): string | null {
     return null;
   }
   const key = placed === " " ? "space" : placed;
-  const shifted = e.shiftKey && byPlace ? SHIFTED[key] : undefined;
+  const shifted = e.shiftKey && byPlace ? shiftedOnUsKeyboard(key) : undefined;
   const shift = e.shiftKey && shifted === undefined && (key.length > 1 || /^[a-z]$/.test(key));
   const parts = [primary && "ctrl", e.altKey && "alt", shift && "shift", shifted ?? key];
   return parts.filter(Boolean).join("+");

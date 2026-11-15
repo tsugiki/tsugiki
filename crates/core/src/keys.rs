@@ -297,38 +297,41 @@ impl Press {
 }
 
 /// The press on which WebView2 opens DevTools in a development build, before Tsugiki sees it (ADR 0013): no
-/// key can start with it.
+/// key can hold it, as one press or either of a chord's two.
 const DEVTOOLS: Press = Press {
     modifiers: Modifiers::CtrlShift,
     key: Key::Char('i'),
 };
 
+/// What Shift makes each key type on a US keyboard, by what the key types alone. A problem suggests it, and
+/// the window names a key it placed by it, from `ui/src/lib/data/keymap.ts`.
+pub const SHIFTED_ON_US_KEYBOARD: &[(char, char)] = &[
+    ('1', '!'),
+    ('2', '@'),
+    ('3', '#'),
+    ('4', '$'),
+    ('5', '%'),
+    ('6', '^'),
+    ('7', '&'),
+    ('8', '*'),
+    ('9', '('),
+    ('0', ')'),
+    ('-', '_'),
+    ('=', '+'),
+    ('[', '{'),
+    (']', '}'),
+    ('\\', '|'),
+    (';', ':'),
+    ('\'', '"'),
+    ('`', '~'),
+    (',', '<'),
+    ('.', '>'),
+    ('/', '?'),
+];
+
 /// What Shift makes `typed` type on a US keyboard, for a problem to suggest.
 fn shifted_on_us_keyboard(typed: char) -> Option<char> {
-    const PAIRS: &[(char, char)] = &[
-        ('1', '!'),
-        ('2', '@'),
-        ('3', '#'),
-        ('4', '$'),
-        ('5', '%'),
-        ('6', '^'),
-        ('7', '&'),
-        ('8', '*'),
-        ('9', '('),
-        ('0', ')'),
-        ('-', '_'),
-        ('=', '+'),
-        ('[', '{'),
-        (']', '}'),
-        ('\\', '|'),
-        (';', ':'),
-        ('\'', '"'),
-        ('`', '~'),
-        (',', '<'),
-        ('.', '>'),
-        ('/', '?'),
-    ];
-    PAIRS
+    SHIFTED_ON_US_KEYBOARD
         .iter()
         .find(|(key, _)| *key == typed)
         .map(|(_, shifted)| *shifted)
@@ -369,17 +372,20 @@ impl Keys {
         }
     }
 
-    /// The key's one press, or its chord's first.
-    const fn first(self) -> Press {
+    /// Whether `press` is the key's one press, or either of its chord's two.
+    fn presses(self, press: Press) -> bool {
         match self {
-            Self::One(first) | Self::Chord(first, _) => first,
+            Self::One(one) => one == press,
+            Self::Chord(first, second) => first == press || second == press,
         }
     }
 
     /// Whether the key's first press moves around, confirms or presses a button, so no action can take it.
     /// A chord's second press can: the chord's wait keeps it from the browser and from every other handler.
     fn keeps_its_work(self) -> bool {
-        self.first().keeps_its_work()
+        match self {
+            Self::One(first) | Self::Chord(first, _) => first.keeps_its_work(),
+        }
     }
 
     /// The first symbol or digit of the key pressed with Shift, which the window never names that way.
@@ -611,7 +617,7 @@ impl Remap {
             let problem = "but the window names a key that types by what it types, with no Shift";
             return Err(format!(r#"gives "{text}", {problem}: write {instead}"#));
         }
-        if key.first() == DEVTOOLS {
+        if key.presses(DEVTOOLS) {
             return Err(format!(
                 r#"gives "{text}", but WebView2 opens DevTools on Ctrl+Shift+I in a development build"#
             ));
@@ -625,13 +631,22 @@ impl Remap {
     }
 }
 
+/// A key of a settings table given a value Tsugiki can't read, and what Tsugiki does instead, in words for
+/// the status bar that follow the key. `[keys]` has its lines' problems in it, and the settings those of each
+/// table.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unread {
+    pub key: String,
+    pub problem: String,
+}
+
 /// The lines of `[keys]`, in the file's order, which says who keeps a key that two lines give (#550): those
 /// Tsugiki can read, and the problems with the others, which leave their actions at their default keys. The
 /// window reads the remaps as a map from each action's name to its key, `""` for none.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Remaps {
     remaps: Vec<Remap>,
-    unread: Vec<(String, String)>,
+    unread: Vec<Unread>,
 }
 
 impl Remaps {
@@ -642,15 +657,14 @@ impl Remaps {
         for (name, value) in lines {
             match Remap::read(&name, value.as_deref()) {
                 Ok(remap) => read.remaps.push(remap),
-                Err(problem) => read.unread.push((name, problem)),
+                Err(problem) => read.unread.push(Unread { key: name, problem }),
             }
         }
         read
     }
 
-    /// The lines Tsugiki can't read, each by its name with what is wrong, in words for the status bar that
-    /// follow the name.
-    pub fn unread(&self) -> &[(String, String)] {
+    /// The lines Tsugiki can't read, each by its action's name with what is wrong.
+    pub fn unread(&self) -> &[Unread] {
         &self.unread
     }
 }

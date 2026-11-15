@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { actionOn, isChordStart, keyOf, keyTable, ownsKey, remapKeys } from "./keymap.svelte";
+import { actionOn, isChordStart, keyOf, keyTable, ownsKey, remapKeys, startsChordOf } from "./keymap.svelte";
 
 afterEach(() => {
   remapKeys({});
@@ -34,9 +34,19 @@ describe("the key table", () => {
     expect([actionOn("ctrl+k m"), keyOf("local_mark")]).toEqual([undefined, null]);
   });
 
-  it("lets a remapped action keep its key over the default it lands on", () => {
+  it("lets a remapped action keep its key over the default it lands on, which shows no key", () => {
     remapKeys({ quick_open: "e" });
-    expect([actionOn("e"), actionOn("ctrl+p")]).toEqual(["quick_open", undefined]);
+    expect([actionOn("e"), actionOn("ctrl+p"), keyOf("archive")]).toEqual(["quick_open", undefined, null]);
+    expect(keyTable().find((row) => row.action === "archive")?.key).toBeNull();
+  });
+
+  it("leaves the bare ← and → alone whichever action has them, and owns Fold's remapped key", () => {
+    remapKeys({ unfold: "ctrl+shift+arrowright" });
+    expect([ownsKey("ctrl+shift+arrowright"), ownsKey("arrowleft"), ownsKey("ctrl+shift+i")]).toEqual([
+      true,
+      false,
+      false,
+    ]);
   });
 
   it("knows the chords' first presses and the keys the guard owns, with the remaps", () => {
@@ -48,6 +58,15 @@ describe("the key table", () => {
     ]);
     remapKeys({ pin: "ctrl+j p", archive: "" });
     expect([isChordStart("ctrl+j"), ownsKey("ctrl+j"), ownsKey("e")]).toEqual([true, true, false]);
+  });
+
+  it("knows whether a press starts the chord of one of some actions", () => {
+    remapKeys({ open_settings: "ctrl+j s" });
+    expect([
+      startsChordOf("ctrl+j", ["open_settings", "pin"]),
+      startsChordOf("ctrl+k", ["open_settings"]),
+      startsChordOf("ctrl+k", ["pin"]),
+    ]).toEqual([true, false, true]);
   });
 
   it("puts each default back once the remaps change again", () => {

@@ -30,8 +30,8 @@
   } from "$lib/state/workbench.svelte";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { type Action, actionOn, keyTable } from "$lib/state/keymap.svelte";
-  import { actionLabel, type Bindings, currentOs, isTextBox, keyName, typesInTextBox } from "./keys";
+  import { type Action, actionOn } from "$lib/state/keymap.svelte";
+  import { actionLabel, currentOs, isTextBox, keyName, typesInTextBox } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -384,17 +384,10 @@
     if (!panes.hidden("list") || detailPane()?.contains(document.activeElement) !== true) focusCursor();
   }
 
-  /** The screen's bindings for a chord's wait: for each action, what the action's key runs here, as
-   * `[keys]` can give any action a chord or a key of one press (#549). */
-  export function chordBindings(): Bindings {
-    return Object.fromEntries(
-      keyTable().map((row) => [
-        row.action,
-        (e: KeyboardEvent) => {
-          runKey(null, row.action, e);
-        },
-      ]),
-    );
+  /** Runs `action` at the end of its chord, press `e`, as its key of one press would, as `[keys]` can give
+   * any action a chord or a key of one press (#549). */
+  export function runChord(action: Action, e: KeyboardEvent): void {
+    runKey(null, action, e);
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's

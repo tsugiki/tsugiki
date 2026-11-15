@@ -3,10 +3,9 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
-import { remapKeys } from "$lib/state/keymap.svelte";
+import { type Action, remapKeys } from "$lib/state/keymap.svelte";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
-import type { Bindings } from "./keys";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 const core = vi.hoisted(() => ({
@@ -1170,7 +1169,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   const pressed = () =>
     screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed");
   // The Conversation tab shows no files to switch.
-  component.chordBindings().toggle_files_mode?.(chordEnd());
+  component.runChord("toggle_files_mode", chordEnd());
   expect([command("View: All Files"), command("View: One File at a Time")]).toEqual([undefined, undefined]);
   await fireEvent.click(tab);
   // The tab reads the diff the first time it shows.
@@ -1184,7 +1183,7 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
     "false",
     "View: One File at a Time",
   ]);
-  component.chordBindings().toggle_files_mode?.(chordEnd());
+  component.runChord("toggle_files_mode", chordEnd());
   await tick();
   expect(pressed()).toBe("true");
 });
@@ -1211,14 +1210,14 @@ it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palet
   const command = () =>
     component.paletteCommands().find((found) => found.title === "View: Unfold Unchanged Files");
   // The Conversation tab shows no files to unfold.
-  component.chordBindings().unfold_unchanged?.(chordEnd());
+  component.runChord("unfold_unchanged", chordEnd());
   expect(command()).toBeUndefined();
   await fireEvent.click(tab);
   await screen.findByRole("region", { name: "Diff" });
 
   expect(command()?.note).toBe("Ctrl+K J");
   command()?.run();
-  component.chordBindings().unfold_unchanged?.(chordEnd());
+  component.runChord("unfold_unchanged", chordEnd());
   expect(unfold).toHaveBeenCalledTimes(2);
   // Once no unchanged file is folded, the palette has nothing to offer.
   folded.mockReturnValue(0);
@@ -2847,8 +2846,8 @@ it("names the view over the list, and switches its order, which the list asks fo
 });
 
 /** Presses Ctrl+K Z, which the page hands the screen once the chord ends. */
-const detailOnly = async (component: { chordBindings: () => Bindings }) => {
-  component.chordBindings().toggle_detail_only?.(chordEnd());
+const detailOnly = async (component: { runChord: (action: Action, e: KeyboardEvent) => void }) => {
+  component.runChord("toggle_detail_only", chordEnd());
   await tick();
 };
 
@@ -2890,7 +2889,7 @@ it("runs a chord's action on a key of one press, and a key's action on a chord, 
   expect([sidebar(), repositoryName()]).toEqual([null, null]);
   await press("d", { code: "KeyD", ctrlKey: true });
   await tick();
-  component.chordBindings().toggle_issue_list?.(chordEnd());
+  component.runChord("toggle_issue_list", chordEnd());
   await tick();
 
   expect(sidebar()).toBeTruthy();

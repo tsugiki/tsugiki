@@ -67,14 +67,15 @@
 
 <!-- One entry: its icon, with its count as a badge, and its name for the tooltip and a screen reader. A
      Filter whose last search failed says why there too, as the full Sidebar does under its line, and marks
-     its icon with ! in the danger colour in place of the count, which may be short. -->
+     its icon with ! in the danger colour in place of the count, which may be short, so neither the tooltip
+     nor the label gives the count. -->
 {#snippet entry(icon: string, name: string, entryCount: number, view: WorkbenchView, problem?: string | null)}
   {@const words = badge(entryCount)}
   {@const counted = words === undefined ? name : `${name} (${String(entryCount)})`}
   <button
     class="entry"
     aria-current={currentView(selected, view)}
-    aria-label={problem ? `${counted}. ${problem}` : counted}
+    aria-label={problem ? `${name}. ${problem}` : counted}
     title={problem ? `${name}\n${problem}` : name}
     onclick={() => {
       onselect(view);

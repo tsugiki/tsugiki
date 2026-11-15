@@ -67,10 +67,11 @@ export class PanesState {
   /** Whether the Sidebar shows as a strip of icons, hidden or not, nothing until the core or the user says.
    * `Ctrl+B` brings it back the way this says. */
   #sidebarIcons = $state<boolean | null>(null);
-  /** The full Sidebar's width as `machine.toml` holds it: the width the core read, or the last one saved
-   * while the Sidebar showed in full, nothing for its default. The full Sidebar comes back at this width
-   * after a fold, however the fold came: a drag passes through narrower widths on its way to fold, and those
-   * are no width the user settled on. Undefined until the core answers or the layout is saved. */
+  /** The last width Tsugiki saved for the full Sidebar: the one the core read, or else the last one a save
+   * that worked sent while the Sidebar showed in full, nothing for its default. The full Sidebar comes back
+   * at this width after a fold, however the fold came: a drag passes through narrower widths on its way to
+   * fold, and those are no width the user settled on. Undefined until the core answers or a save works,
+   * which counts as the default. */
   #savedSidebar: number | null | undefined;
   /** The panes `Ctrl+K Z` hid, which it brings back next: null while it remembers none, and undefined until
    * the core or the user says. */
@@ -119,8 +120,10 @@ export class PanesState {
         order,
       } = await commands.paneLayout();
       this.#order ??= order;
-      this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
-      if (this.#savedSidebar === undefined) this.#savedSidebar = this.sidebar;
+      const saved = sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
+      this.sidebar ??= saved;
+      // From the file, not from a drag that may be under way.
+      if (this.#savedSidebar === undefined) this.#savedSidebar = saved;
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
       this.peek ??= peek === null ? null : Math.min(PEEK_MOST, Math.max(PEEK_LEAST, peek));
       this.splitPeek ??= split_peek === null ? null : Math.max(SPLIT_PEEK_LEAST, split_peek);
@@ -171,7 +174,7 @@ export class PanesState {
    * back the saved width for the full Sidebar, as the drag moved it on its way. The edge saves once it
    * stops. */
   foldSidebar(icons: boolean): void {
-    if (icons && this.#savedSidebar !== undefined) this.sidebar = this.#savedSidebar;
+    if (icons) this.sidebar = this.#savedSidebar ?? null;
     this.#sidebarIcons = icons;
   }
 
@@ -257,7 +260,6 @@ export class PanesState {
 
   /** Saves the layout in `machine.toml`, once the save before has finished. */
   save(): Promise<void> {
-    if (!this.sidebarIcons) this.#savedSidebar = this.sidebar;
     this.#saving = this.#saving.then(() => this.#send());
     return this.#saving;
   }
@@ -283,6 +285,7 @@ export class PanesState {
     } catch (e) {
       problem = String(e);
     }
+    if (problem === undefined && !layout.sidebar_icons) this.#savedSidebar = layout.sidebar;
     this.#saveProblem =
       problem === undefined ? undefined : `Tsugiki can't save the panes' layout: ${problem}`;
   }

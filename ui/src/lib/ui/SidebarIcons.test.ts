@@ -99,7 +99,8 @@ it("says why a Filter's last search failed, and marks its icon with ! in place o
     ],
   });
 
-  const icons = [button(`Mine (3). ${cut}`), button(`Involved. ${cut}`)];
+  // The count may be short, so the label leaves it out, as the badge and the tooltip do.
+  const icons = [button(`Mine. ${cut}`), button(`Involved. ${cut}`)];
 
   expect(icons.map((icon) => [icon.title, icon.querySelector(".badge.problem")?.textContent])).toEqual([
     [`Mine\n${cut}`, "!"],

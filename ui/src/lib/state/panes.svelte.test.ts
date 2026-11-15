@@ -487,9 +487,10 @@ it("shows the Sidebar in full until the core says it shows as icons", async () =
 });
 
 it("shows the Sidebar as icons and in full again, keeping its width, and saves each", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240 });
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
-  panes.sidebar = 240;
+  await panes.load();
 
   await panes.showSidebar(true);
   const icons = sidebarOf(panes);
@@ -540,7 +541,7 @@ it.each([
   ]);
 });
 
-it("folds the Sidebar back to the width machine.toml holds, past the widths a drag went through", async () => {
+it("folds the Sidebar back to the last width Tsugiki saved, past the widths a drag went through", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240 });
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
@@ -583,6 +584,60 @@ it("folds a Sidebar at its default width back to its default", async () => {
   panes.foldSidebar(true);
 
   expect(panes.sidebar).toBeNull();
+});
+
+it("folds the Sidebar back to its default width when the core can't say what it saved", async () => {
+  core.paneLayout.mockRejectedValue(new Error("no core"));
+  const panes = new PanesState();
+  await panes.load();
+
+  panes.sidebar = 140;
+  panes.foldSidebar(true);
+
+  expect([panes.sidebar, panes.problem]).toEqual([
+    null,
+    "Tsugiki can't read the panes' layout: Error: no core",
+  ]);
+});
+
+it("folds the Sidebar back to the width the core read, though the read answered mid-drag", async () => {
+  let answer: (layout: PaneLayout_Serialize) => void = () => {};
+  core.paneLayout.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const panes = new PanesState();
+  const loading = panes.load();
+
+  panes.sidebar = 160;
+  answer({ ...DEFAULTS, sidebar: 240 });
+  await loading;
+  const dragged = panes.sidebar;
+  panes.sidebar = 140;
+  panes.foldSidebar(true);
+
+  expect([dragged, panes.sidebar]).toEqual([160, 240]);
+});
+
+it("folds the Sidebar back to the last width a save got into machine.toml", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULTS, sidebar: 240 });
+  core.savePaneLayout
+    .mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "locked" } })
+    .mockResolvedValue({ status: "ok", data: DEFAULTS });
+  const panes = new PanesState();
+  await panes.load();
+
+  panes.sidebar = 300;
+  await panes.save();
+  panes.foldSidebar(true);
+  const refused = panes.sidebar;
+  panes.foldSidebar(false);
+  panes.sidebar = 320;
+  await panes.save();
+  panes.foldSidebar(true);
+
+  expect([refused, panes.sidebar]).toEqual([240, 320]);
 });
 
 it("shows the full Sidebar and the list for a click on an icon of the strip, with one save", async () => {

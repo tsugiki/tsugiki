@@ -20,6 +20,8 @@ const LIGHT_MODERN: ThemeView = {
     { property: "--state-open", value: "#1a7f37" },
     { property: "--state-done", value: "#8250df" },
     { property: "--hl-keyword", value: "#0000ff" },
+    { property: "--find", value: "#f8c94a" },
+    { property: "--find-current", value: "#a8ac94" },
   ],
 };
 
@@ -35,6 +37,8 @@ const DARK_MODERN: ThemeView = {
     { property: "--state-open", value: "#3fb950" },
     { property: "--state-done", value: "#ab7df8" },
     { property: "--hl-keyword", value: "#569cd6" },
+    { property: "--find", value: "#9e6a03" },
+    { property: "--find-current", value: "#515c6a" },
   ],
 };
 

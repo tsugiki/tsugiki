@@ -22,6 +22,14 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 Once the build is done, report what you changed, the files you touched and the tests you ran. The session
 sends you `/code-review` findings. Fix each, or decline it with the reason it doesn't hold.
 
+Put each round of fixes in a new commit, and leave the first one alone, so the session can review a round's
+fixes on their own. When a fix makes the first commit's message wrong, reword only the message, before the
+first push: `git commit --fixup=reword:<first>`, then `GIT_SEQUENCE_EDITOR=: git rebase -i --autosquash
+<base>`, and check that the tree hasn't changed.
+
+CodeQL runs on CI and no local gate runs it, so don't strip tags or other markup with `replace`, even in a
+test that reads our own sources: CodeQL fails it as `js/incomplete-multi-character-sanitization`.
+
 ### The pre-push gates
 
 Run `just preflight` once the session says to; it lets one agent run it at a time. It runs the full Vitest

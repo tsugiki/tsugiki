@@ -58,7 +58,8 @@ test("Ctrl+Shift+H shows the performance HUD, and its numbers move", async ({ pa
 test("the palette shows and hides the performance HUD", async ({ page }) => {
   await openApp(page);
   await page.keyboard.press("ControlOrMeta+Shift+P");
-  await page.getByRole("combobox", { name: "Command" }).fill("hud");
+  // The box opens with `>` typed, which marks the commands, and `fill` replaces it.
+  await page.getByRole("combobox", { name: "Command" }).fill(">hud");
   await page.keyboard.press("Enter");
   await expect(hud(page)).toBeVisible();
 

@@ -16,7 +16,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** The table's rows below its header, each as its cells' text. */
+/** The table's rows below its header, each as its cells' words, one space apart. */
 const rows = () =>
   within(screen.getByRole("table"))
     .getAllByRole("row")
@@ -24,7 +24,7 @@ const rows = () =>
     .map((row) =>
       within(row)
         .getAllByRole("cell")
-        .map((cell) => cell.textContent.trim()),
+        .map((cell) => cell.textContent.trim().split(/\s+/).join(" ")),
     );
 
 /** The row of the action titled `title`, as its cells' text. */
@@ -84,26 +84,61 @@ it("finds a key on macOS by Cmd, as the page shows it, and by Ctrl, as `[keys]` 
   expect(rows()).toEqual([["Local Mark", "Cmd+K M", "Anywhere"]]);
 });
 
+it("finds the actions with no key by the words the page shows", async () => {
+  render(KeyboardPage);
+  await filter("no key");
+  expect(rows()).toEqual([["Reset Layout", "No key", "Anywhere"]]);
+});
+
 it("says so when no row holds what the box holds", async () => {
   render(KeyboardPage);
   await filter("no such action");
   expect(rows()).toEqual([["No action or key holds that."]]);
 });
 
-it("marks a remapped key, with its default, and says which action took a default key", () => {
-  remapKeys({ archive: "f7", local_mark: "", reset_layout: "ctrl+k l" });
+it("clears the box on Esc, and lets Esc through to the dialog once the box is empty", async () => {
+  const heard = vi.fn();
+  window.addEventListener("keydown", heard);
+  render(KeyboardPage);
+  const box = screen.getByRole("searchbox", { name: "Filter keys" });
+  await filter("archive");
+
+  await fireEvent.keyDown(box, { key: "Escape" });
+  expect([box, heard.mock.calls.length]).toEqual([expect.objectContaining({ value: "" }), 0]);
+  expect(rows()).toHaveLength(keyTable().length);
+
+  await fireEvent.keyDown(box, { key: "a" });
+  await fireEvent.keyDown(box, { key: "Escape" });
+  expect(heard).toHaveBeenCalledTimes(2);
+  window.removeEventListener("keydown", heard);
+});
+
+it("marks a remapped key, with its default, and says which action took a key", () => {
+  remapKeys({ archive: "f7", mute: "f8", local_mark: "", reset_layout: "ctrl+k l", pin: "ctrl+k p" });
   render(KeyboardPage);
 
-  expect(rowOf("Archive")).toEqual(["Archive", "F7 remapped", "Issue list"]);
+  expect(rowOf("Mute")).toEqual(["Mute", "F8 remapped", "Issue list"]);
   expect(rowOf("Local Mark")).toEqual(["Local Mark", "No key remapped", "Anywhere"]);
   expect(rowOf("Reset Layout")).toEqual(["Reset Layout", "Ctrl+K L remapped", "Anywhere"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "No key F7 went to Archive", "Diff"]);
-  expect(rowOf("Mute")).toEqual(["Mute", "M", "Issue list"]);
+  expect(rowOf("Next Comment Thread")).toEqual(["Next Comment Thread", "No key F8 went to Mute", "Diff"]);
+  // A line that gives an action its own default isn't marked.
+  expect(rowOf("Pin or Unpin")?.[1]).toBe("Ctrl+K P");
 
   const tips = screen.getAllByText("remapped").map((mark) => mark.getAttribute("title"));
   expect(tips).toEqual([
     "Set in settings.toml's [keys]. Default: Ctrl+K M",
-    "Set in settings.toml's [keys]. Default: no key",
+    "Set in settings.toml's [keys]. Default: No key",
     "Set in settings.toml's [keys]. Default: E",
+    "Set in settings.toml's [keys]. Default: M",
   ]);
+});
+
+it("marks a remapped key a later remapped action took as lost to it", () => {
+  remapKeys({ archive: "f7", mute: "f7" });
+  render(KeyboardPage);
+
+  expect(rowOf("Archive")).toEqual(["Archive", "No key remapped F7 went to Mute", "Issue list"]);
+  expect(rowOf("Mute")).toEqual(["Mute", "F7 remapped", "Issue list"]);
+  expect(rowOf("Next Change")).toEqual(["Next Change", "No key F7 went to Mute", "Diff"]);
 });

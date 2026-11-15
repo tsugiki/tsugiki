@@ -2,7 +2,7 @@
      from the core's key table with the user's remaps, each key `[keys]` remaps marked. A box above the table
      filters its rows by action or by key. Remapping a key with a click comes later (#552). -->
 <script lang="ts">
-  import { CONTEXT_NAMES, keyTable, type Row } from "$lib/state/keymap.svelte";
+  import { CONTEXT_NAMES, keyTable, type Lost, type Remap, type Row } from "$lib/state/keymap.svelte";
   import { bindingLabel, currentOs } from "./keys";
   import StoredIn from "./StoredIn.svelte";
 
@@ -11,25 +11,33 @@
 
   /** The box's text, trimmed and in lower case, which each row shown holds. */
   const typed = $derived(query.trim().toLowerCase());
-  /** Each action's title, for the row whose default key another action took. */
-  const titles = $derived(new Map(keyTable().map((row) => [row.action, row.title])));
   const rows = $derived(keyTable().filter(matches));
 
   /** Whether `row` holds what the box holds, in any case: in its title, its name in `[keys]`, or its key, by
-   * the name `[keys]` writes and the name the page shows, so "ctrl+k" finds Cmd+K M on macOS too. */
+   * the name `[keys]` writes and the name the page shows, so "ctrl+k" finds Cmd+K M on macOS too, and "no
+   * key" finds the actions with none. */
   function matches(row: Row): boolean {
-    const key = row.key === null ? [] : [row.key, bindingLabel(row.key, os)];
-    return [row.title, row.action, ...key].some((text) => text.toLowerCase().includes(typed));
+    const key = row.key === null ? [] : [row.key];
+    return [row.title, row.action, label(row.key), ...key].some((text) => text.toLowerCase().includes(typed));
   }
 
-  /** A key as the page shows it, or "no key". */
-  const label = (key: string | null) => (key === null ? "no key" : bindingLabel(key, os));
+  /** A key as the page shows it, or "No key". */
+  function label(key: string | null): string {
+    return key === null ? "No key" : bindingLabel(key, os);
+  }
 
   /** What the mark beside a remapped key says when the pointer rests on it, with the action's default key. */
-  const remappedTip = (key: string | null) => `Set in settings.toml's [keys]. Default: ${label(key)}`;
+  const remappedTip = ({ default: key }: Remap) => `Set in settings.toml's [keys]. Default: ${label(key)}`;
 
-  /** Why a row whose default key another action took has none. */
-  const takenWords = (key: string, by: Row["action"]) => `${label(key)} went to ${String(titles.get(by))}`;
+  /** Why a row has no key though it would have one: which action's line of `[keys]` took it. */
+  const lostWords = ({ key, to }: Lost) => `${label(key)} went to ${to.title}`;
+
+  /** Esc in the box clears it, and closes the dialog only once the box is empty. */
+  function clearOnEscape(e: KeyboardEvent) {
+    if (e.key !== "Escape" || query === "") return;
+    query = "";
+    e.stopPropagation();
+  }
 </script>
 
 <p class="help">The default keys follow VS Code's. On macOS, Cmd stands for Ctrl.</p>
@@ -43,6 +51,7 @@
   placeholder="Filter by action or key"
   spellcheck="false"
   bind:value={query}
+  onkeydown={clearOnEscape}
 />
 <table>
   <thead>
@@ -62,10 +71,11 @@
           {:else}
             <kbd>{bindingLabel(row.key, os)}</kbd>
           {/if}
-          {#if row.remapped.kind === "remapped"}
-            <span class="remapped" title={remappedTip(row.remapped.default)}>remapped</span>
-          {:else if row.remapped.kind === "taken"}
-            <span class="taken">{takenWords(row.remapped.default, row.remapped.by)}</span>
+          {#if row.remapped !== null}
+            <span class="remapped" title={remappedTip(row.remapped)}>remapped</span>
+          {/if}
+          {#if row.lost !== null}
+            <span class="lost">{lostWords(row.lost)}</span>
           {/if}
         </td>
         <td>{CONTEXT_NAMES[row.context]}</td>
@@ -91,9 +101,12 @@
     box-sizing: border-box;
   }
 
+  /* Separate, as a sticky header cell of a collapsed table loses its bottom border in Chromium once the table
+     scrolls. */
   table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
   }
 
   th {
@@ -111,11 +124,11 @@
   }
 
   .none,
-  .taken {
+  .lost {
     color: var(--fg-muted);
   }
 
-  .taken {
+  .lost {
     margin-left: 6px;
     font-size: 11.5px;
   }

@@ -8,17 +8,27 @@ type Default = (typeof KEYMAP)[number];
 /** An action the user can bind a key to, named as `[keys]` in settings.toml names it. */
 export type Action = Default["action"];
 
-/** What `[keys]` did to an action's key, which the Keyboard page marks: nothing; gave it another key or none
- * in place of `default`; or left it with none, as `by` took its default key. */
-export type Remapped =
-  | { readonly kind: "default" }
-  | { readonly kind: "remapped"; readonly default: string | null }
-  | { readonly kind: "taken"; readonly default: string; readonly by: Action };
+/** A line of `[keys]` that gives an action another key than its default, or none: the default it replaced,
+ * which the Keyboard page shows beside the mark. */
+export interface Remap {
+  readonly default: string | null;
+}
+
+/** A key an action would have, its default or the one `[keys]` gives it, which another action's line of
+ * `[keys]` took: the key, and the action that has it now, which the Keyboard page names. */
+export interface Lost {
+  readonly key: string;
+  readonly to: { readonly action: Action; readonly title: string };
+}
 
 /** A row of the table: an action, its title and where its key works, with its key in force, null for none,
- * and what `[keys]` did to it. A key is named as `keyName` and `chordName` name them: "ctrl+shift+p",
- * "ctrl+k m". */
-export type Row = Omit<Default, "key"> & { readonly key: string | null; readonly remapped: Remapped };
+ * and what `[keys]` did to it: whether a line of its own remapped it, and whether another's took its key. A
+ * key is named as `keyName` and `chordName` name them: "ctrl+shift+p", "ctrl+k m". */
+export type Row = Omit<Default, "key"> & {
+  readonly key: string | null;
+  readonly remapped: Remap | null;
+  readonly lost: Lost | null;
+};
 
 /** A row whose action has a key in force. */
 export type KeyedRow = Row & { readonly key: string };
@@ -38,8 +48,6 @@ export const CONTEXT_NAMES: Readonly<Record<Context, string>> = {
   diff: "Diff",
   composer: "Composer",
 };
-
-const UNTOUCHED: Remapped = { kind: "default" };
 
 /**
  * The keys the window's guard leaves alone, whichever action has them. The bare ← and → that fold the Issue
@@ -63,29 +71,30 @@ class Keymap {
   #remaps = $state.raw<Remaps>({});
 
   /** Every row, in the order the Keyboard page lists them. A remapped action keeps its key over an action
-   * that has it by default, which is left with no key. */
+   * that has it by default, which is left with no key, and of two remapped actions on one key the later in
+   * the table keeps it, until #550 settles that as `[keys]` orders them. So no two rows share a key. */
   readonly rows: readonly Row[] = $derived.by(() => {
-    // The remapped action on each key, the later in the table where two share one, as `#actionOn` finds.
-    const takers = new Map<string, { key: string; by: Action }>(
+    // The action each line of `[keys]` puts on its key, the later in the table where two share one.
+    const takers = new Map<string, Default>(
       KEYMAP.flatMap((row) => {
         const given = this.#remaps[row.action];
-        return given ? [[given, { key: given, by: row.action }]] : [];
+        return given ? [[given, row]] : [];
       }),
     );
     return KEYMAP.map((row): Row => {
       const given = this.#remaps[row.action];
-      if (given !== undefined) {
-        return { ...row, key: given === "" ? null : given, remapped: { kind: "remapped", default: row.key } };
+      const key = given === undefined ? row.key : given || null;
+      // A line that gives an action its own default changes nothing.
+      const remapped = key === row.key ? null : { default: row.key };
+      const taker = key === null ? undefined : takers.get(key);
+      if (key === null || taker === undefined || taker.action === row.action) {
+        return { ...row, key, remapped, lost: null };
       }
-      const taker = takers.get(row.key ?? "");
-      return taker === undefined
-        ? { ...row, remapped: UNTOUCHED }
-        : { ...row, key: null, remapped: { kind: "taken", default: taker.key, by: taker.by } };
+      return { ...row, key: null, remapped, lost: { key, to: { action: taker.action, title: taker.title } } };
     });
   });
 
-  /** The action on each key. Of two remapped actions on one key, the later in the table keeps it, until #550
-   * settles that as `[keys]` orders them. */
+  /** The action on each key. */
   readonly #actionOn = $derived(
     new Map<string | null, Action>(
       this.rows.flatMap((row) => (row.key === null ? [] : [[row.key, row.action]])),
@@ -141,13 +150,10 @@ export function keyTable(): readonly Row[] {
   return keymap.rows;
 }
 
-/** The rows of the actions whose key works in `context` and runs them, in the table's order: of two remapped
- * actions on one key, only the one `actionOn` finds there. The `?` list shows them. */
+/** The rows of the actions whose key works in `context`, in the table's order: of two remapped actions on one
+ * key, only the one that keeps it. The `?` list shows them. */
 export function keysIn(context: Context): readonly KeyedRow[] {
-  return keymap.rows.filter(
-    (row): row is KeyedRow =>
-      row.context === context && row.key !== null && keymap.actionOn(row.key) === row.action,
-  );
+  return keymap.rows.filter((row): row is KeyedRow => row.context === context && row.key !== null);
 }
 
 /** Puts the keys `[keys]` gives in force, in place of those it gave before. */

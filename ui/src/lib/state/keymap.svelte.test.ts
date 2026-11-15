@@ -97,16 +97,23 @@ describe("the key table", () => {
     expect(listed).not.toContain("archive");
   });
 
-  it("says what `[keys]` did to each key: nothing, a remap, or a default another remap took", () => {
-    remapKeys({ archive: "f7", mute: "f7", local_mark: "" });
-    const remapped = (action: string) => keyTable().find((row) => row.action === action)?.remapped;
-    expect([remapped("archive"), remapped("local_mark"), remapped("next_change"), remapped("pin")]).toEqual([
-      { kind: "remapped", default: "e" },
-      { kind: "remapped", default: "ctrl+k m" },
-      // Of two remapped actions on its key, the one the key runs.
-      { kind: "taken", default: "f7", by: "mute" },
-      { kind: "default" },
-    ]);
+  it("says what `[keys]` did to each key: a remap of its own, and a key another remap took", () => {
+    remapKeys({ archive: "f7", mute: "f7", local_mark: "", pin: "ctrl+k p", reset_layout: "" });
+    const row = (action: string) => {
+      const found = keyTable().find((each) => each.action === action);
+      return [found?.key, found?.remapped, found?.lost];
+    };
+    const mute = { action: "mute", title: "Mute" };
+    expect(row("mute")).toEqual(["f7", { default: "m" }, null]);
+    // Of two remapped actions on one key, the later in the table keeps it, and the other has none.
+    expect(row("archive")).toEqual([null, { default: "e" }, { key: "f7", to: mute }]);
+    expect(row("next_change")).toEqual([null, null, { key: "f7", to: mute }]);
+    expect(row("local_mark")).toEqual([null, { default: "ctrl+k m" }, null]);
+    // A line that gives an action its own default, or none to an action with none, changes nothing.
+    expect(row("pin")).toEqual(["ctrl+k p", null, null]);
+    expect(row("reset_layout")).toEqual([null, null, null]);
+    expect(row("toggle_hud")).toEqual(["ctrl+shift+h", null, null]);
+    expect([keyOf("archive"), actionOn("f7")]).toEqual([null, "mute"]);
   });
 
   it("puts each default back once the remaps change again", () => {

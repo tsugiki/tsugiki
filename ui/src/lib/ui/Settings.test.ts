@@ -300,6 +300,19 @@ describe("the Settings dialog", () => {
     expect(await fireEvent.mouseDown(screen.getByTestId("settings-scrim"))).toBe(false);
     expect(onclose).toHaveBeenCalledTimes(3);
   });
+
+  it("stays open on an Esc that clears Keyboard's filter box, and closes on the next", async () => {
+    const onclose = vi.fn();
+    render(Settings, props(onclose));
+    await go("Keyboard");
+    const box = screen.getByRole("searchbox", { name: "Filter keys" });
+    await fireEvent.input(box, { target: { value: "archive" } });
+
+    await fireEvent.keyDown(box, { key: "Escape" });
+    expect([box, onclose.mock.calls.length]).toEqual([expect.objectContaining({ value: "" }), 0]);
+    await fireEvent.keyDown(box, { key: "Escape" });
+    expect(onclose).toHaveBeenCalledOnce();
+  });
 });
 
 describe("Settings › General", () => {

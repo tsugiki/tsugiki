@@ -63,13 +63,16 @@
   };
 
   let browserProblem = $state<string>();
-  let section = $state<HTMLElement>();
-  let panel = $state<HTMLElement>();
+  // Svelte sets each to null as its element goes.
+  let section = $state<HTMLElement | null>(null);
+  let panel = $state<HTMLElement | null>(null);
   /** The rail's key, which its button and × name. */
   const railKey = actionLabel("toggle_rail_files", currentOs());
+  /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
+  const railed = $derived(panes.railOpen && Boolean(pr.view));
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
    * scrolls it, under the header. */
-  const conversationScrolls = $derived(panes.railOpen && pr.tab === "conversation");
+  const conversationScrolls = $derived(railed && pr.tab === "conversation");
 
   /** The pixels of the pane above the tab, which scroll away with the Conversation while the pane scrolls
    * it. */
@@ -78,7 +81,7 @@
 
   /** How far down the Conversation the user has read, from the scroller the page has now. */
   function conversationTop(): number {
-    if (section === undefined || panel === undefined || pr.tab !== "conversation") return 0;
+    if (section === null || panel === null || pr.tab !== "conversation") return 0;
     if (panel.hasAttribute("data-scrolls")) return panel.scrollTop;
     return Math.max(0, section.scrollTop - headerHeight(section, panel));
   }
@@ -86,25 +89,31 @@
   /** Scrolls the Conversation `top` pixels down, in the scroller the page has now. Back at the top, the pane
    * shows its header again. */
   function showConversationAt(top: number) {
-    if (section === undefined || panel === undefined || pr.tab !== "conversation") return;
+    if (section === null || panel === null || pr.tab !== "conversation") return;
     if (panel.hasAttribute("data-scrolls")) panel.scrollTop = top;
     else section.scrollTop = top > 0 ? top + headerHeight(section, panel) : 0;
   }
 
-  // Opening or closing the rail on the Conversation moves its scroller between the pane and the tab, which
-  // would start it at the top. Each reads where the Conversation was before the page changes, and scrolls the
-  // new scroller there after.
+  // Opening or closing the rail, or moving to the other tab, changes what scrolls. Opening or closing it on
+  // the Conversation moves the Conversation's scroller between the pane and the tab, which would start it at
+  // the top, so each reads where the Conversation was before the page changes, and scrolls the new scroller
+  // there after. And the Conversation beside the rail holds the focus as only a scroller does, so a focus on
+  // it that the change leaves on a tab that no longer scrolls goes to what the rail sits beside, or the
+  // Files button: on the page, the arrows would move the Issue list's cursor.
   let readTo = 0;
+  let panelFocused = false;
   $effect.pre(() => {
-    void panes.railOpen;
+    void [railed, pr.tab];
     untrack(() => {
       readTo = conversationTop();
+      panelFocused = panel !== null && document.activeElement === panel;
     });
   });
   $effect(() => {
-    void panes.railOpen;
+    void [railed, pr.tab];
     untrack(() => {
       showConversationAt(readTo);
+      if (panelFocused && !conversationScrolls) focusBesideRail(section);
       handOnFocus();
     });
   });
@@ -128,7 +137,7 @@
   bind:this={section}
   class="detail"
   class:files={pr.tab === "files"}
-  class:railed={panes.railOpen}
+  class:railed
   aria-label="PR view"
   tabindex={focusable ? -1 : undefined}
   data-pane="detail"
@@ -194,10 +203,11 @@
         type="button"
         class="rail-button"
         data-opens-rail
+        aria-label="Files in the rail"
         aria-pressed={panes.railOpen}
         title={`Files in the rail (${railKey})`}
         onclick={() => {
-          panes.railOpen = !panes.railOpen;
+          panes.toggleRail();
         }}>Files</button
       >
     </div>
@@ -218,7 +228,11 @@
     <!-- Beside the rail the Conversation scrolls by itself, as the diff does, and takes the focus for its
          keys (axe's scrollable-region-focusable). The Detail pane's ↑ and ↓ scroll it, which `data-scrolls`
          marks it for. -->
-    <div class="body" style:--rail-width={`${String(panes.rail ?? RAIL_WIDTH)}px`}>
+    <div
+      class="body"
+      style:--rail-width={`${String(panes.rail ?? RAIL_WIDTH)}px`}
+      style:--beside-rail-least={`${String(BESIDE_RAIL_LEAST)}px`}
+    >
       <div
         bind:this={panel}
         role="tabpanel"
@@ -244,10 +258,12 @@
           <FilesTab files={pr.files} {now} onlink={(address) => void followLink(address)} />
         {/if}
       </div>
-      {#if panes.railOpen}
+      {#if railed}
         <Rail
           closeKey={railKey}
-          onclose={() => (panes.railOpen = false)}
+          onclose={() => {
+            panes.toggleRail();
+          }}
           onleave={() => {
             focusBesideRail(section);
           }}
@@ -300,7 +316,7 @@
   .body > [role="tabpanel"] {
     flex: 1;
     box-sizing: border-box;
-    min-width: 240px;
+    min-width: var(--beside-rail-least);
   }
 
   /* The file view covers the tab, and stacks over nothing outside it. */

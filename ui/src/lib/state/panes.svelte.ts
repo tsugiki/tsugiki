@@ -55,6 +55,11 @@ export class PanesState {
   /** Whether the rail shows beside the PR's tabs. It stays open from tab to tab and PR to PR, for the
    * session, and the layout doesn't save it. */
   railOpen = $state(false);
+
+  /** Opens the rail, or closes it: the Files button, ×, `Ctrl+K F` and its palette command. */
+  toggleRail() {
+    this.railOpen = !this.railOpen;
+  }
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });

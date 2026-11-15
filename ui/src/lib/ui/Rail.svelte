@@ -34,15 +34,24 @@
 
   /** Hands the focus on as the rail goes while it holds the focus, however it closes: the focus would fall
    * to the page, where ↑ ↓ move the Issue list's cursor. The rail holds it from the first focus in it until
-   * the focus moves to an element outside it. By the time the rail goes, the page has taken it off the
-   * screen, and the tab beside it has taken its place, which `onleave` then finds. */
+   * the focus moves to an element outside it, or to the page, as a click on a pane's background moves it.
+   * Another app taking the focus leaves the rail holding it, as the window gives it back there. By the time
+   * the rail goes, the page has taken it off the screen, and the tab beside it has taken its place, which
+   * `onleave` then finds. */
   function handOnFocus(rail: HTMLElement) {
     let held = false;
     rail.addEventListener("focusin", () => {
       held = true;
     });
     rail.addEventListener("focusout", (e) => {
-      if (e.relatedTarget instanceof Node && !rail.contains(e.relatedTarget)) held = false;
+      if (e.relatedTarget instanceof Node) {
+        if (!rail.contains(e.relatedTarget)) held = false;
+        return;
+      }
+      // A browser may say the focus left as the rail goes, which the rail's going then answers first.
+      queueMicrotask(() => {
+        if (rail.isConnected && document.hasFocus()) held = false;
+      });
     });
     return () => {
       if (held && document.activeElement === document.body) queueMicrotask(onleave);

@@ -392,7 +392,7 @@ test("the Files button, Ctrl+K F and × open and close the rail, its left edge s
   await page.setViewportSize({ width: 1800, height: 700 });
   const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
   const rail = pane.getByRole("complementary", { name: "Rail" });
-  const button = pane.getByRole("button", { name: "Files", exact: true });
+  const button = pane.getByRole("button", { name: "Files in the rail" });
   const width = async () => (await rail.boundingBox())?.width ?? 0;
 
   await button.click();

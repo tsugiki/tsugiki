@@ -399,13 +399,14 @@
     };
   }
 
-  /** Whether the Detail pane shows a PR's view, with the tabs the rail sits beside. */
+  /** Whether the Detail pane shows a PR's view, with the tabs the rail sits beside. The key and the palette
+   * command wait for it, as the PR view's button does by coming with the tabs. */
   const showsPr = () => detail instanceof PrViewState && Boolean(detail.view);
 
   /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). The rail hands on the
    * focus it holds as it goes. */
   function toggleRail() {
-    if (showsPr()) panes.railOpen = !panes.railOpen;
+    if (showsPr()) panes.toggleRail();
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's

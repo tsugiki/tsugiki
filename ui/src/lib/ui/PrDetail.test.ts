@@ -424,7 +424,7 @@ it("offers Mark Seen in its header while the PR has New activity, and Mark Unsee
 });
 
 const rail = () => screen.queryByRole("complementary", { name: "Rail" });
-const railButton = () => screen.getByRole("button", { name: "Files" });
+const railButton = () => screen.getByRole("button", { name: "Files in the rail" });
 
 it("opens the rail from the Files button at the right of the tabs, and closes it on a second click", async () => {
   const panes = new PanesState();
@@ -444,7 +444,7 @@ it("opens the rail from the Files button at the right of the tabs, and closes it
   expect(opened).toEqual(["Files", "true", "Files in the rail (Ctrl+K F)", true]);
   expect([rail(), railButton().getAttribute("aria-pressed"), panes.railOpen]).toEqual([null, "false", false]);
   // The button stands beside the tabs, not among them.
-  expect(within(screen.getByRole("tablist")).queryByRole("button", { name: "Files" })).toBeNull();
+  expect(within(screen.getByRole("tablist")).queryByRole("button", { name: "Files in the rail" })).toBeNull();
 });
 
 it("closes the rail on ×, and gives the focus to the Files button, as the whole pane scrolls the Conversation again", async () => {
@@ -471,20 +471,73 @@ it("closes the rail on ×, and gives the focus to the Files button, as the whole
   ]);
 });
 
+it("lets the whole pane scroll, with no rail, for a PR without a view, though the rail is open", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(null, 10, vi.fn(), vi.fn(), panes);
+
+  const section = screen.getByRole("region", { name: "PR view" });
+  expect([rail(), section.classList.contains("railed")]).toEqual([null, false]);
+});
+
 it("leaves the focus where it went after the rail held it, as the rail closes", async () => {
   const panes = new PanesState();
   panes.railOpen = true;
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const close = screen.getByRole("button", { name: "Close the rail" });
+  // The focus moves within the rail, then a click on a pane's background takes it to the page.
+  screen.getByRole("separator", { name: "Rail width" }).focus();
   close.focus();
-  // A click on the page's background takes the focus to nowhere, and the Files button then takes it.
   close.blur();
-  railButton().focus();
+  await Promise.resolve();
 
-  await fireEvent.click(railButton());
+  panes.toggleRail();
+  await tick();
+  await Promise.resolve();
+
+  expect([rail(), document.activeElement]).toEqual([null, document.body]);
+});
+
+it("still hands on the focus as the rail goes after another app took it from the rail", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  close.focus();
+  const away = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  close.blur();
+  await Promise.resolve();
+  away.mockRestore();
+
+  panes.toggleRail();
   await tick();
 
-  expect([rail(), document.activeElement]).toEqual([null, railButton()]);
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(railButton());
+  });
+});
+
+it("gives the focus to the Files button as a Conversation that held it stops scrolling beside the rail", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  close.focus();
+  // Esc hands the focus to the Conversation beside the rail.
+  await fireEvent.keyDown(close, { key: "Escape" });
+  const beside = document.activeElement === screen.getByRole("tabpanel");
+
+  panes.toggleRail();
+  await tick();
+  const closed = document.activeElement;
+  // On the Files tab, where the tab doesn't scroll, the focus on the Conversation goes the same way.
+  panes.toggleRail();
+  await tick();
+  screen.getByRole("tabpanel").focus();
+  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  await tick();
+
+  expect([beside, closed, document.activeElement]).toEqual([true, railButton(), railButton()]);
 });
 
 it("gives the focus back to the Conversation on Esc in the rail, which stays open, and goes no further", async () => {

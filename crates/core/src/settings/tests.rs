@@ -1551,6 +1551,7 @@ const WIDE: PaneLayout = PaneLayout {
     list: Some(500),
     peek: None,
     split_peek: None,
+    rail: None,
     sidebar_hidden: false,
     list_hidden: false,
     detail_only_hid: None,
@@ -1597,6 +1598,26 @@ fn the_split_peeks_height_stays_on_this_machine_until_it_goes_back_to_its_defaul
         "[panes]\nsidebar = 240\nlist = 500\nsplit_peek = 320\n"
     );
     assert_eq!(read_again, taller);
+    assert_eq!(back, "[panes]\nsidebar = 240\nlist = 500\n");
+}
+
+#[test]
+fn the_rails_width_stays_on_this_machine_until_it_goes_back_to_its_default() {
+    let (folders, _root) = temp_folders("panes-rail");
+    let mut files = SettingsFiles::load(folders.clone());
+    let wider = PaneLayout {
+        rail: Some(360),
+        ..WIDE
+    };
+
+    files.save_panes(wider).unwrap();
+    let saved = fs::read_to_string(folders.machine_file()).unwrap();
+    let read_again = SettingsFiles::load(folders.clone()).view().panes;
+    files.save_panes(WIDE).unwrap();
+    let back = fs::read_to_string(folders.machine_file()).unwrap();
+
+    assert_eq!(saved, "[panes]\nsidebar = 240\nlist = 500\nrail = 360\n");
+    assert_eq!(read_again, wider);
     assert_eq!(back, "[panes]\nsidebar = 240\nlist = 500\n");
 }
 
@@ -1798,6 +1819,7 @@ order = \"by_mood\"
         list: Some(500),
         peek: None,
         split_peek: None,
+        rail: None,
         sidebar_hidden: false,
         list_hidden: false,
         detail_only_hid: None,

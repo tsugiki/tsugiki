@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { keepFocusIn } from "./focus";
+import { focusBesideRail, keepFocusIn } from "./focus";
 
 /** A dialog in the page, with `inside` as its HTML, that keeps the focus in. */
 function dialogOf(inside: string) {
@@ -57,5 +57,58 @@ describe("keepFocusIn", () => {
     dialog.focus();
     expect(press("Tab")).toBe(false);
     expect(document.activeElement).toBe(dialog);
+  });
+});
+
+describe("focusBesideRail", () => {
+  /** A PR view in the page, with `panel` as its tab's HTML, and the button that opens the rail. */
+  function paneOf(panel: string, scrolls = false) {
+    const pane = document.createElement("section");
+    const attributes = scrolls ? ' tabindex="0" data-scrolls' : "";
+    pane.innerHTML = `<button data-opens-rail>Files</button><div role="tabpanel"${attributes}>${panel}</div>`;
+    document.body.append(pane);
+    return pane;
+  }
+  const focusedName = () =>
+    document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent;
+
+  it("gives the focus to the diff, or the file view over it, which leaves the diff inert", () => {
+    const diff = '<div aria-label="Diff" tabindex="0" data-scrolls></div>';
+    focusBesideRail(paneOf(diff));
+    const toDiff = focusedName();
+    document.body.innerHTML = "";
+    const covered = `<div inert>${diff}</div><div aria-label="File view" tabindex="0" data-scrolls></div>`;
+
+    focusBesideRail(paneOf(covered));
+
+    expect([toDiff, focusedName()]).toEqual(["Diff", "File view"]);
+  });
+
+  it("gives the focus to the Conversation while it scrolls beside the rail, and else to the Files button", () => {
+    const pane = paneOf("<p>The description</p>", true);
+    focusBesideRail(pane);
+    const beside = document.activeElement;
+    document.body.innerHTML = "";
+
+    focusBesideRail(paneOf("<p>The description</p>"));
+
+    expect([beside, focusedName()]).toEqual([pane.querySelector('[role="tabpanel"]'), "Files"]);
+  });
+
+  it("passes over a region of the rail's own that scrolls, as before the diff has come", () => {
+    const pane = paneOf("<p>Fetching the PR's commits…</p>");
+    pane.insertAdjacentHTML(
+      "beforeend",
+      '<aside data-rail><div tabindex="0" data-scrolls>Tree</div></aside>',
+    );
+
+    focusBesideRail(pane);
+
+    expect(focusedName()).toBe("Files");
+  });
+
+  it("does nothing without a PR view", () => {
+    focusBesideRail(undefined);
+    expect(document.activeElement).toBe(document.body);
   });
 });

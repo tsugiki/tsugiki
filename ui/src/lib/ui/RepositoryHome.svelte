@@ -28,6 +28,7 @@
     type WorkbenchRow,
     type WorkbenchView,
   } from "$lib/state/workbench.svelte";
+  import { scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { type Action, actionOn } from "$lib/state/keymap.svelte";
@@ -390,6 +391,16 @@
     runKey(null, action, e);
   }
 
+  /** Whether the Detail pane shows a PR's view, with the tabs the rail sits beside. The key and the palette
+   * command wait for it, as the PR view's button does by coming with the tabs. */
+  const showsPr = () => detail instanceof PrViewState && Boolean(detail.view);
+
+  /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). The rail hands on the
+   * focus it holds as it goes. */
+  function toggleRail() {
+    if (showsPr()) panes.toggleRail();
+  }
+
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
    * keys and commands wait until Back (#453). */
   function shownFiles(): PrFilesState | undefined {
@@ -479,6 +490,15 @@
         ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
+      ...(showsPr()
+        ? [
+            {
+              title: "View: Files in the Rail",
+              note: actionLabel("toggle_rail_files", currentOs()),
+              run: toggleRail,
+            },
+          ]
+        : []),
       ...filesCommands(),
     ];
   }
@@ -558,12 +578,11 @@
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
 
-  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, each of
-   * which scrolls by itself. */
+  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, or the
+   * Conversation beside the rail, each of which scrolls by itself. */
   function scrollDetail(step: 1 | -1) {
     const pane = detailPane();
-    // A region something covers, such as the diff under the file view, is inert and keeps still.
-    const scroller = pane?.querySelector<HTMLElement>("[data-scrolls]:not([inert] *)") ?? pane;
+    const scroller = scrollerIn(pane) ?? pane;
     scroller?.scrollBy({ top: step * LINE });
   }
 
@@ -607,6 +626,8 @@
       files?.toggleMode();
     } else if (action === "unfold_unchanged") {
       files?.unfoldUnchanged();
+    } else if (action === "toggle_rail_files") {
+      toggleRail();
     } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;
@@ -951,6 +972,7 @@
       <PrDetail
         repository={name}
         {pr}
+        {panes}
         {now}
         onback={back}
         onmark={markByButton}

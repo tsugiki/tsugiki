@@ -177,12 +177,6 @@
 </div>
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--backdrop);
-  }
-
   .palette {
     width: min(640px, calc(100vw - 32px));
     margin: 60px auto 0;

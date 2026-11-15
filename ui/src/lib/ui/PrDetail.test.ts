@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import PrDetail from "./PrDetail.svelte";
@@ -14,6 +16,7 @@ const core = vi.hoisted(() => ({
   cloning: vi.fn(),
   mirrorStates: vi.fn(),
   mirrorsHeld: vi.fn(),
+  savePaneLayout: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -28,6 +31,7 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: core.cloning,
     mirrorStates: core.mirrorStates,
     mirrorsHeld: core.mirrorsHeld,
+    savePaneLayout: core.savePaneLayout,
   },
   events: {
     changed: { listen: core.listen },
@@ -87,18 +91,19 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 /** The PR on show, which stops after each test, as its Files tab loads once it shows. */
 let onShow: PrViewState | undefined;
 
-/** Shows the PR as opened from Issue `issue`. */
+/** Shows the PR as opened from Issue `issue`, in the panes laid out as `panes` says. */
 const shown = async (
   answer: PrView | null,
   issue: number | undefined,
   onback = vi.fn(),
   onmark = vi.fn(),
+  panes = new PanesState(),
 ) => {
   core.pullRequest.mockResolvedValue({ status: "ok", data: answer });
-  const state = new PrViewState("python/cpython", 11, issue, new PanesState());
+  const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback, onmark });
+  render(PrDetail, { repository: "python/cpython", pr: state, panes, now: NOW, onback, onmark });
   return state;
 };
 
@@ -391,9 +396,17 @@ it("says why it can't show the PR", async () => {
     status: "error",
     error: { kind: "internal", message: "no database" },
   });
-  const state = new PrViewState("python/cpython", 11, 10, new PanesState());
+  const panes = new PanesState();
+  const state = new PrViewState("python/cpython", 11, 10, panes);
   await state.load();
-  render(PrDetail, { repository: "python/cpython", pr: state, now: NOW, onback: vi.fn(), onmark: vi.fn() });
+  render(PrDetail, {
+    repository: "python/cpython",
+    pr: state,
+    panes,
+    now: NOW,
+    onback: vi.fn(),
+    onmark: vi.fn(),
+  });
   state.stop();
 
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this PR: no database");
@@ -409,4 +422,316 @@ it("offers Mark Seen in its header while the PR has New activity, and Mark Unsee
   onShow?.stop();
   await shown({ ...view, seen: { ...view.seen, state: "seen" } }, 10);
   expect(screen.getByRole("button", { name: "Mark Unseen" })).toBeTruthy();
+});
+
+const rail = () => screen.queryByRole("complementary", { name: "Rail" });
+const railButton = () => screen.getByRole("button", { name: "Files in the rail" });
+
+it("opens the rail from the Files button at the right of the tabs, and closes it on a second click", async () => {
+  const panes = new PanesState();
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const before = [rail(), railButton().getAttribute("aria-pressed")];
+
+  await fireEvent.click(railButton());
+  const opened = [
+    within(rail() as HTMLElement).getByRole("heading").textContent,
+    railButton().getAttribute("aria-pressed"),
+    railButton().title,
+    panes.railOpen,
+  ];
+  await fireEvent.click(railButton());
+
+  expect(before).toEqual([null, "false"]);
+  expect(opened).toEqual(["Files", "true", "Files in the rail (Ctrl+K F)", true]);
+  expect([rail(), railButton().getAttribute("aria-pressed"), panes.railOpen]).toEqual([null, "false", false]);
+  // The button stands beside the tabs, not among them.
+  expect(within(screen.getByRole("tablist")).queryByRole("button", { name: "Files in the rail" })).toBeNull();
+});
+
+it("names the rail's key as [keys] gives it, and none while it has none", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  remapKeys({ toggle_rail_files: "ctrl+j f" });
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  const remapped = [railButton().title, close.title];
+  remapKeys({ toggle_rail_files: "" });
+  await tick();
+  const none = [railButton().title, close.title];
+  remapKeys({});
+
+  expect(remapped).toEqual(["Files in the rail (Ctrl+J F)", "Close (Ctrl+J F)"]);
+  expect(none).toEqual(["Files in the rail", "Close"]);
+});
+
+it("closes the rail on ×, and gives the focus to the Files button, as the whole pane scrolls the Conversation again", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const panel = screen.getByRole("tabpanel");
+  const beside = [panel.tabIndex, panel.hasAttribute("data-scrolls")];
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  const tooltip = close.title;
+  close.focus();
+
+  await fireEvent.click(close);
+
+  expect([beside, tooltip]).toEqual([[0, true], "Close (Ctrl+K F)"]);
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(railButton());
+  });
+  // Without the rail the whole pane scrolls, as before.
+  expect([rail(), panel.hasAttribute("tabindex"), panel.hasAttribute("data-scrolls")]).toEqual([
+    null,
+    false,
+    false,
+  ]);
+});
+
+it("lets the whole pane scroll, with no rail, for a PR without a view, though the rail is open", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(null, 10, vi.fn(), vi.fn(), panes);
+
+  const section = screen.getByRole("region", { name: "PR view" });
+  expect([rail(), section.classList.contains("railed")]).toEqual([null, false]);
+});
+
+it("leaves the focus where it went after the rail held it, as the rail closes", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  // The focus moves within the rail, then a click on a pane's background takes it to the page.
+  screen.getByRole("separator", { name: "Rail width" }).focus();
+  close.focus();
+  close.blur();
+  await Promise.resolve();
+
+  panes.toggleRail();
+  await tick();
+  await Promise.resolve();
+
+  expect([rail(), document.activeElement]).toEqual([null, document.body]);
+});
+
+it("still hands on the focus as the rail goes after another app took it from the rail", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  close.focus();
+  const away = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  close.blur();
+  await Promise.resolve();
+  away.mockRestore();
+
+  panes.toggleRail();
+  await tick();
+
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(railButton());
+  });
+});
+
+it("gives the focus to the Files button as a Conversation that held it stops scrolling beside the rail", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  close.focus();
+  // Esc hands the focus to the Conversation beside the rail.
+  await fireEvent.keyDown(close, { key: "Escape" });
+  const beside = document.activeElement === screen.getByRole("tabpanel");
+
+  panes.toggleRail();
+  await tick();
+  const closed = document.activeElement;
+  // On the Files tab, where the tab doesn't scroll, the focus on the Conversation goes the same way.
+  panes.toggleRail();
+  await tick();
+  screen.getByRole("tabpanel").focus();
+  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  await tick();
+
+  expect([beside, closed, document.activeElement]).toEqual([true, railButton(), railButton()]);
+});
+
+it("gives the focus back to the Conversation on Esc in the rail, which stays open, and goes no further", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const heard = vi.fn();
+  window.addEventListener("keydown", heard);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  close.focus();
+
+  // Another key in the rail goes on to the window.
+  await fireEvent.keyDown(close, { key: "a" });
+  await fireEvent.keyDown(close, { key: "Escape" });
+  const fromClose = document.activeElement;
+  // The edge is the rail's too.
+  const edge = screen.getByRole("separator", { name: "Rail width" });
+  edge.focus();
+  await fireEvent.keyDown(edge, { key: "Escape" });
+  window.removeEventListener("keydown", heard);
+
+  expect([fromClose, document.activeElement]).toEqual([
+    screen.getByRole("tabpanel"),
+    screen.getByRole("tabpanel"),
+  ]);
+  expect([rail() !== null, heard.mock.calls.length]).toEqual([true, 1]);
+});
+
+it("keeps the rail open, at its width, from the Conversation to the Files tab and back", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  panes.rail = 360;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const body = () => document.querySelector<HTMLElement>(".body") as HTMLElement;
+
+  await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  const onFiles = [rail() !== null, body().style.getPropertyValue("--rail-width")];
+  // The diff scrolls by itself, so the tab doesn't.
+  const panel = screen.getByRole("tabpanel");
+  const scrolls = [panel.hasAttribute("tabindex"), panel.hasAttribute("data-scrolls")];
+  await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+
+  expect([onFiles, scrolls]).toEqual([
+    [true, "360px"],
+    [false, false],
+  ]);
+  expect([rail() !== null, body().style.getPropertyValue("--rail-width")]).toEqual([true, "360px"]);
+});
+
+it("drags the rail's left edge between its least and greatest widths, saves where it stops, and resets on a double-click", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: null });
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return { width: this.matches(".rail") ? 280 : 600 } as DOMRect;
+  });
+  // jsdom has no pointer capture.
+  HTMLElement.prototype.setPointerCapture = vi.fn();
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const edge = screen.getByRole("separator", { name: "Rail width" });
+  const width = () => panes.rail;
+
+  await fireEvent.pointerDown(edge, { button: 0, clientX: 500, pointerId: 1 });
+  await fireEvent.pointerMove(edge, { clientX: 400 });
+  const dragged = [width(), edge.getAttribute("aria-valuenow"), edge.getAttribute("aria-orientation")];
+  // The Conversation keeps 240 px of its 600, which the rail can take the rest of, up to 640.
+  await fireEvent.pointerMove(edge, { clientX: -2000 });
+  const widest = width();
+  await fireEvent.pointerMove(edge, { clientX: 3000 });
+  await fireEvent.pointerUp(edge);
+  const narrowest = width();
+  // ← widens it, as it moves the edge left, and → narrows it.
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyUp(edge, { key: "ArrowLeft" });
+  const keyed = width();
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  await fireEvent.keyUp(edge, { key: "ArrowRight" });
+
+  await fireEvent.dblClick(edge);
+
+  expect([dragged, widest, narrowest, keyed]).toEqual([[380, "380", "vertical"], 640, 200, 216]);
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.rail)).toEqual([200, 216, 200, null]);
+  });
+});
+
+it("keeps the rail's width while a narrow pane squeezes it, and narrows it from that width", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: null });
+  // The rail keeps 280 px but shows 150, beside a Conversation at its least.
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return { width: this.matches(".rail") ? 150 : 240 } as DOMRect;
+  });
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const edge = screen.getByRole("separator", { name: "Rail width" });
+
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyUp(edge, { key: "ArrowLeft" });
+  const widened = panes.rail;
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  await fireEvent.keyUp(edge, { key: "ArrowRight" });
+
+  expect([widened, panes.rail]).toEqual([null, 264]);
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.rail)).toEqual([264]);
+  });
+});
+
+it("keeps the Conversation where it was read to as the rail opens and closes, though its scroller moves", async () => {
+  const panes = new PanesState();
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const section = screen.getByRole("region", { name: "PR view" });
+  const panel = screen.getByRole("tabpanel");
+  /** Lets `element` keep its scroll, which jsdom doesn't. */
+  const scrolling = (element: HTMLElement) => {
+    let top = 0;
+    Object.defineProperty(element, "scrollTop", {
+      get: () => top,
+      set: (to: number) => {
+        top = to;
+      },
+    });
+  };
+  scrolling(section);
+  scrolling(panel);
+  // The header above the tab is 100 px tall, and scrolls away with the pane.
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return { top: this === panel ? 100 - section.scrollTop : 0 } as DOMRect;
+  });
+  section.scrollTop = 400;
+
+  panes.railOpen = true;
+  await tick();
+  const opened = panel.scrollTop;
+  panel.scrollTop = 500;
+  panes.railOpen = false;
+  await tick();
+  const closed = section.scrollTop;
+  // Back at the top of the Conversation, the pane shows its header again.
+  section.scrollTop = 50;
+  panes.railOpen = true;
+  await tick();
+  const topOpened = panel.scrollTop;
+  panes.railOpen = false;
+  await tick();
+
+  expect([opened, closed, topOpened, section.scrollTop]).toEqual([300, 600, 0, 0]);
+});
+
+it("hands the focus the pane takes on to the Conversation beside the rail, which scrolls as the pane doesn't", async () => {
+  const panes = new PanesState();
+  core.pullRequest.mockResolvedValue({ status: "ok", data: view });
+  const state = new PrViewState("python/cpython", 11, 10, panes);
+  onShow = state;
+  await state.load();
+  render(PrDetail, {
+    repository: "python/cpython",
+    pr: state,
+    panes,
+    now: NOW,
+    onback: vi.fn(),
+    onmark: vi.fn(),
+    focusable: true,
+  });
+  const section = screen.getByRole("region", { name: "PR view" });
+  const panel = screen.getByRole("tabpanel");
+  section.focus();
+  const alone = document.activeElement;
+  panes.railOpen = true;
+  await tick();
+  const opened = document.activeElement;
+  // A focus inside the pane stays where it is.
+  railButton().focus();
+  const button = document.activeElement;
+
+  section.focus();
+
+  expect([alone, opened, button, document.activeElement]).toEqual([section, panel, railButton(), panel]);
 });

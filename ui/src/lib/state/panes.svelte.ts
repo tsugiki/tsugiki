@@ -1,8 +1,9 @@
 // How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list (#187), and
 // whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), the list's
-// order (#592), how many rows tall they dragged the Definition peek (#458), and how many pixels tall they
-// dragged the split one (#459). The core keeps the layout in `machine.toml`, so it stays on this machine and
-// isn't synced.
+// order (#592), how many rows tall they dragged the Definition peek (#458), how many pixels tall they
+// dragged the split one (#459), and how wide they dragged the PR view's rail (#603). The core keeps the
+// layout in `machine.toml`, so it stays on this machine and isn't synced. Whether the rail shows lasts only
+// the session.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
 import { PEEK_ROWS } from "./peek";
 
@@ -25,6 +26,12 @@ export const PEEK_MOST = 60;
 export const SPLIT_PEEK_LEAST = 160;
 /** The share of the room the split Definition peek takes until the user drags its top edge. */
 export const SPLIT_PEEK_SHARE = 0.42;
+/** The rail's width until the user drags its left edge, in CSS pixels, and its least and greatest widths. */
+export const RAIL_WIDTH = 280;
+export const RAIL_LEAST = 200;
+export const RAIL_MOST = 640;
+/** The least width the Conversation or the diff keeps beside the rail. */
+export const BESIDE_RAIL_LEAST = 240;
 
 /** The most the split Definition peek may take of `room` pixels: all but its least height, so the code above
  * it keeps that much too, and at least that height in a room too small for both. */
@@ -43,6 +50,16 @@ export class PanesState {
   peek = $state<number | null>(null);
   /** The split Definition peek's height in CSS pixels, or nothing for `SPLIT_PEEK_SHARE` of the room. */
   splitPeek = $state<number | null>(null);
+  /** The rail's width beside the PR's tabs, or nothing for its default, `RAIL_WIDTH`. */
+  rail = $state<number | null>(null);
+  /** Whether the rail shows beside the PR's tabs. It stays open from tab to tab and PR to PR, for the
+   * session, and the layout doesn't save it. */
+  railOpen = $state(false);
+
+  /** Opens the rail, or closes it: the Files button, ×, `Ctrl+K F` and its palette command. */
+  toggleRail() {
+    this.railOpen = !this.railOpen;
+  }
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });
@@ -80,13 +97,14 @@ export class PanesState {
 
   async #read() {
     try {
-      const { sidebar, list, peek, split_peek, sidebar_hidden, list_hidden, detail_only_hid, order } =
+      const { sidebar, list, peek, split_peek, rail, sidebar_hidden, list_hidden, detail_only_hid, order } =
         await commands.paneLayout();
       this.#order ??= order;
       this.sidebar ??= sidebar === null ? null : Math.min(SIDEBAR_MOST, Math.max(SIDEBAR_LEAST, sidebar));
       this.list ??= list === null ? null : Math.max(LIST_LEAST, list);
       this.peek ??= peek === null ? null : Math.min(PEEK_MOST, Math.max(PEEK_LEAST, peek));
       this.splitPeek ??= split_peek === null ? null : Math.max(SPLIT_PEEK_LEAST, split_peek);
+      this.rail ??= rail === null ? null : Math.min(RAIL_MOST, Math.max(RAIL_LEAST, rail));
       this.#hidden.sidebar ??= sidebar_hidden;
       this.#hidden.list ??= list_hidden;
       if (this.#detailOnlyHid === undefined) this.#detailOnlyHid = detail_only_hid;
@@ -157,18 +175,20 @@ export class PanesState {
     return this.save();
   }
 
-  /** Gives `pane` its default width, or the Definition peek, inline or split, its default height, again, and
-   * saves that. */
-  reset(pane: Pane | "peek" | "splitPeek"): Promise<void> {
+  /** Gives `pane` or the rail its default width, or the Definition peek, inline or split, its default height,
+   * again, and saves that. */
+  reset(pane: Pane | "rail" | "peek" | "splitPeek"): Promise<void> {
     this[pane] = null;
     return this.save();
   }
 
-  /** "Reset Layout": gives both panes their default widths and the Definition peek, inline and split, its
-   * default height, shows both panes, forgets what `Ctrl+K Z` hid, and saves that. */
+  /** "Reset Layout": gives both panes and the rail their default widths and the Definition peek, inline and
+   * split, its default height, shows both panes, forgets what `Ctrl+K Z` hid, and saves that. It leaves the
+   * rail open or closed. */
   resetLayout(): Promise<void> {
     this.sidebar = null;
     this.list = null;
+    this.rail = null;
     this.peek = null;
     this.splitPeek = null;
     this.#hidden.sidebar = false;
@@ -190,6 +210,7 @@ export class PanesState {
       list: this.list,
       peek: this.peek,
       split_peek: this.splitPeek,
+      rail: this.rail,
       sidebar_hidden: this.hidden("sidebar"),
       list_hidden: this.hidden("list"),
       detail_only_hid: this.#detailOnlyHid ?? null,

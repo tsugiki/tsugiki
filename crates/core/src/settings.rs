@@ -557,10 +557,10 @@ impl Default for Home {
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
 /// (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
 /// bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
-/// (#458), and how many pixels tall they dragged the split one (#459). All of it stays on this machine, like
-/// the window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
-/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of `machine.toml`
-/// over.
+/// (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
+/// rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
+/// default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
+/// is too small a thing to lose the rest of `machine.toml` over.
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
@@ -583,6 +583,11 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = Option<u32>)]
     pub split_peek: Option<u32>,
+    /// The width of the rail beside the PR's Conversation and Files tabs in CSS pixels, or nothing for its
+    /// 280 (#603).
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = Option<u32>)]
+    pub rail: Option<u32>,
     /// `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again.
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
@@ -1042,6 +1047,7 @@ impl SettingsFiles {
                 ("list", panes.list),
                 ("peek", panes.peek),
                 ("split_peek", panes.split_peek),
+                ("rail", panes.rail),
             ] {
                 // A reset takes the comment on its key too: kept, the key would hold the old size.
                 match size {

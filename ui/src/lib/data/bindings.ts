@@ -2402,8 +2402,8 @@ export type SearchState_Deserialize =
 { state: "waiting"; id: SearchId } | 
 /**
  *  No move has put the Repository's Lookup checkout at the query's diff: none has put it anywhere, the
- *  last one failed, a newer one took it to another diff, or the Mirror worker has stopped. So there is
- *  nothing to search.
+ *  last one failed, it went to another diff, or the Mirror worker has stopped. So there is nothing to
+ *  search.
  */
 { state: "no_checkout"; id: SearchId } | 
 /**  git couldn't list or read the PR's files, which the log says more of. */
@@ -2424,8 +2424,8 @@ export type SearchState_Serialize =
 { state: "waiting"; id: SearchId } | 
 /**
  *  No move has put the Repository's Lookup checkout at the query's diff: none has put it anywhere, the
- *  last one failed, a newer one took it to another diff, or the Mirror worker has stopped. So there is
- *  nothing to search.
+ *  last one failed, it went to another diff, or the Mirror worker has stopped. So there is nothing to
+ *  search.
  */
 { state: "no_checkout"; id: SearchId } | 
 /**  git couldn't list or read the PR's files, which the log says more of. */

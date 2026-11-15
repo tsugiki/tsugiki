@@ -8,6 +8,9 @@
 
   interface PaletteRow {
     title: string;
+    /** What the command palette's history knows the row by where its title changes with what it does, as
+     * Hide Sidebar turns into Show Sidebar: the action it runs. Without one it goes by its title. */
+    id?: string;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
     current?: boolean;
     /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match
@@ -40,9 +43,9 @@
 </script>
 
 <script lang="ts">
-  // The command palette: it lists the commands that hold what the user typed, and runs the one they pick.
-  // Each feature brings its own commands, and the ranking comes with the whole palette (docs/build-order.md).
-  // The Repository picker is the same quick pick with other words and rows.
+  // The command palette: it lists the commands that hold what the user typed, in the order it was given them,
+  // and runs the one they pick. Each feature brings its own commands, and the page puts those the user ran
+  // last first (#556). The Repository picker is the same quick pick with other words and rows.
   import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
 
@@ -50,6 +53,7 @@
     commands,
     onclose,
     oncancel = () => {},
+    onrun = () => {},
     words = COMMAND_WORDS,
     start = 0,
   }: {
@@ -57,6 +61,8 @@
     onclose: () => void;
     /** Runs before `onclose` when it closes without running a row: on Esc or a press outside it. */
     oncancel?: () => void;
+    /** Runs as a row runs, before the row does, such as the command palette's note that the user ran it. */
+    onrun?: (command: PaletteAction) => void;
     words?: PaletteWords;
     /** The row picked when it opens. Typing picks the first. */
     start?: number;
@@ -87,6 +93,7 @@
    * open runs at once. */
   function run(command: PaletteCommand) {
     if (command.disabled) return;
+    onrun(command);
     if (command.keepsOpen) {
       command.run();
       return;

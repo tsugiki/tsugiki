@@ -1471,6 +1471,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     );
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
+    let running = owner.remember_command(CommandId::new("Reset Layout"));
     let opening = owner.open_repository(repository("a/b"));
     let picking = owner.save_theme(ThemeKind::Dark, named("Gruvbox Dark Hard"));
     let rereading = owner.reread();
@@ -1483,6 +1484,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);
     assert_eq!(resizing.unwrap_err(), lost);
+    assert_eq!(running.unwrap_err(), lost);
 }
 
 #[test]
@@ -2943,4 +2945,104 @@ fn a_file_gone_from_settings_path_on_a_reload_keeps_the_last_good_values() {
     let problem = only_problem(&files);
     assert!(problem.contains("dotfiles.toml"), "{problem}");
     assert!(problem.contains("last values"), "{problem}");
+}
+
+fn commands(names: &[&str]) -> Vec<CommandId> {
+    names.iter().map(|name| CommandId::new(name)).collect()
+}
+
+#[test]
+fn a_command_run_comes_first_in_recent_commands_and_a_restart_reads_them() {
+    let (folders, _root) = temp_folders("commands");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+
+    for name in ["Reset Layout", "Pick a Theme", "Reset Layout"] {
+        drop(owner.remember_command(CommandId::new(name)).unwrap());
+    }
+    let saved = owner.view().recent_commands;
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let restarted = SettingsFiles::load(folders).view().recent_commands;
+
+    assert_eq!(
+        machine,
+        "recent_commands = [\n    \"Reset Layout\",\n    \"Pick a Theme\",\n]\n"
+    );
+    assert_eq!(saved, commands(&["Reset Layout", "Pick a Theme"]));
+    assert_eq!(restarted, saved);
+}
+
+#[test]
+fn recent_commands_pass_over_an_entry_that_isnt_text_and_keep_the_users_comments() {
+    let (folders, _root) = temp_folders("commands-hand");
+    let mine = "recent_commands = [
+    \"Pick a Theme\",
+    7,
+    # The one I want.
+    \"Open Settings\",
+]
+";
+    fs::write(folders.machine_file(), mine).unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let read = files.view().recent_commands;
+    let problems = files.loaded().problems.clone();
+
+    files
+        .remember_command(&CommandId::new("Open Settings"))
+        .unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+
+    assert_eq!(
+        (read, problems),
+        (commands(&["Pick a Theme", "Open Settings"]), Vec::new())
+    );
+    assert_eq!(
+        machine,
+        "recent_commands = [
+    # The one I want.
+    \"Open Settings\",
+    \"Pick a Theme\",
+    7,
+]
+"
+    );
+}
+
+#[test]
+fn recent_commands_that_arent_a_list_count_as_none_and_a_run_puts_a_list_in_their_place() {
+    let (folders, _root) = temp_folders("commands-not-list");
+    fs::write(
+        folders.machine_file(),
+        "# Mine.\nrecent_commands = \"Reset Layout\"\n",
+    )
+    .unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
+    let read = files.view().recent_commands;
+
+    files
+        .remember_command(&CommandId::new("Open Settings"))
+        .unwrap();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+
+    assert_eq!(read, Vec::new());
+    assert_eq!(
+        machine,
+        "# Mine.\nrecent_commands = [\n    \"Open Settings\",\n]\n"
+    );
+}
+
+#[test]
+fn recent_commands_keep_the_50_run_last() {
+    let (folders, _root) = temp_folders("commands-kept");
+    let mut files = SettingsFiles::load(folders);
+
+    for count in 0..=COMMANDS_KEPT {
+        files
+            .remember_command(&CommandId::new(&format!("Command {count}")))
+            .unwrap();
+    }
+    let kept = files.view().recent_commands;
+
+    assert_eq!(kept.len(), COMMANDS_KEPT);
+    assert_eq!(kept.first(), Some(&CommandId::new("Command 50")));
+    assert_eq!(kept.last(), Some(&CommandId::new("Command 1")));
 }

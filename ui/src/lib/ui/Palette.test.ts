@@ -300,9 +300,11 @@ it("moves no pick on an arrow while no command matches", async () => {
 
 it("shows a row that can't run greyed with its note, and Enter or a click on it does nothing", async () => {
   const onclose = vi.fn();
+  const onrun = vi.fn();
   render(Palette, {
     commands: [{ title: "Night (night.toml)", note: "it extends Dusk", disabled: true }],
     onclose,
+    onrun,
   });
   const row = screen.getByRole("option");
   expect(row.getAttribute("aria-disabled")).toBe("true");
@@ -312,6 +314,28 @@ it("shows a row that can't run greyed with its note, and Enter or a click on it 
   await fireEvent.click(row);
 
   expect(onclose).not.toHaveBeenCalled();
+  expect(onrun).not.toHaveBeenCalled();
+});
+
+it("tells of each row it runs before the row runs, one that stays open too", async () => {
+  const told: string[] = [];
+  const stays = {
+    title: "Dark themes…",
+    keepsOpen: true,
+    run: () => told.push("ran Dark themes…"),
+  };
+  const closes = { title: "Reset Layout", id: "reset", run: () => told.push("ran Reset Layout") };
+  render(Palette, {
+    commands: [stays, closes],
+    onclose: () => {},
+    onrun: (command: { title: string; id?: string }) => told.push(`told ${command.id ?? command.title}`),
+  });
+
+  await fireEvent.click(screen.getByRole("option", { name: "Dark themes…" }));
+  await fireEvent.click(screen.getByRole("option", { name: "Reset Layout" }));
+  await tick();
+
+  expect(told).toEqual(["told Dark themes…", "ran Dark themes…", "told reset", "ran Reset Layout"]);
 });
 
 it("leaves other keys to the text box", async () => {

@@ -111,6 +111,11 @@ export const commands = {
 	 *  whether the Sidebar (#234) and the list (#242) show.
 	 */
 	paneLayout: () => __TAURI_INVOKE<PaneLayout_Serialize>("pane_layout"),
+	/**
+	 *  The command palette's commands the user ran on this machine, most recently run first, which the palette
+	 *  lists first (#556).
+	 */
+	recentCommands: () => __TAURI_INVOKE<CommandId[]>("recent_commands"),
 	/**  The milliseconds since Tsugiki started running. */
 	timeRunning: () => __TAURI_INVOKE<number | null>("time_running"),
 	/**  Writes what the performance HUD measured to `tsugiki.log`, and says the summary line it wrote. */
@@ -139,6 +144,12 @@ export const commands = {
 	 *  waits on a small file.
 	 */
 	savePaneLayout: (layout: PaneLayout_Deserialize) => typedError<PaneLayout_Serialize, Error_Serialize>(__TAURI_INVOKE("save_pane_layout", { layout })),
+	/**
+	 *  Notes in `machine.toml` that the user ran `command` from the command palette, so the palette lists it
+	 *  first, and says the palette's recent commands now, most recently run first (#556). This waits on a small
+	 *  file.
+	 */
+	rememberCommand: (command: CommandId) => typedError<CommandId[], Error_Serialize>(__TAURI_INVOKE("remember_command", { command })),
 	/**
 	 *  Saves the theme the picker chose for side `kind` to `light_theme` or `dark_theme` in `settings.toml`,
 	 *  without Settings' Apply (#518). The window shows it already. It may be a file of the `themes` folder
@@ -482,6 +493,12 @@ export type CodeFile =
  *  a missing newline at the end.
  */
 export type CodeRow = { kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | { kind: "note"; text: string };
+
+/**
+ *  A command of the command palette, by the id the window gives it. The window names its commands, so the
+ *  core keeps the id as it comes and checks nothing in it.
+ */
+export type CommandId = string;
 
 /**  What a comment says and who wrote it when, on an Issue, in a PR's Conversation or in a review thread. */
 export type Comment = Comment_Serialize | Comment_Deserialize;

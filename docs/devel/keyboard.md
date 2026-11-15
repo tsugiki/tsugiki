@@ -54,6 +54,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   `Ctrl+K Ctrl+J` unfolds all its regions.
 - The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys
   available in the current view.
+- The command palette lists the commands the user ran at the top, newest first, then those never run, in
+  their usual order. Typing filters the list by substring and keeps that order. `machine.toml` keeps the last 50
+  commands run, newest first, in `recent_commands` beside the recent Repositories, so the order survives a
+  restart and stays on its machine. A command whose title flips, such as Hide Sidebar and Show Sidebar, keeps
+  one place under both titles. The Repository picker keeps its own order.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable
   config file.

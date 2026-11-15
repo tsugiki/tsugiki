@@ -40,7 +40,7 @@ use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
-    Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
+    CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
@@ -383,6 +383,14 @@ fn token_source() -> TokenSource {
 #[specta::specta]
 fn pane_layout(owner: State<'_, SettingsOwner>) -> PaneLayout {
     owner.view().panes
+}
+
+/// The command palette's commands the user ran on this machine, most recently run first, which the palette
+/// lists first (#556).
+#[tauri::command]
+#[specta::specta]
+fn recent_commands(owner: State<'_, SettingsOwner>) -> Vec<CommandId> {
+    owner.view().recent_commands
 }
 
 /// The moment Tsugiki's code started running, for the performance HUD's start-up time (ADR 0017). The
@@ -970,6 +978,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             home,
             token_source,
             pane_layout,
+            recent_commands,
             time_running,
             record_measurement,
             record_miss,
@@ -978,6 +987,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::add_repository,
             slow_commands::open_repository,
             slow_commands::save_pane_layout,
+            slow_commands::remember_command,
             slow_commands::save_theme,
             slow_commands::reread_settings,
             slow_commands::apply_settings,

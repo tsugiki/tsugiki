@@ -37,6 +37,9 @@ const RECENT: &str = "recent";
 /// The keys of an entry in `recent`.
 const NAME: &str = "name";
 const OPENED_AT: &str = "opened_at";
+const RECENT_COMMANDS: &str = "recent_commands";
+/// How many commands `recent_commands` keeps, as VS Code's palette keeps 50 by default.
+const COMMANDS_KEPT: usize = 50;
 const LAST_REPOSITORY: &str = "last_repository";
 const PANES: &str = "panes";
 const APPEARANCE: &str = "appearance";
@@ -482,6 +485,24 @@ pub struct SettingsView {
     /// status bar to name when no theme has the name it gives (#755).
     pub theme_place: String,
     pub language_servers: LanguageServers,
+    /// The command palette's commands the user ran on this machine, most recently run first (#556).
+    pub recent_commands: Vec<CommandId>,
+}
+
+/// A command of the command palette, by the id the window gives it. The window names its commands, so the
+/// core keeps the id as it comes and checks nothing in it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct CommandId(String);
+
+impl CommandId {
+    pub fn new(id: &str) -> Self {
+        Self(id.to_owned())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Where the language servers the user supplies are on this machine (ADR 0020), each from its
@@ -692,6 +713,17 @@ fn recent_or_skip<'de, D: Deserializer<'de>>(
     }))
 }
 
+/// The commands in `recent_commands`, leaving out an entry that isn't text, for the reason `sources_or_skip`
+/// gives. A `recent_commands` that isn't a list counts as none.
+fn commands_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<Vec<CommandId>, D::Error> {
+    let entries = Read::<Vec<Read<CommandId>>>::deserialize(given)?.given();
+    Ok(entries
+        .into_iter()
+        .flatten()
+        .filter_map(Read::given)
+        .collect())
+}
+
 /// Each Repository's answer of where its mirror gets its objects, leaving out an entry Tsugiki can't read:
 /// one answer is too small a thing to lose the rest of `machine.toml` over. Its Repository asks again.
 fn sources_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<MirrorSources, D::Error> {
@@ -713,6 +745,8 @@ struct MachineFile {
     /// The Repository to reopen, as 0.2.0 kept it. It counts while the file has no `recent`, and the next
     /// write of `machine.toml` puts `recent` in its place.
     last_repository: Option<RepositoryName>,
+    #[serde(deserialize_with = "commands_or_skip")]
+    recent_commands: Vec<CommandId>,
     panes: PaneLayout,
     #[serde(deserialize_with = "sources_or_skip")]
     mirrors: MirrorSources,
@@ -764,6 +798,8 @@ struct Machine {
     /// The Repositories opened most recently on this machine, newest first. They stay on this machine and
     /// are read with the settings, so a normal launch knows what to reopen before the window exists.
     recent: Vec<RepositoryName>,
+    /// The command palette's commands run on this machine, most recently run first.
+    recent_commands: Vec<CommandId>,
     panes: PaneLayout,
     mirrors: MirrorSources,
     /// Each language server's path as the file gives it, which may be relative.
@@ -777,6 +813,7 @@ impl From<MachineFile> for Machine {
             recent: file
                 .recent
                 .unwrap_or_else(|| file.last_repository.into_iter().collect()),
+            recent_commands: file.recent_commands,
             panes: file.panes,
             mirrors: file.mirrors,
             servers: file.language_servers,
@@ -839,6 +876,10 @@ impl SettingsFiles {
                     idle: minutes(given.idle_minutes),
                 }
             },
+            recent_commands: self
+                .machine
+                .as_ref()
+                .map_or_else(Vec::new, |machine| machine.recent_commands.clone()),
         }
     }
 
@@ -1085,6 +1126,17 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Puts `command` at the head of `recent_commands` in `machine.toml`, keeping everything else in it, and
+    /// reads the files again. It refuses while `machine.toml` can't be used.
+    pub fn remember_command(&mut self, command: &CommandId) -> Result<(), Error> {
+        let path = self.folders.machine_file();
+        let mut edit = TomlEdit::open_machine(&path)?;
+        put_first_in_recent_commands(edit.document.as_table_mut(), command);
+        edit.save()?;
+        self.reload();
+        Ok(())
+    }
+
     /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
     /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
     /// say now and refuses while either can't be used.
@@ -1161,6 +1213,10 @@ enum Request {
         layout: PaneLayout,
         reply: Sender<Result<SettingsView, Error>>,
     },
+    Command {
+        command: CommandId,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
     Theme {
         kind: ThemeKind,
         name: ThemeName,
@@ -1218,6 +1274,10 @@ impl SettingsOwner {
                     (Ok(files), Request::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
+                    (Ok(files), Request::Command { command, reply }) => {
+                        let saved = files.remember_command(&command);
+                        (saved.map(|()| files.view()), reply)
+                    }
                     (Ok(files), Request::Theme { kind, name, reply }) => {
                         (files.save_theme(kind, &name).map(|()| files.view()), reply)
                     }
@@ -1237,6 +1297,7 @@ impl SettingsOwner {
                         Request::Add { reply, .. }
                         | Request::MirrorSource { reply, .. }
                         | Request::Panes { reply, .. }
+                        | Request::Command { reply, .. }
                         | Request::Theme { reply, .. }
                         | Request::Open { reply, .. }
                         | Request::Reread { reply }
@@ -1309,6 +1370,13 @@ impl SettingsOwner {
     pub fn save_panes(&self, layout: PaneLayout) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(Request::Panes { layout, reply }, &answer)
+    }
+
+    /// Puts `command` at the head of the palette's recent commands in `machine.toml`, and answers with what
+    /// the settings say now.
+    pub fn remember_command(&self, command: CommandId) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(Request::Command { command, reply }, &answer)
     }
 
     /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
@@ -1528,6 +1596,35 @@ fn put_first_in_recent(file: &mut Table, name: &RepositoryName, opened_at: Offse
     recent.insert_formatted(0, head);
     one_per_line(&mut recent);
     merge_value(file, RECENT, &Item::Value(Value::Array(recent)), None);
+}
+
+/// Puts `command` at the head of `file`'s `recent_commands`, with the comments the user wrote on its entry,
+/// and takes that entry out. Past `COMMANDS_KEPT` the oldest go. A `recent_commands` that isn't a list gives
+/// the list its place and its comments.
+fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) {
+    let mut commands = file
+        .get(RECENT_COMMANDS)
+        .and_then(Item::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut head = Value::from(command.as_str());
+    let held = commands
+        .iter()
+        .position(|entry| entry.as_str() == Some(command.as_str()));
+    if let Some(index) = held {
+        *head.decor_mut() = commands.remove(index).decor().clone();
+    }
+    commands.insert_formatted(0, head);
+    while commands.len() > COMMANDS_KEPT {
+        drop(commands.remove(COMMANDS_KEPT));
+    }
+    one_per_line(&mut commands);
+    merge_value(
+        file,
+        RECENT_COMMANDS,
+        &Item::Value(Value::Array(commands)),
+        None,
+    );
 }
 
 /// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.

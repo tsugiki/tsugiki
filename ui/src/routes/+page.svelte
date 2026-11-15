@@ -4,6 +4,7 @@
   import { HomeState } from "$lib/state/home.svelte";
   import { type Action, startsChordOf } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
+  import { RecentCommands } from "$lib/state/recent-commands.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
   import { SettingsState } from "$lib/state/settings.svelte";
@@ -46,6 +47,8 @@
   void settings.load();
   const home = new HomeState();
   void home.load();
+  const recentCommands = new RecentCommands();
+  void recentCommands.load();
   // WKWebView has no PerformanceObserver for keys and long frames, and the miss log asks before it listens.
   hud.watchBrowser(globalThis.PerformanceObserver);
 
@@ -196,21 +199,25 @@
   });
   /** The open Repository's screen, which adds its own commands to the palette. */
   let repositoryHome = $state<ReturnType<typeof RepositoryHome>>();
-  const commands: PaletteCommand[] = $derived([
-    ...(repositoryHome?.paletteCommands() ?? []),
-    ...switchRows("Repository: "),
-    { title: "Open Settings", run: openSettings },
-    { title: "Pick a Theme", run: openThemePicker },
-    { title: "Reload Themes", run: reloadThemes },
-    {
-      title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
-      run: () => {
-        hud.toggle();
+  /** The palette's commands: those the user ran, most recently run first, then the others in this order. */
+  const commands: PaletteCommand[] = $derived(
+    recentCommands.order<PaletteCommand>([
+      ...(repositoryHome?.paletteCommands() ?? []),
+      ...switchRows("Repository: "),
+      { title: "Open Settings", run: openSettings },
+      { title: "Pick a Theme", run: openThemePicker },
+      { title: "Reload Themes", run: reloadThemes },
+      {
+        title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
+        id: "toggle_hud",
+        run: () => {
+          hud.toggle();
+        },
       },
-    },
-    // The core says which build it is, so a development UI over a release core lists nothing that fails.
-    ...(about.about?.build === "development" ? [{ title: "Open DevTools", run: openDevtools }] : []),
-  ]);
+      // The core says which build it is, so a development UI over a release core lists nothing that fails.
+      ...(about.about?.build === "development" ? [{ title: "Open DevTools", run: openDevtools }] : []),
+    ]),
+  );
 </script>
 
 <svelte:window onkeydowncapture={readKey} onpointerdowncapture={endChord} onblur={endChord} />
@@ -249,6 +256,7 @@
     ...theme.problems,
     ...(theme.problem === undefined ? [] : [theme.problem]),
     ...(theme.turnProblem === undefined ? [] : [theme.turnProblem]),
+    ...(recentCommands.problem === undefined ? [] : [recentCommands.problem]),
   ]}
   {lastSync}
   syncActivity={status.syncActivity}
@@ -292,6 +300,7 @@
 {#if paletteOpen}
   <Palette
     {commands}
+    onrun={(command) => void recentCommands.ran(command)}
     onclose={() => {
       paletteOpen = false;
     }}

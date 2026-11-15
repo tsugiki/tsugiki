@@ -184,6 +184,12 @@ export class WorkbenchState {
     return this.#lines(() => true).some((line) => sameStop(line.stop, stop));
   }
 
+  /** The first line the list has for the Issue or PR `number`, under a folded Issue or in the quiet section
+   * too, or else a line of its own, as for an item the view on show leaves out. */
+  stopFor(number: number, kind: Stop["kind"]): Stop {
+    return this.#allStops().find((stop) => stop.number === number) ?? { number, kind, issue: undefined };
+  }
+
   /** Whether the list shows Issue `issue`'s PRs under it in the view on show. Each Issue starts folded, and
    * each view keeps its own while the Repository stays open (#593). */
   unfolded(issue: number): boolean {

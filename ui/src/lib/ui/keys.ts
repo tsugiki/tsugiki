@@ -32,6 +32,7 @@ export function chordName(first: string, second: string): string {
  * Alt, which AltGr sends on Windows to type: Unified or Side by Side is one, on Ctrl+Alt+U. */
 const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "command_palette",
+  "quick_open",
   "switch_repository",
   "open_settings",
   "toggle_hud",

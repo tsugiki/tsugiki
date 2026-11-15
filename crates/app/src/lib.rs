@@ -44,13 +44,14 @@ use tsugiki_core::settings::{
     CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
-use tsugiki_core::store::StoreReader;
+use tsugiki_core::store::{StoreReader, TitledItem};
 use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, LineInDiff, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
+use tsugiki_core::workbench::quick_open;
 use tsugiki_core::workbench::{SeenMark, Workbench, WorkbenchView};
 
 #[tauri::command]
@@ -553,6 +554,14 @@ fn read_pull_request(
     let name = RepositoryName::parse(repository)?;
     let repository = owner.view().loaded.settings.repository(name);
     PrView::read(reader, &repository, number)
+}
+
+fn find_items(
+    repository: &str,
+    typed: &str,
+    reader: &StoreReader,
+) -> Result<Vec<TitledItem>, Error> {
+    quick_open::find(reader, &RepositoryName::parse(repository)?, typed)
 }
 
 /// What the Files tab reads besides the database: where the mirrors are, the diff on show, the mirrors'
@@ -1062,6 +1071,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_lines,
             slow_commands::pull_request_find,
             slow_commands::pull_request_row,
+            slow_commands::quick_open,
             slow_commands::definitions,
             cancel_definitions,
             language_servers,

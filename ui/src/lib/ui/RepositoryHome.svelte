@@ -211,22 +211,25 @@
    * The history can go through to a file view too (#456): it shows its PR, on the Files tab, with the view
    * over it, which takes the focus, and the cursor goes to the PR's row. Any other place shows its PR with no
    * file view, and so does a click on the row of the PR on show, which the history records as the PR's line.
+   *
+   * A `"pick"` from quick open opens as a click does, except that the cursor takes the focus, as the palette
+   * has just handed it back, and the PR on show stays on its tab.
    */
-  function open(place: HistoryPlace, how: "open" | "back" | "through" = "open") {
+  function open(place: HistoryPlace, how: "open" | "back" | "through" | "pick" = "open") {
     const stop = lineOf(place);
     const fileView = place.kind === "file" ? place.view : undefined;
     if (how !== "through") visits.visit(place);
     workbench.moveTo(stop);
     if (how !== "open" && fileView === undefined) focusCursor();
     if (stop.kind === "pull_request" && detail instanceof PrViewState && sameStop(detail.line, stop)) {
-      if (how !== "through") detail.switchTab();
+      if (how === "open") detail.switchTab();
       showFileView(detail, fileView);
       return;
     }
     if (stop.kind === "issue" && kept?.number === stop.number) {
       const resumed = kept;
       swap(resumed);
-      if (how !== "open") {
+      if (how === "back" || how === "through") {
         resumed.show();
         return;
       }
@@ -261,6 +264,15 @@
     swap(next);
     void next.load();
     if (next instanceof PrViewState) showFileView(next, fileView);
+  }
+
+  /** Opens the Issue or PR `number` that quick open found (#557), on its line in the list if the list has
+   * one, and moves the focus with the cursor, as going back does. An item the view on show leaves out has
+   * no line to take the focus, which stays where it was, as when the history goes to such an item. */
+  export function openFound(kind: Stop["kind"], number: number): void {
+    // The PR on show keeps the line it opened from, so the pick finds it on show.
+    const onShow = detail instanceof PrViewState && detail.number === number ? detail.line : undefined;
+    open(onShow ?? workbench.stopFor(number, kind), "pick");
   }
 
   /** Puts `next` in the Detail pane. The Issue view a PR in its tree came from stays, hidden, while that PR

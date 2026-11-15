@@ -28,6 +28,12 @@ const core = vi.hoisted(() => ({
   applySettings: vi.fn(),
   recentCommands: vi.fn(),
   rememberCommand: vi.fn(),
+  quickOpen: vi.fn(),
+  // The HUD logs a slow opening of an Issue whether or not it shows.
+  recordMiss: vi.fn(() => Promise.resolve("a miss")),
+  issue: vi.fn(),
+  openIssue: vi.fn(),
+  fetchIssue: vi.fn(),
 }));
 
 /** What `settings.toml` says unless a test says otherwise: the defaults. */
@@ -150,6 +156,7 @@ beforeEach(() => {
   });
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.recentCommands.mockResolvedValue([]);
+  core.quickOpen.mockResolvedValue({ status: "ok", data: [] });
   // The core answers with the list it keeps, the command run first.
   let kept: string[] = [];
   core.rememberCommand.mockImplementation(async (id: string) => {
@@ -563,6 +570,105 @@ const pepsHome = { screen: "repository", repository: peps, others: [gcmon.name] 
 const spaced = (option: HTMLElement) => option.textContent.replace(/\s/g, " ");
 const options = () => screen.getAllByRole("option").map(spaced);
 
+describe("quick open", () => {
+  const ctrlP = () => fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+  const quickOpen = () => screen.queryByRole("dialog", { name: "Quick open" });
+  const box = () => screen.getByRole("combobox");
+  const found = [
+    { kind: "issue", number: 7, title: "It crashes", state: "OPEN" },
+    { kind: "pull_request", number: 70, title: "gh-7: Fix the crash", state: "OPEN", is_draft: true },
+    { kind: "issue", number: 700, title: "It crashed long ago", state: null },
+  ];
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(gcmonHome);
+    core.workbench.mockResolvedValue(oneIssue);
+    core.quickOpen.mockResolvedValue({ status: "ok", data: found });
+    core.openIssue.mockResolvedValue({ status: "ok", data: null });
+    core.issue.mockResolvedValue({ status: "ok", data: null });
+  });
+
+  it("opens on Ctrl+P with nothing typed, and lists what the core finds in the open Repository", async () => {
+    render(Page);
+    await screen.findByRole("button", { name: "#7 It crashes" });
+
+    await ctrlP();
+    await screen.findByRole("option", { name: /^#7 / });
+
+    expect(core.quickOpen).toHaveBeenCalledWith("some-maintainer/gcmon", "");
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "#7 It crashes · Open issue",
+      "#70 gh-7: Fix the crash · Draft PR",
+      "#700 It crashed long ago · Issue",
+    ]);
+    expect((box() as HTMLInputElement).value).toBe("");
+  });
+
+  it("opens the item typed on Enter, and keeps it out of the palette's history", async () => {
+    render(Page);
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+    await ctrlP();
+    await fireEvent.input(box(), { target: { value: "#7" } });
+    await vi.waitFor(() => {
+      expect(core.quickOpen).toHaveBeenLastCalledWith("some-maintainer/gcmon", "#7");
+    });
+
+    await fireEvent.keyDown(box(), { key: "Enter" });
+
+    await vi.waitFor(() => {
+      expect(core.openIssue).toHaveBeenCalledWith("some-maintainer/gcmon", 7);
+    });
+    expect(quickOpen()).toBeNull();
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(row);
+    });
+    expect(core.rememberCommand).not.toHaveBeenCalled();
+  });
+
+  it("switches to the commands on `>`, and Ctrl+Shift+P opens with `>` typed", async () => {
+    render(Page);
+    await screen.findByRole("button", { name: "#7 It crashes" });
+    await ctrlP();
+    await fireEvent.input(box(), { target: { value: ">settings" } });
+    const commands = screen.getAllByRole("option").map((option) => option.textContent);
+    await fireEvent.keyDown(window, { key: "Escape" });
+
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+
+    expect(commands).toEqual(["Open Settings"]);
+    expect((box() as HTMLInputElement).value).toBe(">");
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeTruthy();
+  });
+
+  it("says why the core couldn't search", async () => {
+    core.quickOpen.mockResolvedValue({ status: "error", error: { kind: "internal", message: "gone" } });
+    render(Page);
+    await screen.findByRole("button", { name: "#7 It crashes" });
+
+    await ctrlP();
+
+    const dialog = await screen.findByRole("dialog", { name: "Quick open" });
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(
+      "Tsugiki can't search the Issues and PRs: gone",
+    );
+  });
+
+  it("does nothing on onboarding, which has no Repository to search, whose palette has no `>`", async () => {
+    core.home.mockResolvedValue(onboarding);
+    render(Page);
+    await screen.findByText(/Your token comes from/);
+
+    await ctrlP();
+    const opened = screen.queryByRole("dialog");
+    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+
+    expect(opened).toBeNull();
+    expect((box() as HTMLInputElement).value).toBe("");
+    expect(core.quickOpen).not.toHaveBeenCalled();
+  });
+});
+
 describe("a switch from the palette", () => {
   const palette = async () => {
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
@@ -647,7 +753,7 @@ describe("the palette's order", () => {
 
     await palette();
     const after = titles();
-    await fireEvent.input(screen.getByRole("combobox", { name: "Command" }), { target: { value: "re" } });
+    await fireEvent.input(screen.getByRole("combobox", { name: "Command" }), { target: { value: ">re" } });
 
     expect(before.slice(0, 2)).toEqual(["Hide Sidebar", "Hide Issue List"]);
     expect(after.slice(0, 3)).toEqual(["Reset Layout", "Reload Themes", "Hide Sidebar"]);

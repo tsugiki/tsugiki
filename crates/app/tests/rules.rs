@@ -149,7 +149,11 @@ fn tables_naming<'a>(manifest: &'a str, package: &str) -> Vec<&'a str> {
 
 #[test]
 fn only_tests_depend_on_the_git_test_helpers() {
-    for manifest in ["crates/core/Cargo.toml", "crates/app/Cargo.toml"] {
+    for manifest in [
+        "crates/core/Cargo.toml",
+        "crates/app/Cargo.toml",
+        "crates/lsp/Cargo.toml",
+    ] {
         assert_eq!(
             tables_naming(&read(manifest), "tsugiki-test-git"),
             ["[dev-dependencies]"],

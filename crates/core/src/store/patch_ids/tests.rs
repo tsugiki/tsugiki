@@ -1,6 +1,3 @@
-use std::fs;
-use std::path::PathBuf;
-
 use time::OffsetDateTime;
 
 use super::*;
@@ -11,6 +8,7 @@ use crate::login::Login;
 use crate::patch_ids::PatchId;
 use crate::store::Store;
 use crate::store::testing::temp_database;
+use crate::testing::TempPath;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -90,7 +88,7 @@ fn reviewed_at(commit: &CommitSha) -> PullRequestContent {
 }
 
 /// A store with the user signed in, and PR 1 reviewed at commit 1 and now at commit 2.
-fn store(name: &str) -> (Store, PathBuf) {
+fn store(name: &str) -> (Store, TempPath) {
     let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     store.remember_login(&me()).unwrap();
@@ -103,9 +101,10 @@ fn store(name: &str) -> (Store, PathBuf) {
     (store, folder)
 }
 
-fn finish(store: Store, folder: PathBuf) {
+/// Closes the database, then drops its folder.
+fn finish(store: Store, folder: TempPath) {
     store.close();
-    fs::remove_dir_all(folder).unwrap();
+    drop(folder);
 }
 
 #[test]

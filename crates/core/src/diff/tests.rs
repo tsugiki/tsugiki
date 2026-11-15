@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use tsugiki_test_git::git;
 
 use super::*;
+use crate::testing::TempPath;
 
 fn sha(text: &str) -> CommitSha {
     CommitSha::parse(text.trim()).unwrap()
@@ -22,9 +23,9 @@ fn assigned(lines: std::ops::RangeInclusive<u32>) -> String {
 /// A mirror with a branch `main`, and a PR branch `pr` started from main's first commit. main has moved on
 /// since, in a file the PR doesn't touch.
 pub(crate) struct Mirrored {
-    root: PathBuf,
     pub(crate) mirror: PathBuf,
     pub(crate) head: CommitSha,
+    root: TempPath,
 }
 
 /// A NEWS entry main has before the PR starts, which a PR can delete.
@@ -90,7 +91,7 @@ impl Mirrored {
             ],
         );
         let head = sha(&git(&mirror, &["rev-parse", "refs/heads/pr"]));
-        Self { root, mirror, head }
+        Self { mirror, head, root }
     }
 
     /// Its diff, read from where it was made.
@@ -101,10 +102,6 @@ impl Mirrored {
     /// Its diff and the merge base it starts from.
     pub(crate) fn read(&self) -> MirrorDiff {
         read(&self.mirror, "main", &Start::TargetBranch, &self.head).unwrap()
-    }
-
-    pub(crate) fn finish(self) {
-        fs::remove_dir_all(self.root).unwrap();
     }
 }
 
@@ -149,7 +146,6 @@ fn a_prs_diff_runs_from_the_merge_base_to_its_head_file_by_file() {
         diff.files().iter().all(|file| file.path != "README.rst"),
         "main's later commit isn't the PR's"
     );
-    mirrored.finish();
 }
 
 #[test]
@@ -163,7 +159,6 @@ fn a_mirror_holds_a_diff_only_with_both_the_head_and_the_target_branch() {
         Held::NoTarget
     );
     assert_eq!(held(&mirrored.mirror, "main", &elsewhere), Held::NoHead);
-    mirrored.finish();
 }
 
 #[test]
@@ -183,7 +178,6 @@ fn a_diff_git_cant_read_says_so_in_plain_words() {
         problem.message,
         "Tsugiki couldn't read this PR's diff from its mirror."
     );
-    mirrored.finish();
 }
 
 #[test]
@@ -196,7 +190,6 @@ fn rows_asked_for_past_the_end_stop_there() {
     assert_eq!(diff.rows(rows + 512..rows + 1024), []);
     let (late, early) = (5, 2);
     assert_eq!(diff.rows(late..early), []);
-    mirrored.finish();
 }
 
 #[test]
@@ -238,7 +231,6 @@ fn the_diff_on_show_answers_each_chunk_and_another_head_is_read_again() {
     assert_eq!(other.pr.head, moved.head);
     let no = || Err(Error::new(ErrorKind::Internal, "no"));
     assert!(diffs.get_or_read(&other_pr, main, no).is_err());
-    mirrored.finish();
 }
 
 #[test]
@@ -271,7 +263,6 @@ fn a_diff_against_another_branch_or_from_another_base_is_read_again() {
     assert!(diffs.shown(&pr, elsewhere).is_some());
     // Its base may not be main's, so it can't answer for main.
     assert!(diffs.shown(&pr, main).is_none());
-    mirrored.finish();
 }
 
 #[test]
@@ -302,7 +293,6 @@ fn a_diff_from_a_base_reads_from_that_base_whatever_the_branch_says() {
     assert_eq!(again.diff.rows(0..100), first.diff.rows(0..100));
     assert_eq!(retargeted.base, mirrored.head);
     assert_eq!(retargeted.diff.row_count(), 0);
-    mirrored.finish();
 }
 
 #[test]
@@ -318,7 +308,6 @@ fn a_base_the_mirror_lacks_cant_be_read() {
     );
 
     assert_eq!(problem.unwrap_err().kind, ErrorKind::Internal);
-    mirrored.finish();
 }
 
 #[test]
@@ -485,7 +474,6 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
     insta::assert_snapshot!(drawn.join("\n"));
     assert_eq!(chunk, spans.get(3..9).unwrap());
     assert!(unreadable.iter().all(Vec::is_empty));
-    mirrored.finish();
 }
 
 #[test]
@@ -512,7 +500,6 @@ fn only_the_target_branch_s_attributes_count_and_an_index_a_run_left_goes() {
             .into_iter()
             .all(|entry| !entry.file_name().to_string_lossy().starts_with(INDEX))
     );
-    mirrored.finish();
 }
 
 #[test]
@@ -525,7 +512,6 @@ fn a_left_index_the_sweep_cant_remove_stays_and_the_diff_still_reads() {
 
     assert!(diff.files().iter().any(|file| file.generated));
     assert!(stuck.is_dir());
-    mirrored.finish();
 }
 
 #[test]
@@ -537,7 +523,6 @@ fn attributes_git_cant_read_mark_nothing_generated() {
     diff.mark_generated(made.map(|()| vec![true; 7]), &mirrored.mirror);
 
     assert!(diff.files().iter().all(|file| !file.generated));
-    mirrored.finish();
 }
 
 #[test]
@@ -555,7 +540,6 @@ fn a_prs_news_entries_come_rendered_from_its_head() {
         read.news,
         [NewsEntry::render(entry, "Fix :func:`ast.parse`.\n")]
     );
-    mirrored.finish();
 }
 
 #[test]
@@ -563,5 +547,4 @@ fn a_pr_without_news_entries_has_none() {
     let mirrored = Mirrored::new("no-news");
 
     assert!(mirrored.read().news.is_empty());
-    mirrored.finish();
 }

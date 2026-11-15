@@ -34,7 +34,7 @@ fn content(body_html: &str, comments: Vec<IssueComment>) -> IssueContent {
 
 #[test]
 fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
-    let (path, folder) = temp_database("issue-content");
+    let (path, _folder) = temp_database("issue-content");
     let store = Store::open(&path).unwrap();
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
@@ -71,5 +71,4 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
     assert_eq!(read(3), None);
     open.close();
     store.close();
-    std::fs::remove_dir_all(folder).unwrap();
 }

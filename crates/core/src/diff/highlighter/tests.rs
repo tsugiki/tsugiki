@@ -7,6 +7,7 @@ use super::*;
 use crate::diff::{Diff, PrAt, Start, read};
 use crate::github::CommitSha;
 use crate::repository::RepositoryName;
+use crate::testing::TempPath;
 
 #[test]
 fn lines_close_together_are_read_in_one_run_and_distant_hunks_apart() {
@@ -19,9 +20,9 @@ fn lines_close_together_are_read_in_one_run_and_distant_hunks_apart() {
 /// A mirror whose branch `main` has the files `base`, and whose PR branch changes them to `head`. A file
 /// with no text in `head` is deleted.
 struct Repo {
-    root: PathBuf,
     mirror: PathBuf,
     head: CommitSha,
+    root: TempPath,
 }
 
 impl Repo {
@@ -51,7 +52,7 @@ impl Repo {
         let _ = git(&root, &["clone", "-q", "--bare", &from, &to]);
         let head = git(&mirror, &["rev-parse", "refs/heads/pr"]);
         let head = CommitSha::parse(head.trim()).unwrap();
-        Self { root, mirror, head }
+        Self { mirror, head, root }
     }
 
     /// The diff of PR `number`, whose head is the PR branch.
@@ -68,10 +69,6 @@ impl Repo {
             diff: Arc::new(diff),
             mirror: self.mirror.clone(),
         }
-    }
-
-    fn finish(self) {
-        fs::remove_dir_all(self.root).unwrap();
     }
 }
 
@@ -182,7 +179,6 @@ fn a_chunk_s_versions_are_parsed_first_and_the_rest_between_chunks_in_order() {
     assert!(parsed);
     assert_eq!(then, ALL);
     assert!(!worker.parse_ahead(&incoming, &mut waiting));
-    repo.finish();
 }
 
 #[test]
@@ -200,7 +196,6 @@ fn news_entries_are_parsed_ahead_first_then_the_files_in_the_diff_s_order() {
 
     // Doc/notes.txt comes first, but Tsugiki doesn't highlight it.
     assert_eq!(ahead, [(2, Side::Head), (1, Side::Base), (1, Side::Head)]);
-    repo.finish();
 }
 
 #[test]
@@ -244,7 +239,6 @@ fn generated_files_are_parsed_only_when_a_chunk_asks_for_them() {
 
     assert_eq!(ahead, [(0, Side::Base), (0, Side::Head)]);
     assert_eq!(shelved(&shelf, &diff, &generated), generated);
-    repo.finish();
 }
 
 #[test]
@@ -280,7 +274,6 @@ fn a_collapsed_file_s_rows_get_no_spans_until_the_window_opens_it() {
     assert_eq!(painted(&generated), [code, [false; 4]].concat());
     assert_eq!(painted(&opened), [code, code].concat());
     assert_eq!(painted(&other), [[false; 4], code].concat());
-    repo.finish();
 }
 
 #[test]
@@ -305,7 +298,6 @@ fn a_chunk_that_asks_stops_the_parse_ahead_which_takes_it_up_again_after() {
     assert_eq!(asked, 1);
     assert_eq!(asked_for, [LONG_HEAD]);
     assert_eq!(shelved(&shelf, &diff, &both), both);
-    repo.finish();
 }
 
 #[test]
@@ -322,7 +314,6 @@ fn a_chunk_that_asks_for_the_version_under_way_lets_its_parse_finish() {
     // The head comes next, which the chunk doesn't ask for, so the chunk goes first.
     assert_eq!(shelved(&shelf, &diff, &[LONG_BASE, LONG_HEAD]), [LONG_BASE]);
     assert_eq!(waiting.len(), 1);
-    repo.finish();
 }
 
 #[test]
@@ -338,7 +329,6 @@ fn only_a_chunk_that_waits_for_a_tree_holds_the_parse_up() {
 
     assert!(!held_up(&waiting, &diff, AST_HEAD));
     assert!(!held_up(&VecDeque::new(), &diff, AST_HEAD));
-    repo.finish();
 }
 
 #[test]
@@ -363,7 +353,6 @@ fn the_open_pr_and_the_one_before_keep_their_trees_and_a_third_drops_the_older()
     assert_eq!(shelved(&shelf, &three, &ALL), [NEW]);
     let costs: usize = worker.prs.iter().map(Opened::cost).sum();
     assert_eq!(worker.store.kept, costs);
-    repo.finish();
 }
 
 #[test]
@@ -390,7 +379,6 @@ fn at_the_cap_the_parse_ahead_stops_and_a_chunk_drops_the_trees_used_longest_ago
     assert!(!room);
     assert_eq!(shelved(&shelf, &diff, &ALL), [AST_BASE, AST_HEAD]);
     assert!(worker.store.kept > worker.store.cap);
-    repo.finish();
 }
 
 #[test]
@@ -418,7 +406,6 @@ fn trees_no_chunk_has_used_go_first_and_the_previous_pr_s_before_the_open_one_s(
         [AST_HEAD, GONE, NEW, C_BASE, C_HEAD]
     );
     assert_eq!(shelved(&shelf, &two, &ALL), ALL);
-    repo.finish();
 }
 
 #[test]
@@ -457,7 +444,6 @@ fn a_retargeted_pr_s_diff_keeps_trees_of_its_own() {
     }
     assert_eq!(shelved(&shelf, &second, &ALL), [AST_HEAD, NEW, C_HEAD]);
     assert_eq!(shelved(&shelf, &first, &ALL), [AST_BASE]);
-    repo.finish();
 }
 
 #[test]
@@ -481,7 +467,6 @@ fn a_git_that_fails_leaves_its_versions_for_a_chunk_to_ask_for_again() {
     }
     let again = ask(&mut worker, repo.source(7), &[AST_HEAD]);
     assert!(matches!(again.get(&AST_HEAD), Some(Some(_))));
-    repo.finish();
 }
 
 #[test]
@@ -501,7 +486,6 @@ fn a_highlighter_whose_thread_has_stopped_shows_the_diff_plain() {
     let spans = highlighter.spans(&repo.source(7).diff, &repo.mirror, chunk);
 
     assert!(spans.iter().all(Vec::is_empty));
-    repo.finish();
 }
 
 #[test]
@@ -524,7 +508,6 @@ fn one_git_reads_sixteen_versions_ahead() {
     assert_eq!(shelved(&shelf, &diff, &versions).len(), BATCH);
     assert!(worker.parse_ahead(&incoming, &mut waiting));
     assert_eq!(shelved(&shelf, &diff, &versions), versions);
-    repo.finish();
 }
 
 #[test]
@@ -543,7 +526,6 @@ fn the_thread_parses_ahead_between_chunks_and_ends_with_the_last_highlighter() {
     worker.run(&incoming);
 
     assert_eq!(shelved(&shelf, &diff, &ALL), ALL);
-    repo.finish();
 }
 
 #[test]
@@ -573,7 +555,6 @@ fn a_diff_with_no_file_tsugiki_highlights_asks_git_for_nothing() {
 
     assert!(matches!(read.as_slice(), [((0, Side::Head), Read::Plain)]));
     assert!(blobs(Path::new("no-mirror"), &[]).is_empty());
-    repo.finish();
 }
 
 /// A file at `commit`, by its path.
@@ -630,7 +611,6 @@ fn a_file_the_pr_changes_takes_its_tree_from_the_diff_so_it_looks_the_same_and_i
     assert_eq!(at_head.unwrap(), diff_lines);
     assert_eq!(at_base.unwrap(), [rows[5].clone()]);
     assert_eq!(reads.get(), 0);
-    repo.finish();
 }
 
 #[test]
@@ -651,7 +631,6 @@ fn a_file_the_kept_diff_has_no_tree_for_is_parsed_whole() {
         highlighter.whole_spans(&repo.mirror, &lines(&gone, 1..2), counted(&reads, "pass\n"));
 
     assert_eq!((spans, reads.get()), (pass(), 1));
-    repo.finish();
 }
 
 #[test]
@@ -783,7 +762,6 @@ fn an_ask_for_a_whole_file_stops_the_parse_ahead() {
     };
 
     assert!(held_up(&VecDeque::from([whole]), &diff, AST_HEAD));
-    repo.finish();
 }
 
 #[test]

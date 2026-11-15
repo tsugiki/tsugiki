@@ -27,7 +27,7 @@ fn saved(
     repository: &RepositoryName,
     saves: Vec<(RepositoryName, Vec<IssueFacts>)>,
 ) -> Vec<IssueFacts> {
-    let (path, folder) = temp_database(name);
+    let (path, _folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
@@ -37,7 +37,6 @@ fn saved(
     let read = reader.work_facts(repository).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
     read.issues
 }
 
@@ -127,7 +126,7 @@ fn an_issue_keeps_its_labels_and_a_save_replaces_them() {
 
 #[test]
 fn an_issue_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
-    let (path, folder) = temp_database("issues-before-labels");
+    let (path, _folder) = temp_database("issues-before-labels");
     let before = MIGRATIONS
         .iter()
         .position(|step| step.sql == super::LABELS)
@@ -147,13 +146,12 @@ fn an_issue_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
     let store = Store::open(&path).unwrap();
     let read = store.issues(&cpython()).unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
     assert_eq!(read, [issue(1)]);
 }
 
 #[test]
 fn an_issue_saved_before_tsugiki_kept_states_has_none() {
-    let (path, folder) = temp_database("issues-no-state");
+    let (path, _folder) = temp_database("issues-no-state");
     let store = Store::open(&path).unwrap();
     let closed = IssueFacts {
         state: Some(IssueState::Closed),
@@ -171,7 +169,6 @@ fn an_issue_saved_before_tsugiki_kept_states_has_none() {
     let store = Store::open(&path).unwrap();
     let read = store.issues(&cpython()).unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
     let unknown = IssueFacts {
         state: None,
         ..issue(1)
@@ -221,7 +218,7 @@ fn a_save_that_fails_says_so() {
 
 #[test]
 fn a_time_tsugiki_cant_understand_is_a_read_error() {
-    let (path, folder) = temp_database("issues-bad-time");
+    let (path, _folder) = temp_database("issues-bad-time");
     let store = Store::open(&path).unwrap();
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
@@ -236,7 +233,6 @@ fn a_time_tsugiki_cant_understand_is_a_read_error() {
     let refused = reader.work_facts(&cpython()).unwrap_err();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_READ));
 }

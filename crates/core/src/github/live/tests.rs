@@ -57,9 +57,9 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
             .unwrap();
     });
     let closed = closed.recv_timeout(Duration::from_secs(30));
-    let removed = std::fs::remove_dir_all(&folder);
 
     assert_eq!(line.trim_end(), "started");
     assert_eq!(closed, Ok(true), "the orphans have ended");
-    assert!(removed.is_ok(), "{removed:?}");
+    // The folder can't go while a process holds it, and then this panics.
+    drop(folder);
 }

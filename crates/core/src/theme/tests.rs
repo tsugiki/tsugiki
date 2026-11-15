@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use super::*;
+use crate::testing::TempPath;
 
 /// Each built-in theme's file, name and kind.
 fn built_in() -> Vec<(&'static str, &'static str, ThemeKind)> {
@@ -42,7 +41,7 @@ fn four_themes_are_built_in_with_vs_codes_the_defaults() {
 }
 
 /// A `themes` folder in `.temp` holding `files`, each a file name and its text.
-fn folder_with(name: &str, files: &[(&str, &str)]) -> PathBuf {
+fn folder_with(name: &str, files: &[(&str, &str)]) -> TempPath {
     let folder = crate::testing::temp_path(name);
     std::fs::create_dir_all(&folder).unwrap();
     for (file, text) in files {
@@ -51,11 +50,10 @@ fn folder_with(name: &str, files: &[(&str, &str)]) -> PathBuf {
     folder
 }
 
-/// The library of a folder holding `files`, which it then removes.
-fn library_of(name: &str, files: &[(&str, &str)]) -> (ThemeLibrary, PathBuf) {
+/// The library of a folder holding `files`, and that folder.
+fn library_of(name: &str, files: &[(&str, &str)]) -> (ThemeLibrary, TempPath) {
     let folder = folder_with(name, files);
     let library = ThemeLibrary::read(&folder).unwrap();
-    std::fs::remove_dir_all(&folder).unwrap();
     (library, folder)
 }
 
@@ -136,7 +134,6 @@ fn a_themes_folder_that_cant_be_listed_is_named_in_the_problems() {
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
     std::fs::write(&file, "not a folder").unwrap();
     let themes = sent(&ThemeLibrary::read(&file).unwrap());
-    std::fs::remove_file(&file).unwrap();
 
     assert_eq!(
         names(&themes.dark),
@@ -389,7 +386,6 @@ fn a_file_tsugiki_cant_read_is_named() {
     let folder = folder_with("themes-unreadable", &[]);
     std::fs::create_dir_all(folder.join("folder.toml")).unwrap();
     let themes = sent(&ThemeLibrary::read(&folder).unwrap());
-    std::fs::remove_dir_all(&folder).unwrap();
 
     let unread = format!(
         "Tsugiki can't read {}: ",

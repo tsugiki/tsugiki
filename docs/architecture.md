@@ -24,8 +24,9 @@ Tsugiki is a Tauri app with five crates and a webview
   into calls on the core, and owns the window.
 - `crates/webview-keys` holds the one `unsafe` call that turns off WebView2's browser shortcuts
   ([ADR 0013](adr/0013-webview2-browser-shortcuts-off-tsugiki-owns-its-keys.md)).
-- `crates/test-git` runs git and builds bare remotes for the tests of `core` and `app`. Only their tests
-  depend on it.
+- `crates/test-git` runs git and builds bare remotes for the tests of `core` and `app`, and gives the tests
+  of `core`, `app` and `lsp` their folders under `.temp`, which go when a test passes. Only tests depend on
+  it.
 - `ui/` is a SvelteKit single-page app that renders what the core computed.
 
 The GitHub token never leaves the core ([ADR 0005](adr/0005-token-stays-in-the-rust-core.md)). The webview

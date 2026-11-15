@@ -1822,6 +1822,8 @@ fn a_pr_at_other_commits_tells_the_lookup_that_its_clangd_stopped() {
 
     let heard: Vec<Index> = asked.indexed.try_iter().collect();
     assert_eq!(heard, [uncounted(), Index::Stopped]);
+    // The real clangd started in the moved checkout, so that folder goes once the owner has stopped it.
+    drop(owner);
 }
 
 #[test]
@@ -2201,15 +2203,15 @@ fn each_start_writes_the_server_s_log_beside_the_checkout_and_keeps_the_last_one
 }
 
 /// A folder unpacked from clangd's archive, as far as `files` go, and the path of its `bin\clangd.exe`,
-/// which is empty: a fake clangd runs nothing.
-fn clangd_folder(name: &str, files: &[&str]) -> PathBuf {
+/// which is empty: a fake clangd runs nothing. Then the folder.
+fn clangd_folder(name: &str, files: &[&str]) -> (PathBuf, crate::testing::TempPath) {
     let root = crate::testing::temp_path(name);
     for path in ["bin/clangd.exe"].iter().chain(files) {
         let file = root.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(file, "").unwrap();
     }
-    root.join("bin").join("clangd.exe")
+    (root.join("bin").join("clangd.exe"), root)
 }
 
 /// The headers clangd has beside it.
@@ -2294,8 +2296,8 @@ fn clangd_problem(problem: ServerProblem) -> Result<Answer, Error> {
 #[test]
 fn a_clangd_without_its_built_in_headers_says_so_once_it_can_t_find_stddef_h() {
     let fixture = c_including("definitions-built-ins", "#include <stddef.h>\n");
-    let lone = clangd_folder("definitions-built-ins-lone", &[]);
-    let whole = clangd_folder("definitions-built-ins-whole", &[BUILT_INS]);
+    let (lone, _lone_folder) = clangd_folder("definitions-built-ins-lone", &[]);
+    let (whole, _whole_folder) = clangd_folder("definitions-built-ins-whole", &[BUILT_INS]);
     let (mut owner, fake) = clangd_finding_nothing(&fixture, lone, PATIENCE);
     let (mut other, other_fake) = clangd_finding_nothing(&fixture, whole, PATIENCE);
     let not_found = (0, "'stddef.h' file not found");
@@ -2353,7 +2355,7 @@ fn set_clangd(owner: &mut Owner, clangd: &Mutex<Option<PathBuf>>, path: PathBuf)
 fn apply_of_a_clangd_unpacked_without_its_built_in_headers_says_so_and_shows_its_version() {
     let fixture = c_including("definitions-built-ins-apply", "int eggs;\n");
     // The real clangd, linked into a folder that has nothing else.
-    let lone = clangd_folder("definitions-built-ins-apply-lone", &[]);
+    let (lone, _lone_folder) = clangd_folder("definitions-built-ins-apply-lone", &[]);
     std::fs::remove_file(&lone).unwrap();
     let clangd = super::testing::clangd();
     if std::fs::hard_link(&clangd, &lone).is_err() {
@@ -2402,7 +2404,8 @@ const INCLUDES: &str = "\
 #[test]
 fn a_system_header_clangd_can_t_find_says_so_and_one_of_the_repository_s_says_nothing() {
     let fixture = c_including("definitions-system-headers", INCLUDES);
-    let program = clangd_folder("definitions-system-headers-clangd", &[BUILT_INS]);
+    let (program, _clangd_folder) =
+        clangd_folder("definitions-system-headers-clangd", &[BUILT_INS]);
     let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
     let file = eggs_c(&fixture);
 
@@ -2441,7 +2444,7 @@ fn a_system_header_clangd_can_t_find_says_so_and_one_of_the_repository_s_says_no
 #[test]
 fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
     let fixture = c_files("definitions-not-indexing");
-    let program = clangd_folder("definitions-not-indexing-clangd", &[BUILT_INS]);
+    let (program, _clangd_folder) = clangd_folder("definitions-not-indexing-clangd", &[BUILT_INS]);
     let soon = Duration::from_millis(300);
     // This fake reports its index before it answers `initialize`, so the report comes first however slow
     // the machine.
@@ -2474,7 +2477,7 @@ fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
 #[test]
 fn a_clangd_that_reports_its_index_after_its_time_is_indexing_after_all() {
     let fixture = c_files("definitions-indexing-late");
-    let program = clangd_folder("definitions-indexing-late-clangd", &[BUILT_INS]);
+    let (program, _clangd_folder) = clangd_folder("definitions-indexing-late-clangd", &[BUILT_INS]);
     let soon = Duration::from_millis(300);
     let (mut owner, fake) = clangd_finding_nothing(&fixture, program, soon);
 
@@ -2493,7 +2496,7 @@ fn a_clangd_that_reports_its_index_after_its_time_is_indexing_after_all() {
 #[test]
 fn nothing_found_again_once_the_index_is_built_leaves_the_problem_that_says_why() {
     let fixture = c_including("definitions-problem-again", "#include <stdlib.h>\n");
-    let program = clangd_folder("definitions-problem-again-clangd", &[BUILT_INS]);
+    let (program, _clangd_folder) = clangd_folder("definitions-problem-again-clangd", &[BUILT_INS]);
     let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
     let lookup = Lookup {
         repository: repository(),
@@ -2525,7 +2528,8 @@ fn nothing_found_again_once_the_index_is_built_leaves_the_problem_that_says_why(
 #[test]
 fn what_one_repository_s_clangd_reports_leaves_another_s_be() {
     let fixture = c_including("definitions-troubled-elsewhere", "#include <stdlib.h>\n");
-    let program = clangd_folder("definitions-troubled-elsewhere-clangd", &[BUILT_INS]);
+    let (program, _clangd_folder) =
+        clangd_folder("definitions-troubled-elsewhere-clangd", &[BUILT_INS]);
     let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
     let other = (
         RepositoryName::parse("tsugiki/tsugiki").unwrap(),

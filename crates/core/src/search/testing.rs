@@ -8,13 +8,15 @@ use tsugiki_test_git::git;
 
 use crate::github::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
-use crate::testing::temp_path;
+use crate::testing::{TempPath, temp_path};
 
 /// A repository whose `main` is the PR's base and whose PR, at `head`, changes, adds and deletes files.
 pub(crate) struct Fixture {
     /// The folder of the repository, which stands for the Mirror.
     pub(crate) mirror: PathBuf,
     pub(crate) checkout: LookupCheckout,
+    /// The folder around both, which a test drops after the searches that read it.
+    _root: TempPath,
 }
 
 impl Fixture {
@@ -72,6 +74,7 @@ impl Fixture {
                     head: head_commit,
                 },
             },
+            _root: root,
         }
     }
 }

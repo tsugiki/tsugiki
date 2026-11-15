@@ -4,7 +4,6 @@ use crate::github::issue_content::IssueContent;
 use crate::github::pull_request_content::PullRequestContent;
 use crate::store::Store;
 use crate::store::testing::temp_database;
-use std::fs;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -22,19 +21,18 @@ fn at(seconds: i64, check: ChangeCheck) -> SyncState {
 
 #[test]
 fn a_repository_that_never_finished_a_sync_has_no_state() {
-    let (path, folder) = temp_database("sync-state-none");
+    let (path, _folder) = temp_database("sync-state-none");
     let store = Store::open(&path).unwrap();
 
     let state = store.sync_state(&cpython()).unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(state, None);
 }
 
 #[test]
 fn the_newest_state_survives_a_restart_whatever_the_case_of_the_name() {
-    let (path, folder) = temp_database("sync-state-restart");
+    let (path, _folder) = temp_database("sync-state-restart");
     let store = Store::open(&path).unwrap();
     store
         .save_sync_state(&cpython(), at(100, ChangeCheck::Skipped))
@@ -50,14 +48,13 @@ fn the_newest_state_survives_a_restart_whatever_the_case_of_the_name() {
     let shouted = RepositoryName::parse("Python/CPython").unwrap();
     let state = store.sync_state(&shouted).unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(state, Some(newest));
 }
 
 #[test]
 fn each_kind_of_check_reads_back_as_it_was_saved() {
-    let (path, folder) = temp_database("sync-state-checks");
+    let (path, _folder) = temp_database("sync-state-checks");
     let store = Store::open(&path).unwrap();
     let mut read = Vec::new();
     let checks = [
@@ -70,14 +67,13 @@ fn each_kind_of_check_reads_back_as_it_was_saved() {
         read.push(store.sync_state(&cpython()).unwrap().unwrap().check);
     }
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read, checks);
 }
 
 #[test]
 fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
-    let (path, folder) = temp_database("sync-state-read-ahead");
+    let (path, _folder) = temp_database("sync-state-read-ahead");
     let store = Store::open(&path).unwrap();
     let under_way = SyncState {
         refresh_under_way: true,
@@ -106,7 +102,6 @@ fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
         .unwrap();
     let after = store.read_ahead_owed(&cpython()).unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(owed, BTreeSet::from([1, 3]), "PR 2's Conversation was read");
     assert_eq!(after, BTreeSet::new(), "a finished sync owes nothing");

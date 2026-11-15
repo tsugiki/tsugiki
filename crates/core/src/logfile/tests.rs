@@ -1,8 +1,9 @@
 use super::*;
+use crate::testing::TempPath;
 use crate::token::{GhOutput, read_token};
 
 /// A logger with its own folder, so tests don't share the process's one logger.
-fn temp_logger(name: &str) -> (Logger, PathBuf) {
+fn temp_logger(name: &str) -> (Logger, TempPath) {
     let folder = crate::testing::temp_path(&format!("log-{name}"));
     let logger = Logger::start(folder.join("tsugiki.log"));
     (logger, folder)
@@ -43,7 +44,6 @@ fn a_line_says_when_how_bad_where_and_what() {
         "{file}"
     );
     assert!(file.starts_with("20"), "it starts with the year: {file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -67,7 +67,6 @@ fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
 
     assert!(!file.contains("0123456789abcdef"), "{file}");
     assert!(file.contains("Bearer [token] refused"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -94,7 +93,6 @@ fn text_shaped_like_a_token_never_reaches_the_file() {
     assert!(!file.contains("abc123"), "{file}");
     assert!(!file.contains("11ABC"), "{file}");
     assert!(file.contains("first [token], then [token]."), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -110,7 +108,6 @@ fn a_prefix_with_nothing_after_it_is_only_words() {
     let file = written(&logger, &folder);
 
     assert!(file.contains("tokens start with ghp_ or gho_\n"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -122,7 +119,6 @@ fn a_token_cut_off_by_the_length_limit_still_doesnt_show() {
     let file = written(&logger, &folder);
 
     assert!(!file.contains("aaaa"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -146,7 +142,6 @@ fn a_long_line_is_cut_on_a_character_and_the_next_line_still_starts_fresh() {
         file.ends_with("tsugiki: the next one\n"),
         "the next line follows"
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 fn file_size(path: &Path) -> u64 {
@@ -174,7 +169,6 @@ fn the_file_and_the_one_before_it_stay_under_the_limit() {
         2,
         "and no third file"
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -189,7 +183,6 @@ fn a_file_that_cant_be_moved_aside_makes_way_for_new_lines() {
     let file = written(&logger, &folder);
     assert!(file.ends_with("tsugiki: the newest line\n"), "{file}");
     assert!(file.len() < 100, "the old lines made way");
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -206,7 +199,6 @@ fn a_line_the_same_as_the_last_isnt_written_again() {
         .map(|line| line.rsplit(": ").next().unwrap())
         .collect();
     assert_eq!(said, ["offline", "a bad answer", "offline"]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -217,8 +209,6 @@ fn a_folder_it_cant_create_loses_the_lines_and_nothing_else() {
 
     say(&logger, Level::Warn, "tsugiki", "this has nowhere to go");
     logger.flush();
-
-    fs::remove_file(blocker).unwrap();
 }
 
 #[test]
@@ -235,5 +225,4 @@ fn libraries_only_write_what_is_wrong() {
     assert!(file.contains("a bad certificate"), "{file}");
     assert!(file.contains("started"), "{file}");
     assert!(!file.contains("details"), "{file}");
-    fs::remove_dir_all(folder).unwrap();
 }

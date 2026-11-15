@@ -17,6 +17,7 @@ use crate::status::testing::{
 };
 use crate::status::{Change, FailedRead, MirrorWork, ReadFailure};
 use crate::store::{ActivityFacts, ChangeCheck, LastCheck, ReviewFacts, SyncState};
+use crate::testing::TempPath;
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use std::cell::RefCell;
@@ -74,19 +75,21 @@ fn octocat() -> Status {
     }
 }
 
-fn temp_folders(name: &str) -> Folders {
+/// Folders that are all one temp folder, and that folder. Stop the session before the folder drops.
+fn temp_folders(name: &str) -> (Folders, TempPath) {
     let folder = crate::testing::temp_path(&format!("session-{name}"));
     fs::create_dir_all(&folder).unwrap();
-    Folders {
-        data: folder.clone(),
-        settings: folder.clone(),
-        logs: folder,
-    }
+    let folders = Folders {
+        data: folder.to_path_buf(),
+        settings: folder.to_path_buf(),
+        logs: folder.to_path_buf(),
+    };
+    (folders, folder)
 }
 
 #[test]
 fn a_second_session_on_the_same_folder_says_why_it_stopped() {
-    let folders = temp_folders("held");
+    let (folders, _folder) = temp_folders("held");
     let (first_board, first_seen) = watched_board();
     let first = Session::start(first_board, Ok(folders.clone()), offline(), HOURLY);
     // A session says nothing until its database is open.
@@ -97,7 +100,6 @@ fn a_second_session_on_the_same_folder_says_why_it_stopped() {
     second.stop(PLENTY);
 
     first.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
     assert!(problem_of(first_status).is_none());
     assert_eq!(
         problem_of(showing(&seen)),
@@ -306,7 +308,7 @@ fn after_asking(
     access: GitHubAccess,
     ask: impl FnOnce(&SessionRequests),
 ) -> (Option<IssueContent>, ActivityFacts, Vec<Status>) {
-    let folders = temp_folders(name);
+    let (folders, _folder) = temp_folders(name);
     let (board, seen) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
     ask(&session.requests());
@@ -319,7 +321,6 @@ fn after_asking(
     let (facts, content) = reader.issue_facts(&gcmon(), 7).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folders.data).unwrap();
     (content, facts.activity, announced(&seen))
 }
 
@@ -382,7 +383,7 @@ fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
         transport: Box::new(Replayer::new(recordings)),
         run_gh: signed_in_gh,
     };
-    let folders = temp_folders("open-pr");
+    let (folders, _folder) = temp_folders("open-pr");
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
     let cpython = RepositoryName::parse("python/cpython").unwrap();
@@ -396,7 +397,6 @@ fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
         .pull_request_facts(&cpython, 152_326)
         .unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     let content = content.unwrap();
     let conversation = &content.conversation;
@@ -476,7 +476,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
     let board = quiet_board().with_changes(Box::new(move |change: &Change| {
         changes_sent.send(change.clone()).unwrap();
     }));
-    let folders = temp_folders("open-issue-changes");
+    let (folders, _folder) = temp_folders("open-issue-changes");
     let access = replying(vec![signed_in(), issue_content_reply()]);
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
 
@@ -490,7 +490,6 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
     );
     requests.fetch_issue(gcmon(), 7);
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     let change = |items| Change {
         repository: gcmon(),
@@ -592,12 +591,11 @@ fn losing_the_network_while_reading_an_issue_shows_on_the_status_bar() {
 
 /// The reads that failed while a session with `access` ran `ask`.
 fn failed_reads(name: &str, access: GitHubAccess, ask: fn(&SessionRequests)) -> Vec<FailedRead> {
-    let folders = temp_folders(name);
+    let (folders, _folder) = temp_folders(name);
     let (board, failed) = failed_reads_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
     ask(&session.requests());
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
     failed.try_iter().collect()
 }
 
@@ -733,12 +731,11 @@ fn a_session_answers_a_check_between_refreshes() {
         body: GCMON.to_owned(),
     };
     let access = replying(vec![signed_in(), Ok(gcmon_reply)]);
-    let folders = temp_folders("check");
+    let (folders, _folder) = temp_folders("check");
     let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
 
     let check = session.requests().check(gcmon()).unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(check.repository.name, gcmon());
     assert_eq!((check.open_issues, check.open_prs), (10, 3));
@@ -749,12 +746,11 @@ fn a_session_answers_a_check_between_refreshes() {
 
 #[test]
 fn a_check_github_cant_answer_says_why() {
-    let folders = temp_folders("check-offline");
+    let (folders, _folder) = temp_folders("check-offline");
     let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), HOURLY);
 
     let problem = session.requests().check(gcmon()).unwrap_err();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(problem.kind, ErrorKind::Offline);
     assert_eq!(problem.message, "Tsugiki can't reach GitHub.");
@@ -766,12 +762,11 @@ fn a_session_that_has_ended_says_so_to_a_check() {
         transport: Box::new(answered(200, GCMON)),
         run_gh: without_gh,
     };
-    let folders = temp_folders("check-ended");
+    let (folders, _folder) = temp_folders("check-ended");
     let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
 
     let problem = session.requests().check(gcmon()).unwrap_err();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(problem.kind, ErrorKind::Offline);
     assert_eq!(problem.message, NOT_CONNECTED);
@@ -883,7 +878,7 @@ fn the_recorded_cpython_work_reads_as_an_inbox() {
         transport: Box::new(Replayer::new(recordings)),
         run_gh: signed_in_gh,
     };
-    let folders = temp_folders("recorded-inbox");
+    let (folders, _folder) = temp_folders("recorded-inbox");
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
     let reader = session.reader();
@@ -902,7 +897,6 @@ fn the_recorded_cpython_work_reads_as_an_inbox() {
     )
     .unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     insta::assert_snapshot!(inbox_of(&workbench));
 }
@@ -921,7 +915,7 @@ fn a_sync_fills_the_workbench_and_says_so() {
         transport: Box::new(script),
         run_gh: signed_in_gh,
     };
-    let folders = temp_folders("sync");
+    let (folders, _folder) = temp_folders("sync");
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
     let reader = session.reader();
@@ -936,7 +930,6 @@ fn a_sync_fills_the_workbench_and_says_so() {
     )
     .unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(
         changed,
@@ -989,7 +982,7 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
         transport: Box::new(script),
         run_gh: signed_in_gh,
     };
-    let folders = temp_folders("reached-heads");
+    let (folders, _folder) = temp_folders("reached-heads");
     let store = Store::open(&folders.database()).unwrap();
     // The user's own PR, which the sync finds moved on, and a PR of someone else's.
     let stored = vec![
@@ -1009,7 +1002,6 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     session.requests().sync(plain_gcmon());
     let handed = heads.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     let moved = CommitSha::parse("89abcdef0123456789abcdef0123456789abcdef").unwrap();
     assert_eq!(
@@ -1052,7 +1044,7 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
         transport: Box::new(script),
         run_gh: signed_in_gh,
     };
-    let folders = temp_folders("last-check-on-sync");
+    let (folders, _folder) = temp_folders("last-check-on-sync");
     let store = Store::open(&folders.database()).unwrap();
     store
         .save_pull_requests(&gcmon(), vec![stored_pr(8, "some-author", "4567def")])
@@ -1071,7 +1063,6 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
     let handed = heads.recv_timeout(PLENTY).unwrap();
     let held = session.reader().work_facts(&gcmon()).unwrap().reviews;
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     let last = LastCheck {
         reviewed,
@@ -1109,7 +1100,7 @@ fn keeping_patches(
     access: GitHubAccess,
     handed: Vec<PatchReads>,
 ) -> (Vec<Change>, ReviewFacts) {
-    let folders = temp_folders(name);
+    let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&Login::new("octocat")).unwrap();
     let stored = vec![
@@ -1138,7 +1129,6 @@ fn keeping_patches(
     let heard = heard.collect();
     let held = session.reader().work_facts(&gcmon()).unwrap().reviews;
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
     (heard, held)
 }
 
@@ -1333,7 +1323,7 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
     up.store(false, Ordering::Relaxed);
     let back = move |_| up.store(true, Ordering::Relaxed);
     let (board, heard) = heard_board(back, |_| {});
-    let folders = temp_folders("late-viewer");
+    let (folders, _folder) = temp_folders("late-viewer");
     let session = Session::start(
         board,
         Ok(folders.clone()),
@@ -1355,7 +1345,6 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
     )
     .unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(workbench.items.len(), 1);
 }
@@ -1529,7 +1518,7 @@ fn with_no_token_what_is_stored_stays_readable() {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
-    let folders = temp_folders("no-token-readable");
+    let (folders, _folder) = temp_folders("no-token-readable");
     let session = Session::start(quiet_board(), Ok(folders.clone()), access, HOURLY);
     let requests = session.requests();
 
@@ -1537,7 +1526,6 @@ fn with_no_token_what_is_stored_stays_readable() {
     let checked = requests.check(gcmon());
     let facts = session.reader().work_facts(&gcmon());
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(checked.unwrap_err().kind, ErrorKind::Offline);
     assert_eq!(facts.unwrap().pull_requests, []);
@@ -1619,7 +1607,7 @@ fn wait_for(seen: &Receiver<String>, operation: &str) {
 
 #[test]
 fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
-    let folders = temp_folders("opened");
+    let (folders, _folder) = temp_folders("opened");
     let at = after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let (board, last_syncs) = last_sync_board();
@@ -1630,7 +1618,6 @@ fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
     wait_for(&asked, "RefreshRepository");
     let after = last_syncs.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(
         shown,
@@ -1644,7 +1631,7 @@ fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
 
 #[test]
 fn opening_a_repository_that_never_synced_says_so() {
-    let folders = temp_folders("opened-new");
+    let (folders, _folder) = temp_folders("opened-new");
     let (access, _asked) = quiet_repository();
     let (board, last_syncs) = last_sync_board();
     let session = Session::start(board, Ok(folders.clone()), access, HOURLY);
@@ -1652,7 +1639,6 @@ fn opening_a_repository_that_never_synced_says_so() {
     session.requests().sync(plain_gcmon());
     let shown = last_syncs.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(
         shown,
@@ -1674,7 +1660,7 @@ fn a_store_that_cant_say_when_it_last_synced_shows_the_problem() {
 
 #[test]
 fn a_click_refreshes_the_open_repository_again() {
-    let folders = temp_folders("click");
+    let (folders, _folder) = temp_folders("click");
     let _at = after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let (board, last_syncs) = last_sync_board();
@@ -1689,12 +1675,11 @@ fn a_click_refreshes_the_open_repository_again() {
     session.requests().refresh();
     wait_for(&asked, "RefreshRepository");
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 }
 
 #[test]
 fn the_timer_refreshes_the_open_repository_again() {
-    let folders = temp_folders("timer");
+    let (folders, _folder) = temp_folders("timer");
     let _at = after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let every_moment = Intervals {
@@ -1707,7 +1692,6 @@ fn the_timer_refreshes_the_open_repository_again() {
     wait_for(&asked, "RefreshRepository");
     wait_for(&asked, "RefreshRepository");
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 }
 
 #[test]
@@ -1725,12 +1709,11 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
 
 #[test]
 fn a_reader_answers_once_the_session_has_opened_the_database() {
-    let folders = temp_folders("reader");
+    let (folders, _folder) = temp_folders("reader");
     let session = Session::start(quiet_board(), Ok(folders.clone()), offline(), HOURLY);
 
     let facts = session.reader().work_facts(&gcmon());
     session.stop(PLENTY);
-    fs::remove_dir_all(folders.data).unwrap();
 
     assert_eq!(facts.unwrap().pull_requests, []);
 }
@@ -1752,7 +1735,7 @@ fn wal_of(folders: &Folders) -> PathBuf {
 
 #[test]
 fn stopping_between_refreshes_closes_the_store() {
-    let folders = temp_folders("stop-between");
+    let (folders, _folder) = temp_folders("stop-between");
     let (board, statuses) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), octocat_answers(), HOURLY);
     assert_eq!(statuses.recv().unwrap(), octocat());
@@ -1765,7 +1748,6 @@ fn stopping_between_refreshes_closes_the_store() {
     let store = Store::open(&folders.database()).unwrap();
     assert_eq!(store.last_login().unwrap(), Some(Login::new("octocat")));
     store.close();
-    fs::remove_dir_all(folders.data).unwrap();
 }
 
 /// Holds its answer back until the test lets go.
@@ -1788,7 +1770,7 @@ impl Transport for Held {
 
 #[test]
 fn stopping_doesnt_wait_out_a_request_in_progress() {
-    let folders = temp_folders("stop-in-request");
+    let (folders, _folder) = temp_folders("stop-in-request");
     let (asked, request) = mpsc::channel();
     let (answer, answering) = mpsc::channel();
     let access = GitHubAccess {
@@ -1811,7 +1793,6 @@ fn stopping_doesnt_wait_out_a_request_in_progress() {
         Err(RecvTimeoutError::Disconnected),
         "it finishes after all"
     );
-    fs::remove_dir_all(folders.data).unwrap();
 }
 
 #[test]
@@ -1850,7 +1831,7 @@ fn a_panic_anywhere_in_a_run_says_tsugiki_stopped_checking() {
 
 #[test]
 fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
-    let folders = temp_folders("no-gh");
+    let (folders, _folder) = temp_folders("no-gh");
     let (mut board, seen) = watched_board();
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
@@ -1866,7 +1847,6 @@ fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
 
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
     assert!(folders.database().exists());
-    fs::remove_dir_all(folders.data).unwrap();
 }
 
 #[test]
@@ -1893,7 +1873,7 @@ fn folders_that_cant_be_found_show_as_a_problem() {
     reason = "a database from a newer Tsugiki has a version the store can't write, so the test sets it"
 )]
 fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
-    let folders = temp_folders("newer");
+    let (folders, _folder) = temp_folders("newer");
     let newer = rusqlite::Connection::open(folders.database()).unwrap();
     newer.pragma_update(None, "user_version", 9999).unwrap();
     drop(newer);
@@ -1910,5 +1890,4 @@ fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
     let [only]: [Status; 1] = announced(&seen).try_into().unwrap();
     assert!(problem_of(only).unwrap().message.contains("newer"));
     assert_eq!(fs::read(folders.database()).unwrap(), before);
-    fs::remove_dir_all(folders.data).unwrap();
 }

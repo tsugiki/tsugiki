@@ -19,7 +19,6 @@ fn an_older_database_moves_forward_and_leaves_a_backup_of_how_it_was() {
     assert_eq!(user_version(&backup), 1);
     assert!(has_table(&backup, "notes"));
     assert!(!has_table(&backup, "tags"));
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -28,7 +27,6 @@ fn a_current_database_leaves_no_backup() {
     open_with(&path, &[V1]).unwrap().close();
     open_with(&path, &[V1]).unwrap().close();
     assert_eq!(backups(&folder), [""; 0]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -51,7 +49,6 @@ fn a_failed_migration_changes_nothing_and_can_be_tried_again() {
     open_with(&path, &[V1, V2]).unwrap().close();
     assert_eq!(user_version(&path), 2);
     assert_eq!(backups(&folder), ["tsugiki.db.v1.bak"]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -81,7 +78,6 @@ fn only_the_last_few_backups_are_kept() {
             "tsugiki.db.v5.bak"
         ]
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -107,7 +103,6 @@ fn the_backup_just_written_stays_whatever_the_numbers_on_the_others() {
         ]
     );
     assert_eq!(user_version(&folder.join("tsugiki.db.v2.bak")), 2);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -133,7 +128,6 @@ fn a_backup_with_a_padded_number_goes_by_its_real_name() {
             "tsugiki.db.v4.bak"
         ]
     );
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -148,7 +142,6 @@ fn an_old_backup_that_cant_be_removed_doesnt_stop_the_migration() {
     open_with(&path, &[V1, V2]).unwrap().close();
 
     assert_eq!(user_version(&path), 2);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -165,7 +158,6 @@ fn a_backup_that_fails_keeps_the_one_before_it() {
     assert_eq!(problem.message, CANT_UPDATE);
     assert_eq!(fs::read_to_string(&earlier).unwrap(), "the earlier backup");
     assert_eq!(user_version(&path), 1);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -179,7 +171,6 @@ fn a_backup_left_half_written_doesnt_block_the_next_one() {
 
     assert!(!partial.exists());
     assert_eq!(user_version(&folder.join("tsugiki.db.v1.bak")), 1);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -195,12 +186,11 @@ fn a_file_with_tables_and_no_version_gets_a_backup() {
 
     assert_eq!(backups(&folder), ["tsugiki.db.v0.bak"]);
     assert!(has_table(&folder.join("tsugiki.db.v0.bak"), "theirs"));
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn a_newer_version_still_in_the_wal_is_refused_too() {
-    let (path, folder) = temp_database("newer-in-wal");
+    let (path, _folder) = temp_database("newer-in-wal");
     open_with(&path, &[V1]).unwrap().close();
     // While this stays open its change sits in the `-wal` file, and the header still says version 1.
     let writer = Connection::open(&path).unwrap();
@@ -211,7 +201,6 @@ fn a_newer_version_still_in_the_wal_is_refused_too() {
 
     assert!(problem.message.contains("newer"), "{}", problem.message);
     drop(writer);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 /// A parent and a child that points at it.
@@ -258,7 +247,7 @@ fn enforces_foreign_keys(connection: &Connection) -> bool {
 
 #[test]
 fn a_migration_can_rebuild_a_table_that_others_point_at() {
-    let (path, folder) = temp_database("rebuilt-parent");
+    let (path, _folder) = temp_database("rebuilt-parent");
     open_with(&path, &[V1, PARENTS]).unwrap().close();
 
     open_with(&path, &[V1, PARENTS, REBUILT_PARENTS])
@@ -267,7 +256,6 @@ fn a_migration_can_rebuild_a_table_that_others_point_at() {
 
     assert_eq!(user_version(&path), 3);
     assert_eq!(children(&path), [1]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
@@ -283,12 +271,11 @@ fn a_migration_that_breaks_a_foreign_key_fails_and_changes_nothing() {
     assert_eq!(children(&path), [1]);
     assert_eq!(backups(&folder), ["tsugiki.db.v2.bak"]);
     assert_eq!(children(&folder.join("tsugiki.db.v2.bak")), [1]);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]
 fn foreign_keys_are_enforced_again_after_a_migration_whatever_happened() {
-    let (path, folder) = temp_database("keys-back-on");
+    let (path, _folder) = temp_database("keys-back-on");
     let mut connection = Connection::open(&path).unwrap();
 
     run(&mut connection, &path, &[V1, PARENTS]).unwrap();
@@ -297,7 +284,6 @@ fn foreign_keys_are_enforced_again_after_a_migration_whatever_happened() {
     assert!(enforces_foreign_keys(&connection));
 
     drop(connection);
-    fs::remove_dir_all(folder).unwrap();
 }
 
 #[test]

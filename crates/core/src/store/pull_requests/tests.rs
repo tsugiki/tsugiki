@@ -5,6 +5,7 @@ use crate::github::CommitSha;
 use crate::github::labels::Label;
 use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
 use crate::repository::RepositoryName;
+use crate::testing::TempPath;
 use std::fs;
 use std::path::PathBuf;
 use time::OffsetDateTime;
@@ -46,7 +47,7 @@ fn at(seconds: i64, facts: PullRequestFacts) -> PullRequestFacts {
 }
 
 /// A store and a reader of the same file.
-fn opened(name: &str) -> (Store, OpenReader, StoreReader, PathBuf, PathBuf) {
+fn opened(name: &str) -> (Store, OpenReader, StoreReader, PathBuf, TempPath) {
     let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     let (to_open, reader) = reader();
@@ -61,7 +62,7 @@ fn numbers(reader: &StoreReader, repository: &RepositoryName) -> Vec<u32> {
 
 #[test]
 fn what_the_writer_saves_the_reader_reads() {
-    let (store, open, reader, _path, folder) = opened("pr-roundtrip");
+    let (store, open, reader, _path, _folder) = opened("pr-roundtrip");
     store.remember_login(&Login::new("Octocat")).unwrap();
 
     store
@@ -70,7 +71,6 @@ fn what_the_writer_saves_the_reader_reads() {
     let read = reader.work_facts(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.viewer, Some(Login::new("octocat")));
     assert_eq!(read.pull_requests, [facts(1)]);
@@ -78,7 +78,7 @@ fn what_the_writer_saves_the_reader_reads() {
 
 #[test]
 fn a_pr_with_nothing_optional_reads_back_the_same() {
-    let (store, open, reader, _path, folder) = opened("pr-sparse");
+    let (store, open, reader, _path, _folder) = opened("pr-sparse");
     let sparse = PullRequestFacts {
         author: None,
         ci: None,
@@ -100,7 +100,6 @@ fn a_pr_with_nothing_optional_reads_back_the_same() {
     let read = reader.work_facts(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.pull_requests, [sparse]);
 }
@@ -111,7 +110,7 @@ fn sha(text: &str) -> CommitSha {
 
 #[test]
 fn a_backports_facts_read_back_the_same() {
-    let (store, open, reader, _path, folder) = opened("pr-backport");
+    let (store, open, reader, _path, _folder) = opened("pr-backport");
     let backport = PullRequestFacts {
         off_default: Some(OffDefault {
             description: "(cherry picked from commit 0123abc)".to_owned(),
@@ -140,14 +139,13 @@ fn a_backports_facts_read_back_the_same() {
     let read = reader.work_facts(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.pull_requests, [at(2, backport), at(1, origin)]);
 }
 
 #[test]
 fn saving_a_backport_again_replaces_its_commits() {
-    let (store, open, reader, _path, folder) = opened("pr-backport-again");
+    let (store, open, reader, _path, _folder) = opened("pr-backport-again");
     let first = PullRequestFacts {
         off_default: Some(OffDefault {
             description: String::new(),
@@ -172,14 +170,13 @@ fn saving_a_backport_again_replaces_its_commits() {
     let read = reader.work_facts(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.pull_requests, [again]);
 }
 
 #[test]
 fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
-    let (store, open, _reader, _path, folder) = opened("pr-frozen");
+    let (store, open, _reader, _path, _folder) = opened("pr-frozen");
     let in_state = |number, state| PullRequestFacts {
         state,
         ..facts(number)
@@ -210,7 +207,6 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
     let frozen = store.frozen_pull_requests(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     let mut numbers: Vec<u32> = frozen.iter().map(|pr| pr.number).collect();
     numbers.sort_unstable();
@@ -219,7 +215,7 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
 
 #[test]
 fn saving_a_pr_again_replaces_what_was_known() {
-    let (store, open, reader, _path, folder) = opened("pr-replace");
+    let (store, open, reader, _path, _folder) = opened("pr-replace");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -243,14 +239,13 @@ fn saving_a_pr_again_replaces_what_was_known() {
     let read = reader.work_facts(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.pull_requests, [changed]);
 }
 
 #[test]
 fn a_pr_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
-    let (path, folder) = temp_database("pr-before-labels");
+    let (path, _folder) = temp_database("pr-before-labels");
     let before = MIGRATIONS
         .iter()
         .position(|step| step.sql == super::LABELS)
@@ -271,14 +266,13 @@ fn a_pr_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
     let store = Store::open(&path).unwrap();
     let read = store.pull_requests(&cpython()).unwrap();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].labels, []);
 }
 
 #[test]
 fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
-    let (store, open, reader, _path, folder) = opened("pr-order");
+    let (store, open, reader, _path, _folder) = opened("pr-order");
     let merged = PullRequestFacts {
         state: PrState::Merged,
         ..facts(3)
@@ -298,14 +292,13 @@ fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
     let found = numbers(&reader, &cpython());
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(found, [3, 2, 4, 1]);
 }
 
 #[test]
 fn repositories_keep_apart_and_their_names_ignore_case() {
-    let (store, open, reader, _path, folder) = opened("pr-repositories");
+    let (store, open, reader, _path, _folder) = opened("pr-repositories");
     let peps = RepositoryName::parse("python/peps").unwrap();
     let shouting = RepositoryName::parse("Python/CPython").unwrap();
     store
@@ -318,14 +311,13 @@ fn repositories_keep_apart_and_their_names_ignore_case() {
     let found = numbers(&reader, &shouting);
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(found, [1]);
 }
 
 #[test]
 fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
-    let (store, open, reader, _path, folder) = opened("pr-requests");
+    let (store, open, reader, _path, _folder) = opened("pr-requests");
     let in_state = |number, state| PullRequestFacts {
         state,
         ..facts(number)
@@ -345,7 +337,6 @@ fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
     let stored = count(&store, "SELECT count(*) AS found FROM review_requests");
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     let requests: Vec<(u32, usize)> = read
         .pull_requests
@@ -373,7 +364,7 @@ fn count(store: &Store, query: &'static str) -> u32 {
 
 #[test]
 fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
-    let (store, open, _reader, _path, folder) = opened("pr-columns");
+    let (store, open, _reader, _path, _folder) = opened("pr-columns");
 
     store
         .save_pull_requests(&cpython(), vec![at(7, facts(1))])
@@ -413,14 +404,13 @@ fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
         ];
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(found, [1, 1, 1, 1, 2]);
 }
 
 #[test]
 fn a_row_an_earlier_tsugiki_wrote_reads_back() {
-    let (store, open, reader, _path, folder) = opened("pr-earlier");
+    let (store, open, reader, _path, _folder) = opened("pr-earlier");
     store
             .call(|connection| {
                 connection.execute_batch(
@@ -439,7 +429,6 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
     let read = reader.work_facts(&cpython()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     let earlier = PullRequestFacts {
         labels: vec![],
@@ -455,7 +444,7 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
 
 #[test]
 fn logins_keep_githubs_casing_and_the_database_ignores_case() {
-    let (store, open, reader, _path, folder) = opened("pr-casing");
+    let (store, open, reader, _path, _folder) = opened("pr-casing");
     store.remember_login(&Login::new("OctoCat")).unwrap();
     let twice = PullRequestFacts {
         review_requests: vec![Login::new("Some-Reviewer"), Login::new("some-reviewer")],
@@ -469,7 +458,6 @@ fn logins_keep_githubs_casing_and_the_database_ignores_case() {
     let viewer = store.last_login().unwrap().unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     let requested: Vec<_> = read
         .pull_requests
@@ -483,7 +471,7 @@ fn logins_keep_githubs_casing_and_the_database_ignores_case() {
 
 #[test]
 fn a_reader_doesnt_wait_for_a_write_in_progress() {
-    let (store, open, reader, _path, folder) = opened("pr-no-wait");
+    let (store, open, reader, _path, _folder) = opened("pr-no-wait");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -507,28 +495,26 @@ fn a_reader_doesnt_wait_for_a_write_in_progress() {
     release.send(()).unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.unwrap().pull_requests, [facts(1)]);
 }
 
 #[test]
 fn a_reader_cant_write() {
-    let (store, open, reader, _path, folder) = opened("pr-read-only");
+    let (store, open, reader, _path, _folder) = opened("pr-read-only");
 
     let written = reader
         .call(|connection| write_last_login(connection, &Login::new("octocat")))
         .unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert!(written.is_err());
 }
 
 #[test]
 fn a_question_asked_before_the_database_opens_waits_for_it() {
-    let (path, folder) = temp_database("pr-early");
+    let (path, _folder) = temp_database("pr-early");
     let (to_open, reader) = reader();
     let name = cpython();
     let asked = thread::spawn(move || reader.work_facts(&name));
@@ -538,7 +524,6 @@ fn a_question_asked_before_the_database_opens_waits_for_it() {
     let read = asked.join().unwrap();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(read.unwrap().pull_requests, []);
 }
@@ -555,18 +540,17 @@ fn a_database_that_never_opens_is_an_answer_too() {
 
 #[test]
 fn a_reader_with_no_file_to_read_says_so() {
-    let (path, folder) = temp_database("pr-no-file");
+    let (path, _folder) = temp_database("pr-no-file");
     let (to_open, _reader) = reader();
 
     let refused = to_open.open(&path).err().unwrap();
-    drop(fs::remove_dir_all(folder));
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_OPEN));
 }
 
 #[test]
 fn closing_both_connections_leaves_only_the_database() {
-    let (store, open, reader, path, folder) = opened("pr-close");
+    let (store, open, reader, path, _folder) = opened("pr-close");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -579,7 +563,6 @@ fn closing_both_connections_leaves_only_the_database() {
         .map(|entry| entry.unwrap().file_name())
         .collect();
     left.sort();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, STOPPED));
     assert_eq!(left, ["tsugiki.db", "tsugiki.db.lock"]);
@@ -587,7 +570,7 @@ fn closing_both_connections_leaves_only_the_database() {
 
 #[test]
 fn a_row_tsugiki_cant_understand_is_a_read_error() {
-    let (store, open, reader, _path, folder) = opened("pr-bad-row");
+    let (store, open, reader, _path, _folder) = opened("pr-bad-row");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -599,14 +582,13 @@ fn a_row_tsugiki_cant_understand_is_a_read_error() {
     let refused = reader.work_facts(&cpython()).unwrap_err();
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_READ));
 }
 
 #[test]
 fn a_save_that_fails_says_so_and_keeps_nothing_of_the_batch() {
-    let (store, open, reader, _path, folder) = opened("pr-bad-save");
+    let (store, open, reader, _path, _folder) = opened("pr-bad-save");
     store
         .call(|connection| {
             connection.execute_batch(
@@ -624,7 +606,6 @@ fn a_save_that_fails_says_so_and_keeps_nothing_of_the_batch() {
     let found = numbers(&reader, &cpython());
     open.close();
     store.close();
-    fs::remove_dir_all(folder).unwrap();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_WRITE));
     assert_eq!(found, [0_u32; 0]);

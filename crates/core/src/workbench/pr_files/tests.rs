@@ -17,6 +17,8 @@ struct World {
     mirrors: MirrorRequests,
     heard: HeardRequests,
     highlighter: Highlighter,
+    /// The data folder, dropped last.
+    _data: crate::testing::TempPath,
 }
 
 impl World {
@@ -28,14 +30,15 @@ impl World {
         Self {
             view,
             folders: Folders {
-                data: data.clone(),
-                settings: data.clone(),
-                logs: data,
+                data: data.to_path_buf(),
+                settings: data.to_path_buf(),
+                logs: data.to_path_buf(),
             },
             diffs: Diffs::default(),
             mirrors,
             heard,
             highlighter: Highlighter::start(),
+            _data: data,
         }
     }
 
@@ -101,7 +104,6 @@ impl World {
     }
 
     fn finish(self) {
-        std::fs::remove_dir_all(&self.folders.data).unwrap();
         self.view.finish();
     }
 }
@@ -143,7 +145,6 @@ fn a_pr_whose_head_tsugiki_hasnt_read_waits_for_the_sync() {
 
     assert_eq!(world.files(), Some(PrFiles::Fetching));
     assert_eq!(world.heard.firsts(), []);
-    mirrored.finish();
     world.finish();
 }
 
@@ -162,7 +163,6 @@ fn a_head_the_mirror_lacks_is_fetched_first() {
         target_branch: "main".to_owned(),
     };
     assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
-    mirrored.finish();
     world.finish();
 }
 
@@ -182,7 +182,6 @@ fn opening_a_pr_fetches_a_head_the_mirror_lacks_without_reading_a_diff() {
         target_branch: "main".to_owned(),
     };
     assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
-    mirrored.finish();
     world.finish();
 }
 
@@ -203,7 +202,6 @@ fn opening_a_pr_whose_head_the_mirror_holds_asks_for_nothing_and_reads_no_diff()
     };
     let target = Against::Branch("main", &Start::TargetBranch);
     assert!(world.diffs.shown(&at, target).is_none());
-    mirrored.finish();
     world.finish();
 }
 
@@ -268,7 +266,6 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
         target_branch: "main".to_owned(),
     };
     assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
-    mirrored.finish();
     world.finish();
 }
 
@@ -289,7 +286,6 @@ fn the_files_tab_moves_the_lookup_checkout_to_the_diffs_merge_base_and_head() {
     };
     let asked = (world.repository(), at);
     assert_eq!(world.heard.look_ups(), [asked.clone(), asked]);
-    mirrored.finish();
     world.finish();
 }
 
@@ -309,7 +305,6 @@ fn a_moved_head_whose_older_diff_has_no_target_branch_waits_for_the_newer() {
     world.has_pr(Some(CommitSha::parse(&"3".repeat(40)).unwrap()), "3.14");
 
     assert_eq!(world.files(), Some(PrFiles::Fetching));
-    mirrored.finish();
     world.finish();
 }
 
@@ -326,7 +321,6 @@ fn a_target_branch_the_mirror_lacks_says_so() {
         problem.message,
         "The mirror of python/cpython has no branch 3.14, which this PR targets."
     );
-    mirrored.finish();
     world.finish();
 }
 
@@ -361,7 +355,6 @@ fn a_head_in_the_mirror_shows_its_files_and_each_chunk_of_rows() {
     assert_eq!(rows, whole.rows(0..3));
     assert_eq!(spans.len(), whole.rows(0..whole.row_count()).len());
     assert_eq!(spans.iter().filter(|spans| !spans.is_empty()).count(), 13);
-    mirrored.finish();
     world.finish();
 }
 
@@ -430,7 +423,6 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
         "a link names a thread's comment by GitHub's number"
     );
     assert_eq!(threads(elsewhere), serde_json::json!([]));
-    mirrored.finish();
     world.finish();
 }
 
@@ -471,7 +463,6 @@ fn the_lines_a_gap_leaves_out_come_from_the_head_highlighted_and_stop_at_its_end
         }]
     );
     assert_eq!(unknown, []);
-    mirrored.finish();
     world.finish();
 }
 
@@ -488,7 +479,6 @@ fn the_diff_on_show_answers_without_asking_git_again() {
     let _ = git(&mirror, &["update-ref", "-d", "refs/heads/main"]);
 
     assert_eq!(world.files(), first);
-    mirrored.finish();
     world.finish();
 }
 
@@ -516,7 +506,6 @@ fn rows_of_a_diff_no_longer_on_show_are_read_again_from_its_base() {
 
     assert_eq!(rows, whole.diff.rows(3..5));
     assert_eq!(unknown.message, "Tsugiki doesn't hold PR #8.");
-    mirrored.finish();
     world.finish();
 }
 
@@ -582,7 +571,6 @@ fn a_line_has_its_row_or_its_line_at_the_head_where_no_hunk_shows_it() {
     assert_eq!(hidden_at_base, Some(hidden(4)));
     assert_eq!(old_name_at_head, None);
     assert_eq!(unchanged, None);
-    mirrored.finish();
     world.finish();
 }
 
@@ -611,7 +599,6 @@ fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
     };
     assert_ne!(before, Some(expected.clone()));
     assert_eq!(world.files(), Some(expected));
-    mirrored.finish();
     world.finish();
 }
 
@@ -658,7 +645,6 @@ fn a_pr_merged_with_a_merge_commit_shows_the_diff_it_had() {
     world.has_merged(&head, merge_commit, Some(base));
 
     assert_eq!(world.files(), Some(ready(head, before)));
-    mirrored.finish();
     world.finish();
 }
 
@@ -687,7 +673,6 @@ fn a_pr_merged_by_fast_forward_shows_the_diff_from_where_main_was() {
 
     let expected = ready(head, MirrorDiff { base, ..before });
     assert_eq!(world.files(), Some(expected));
-    mirrored.finish();
     world.finish();
 }
 
@@ -704,7 +689,6 @@ fn a_merged_pr_stored_before_tsugiki_read_its_base_starts_from_its_merge_commits
     world.has_merged(&head, merge_commit, None);
 
     assert_eq!(world.files(), Some(ready(head, before)));
-    mirrored.finish();
     world.finish();
 }
 
@@ -721,7 +705,6 @@ fn a_squashed_pr_stored_before_tsugiki_read_its_base_shows_its_diff() {
     world.has_merged(&head, squashed, None);
 
     assert_eq!(world.files(), Some(ready(head, before)));
-    mirrored.finish();
     world.finish();
 }
 
@@ -742,7 +725,6 @@ fn a_merge_the_mirror_hasnt_fetched_yet_shows_the_diff_against_the_target_branch
 
     assert_eq!(with_base, Some(ready(head.clone(), before)));
     assert_eq!(world.files(), with_base);
-    mirrored.finish();
     world.finish();
 }
 
@@ -763,7 +745,6 @@ fn a_pr_that_merges_while_its_diff_shows_starts_where_github_compared_it() {
 
     assert!(matches!(open, Some(PrFiles::Ready { files, .. }) if files.is_empty()));
     assert_eq!(world.files(), Some(ready(head, before)));
-    mirrored.finish();
     world.finish();
 }
 
@@ -781,6 +762,5 @@ fn a_fast_forward_stored_before_tsugiki_read_its_base_has_nothing_to_show() {
     world.has_merged(&head, head.clone(), None);
 
     assert!(matches!(world.files(), Some(PrFiles::Ready { files, .. }) if files.is_empty()));
-    mirrored.finish();
     world.finish();
 }

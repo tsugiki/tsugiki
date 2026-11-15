@@ -20,7 +20,7 @@
 )]
 
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
 use std::time::{Duration, Instant};
 use std::{env, thread};
@@ -45,17 +45,13 @@ fn a_killed_parent_leaves_no_server_behind() {
         Ok("worker") => hold("worker"),
         _ => {}
     }
-    let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../.temp")
-        .join(format!("lsp-crash-{}", process::id()));
-    if folder.exists() {
-        fs::remove_dir_all(&folder).unwrap();
-    }
+    // The server and the worker work in it, so it goes once both have ended.
+    let folder = tsugiki_test_git::temp_path("lsp-crash");
     fs::create_dir_all(&folder).unwrap();
     let mut parent = Command::new(env::current_exe().unwrap())
         .args(rerun())
         .env(ROLE, "parent")
-        .env(FOLDER, &folder)
+        .env(FOLDER, folder.as_os_str())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

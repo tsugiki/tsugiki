@@ -181,7 +181,8 @@ pub(super) struct ViewWorld {
     pub(super) store: crate::store::Store,
     pub(super) reader: crate::store::StoreReader,
     open: crate::store::OpenReader,
-    folder: std::path::PathBuf,
+    /// Dropped last, once `finish` has closed the database in it.
+    _folder: crate::testing::TempPath,
 }
 
 impl ViewWorld {
@@ -197,7 +198,7 @@ impl ViewWorld {
             store,
             reader,
             open,
-            folder,
+            _folder: folder,
         }
     }
 
@@ -214,6 +215,5 @@ impl ViewWorld {
     pub(super) fn finish(self) {
         self.open.close();
         self.store.close();
-        std::fs::remove_dir_all(self.folder).unwrap();
     }
 }

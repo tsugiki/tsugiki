@@ -1,7 +1,6 @@
 //! Each rule of New activity as a scenario in the glossary's words.
 
 use std::fs;
-use std::path::PathBuf;
 
 use time::{Duration, OffsetDateTime};
 
@@ -15,6 +14,7 @@ use crate::github::pull_requests::{
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, WorkFacts, reader};
+use crate::testing::TempPath;
 
 const OWN_PR: u32 = 1;
 const COLLEAGUES_PR: u32 = 2;
@@ -86,7 +86,8 @@ struct World {
     store: Store,
     reader: StoreReader,
     open_reader: OpenReader,
-    folder: PathBuf,
+    /// Dropped last, once `finish` has closed the database in it.
+    _folder: TempPath,
 }
 
 impl World {
@@ -119,7 +120,7 @@ impl World {
             store,
             reader,
             open_reader,
-            folder,
+            _folder: folder,
         }
     }
 
@@ -191,7 +192,6 @@ impl World {
     fn finish(self) {
         self.open_reader.close();
         self.store.close();
-        fs::remove_dir_all(self.folder).unwrap();
     }
 }
 

@@ -15,7 +15,7 @@ use tsugiki_test_git::git;
 
 use crate::github::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
-use crate::testing::temp_path;
+use crate::testing::{TempPath, temp_path};
 
 /// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
 /// `scripts/test-servers.ts` fetches.
@@ -52,6 +52,8 @@ pub(crate) struct Fixture {
     /// The repository the PR is in, which stands in for its Mirror.
     pub(crate) mirror: PathBuf,
     pub(crate) checkout: LookupCheckout,
+    /// The folder around both, which a test drops after the servers that work in it.
+    _root: TempPath,
 }
 
 impl Fixture {
@@ -108,6 +110,7 @@ impl Fixture {
                     head: head_commit,
                 },
             },
+            _root: root,
         }
     }
 }

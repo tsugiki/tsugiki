@@ -7,7 +7,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 use tsugiki_lsp::Language;
 
-use super::server::{Ready, Setup};
+use super::server::{Ready, Setup, Unopened};
 
 #[cfg(test)]
 mod tests;
@@ -21,6 +21,7 @@ pub(super) fn setup(folder: &Path) -> Setup {
         settings: settings(folder),
         language: Language::Python,
         ready: Ready::Initialized,
+        unopened: Unopened::FromDisk,
         index: None,
         troubles: None,
     }

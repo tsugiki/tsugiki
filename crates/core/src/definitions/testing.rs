@@ -2,6 +2,7 @@
 //! real git (ADR 0009), the servers the tests start, and a fake server for what a real one does only at
 //! moments a test can't pick.
 
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
@@ -130,16 +131,26 @@ fn commit(folder: &Path, message: &str) -> CommitSha {
 
 /// A fake clangd, which threads of the test play over in-memory pipes: it answers each lookup with the
 /// locations it was given, and reports its index's progress when the test says. The real clangd indexes a
-/// small Repository before a test could ask it anything.
+/// small Repository before a test could ask it anything. As clangd does, it refuses a lookup in a document
+/// it wasn't sent.
 pub(crate) struct FakeClangd {
     /// The messages the fake writes to the client, in order, and `None` to end its output as a crash does.
     says: Sender<Option<Value>>,
     /// The lookups the client has asked it.
     asked: Arc<AtomicUsize>,
+    /// Each document the client has opened or closed on it, in order.
+    documents: Arc<Mutex<Vec<Notified>>>,
     /// Its error output, until it ends.
     errors: Arc<Mutex<Option<PipeWriter>>>,
     /// The exit code its process ends with.
     code: Arc<AtomicI32>,
+}
+
+/// A document the client opened or closed on a [`FakeClangd`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Notified {
+    Opened(Uri),
+    Closed(Uri),
 }
 
 /// What a [`FakeClangd`] does with `initialize`.
@@ -179,8 +190,15 @@ impl FakeClangd {
         });
         let (replies, asked) = (says.clone(), Arc::new(AtomicUsize::new(0)));
         let (counts, closes) = (Arc::clone(&asked), Arc::clone(&errors));
+        let documents = Arc::new(Mutex::new(Vec::new()));
+        let logs = Arc::clone(&documents);
         let _reads = thread::spawn(move || {
-            serve(server_reads, &replies, (&answers, &counts), initialize);
+            serve(
+                server_reads,
+                &replies,
+                (&answers, &counts, &logs),
+                initialize,
+            );
             // The process ends, and its error output with it, once it stops reading.
             let _gone = ended.send(());
             drop(closes.lock().unwrap().take());
@@ -196,6 +214,7 @@ impl FakeClangd {
         let fake = Self {
             says,
             asked,
+            documents,
             errors,
             code,
         };
@@ -242,6 +261,11 @@ impl FakeClangd {
     pub(crate) fn asked(&self) -> usize {
         self.asked.load(Ordering::SeqCst)
     }
+
+    /// Each document the client has opened or closed on the fake, in order.
+    pub(crate) fn documents(&self) -> Vec<Notified> {
+        self.documents.lock().unwrap().clone()
+    }
 }
 
 /// The process a [`FakeClangd`] stands in for, which ends once the fake stops reading or crashes, with the
@@ -259,18 +283,22 @@ impl Process for FakeProcess {
 
 /// Answers each request the client writes to `input` until it sends `exit` or closes the input: each
 /// `textDocument/definition` with the next of `answers`, or the last, counting them in `asked`, and the rest
-/// with an empty result. It does what `initialize` says with `initialize`.
+/// with an empty result. A lookup in a document the client hasn't opened fails, as clangd's does, and
+/// `documents` logs each the client opens or closes. It does what `initialize` says with `initialize`.
 fn serve(
     input: PipeReader,
     replies: &Sender<Option<Value>>,
-    (answers, asked): (&[Value], &AtomicUsize),
+    (answers, asked, documents): (&[Value], &AtomicUsize, &Mutex<Vec<Notified>>),
     initialize: Initialize,
 ) {
     let mut input = BufReader::new(input);
+    let mut open = HashSet::new();
     while let Some(message) = read_message(&mut input) {
         let (Some(method), id) = (message["method"].as_str(), message.get("id")) else {
             continue;
         };
+        let document = message["params"]["textDocument"]["uri"].clone();
+        let document = serde_json::from_value::<Uri>(document).ok();
         let result = match method {
             "exit" => return,
             "initialized" if initialize == Initialize::AnswerThenLeave => {
@@ -281,6 +309,22 @@ fn serve(
                 json!({"error": {"code": -32603, "message": "the workspace can't be read"}})
             }
             "initialize" => json!({"capabilities": {}}),
+            "textDocument/didOpen" => {
+                let document = document.unwrap();
+                let _new = open.insert(document.clone());
+                documents.lock().unwrap().push(Notified::Opened(document));
+                Value::Null
+            }
+            "textDocument/didClose" => {
+                let document = document.unwrap();
+                let _was = open.remove(&document);
+                documents.lock().unwrap().push(Notified::Closed(document));
+                Value::Null
+            }
+            "textDocument/definition" if !document.is_some_and(|uri| open.contains(&uri)) => {
+                let message = "trying to get AST for non-added document";
+                json!({"error": {"code": -32602, "message": message}})
+            }
             "textDocument/definition" => {
                 let count = asked.fetch_add(1, Ordering::SeqCst);
                 answers[count.min(answers.len() - 1)].clone()

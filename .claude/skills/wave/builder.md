@@ -13,7 +13,9 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 
 - Run every command inside your worktree, with `CARGO_TARGET_DIR` unset, so Cargo builds into the
   worktree's own `target/`.
-- Skip `just smoke` and the Playwright tests.
+- Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
+  changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
+  commands and components your branch touches.
 - Commit to your branch. The session that started you runs the review and ships the PR, so don't push.
 - `just ship` takes the PR's title and body from your branch's first commit. Write that commit's message as
   the PR: a title that says what the ticket delivers, and a body that says why and how, with

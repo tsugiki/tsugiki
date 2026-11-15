@@ -75,11 +75,15 @@ reviewed to the branch's head, before any merge of main, and asks for correctnes
 or a finding a fix left half done. Name the findings already declined or kept in its prompt, so it doesn't
 raise them again. Run a third round only when a fix added a mechanism of its own, such as a new table,
 channel or type that other code goes through. In wave 4 of 0.3.2 the second rounds found the bugs that
-mattered, both in code a fix had added, and each third round found cleanups and cost 10 to 15 minutes.
+mattered, both in code a fix had added, and each third round found cleanups and cost 10 to 15 minutes. In
+wave 5, #686's third round, run because round 2 had rebuilt round 1's mechanism, found a break the rebuild
+brought in.
 
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time: each runs the
 full vitest and `rust-coverage`, which AGENTS.md leaves to CI outside a wave. In a wave a CI round trip
-costs more, and in 0.3.1 two of three first pushes failed coverage without them.
+costs more, and in 0.3.1 two of three first pushes failed coverage without them. `just preflight` runs no
+Playwright, so the builder runs the specs that drive what it changed, as [builder.md](builder.md) says: in
+wave 5 of 0.3.2, #557 changed what Ctrl+Shift+P opens with, and three e2e tests of the palette failed on CI.
 
 Done when the agent reports the review fixed and its gates passed.
 

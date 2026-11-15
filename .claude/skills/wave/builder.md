@@ -44,7 +44,7 @@ After the session says a sibling merged, run `git fetch origin`, then `git merge
 conflicts, then rerun the full `npm run vitest` and the tests of each crate either branch touched. A merge
 with no conflict can still break: a function's new signature, a new argument, a test that mocks a command's
 old answer. If both branches changed the generated bindings, run `just bindings`. Report the conflicts and
-each break you fixed.
+each break you fixed. Don't rerun `just preflight` unless the session asks: CI runs the gates on the push.
 
 ### Branch off a sibling
 

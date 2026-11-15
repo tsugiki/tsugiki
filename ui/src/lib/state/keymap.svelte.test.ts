@@ -97,6 +97,36 @@ describe("the key table", () => {
     expect(listed).not.toContain("archive");
   });
 
+  it("says what `[keys]` did to each key: a remap of its own, and a key another remap took", () => {
+    remapKeys({ archive: "f7", mute: "f7", local_mark: "", pin: "ctrl+k p", reset_layout: "" });
+    const row = (action: string) => {
+      const found = keyTable().find((each) => each.action === action);
+      return [found?.key, found?.remapped, found?.lost];
+    };
+    expect(row("mute")).toEqual(["f7", { default: "m" }, null]);
+    // Of two remapped actions on one key, the later in the table keeps it, and the other has none.
+    expect(row("archive")).toEqual([null, { default: "e" }, { key: "f7", to: "Mute" }]);
+    expect(row("next_change")).toEqual([null, null, { key: "f7", to: "Mute" }]);
+    expect(row("local_mark")).toEqual([null, { default: "ctrl+k m" }, null]);
+    // A line that gives an action its own default, or none to an action with none, changes nothing.
+    expect(row("pin")).toEqual(["ctrl+k p", null, null]);
+    expect(row("reset_layout")).toEqual([null, null, null]);
+    expect(row("toggle_hud")).toEqual(["ctrl+shift+h", null, null]);
+    expect([keyOf("archive"), actionOn("f7")]).toEqual([null, "mute"]);
+  });
+
+  it("lets a remap keep its key over a line that gives the action its own default", () => {
+    // Command Palette comes first in the table, and Next Change's line would win F7 if it took a key.
+    remapKeys({ command_palette: "f7", next_change: "f7" });
+    const row = (action: string) => {
+      const found = keyTable().find((each) => each.action === action);
+      return [found?.key, found?.remapped, found?.lost];
+    };
+    expect(row("command_palette")).toEqual(["f7", { default: "ctrl+shift+p" }, null]);
+    expect(row("next_change")).toEqual([null, null, { key: "f7", to: "Command Palette" }]);
+    expect(actionOn("f7")).toBe("command_palette");
+  });
+
   it("puts each default back once the remaps change again", () => {
     remapKeys({ archive: "a", reset_layout: "ctrl+k l" });
     remapKeys({});

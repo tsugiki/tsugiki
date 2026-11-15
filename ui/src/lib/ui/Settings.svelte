@@ -17,6 +17,7 @@
   import AccountPage from "./AccountPage.svelte";
   import AdvancedPage from "./AdvancedPage.svelte";
   import GeneralPage from "./GeneralPage.svelte";
+  import KeyboardPage from "./KeyboardPage.svelte";
   import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
 
   let {
@@ -131,6 +132,8 @@
           <GeneralPage {dialog} />
         {:else if dialog.shown.page === "Account"}
           <AccountPage {status} {about} />
+        {:else if dialog.shown.page === "Keyboard"}
+          <KeyboardPage />
         {:else if dialog.shown.page === "Advanced"}
           <AdvancedPage {dialog} {repository} {at} />
         {:else}

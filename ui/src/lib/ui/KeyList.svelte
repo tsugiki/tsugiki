@@ -23,24 +23,18 @@
 </script>
 
 <script lang="ts">
-  import { keysIn } from "$lib/state/keymap.svelte";
+  import { CONTEXT_NAMES, keysIn } from "$lib/state/keymap.svelte";
   import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
   import { bindingLabel, currentOs } from "./keys";
 
   let { here, onclose }: { here: KeysHere; onclose: () => void } = $props();
-
-  const HEADINGS: Readonly<Record<View | "anywhere", string>> = {
-    issue_list: "Issue list",
-    diff: "Diff",
-    anywhere: "Anywhere",
-  };
 
   const os = currentOs();
   /** Each view's keys that work, and a view with none goes. */
   const groups = $derived(
     [...here.views, "anywhere" as const]
       .map((context) => ({
-        heading: HEADINGS[context],
+        heading: CONTEXT_NAMES[context],
         rows: keysIn(context).filter((row) => here.actions.has(row.action)),
       }))
       .filter((group) => group.rows.length > 0),

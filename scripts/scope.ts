@@ -8,8 +8,13 @@ export type Scope = "docs" | "ui" | "all";
 const READ_BY_RUST = new Set([
   // Drawn from the migrations, and crates/core/src/store/schema/tests.rs compares the two.
   "docs/schema.md",
-  // Generated from the Rust commands, and the stale-bindings check compares the two.
+  // crates/core/src/keys/tests.rs checks each action's key against its table.
+  "docs/devel/keyboard.md",
+  // crates/core/src/theme/tests.rs checks each token's value against its table.
+  "docs/devel/themes.md",
+  // Generated from the Rust commands and the core's key table, and the stale-bindings check compares them.
   "ui/src/lib/data/bindings.ts",
+  "ui/src/lib/data/keymap.ts",
   // crates/app/tests/security.rs fails on a Tauri plugin listed here.
   "ui/package.json",
   // crates/app/src/first_frame/tests.rs checks that the page starts on the window's background.

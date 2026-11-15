@@ -39,7 +39,7 @@ describe("ChordWait", () => {
     const wait = waiting();
     const zoom = vi.fn();
     const event = press(z);
-    expect(wait.read(event, true, { "ctrl+k z": zoom })).toBe(true);
+    expect(wait.read(event, true, { toggle_detail_only: zoom })).toBe(true);
     expect(zoom).toHaveBeenCalledOnce();
     expect(wait.first).toBeNull();
     expect(stopped(event)).toBe(true);
@@ -48,7 +48,7 @@ describe("ChordWait", () => {
   it("reads the second key by where it is on a non-Latin layout", () => {
     const wait = waiting();
     const pin = vi.fn();
-    wait.read(press({ key: "з", code: "KeyP" }), true, { "ctrl+k p": pin });
+    wait.read(press({ key: "з", code: "KeyP" }), true, { pin });
     expect(pin).toHaveBeenCalledOnce();
   });
 
@@ -57,7 +57,7 @@ describe("ChordWait", () => {
       const wait = waiting();
       const pin = vi.fn();
       const event = press(init);
-      expect(wait.read(event, true, { "ctrl+k p": pin }), init.key).toBe(true);
+      expect(wait.read(event, true, { pin }), init.key).toBe(true);
       expect(wait.first, init.key).toBeNull();
       expect(stopped(event), init.key).toBe(true);
       expect(pin, init.key).not.toHaveBeenCalled();

@@ -1,10 +1,10 @@
+import { actionOn } from "$lib/state/keymap";
 import {
-  type ChordBindings,
+  type Bindings,
   type ChordStart,
   chordName,
   isChordStart,
   isModifier,
-  isOwnedChord,
   isTextBox,
   keyName,
   type Os,
@@ -35,15 +35,15 @@ export class ChordWait {
    * still times it. `canStart` says whether a chord can start here: not under a dialog or the palette, nor
    * on a screen with no chords. A chord never starts in a text box, which keeps its keys.
    */
-  read(e: KeyboardEvent, canStart: boolean, bindings: ChordBindings): boolean {
+  read(e: KeyboardEvent, canStart: boolean, bindings: Bindings): boolean {
     const name = keyName(e, this.#os);
     if (this.#first === null) {
       if (name === null || !isChordStart(name) || !canStart || isTextBox(e.target)) return false;
       this.#first = name;
     } else if (!e.repeat && !(name === null && isModifier(e))) {
-      const chord = name === null ? null : chordName(this.#first, name);
+      const action = actionOn(name === null ? null : chordName(this.#first, name));
       this.#first = null;
-      if (chord !== null && isOwnedChord(chord)) bindings[chord]?.();
+      if (action !== undefined) bindings[action]?.();
     }
     e.preventDefault();
     e.stopPropagation();

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { chordLabel, chordName, currentOs, keyGuard, keyLabel, keyName } from "./keys";
+import { actionLabel, chordName, currentOs, keyGuard, keyLabel, keyName } from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -122,7 +122,14 @@ describe("keyLabel", () => {
   });
 
   it("names a chord's two presses, with Cmd on macOS", () => {
-    expect([chordLabel("ctrl+k o", "other"), chordLabel("ctrl+k z", "mac")]).toEqual(["Ctrl+K O", "Cmd+K Z"]);
+    expect([actionLabel("toggle_files_mode", "other"), actionLabel("toggle_detail_only", "mac")]).toEqual([
+      "Ctrl+K O",
+      "Cmd+K Z",
+    ]);
+  });
+
+  it("names an action's key of one press", () => {
+    expect(actionLabel("open_settings", "other")).toBe("Ctrl+,");
   });
 
   it("names Page Down and Page Up as keyboard.md does", () => {
@@ -150,7 +157,7 @@ describe("keyGuard", () => {
   it("stops the browser and runs the action for a bound key", () => {
     const open = vi.fn();
     const event = press({ key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
-    keyGuard({ "ctrl+shift+p": open }, "other")(event);
+    keyGuard({ command_palette: open }, "other")(event);
     expect(event.defaultPrevented).toBe(true);
     expect(open).toHaveBeenCalledOnce();
   });
@@ -263,7 +270,7 @@ describe("keyGuard", () => {
   it("doesn't run an action for a key it can't name", () => {
     const open = vi.fn();
     keyGuard(
-      { "ctrl+shift+p": open },
+      { command_palette: open },
       "mac",
     )(press({ key: "P", code: "KeyP", ctrlKey: true, shiftKey: true }));
     expect(open).not.toHaveBeenCalled();

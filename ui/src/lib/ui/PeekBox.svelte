@@ -13,6 +13,7 @@
 </script>
 
 <script lang="ts">
+  import { actionOn } from "$lib/state/keymap";
   import { PEEK_LEAST, PEEK_MOST } from "$lib/state/panes.svelte";
   import { peekSized, ROW, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
@@ -53,7 +54,7 @@
     (box.querySelector<HTMLElement>("[role=listbox]") ?? box).focus({ preventScroll: true });
   }}
   onkeydown={(e) => {
-    if (keyName(e, os) !== "alt+f12" || peek.code?.pick === undefined) return;
+    if (actionOn(keyName(e, os)) !== "peek_definition" || peek.code?.pick === undefined) return;
     e.preventDefault();
     e.stopPropagation();
     // A held key would ask the server again and again.

@@ -15,7 +15,7 @@
   import DiffRows from "./DiffRows.svelte";
   import FileView from "./FileView.svelte";
   import FindBar from "./FindBar.svelte";
-  import { chordLabel, currentOs, keyLabel } from "./keys";
+  import { actionLabel, currentOs } from "./keys";
   import MirrorQuestion from "./MirrorQuestion.svelte";
   import SplitPeek from "./SplitPeek.svelte";
   import { cloningWords } from "./synced";
@@ -54,14 +54,14 @@
 
 <!-- The bar's button for the file before or after the one on show. -->
 {#snippet stepper(page: Page, by: 1 | -1)}
-  {@const [name, key, arrow] =
+  {@const [name, action, arrow] =
     by === 1
-      ? (["Next file", "alt+pagedown", "›"] as const)
-      : (["Previous file", "alt+pageup", "‹"] as const)}
+      ? (["Next file", "next_file", "›"] as const)
+      : (["Previous file", "previous_file", "‹"] as const)}
   <button
     type="button"
     aria-label={name}
-    title={`${name} (${keyLabel(key, os)})`}
+    title={`${name} (${actionLabel(action, os)})`}
     disabled={files.pages.step(page, by) === undefined}
     onclick={() => {
       files.nextFile(by);
@@ -133,7 +133,7 @@
         type="button"
         class="mode"
         aria-pressed={files.mode === "one"}
-        title={`One file at a time (${chordLabel("ctrl+k o", os)})`}
+        title={`One file at a time (${actionLabel("toggle_files_mode", os)})`}
         onclick={() => {
           files.toggleMode();
         }}>One file at a time</button

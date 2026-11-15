@@ -42,16 +42,18 @@ describe("scope", () => {
     expect(scope([])).toBe("all");
   });
 
-  // A Rust file that names a path under ui/ may read it, and then a change to that file needs the Rust
-  // checks. The highlighter's test names one only to pick its language.
-  it("runs everything for each file under ui/ that the Rust code names", () => {
+  // A Rust file that names a path under ui/ or docs/ may read it, and then a change to that file needs the
+  // Rust checks. The highlighter's test names one only to pick its language.
+  it("runs everything for each file under ui/ or docs/ that the Rust code names", () => {
     const named = new Set(
       rustFiles("../crates").flatMap((file) =>
-        [...readFileSync(file, "utf8").matchAll(/"(?:\.\.\/)*(ui\/[^"]+)"/g)].map((match) => match[1]),
+        [...readFileSync(file, "utf8").matchAll(/"(?:\.\.\/)*((?:ui\/[^"]+)|(?:docs\/[\w./-]+))"/g)].map(
+          (match) => match[1],
+        ),
       ),
     );
     named.delete("ui/src/App.svelte");
-    expect(named.size).toBeGreaterThan(0);
+    expect(named.has("docs/devel/keyboard.md") && named.has("ui/src/lib/data/keymap.ts")).toBe(true);
     for (const path of named) {
       expect(scope([path ?? ""]), path).toBe("all");
     }

@@ -618,18 +618,13 @@
       );
     };
 
-  /** Marks the item `Q` and `Shift+Q` act on, while there is one. A held key would ask the core again and
-   * again. */
+  /** Marks the item `Q` and `Shift+Q` act on, if there is one, which `markSeen` and `markUnseen` ask. A held
+   * key would ask the core again and again. */
   const marking =
-    (mark: (marked: Marked, target: EventTarget | null) => Promise<void>): ScreenAction =>
-    (target) => {
-      const marked = keyMarked(target);
-      return (
-        marked &&
-        ((e) => {
-          if (!e.repeat) void mark(marked, target);
-        })
-      );
+    (mark: (marked: Marked | undefined, target: EventTarget | null) => Promise<void>): ScreenAction =>
+    (target) =>
+    (e) => {
+      if (!e.repeat) void mark(keyMarked(target), target);
     };
 
   /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block

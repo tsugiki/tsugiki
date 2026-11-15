@@ -51,11 +51,11 @@ enum Modifiers {
 
 impl Modifiers {
     /// The modifiers a press names before its key, "ctrl+shift" in "ctrl+shift+p", in any order and case,
-    /// with Cmd for Ctrl and Option for Alt as macOS calls them. None for a word that names no modifier, or
-    /// names one twice.
-    fn parse(held: &str) -> Option<Self> {
+    /// with Cmd for Ctrl and Option for Alt as macOS calls them, or none for a press that names its key
+    /// alone. None for a word that names no modifier, or names one twice.
+    fn parse(held: Option<&str>) -> Option<Self> {
         let (mut ctrl, mut alt, mut shift) = (false, false, false);
-        for word in held.split('+') {
+        for word in held.into_iter().flat_map(|held| held.split('+')) {
             let flag = match word.to_lowercase().as_str() {
                 "ctrl" | "cmd" => &mut ctrl,
                 "alt" | "option" => &mut alt,
@@ -267,7 +267,7 @@ impl Press {
                 .map_or((None, text), |(held, key)| (Some(held), key)),
         };
         Some(Self {
-            modifiers: held.map_or(Some(Modifiers::Plain), Modifiers::parse)?,
+            modifiers: Modifiers::parse(held)?,
             key: Key::parse(key)?,
         })
     }

@@ -492,3 +492,32 @@ describe("with quick open", () => {
     expect(ran).toEqual([]);
   });
 });
+
+it("scrolls the list as little as it takes to keep the picked row in sight", async () => {
+  // Rows 20 px high, one under the other, in a list that shows 100 px of them.
+  vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
+    return Number(/palette-command-(\d+)/.exec(this.id)?.[1] ?? 0) * 20;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(20);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  const commands = Array.from({ length: 12 }, (_, i) => ({ title: `Command ${String(i)}`, run: () => {} }));
+  render(Palette, { commands, onclose: () => {} });
+  const list = screen.getByRole("listbox");
+  let scrolled = 0;
+  Object.defineProperty(list, "scrollTop", {
+    get: () => scrolled,
+    set: (top: number) => {
+      scrolled = top;
+    },
+  });
+  const input = screen.getByRole("combobox", { name: "Command" });
+
+  for (let i = 0; i < 4; i++) await fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(scrolled).toBe(0);
+  for (let i = 0; i < 6; i++) await fireEvent.keyDown(input, { key: "ArrowDown" });
+  expect(scrolled).toBe(120);
+  await fireEvent.keyDown(input, { key: "ArrowUp" });
+  expect(scrolled).toBe(120);
+  for (let i = 0; i < 9; i++) await fireEvent.keyDown(input, { key: "ArrowUp" });
+  expect(scrolled).toBe(0);
+});

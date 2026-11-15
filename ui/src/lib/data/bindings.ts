@@ -2898,7 +2898,7 @@ export type ThemeName = string;
  *  The theme picker's pick for `[appearance] theme` (#756): follow the system, or show the Theme named, which
  *  `ThemeLibrary::choice` checks against the `themes` folder before it's saved.
  */
-export type ThemePick = { kind: "system" } | { kind: "named"; name: string };
+export type ThemePick = { kind: "system" } | { kind: "named"; name: ThemeName };
 
 /**
  *  A theme ready for the window: each token as a CSS variable, and the kind, which the root's

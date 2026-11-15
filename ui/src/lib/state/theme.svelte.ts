@@ -36,6 +36,13 @@ export class ThemeState {
   #picks = 0;
   /** How many saves are on their way, which a load may have read the settings before. */
   #saving = 0;
+  /** The theme in force that `settings.toml` holds, as the last load that crossed no pick read it, or a save
+   * that worked since wrote it. A save that fails puts this back, not a pick whose save hasn't answered. No
+   * pick comes before the first load. */
+  #saved: ThemeInForce = { kind: "system" };
+  /** The theme in force that the last pick put on the window, or the failed save after it put back, which a
+   * load that crossed them keeps. */
+  #picked: ThemeInForce = { kind: "system" };
   /** The count of loads asked, so only the last one asked shows: one asked later read settings no older. */
   #loads = 0;
   /** The window's turns, one after the other, so each reaches the window after the one before it. */
@@ -98,16 +105,14 @@ export class ThemeState {
     }
     const data = answer.data;
     // The core may have read the settings before a pick made since, or before a save that is on its way, so
-    // the pick on the window stands. A pick may also come while the window turns.
-    const keepPick = () => {
-      if (this.themes && (this.#picks !== picks || this.#saving > 0)) {
-        data.theme = $state.snapshot(this.themes.theme);
-      }
-    };
-    keepPick();
+    // the theme on the window stands. Otherwise the answer says what the file holds.
+    const stands = this.#picks !== picks || this.#saving > 0;
+    if (stands) data.theme = this.#picked;
+    else this.#saved = data.theme;
     this.#take(await this.#turn(data.theme));
     if (asked !== this.#loads) return;
-    keepPick();
+    // While the window turned, a pick may have come, or a failed save put the saved theme back.
+    if (stands || this.#picks !== picks || this.#saving > 0) data.theme = this.#picked;
     this.themes = data;
     this.error = undefined;
   }
@@ -166,12 +171,11 @@ export class ThemeState {
 
   /** Makes `theme` the theme in force, or follows the system, and saves it to `settings.toml` at once,
    * without Settings' Apply (#756). The window turns to the side it keeps. One that can't be saved puts the
-   * old theme in force back, unless the user has picked again since, and `problem` says why. */
+   * theme the file holds back, unless the user has picked again since, and `problem` says why. */
   async pick(theme: ThemeView | "system"): Promise<void> {
     if (!this.themes) return;
     const pick = ++this.#picks;
     this.#saving += 1;
-    const before = $state.snapshot(this.themes.theme);
     const [inForce, saved]: [ThemeInForce, ThemePick] =
       theme === "system"
         ? [{ kind: "system" }, { kind: "system" }]
@@ -179,21 +183,28 @@ export class ThemeState {
             { kind: "named", name: theme.name, side: theme.kind },
             { kind: "named", name: theme.name },
           ];
+    this.#picked = inForce;
     this.themes.theme = inForce;
     const turned = this.#turn(inForce);
     const answer = await ask(commands.saveTheme(saved));
     this.#saving -= 1;
+    const putBack = answer.status !== "ok" && this.#picks === pick;
     if (answer.status === "ok") {
+      this.#saved = inForce;
       this.problem = undefined;
     } else {
       this.problem = `Tsugiki can't save the theme: ${answer.error.message}`;
     }
-    this.#take(await turned);
-    // The themes a reload brought since, not the ones the pick was made on.
-    if (answer.status !== "ok" && this.#picks === pick) {
-      this.themes.theme = before;
-      this.#take(await this.#turn(before));
+    // On the themes a reload brought since, not the ones the pick was made on. The turn back goes in the
+    // queue now, before any pick that comes while the pick's own turn answers.
+    let back: Promise<ThemeKind | undefined> = Promise.resolve(undefined);
+    if (putBack) {
+      this.#picked = this.#saved;
+      this.themes.theme = this.#saved;
+      back = this.#turn(this.#saved);
     }
+    this.#take(await turned);
+    this.#take(await back);
   }
 }
 

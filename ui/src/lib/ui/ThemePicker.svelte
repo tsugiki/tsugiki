@@ -29,11 +29,8 @@
   };
 
   /** Each row previews while it's picked. A file that failed shows greyed with why, and Reload themes acts
-   * without closing the list. A theme lists under the heading above it. */
-  const command = (
-    row: Exclude<PickerRow, { kind: "heading" }>,
-    group: string | undefined,
-  ): PaletteCommand => {
+   * without closing the list. A theme lists under its side's heading. */
+  const command = (row: PickerRow): PaletteCommand => {
     const preview = () => {
       picker.move(row);
     };
@@ -43,7 +40,7 @@
         return {
           title: row.title,
           current: row.chosen,
-          group,
+          group: row.kind === "theme" ? row.heading : undefined,
           preview,
           run: () => void picker.pick(row).then(onsaved),
         };
@@ -54,17 +51,7 @@
     }
   };
 
-  /** The palette's rows: each heading becomes the group of the themes below it. */
-  const commands: PaletteCommand[] = $derived.by(() => {
-    let heading: string | undefined;
-    return picker.rows.flatMap((row) => {
-      if (row.kind === "heading") {
-        heading = row.title;
-        return [];
-      }
-      return [command(row, row.kind === "theme" ? heading : undefined)];
-    });
-  });
+  const commands: PaletteCommand[] = $derived(picker.rows.map(command));
   /** The row the list opens on: the one in force. */
   const start = $derived(
     Math.max(

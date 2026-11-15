@@ -48,12 +48,15 @@ const opened = async (dark: boolean, themes: Themes = THEMES) => {
   return { theme, picker: new ThemePicker(theme) };
 };
 
-/** Each row as it reads: a heading in brackets, the row in force with a star. */
+/** Each row as it reads, the row in force with a star, and in brackets the heading each run of themes lists
+ * under. */
 const titles = (picker: ThemePicker) =>
-  picker.rows.map((row) => {
-    if (row.kind === "heading") return `[${row.title}]`;
-    if ((row.kind === "system" || row.kind === "theme") && row.chosen) return `${row.title} *`;
-    return row.title;
+  picker.rows.flatMap((row, index) => {
+    const title =
+      (row.kind === "system" || row.kind === "theme") && row.chosen ? `${row.title} *` : row.title;
+    if (row.kind !== "theme") return [title];
+    const above = picker.rows[index - 1];
+    return above?.kind === "theme" && above.heading === row.heading ? [title] : [`[${row.heading}]`, title];
   });
 
 /** The row titled `title` that picks: Follow system or a theme. */
@@ -109,9 +112,9 @@ describe("ThemePicker", () => {
     expect(titles(picker).filter((title) => title.endsWith("*"))).toEqual(["Gruvbox Dark Hard *"]);
   });
 
-  it("shows the theme in force on a heading, a file that failed and Reload themes", async () => {
+  it("shows the theme in force on a file that failed and on Reload themes", async () => {
     const { theme, picker } = await opened(true, WITH_FILES);
-    for (const title of ["Dark", "Night (night.toml)", "Reload themes"]) {
+    for (const title of ["Night (night.toml)", "Reload themes"]) {
       picker.move(pickRow(picker, "Solarized Dark"));
       picker.move(rowTitled(picker, title));
       expect(theme.shown?.name, title).toBe("Gruvbox Dark Hard");

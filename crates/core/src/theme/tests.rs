@@ -454,7 +454,7 @@ fn the_library_turns_a_pick_into_the_choice_it_saves_once_the_theme_can_be_used(
         ],
     );
     let named = |name: &str| ThemePick::Named {
-        name: name.to_owned(),
+        name: ThemeName::new(name),
     };
 
     assert_eq!(

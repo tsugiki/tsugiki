@@ -25,7 +25,7 @@
     /** Runs without closing, such as the theme picker's Reload themes. */
     keepsOpen?: boolean;
     /** The heading the row lists under, such as a theme's side in the theme picker. Rows next to each other
-     * with the same heading list under one. */
+     * with the same heading list under one, and the rows of a heading come next to each other. */
     group?: string | undefined;
   }
 
@@ -162,6 +162,21 @@
   $effect(() => {
     if (shownTitle !== undefined) untrack(() => pickedCommand?.preview?.());
   });
+  let list = $state<HTMLElement>();
+  // The list scrolls past a height, so the picked row stays in sight as the arrows move the pick.
+  $effect(() => {
+    const row = list?.querySelector<HTMLElement>(`#palette-command-${String(picked)}`);
+    if (list && row) keepInSight(list, row);
+  });
+
+  /** Scrolls `list` as little as it takes to show `row`. `scrollIntoView` would scroll the page under the
+   * palette too. The list is the offset parent of its rows. */
+  function keepInSight(list: HTMLElement, row: HTMLElement) {
+    const top = row.offsetTop;
+    const bottom = top + row.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+  }
 
   /** Closes, and runs `command` once the palette has gone and handed the focus back, so the command finds
    * the focus where the user left it: a pane command then moves it as its key would. A row that keeps it
@@ -254,8 +269,8 @@
       </li>
     {/snippet}
     {#if matching.length > 0}
-      <ul id="palette-commands" role="listbox" aria-label={shownWords.list}>
-        {#each sections as section (section.start)}
+      <ul id="palette-commands" role="listbox" aria-label={shownWords.list} bind:this={list}>
+        {#each sections as section (section.group ?? section.start)}
           {#if section.group === undefined}
             {#each section.rows as command, i (command.title)}
               {@render option(command, section.start + i)}
@@ -312,6 +327,13 @@
     margin: 0;
     padding: 4px 0;
     list-style: none;
+  }
+
+  /* A long list scrolls inside the palette, which stays in the window, and its rows measure from its top. */
+  [role="listbox"] {
+    position: relative;
+    max-height: min(480px, calc(100vh - 140px));
+    overflow-y: auto;
   }
 
   li {

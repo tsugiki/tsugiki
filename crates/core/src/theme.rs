@@ -680,7 +680,7 @@ pub struct GivenTheme<'a> {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ThemePick {
     System,
-    Named { name: String },
+    Named { name: ThemeName },
 }
 
 /// The theme the window shows, from `[appearance] theme` (#755).
@@ -846,13 +846,12 @@ impl ThemeLibrary {
             ThemePick::System => return Ok(ThemeChoice::System),
             ThemePick::Named { name } => name,
         };
-        let found = self.usable.iter().find(|theme| theme.name == name);
-        found
-            .map(|theme| ThemeChoice::Theme(ThemeName::new(&theme.name)))
-            .ok_or_else(|| {
-                let message = format!("No theme is named {name:?}.");
-                Error::new(ErrorKind::NotFound, &message)
-            })
+        if self.usable.iter().any(|theme| theme.name == name.as_str()) {
+            Ok(ThemeChoice::Theme(name))
+        } else {
+            let message = format!("No theme is named {:?}.", name.as_str());
+            Err(Error::new(ErrorKind::NotFound, &message))
+        }
     }
 
     /// The themes for the window, showing what `given` asks for, with `light` and `dark` chosen. A name no

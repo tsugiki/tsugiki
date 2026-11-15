@@ -519,6 +519,62 @@ describe("ThemeState's saves", () => {
     expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([["dark"], [null], ["dark"]]);
   });
 
+  it("put the saved theme back when every save fails, not a pick whose save hadn't answered", async () => {
+    const state = await loaded(THEMES, false);
+    const fails: ((answer: { status: "error"; error: { kind: "internal"; message: string } }) => void)[] = [];
+    vi.mocked(commands.saveTheme).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          fails.push(resolve);
+        }),
+    );
+    const failure = { status: "error", error: { kind: "internal", message: "expected `]`" } } as const;
+
+    const first = state.pick(GRUVBOX_DARK);
+    const second = state.pick(GRUVBOX_LIGHT);
+    fails[0]?.(failure);
+    await first;
+    expect(state.current?.name).toBe("Gruvbox Light Hard");
+    fails[1]?.(failure);
+    await second;
+
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(state.current?.name).toBe("VS Code Light Modern");
+    expect(vi.mocked(commands.turnWindow).mock.calls.at(-1)).toEqual([null]);
+  });
+
+  it("put the saved theme back over a load that kept the pick while the window turned", async () => {
+    const state = await loaded(THEMES, false);
+    let turned: (side: null) => void = () => {};
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(
+      new Promise((resolve) => {
+        turned = resolve;
+      }),
+    );
+    let fail: (answer: { status: "error"; error: { kind: "internal"; message: string } }) => void = () => {};
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(
+      new Promise((resolve) => {
+        fail = resolve;
+      }),
+    );
+
+    const picking = state.pick(GRUVBOX_DARK);
+    const reload = state.load();
+    // The load has its answer, and waits on its turn behind the pick's.
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(2);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fail({ status: "error", error: { kind: "internal", message: "the drive went away" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    turned(null);
+    await Promise.all([picking, reload]);
+
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    expect(state.current?.name).toBe("VS Code Light Modern");
+    expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"], [null]]);
+  });
+
   it("put the old theme back on the themes a load brought while the save was on its way", async () => {
     const state = await loaded(THEMES, true);
     let fail: (answer: { status: "error"; error: { kind: "internal"; message: string } }) => void = () => {};

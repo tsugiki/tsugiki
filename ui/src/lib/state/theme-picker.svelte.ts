@@ -5,12 +5,11 @@
 // why after both sides, and Reload themes reads the folder again (#519).
 import type { ThemeKind, ThemeState, ThemeView } from "./theme.svelte";
 
-/** A row of the picker: Follow system, a side's heading, a theme, a theme file that can't be used, or
+/** A row of the picker: Follow system, a theme under its side's heading, a theme file that can't be used, or
  * Reload themes. */
 export type PickerRow =
   | { kind: "system"; title: string; chosen: boolean }
-  | { kind: "heading"; title: string }
-  | { kind: "theme"; title: string; theme: ThemeView; chosen: boolean }
+  | { kind: "theme"; title: string; theme: ThemeView; heading: string; chosen: boolean }
   | { kind: "failed"; title: string; reason: string }
   | { kind: "reload"; title: string };
 
@@ -19,9 +18,9 @@ const SIDES: readonly ThemeKind[] = ["light", "dark"];
 
 export class ThemePicker {
   readonly #theme: ThemeState;
-  /** Follow system, each side's heading and its themes, the files of both sides that failed, then Reload
-   * themes. The row in force is marked, and the list opens on it. A failed file's row names its file, as a
-   * theme the list holds may have its name. */
+  /** Follow system, the themes of each side under its heading, the files of both sides that failed, then
+   * Reload themes. The row in force is marked, and the list opens on it. A failed file's row names its file,
+   * as a theme the list holds may have its name. */
   rows: PickerRow[] = $derived([
     this.#systemRow(),
     ...SIDES.flatMap((side) => this.#sideRows(side)),
@@ -37,20 +36,18 @@ export class ThemePicker {
     return { kind: "system", title: "Follow system", chosen: this.#theme.themes?.theme.kind === "system" };
   }
 
-  /** Side `side`'s heading, then its themes. One a theme the settings keep, by its name or a mode from
+  /** Side `side`'s themes, under its heading. One a theme the settings keep, by its name or a mode from
    * before, is in force. */
   #sideRows(side: ThemeKind): PickerRow[] {
     const kept = this.#theme.themes?.theme.kind !== "system";
     const inForce = kept ? this.#theme.current?.name : undefined;
-    return [
-      { kind: "heading", title: HEADINGS[side] },
-      ...this.#theme.themesOf(side).map((theme): PickerRow => ({
-        kind: "theme",
-        title: theme.name,
-        theme,
-        chosen: theme.name === inForce,
-      })),
-    ];
+    return this.#theme.themesOf(side).map((theme) => ({
+      kind: "theme",
+      title: theme.name,
+      theme,
+      heading: HEADINGS[side],
+      chosen: theme.name === inForce,
+    }));
   }
 
   #failedRows(side: ThemeKind): PickerRow[] {

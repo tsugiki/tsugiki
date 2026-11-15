@@ -6,7 +6,7 @@
 -->
 <script lang="ts" generics="T extends string">
   import { type Snippet, tick, untrack } from "svelte";
-  import { railTabLabel, type RailState, type RailTab } from "$lib/state/rail.svelte";
+  import { railTabLabel, type RailState, type RailStep, type RailTab } from "$lib/state/rail.svelte";
   import { currentOs, keyName, withKey } from "./keys";
 
   let {
@@ -28,7 +28,9 @@
 
   /** The tab on show: the one picked last. */
   const shown = $derived(tabs[rail.tab]);
-  /** The tab row, which shows only while there is more than one tab to pick. */
+  /** Whether the rail shows a tab row: only while it has more than one tab to pick. */
+  const tabbed = $derived(rail.order.length > 1);
+  /** The tab row. */
   let tabRow = $state<HTMLElement | null>(null);
   /** Whether the focus is in the rail, from the first focus in it until the focus moves to an element outside
    * it, or to the page, as a click on a pane's background moves it. Another app taking the focus leaves the
@@ -46,15 +48,31 @@
 
   const selectedTab = () => tabRow?.querySelector<HTMLElement>('[aria-selected="true"]');
 
-  /** ← and → in the tab row show the tab before or after the one on show, round from either end, and focus
-   * it. */
+  /** The tab each key of the tab row moves to, as the ARIA tabs pattern has it. */
+  const STEPS: Readonly<Record<string, RailStep>> = {
+    home: "first",
+    arrowleft: "previous",
+    arrowright: "next",
+    end: "last",
+  };
+
+  /** Home, End, ← and → in the tab row show the first tab, the one before the tab on show, the one after it,
+   * or the last, round from either end, and focus it. */
   async function ontabkeydown(e: KeyboardEvent) {
-    const key = keyName(e, currentOs());
-    if (key !== "arrowleft" && key !== "arrowright") return;
+    const step = STEPS[keyName(e, currentOs()) ?? ""];
+    if (step === undefined) return;
     e.preventDefault();
-    rail.step(key === "arrowright" ? 1 : -1);
+    rail.go(step);
     await tick();
     selectedTab()?.focus();
+  }
+
+  /** A click on a tab shows it, and a click on the tab on show closes the rail (#727). Enter or Space on the
+   * tab on show, or a screen reader's press, leaves the rail open: the ARIA tabs pattern lets them confirm
+   * the tab. Only a mouse's click counts clicks in `detail`. */
+  function ontabclick(id: T, e: MouseEvent) {
+    if (e.detail === 0) rail.pick(id);
+    else rail.toggle(id);
   }
 
   // A key or a button that shows another tab while the focus is in the pane on show takes that pane away,
@@ -95,7 +113,7 @@
   {@render edge()}
   <div class="column">
     <header>
-      {#if rail.order.length > 1}
+      {#if tabbed}
         <div class="tabs" role="tablist" aria-label="Rail tabs" bind:this={tabRow}>
           {#each rail.order as id (id)}
             {@const label = railTabLabel(tabs[id])}
@@ -108,8 +126,8 @@
               tabindex={id === rail.tab ? 0 : -1}
               onkeydown={ontabkeydown}
               title={withKey(label, tabs[id].action, currentOs())}
-              onclick={() => {
-                rail.toggle(id);
+              onclick={(e) => {
+                ontabclick(id, e);
               }}>{label}</button
             >
           {/each}
@@ -127,13 +145,15 @@
         }}>×</button
       >
     </header>
-    {#if rail.order.length > 1}
-      <div class="pane" id="rail-pane" role="tabpanel" aria-labelledby={`rail-tab-${rail.tab}`}>
-        {@render shown.pane()}
-      </div>
-    {:else}
-      <div class="pane" role="region" aria-label={shown.name}>{@render shown.pane()}</div>
-    {/if}
+    <div
+      class="pane"
+      id={tabbed ? "rail-pane" : undefined}
+      role={tabbed ? "tabpanel" : "region"}
+      aria-labelledby={tabbed ? `rail-tab-${rail.tab}` : undefined}
+      aria-label={tabbed ? undefined : shown.name}
+    >
+      {@render shown.pane()}
+    </div>
   </div>
 </aside>
 

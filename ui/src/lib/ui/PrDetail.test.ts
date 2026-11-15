@@ -454,7 +454,7 @@ it("opens the rail from the Files button at the right of the tabs, and closes it
 
 it("names the rail's key as [keys] gives it, and none while it has none", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   remapKeys({ toggle_rail_files: "ctrl+j f" });
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const close = screen.getByRole("button", { name: "Close the rail" });
@@ -470,7 +470,7 @@ it("names the rail's key as [keys] gives it, and none while it has none", async 
 
 it("closes the rail on ×, and gives the focus to the Files button, as the whole pane scrolls the Conversation again", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const panel = screen.getByRole("tabpanel");
   const beside = [panel.tabIndex, panel.hasAttribute("data-scrolls")];
@@ -494,7 +494,7 @@ it("closes the rail on ×, and gives the focus to the Files button, as the whole
 
 it("lets the whole pane scroll, with no rail, for a PR without a view, though the rail is open", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(null, 10, vi.fn(), vi.fn(), panes);
 
   const section = screen.getByRole("region", { name: "PR view" });
@@ -503,7 +503,7 @@ it("lets the whole pane scroll, with no rail, for a PR without a view, though th
 
 it("leaves the focus where it went after the rail held it, as the rail closes", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const close = screen.getByRole("button", { name: "Close the rail" });
   // The focus moves within the rail, then a click on a pane's background takes it to the page.
@@ -521,7 +521,7 @@ it("leaves the focus where it went after the rail held it, as the rail closes", 
 
 it("still hands on the focus as the rail goes after another app took it from the rail", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const close = screen.getByRole("button", { name: "Close the rail" });
   close.focus();
@@ -540,7 +540,7 @@ it("still hands on the focus as the rail goes after another app took it from the
 
 it("gives the focus to the Files button as a Conversation that held it stops scrolling beside the rail", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const close = screen.getByRole("button", { name: "Close the rail" });
   close.focus();
@@ -563,7 +563,7 @@ it("gives the focus to the Files button as a Conversation that held it stops scr
 
 it("gives the focus back to the Conversation on Esc in the rail, which stays open, and goes no further", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const heard = vi.fn();
   window.addEventListener("keydown", heard);
@@ -589,7 +589,7 @@ it("gives the focus back to the Conversation on Esc in the rail, which stays ope
 
 it("keeps the rail open, at its width, from the Conversation to the Files tab and back", async () => {
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   panes.rail = 360;
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const body = () => document.querySelector<HTMLElement>(".body") as HTMLElement;
@@ -616,7 +616,7 @@ it("drags the rail's left edge between its least and greatest widths, saves wher
   // jsdom has no pointer capture.
   HTMLElement.prototype.setPointerCapture = vi.fn();
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const edge = screen.getByRole("separator", { name: "Rail width" });
   const width = () => panes.rail;
@@ -652,7 +652,7 @@ it("keeps the rail's width while a narrow pane squeezes it, and narrows it from 
     return { width: this.matches(".rail") ? 150 : 240 } as DOMRect;
   });
   const panes = new PanesState();
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
   const edge = screen.getByRole("separator", { name: "Rail width" });
 
@@ -691,19 +691,19 @@ it("keeps the Conversation where it was read to as the rail opens and closes, th
   });
   section.scrollTop = 400;
 
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await tick();
   const opened = panel.scrollTop;
   panel.scrollTop = 500;
-  panes.railState.open = false;
+  panes.railState.close();
   await tick();
   const closed = section.scrollTop;
   // Back at the top of the Conversation, the pane shows its header again.
   section.scrollTop = 50;
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await tick();
   const topOpened = panel.scrollTop;
-  panes.railState.open = false;
+  panes.railState.close();
   await tick();
 
   expect([opened, closed, topOpened, section.scrollTop]).toEqual([300, 600, 0, 0]);
@@ -728,7 +728,7 @@ it("hands the focus the pane takes on to the Conversation beside the rail, which
   const panel = screen.getByRole("tabpanel");
   section.focus();
   const alone = document.activeElement;
-  panes.railState.open = true;
+  panes.railState.pick("files");
   await tick();
   const opened = document.activeElement;
   // A focus inside the pane stays where it is.

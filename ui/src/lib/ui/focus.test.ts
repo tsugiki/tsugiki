@@ -87,7 +87,7 @@ describe("focusBesideRail", () => {
     expect([toDiff, focusedName()]).toEqual(["Diff", "File view"]);
   });
 
-  it("gives the focus to the Conversation while it scrolls beside the rail, and else to the Files button", () => {
+  it("gives the focus to the Conversation while it scrolls beside the rail, and else to the button of the rail's tab", () => {
     const pane = paneOf("<p>The description</p>", true);
     focusBesideRail(pane, "files");
     const beside = document.activeElement;

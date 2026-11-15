@@ -65,7 +65,8 @@ it("shows another tab on a click, keeps a tab's count while another shows, and c
     tab("Review · 3").textContent,
   ];
   const onFiles = screen.getByRole("button", { name: "Close the rail" }).title;
-  await fireEvent.click(tab("Files"));
+  // A mouse counts its clicks in `detail`.
+  await fireEvent.click(tab("Files"), { detail: 1 });
 
   expect([moved, onReview, onFiles]).toEqual([
     [true, "files", "Tree", "Review · 3"],
@@ -75,7 +76,23 @@ it("shows another tab on a click, keeps a tab's count while another shows, and c
   expect([rail.open, rail.tab]).toEqual([false, "files"]);
 });
 
-it("moves between the tabs on ← and →, round from either end, and takes the focus along", async () => {
+it("leaves the rail open on Enter or Space on the tab on show, which confirm it, and shows another tab", async () => {
+  const { rail } = shown(["files", "review"]);
+
+  // A key or a screen reader presses a button with a click that counts none.
+  tab("Files").click();
+  await tick();
+  const confirmed = [rail.open, rail.tab];
+  tab("Review · 3").click();
+  await tick();
+
+  expect([confirmed, [rail.open, rail.tab]]).toEqual([
+    [true, "files"],
+    [true, "review"],
+  ]);
+});
+
+it("moves between the tabs on Home, End, ← and →, round from either end, and takes the focus along", async () => {
   const { rail } = shown(["files", "review"]);
   tab("Files").focus();
 
@@ -85,11 +102,18 @@ it("moves between the tabs on ← and →, round from either end, and takes the 
   const round = [rail.tab, document.activeElement === tab("Files")];
   await fireEvent.keyDown(tab("Files"), { key: "ArrowLeft" });
   const left = [rail.tab, document.activeElement === tab("Review · 3")];
-  // Another key, or an arrow with Ctrl, leaves the tab on show.
+  await fireEvent.keyDown(tab("Review · 3"), { key: "Home" });
+  const home = [rail.tab, document.activeElement === tab("Files")];
+  await fireEvent.keyDown(tab("Files"), { key: "End" });
+  const end = [rail.tab, document.activeElement === tab("Review · 3")];
+  // Another key, an arrow with Ctrl, or Shift alone, leaves the tab on show.
   await fireEvent.keyDown(tab("Review · 3"), { key: "ArrowLeft", ctrlKey: true });
   await fireEvent.keyDown(tab("Review · 3"), { key: "a" });
+  await fireEvent.keyDown(tab("Review · 3"), { key: "Shift", shiftKey: true });
 
-  expect([right, round, left]).toEqual([
+  expect([right, round, left, home, end]).toEqual([
+    ["review", true],
+    ["files", true],
     ["review", true],
     ["files", true],
     ["review", true],

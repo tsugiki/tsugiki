@@ -34,8 +34,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   tab: the Files button, `Ctrl+K F` and "View: Files in the Rail". The button or key of the tab on show
   closes the rail, and so does × in its corner. It stays open, at its width and on its tab, from one of the
   PR's tabs to the other and from PR to PR, until the user closes it or Tsugiki quits.
-  - A row of tabs at the top of the rail shows once it has two tabs or more. A click on a tab shows it, a
-    click on the tab on show closes the rail, and ← → move between the tabs while the row holds the focus.
+  - A row of tabs at the top of the rail shows once it has two tabs or more. A click on a tab shows it, and
+    a click on the tab on show closes the rail, though Enter or Space on it leaves the rail open, as the ARIA
+    tabs pattern has them confirm the tab. ← → move between the tabs while the row holds the focus, and Home
+    and End go to the first and the last.
     The rail opens on the tab the user picked last, for the session. A tab can put a count in its label,
     as "Review · 3", on its button too, and keeps it while another tab shows.
   - Its left edge drags its width, from 200 to 640 px, while the tab beside it keeps 240; a double-click
@@ -43,7 +45,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     the rail the Conversation scrolls by itself under the tab row, as the diff does.
   - Esc in the rail gives the focus to the diff, or the file view over it, or the Conversation, and leaves
     the rail open. Closing the rail with the focus in it does the same, and from the Conversation, which the
-    whole pane scrolls again, gives the focus to the Files button.
+    whole pane scrolls again, gives the focus to the button of the rail's tab that showed.
 - Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a
   short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs
   no API call. New line comments stay on lines of the diff, because GitHub's API accepts them only there; the

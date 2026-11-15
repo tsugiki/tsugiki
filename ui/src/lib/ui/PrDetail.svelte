@@ -67,8 +67,11 @@
   // Svelte sets each to null as its element goes.
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
-  /** The rail's tabs, each with the pane it draws. */
-  const railTabs: Readonly<Record<RailTabId, RailTab>> = { files: { ...RAIL_TABS.files, pane: filesPane } };
+  /** The rail's tabs, each with the pane it draws. Derived, so that a count a tab takes from the PR, as
+   * #413's Review will, follows it. */
+  const railTabs: Readonly<Record<RailTabId, RailTab>> = $derived({
+    files: { ...RAIL_TABS.files, pane: filesPane },
+  });
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
   const railed = $derived(panes.railState.open && Boolean(pr.view));
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
@@ -100,7 +103,7 @@
   // the top, so each reads where the Conversation was before the page changes, and scrolls the new scroller
   // there after. And the Conversation beside the rail holds the focus as only a scroller does, so a focus on
   // it that the change leaves on a tab that no longer scrolls goes to what the rail sits beside, or the
-  // Files button: on the page, the arrows would move the Issue list's cursor.
+  // button of the rail's tab: on the page, the arrows would move the Issue list's cursor.
   let readTo = 0;
   let panelFocused = false;
   $effect.pre(() => {
@@ -210,7 +213,7 @@
           type="button"
           class="rail-button"
           data-opens-rail={id}
-          aria-label={`${label} in the rail`}
+          aria-label={`${railTabs[id].name} in the rail`}
           aria-pressed={panes.railState.open && panes.railState.tab === id}
           title={withKey(`${label} in the rail`, railTabs[id].action, currentOs())}
           onclick={() => {

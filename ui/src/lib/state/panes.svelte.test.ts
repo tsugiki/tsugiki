@@ -67,7 +67,7 @@ it("keeps the rail's width with the panes, and leaves out whether the rail shows
   const panes = new PanesState();
   await panes.load();
   const read = [panes.rail, panes.railState.open];
-  panes.railState.open = true;
+  panes.railState.pick("files");
   panes.rail = 400;
 
   await panes.save();
@@ -296,7 +296,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   await panes.load();
-  panes.railState.open = true;
+  panes.railState.pick("files");
 
   await panes.resetLayout();
 

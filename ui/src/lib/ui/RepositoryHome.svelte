@@ -16,7 +16,7 @@
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
-  import { RAIL_ORDER, RAIL_TABS, railTabOf, type RailTabId } from "$lib/state/rail.svelte";
+  import { RAIL_ORDER, RAIL_TAB_OF, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -606,7 +606,6 @@
   function runKey(key: string | null, action: Action | undefined, e: KeyboardEvent) {
     const files = shownFiles();
     const tab = filesTab();
-    const railTab = action === undefined ? undefined : railTabOf(action);
     // A key that types does so in a text box, whatever its action: `[keys]` may give Hide or Show the Sidebar
     // a plain key.
     if (key !== null && typesInTextBox(key) && isTextBox(e.target)) return;
@@ -629,8 +628,8 @@
       files?.toggleMode();
     } else if (action === "unfold_unchanged") {
       files?.unfoldUnchanged();
-    } else if (railTab) {
-      toggleRail(railTab);
+    } else if (action !== undefined && RAIL_TAB_OF[action] !== undefined) {
+      toggleRail(RAIL_TAB_OF[action]);
     } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;

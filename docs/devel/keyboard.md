@@ -54,8 +54,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   row holds the focus, and Home and End go to the first and the last.
 - `Ctrl+K J` opens the files of a Stale review's Files tab that the Review left unchanged, as VS Code's
   `Ctrl+K Ctrl+J` unfolds all its regions.
-- The command palette's quick open finds Issues, PRs, and files in the current PR. `?` lists the keys
-  available in the current view.
+- The command palette's quick open finds Issues, PRs, and files in the current PR.
+- `?` lists the keys that work where the focus is, each with its action's title and the key in force: the
+  Issue list's while the list has the focus, the diff's while the Files tab shows its diff, then those that
+  work anywhere. A key is listed only where it would run its action: Next Tab while a PR shows, and in a
+  text box only the keys that work there. Esc closes the list, and in a text box `?` types.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable
   config file.

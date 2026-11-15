@@ -3,7 +3,7 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
-import { type Action, remapKeys } from "$lib/state/keymap.svelte";
+import { type Action, keysIn, remapKeys } from "$lib/state/keymap.svelte";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -1136,6 +1136,58 @@ it("moves through a PR's changes with F7 and Shift+F7 on its Files tab", async (
   expect(next.mock.calls).toEqual([[1], [-1]]);
 });
 
+it("names the views whose keys work where a press goes, for the `?` list", async () => {
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  const views = (target: EventTarget | null) => component.keysHere(target).views;
+  const onList = [views(document.body), views(treeRow)];
+  await fireEvent.click(treeRow);
+  const detail = document.querySelector('[data-pane="detail"]');
+  // The Conversation tab has no keys of its own.
+  const onConversation = views(detail);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  await screen.findByRole("region", { name: "Diff" });
+
+  expect([...onList, onConversation]).toEqual([["issue_list"], ["issue_list"], []]);
+  // The diff's keys work from the list too, while the Files tab shows, every one of them.
+  expect([views(detail), views(treeRow)]).toEqual([["diff"], ["issue_list", "diff"]]);
+  const here = component.keysHere(detail);
+  expect(keysIn("diff").every((row) => here.works(row.action))).toBe(true);
+});
+
+it("lists for `?` only the keys that would run: the PR view's while a PR shows, a text box's in one", async () => {
+  const { component, issueRow, treeRow } = await listing();
+  const box = document.createElement("input");
+  document.body.append(box);
+  /** Whether each key that works anywhere would run for a press on `target`. */
+  const works = (target: EventTarget | null) => {
+    const here = component.keysHere(target);
+    return Object.fromEntries(keysIn("anywhere").map((row) => [row.action, here.works(row.action)]));
+  };
+  const inBox = works(box);
+  box.remove();
+  await fireEvent.click(issueRow);
+  const onIssue = works(document.body);
+  await fireEvent.click(treeRow);
+  await screen.findByRole("tab", { name: "Files" });
+
+  // The page decides on its own actions, such as Command Palette.
+  expect(inBox).toMatchObject({ toggle_sidebar: true, toggle_detail_only: false, command_palette: true });
+  expect(onIssue).toMatchObject({ next_tab: false, toggle_rail_files: false, toggle_detail_only: true });
+  expect(works(document.body)).toMatchObject({ next_tab: true, toggle_rail_files: true });
+});
+
 it("moves between a PR's files with Alt+PageDown and Alt+PageUp on its Files tab", async () => {
   const next = vi.spyOn(PrFilesState.prototype, "nextFile");
   const files = await onFiles();
@@ -1545,6 +1597,36 @@ it("leaves the diff's keys alone while the file view covers it, and the cursor o
 
   expect(nextChange).not.toHaveBeenCalled();
   expect(row?.getAttribute("aria-current")).toBe("true");
+});
+
+it("leaves the diff's lookups alone of its keys for `?` while the file view covers it", async () => {
+  vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue(eggsView());
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  const here = component.keysHere(await screen.findByRole("region", { name: "File view" }));
+  const works = Object.fromEntries(keysIn("diff").map((row) => [row.action, here.works(row.action)]));
+
+  expect(here.views).toEqual(["diff"]);
+  expect(works).toMatchObject({
+    go_to_definition: true,
+    peek_definition: true,
+    next_change: false,
+    find_in_diff: false,
+  });
+  expect(keysIn("anywhere").every((row) => here.works(row.action))).toBe(true);
 });
 
 it("adds a history entry for a file view F12 opens from another, and Alt+← comes back to the first", async () => {

@@ -31,7 +31,7 @@
   import { scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import type { View } from "./KeyList.svelte";
+  import type { KeysHere, View } from "./KeyList.svelte";
   import { type Action, actionOn } from "$lib/state/keymap.svelte";
   import { actionLabel, currentOs, isTextBox, keyName, typesInTextBox } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
@@ -567,15 +567,21 @@
     }
   }
 
-  /** The views whose keys work for a press on `target`, which the `?` list shows: the list's while the press
-   * goes to the list, as `inList` says, and the diff's while the Files tab shows its diff, wherever the focus
-   * is. A text box keeps the keys of both. */
-  export function keyViews(target: EventTarget | null): View[] {
+  /** The diff's actions that work in the file view over it, which looks up the word picked in it (#457). */
+  const IN_FILE_VIEW: ReadonlySet<Action> = new Set(["go_to_definition", "peek_definition"]);
+
+  /** Which keys of the screen work for a press on `target`, for the `?` list: the list's while the press
+   * goes to the list, as `inList` says, and the diff's while the Files tab shows, wherever the focus is. The
+   * file view over the diff keeps only its lookups. The page knows which keys a text box keeps. */
+  export function keysHere(target: EventTarget | null): KeysHere {
     const views: View[] = [];
-    if (isTextBox(target)) return views;
     if (inList(target)) views.push("issue_list");
-    if (shownFiles()) views.push("diff");
-    return views;
+    if (filesTab()) views.push("diff");
+    const covered = shownFiles() === undefined;
+    return {
+      views,
+      works: (row) => row.context !== "diff" || !covered || IN_FILE_VIEW.has(row.action),
+    };
   }
 
   /** Focuses the row under the cursor, so it scrolls into view, and Enter presses its button. While the list

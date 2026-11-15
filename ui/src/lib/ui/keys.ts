@@ -41,7 +41,16 @@ const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "open_on_github",
   "toggle_diff_view",
   "find_in_diff",
+  "show_keys",
+  "open_devtools",
 ]);
+
+/** Whether the key of `action` works in a text box, as long as it types nothing there: the page's own
+ * actions, those the Repository screen runs before it leaves a text box its keys, and Open DevTools, which
+ * the webview opens itself. */
+export function worksInTextBox(action: Action): boolean {
+  return IN_TEXT_BOX.has(action);
+}
 
 /** Whether `name` types in a text box: a plain key, Backspace and Delete, a capital letter such as Shift+Q,
  * and Ctrl+Alt with a key that types, which AltGr sends on Windows, as on Ctrl+Alt+B or a German Ctrl+Alt+Q,
@@ -151,7 +160,11 @@ function chordLabel(chord: string, os: Os): string {
  * while the user has left it with no key. */
 export function actionLabel(action: Action, os: Os): string | null {
   const key = keyOf(action);
-  if (key === null) return null;
+  return key === null ? null : bindingLabel(key, os);
+}
+
+/** A key of one press or a chord as the user reads it: "ctrl+k o" is "Ctrl+K O", and "f7" is "F7". */
+export function bindingLabel(key: string, os: Os): string {
   return isChord(key) ? chordLabel(key, os) : keyLabel(key, os);
 }
 

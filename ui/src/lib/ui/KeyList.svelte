@@ -1,27 +1,26 @@
-<!-- The list `?` opens (#559): the keys that work where the focus was, each with its action's title, from the
-     core's key table with the user's remaps. The view's own keys come first, then those that work anywhere.
-     It closes on Esc, Close or a press outside, and gives the focus back. -->
+<!-- The list `?` opens (#559): the keys that work where the press went, each with its action's title, from
+     the core's key table with the user's remaps. The view's own keys come first, then those that work
+     anywhere. It closes on Esc, Close or a press outside, and gives the focus back. -->
 <script lang="ts" module>
+  import type { KeyedRow } from "$lib/state/keymap.svelte";
+
   /** A view whose keys work only there, which the list names. */
   export type View = "issue_list" | "diff";
+
+  /** Which keys work where a press went: the views it went to, whose keys the list shows before those that
+   * work anywhere, and whether each row's key runs its action there. */
+  export interface KeysHere {
+    views: readonly View[];
+    works: (row: KeyedRow) => boolean;
+  }
 </script>
 
 <script lang="ts">
   import { keysIn } from "$lib/state/keymap.svelte";
   import { closeOnPress, takeFocus } from "./focus";
-  import { actionLabel, currentOs } from "./keys";
+  import { bindingLabel, currentOs } from "./keys";
 
-  let {
-    views,
-    development,
-    onclose,
-  }: {
-    /** The views the focus was in, whose keys the list shows before those that work anywhere. */
-    views: readonly View[];
-    /** Whether this is a development build, the only one in which Open DevTools has a key. */
-    development: boolean;
-    onclose: () => void;
-  } = $props();
+  let { here, onclose }: { here: KeysHere; onclose: () => void } = $props();
 
   const HEADINGS: Readonly<Record<View | "anywhere", string>> = {
     issue_list: "Issue list",
@@ -30,11 +29,11 @@
   };
 
   const os = currentOs();
+  /** Each view's keys that work, and a view with none goes. */
   const groups = $derived(
-    [...views, "anywhere" as const].map((context) => ({
-      heading: HEADINGS[context],
-      rows: keysIn(context).filter((row) => development || row.action !== "open_devtools"),
-    })),
+    [...here.views, "anywhere" as const]
+      .map((context) => ({ heading: HEADINGS[context], rows: keysIn(context).filter(here.works) }))
+      .filter((group) => group.rows.length > 0),
   );
 
   function closeOnEscape(e: KeyboardEvent) {
@@ -64,7 +63,7 @@
         <h3>{heading}</h3>
         <dl>
           {#each rows as row (row.action)}
-            <dt><kbd>{actionLabel(row.action, os)}</kbd></dt>
+            <dt><kbd>{bindingLabel(row.key, os)}</kbd></dt>
             <dd>{row.title}</dd>
           {/each}
         </dl>

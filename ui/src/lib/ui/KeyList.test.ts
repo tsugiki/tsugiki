@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { remapKeys } from "$lib/state/keymap.svelte";
+import { type KeyedRow, remapKeys } from "$lib/state/keymap.svelte";
 import KeyList, { type View } from "./KeyList.svelte";
 
 beforeEach(() => {
@@ -12,11 +12,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const show = (views: readonly View[], development = false) => {
+const show = (views: readonly View[], works: (row: KeyedRow) => boolean = () => true) => {
   const onclose = vi.fn();
-  render(KeyList, { views, development, onclose });
+  render(KeyList, { here: { views, works }, onclose });
   return onclose;
 };
+
+/** The sections of the list, by name. */
+const sections = () =>
+  within(screen.getByRole("dialog", { name: "Keys" }))
+    .getAllByRole("region")
+    .map((section) => section.getAttribute("aria-label"));
 
 /** The keys a section of the list names, each with its action's title. */
 const keysOf = (section: string) => {
@@ -26,9 +32,8 @@ const keysOf = (section: string) => {
 
 it("lists the diff's keys first, then those that work anywhere, each by its title", () => {
   show(["diff"]);
-  const sections = within(screen.getByRole("dialog", { name: "Keys" })).getAllByRole("region");
 
-  expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["Diff", "Anywhere"]);
+  expect(sections()).toEqual(["Diff", "Anywhere"]);
   expect(keysOf("Diff")).toEqual(expect.arrayContaining(["F7 Next Change", "F8 Next Comment Thread"]));
   expect(keysOf("Diff")).not.toContain("E Archive");
   expect(keysOf("Anywhere")).toEqual(
@@ -53,6 +58,13 @@ it("lists the Issue list's keys, and leaves out an action with no key and the co
   expect(all).not.toContain("Send Comment");
 });
 
+it("leaves out each key that doesn't work there, and a view with none", () => {
+  show(["issue_list", "diff"], (row) => row.context !== "issue_list" && row.action !== "next_change");
+
+  expect(sections()).toEqual(["Diff", "Anywhere"]);
+  expect(keysOf("Diff")).not.toContain("F7 Next Change");
+});
+
 it("shows a remapped key by its new binding, and an action it took the key from not at all", () => {
   remapKeys({ archive: "a", next_change: "ctrl+k n", mute: "f8" });
   show(["issue_list", "diff"]);
@@ -63,14 +75,10 @@ it("shows a remapped key by its new binding, and an action it took the key from 
   expect(keysOf("Diff").filter((key) => key.endsWith("Next Comment Thread"))).toEqual([]);
 });
 
-it("lists Open DevTools only in a development build", () => {
-  show([], true);
-  expect(keysOf("Anywhere")).toContain("Ctrl+Shift+I Open DevTools");
-});
-
-it("leaves Open DevTools out of a release", () => {
-  show([]);
-  expect(keysOf("Anywhere")).not.toContain("Ctrl+Shift+I Open DevTools");
+it("shows a key two remapped actions share only by the one it runs", () => {
+  remapKeys({ archive: "x", mute: "x" });
+  show(["issue_list"]);
+  expect(keysOf("Issue list").filter((key) => key.startsWith("X "))).toEqual(["X Mute"]);
 });
 
 it("closes on Esc, Close and a press outside", async () => {

@@ -12,6 +12,9 @@ export type Action = Default["action"];
  * A key is named as `keyName` and `chordName` name them: "ctrl+shift+p", "ctrl+k m". */
 export type Row = Omit<Default, "key"> & { readonly key: string | null };
 
+/** A row whose action has a key in force. */
+export type KeyedRow = Row & { readonly key: string };
+
 /** Where an action's key works, as the core's table says: anywhere, or in the Issue list, the diff or the
  * composer. */
 export type Context = Default["context"];
@@ -108,10 +111,13 @@ export function keyTable(): readonly Row[] {
   return keymap.rows;
 }
 
-/** The rows of the actions whose key works in `context` and that have a key in force, in the table's order.
- * The `?` list shows them. */
-export function keysIn(context: Context): readonly Row[] {
-  return keymap.rows.filter((row) => row.context === context && row.key !== null);
+/** The rows of the actions whose key works in `context` and runs them, in the table's order: of two remapped
+ * actions on one key, only the one `actionOn` finds there. The `?` list shows them. */
+export function keysIn(context: Context): readonly KeyedRow[] {
+  return keymap.rows.filter(
+    (row): row is KeyedRow =>
+      row.context === context && row.key !== null && keymap.actionOn(row.key) === row.action,
+  );
 }
 
 /** Puts the keys `[keys]` gives in force, in place of those it gave before. */

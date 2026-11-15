@@ -1316,11 +1316,74 @@ describe("the key list", () => {
     expect(issueList.getByText("Archive").previousElementSibling?.textContent).toBe("A");
   });
 
-  it("lists only the keys that work anywhere on onboarding", async () => {
+  /** The titles of the actions the list names. */
+  const titles = () => screen.getAllByRole("definition").map((title) => title.textContent);
+
+  it("lists only the page's own keys on onboarding, which has no Repository's screen", async () => {
     render(Page);
     await screen.findByText(/Your token comes from/);
     await question();
+
     expect(sections()).toEqual(["Anywhere"]);
+    expect(titles()).toEqual([
+      "Command Palette",
+      "Pick a Theme",
+      "Reload Themes",
+      "Switch Repository",
+      "Open Settings",
+      "Show or Hide the Performance HUD",
+      "List the View's Keys",
+    ]);
+  });
+
+  it("lists in a text box only the keys that work there", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { show_keys: "ctrl+/", toggle_hud: "h", reload_themes: "k r" };
+    core.settings.mockResolvedValue(remapped);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+/")).toBe("show_keys");
+    });
+    const box = document.createElement("input");
+    document.body.append(box);
+    await fireEvent.keyDown(box, { key: "/", code: "Slash", ctrlKey: true });
+    box.remove();
+
+    // H and K type there, and a chord of the screen's, such as Ctrl+K Z, doesn't start in a text box.
+    expect(titles()).toEqual(
+      expect.arrayContaining(["Command Palette", "Hide or Show the Sidebar", "Pick a Theme"]),
+    );
+    for (const title of [
+      "Show or Hide the Performance HUD",
+      "Reload Themes",
+      "Show Only the Detail Pane, or the Panes",
+      "Go Back",
+    ]) {
+      expect(titles()).not.toContain(title);
+    }
+  });
+
+  it("lists Open DevTools in a development build, whose webview opens DevTools on any screen", async () => {
+    core.about.mockResolvedValue({
+      name: "Tsugiki",
+      version: "1.2.3",
+      build: "development",
+      source_ref: "main",
+    });
+    render(Page);
+    expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+    await question();
+    expect(titles()).toContain("Open DevTools");
+  });
+
+  it("leaves Open DevTools out of a release", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await question();
+    expect(titles()).not.toContain("Open DevTools");
   });
 
   it("types ? in a text box", async () => {

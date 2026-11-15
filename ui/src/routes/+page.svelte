@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
-  import { type Action, startsChordOf } from "$lib/state/keymap.svelte";
+  import { type Action, isChord, type KeyedRow, startsChordOf } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -12,8 +12,15 @@
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
-  import KeyList, { type View } from "$lib/ui/KeyList.svelte";
-  import { type Bindings, currentOs, isTextBox, keyGuard, typesInTextBox } from "$lib/ui/keys";
+  import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
+  import {
+    type Bindings,
+    currentOs,
+    isTextBox,
+    keyGuard,
+    typesInTextBox,
+    worksInTextBox,
+  } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
@@ -55,8 +62,8 @@
   let pickerOpen = $state(false);
   let themePickerOpen = $state(false);
   let settingsOpen = $state(false);
-  /** The views whose keys the `?` list shows, while it's open. */
-  let keyViews = $state<readonly View[]>();
+  /** Which keys the `?` list shows, while it's open. */
+  let keysHere = $state<KeysHere>();
   /** The Repository whose mirror's question the dialog asks, while it's open. */
   let questionFor = $state<string>();
   /** Whether a dialog, the palette or a picker is open. Each closes on Esc, so one on top of another would
@@ -68,7 +75,7 @@
       pickerOpen ||
       themePickerOpen ||
       settingsOpen ||
-      keyViews !== undefined ||
+      keysHere !== undefined ||
       questionFor !== undefined,
   );
   const openAdd = () => {
@@ -127,13 +134,38 @@
       if (!dialogOpen) openThemePicker();
     },
     reload_themes: reloadThemes,
-    // The list shows the keys that work where the press was, so it asks the screen before it takes the focus.
+    // The list shows the keys that work where the press went, so it asks before it takes the focus.
     show_keys: (e) => {
-      if (!dialogOpen) keyViews = repositoryHome?.keyViews(e.target) ?? [];
+      if (!dialogOpen) keysHere = keysAt(e.target);
     },
   };
   const guard = keyGuard(pageBindings, os);
   const pageActions = Object.keys(pageBindings) as Action[];
+  /**
+   * Which keys work for a press on `target`, for the `?` list. Off a Repository's screen only the page's own
+   * do, and Open DevTools, which the webview opens itself. In a text box a key works only for an action that
+   * works there, and not when it types, nor a chord of the screen's, as `chordStart` has it. Open DevTools
+   * works only in a development build.
+   */
+  function keysAt(target: EventTarget | null): KeysHere {
+    const onScreen = repositoryHome?.keysHere(target) ?? {
+      views: [],
+      works: (row: KeyedRow) => pageActions.includes(row.action) || row.action === "open_devtools",
+    };
+    const inTextBox = isTextBox(target);
+    const development = about.about?.build === "development";
+    const typesIn = (row: KeyedRow) =>
+      isChord(row.key)
+        ? !pageActions.includes(row.action) || typesInTextBox(row.key.slice(0, row.key.indexOf(" ")))
+        : typesInTextBox(row.key);
+    return {
+      views: onScreen.views,
+      works: (row) =>
+        onScreen.works(row) &&
+        (development || row.action !== "open_devtools") &&
+        (!inTextBox || (worksInTextBox(row.action) && !typesIn(row))),
+    };
+  }
   const runPage: ChordRun = (action, e) => {
     pageBindings[action]?.(e);
   };
@@ -342,12 +374,11 @@
     }}
   />
 {/if}
-{#if keyViews !== undefined}
+{#if keysHere !== undefined}
   <KeyList
-    views={keyViews}
-    development={about.about?.build === "development"}
+    here={keysHere}
     onclose={() => {
-      keyViews = undefined;
+      keysHere = undefined;
     }}
   />
 {/if}

@@ -5,6 +5,8 @@
 // reached the PR stays.
 import { execFileSync } from "node:child_process";
 
+import { type Pr, unmergedReason } from "./pr.ts";
+
 function stop(message: string): never {
   console.error(message);
   process.exit(1);
@@ -45,12 +47,6 @@ if (run("git status failed.", "git", "status", "--porcelain", "--untracked-files
   stop("Commit or stash your changes first, or they go along to main.");
 }
 
-interface Pr {
-  number: number;
-  state: string;
-  headRefName: string;
-  headRefOid: string;
-}
 const pr = JSON.parse(
   run(
     `gh couldn't read the PR for ${branch}. Its message is above.`,
@@ -62,11 +58,10 @@ const pr = JSON.parse(
     "number,state,headRefName,headRefOid",
   ),
 ) as Pr;
-if (pr.headRefName !== branch) stop(`gh found #${pr.number}, whose branch is ${pr.headRefName}.`);
-if (pr.state !== "MERGED") stop(`#${pr.number} is ${pr.state.toLowerCase()}, not merged.`);
-if (tip !== pr.headRefOid && !succeeds("git", "merge-base", "--is-ancestor", tip, pr.headRefOid)) {
-  stop(`${branch} is at ${tip.slice(0, 7)}, which #${pr.number} doesn't hold.`);
-}
+const unmerged = unmergedReason(branch, tip, pr, (commit, of) =>
+  succeeds("git", "merge-base", "--is-ancestor", commit, of),
+);
+if (unmerged !== undefined) stop(unmerged);
 
 step("git", "switch", "main");
 step("git", "pull", "--ff-only", "--prune");

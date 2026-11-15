@@ -44,19 +44,16 @@ Done when the user has agreed to the wave's tickets, each open and with no open 
 
 ### 2. Make the worktrees
 
-For each ticket, from the main checkout:
+For each ticket, run `just worktree <n>`. It makes `.temp/wt-<n>` on a new branch off `origin/main`, runs
+`npm ci` there and copies the main checkout's `target/tools`, so the Rust tests find ty and clangd without
+fetching them. It prints the worktree's path and branch, which the builder's prompt takes. The branch's slug
+comes from the ticket's title; name a shorter one with `just worktree <n> <slug>`.
 
-```
-git fetch origin
-git worktree add .temp/wt-<n> -b <n>-<slug> origin/main
-(cd .temp/wt-<n> && npm ci)
-mkdir -p .temp/wt-<n>/target && cp -r target/tools .temp/wt-<n>/target/
-```
+A ticket that starts on a sibling's branch gets its worktree the same way, then merges that branch:
+`git -C .temp/wt-<n> merge <sibling-branch>`. The worktrees share one repository, so the name is enough.
 
-`<slug>` is a few words of the ticket's title, in the form our branches take. Each worktree builds into its
-own `target/`, which is Cargo's default there: leave `CARGO_TARGET_DIR` unset. A shared target builds one
-worktree's crate against another worktree's source. The copy of `target/tools` saves each worktree a
-download of ty and clangd; skip it if the main checkout has none.
+Each worktree builds into its own `target/`, Cargo's default there, and the recipe refuses to run while
+`CARGO_TARGET_DIR` is set: a shared target builds one worktree's crate against another worktree's source.
 
 Add the wave's entry to `## Wave log`, from the form in step 7, with the agents' start time.
 
@@ -123,6 +120,7 @@ After the last merge:
 1. Fill in the wall-clock time and the follow-ups, and cut the parts of the form the wave had nothing for.
 2. Update `## Waves` if a slot changed hands, and move a ticket the wave couldn't start to a later wave.
 3. If the wave taught something that holds for the next one, add it to this skill in a PR.
-4. Remove each worktree with `git worktree remove .temp/wt-<n>` and delete its local branch.
+4. Remove each worktree with `just worktree-remove <n>`, which deletes its builds and, once its PR has
+   merged, its local branch.
 
 Done when the entry has every part of the form filled or cut, and no worktree of the wave is left.

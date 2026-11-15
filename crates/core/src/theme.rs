@@ -864,7 +864,9 @@ impl ThemeLibrary {
             ThemePick::Named { name } => name,
         };
         if self.usable.iter().any(|theme| theme.name == name.as_str()) {
-            ThemeChoice::named(name)
+            // No Theme that can be used has a reserved name: `resolve` fails a file that takes one
+            // (`ReservedName`), and no built-in name is reserved. So `ThemeChoice::named` would never refuse.
+            Ok(ThemeChoice::Theme(name))
         } else {
             Err(no_theme_named(&name))
         }

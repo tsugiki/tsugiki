@@ -540,7 +540,28 @@ describe("ThemeState", () => {
     await state.previewSettings(APPEARANCE);
     const own = Promise.withResolvers<{ status: "ok"; data: Themes }>();
     vi.mocked(commands.themes).mockReturnValueOnce(own.promise);
-    vi.mocked(commands.themes).mockReturnValueOnce(new Promise(() => {}));
+
+    const ending = state.endPreview(APPEARANCE);
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(2);
+    });
+    expect(state.error).toBe("an old refusal");
+    own.resolve({ status: "ok", data: structuredClone(THEMES) });
+
+    expect(await ending).toBeUndefined();
+    expect(state.error).toBeUndefined();
+  });
+
+  it("answers Apply with a later load that worked, not the refusal of its own that it crossed", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "access denied" },
+    });
+    await state.previewSettings(APPEARANCE);
+    const own = Promise.withResolvers<{ status: "error"; error: { kind: "internal"; message: string } }>();
+    const later = Promise.withResolvers<{ status: "ok"; data: Themes }>();
+    vi.mocked(commands.themes).mockReturnValueOnce(own.promise).mockReturnValueOnce(later.promise);
 
     const ending = state.endPreview(APPEARANCE);
     await vi.waitFor(() => {
@@ -550,10 +571,11 @@ describe("ThemeState", () => {
     await vi.waitFor(() => {
       expect(commands.themes).toHaveBeenCalledTimes(3);
     });
-    own.resolve({ status: "ok", data: structuredClone(THEMES) });
+    own.resolve({ status: "error", error: { kind: "internal", message: "the folder was busy" } });
+    later.resolve({ status: "ok", data: { ...structuredClone(THEMES), theme: NAMED_DARK } });
 
     expect(await ending).toBeUndefined();
-    expect(state.error).toBe("an old refusal");
+    expect(state.shown?.name).toBe(NAMED_DARK.name);
   });
 
   it("leaves the window's side to the Settings dialog while a load answers", async () => {
@@ -611,6 +633,72 @@ describe("ThemeState", () => {
     );
     expect(state.previewProblem).toBeUndefined();
     expect(await state.endPreview(APPEARANCE)).toBeUndefined();
+  });
+
+  it("turns the window back to what it shows once an answer it turned for changed and the next was refused", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes)
+      .mockResolvedValueOnce({ status: "ok", data: { ...structuredClone(THEMES), theme: NAMED_DARK } })
+      .mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "access denied" } });
+    const turning = Promise.withResolvers<null>();
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(turning.promise);
+
+    const asked = state.previewSettings(APPEARANCE);
+    await vi.waitFor(() => {
+      expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
+    });
+    void state.previewSettings({ ...APPEARANCE, theme: "system" });
+    turning.resolve(null);
+    await asked;
+
+    expect(state.previewProblem).toBe("Tsugiki can't show the theme: access denied");
+    expect(state.shown?.name).toBe("VS Code Light Modern");
+    expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
+  });
+
+  it("goes on showing the dialog's themes until Apply's read of values it had none for answers", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "ok",
+      data: { ...structuredClone(THEMES), theme: NAMED_DARK },
+    });
+    await state.previewSettings(APPEARANCE);
+    const reading = Promise.withResolvers<{ status: "ok"; data: Themes }>();
+    vi.mocked(commands.themes).mockReturnValueOnce(reading.promise);
+
+    const ending = state.endPreview({ ...APPEARANCE, theme: "system" });
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(2);
+    });
+    expect(state.shown?.name).toBe("Gruvbox Dark Hard");
+    expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
+    reading.resolve({ status: "ok", data: structuredClone(THEMES) });
+
+    expect(await ending).toBeUndefined();
+    expect(state.shown?.name).toBe("VS Code Light Modern");
+    expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
+  });
+
+  it("shows the theme in force from the last read once Apply's can't be shown, and has nothing to put back", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "ok",
+      data: { ...structuredClone(THEMES), theme: NAMED_DARK },
+    });
+    await state.previewSettings(APPEARANCE);
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "access denied" },
+    });
+
+    expect(await state.endPreview({ ...APPEARANCE, theme: "system" })).toBe(
+      "Tsugiki saved the settings, but can't show the theme: access denied",
+    );
+    expect(state.shown?.name).toBe("VS Code Light Modern");
+    expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
+    const turns = vi.mocked(commands.turnWindow).mock.calls.length;
+    expect(await state.endPreview()).toBeUndefined();
+    expect(vi.mocked(commands.turnWindow).mock.calls.length).toBe(turns);
   });
 
   it("follows the system with the chosen theme of the side Windows is on", async () => {

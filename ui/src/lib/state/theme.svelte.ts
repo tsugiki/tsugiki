@@ -44,6 +44,24 @@ const chosenIn = (themes: Themes | undefined, kind: ThemeKind): ThemeView | unde
   return themes?.[kind].all.find((one) => one.name === name);
 };
 
+/** The themes the core worked out for `values`, an `[appearance]` the Settings dialog shows. */
+interface DialogThemes {
+  themes: Themes;
+  values: AppearanceSettings;
+}
+
+/** What the window shows of the `[appearance]` the Settings dialog shows (#757). The window's side follows
+ * it: the side of `shown`'s themes while the dialog is on with some, or else the side of the theme in force,
+ * which a load may turn. */
+type DialogPreview =
+  /** The dialog doesn't show its `[appearance]` on the window. */
+  | { kind: "off" }
+  /** The dialog has asked to show it, and the window shows `shown`, once the core has worked out some
+   * themes, under the picker's preview and over the theme in force. */
+  | { kind: "on"; shown?: DialogThemes }
+  /** Apply saved values the window has no themes for: it goes on showing `shown` until its load answers. */
+  | { kind: "ending"; shown: DialogThemes };
+
 /** Says which side Windows is on: `matchMedia("(prefers-color-scheme: dark)")` in the window. */
 export type DarkQuery = Pick<MediaQueryList, "matches" | "addEventListener">;
 
@@ -86,16 +104,10 @@ export class ThemeState {
   /** The count of media events that report Windows' side, so a side the window said before one doesn't undo
    * it. */
   #heard = 0;
-  /** The themes the core worked out for the `[appearance]` the Settings dialog shows, which the window shows
-   * under the picker's preview and over the theme in force (#757). */
-  #settingsThemes = $state<Themes>();
-  /** The `[appearance]` the core worked out `#settingsThemes` for. */
-  #settingsShown: AppearanceSettings | undefined;
-  /** Whether the dialog has asked to show its `[appearance]` since it last stopped. */
-  #previewAsked = false;
-  /** Whether the window shows the dialog's themes, or turns to them, which keeps it to their side: a load
-   * leaves the window's side alone until the dialog stops. */
-  #previewing = false;
+  /** The last load asked, which answers for the loads asked before it. It never rejects. */
+  #latest = Promise.resolve<string | undefined>(undefined);
+  /** What the window shows of the `[appearance]` the Settings dialog shows (#757). */
+  #dialog = $state.raw<DialogPreview>({ kind: "off" });
   /** The values the dialog asked to show that no ask has taken yet: only the latest wait. */
   #wanted: AppearanceSettings | undefined;
   /** The dialog's asks on their way, one at a time, until none wait. It never rejects. */
@@ -114,9 +126,7 @@ export class ThemeState {
   following = $derived(chosenIn(this.themes, this.dark ? "dark" : "light"));
   /** What the window shows: the picker's preview, or else the Settings dialog's, or else the theme in
    * force. */
-  shown = $derived(
-    this.preview ?? (this.#settingsThemes && this.#inForce(this.#settingsThemes)) ?? this.current,
-  );
+  shown = $derived(this.preview ?? this.#inForce(this.#dialogShown()?.themes) ?? this.current);
 
   constructor(query: DarkQuery) {
     this.dark = query.matches;
@@ -138,19 +148,25 @@ export class ThemeState {
     await this.#load();
   }
 
-  /** Loads as `load` says, and gives why the core refused this load's own ask, if it did. */
-  async #load(): Promise<string | undefined> {
-    const asked = ++this.#loads;
+  /** Loads as `load` says, and gives why the core refused the load that showed, if it did: a load asked
+   * later answers for this one. */
+  #load(): Promise<string | undefined> {
+    const loading = this.#loadAsked(++this.#loads);
+    this.#latest = loading;
+    return loading;
+  }
+
+  /** The load counted `asked`, as `#load` says. */
+  async #loadAsked(asked: number): Promise<string | undefined> {
     const picks = this.#picks;
     await this.#saves;
     const answer = await ask(commands.themes());
-    const refused = answer.status === "ok" ? undefined : answer.error.message;
-    if (asked !== this.#loads) return refused;
+    if (asked !== this.#loads) return this.#latest;
     if (answer.status !== "ok") {
       this.error = answer.error.message;
       // A load asked before this one may have turned the window before this one was asked.
       if (this.themes) this.#take(await this.#turnInForce(this.themes.theme));
-      return refused;
+      return answer.error.message;
     }
     const data = answer.data;
     // The core may have read the settings before the save of a pick made since, so the theme on the window
@@ -162,7 +178,7 @@ export class ThemeState {
     if (this.#picks === picks) this.#saved = data.theme;
     keepPicks();
     this.#take(await this.#turnInForce(data.theme));
-    if (asked !== this.#loads) return undefined;
+    if (asked !== this.#loads) return this.#latest;
     keepPicks();
     this.themes = data;
     this.error = undefined;
@@ -176,18 +192,28 @@ export class ThemeState {
    * answer for values changed since doesn't show. One the core refuses leaves the window as it was, and
    * `previewProblem` says why. It answers once no values wait. */
   previewSettings(appearance: AppearanceSettings): Promise<void> {
-    this.#previewAsked = true;
+    if (this.#dialog.kind === "off") this.#dialog = { kind: "on" };
     this.#previews += 1;
     this.#wanted = appearance;
-    this.#showing ??= this.#showWanted().then(() => {
-      this.#showing = undefined;
-    });
+    this.#showing ??= this.#showWanted();
     return this.#showing;
   }
 
+  /** Asks for the values that wait until none do, and then clears `#showing`, in the step that finds none, so
+   * values asked to show after it start the next round of asks. The window turns only for an answer for
+   * values the dialog still shows. Once the asks stop, it goes to the side of what it shows, as an answer
+   * changed while the window turned to it, or a load that turned it meanwhile, may have left it on another.
+   */
   async #showWanted(): Promise<void> {
-    while (this.#wanted !== undefined) {
+    let turned = false;
+    for (;;) {
       const appearance = this.#wanted;
+      if (appearance === undefined) {
+        if (!turned || this.#dialog.kind !== "on") break;
+        turned = false;
+        await this.#align();
+        continue;
+      }
       this.#wanted = undefined;
       const asked = this.#previews;
       // A broken call answers as a refusal, so the asks go on.
@@ -197,50 +223,62 @@ export class ThemeState {
         this.previewProblem = `Tsugiki can't show the theme: ${answer.error.message}`;
         continue;
       }
-      this.#previewing = true;
-      const side = await this.#turn(answer.data.theme);
+      turned = true;
+      this.#take(await this.#turn(answer.data.theme));
       if (asked !== this.#previews) continue;
-      this.#take(side);
       this.previewProblem = undefined;
-      this.#settingsThemes = answer.data;
-      this.#settingsShown = appearance;
+      this.#dialog = { kind: "on", shown: { themes: answer.data, values: appearance } };
     }
+    this.#showing = undefined;
   }
 
   /** Stops showing the Settings dialog's `[appearance]`. Once Apply has `saved` it, the window keeps the
    * themes the core worked out for those values, waiting for the ask on its way, and reads them again for
-   * the files' problems. Without them it reads them now, and gives why the core refused that read. Otherwise
-   * the window goes back to the theme in force and its side. */
+   * the files' problems. Without them it goes on showing what it shows until it has read them, and gives
+   * why the core refused that read: the window then shows the theme in force from the last read that
+   * worked, as after any read that doesn't, and the dialog has nothing more to put back. Otherwise the
+   * window goes back to the theme in force and its side. */
   async endPreview(saved?: AppearanceSettings): Promise<string | undefined> {
-    if (!this.#previewAsked) return undefined;
+    if (this.#dialog.kind === "off") return undefined;
     if (saved) await this.#showing;
-    const kept = saved && this.#settingsShown && sameAppearance(this.#settingsShown, saved);
-    const themes = kept ? this.#settingsThemes : undefined;
-    this.#previewAsked = false;
-    this.#previewing = false;
+    const shown = this.#dialogShown();
     this.#previews += 1;
     this.#wanted = undefined;
-    this.#settingsThemes = undefined;
-    this.#settingsShown = undefined;
     this.previewProblem = undefined;
-    if (themes) {
-      this.themes = themes;
-      this.#saved = themes.theme;
+    if (!saved) {
+      this.#dialog = { kind: "off" };
+      await this.#align();
+      return undefined;
+    }
+    if (shown && sameAppearance(shown.values, saved)) {
+      this.#dialog = { kind: "off" };
+      this.themes = shown.themes;
+      this.#saved = shown.themes.theme;
       void this.load();
       return undefined;
     }
-    if (saved) {
-      const refused = await this.#load();
-      return refused && `Tsugiki saved the settings, but can't show the theme: ${refused}`;
-    }
-    if (this.themes) this.#take(await this.#turn(this.themes.theme));
-    return undefined;
+    this.#dialog = shown ? { kind: "ending", shown } : { kind: "off" };
+    const refused = await this.#load();
+    this.#dialog = { kind: "off" };
+    return refused && `Tsugiki saved the settings, but can't show the theme: ${refused}`;
+  }
+
+  /** The themes the window shows for the Settings dialog, if it shows any. */
+  #dialogShown(): DialogThemes | undefined {
+    return this.#dialog.kind === "off" ? undefined : this.#dialog.shown;
+  }
+
+  /** Turns the window to the side of the themes it shows: the Settings dialog's, or else those in force. */
+  async #align(): Promise<void> {
+    const themes = this.#dialogShown()?.themes ?? this.themes;
+    if (themes) this.#take(await this.#turn(themes.theme));
   }
 
   /** Turns the window to the side of the theme in force, as `#turn` does, unless the Settings dialog shows
-   * its `[appearance]` on it, which keeps the window to the side of what it shows. */
+   * themes for its `[appearance]`, which keep the window to their side. */
   #turnInForce(theme: ThemeInForce): Promise<ThemeKind | undefined> {
-    return this.#previewing ? Promise.resolve(undefined) : this.#turn(theme);
+    const dialog = this.#dialog;
+    return dialog.kind === "on" && dialog.shown ? Promise.resolve(undefined) : this.#turn(theme);
   }
 
   /** Takes `side` as the one Windows is on, when the window said it. */

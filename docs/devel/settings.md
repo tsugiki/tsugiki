@@ -38,9 +38,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   window turns to their side, so Follow system shows the side the system is on, not the side a Theme kept
   the window on. The window sends one `preview_themes` at a time, and the next carries the rows' latest
   values. The rows are off while Apply saves, which keeps the Themes of the values it saved in force and
-  reads the themes again for the files' problems. If the window has none to keep, Apply reads them, and
-  stays open with why when it can't. Cancel turns the window back. When the window has no themes at all,
-  the rows stay off and say why. Status bar has Show the status bar, and says that problems and being
+  reads the themes again for the files' problems. If the window has none to keep, it goes on showing what
+  it shows while Apply reads them. When it can't, Apply stays open with why, and the window shows the
+  Theme in force from the last read that worked, as after any read that fails, so OK and Cancel have
+  nothing to put back. Cancel turns the window back. When the window has no themes at all, the rows stay
+  off and say why. Status bar has Show the status bar, and says that problems and being
   offline still show when it's off. Updates has Check for new versions (`[releases] check`), the one setting
   that still needs a restart, so it says "Takes effect at the next start" under its row. Both live in
   `settings.toml`. Repositories, each Repository's page and Sync say "Nothing to set here yet." for now.

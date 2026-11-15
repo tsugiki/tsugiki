@@ -1535,6 +1535,7 @@ fn an_owner_whose_thread_has_gone_says_so() {
     let owner = SettingsOwner {
         requests: mpsc::channel().0,
         view: latest::channel(SettingsView::default()).1,
+        commands: latest::channel(Vec::new()).1,
     };
 
     let refused = owner
@@ -2956,34 +2957,62 @@ fn a_command_run_comes_first_in_recent_commands_and_a_restart_reads_them() {
     let (folders, _root) = temp_folders("commands");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
-    for name in ["Reset Layout", "Pick a Theme", "Reset Layout"] {
-        drop(owner.remember_command(CommandId::new(name)).unwrap());
-    }
-    let saved = owner.view().recent_commands;
+    let before = owner.recent_commands();
+    let answers: Vec<_> = ["Reset Layout", "Pick a Theme", "Reset Layout"]
+        .into_iter()
+        .map(|name| owner.remember_command(CommandId::new(name)).unwrap())
+        .collect();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
-    let restarted = SettingsFiles::load(folders).view().recent_commands;
+    let restarted = SettingsOwner::start(Ok(SettingsFiles::load(folders))).recent_commands();
 
+    assert_eq!(before, Vec::new());
     assert_eq!(
         machine,
         "recent_commands = [\n    \"Reset Layout\",\n    \"Pick a Theme\",\n]\n"
     );
-    assert_eq!(saved, commands(&["Reset Layout", "Pick a Theme"]));
-    assert_eq!(restarted, saved);
+    assert_eq!(
+        answers,
+        [
+            commands(&["Reset Layout"]),
+            commands(&["Pick a Theme", "Reset Layout"]),
+            commands(&["Reset Layout", "Pick a Theme"]),
+        ]
+    );
+    assert_eq!(owner.recent_commands(), restarted);
+    assert_eq!(restarted, commands(&["Reset Layout", "Pick a Theme"]));
 }
 
 #[test]
-fn recent_commands_pass_over_an_entry_that_isnt_text_and_keep_the_users_comments() {
+fn a_command_run_reads_neither_file_again() {
+    let (folders, _root) = temp_folders("commands-no-reread");
+    let mut files = SettingsFiles::load(folders.clone());
+    fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
+
+    files
+        .remember_command(&CommandId::new("Reset Layout"))
+        .unwrap();
+
+    // The hand edit waits for the next read (ADR 0014).
+    assert_eq!(files.loaded().settings, Settings::default());
+    assert_eq!(files.recent_commands(), commands(&["Reset Layout"]));
+}
+
+#[test]
+fn recent_commands_pass_over_an_entry_that_isnt_text_and_twice_written_ones_and_keep_the_users_comments()
+ {
     let (folders, _root) = temp_folders("commands-hand");
     let mine = "recent_commands = [
     \"Pick a Theme\",
     7,
     # The one I want.
     \"Open Settings\",
+    \"Pick a Theme\",
+    \"Open Settings\",
 ]
 ";
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
-    let read = files.view().recent_commands;
+    let read = files.recent_commands();
     let problems = files.loaded().problems.clone();
 
     files
@@ -2994,6 +3023,10 @@ fn recent_commands_pass_over_an_entry_that_isnt_text_and_keep_the_users_comments
     assert_eq!(
         (read, problems),
         (commands(&["Pick a Theme", "Open Settings"]), Vec::new())
+    );
+    assert_eq!(
+        files.recent_commands(),
+        commands(&["Open Settings", "Pick a Theme"])
     );
     assert_eq!(
         machine,
@@ -3016,7 +3049,7 @@ fn recent_commands_that_arent_a_list_count_as_none_and_a_run_puts_a_list_in_thei
     )
     .unwrap();
     let mut files = SettingsFiles::load(folders.clone());
-    let read = files.view().recent_commands;
+    let read = files.recent_commands();
 
     files
         .remember_command(&CommandId::new("Open Settings"))
@@ -3031,18 +3064,34 @@ fn recent_commands_that_arent_a_list_count_as_none_and_a_run_puts_a_list_in_thei
 }
 
 #[test]
-fn recent_commands_keep_the_50_run_last() {
+fn recent_commands_keep_the_50_run_last_and_an_entry_that_isnt_text_doesnt_count() {
     let (folders, _root) = temp_folders("commands-kept");
-    let mut files = SettingsFiles::load(folders);
+    fs::write(folders.machine_file(), "recent_commands = [\n    7,\n]\n").unwrap();
+    let mut files = SettingsFiles::load(folders.clone());
 
-    for count in 0..=COMMANDS_KEPT {
+    let mut run = |count: usize| {
         files
             .remember_command(&CommandId::new(&format!("Command {count}")))
             .unwrap();
+    };
+    for count in 0..COMMANDS_KEPT - 1 {
+        run(count);
     }
-    let kept = files.view().recent_commands;
+    let one_short = fs::read_to_string(folders.machine_file()).unwrap();
+    run(COMMANDS_KEPT - 1);
+    run(COMMANDS_KEPT);
+    let kept = files.recent_commands();
+    let machine = fs::read_to_string(folders.machine_file()).unwrap();
+    let restarted = SettingsFiles::load(folders).recent_commands();
 
+    // The 7 stays while fewer than 50 commands come before it.
+    assert!(
+        one_short.ends_with("\"Command 0\",\n    7,\n]\n"),
+        "{one_short}"
+    );
     assert_eq!(kept.len(), COMMANDS_KEPT);
     assert_eq!(kept.first(), Some(&CommandId::new("Command 50")));
     assert_eq!(kept.last(), Some(&CommandId::new("Command 1")));
+    assert!(machine.ends_with("\"Command 1\",\n]\n"), "{machine}");
+    assert_eq!(restarted, kept);
 }

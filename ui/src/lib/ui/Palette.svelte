@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import type { PaletteId } from "$lib/state/recent-commands.svelte";
+
   /** A row: one that runs, or one that shows greyed and runs nothing, such as a theme file that can't be
    * used, whose note says why. */
   export type PaletteCommand = PaletteAction | (PaletteRow & { disabled: true; run?: never });
@@ -8,9 +10,9 @@
 
   interface PaletteRow {
     title: string;
-    /** What the command palette's history knows the row by where its title changes with what it does, as
-     * Hide Sidebar turns into Show Sidebar: the action it runs. Without one it goes by its title. */
-    id?: string;
+    /** What the command palette's history knows the row by where its title changes with what it does.
+     * Without one it goes by its title. */
+    id?: PaletteId;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
     current?: boolean;
     /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match
@@ -55,7 +57,7 @@
     oncancel = () => {},
     onrun = () => {},
     words = COMMAND_WORDS,
-    start = 0,
+    start,
   }: {
     commands: readonly PaletteCommand[];
     onclose: () => void;
@@ -64,14 +66,16 @@
     /** Runs as a row runs, before the row does, such as the command palette's note that the user ran it. */
     onrun?: (command: PaletteAction) => void;
     words?: PaletteWords;
-    /** The row picked when it opens. Typing picks the first. */
+    /** The row picked when it opens. Without it the pick is on the first row, and stays on whichever row
+     * is first until the user moves it: the command palette's order can change while it's open, as the
+     * history arrives. Typing picks the first. */
     start?: number;
   } = $props();
 
   let typed = $state("");
   // The picked row goes by its title, so a list that changes while open, as Reload themes does, keeps the
   // pick on the same row. No title, or one the list no longer holds, picks the first.
-  let pickedTitle = $state(untrack(() => commands[start]?.title));
+  let pickedTitle = $state(untrack(() => (start === undefined ? undefined : commands[start]?.title)));
   const matching = $derived(
     commands.filter((command) => command.title.toLowerCase().includes(typed.trim().toLowerCase())),
   );

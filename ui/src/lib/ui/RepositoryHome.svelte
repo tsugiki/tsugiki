@@ -496,7 +496,7 @@
         ? [
             {
               title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items",
-              id: "toggle_quiet",
+              id: "toggle_quiet" as const,
               run: toggleQuiet,
             },
           ]

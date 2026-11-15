@@ -485,8 +485,6 @@ pub struct SettingsView {
     /// status bar to name when no theme has the name it gives (#755).
     pub theme_place: String,
     pub language_servers: LanguageServers,
-    /// The command palette's commands the user ran on this machine, most recently run first (#556).
-    pub recent_commands: Vec<CommandId>,
 }
 
 /// A command of the command palette, by the id the window gives it. The window names its commands, so the
@@ -714,14 +712,24 @@ fn recent_or_skip<'de, D: Deserializer<'de>>(
 }
 
 /// The commands in `recent_commands`, leaving out an entry that isn't text, for the reason `sources_or_skip`
-/// gives. A `recent_commands` that isn't a list counts as none.
+/// gives, as `kept_commands` keeps them. A `recent_commands` that isn't a list counts as none.
 fn commands_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<Vec<CommandId>, D::Error> {
     let entries = Read::<Vec<Read<CommandId>>>::deserialize(given)?.given();
-    Ok(entries
-        .into_iter()
-        .flatten()
-        .filter_map(Read::given)
-        .collect())
+    Ok(kept_commands(
+        entries.into_iter().flatten().filter_map(Read::given),
+    ))
+}
+
+/// `commands` as `recent_commands` keeps them: each once, where it first comes, and only the first
+/// `COMMANDS_KEPT`. A hand edit may have written one twice, or more than that.
+fn kept_commands(commands: impl IntoIterator<Item = CommandId>) -> Vec<CommandId> {
+    let mut kept: Vec<CommandId> = Vec::new();
+    for command in commands {
+        if kept.len() < COMMANDS_KEPT && !kept.contains(&command) {
+            kept.push(command);
+        }
+    }
+    kept
 }
 
 /// Each Repository's answer of where its mirror gets its objects, leaving out an entry Tsugiki can't read:
@@ -876,11 +884,15 @@ impl SettingsFiles {
                     idle: minutes(given.idle_minutes),
                 }
             },
-            recent_commands: self
-                .machine
-                .as_ref()
-                .map_or_else(Vec::new, |machine| machine.recent_commands.clone()),
         }
+    }
+
+    /// The command palette's commands the user ran on this machine, most recently run first (#556). Apart
+    /// from `view`, as only the palette asks for them.
+    pub fn recent_commands(&self) -> Vec<CommandId> {
+        self.machine
+            .as_ref()
+            .map_or_else(Vec::new, |machine| machine.recent_commands.clone())
     }
 
     /// Reads both files again, for the Settings window to call as it opens.
@@ -1126,14 +1138,20 @@ impl SettingsFiles {
         Ok(())
     }
 
-    /// Puts `command` at the head of `recent_commands` in `machine.toml`, keeping everything else in it, and
-    /// reads the files again. It refuses while `machine.toml` can't be used.
+    /// Puts `command` at the head of `recent_commands` in `machine.toml`, keeping everything else in it. It
+    /// refuses while `machine.toml` can't be used.
+    ///
+    /// It takes in the list it saved and nothing else: a palette run is no moment to read the files again
+    /// (ADR 0014), and `settings.toml` may sit on a slow drive. Until a good `machine.toml` has been read,
+    /// the list waits for the next read.
     pub fn remember_command(&mut self, command: &CommandId) -> Result<(), Error> {
         let path = self.folders.machine_file();
         let mut edit = TomlEdit::open_machine(&path)?;
-        put_first_in_recent_commands(edit.document.as_table_mut(), command);
+        let saved = put_first_in_recent_commands(edit.document.as_table_mut(), command);
         edit.save()?;
-        self.reload();
+        if let Some(machine) = &mut self.machine {
+            machine.recent_commands = saved;
+        }
         Ok(())
     }
 
@@ -1194,6 +1212,8 @@ impl SettingsFiles {
 pub struct SettingsOwner {
     requests: Sender<Request>,
     view: LatestReader<SettingsView>,
+    /// The palette's recent commands, apart from `view`, which every command that reads the settings copies.
+    commands: LatestReader<Vec<CommandId>>,
 }
 
 /// What the owner's thread saves, and where it answers with what the settings say after.
@@ -1240,6 +1260,8 @@ impl SettingsOwner {
     pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
         let first = files.as_ref().map(SettingsFiles::view).unwrap_or_default();
         let (mut writer, view) = latest::channel(first);
+        let commands = files.as_ref().map(SettingsFiles::recent_commands);
+        let (mut commands_writer, commands) = latest::channel(commands.unwrap_or_default());
         let (requests, incoming) = mpsc::channel::<Request>();
         let _ = thread::spawn(move || {
             for request in incoming {
@@ -1306,8 +1328,9 @@ impl SettingsOwner {
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
                 // one at a time, so an older one can't replace a newer one.
-                if let Ok(saved) = &saved {
+                if let (Ok(saved), Ok(files)) = (&saved, &files) {
                     writer.set(saved);
+                    commands_writer.set(&files.recent_commands());
                 }
                 #[expect(
                     clippy::let_underscore_must_use,
@@ -1316,12 +1339,22 @@ impl SettingsOwner {
                 let _ = reply.send(saved);
             }
         });
-        Self { requests, view }
+        Self {
+            requests,
+            view,
+            commands,
+        }
     }
 
     /// What the settings said after the last change saved. This never waits on a file.
     pub fn view(&self) -> SettingsView {
         self.view.get()
+    }
+
+    /// The command palette's commands the user ran on this machine, most recently run first, as the owner
+    /// last read or saved them. This never waits on a file.
+    pub fn recent_commands(&self) -> Vec<CommandId> {
+        self.commands.get()
     }
 
     /// A copy of what the settings say, for a thread that reads them later.
@@ -1372,11 +1405,13 @@ impl SettingsOwner {
         self.ask(Request::Panes { layout, reply }, &answer)
     }
 
-    /// Puts `command` at the head of the palette's recent commands in `machine.toml`, and answers with what
-    /// the settings say now.
-    pub fn remember_command(&self, command: CommandId) -> Result<SettingsView, Error> {
+    /// Puts `command` at the head of the palette's recent commands in `machine.toml`, and answers with the
+    /// list saved, most recently run first.
+    pub fn remember_command(&self, command: CommandId) -> Result<Vec<CommandId>, Error> {
         let (reply, answer) = mpsc::channel();
+        // The thread set the list before it answered.
         self.ask(Request::Command { command, reply }, &answer)
+            .map(|_| self.recent_commands())
     }
 
     /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
@@ -1599,9 +1634,11 @@ fn put_first_in_recent(file: &mut Table, name: &RepositoryName, opened_at: Offse
 }
 
 /// Puts `command` at the head of `file`'s `recent_commands`, with the comments the user wrote on its entry,
-/// and takes that entry out. Past `COMMANDS_KEPT` the oldest go. A `recent_commands` that isn't a list gives
-/// the list its place and its comments.
-fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) {
+/// and gives the commands the list holds now, as `kept_commands` reads them. Any other entry for `command`
+/// goes, as does any other command written twice. Past `COMMANDS_KEPT` commands the oldest go, and so does an
+/// entry that isn't text among them; one before them stays. A `recent_commands` that isn't a list gives the
+/// list its place and its comments.
+fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) -> Vec<CommandId> {
     let mut commands = file
         .get(RECENT_COMMANDS)
         .and_then(Item::as_array)
@@ -1615,9 +1652,15 @@ fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) {
         *head.decor_mut() = commands.remove(index).decor().clone();
     }
     commands.insert_formatted(0, head);
-    while commands.len() > COMMANDS_KEPT {
-        drop(commands.remove(COMMANDS_KEPT));
-    }
+    let mut kept: Vec<CommandId> = Vec::new();
+    commands.retain(|entry| match entry.as_str().map(CommandId::new) {
+        Some(text) if kept.len() == COMMANDS_KEPT || kept.contains(&text) => false,
+        Some(text) => {
+            kept.push(text);
+            true
+        }
+        None => kept.len() < COMMANDS_KEPT,
+    });
     one_per_line(&mut commands);
     merge_value(
         file,
@@ -1625,6 +1668,7 @@ fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) {
         &Item::Value(Value::Array(commands)),
         None,
     );
+    kept
 }
 
 /// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.

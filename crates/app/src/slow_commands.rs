@@ -170,7 +170,7 @@ pub(crate) fn remember_command(
     command: CommandId,
     owner: State<'_, SettingsOwner>,
 ) -> Result<Vec<CommandId>, Error> {
-    Ok(owner.remember_command(command)?.recent_commands)
+    owner.remember_command(command)
 }
 
 /// Every theme of each side, light and dark, as CSS variables (#515), with the theme the settings choose for

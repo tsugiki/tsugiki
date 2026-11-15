@@ -390,7 +390,7 @@ fn pane_layout(owner: State<'_, SettingsOwner>) -> PaneLayout {
 #[tauri::command]
 #[specta::specta]
 fn recent_commands(owner: State<'_, SettingsOwner>) -> Vec<CommandId> {
-    owner.view().recent_commands
+    owner.recent_commands()
 }
 
 /// The moment Tsugiki's code started running, for the performance HUD's start-up time (ADR 0017). The

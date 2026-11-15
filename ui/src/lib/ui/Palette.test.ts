@@ -324,7 +324,11 @@ it("tells of each row it runs before the row runs, one that stays open too", asy
     keepsOpen: true,
     run: () => told.push("ran Dark themes…"),
   };
-  const closes = { title: "Reset Layout", id: "reset", run: () => told.push("ran Reset Layout") };
+  const closes = {
+    title: "Reset Layout",
+    id: "reset_layout" as const,
+    run: () => told.push("ran Reset Layout"),
+  };
   render(Palette, {
     commands: [stays, closes],
     onclose: () => {},
@@ -335,7 +339,21 @@ it("tells of each row it runs before the row runs, one that stays open too", asy
   await fireEvent.click(screen.getByRole("option", { name: "Reset Layout" }));
   await tick();
 
-  expect(told).toEqual(["told Dark themes…", "ran Dark themes…", "told reset", "ran Reset Layout"]);
+  expect(told).toEqual(["told Dark themes…", "ran Dark themes…", "told reset_layout", "ran Reset Layout"]);
+});
+
+it("keeps the pick on the first row as the list's order changes, until the user moves it", async () => {
+  const ran: string[] = [];
+  const row = (title: string) => ({ title, run: () => ran.push(title) });
+  const { rerender } = render(Palette, { commands: [row("A"), row("B"), row("C")], onclose: () => {} });
+
+  await rerender({ commands: [row("C"), row("A"), row("B")] });
+  const first = screen.getByRole("option", { selected: true }).textContent;
+  await fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
+  await rerender({ commands: [row("B"), row("C"), row("A")] });
+  const moved = screen.getByRole("option", { selected: true }).textContent;
+
+  expect([first, moved]).toEqual(["C", "A"]);
 });
 
 it("leaves other keys to the text box", async () => {

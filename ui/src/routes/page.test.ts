@@ -150,7 +150,12 @@ beforeEach(() => {
   });
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.recentCommands.mockResolvedValue([]);
-  core.rememberCommand.mockResolvedValue({ status: "ok", data: [] });
+  // The core answers with the list it keeps, the command run first.
+  let kept: string[] = [];
+  core.rememberCommand.mockImplementation(async (id: string) => {
+    kept = [id, ...kept.filter((one) => one !== id)];
+    return { status: "ok", data: kept };
+  });
   core.rereadSettings.mockResolvedValue({ status: "ok", data: structuredClone(SETTINGS) });
   core.applySettings.mockImplementation(async (changes: object) => ({
     status: "ok",

@@ -3,8 +3,8 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{
-    Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, Position, Progress,
-    ProgressToken, Range, Severity, Uri, WorkDone,
+    Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, MessageKind, Position,
+    Progress, ProgressToken, Range, Severity, ShowMessage, Uri, WorkDone, hears_folder_changes,
 };
 
 fn uri(text: &str) -> Uri {
@@ -210,6 +210,52 @@ fn each_severity_reads_from_its_number_and_no_other_does() {
     assert_eq!(
         Severity::try_from(5).unwrap_err(),
         "5 isn't a diagnostic's severity"
+    );
+}
+
+#[test]
+fn a_server_hears_folder_changes_only_when_it_says_true() {
+    let hears = |folders: Value| {
+        hears_folder_changes(&json!({"capabilities": {"workspace": {"workspaceFolders": folders}}}))
+    };
+
+    assert!(hears(
+        json!({"supported": true, "changeNotifications": true})
+    ));
+    assert!(!hears(json!({"changeNotifications": "folders"})));
+    assert!(!hears(json!({"changeNotifications": false})));
+    assert!(!hears(json!({"changeNotifications": 1})));
+    assert!(!hears(json!({"supported": true})));
+    assert!(!hears(json!(null)));
+    assert!(!hears_folder_changes(
+        &json!({"capabilities": {"workspace": null}})
+    ));
+}
+
+#[test]
+fn a_message_to_show_reads_its_kind_from_its_number_and_no_other_does() {
+    let shown: ShowMessage =
+        serde_json::from_value(json!({"type": 1, "message": "Invalid options"})).unwrap();
+    assert_eq!(
+        shown,
+        ShowMessage {
+            kind: MessageKind::Error,
+            message: "Invalid options".into()
+        }
+    );
+    assert_eq!(
+        [1_u8, 2, 3, 4, 5].map(|n| MessageKind::try_from(n).unwrap()),
+        [
+            MessageKind::Error,
+            MessageKind::Warning,
+            MessageKind::Info,
+            MessageKind::Log,
+            MessageKind::Debug
+        ]
+    );
+    assert_eq!(
+        MessageKind::try_from(6).unwrap_err(),
+        "6 isn't a message's type"
     );
 }
 

@@ -6,8 +6,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::client::{Event, Exit, Init, Pending, RequestError, Server};
-use crate::testing::{Fake, PATIENCE, connect, connect_logged, initialize, initialized, uri};
+use crate::client::{Event, Exit, Fallback, Init, Pending, RequestError, Server};
+use crate::testing::{
+    Fake, PATIENCE, connect, connect_logged, initialize, initialized, initialized_with, uri,
+};
 use crate::types::{
     Definitions, Diagnostics, Language, Location, LocationLink, Position, Progress, ProgressToken,
     Range, ServerInfo, Status, WorkDone,
@@ -74,6 +76,7 @@ fn initialize_says_what_the_client_can_do_then_sends_initialized() {
         options: json!({"logLevel": "info"}),
         settings: json!({}),
         experimental: json!({}),
+        fallback: None,
     };
     let initializing = initialize(starting, init, PATIENCE);
     let asked = fake.expect("initialize");
@@ -122,6 +125,7 @@ fn a_failed_initialize_sends_no_initialized_and_kills_the_server() {
         options: json!(null),
         settings: json!({}),
         experimental: json!({}),
+        fallback: None,
     };
     let initializing = initialize(starting, init, PATIENCE);
     let asked = fake.expect("initialize");
@@ -150,6 +154,7 @@ fn a_server_that_doesn_t_answer_initialize_in_time_is_killed() {
         options: json!(null),
         settings: json!({}),
         experimental: json!({}),
+        fallback: None,
     };
     let initializing = initialize(starting, init, Duration::from_millis(50));
     let _asked = fake.expect("initialize");
@@ -184,6 +189,167 @@ fn workspace_configuration_is_answered_from_the_settings_section_by_section() {
         answer["result"],
         json!([settings["ty"], ["Lib"], environment, null, settings])
     );
+}
+
+/// The `ty` section of the settings the client answers the fake's `workspace/configuration` with.
+fn ty_settings(fake: &mut Fake) -> Value {
+    fake.send(&json!({
+        "jsonrpc": "2.0",
+        "id": "c",
+        "method": "workspace/configuration",
+        "params": {"items": [{"section": "ty"}]},
+    }));
+    let answer = fake.next();
+    assert_eq!(answer["id"], "c", "{answer}");
+    answer["result"][0].clone()
+}
+
+/// Has the fake show `message` as a message of type `kind`.
+fn show(fake: &mut Fake, kind: u8, message: &str) {
+    let params = json!({"type": kind, "message": message});
+    fake.send(&json!({"jsonrpc": "2.0", "method": "window/showMessage", "params": params}));
+}
+
+#[test]
+fn a_server_that_refuses_the_settings_gets_the_fallback_once_and_asks_for_it_again() {
+    let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
+    let folder_changes = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
+    let (_server, _events, mut fake) =
+        initialized_with(settings.clone(), Some(fallback()), folder_changes);
+    let refusal =
+        "Invalid `ty.configuration` options: unknown variant `3.99`, expected one of `3.15`";
+
+    // A warning, an error that holds one text of the refusal and not the other, and a message that
+    // doesn't parse change nothing.
+    show(&mut fake, 2, refusal);
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: missing field `root`",
+    );
+    show(&mut fake, 9, refusal);
+    assert_eq!(ty_settings(&mut fake), settings["ty"]);
+    show(&mut fake, 1, refusal);
+
+    let folders = json!([{"uri": "file:///work/lookup", "name": "file:///work/lookup"}]);
+    let removed = fake.expect("workspace/didChangeWorkspaceFolders");
+    assert_eq!(
+        removed["params"],
+        json!({"event": {"added": [], "removed": folders}})
+    );
+    let added = fake.expect("workspace/didChangeWorkspaceFolders");
+    assert_eq!(
+        added["params"],
+        json!({"event": {"added": folders, "removed": []}})
+    );
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+    // Once: the next message the client writes after another refusal is its answer.
+    show(&mut fake, 1, refusal);
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+/// A fallback for a server that refuses Python 3.99 in `ty.configuration`.
+fn fallback() -> Fallback {
+    // The texts the core's ty setup gives for 3.99.
+    let refusal = ["`ty.configuration`", "unknown variant `3.99`"];
+    Fallback {
+        refusal: refusal.map(str::to_owned).to_vec(),
+        settings: json!({"ty": {"root": ["Lib"]}}),
+    }
+}
+
+#[test]
+fn a_server_that_doesn_t_hear_folder_changes_gets_the_fallback_when_it_next_asks_and_no_push() {
+    let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
+    // A capability of a shape LSP doesn't have fails nothing, and means it doesn't hear.
+    let odd = json!({"workspace": null});
+    let (_server, _events, mut fake) = initialized_with(settings, Some(fallback()), odd);
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+
+    // The next message the client writes is its answer, with nothing pushed before it.
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+#[test]
+fn a_refusal_before_the_answer_to_initialize_is_pushed_once_the_answer_says_the_server_hears() {
+    let (starting, _events, mut fake) = connect();
+    let init = Init {
+        root: uri("file:///work/lookup"),
+        options: json!({}),
+        settings: json!({"ty": {"root": ["Lib"], "python-version": "3.99"}}),
+        experimental: json!({}),
+        fallback: Some(fallback()),
+    };
+    let initializing = initialize(starting, init, PATIENCE);
+    let asked = fake.expect("initialize");
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+    let capabilities = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
+    fake.reply(&asked, json!({"capabilities": capabilities}));
+
+    let _initialized = initializing.join().unwrap().unwrap();
+    let _sent = fake.expect("initialized");
+    let removed = fake.expect("workspace/didChangeWorkspaceFolders");
+    assert_eq!(removed["params"]["event"]["added"], json!([]));
+    let added = fake.expect("workspace/didChangeWorkspaceFolders");
+    assert_eq!(added["params"]["event"]["removed"], json!([]));
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+#[test]
+fn a_refusal_before_the_answer_to_initialize_isn_t_pushed_when_the_answer_says_the_server_doesn_t_hear()
+ {
+    let (starting, _events, mut fake) = connect();
+    let init = Init {
+        root: uri("file:///work/lookup"),
+        options: json!({}),
+        settings: json!({"ty": {"root": ["Lib"], "python-version": "3.99"}}),
+        experimental: json!({}),
+        fallback: Some(fallback()),
+    };
+    let initializing = initialize(starting, init, PATIENCE);
+    let asked = fake.expect("initialize");
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+    fake.reply(&asked, json!({"capabilities": {}}));
+
+    let _initialized = initializing.join().unwrap().unwrap();
+    let _sent = fake.expect("initialized");
+    // The next message the client writes is its answer, with nothing pushed before it.
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+#[test]
+fn a_refusal_after_shutdown_has_gone_out_switches_the_settings_and_pushes_nothing() {
+    let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
+    let folder_changes = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
+    let (server, _events, mut fake) = initialized_with(settings, Some(fallback()), folder_changes);
+    server.stop(PATIENCE);
+    let asked = fake.expect("shutdown");
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+    // LSP lets the client send `exit` alone after `shutdown`: the next message it writes is its answer.
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+    fake.reply(&asked, Value::Null);
+    let _exit = fake.expect("exit");
+    fake.exit(Some(0));
 }
 
 #[test]

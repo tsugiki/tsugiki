@@ -5,6 +5,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use url::Url;
 
 #[cfg(test)]
@@ -172,6 +173,14 @@ pub(crate) struct InitializeResult {
     pub(crate) server_info: Option<ServerInfo>,
 }
 
+/// Whether a server's answer to `initialize` says it hears `workspace/didChangeWorkspaceFolders`. Only
+/// `true` counts: a registration id holds until the server unregisters it, which the client doesn't
+/// follow. Any other shape, `null` or a number, means it doesn't, and fails nothing.
+pub(crate) fn hears_folder_changes(initialized: &Value) -> bool {
+    let notifications = "/capabilities/workspace/workspaceFolders/changeNotifications";
+    initialized.pointer(notifications) == Some(&Value::Bool(true))
+}
+
 /// A language, by its LSP identifier, which a document is opened with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Language {
@@ -226,6 +235,39 @@ impl TryFrom<u8> for Severity {
             3 => Ok(Self::Information),
             4 => Ok(Self::Hint),
             other => Err(format!("{other} isn't a diagnostic's severity")),
+        }
+    }
+}
+
+/// A message the server asks the client to show the user, with `window/showMessage`.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub(crate) struct ShowMessage {
+    #[serde(rename = "type")]
+    pub(crate) kind: MessageKind,
+    pub(crate) message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "u8")]
+pub(crate) enum MessageKind {
+    Error,
+    Warning,
+    Info,
+    Log,
+    Debug,
+}
+
+impl TryFrom<u8> for MessageKind {
+    type Error = String;
+
+    fn try_from(number: u8) -> Result<Self, String> {
+        match number {
+            1 => Ok(Self::Error),
+            2 => Ok(Self::Warning),
+            3 => Ok(Self::Info),
+            4 => Ok(Self::Log),
+            5 => Ok(Self::Debug),
+            other => Err(format!("{other} isn't a message's type")),
         }
     }
 }

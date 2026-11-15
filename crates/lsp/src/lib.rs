@@ -16,8 +16,8 @@ mod types;
 pub mod utf16;
 
 pub use client::{
-    Canceller, Document, Event, Exit, Init, Pending, Process, RequestError, Server, Starting,
-    Streams,
+    Canceller, Document, Event, Exit, Fallback, Init, Pending, Process, RequestError, Server,
+    Starting, Streams,
 };
 pub use process::{Launch, version_of};
 pub use types::{

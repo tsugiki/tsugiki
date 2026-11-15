@@ -97,6 +97,7 @@ pub(super) fn setup(folder: &Path, program: &Path) -> Result<Setup, Error> {
         env: Vec::new(),
         options: json!({}),
         settings: json!({}),
+        fallback: None,
         language: Language::C,
         ready: Ready::Initialized,
         unopened: Unopened::Refused,

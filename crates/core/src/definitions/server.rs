@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{
-    Definitions, Diagnostics, Document, Event, Exit, Init, Language, Launch, Location, Pending,
-    Position, Progress, RequestError, Server, Starting, Status, Uri,
+    Definitions, Diagnostics, Document, Event, Exit, Fallback, Init, Language, Launch, Location,
+    Pending, Position, Progress, RequestError, Server, Starting, Status, Uri,
 };
 
 use super::clangd::{Headers, Troubles};
@@ -42,6 +42,8 @@ pub(super) struct Setup {
     pub(super) options: Value,
     /// What the server reads from `workspace/configuration`, by section.
     pub(super) settings: Value,
+    /// The settings it reads instead if it refuses `settings`.
+    pub(super) fallback: Option<Fallback>,
     /// The language of the files it opens.
     pub(super) language: Language,
     pub(super) ready: Ready,
@@ -327,6 +329,7 @@ impl LanguageServer {
             options: setup.options,
             settings: setup.settings,
             experimental: setup.ready.experimental(),
+            fallback: setup.fallback,
         };
         let (server, info) = match starting.initialize(init, PATIENCE) {
             Ok(started) => started,

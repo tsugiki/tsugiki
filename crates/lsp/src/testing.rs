@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use crate::client::{Event, Init, Process, RequestError, Server, Starting, Streams};
+use crate::client::{Event, Fallback, Init, Process, RequestError, Server, Starting, Streams};
 use crate::framing;
 use crate::types::{ServerInfo, Uri};
 
@@ -87,16 +87,27 @@ pub(crate) fn initialize(starting: Starting, init: Init, patience: Duration) -> 
 
 /// A client that has initialized a fake server with `settings`.
 pub(crate) fn initialized(settings: Value) -> (Server, Receiver<Event>, Fake) {
+    initialized_with(settings, None, json!({}))
+}
+
+/// A client that has initialized a fake server with `settings`, and `fallback` if it refuses them. The
+/// server answers `initialize` with `capabilities`.
+pub(crate) fn initialized_with(
+    settings: Value,
+    fallback: Option<Fallback>,
+    capabilities: Value,
+) -> (Server, Receiver<Event>, Fake) {
     let (starting, events, mut fake) = connect();
     let init = Init {
         root: uri("file:///work/lookup"),
         options: json!({}),
         settings,
         experimental: json!({}),
+        fallback,
     };
     let initializing = initialize(starting, init, PATIENCE);
     let asked = fake.expect("initialize");
-    fake.reply(&asked, json!({"capabilities": {}}));
+    fake.reply(&asked, json!({"capabilities": capabilities}));
     let (server, info) = initializing.join().unwrap().unwrap();
     assert_eq!(info, None);
     let _initialized = fake.expect("initialized");

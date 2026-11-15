@@ -22,8 +22,8 @@ use crate::rpc::{
     self, INVALID_PARAMS, Incoming, METHOD_NOT_FOUND, ReplyError, RequestId, ResponseError,
 };
 use crate::types::{
-    ConfigurationParams, Definitions, Diagnostics, InitializeResult, Language, Position, Progress,
-    ServerInfo, Status, Uri,
+    ConfigurationParams, Definitions, Diagnostics, InitializeResult, Language, MessageKind,
+    Position, Progress, ServerInfo, ShowMessage, Status, Uri, hears_folder_changes,
 };
 
 #[cfg(test)]
@@ -70,6 +70,24 @@ pub struct Init {
     /// What else the client can do that only this server knows of, in `capabilities.experimental`, as
     /// rust-analyzer's `serverStatusNotification`.
     pub experimental: Value,
+    /// The settings to give the server instead, once, if it refuses these.
+    pub fallback: Option<Fallback>,
+}
+
+/// Settings the client answers `workspace/configuration` from once the server refuses the first ones,
+/// which it says by showing an error that holds each text in `refusal`. The client then has the server ask
+/// again, by taking its workspace folder away and giving it back, if the server says it hears that: ty
+/// 0.0.103 has no handler for `workspace/didChangeConfiguration`. It does that once, whatever the server
+/// says next.
+#[derive(Clone, Debug)]
+pub struct Fallback {
+    pub refusal: Vec<String>,
+    pub settings: Value,
+}
+
+/// The workspace folders of a client that works in `root`, as LSP lists them.
+fn folders(root: &impl serde::Serialize) -> Value {
+    json!([{"uri": root, "name": root}])
 }
 
 /// A message a server sends the caller without being asked.
@@ -134,6 +152,7 @@ enum Method {
     Shutdown,
     Exit,
     CancelRequest,
+    DidChangeWorkspaceFolders,
 }
 
 impl Method {
@@ -148,6 +167,7 @@ impl Method {
             Self::Shutdown => "shutdown",
             Self::Exit => "exit",
             Self::CancelRequest => "$/cancelRequest",
+            Self::DidChangeWorkspaceFolders => "workspace/didChangeWorkspaceFolders",
         }
     }
 }
@@ -192,6 +212,7 @@ enum Input {
     Configure {
         root: Uri,
         settings: Value,
+        fallback: Option<Fallback>,
     },
     Arrived(Incoming),
     /// A piece of the server's error output.
@@ -234,12 +255,13 @@ impl Starting {
             options,
             settings,
             experimental,
+            fallback,
         } = init;
         let params = json!({
             "processId": std::process::id(),
             "clientInfo": {"name": "Tsugiki", "version": env!("CARGO_PKG_VERSION")},
             "rootUri": root,
-            "workspaceFolders": [{"uri": root, "name": root}],
+            "workspaceFolders": folders(&root),
             "capabilities": {
                 "general": {"positionEncodings": ["utf-16"]},
                 "workspace": {"configuration": true, "workspaceFolders": true},
@@ -253,7 +275,11 @@ impl Starting {
             },
             "initializationOptions": options,
         });
-        self.0.inputs.send(Input::Configure { root, settings });
+        self.0.inputs.send(Input::Configure {
+            root,
+            settings,
+            fallback,
+        });
         let call = Call {
             method: Method::Initialize,
             params,
@@ -305,6 +331,8 @@ impl Server {
             waiting: BTreeMap::new(),
             root: None,
             settings: Value::Null,
+            fallback: None,
+            folders: Folders::Unknown { owed: false },
             tail: Vec::new(),
             life: Life::Running,
         };
@@ -497,6 +525,8 @@ struct Waiting {
 enum Life {
     /// The server reads what the client writes.
     Running,
+    /// The client has sent `shutdown`, after which LSP lets it send `exit` alone.
+    ShuttingDown,
     /// The client has sent `exit`, so the server is on its way out.
     Exiting,
     /// The server stopped reading, so nothing more can be asked, and its process is still there.
@@ -516,9 +546,23 @@ struct Owner {
     /// The folder of the [`Init`], which `workspace/workspaceFolders` asks for.
     root: Option<Uri>,
     settings: Value,
+    /// The settings to give the server if it refuses `settings`, until it has.
+    fallback: Option<Fallback>,
+    folders: Folders,
     /// The end of the server's error output, at most [`TAIL_BYTES`].
     tail: Vec<u8>,
     life: Life,
+}
+
+/// Whether the client can have the server ask for its settings again, by taking its workspace folder away
+/// and giving it back.
+enum Folders {
+    /// The server hasn't answered `initialize`, which says. `owed` once it has refused its settings.
+    Unknown { owed: bool },
+    /// It said it hears `workspace/didChangeWorkspaceFolders`.
+    Heard,
+    /// It didn't.
+    Unheard,
 }
 
 impl Owner {
@@ -530,9 +574,14 @@ impl Owner {
                 Input::Notify { method, params } => {
                     self.write(rpc::notification(method.name(), params));
                 }
-                Input::Configure { root, settings } => {
+                Input::Configure {
+                    root,
+                    settings,
+                    fallback,
+                } => {
                     self.root = Some(root);
                     self.settings = settings;
+                    self.fallback = fallback;
                 }
                 Input::Arrived(incoming) => self.arrived(incoming),
                 Input::Errors(bytes) => self.keep_tail(&bytes),
@@ -601,6 +650,9 @@ impl Owner {
         if self.life == Life::Running {
             self.write(rpc::request(id, method.name(), params));
             let _none = self.waiting.insert(id, Waiting { answer, then });
+            if let Method::Shutdown = method {
+                self.life = Life::ShuttingDown;
+            }
         } else {
             answer(Err(RequestError::Exited));
         }
@@ -647,6 +699,15 @@ impl Owner {
                 match then {
                     Some(Then::Initialized) => {
                         self.write(rpc::notification(Method::Initialized.name(), json!({})));
+                        let owed = matches!(self.folders, Folders::Unknown { owed: true });
+                        self.folders = if hears_folder_changes(&result) {
+                            Folders::Heard
+                        } else {
+                            Folders::Unheard
+                        };
+                        if owed {
+                            self.ask_again();
+                        }
                     }
                     Some(Then::Exit) => {
                         self.write(rpc::notification(Method::Exit.name(), Value::Null));
@@ -683,7 +744,7 @@ impl Owner {
                     }),
                 }
             }
-            "workspace/workspaceFolders" => Ok(json!([{"uri": self.root, "name": self.root}])),
+            "workspace/workspaceFolders" => Ok(folders(&self.root)),
             // The client shows progress whoever starts it, and registers nothing.
             "window/workDoneProgress/create"
             | "client/registerCapability"
@@ -706,7 +767,7 @@ impl Owner {
             .unwrap_or(Value::Null)
     }
 
-    fn notified(&self, method: &str, params: Value) {
+    fn notified(&mut self, method: &str, params: Value) {
         let event = match method {
             "$/progress" => serde_json::from_value::<Progress>(params).map(Event::Progress),
             "textDocument/publishDiagnostics" => {
@@ -715,12 +776,69 @@ impl Owner {
             "experimental/serverStatus" => {
                 serde_json::from_value::<Status>(params).map(Event::Status)
             }
+            "window/showMessage" => {
+                match serde_json::from_value::<ShowMessage>(params) {
+                    Ok(shown) => self.shown(&shown),
+                    Err(cause) => log::warn!("A language server's {method} doesn't parse: {cause}"),
+                }
+                return;
+            }
             _ => return,
         };
         match event {
             // The caller may not listen.
             Ok(event) => drop(self.events.send(event)),
             Err(cause) => log::warn!("A language server's {method} doesn't parse: {cause}"),
+        }
+    }
+
+    /// Logs an error the server shows. One that refuses the settings, while the client has others to give,
+    /// has the client answer from those, and has the server ask for them again.
+    fn shown(&mut self, shown: &ShowMessage) {
+        if shown.kind != MessageKind::Error {
+            return;
+        }
+        log::warn!("A language server says: {}", shown.message);
+        let refused = |fallback: &mut Fallback| {
+            (fallback.refusal.iter()).all(|text| shown.message.contains(text.as_str()))
+        };
+        let Some(fallback) = self.fallback.take_if(refused) else {
+            return;
+        };
+        self.settings = fallback.settings;
+        self.ask_again();
+    }
+
+    /// Has the server ask for its settings again, by taking its workspace folder away and giving it back,
+    /// once it has said it hears that: after its answer to `initialize`, if that comes later. Nothing goes
+    /// out once `shutdown` has.
+    fn ask_again(&mut self) {
+        match self.folders {
+            Folders::Unknown { .. } => self.folders = Folders::Unknown { owed: true },
+            Folders::Heard if self.life == Life::Running => self.push_folders(),
+            Folders::Heard => log::info!(
+                "A language server refused its settings on its way out, so the client tells it nothing more"
+            ),
+            Folders::Unheard => log::warn!(
+                "A language server refused its settings, and doesn't hear folder changes, which would have \
+                 it ask for others: it gets them only if it asks again"
+            ),
+        }
+    }
+
+    /// Takes the server's workspace folder away and gives it back.
+    fn push_folders(&self) {
+        let folders = folders(&self.root);
+        let changes = [
+            json!({"added": [], "removed": folders}),
+            json!({"added": folders, "removed": []}),
+        ];
+        for event in changes {
+            let params = json!({"event": event});
+            self.write(rpc::notification(
+                Method::DidChangeWorkspaceFolders.name(),
+                params,
+            ));
         }
     }
 

@@ -49,10 +49,15 @@ class Shop:
 /// A PR in a Repository with CPython's layout: it changes `Tools/shop.py`, adds `Lib/added.py` and deletes
 /// `Lib/gone.py`.
 fn cpython(name: &str) -> Fixture {
+    cpython_at(name, PATCHLEVEL)
+}
+
+/// [`cpython`], whose `Include/patchlevel.h` is `patchlevel`.
+fn cpython_at(name: &str, patchlevel: &str) -> Fixture {
     Fixture::new(
         name,
         &[
-            ("Include/patchlevel.h", PATCHLEVEL),
+            ("Include/patchlevel.h", patchlevel),
             ("Lib/spam.py", "def eggs(count):\n    return count\n"),
             ("Lib/gone.py", "def bye():\n    pass\n"),
             (SHOP, SHOP_AT_BASE),
@@ -257,6 +262,39 @@ fn a_name_at_the_head_is_found_where_the_head_defines_it() {
     let more = "def more():";
     let added_file = ("Lib/added.py", 1, 4);
     assert_eq!(added, [hit(&fixture, DiffEnd::Head, added_file, more)]);
+}
+
+#[test]
+fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
+    // A CPython newer than the ty in use: ty 0.0.103 knows up to 3.15, and drops all of its settings over
+    // a version past them, `Lib` with the rest.
+    let patchlevel = "#define PY_MAJOR_VERSION 3\n#define PY_MINOR_VERSION 99\n";
+    let fixture = cpython_at("definitions-unknown-version", patchlevel);
+    let mut owner = opened(&fixture);
+    let eggs = lookup(&fixture, DiffEnd::Head, 12, "eggs");
+    let spam = [hit(
+        &fixture,
+        DiffEnd::Base,
+        ("Lib/spam.py", 1, 4),
+        "def eggs(count):",
+    )];
+
+    // ty asks for its settings again once it has refused them, which a lookup at once can beat, and a
+    // lookup while its workspace comes back may fail. Each miss waits a moment before the next try. The
+    // 5 s cap is approximate: a lookup that starts at 4.9 s runs to its own end.
+    let until = Instant::now() + Duration::from_secs(5);
+    let found = (0..)
+        .map(|tries: u32| {
+            thread::sleep(Duration::from_millis(50) * tries.min(1));
+            look(&mut owner, &eggs)
+        })
+        .find(|answer| {
+            let landed = matches!(answer, Ok(Answer::Found { hits }) if *hits == spam);
+            landed || Instant::now() > until
+        })
+        .unwrap();
+
+    assert_eq!(hits(found), spam);
 }
 
 #[test]

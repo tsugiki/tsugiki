@@ -95,6 +95,18 @@ describe("focusBesideRail", () => {
     expect([beside, focusedName()]).toEqual([pane.querySelector('[role="tabpanel"]'), "Files"]);
   });
 
+  it("passes over a region of the rail's own that scrolls, as before the diff has come", () => {
+    const pane = paneOf("<p>Fetching the PR's commits…</p>");
+    pane.insertAdjacentHTML(
+      "beforeend",
+      '<aside data-rail><div tabindex="0" data-scrolls>Tree</div></aside>',
+    );
+
+    focusBesideRail(pane);
+
+    expect(focusedName()).toBe("Files");
+  });
+
   it("does nothing without a PR view", () => {
     focusBesideRail(undefined);
     expect(document.activeElement).toBe(document.body);

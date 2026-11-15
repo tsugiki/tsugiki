@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, type Snippet } from "svelte";
+  import { type Snippet, untrack } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import {
@@ -64,15 +64,56 @@
 
   let browserProblem = $state<string>();
   let section = $state<HTMLElement>();
+  let panel = $state<HTMLElement>();
   /** The rail's key, which its button and × name. */
   const railKey = actionLabel("toggle_rail_files", currentOs());
+  /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
+   * scrolls it, under the header. */
+  const conversationScrolls = $derived(panes.railOpen && pr.tab === "conversation");
 
-  /** × in the rail: closes it, and gives the focus, which was on ×, to what the rail sat beside, or else to
-   * the Files button. */
-  async function closeRail() {
-    panes.railOpen = false;
-    await tick();
-    focusBesideRail(section);
+  /** The pixels of the pane above the tab, which scroll away with the Conversation while the pane scrolls
+   * it. */
+  const headerHeight = (pane: HTMLElement, tab: HTMLElement) =>
+    tab.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+
+  /** How far down the Conversation the user has read, from the scroller the page has now. */
+  function conversationTop(): number {
+    if (section === undefined || panel === undefined || pr.tab !== "conversation") return 0;
+    if (panel.hasAttribute("data-scrolls")) return panel.scrollTop;
+    return Math.max(0, section.scrollTop - headerHeight(section, panel));
+  }
+
+  /** Scrolls the Conversation `top` pixels down, in the scroller the page has now. Back at the top, the pane
+   * shows its header again. */
+  function showConversationAt(top: number) {
+    if (section === undefined || panel === undefined || pr.tab !== "conversation") return;
+    if (panel.hasAttribute("data-scrolls")) panel.scrollTop = top;
+    else section.scrollTop = top > 0 ? top + headerHeight(section, panel) : 0;
+  }
+
+  // Opening or closing the rail on the Conversation moves its scroller between the pane and the tab, which
+  // would start it at the top. Each reads where the Conversation was before the page changes, and scrolls the
+  // new scroller there after.
+  let readTo = 0;
+  $effect.pre(() => {
+    void panes.railOpen;
+    untrack(() => {
+      readTo = conversationTop();
+    });
+  });
+  $effect(() => {
+    void panes.railOpen;
+    untrack(() => {
+      showConversationAt(readTo);
+      handOnFocus();
+    });
+  });
+
+  /** The pane takes the focus while the Issue list is hidden, but beside the rail the Conversation scrolls
+   * and the pane doesn't, so the tab takes the pane's focus on, for Page Down and the like: as the pane takes
+   * it, and as the rail opens while the pane holds it. */
+  function handOnFocus() {
+    if (document.activeElement === section && conversationScrolls) panel?.focus({ preventScroll: true });
   }
 
   const onGitHub = async (item: GitHubItem) => {
@@ -91,6 +132,7 @@
   aria-label="PR view"
   tabindex={focusable ? -1 : undefined}
   data-pane="detail"
+  onfocus={handOnFocus}
 >
   {@render header?.()}
   {#if pr.error}
@@ -176,14 +218,14 @@
     <!-- Beside the rail the Conversation scrolls by itself, as the diff does, and takes the focus for its
          keys (axe's scrollable-region-focusable). The Detail pane's ↑ and ↓ scroll it, which `data-scrolls`
          marks it for. -->
-    {@const scrolls = panes.railOpen && pr.tab === "conversation"}
     <div class="body" style:--rail-width={`${String(panes.rail ?? RAIL_WIDTH)}px`}>
       <div
+        bind:this={panel}
         role="tabpanel"
         id="pr-tab-panel"
         aria-labelledby={`pr-tab-${pr.tab}`}
-        tabindex={scrolls ? 0 : undefined}
-        data-scrolls={scrolls ? "" : undefined}
+        tabindex={conversationScrolls ? 0 : undefined}
+        data-scrolls={conversationScrolls ? "" : undefined}
       >
         {#if pr.tab === "conversation"}
           {#if view.content}
@@ -203,22 +245,25 @@
         {/if}
       </div>
       {#if panes.railOpen}
-        <PaneEdge
-          label="Rail width"
-          sizes={{ kind: "before", value: panes.rail ?? RAIL_WIDTH, previousLeast: BESIDE_RAIL_LEAST }}
-          least={RAIL_LEAST}
-          most={RAIL_MOST}
-          onresize={(width) => (panes.rail = width)}
-          ondone={() => void panes.save()}
-          onreset={() => void panes.reset("rail")}
-        />
         <Rail
           closeKey={railKey}
-          onclose={() => void closeRail()}
+          onclose={() => (panes.railOpen = false)}
           onleave={() => {
             focusBesideRail(section);
           }}
-        />
+        >
+          {#snippet edge()}
+            <PaneEdge
+              label="Rail width"
+              sizes={{ kind: "before", value: panes.rail ?? RAIL_WIDTH, previousLeast: BESIDE_RAIL_LEAST }}
+              least={RAIL_LEAST}
+              most={RAIL_MOST}
+              onresize={(width) => (panes.rail = width)}
+              ondone={() => void panes.save()}
+              onreset={() => void panes.reset("rail")}
+            />
+          {/snippet}
+        </Rail>
       {/if}
     </div>
   {/if}
@@ -250,9 +295,11 @@
     min-height: 0;
   }
 
-  /* The tab keeps some width beside the rail, which gives way first. */
+  /* The tab keeps some width beside the rail, which gives way first. The width counts the Conversation's
+     padding, as the rail's edge measures it. */
   .body > [role="tabpanel"] {
     flex: 1;
+    box-sizing: border-box;
     min-width: 240px;
   }
 

@@ -1217,7 +1217,26 @@ it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it
   ]);
 });
 
-it("keeps the PR on show on Esc in the rail, gives the diff the focus, and gives it the focus as Ctrl+K F closes the rail from inside", async () => {
+it("offers no rail for a PR Tsugiki doesn't hold, which has no tabs to sit beside", async () => {
+  const changed = catchChanged();
+  core.pullRequest.mockResolvedValue({ status: "ok", data: null });
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByText("Tsugiki doesn't hold PR #160662.");
+  const offered = component.paletteCommands().some((found) => found.title === "View: Files in the Rail");
+
+  component.chordBindings().toggle_rail_files?.();
+  core.pullRequest.mockResolvedValue({ status: "ok", data: { ...row, content: null } });
+  changed("python/cpython", [160662]);
+  await screen.findByRole("tab", { name: "Conversation" });
+
+  expect(offered).toBe(false);
+
+  expect(screen.queryByRole("complementary", { name: "Rail" })).toBeNull();
+  expect(component.paletteCommands().some((found) => found.title === "View: Files in the Rail")).toBe(true);
+});
+
+it("keeps the PR on show on Esc in the rail, gives the diff the focus, and gives it the focus as Ctrl+K F closes the rail from its edge", async () => {
   core.pullRequestFiles.mockResolvedValue({
     status: "ok",
     data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
@@ -1241,7 +1260,8 @@ it("keeps the PR on show on Esc in the rail, gives the diff the focus, and gives
 
   await fireEvent.keyDown(close(), { key: "Escape" });
   const left = [document.activeElement === diff, screen.queryByRole("region", { name: "PR view" }) !== null];
-  close().focus();
+  // The rail's edge takes the focus too, and hands it on as the rail goes.
+  screen.getByRole("separator", { name: "Rail width" }).focus();
   component.chordBindings().toggle_rail_files?.();
 
   expect(left).toEqual([true, true]);

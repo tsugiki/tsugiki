@@ -1,6 +1,6 @@
 <!--
-  The edge between two panes, which sizes the pane before it (#187), the edge on the PR view's rail's left,
-  which sizes the rail after it (#603), the edge under the Definition peek, which sizes it in diff rows
+  The edge between two panes, which sizes the pane before it (#187), the edge inside the PR view's rail on
+  its left, which sizes the rail (#603), the edge under the Definition peek, which sizes it in diff rows
   (#458), or the edge atop the split one, which sizes it in pixels (#459). A drag or an arrow key moves it,
   between the size's own minimum and maximum and the minimums of the panes beside it, and a double-click
   asks for the default size back.
@@ -8,12 +8,11 @@
 <script lang="ts" module>
   /** What an edge sizes. A pane's edge stands between panes side by side and sizes the pane on its left, in
    * CSS pixels, while the panes after it keep `nextLeast` between them. Its `value` is the pane's width, for
-   * a screen reader, unless the pane takes half the room. An edge before a pane, such as the rail's, sizes
-   * the pane after it, `value` CSS pixels wide now, while the pane before it keeps `previousLeast`, so a drag
-   * left makes it wider. A box's edge lies under a box, such as the
-   * Definition peek, and sizes it in steps `unit` pixels tall, of which it is `value` now. An edge above a
-   * box, such as the split Definition peek, sizes the box under it, `value` CSS pixels tall now, so a drag
-   * up makes it taller. */
+   * a screen reader, unless the pane takes half the room. An edge at the left of a pane, inside it, such as
+   * the rail's, sizes that pane, `value` CSS pixels wide, while the pane before it keeps `previousLeast`, so
+   * a drag left makes it wider. A box's edge lies under a box, such as the Definition peek, and sizes it in
+   * steps `unit` pixels tall, of which it is `value` now. An edge above a box, such as the split Definition
+   * peek, sizes the box under it, `value` CSS pixels tall now, so a drag up makes it taller. */
   export type Sizes =
     | { kind: "pane"; value: number | undefined; nextLeast: number }
     | { kind: "before"; value: number; previousLeast: number }
@@ -67,17 +66,21 @@
   /** The size the edge gives now, and the most it may take. Between panes, that's the width of the pane
    * before the edge, while the panes after keep their minimums: a pane after it with room to spare, such as
    * the Detail pane beyond the list, gives it up too. The other edges keep their widths, so they don't
-   * count. Before a pane, that's the width of the pane after the edge, which the pane before it gives up
-   * down to its minimum. A box's edge has `value` say its size. */
+   * count. At a pane's left, that's the width the pane keeps, which may be more than it shows while the
+   * pane before it squeezes it, and it may grow by what the pane before it has above its minimum. A squeezed
+   * pane has nothing to grow by, and keeps its width until the edge moves the other way. A box's edge has
+   * `value` say its size. */
   function measure() {
     if (sizes.kind === "box" || sizes.kind === "above") {
       return { size: sizes.value, most: Math.max(least, ceiling) };
     }
     const here = edge as HTMLElement;
     if (sizes.kind === "before") {
-      const width = (here.nextElementSibling as Element).getBoundingClientRect().width;
-      const room = (here.previousElementSibling as Element).getBoundingClientRect().width;
-      return { size: width, most: Math.max(least, Math.min(ceiling, width + room - sizes.previousLeast)) };
+      const pane = here.parentElement as HTMLElement;
+      const shown = pane.getBoundingClientRect().width;
+      const room = (pane.previousElementSibling as Element).getBoundingClientRect().width;
+      const grown = Math.max(sizes.value, shown + room - sizes.previousLeast);
+      return { size: sizes.value, most: Math.max(least, Math.min(ceiling, grown)) };
     }
     const nextLeast = sizes.nextLeast;
     const width = (here.previousElementSibling as Element).getBoundingClientRect().width;

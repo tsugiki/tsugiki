@@ -28,7 +28,7 @@
     type WorkbenchRow,
     type WorkbenchView,
   } from "$lib/state/workbench.svelte";
-  import { focusBesideRail } from "./focus";
+  import { scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { actionOn } from "$lib/state/keymap";
@@ -395,19 +395,17 @@
         shownFiles()?.toggleMode();
       },
       toggle_detail_only: () => void toggleDetailOnly(),
-      toggle_rail_files: () => void toggleRail(),
+      toggle_rail_files: toggleRail,
     };
   }
 
-  /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). Focus in a rail it
-   * closes goes to what the rail sat beside, so it doesn't fall out of the window with the rail. */
-  async function toggleRail() {
-    if (!(detail instanceof PrViewState)) return;
-    const inRail = document.activeElement?.closest("[data-rail]") instanceof HTMLElement;
-    panes.railOpen = !panes.railOpen;
-    if (!inRail) return;
-    await tick();
-    focusBesideRail(detailPane());
+  /** Whether the Detail pane shows a PR's view, with the tabs the rail sits beside. */
+  const showsPr = () => detail instanceof PrViewState && Boolean(detail.view);
+
+  /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). The rail hands on the
+   * focus it holds as it goes. */
+  function toggleRail() {
+    if (showsPr()) panes.railOpen = !panes.railOpen;
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
@@ -499,12 +497,12 @@
         ? [{ title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items", run: toggleQuiet }]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
-      ...(detail instanceof PrViewState
+      ...(showsPr()
         ? [
             {
               title: "View: Files in the Rail",
               note: actionLabel("toggle_rail_files", currentOs()),
-              run: () => void toggleRail(),
+              run: toggleRail,
             },
           ]
         : []),
@@ -587,12 +585,11 @@
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
 
-  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, each of
-   * which scrolls by itself. */
+  /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, or the
+   * Conversation beside the rail, each of which scrolls by itself. */
   function scrollDetail(step: 1 | -1) {
     const pane = detailPane();
-    // A region something covers, such as the diff under the file view, is inert and keeps still.
-    const scroller = pane?.querySelector<HTMLElement>("[data-scrolls]:not([inert] *)") ?? pane;
+    const scroller = scrollerIn(pane) ?? pane;
     scroller?.scrollBy({ top: step * LINE });
   }
 

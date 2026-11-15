@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
@@ -470,6 +471,22 @@ it("closes the rail on ×, and gives the focus to the Files button, as the whole
   ]);
 });
 
+it("leaves the focus where it went after the rail held it, as the rail closes", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  close.focus();
+  // A click on the page's background takes the focus to nowhere, and the Files button then takes it.
+  close.blur();
+  railButton().focus();
+
+  await fireEvent.click(railButton());
+  await tick();
+
+  expect([rail(), document.activeElement]).toEqual([null, railButton()]);
+});
+
 it("gives the focus back to the Conversation on Esc in the rail, which stays open, and goes no further", async () => {
   const panes = new PanesState();
   panes.railOpen = true;
@@ -482,9 +499,17 @@ it("gives the focus back to the Conversation on Esc in the rail, which stays ope
   // Another key in the rail goes on to the window.
   await fireEvent.keyDown(close, { key: "a" });
   await fireEvent.keyDown(close, { key: "Escape" });
+  const fromClose = document.activeElement;
+  // The edge is the rail's too.
+  const edge = screen.getByRole("separator", { name: "Rail width" });
+  edge.focus();
+  await fireEvent.keyDown(edge, { key: "Escape" });
   window.removeEventListener("keydown", heard);
 
-  expect(document.activeElement).toBe(screen.getByRole("tabpanel"));
+  expect([fromClose, document.activeElement]).toEqual([
+    screen.getByRole("tabpanel"),
+    screen.getByRole("tabpanel"),
+  ]);
   expect([rail() !== null, heard.mock.calls.length]).toEqual([true, 1]);
 });
 
@@ -540,8 +565,103 @@ it("drags the rail's left edge between its least and greatest widths, saves wher
 
   await fireEvent.dblClick(edge);
 
-  expect([dragged, widest, narrowest, keyed]).toEqual([[380, "380", "vertical"], 640, 200, 296]);
+  expect([dragged, widest, narrowest, keyed]).toEqual([[380, "380", "vertical"], 640, 200, 216]);
   await vi.waitFor(() => {
-    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.rail)).toEqual([200, 296, 264, null]);
+    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.rail)).toEqual([200, 216, 200, null]);
   });
+});
+
+it("keeps the rail's width while a narrow pane squeezes it, and narrows it from that width", async () => {
+  core.savePaneLayout.mockResolvedValue({ status: "ok", data: null });
+  // The rail keeps 280 px but shows 150, beside a Conversation at its least.
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return { width: this.matches(".rail") ? 150 : 240 } as DOMRect;
+  });
+  const panes = new PanesState();
+  panes.railOpen = true;
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const edge = screen.getByRole("separator", { name: "Rail width" });
+
+  await fireEvent.keyDown(edge, { key: "ArrowLeft" });
+  await fireEvent.keyUp(edge, { key: "ArrowLeft" });
+  const widened = panes.rail;
+  await fireEvent.keyDown(edge, { key: "ArrowRight" });
+  await fireEvent.keyUp(edge, { key: "ArrowRight" });
+
+  expect([widened, panes.rail]).toEqual([null, 264]);
+  await vi.waitFor(() => {
+    expect(core.savePaneLayout.mock.calls.map(([layout]) => layout.rail)).toEqual([264]);
+  });
+});
+
+it("keeps the Conversation where it was read to as the rail opens and closes, though its scroller moves", async () => {
+  const panes = new PanesState();
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const section = screen.getByRole("region", { name: "PR view" });
+  const panel = screen.getByRole("tabpanel");
+  /** Lets `element` keep its scroll, which jsdom doesn't. */
+  const scrolling = (element: HTMLElement) => {
+    let top = 0;
+    Object.defineProperty(element, "scrollTop", {
+      get: () => top,
+      set: (to: number) => {
+        top = to;
+      },
+    });
+  };
+  scrolling(section);
+  scrolling(panel);
+  // The header above the tab is 100 px tall, and scrolls away with the pane.
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    return { top: this === panel ? 100 - section.scrollTop : 0 } as DOMRect;
+  });
+  section.scrollTop = 400;
+
+  panes.railOpen = true;
+  await tick();
+  const opened = panel.scrollTop;
+  panel.scrollTop = 500;
+  panes.railOpen = false;
+  await tick();
+  const closed = section.scrollTop;
+  // Back at the top of the Conversation, the pane shows its header again.
+  section.scrollTop = 50;
+  panes.railOpen = true;
+  await tick();
+  const topOpened = panel.scrollTop;
+  panes.railOpen = false;
+  await tick();
+
+  expect([opened, closed, topOpened, section.scrollTop]).toEqual([300, 600, 0, 0]);
+});
+
+it("hands the focus the pane takes on to the Conversation beside the rail, which scrolls as the pane doesn't", async () => {
+  const panes = new PanesState();
+  core.pullRequest.mockResolvedValue({ status: "ok", data: view });
+  const state = new PrViewState("python/cpython", 11, 10, panes);
+  onShow = state;
+  await state.load();
+  render(PrDetail, {
+    repository: "python/cpython",
+    pr: state,
+    panes,
+    now: NOW,
+    onback: vi.fn(),
+    onmark: vi.fn(),
+    focusable: true,
+  });
+  const section = screen.getByRole("region", { name: "PR view" });
+  const panel = screen.getByRole("tabpanel");
+  section.focus();
+  const alone = document.activeElement;
+  panes.railOpen = true;
+  await tick();
+  const opened = document.activeElement;
+  // A focus inside the pane stays where it is.
+  railButton().focus();
+  const button = document.activeElement;
+
+  section.focus();
+
+  expect([alone, opened, button, document.activeElement]).toEqual([section, panel, railButton(), panel]);
 });

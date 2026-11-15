@@ -6,7 +6,7 @@
 // which tab, lasts only the session.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
 import { PEEK_ROWS } from "./peek";
-import { RAIL_TABS, RailState, type RailTabId } from "./rail.svelte";
+import { RAIL_ORDER, RailState, type RailTabId } from "./rail.svelte";
 
 export type { ListOrder };
 
@@ -55,7 +55,7 @@ export class PanesState {
   rail = $state<number | null>(null);
   /** Whether the rail shows beside the PR's tabs, and on which tab. It stays open from tab to tab and PR to
    * PR, for the session, and the layout doesn't save it. */
-  readonly railState = new RailState<RailTabId>(RAIL_TABS[0].id);
+  readonly railState = new RailState<RailTabId>(...RAIL_ORDER);
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });

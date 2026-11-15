@@ -16,7 +16,7 @@
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
-  import { RAIL_TABS, railTabOf, type RailTabId } from "$lib/state/rail.svelte";
+  import { RAIL_ORDER, RAIL_TABS, railTabOf, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -493,9 +493,9 @@
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       ...(showsPr()
-        ? RAIL_TABS.map(({ id, name, action }) => ({
-            title: `View: ${name} in the Rail`,
-            note: actionLabel(action, currentOs()),
+        ? RAIL_ORDER.map((id) => ({
+            title: `View: ${RAIL_TABS[id].name} in the Rail`,
+            note: actionLabel(RAIL_TABS[id].action, currentOs()),
             run: () => {
               toggleRail(id);
             },
@@ -630,7 +630,7 @@
     } else if (action === "unfold_unchanged") {
       files?.unfoldUnchanged();
     } else if (railTab) {
-      toggleRail(railTab.id);
+      toggleRail(railTab);
     } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;

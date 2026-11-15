@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { createRawSnippet, tick } from "svelte";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { remapKeys } from "$lib/state/keymap.svelte";
 import { RailState, type RailTab } from "$lib/state/rail.svelte";
 import Rail from "./Rail.svelte";
 
@@ -8,32 +9,29 @@ import Rail from "./Rail.svelte";
 type Tab = "files" | "review";
 
 const pane = (html: string) => createRawSnippet(() => ({ render: () => html }));
-const FILES: RailTab<Tab> = {
-  id: "files",
-  name: "Files",
-  key: "Ctrl+K F",
-  pane: pane("<button>Tree</button>"),
-};
-const REVIEW: RailTab<Tab> = {
-  id: "review",
-  name: "Review",
-  count: 3,
-  key: null,
-  pane: pane("<p>Drafts</p>"),
+const TABS: Record<Tab, RailTab> = {
+  files: { name: "Files", action: "toggle_rail_files", pane: pane("<button>Tree</button>") },
+  // Review borrows Pick a Theme's key, `Ctrl+K T`.
+  review: { name: "Review", action: "pick_theme", count: 3, pane: pane("<p>Drafts</p>") },
 };
 
-const shown = (tabs: readonly [RailTab<Tab>, ...RailTab<Tab>[]], tab: Tab = "files") => {
-  const rail = new RailState<Tab>(tab);
-  rail.open = true;
+afterEach(() => {
+  remapKeys({});
+});
+
+const shown = (order: [Tab, ...Tab[]], tab: Tab = order[0]) => {
+  const rail = new RailState<Tab>(...order);
+  rail.pick(tab);
   const onleave = vi.fn();
-  render(Rail, { tabs, rail, edge: pane("<div></div>"), onleave });
-  return { rail, onleave };
+  const { unmount } = render(Rail, { tabs: TABS, rail, edge: pane("<div></div>"), onleave });
+  return { rail, onleave, unmount };
 };
 
 const tab = (name: string) => screen.getByRole("tab", { name });
 
 it("shows a row of tabs with two tabs, the one picked last on show, and its pane under them", () => {
-  shown([FILES, REVIEW], "review");
+  remapKeys({ pick_theme: "" });
+  shown(["files", "review"], "review");
 
   const row = screen.getByRole("tablist", { name: "Rail tabs" });
   expect(
@@ -56,7 +54,8 @@ it("shows a row of tabs with two tabs, the one picked last on show, and its pane
 });
 
 it("shows another tab on a click, keeps a tab's count while another shows, and closes on the tab on show", async () => {
-  const { rail } = shown([FILES, REVIEW], "review");
+  const { rail } = shown(["files", "review"], "review");
+  const onReview = screen.getByRole("button", { name: "Close the rail" }).title;
 
   await fireEvent.click(tab("Files"));
   const moved = [
@@ -65,15 +64,19 @@ it("shows another tab on a click, keeps a tab's count while another shows, and c
     screen.getByRole("tabpanel").textContent,
     tab("Review · 3").textContent,
   ];
-  const close = screen.getByRole("button", { name: "Close the rail" }).title;
+  const onFiles = screen.getByRole("button", { name: "Close the rail" }).title;
   await fireEvent.click(tab("Files"));
 
-  expect([moved, close]).toEqual([[true, "files", "Tree", "Review · 3"], "Close (Ctrl+K F)"]);
+  expect([moved, onReview, onFiles]).toEqual([
+    [true, "files", "Tree", "Review · 3"],
+    "Close (Ctrl+K T)",
+    "Close (Ctrl+K F)",
+  ]);
   expect([rail.open, rail.tab]).toEqual([false, "files"]);
 });
 
 it("moves between the tabs on ← and →, round from either end, and takes the focus along", async () => {
-  const { rail } = shown([FILES, REVIEW]);
+  const { rail } = shown(["files", "review"]);
   tab("Files").focus();
 
   await fireEvent.keyDown(tab("Files"), { key: "ArrowRight" });
@@ -94,18 +97,38 @@ it("moves between the tabs on ← and →, round from either end, and takes the 
   expect([rail.open, rail.tab]).toEqual([true, "review"]);
 });
 
-it("gives the focus in a pane to the tab on show as a key shows another tab", async () => {
-  const { rail } = shown([FILES, REVIEW]);
+it("gives the focus in a pane to the tab on show as a key shows another tab, and still holds it", async () => {
+  const { rail, onleave, unmount } = shown(["files", "review"]);
   screen.getByRole("button", { name: "Tree" }).focus();
 
   rail.toggle("review");
   await tick();
+  const focused = document.activeElement === tab("Review · 3");
+  // WebView2 says the focus left, with nowhere it went, as the pane it was in goes; jsdom doesn't.
+  tab("Review · 3").dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+  await Promise.resolve();
+  unmount();
+  await Promise.resolve();
 
-  expect(document.activeElement).toBe(tab("Review · 3"));
+  expect(focused).toBe(true);
+  // The rail held the focus as it went, so it hands it on.
+  expect(onleave).toHaveBeenCalledOnce();
+});
+
+it("names each tab's key as `[keys]` gives it", async () => {
+  shown(["files", "review"]);
+
+  remapKeys({ toggle_rail_files: "ctrl+j f" });
+  await tick();
+
+  expect([tab("Files").title, screen.getByRole("button", { name: "Close the rail" }).title]).toEqual([
+    "Files (Ctrl+J F)",
+    "Close (Ctrl+J F)",
+  ]);
 });
 
 it("closes on ×", async () => {
-  const { rail } = shown([FILES, REVIEW]);
+  const { rail } = shown(["files", "review"]);
 
   await fireEvent.click(screen.getByRole("button", { name: "Close the rail" }));
 
@@ -113,15 +136,9 @@ it("closes on ×", async () => {
 });
 
 it("shows no tab row with one tab, but its name, count and all, over its pane", () => {
-  shown([{ ...REVIEW, id: "files" }]);
+  shown(["review"]);
 
   expect(screen.queryByRole("tablist")).toBeNull();
   expect(screen.getByRole("heading").textContent).toBe("Review · 3");
   expect(screen.getByRole("region", { name: "Review" }).textContent).toBe("Drafts");
-});
-
-it("shows the first tab while the tabs leave out the one picked last", () => {
-  shown([FILES], "review");
-
-  expect(screen.getByRole("region", { name: "Files" }).textContent).toBe("Tree");
 });

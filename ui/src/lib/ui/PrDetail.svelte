@@ -10,17 +10,11 @@
     RAIL_WIDTH,
   } from "$lib/state/panes.svelte";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
-  import {
-    RAIL_TABS,
-    type RailTab,
-    railTabLabel,
-    type RailTabId,
-    type RailTabSpec,
-  } from "$lib/state/rail.svelte";
+  import { RAIL_TABS, type RailTab, railTabLabel, type RailTabId } from "$lib/state/rail.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
   import { focusBesideRail } from "./focus";
-  import { actionLabel, currentOs } from "./keys";
+  import { currentOs, withKey } from "./keys";
   import MarkButton from "./MarkButton.svelte";
   import { prIcon } from "./octicons";
   import PaneEdge from "./PaneEdge.svelte";
@@ -73,21 +67,8 @@
   // Svelte sets each to null as its element goes.
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
-  /** The pane each of the rail's tabs draws. */
-  const RAIL_PANES: Record<RailTabId, Snippet> = { files: filesPane };
-  /** The rail's tabs, each with its key as `[keys]` gives it, or null while it has none (#549), which its
-   * button and the rail's × name. */
-  const railTab = ({ id, name, action }: RailTabSpec & { id: RailTabId }): RailTab<RailTabId> => ({
-    id,
-    name,
-    key: actionLabel(action, currentOs()),
-    pane: RAIL_PANES[id],
-  });
-  const [firstRailTab, ...moreRailTabs] = RAIL_TABS;
-  const railTabs: readonly [RailTab<RailTabId>, ...RailTab<RailTabId>[]] = $derived([
-    railTab(firstRailTab),
-    ...moreRailTabs.map(railTab),
-  ]);
+  /** The rail's tabs, each with the pane it draws. */
+  const railTabs: Readonly<Record<RailTabId, RailTab>> = { files: { ...RAIL_TABS.files, pane: filesPane } };
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
   const railed = $derived(panes.railState.open && Boolean(pr.view));
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
@@ -133,7 +114,7 @@
     void [railed, pr.tab];
     untrack(() => {
       showConversationAt(readTo);
-      if (panelFocused && !conversationScrolls) focusBesideRail(section);
+      if (panelFocused && !conversationScrolls) focusBesideRail(section, panes.railState.tab);
       handOnFocus();
     });
   });
@@ -223,17 +204,17 @@
           </button>
         {/each}
       </div>
-      {#each railTabs as tab (tab.id)}
-        {@const label = railTabLabel(tab.name, tab.count)}
+      {#each panes.railState.order as id (id)}
+        {@const label = railTabLabel(railTabs[id])}
         <button
           type="button"
           class="rail-button"
-          data-opens-rail
+          data-opens-rail={id}
           aria-label={`${label} in the rail`}
-          aria-pressed={panes.railState.open && panes.railState.tab === tab.id}
-          title={tab.key === null ? `${label} in the rail` : `${label} in the rail (${tab.key})`}
+          aria-pressed={panes.railState.open && panes.railState.tab === id}
+          title={withKey(`${label} in the rail`, railTabs[id].action, currentOs())}
           onclick={() => {
-            panes.railState.toggle(tab.id);
+            panes.railState.toggle(id);
           }}>{label}</button
         >
       {/each}
@@ -290,7 +271,7 @@
           tabs={railTabs}
           rail={panes.railState}
           onleave={() => {
-            focusBesideRail(section);
+            focusBesideRail(section, panes.railState.tab);
           }}
         >
           {#snippet edge()}

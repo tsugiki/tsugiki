@@ -7,7 +7,7 @@
 <script lang="ts" generics="T extends string">
   import { type Snippet, tick, untrack } from "svelte";
   import { railTabLabel, type RailState, type RailTab } from "$lib/state/rail.svelte";
-  import { currentOs, keyName } from "./keys";
+  import { currentOs, keyName, withKey } from "./keys";
 
   let {
     tabs,
@@ -15,9 +15,9 @@
     edge,
     onleave,
   }: {
-    /** The rail's tabs, in the order the tab row shows them. */
-    tabs: readonly [RailTab<T>, ...RailTab<T>[]];
-    /** Whether the rail shows, and which tab. */
+    /** The rail's tabs, by what `rail` calls them. */
+    tabs: Readonly<Record<T, RailTab>>;
+    /** Whether the rail shows, and which tab, of those in the order the tab row shows them. */
     rail: RailState<T>;
     /** The edge that sizes the rail, on its left. */
     edge: Snippet;
@@ -26,8 +26,8 @@
     onleave: () => void;
   } = $props();
 
-  /** The tab on show: the one picked last, or the first while the tabs leave that one out. */
-  const shown = $derived(tabs.find((tab) => tab.id === rail.tab) ?? tabs[0]);
+  /** The tab on show: the one picked last. */
+  const shown = $derived(tabs[rail.tab]);
   /** The tab row, which shows only while there is more than one tab to pick. */
   let tabRow = $state<HTMLElement | null>(null);
   /** Whether the focus is in the rail, from the first focus in it until the focus moves to an element outside
@@ -52,10 +52,7 @@
     const key = keyName(e, currentOs());
     if (key !== "arrowleft" && key !== "arrowright") return;
     e.preventDefault();
-    const to = (tabs.indexOf(shown) + (key === "arrowright" ? 1 : tabs.length - 1)) % tabs.length;
-    tabs.forEach((tab, at) => {
-      if (at === to) rail.pick(tab.id);
-    });
+    rail.step(key === "arrowright" ? 1 : -1);
     await tick();
     selectedTab()?.focus();
   }
@@ -63,7 +60,7 @@
   // A key or a button that shows another tab while the focus is in the pane on show takes that pane away,
   // and the focus would fall to the page, where ↑ ↓ move the Issue list's cursor. The tab on show takes it.
   $effect(() => {
-    void shown;
+    void rail.tab;
     untrack(() => {
       if (held && document.activeElement === document.body) selectedTab()?.focus();
     });
@@ -81,9 +78,10 @@
         if (!aside.contains(e.relatedTarget)) held = false;
         return;
       }
-      // A browser may say the focus left as the rail goes, which the rail's going then answers first.
+      // A browser may say the focus left as the rail goes, which the rail's going then answers first, or as
+      // the pane on show goes, after which the tab on show may have taken the focus back.
       queueMicrotask(() => {
-        if (aside.isConnected && document.hasFocus()) held = false;
+        if (aside.isConnected && !aside.contains(document.activeElement) && document.hasFocus()) held = false;
       });
     });
     return () => {
@@ -97,40 +95,40 @@
   {@render edge()}
   <div class="column">
     <header>
-      {#if tabs.length > 1}
+      {#if rail.order.length > 1}
         <div class="tabs" role="tablist" aria-label="Rail tabs" bind:this={tabRow}>
-          {#each tabs as tab (tab.id)}
-            {@const label = railTabLabel(tab.name, tab.count)}
+          {#each rail.order as id (id)}
+            {@const label = railTabLabel(tabs[id])}
             <button
               type="button"
               role="tab"
-              id={`rail-tab-${tab.id}`}
-              aria-selected={tab === shown}
+              id={`rail-tab-${id}`}
+              aria-selected={id === rail.tab}
               aria-controls="rail-pane"
-              tabindex={tab === shown ? 0 : -1}
+              tabindex={id === rail.tab ? 0 : -1}
               onkeydown={ontabkeydown}
-              title={tab.key === null ? label : `${label} (${tab.key})`}
+              title={withKey(label, tabs[id].action, currentOs())}
               onclick={() => {
-                rail.toggle(tab.id);
+                rail.toggle(id);
               }}>{label}</button
             >
           {/each}
         </div>
       {:else}
-        <h3 class="small-heading">{railTabLabel(shown.name, shown.count)}</h3>
+        <h3 class="small-heading">{railTabLabel(shown)}</h3>
       {/if}
       <button
         type="button"
         class="close"
         aria-label="Close the rail"
-        title={shown.key === null ? "Close" : `Close (${shown.key})`}
+        title={withKey("Close", shown.action, currentOs())}
         onclick={() => {
           rail.close();
         }}>×</button
       >
     </header>
-    {#if tabs.length > 1}
-      <div class="pane" id="rail-pane" role="tabpanel" aria-labelledby={`rail-tab-${shown.id}`}>
+    {#if rail.order.length > 1}
+      <div class="pane" id="rail-pane" role="tabpanel" aria-labelledby={`rail-tab-${rail.tab}`}>
         {@render shown.pane()}
       </div>
     {:else}

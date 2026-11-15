@@ -421,7 +421,9 @@ test("the Files button, Ctrl+K F and × open and close the rail, its left edge s
   await page.keyboard.press("ControlOrMeta+k");
   await page.keyboard.press("f");
   await expect(rail).toBeVisible();
-  await rail.getByRole("button", { name: "Close the rail" }).click();
+  // WebKit gives a clicked button no focus, so the keys press × here, which the rail then hands on.
+  await rail.getByRole("button", { name: "Close the rail" }).focus();
+  await page.keyboard.press("Enter");
 
   await expect(rail).toHaveCount(0);
   await expect(button).toHaveAttribute("aria-pressed", "false");

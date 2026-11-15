@@ -20,10 +20,23 @@ export function chordName(first: string, second: string): string {
   return `${first} ${second}`;
 }
 
+/** The actions whose key works in a text box though it holds Ctrl and Alt, which AltGr sends on Windows to
+ * type: the Repository screen runs them before it leaves a text box its keys. Unified or Side by Side is one,
+ * on Ctrl+Alt+U. */
+const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
+  "toggle_sidebar",
+  "open_on_github",
+  "toggle_diff_view",
+  "find_in_diff",
+]);
+
 /** Whether `name` types in a text box: a plain key, Backspace and Delete, a capital letter such as Shift+Q,
- * or Ctrl+Alt+B, a key AltGr sends to type on Windows, which Hide or Show the Issue List has by default. */
-function typesInTextBox(name: string): boolean {
-  return /^(?:shift\+)?(?:.|backspace|delete)$/.test(name) || name === "ctrl+alt+b";
+ * and Ctrl+Alt with a key that types, which AltGr sends on Windows, as on Ctrl+Alt+B or a German Ctrl+Alt+Q,
+ * unless its action works in a text box. */
+export function typesInTextBox(name: string): boolean {
+  if (/^(?:shift\+)?(?:.|backspace|delete)$/.test(name)) return true;
+  const action = actionOn(name);
+  return /^ctrl\+alt\+(?:shift\+)?.$/.test(name) && (action === undefined || !IN_TEXT_BOX.has(action));
 }
 
 const MODIFIERS = new Set(["control", "shift", "alt", "meta", "altgraph", "capslock", "numlock", "fn"]);
@@ -45,6 +58,32 @@ const PUNCTUATION: Readonly<Record<string, string>> = {
   Minus: "-",
   Equal: "=",
   Backslash: "\\",
+};
+
+/** What Shift makes each key type on a US keyboard, whose places `characterAt` names keys by. The core
+ * suggests the same in a problem with `[keys]`. */
+const SHIFTED: Readonly<Record<string, string>> = {
+  "1": "!",
+  "2": "@",
+  "3": "#",
+  "4": "$",
+  "5": "%",
+  "6": "^",
+  "7": "&",
+  "8": "*",
+  "9": "(",
+  "0": ")",
+  "-": "_",
+  "=": "+",
+  "[": "{",
+  "]": "}",
+  "\\": "|",
+  ";": ":",
+  "'": '"',
+  "`": "~",
+  ",": "<",
+  ".": ">",
+  "/": "?",
 };
 
 /** The Latin character at a physical key: "KeyP" is "p", "Digit0" is "0", "Comma" is ",". */
@@ -71,18 +110,23 @@ function goesByPlace(key: string): boolean {
  * types a character but reports Ctrl and Alt, and the Windows key or macOS's Ctrl, which belong to the OS
  * and to text boxes. On macOS a key with Option goes by where it is, as Option makes it type something
  * else: Option+B types "∫".
+ *
+ * Shift stays only on a Latin letter and on a key that types nothing, such as the space bar or F7. Any other
+ * key goes by what Shift makes it type: "?" is Shift+/ on one layout and something else on another. A key
+ * named by its place takes what Shift types there on a US keyboard, so macOS's Option+Shift+/ is "alt+?" as
+ * Windows names Alt+Shift+/. The core refuses a line of `[keys]` that keeps Shift elsewhere.
  */
 export function keyName(e: KeyboardEvent, os: Os): string | null {
   const [primary, foreign] = os === "mac" ? [e.metaKey, e.ctrlKey] : [e.ctrlKey, e.metaKey];
   const byPlace = goesByPlace(e.key) || (os === "mac" && e.altKey);
-  const key = (byPlace ? characterAt(e.code) : undefined) ?? e.key.toLowerCase();
-  if (foreign || MODIFIERS.has(key) || e.getModifierState("AltGraph")) {
+  const placed = (byPlace ? characterAt(e.code) : undefined) ?? e.key.toLowerCase();
+  if (foreign || MODIFIERS.has(placed) || e.getModifierState("AltGraph")) {
     return null;
   }
-  // A symbol typed with Shift already says so: "?" is Shift+/ on one layout and something else on another. A
-  // key named by its place doesn't.
-  const shift = e.shiftKey && (byPlace || key.length > 1 || /[a-z]/.test(key));
-  const parts = [primary && "ctrl", e.altKey && "alt", shift && "shift", key === " " ? "space" : key];
+  const key = placed === " " ? "space" : placed;
+  const shifted = e.shiftKey && byPlace ? SHIFTED[key] : undefined;
+  const shift = e.shiftKey && shifted === undefined && (key.length > 1 || /^[a-z]$/.test(key));
+  const parts = [primary && "ctrl", e.altKey && "alt", shift && "shift", shifted ?? key];
   return parts.filter(Boolean).join("+");
 }
 
@@ -150,9 +194,10 @@ export function isTextBox(target: EventTarget | null): boolean {
 }
 
 /**
- * The handler for the window's capture phase. In a text box a plain key and Ctrl+Alt+B type, and any other
- * key with a modifier is still Tsugiki's. Every build owns F12, which is Go to definition: a development
- * build opens DevTools on WebView2's own Ctrl+Shift+I, which Tsugiki leaves alone (ADR 0013).
+ * The handler for the window's capture phase. In a text box a key that types there, as `typesInTextBox`
+ * says, is the box's, and any other key with a modifier is still Tsugiki's. Every build owns F12, which is
+ * Go to definition: a development build opens DevTools on WebView2's own Ctrl+Shift+I, which Tsugiki leaves
+ * alone (ADR 0013).
  */
 export function keyGuard(bindings: Bindings, os: Os): (e: KeyboardEvent) => void {
   return (e) => {

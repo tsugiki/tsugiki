@@ -18,6 +18,7 @@
   import { peekSized, ROW, type Peek } from "$lib/state/peek";
   import type { PrFilesState } from "$lib/state/pr-files.svelte";
   import DefinitionPeek from "./DefinitionPeek.svelte";
+  import { takesChords } from "./chord.svelte";
   import { currentOs, keyName } from "./keys";
   import PaneEdge from "./PaneEdge.svelte";
 
@@ -60,6 +61,12 @@
     // A held key would ask the server again and again.
     if (!e.repeat) void diff.followPick();
   }}
+  {@attach takesChords((action) => {
+    // A chord on Peek definition follows the pick, as its key of one press does.
+    if (action !== "peek_definition" || peek.code?.pick === undefined) return false;
+    void diff.followPick();
+    return true;
+  })}
 >
   <DefinitionPeek
     {peek}

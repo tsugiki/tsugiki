@@ -281,6 +281,28 @@ fn shift_with_a_symbol_or_digit_is_refused_with_the_character_to_write() {
     );
 }
 
+/// WebView2 opens DevTools on Ctrl+Shift+I in a development build before Tsugiki sees the press, so no key
+/// can start with it, as one press or a chord's first. A chord's second press goes to the chord's wait.
+#[test]
+fn no_key_starts_with_ctrl_shift_i() {
+    let (remaps, unread) = remapped(&[
+        ("pin", Some("Ctrl+Shift+I")),
+        ("archive", Some("ctrl+shift+i x")),
+        ("mute", Some("ctrl+k ctrl+shift+i")),
+    ]);
+
+    assert_eq!(remaps, r#"{"mute":"ctrl+k ctrl+shift+i"}"#);
+    let problems: Vec<&str> = unread.iter().map(|(_, problem)| problem.as_str()).collect();
+    let refused = "but WebView2 opens DevTools on Ctrl+Shift+I in a development build";
+    assert_eq!(
+        problems,
+        [
+            format!(r#"gives "Ctrl+Shift+I", {refused}, so Pin or Unpin keeps "ctrl+k p"."#),
+            format!(r#"gives "ctrl+shift+i x", {refused}, so Archive keeps "e"."#),
+        ]
+    );
+}
+
 /// The chord's wait keeps its second press from the browser and every other handler, so that press may be
 /// any key.
 #[test]

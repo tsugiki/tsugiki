@@ -13,6 +13,7 @@
   import { actionOn } from "$lib/state/keymap.svelte";
   import { peekWords, type Peek, type PeekWords } from "$lib/state/peek";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
+  import { takesChords } from "./chord.svelte";
   import { actionLabel, currentOs, keyName } from "./keys";
   import PeekCode from "./PeekCode.svelte";
 
@@ -170,6 +171,12 @@
     onkeydown={(e) => {
       moveByKey(e, found.shown);
     }}
+    {@attach takesChords((action) => {
+      // A chord on Go to definition goes to the hit shown, as its key of one press does.
+      if (action !== "go_to_definition") return false;
+      onopen();
+      return true;
+    })}
   >
     {#if split}{@render hits(found)}{/if}
     <div class="code">

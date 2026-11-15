@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { remapKeys } from "$lib/state/keymap.svelte";
-import { actionLabel, chordName, currentOs, keyGuard, keyLabel, keyName, withKey } from "./keys";
+import {
+  actionLabel,
+  chordName,
+  currentOs,
+  keyGuard,
+  keyLabel,
+  keyName,
+  typesInTextBox,
+  withKey,
+} from "./keys";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -34,10 +43,21 @@ describe("keyName", () => {
     expect(keyName(press({ key: "ذ", code: "Digit0", ctrlKey: true }), "other")).toBe("ctrl+0");
   });
 
-  it("keeps Shift on a key it named by where it is", () => {
+  it("names a shifted key it placed by what Shift types there on a US keyboard", () => {
     expect(keyName(press({ key: "Б", code: "Comma", ctrlKey: true, shiftKey: true }), "other")).toBe(
-      "ctrl+shift+,",
+      "ctrl+<",
     );
+    expect(keyName(press({ key: "!", code: "Digit1", ctrlKey: true, shiftKey: true }), "other")).toBe(
+      "ctrl+!",
+    );
+  });
+
+  it("names macOS's Option+Shift+/ as Windows names Alt+Shift+/", () => {
+    const optionQuestion = { key: "¿", code: "Slash", altKey: true, shiftKey: true };
+    expect([
+      keyName(press(optionQuestion), "mac"),
+      keyName(press({ ...optionQuestion, key: "?" }), "other"),
+    ]).toEqual(["alt+?", "alt+?"]);
   });
 
   it("places a dead key by where it is", () => {
@@ -64,8 +84,11 @@ describe("keyName", () => {
     expect(keyName(press({ key: "?", code: "Slash", shiftKey: true }), "other")).toBe("?");
   });
 
-  it("calls the space bar space", () => {
+  it("calls the space bar space, and keeps Shift on it", () => {
     expect(keyName(press({ key: " ", code: "Space", ctrlKey: true }), "other")).toBe("ctrl+space");
+    expect(keyName(press({ key: " ", code: "Space", ctrlKey: true, shiftKey: true }), "other")).toBe(
+      "ctrl+shift+space",
+    );
   });
 
   it("has no name for a modifier on its own", () => {
@@ -328,6 +351,15 @@ describe("keyGuard", () => {
       });
       box.remove();
       expect(typed).toEqual([false, false, false]);
+    });
+
+    it("lets Ctrl+Alt with a key that types type in a text box, unless its action works there", () => {
+      remapKeys({ archive: "ctrl+alt+q", toggle_sidebar: "ctrl+alt+s" });
+      expect([
+        typesInTextBox("ctrl+alt+q"),
+        typesInTextBox("ctrl+alt+s"),
+        typesInTextBox("ctrl+alt+u"),
+      ]).toEqual([true, false, false]);
     });
 
     it("hands the bound action the press that ran it", () => {

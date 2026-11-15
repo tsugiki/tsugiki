@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ChordWait } from "./chord.svelte";
+import { ChordWait, takesChords } from "./chord.svelte";
 
 function press(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
@@ -119,5 +119,30 @@ describe("ChordWait", () => {
     box.remove();
     expect(read).toBe(false);
     expect(wait.first).toBeNull();
+  });
+
+  it("lets the focused part of the page take a chord's action, and runs it only when none does", () => {
+    const pane = document.createElement("div");
+    document.body.append(pane);
+    const taken: string[] = [];
+    const stop = takesChords((action) => {
+      taken.push(action);
+      return action === "toggle_detail_only";
+    })(pane);
+    const page = { toggle_detail_only: vi.fn(), toggle_files_mode: vi.fn() };
+    const wait = new ChordWait("other");
+    pane.addEventListener("keydown", (e) => {
+      wait.read(e, true, page);
+    });
+    for (const second of [z, { key: "o", code: "KeyO" }]) {
+      pane.dispatchEvent(press(ctrlK));
+      pane.dispatchEvent(press(second));
+    }
+    stop();
+    pane.remove();
+
+    expect(taken).toEqual(["toggle_detail_only", "toggle_files_mode"]);
+    expect(page.toggle_detail_only).not.toHaveBeenCalled();
+    expect(page.toggle_files_mode).toHaveBeenCalledOnce();
   });
 });

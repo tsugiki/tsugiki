@@ -124,7 +124,10 @@
    * runs the page's action, or what the screen runs on the action's key. */
   const readKey = (e: KeyboardEvent) => {
     const canStart = home.current?.screen === "repository" && keysActive;
-    if (!chord.read(e, canStart, { ...repositoryHome?.chordBindings(), ...pageBindings })) guard(e);
+    // Only the key that ends a wait runs a chord's action, so only it needs the screen's.
+    const bindings =
+      chord.first === null ? pageBindings : { ...repositoryHome?.chordBindings(), ...pageBindings };
+    if (!chord.read(e, canStart, bindings)) guard(e);
   };
   const endChord = () => {
     chord.end();

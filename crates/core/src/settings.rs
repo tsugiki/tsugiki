@@ -398,7 +398,7 @@ impl<'a> SettingsText<'a> {
             (DIFF, file.diff.settle().1),
         ]
         .into_iter()
-        .flat_map(|(table, unread)| self.described(table, unread))
+        .flat_map(|(table, unread)| self.described(table, &unread))
         .collect()
     }
 
@@ -406,14 +406,15 @@ impl<'a> SettingsText<'a> {
     /// Unlike those of `unread_problems`, they don't refuse a save, which leaves `[keys]` as the user wrote
     /// it.
     fn key_problems(&self, keys: &Remaps) -> Vec<String> {
-        self.described(KEYS, keys.unread().to_vec()).collect()
+        self.described(KEYS, keys.unread())
     }
 
     /// The problems `unread` with keys of the table `table`, each after its place.
-    fn described(&self, table: &'static str, unread: Vec<Unread>) -> impl Iterator<Item = String> {
+    fn described(&self, table: &str, unread: &[Unread]) -> Vec<String> {
         unread
-            .into_iter()
-            .map(move |(key, problem)| format!("{}: {key} {problem}", self.place(table, &key)))
+            .iter()
+            .map(|(key, problem)| format!("{}: {key} {problem}", self.place(table, key)))
+            .collect()
     }
 
     /// The file and, when the parser knows it, the line of `key` in the table `table`.

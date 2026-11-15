@@ -2603,6 +2603,23 @@ it("hides the Sidebar and its edge with Ctrl+B, and brings them back at their wi
   });
 });
 
+it("leaves a text box the key [keys] gives Hide or Show the Sidebar when it types there", async () => {
+  remapKeys({ toggle_sidebar: "s" });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: vi.fn() });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+  const box = document.createElement("input");
+  document.body.append(box);
+
+  await fireEvent.keyDown(box, { key: "s", code: "KeyS" });
+  const typed = screen.queryByRole("navigation", { name: "Sidebar" });
+  await fireEvent.keyDown(document.body, { key: "s", code: "KeyS" });
+  box.remove();
+  remapKeys({});
+
+  expect(typed).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
+});
+
 it("opens with the Sidebar hidden when it was hidden on this machine", async () => {
   core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_hidden: true });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: vi.fn() });

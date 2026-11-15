@@ -283,7 +283,9 @@ impl Press {
     }
 
     /// The symbol or digit pressed with Shift, which the window never names that way: it names the key by
-    /// what Shift makes it type, "?" and not "shift+/". Only a Latin letter keeps its Shift.
+    /// what Shift makes it type, "?" and not "shift+/". Only a Latin letter keeps its Shift. A key the window
+    /// names by its place, as with macOS's Option or on a non-Latin layout, takes what Shift types there on a
+    /// US keyboard: Option+Shift+/ is "alt+?".
     fn shifted_symbol(self) -> Option<char> {
         match self.key {
             Key::Char(typed) if self.modifiers.shift() && !typed.is_ascii_lowercase() => {
@@ -293,6 +295,13 @@ impl Press {
         }
     }
 }
+
+/// The press on which WebView2 opens DevTools in a development build, before Tsugiki sees it (ADR 0013): no
+/// key can start with it.
+const DEVTOOLS: Press = Press {
+    modifiers: Modifiers::CtrlShift,
+    key: Key::Char('i'),
+};
 
 /// What Shift makes `typed` type on a US keyboard, for a problem to suggest.
 fn shifted_on_us_keyboard(typed: char) -> Option<char> {
@@ -360,12 +369,17 @@ impl Keys {
         }
     }
 
+    /// The key's one press, or its chord's first.
+    const fn first(self) -> Press {
+        match self {
+            Self::One(first) | Self::Chord(first, _) => first,
+        }
+    }
+
     /// Whether the key's first press moves around, confirms or presses a button, so no action can take it.
     /// A chord's second press can: the chord's wait keeps it from the browser and from every other handler.
     fn keeps_its_work(self) -> bool {
-        match self {
-            Self::One(first) | Self::Chord(first, _) => first.keeps_its_work(),
-        }
+        self.first().keeps_its_work()
     }
 
     /// The first symbol or digit of the key pressed with Shift, which the window never names that way.
@@ -596,6 +610,11 @@ impl Remap {
             );
             let problem = "but the window names a key that types by what it types, with no Shift";
             return Err(format!(r#"gives "{text}", {problem}: write {instead}"#));
+        }
+        if key.first() == DEVTOOLS {
+            return Err(format!(
+                r#"gives "{text}", but WebView2 opens DevTools on Ctrl+Shift+I in a development build"#
+            ));
         }
         if key.keeps_its_work() && binding.key != Some(key) {
             return Err(format!(

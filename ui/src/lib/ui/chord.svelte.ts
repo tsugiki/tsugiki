@@ -1,5 +1,30 @@
-import { actionOn } from "$lib/state/keymap.svelte";
+import { on } from "svelte/events";
+import { type Action, actionOn } from "$lib/state/keymap.svelte";
 import { type Bindings, chordName, isChordStart, isModifier, isTextBox, keyName, type Os } from "./keys";
+
+/**
+ * The event a chord's action sends to the focused element before the page runs the action. A part of the
+ * page that runs the action its own way takes it with `preventDefault`, and the page then runs nothing: the
+ * Definition peek runs Go to Definition on its shown hit, as it does on the action's key of one press.
+ */
+export class ChordAction extends Event {
+  static readonly type = "chordaction";
+  readonly action: Action;
+
+  constructor(action: Action) {
+    super(ChordAction.type, { bubbles: true, cancelable: true });
+    this.action = action;
+  }
+}
+
+/** For `{@attach}`: hands `take` each chord's action that reaches the element, which takes the action
+ * when `take` says it ran it. */
+export function takesChords(take: (action: Action) => boolean): (node: HTMLElement) => () => void {
+  return (node) =>
+    on(node, ChordAction.type, (e) => {
+      if (e instanceof ChordAction && take(e.action)) e.preventDefault();
+    });
+}
 
 /**
  * The wait for a chord's second key. `Ctrl+K` starts it, and the next key ends it: a bound one runs its
@@ -34,7 +59,8 @@ export class ChordWait {
     } else if (!e.repeat && !(name === null && isModifier(e))) {
       const action = actionOn(name === null ? null : chordName(this.#first, name));
       this.#first = null;
-      if (action !== undefined) bindings[action]?.(e);
+      const untaken = action !== undefined && (e.target?.dispatchEvent(new ChordAction(action)) ?? true);
+      if (untaken) bindings[action]?.(e);
     }
     e.preventDefault();
     e.stopPropagation();

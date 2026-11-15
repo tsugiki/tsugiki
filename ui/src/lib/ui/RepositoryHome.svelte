@@ -31,7 +31,7 @@
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import { type Action, actionOn, keyTable } from "$lib/state/keymap.svelte";
-  import { actionLabel, type Bindings, currentOs, isTextBox, keyName } from "./keys";
+  import { actionLabel, type Bindings, currentOs, isTextBox, keyName, typesInTextBox } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -577,7 +577,8 @@
   /**
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
    * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
-   * and Ctrl+F, which work in a text box too, and for Ctrl+Alt+B outside one, as AltGr sends it to type.
+   * and Ctrl+F, which work in a text box too unless `[keys]` gives them a key that types there, and for
+   * Ctrl+Alt+B outside one, as AltGr sends it to type.
    * ↑ and ↓ go where the focus line shows (#602): they scroll the Detail pane while it holds the focus or
    * the list is hidden, and move the list's cursor otherwise. With the list hidden, Enter has no row to open.
    */
@@ -591,6 +592,9 @@
   function runKey(key: string | null, action: Action | undefined, e: KeyboardEvent) {
     const files = shownFiles();
     const tab = filesTab();
+    // A key that types does so in a text box, whatever its action: `[keys]` may give Hide or Show the Sidebar
+    // a plain key.
+    if (key !== null && typesInTextBox(key) && isTextBox(e.target)) return;
     if (action === "toggle_sidebar") {
       // A held key would flicker the Sidebar and save the file each time.
       if (!e.repeat) void toggleSidebarByKey();

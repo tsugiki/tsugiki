@@ -46,8 +46,11 @@ export default defineConfig(
     plugins: { layers },
     rules: { "layers/imports": ["error", { src }] },
   },
+  // A test may read the sources from disk, as window.test.ts does: Vitest hands it a stylesheet as "".
   {
     files: ["src/**/*.test.ts", "src/**/*.bench.ts"],
-    rules: { "layers/imports": ["error", { src, extraPackages: ["vitest", "@testing-library/svelte"] }] },
+    rules: {
+      "layers/imports": ["error", { src, extraPackages: ["vitest", "@testing-library/svelte", "node:fs"] }],
+    },
   },
 );

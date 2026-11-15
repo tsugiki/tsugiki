@@ -162,6 +162,8 @@
      the pointer (#232). The button comes last, at the pinned bottom edge, for the same reason. */
   aside {
     position: fixed;
+    /* Over the palette and the dialogs too, so "Stop recording" takes its click (window.css). */
+    z-index: var(--layer-hud);
     right: 8px;
     bottom: 32px;
     width: 360px;

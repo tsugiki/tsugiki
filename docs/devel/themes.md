@@ -127,6 +127,10 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
 - **Chips.** One pill for a review's or a thread's state (stale, outdated, resolved, approved, changes
   requested) and for a label: the `chip` class, with a 1 px border, round ends and 11 px text. A chip
   that sets a state's colour on its text takes it on its border too.
+- **Scrim and layers.** The command palette and each dialog sit on the `scrim` class: `backdrop` over the
+  whole window, on the `--layer-overlay` z-index, above everything in the panes. The performance HUD takes
+  `--layer-hud`, above the scrim. Anything else stacks under 10, and a test fails on a z-index that
+  doesn't.
 - **Muted text.** Ages, counts and hints take `fg_muted`, and don't fade with opacity.
 - **Small headings.** A section's heading in the Sidebar, and the Issue list's quiet line, take the
   `small-heading` class: 11 px, `fg_muted`, upper case and 0.04 em apart.

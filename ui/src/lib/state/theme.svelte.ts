@@ -90,8 +90,6 @@ export class ThemeState {
    * a save that worked since wrote it. A save that fails puts this back, not a pick whose save hasn't
    * answered. No pick comes before the first load. */
   #saved: ThemeInForce = { kind: "system" };
-  /** The count of loads asked, so only the last one asked shows: one asked later read settings no older. */
-  #loads = 0;
   /** The window's turns, one after the other, so each reaches the window after the one before it. */
   #turning = Promise.resolve<unknown>(undefined);
   /** The side the last turn asked for, `null` to follow Windows, or `undefined` when the page doesn't know
@@ -104,7 +102,8 @@ export class ThemeState {
   /** The count of media events that report Windows' side, so a side the window said before one doesn't undo
    * it. */
   #heard = 0;
-  /** The last load asked, which answers for the loads asked before it. It never rejects. */
+  /** The last load asked, which alone shows, as one asked later read settings no older, and which answers for
+   * the loads asked before it. It never rejects. */
   #latest = Promise.resolve<string | undefined>(undefined);
   /** What the window shows of the `[appearance]` the Settings dialog shows (#757). */
   #dialog = $state.raw<DialogPreview>({ kind: "off" });
@@ -151,21 +150,24 @@ export class ThemeState {
   /** Loads as `load` says, and gives why the core refused the load that showed, if it did: a load asked
    * later answers for this one. */
   #load(): Promise<string | undefined> {
-    const loading = this.#loadAsked(++this.#loads);
+    // Only asked once the load has waited, by when `loading` is set.
+    const latest = () => this.#latest === loading;
+    const loading = this.#loadAsked(latest);
     this.#latest = loading;
     return loading;
   }
 
-  /** The load counted `asked`, as `#load` says. */
-  async #loadAsked(asked: number): Promise<string | undefined> {
+  /** A load, as `#load` says, which shows while it's the `latest`. Its turn goes only if it still is when
+   * the turn reaches the window. */
+  async #loadAsked(latest: () => boolean): Promise<string | undefined> {
     const picks = this.#picks;
     await this.#saves;
     const answer = await ask(commands.themes());
-    if (asked !== this.#loads) return this.#latest;
+    if (!latest()) return this.#latest;
     if (answer.status !== "ok") {
       this.error = answer.error.message;
       // A load asked before this one may have turned the window before this one was asked.
-      if (this.themes) this.#take(await this.#turnInForce(this.themes.theme));
+      if (this.themes) this.#take(await this.#turnInForce(this.themes.theme, latest));
       return answer.error.message;
     }
     const data = answer.data;
@@ -177,8 +179,8 @@ export class ThemeState {
     };
     if (this.#picks === picks) this.#saved = data.theme;
     keepPicks();
-    this.#take(await this.#turnInForce(data.theme));
-    if (asked !== this.#loads) return this.#latest;
+    this.#take(await this.#turnInForce(data.theme, latest));
+    if (!latest()) return this.#latest;
     keepPicks();
     this.themes = data;
     this.error = undefined;
@@ -190,8 +192,10 @@ export class ThemeState {
    * system, the window then says the side the system is on. One ask goes at a time: values changed while
    * it's on its way wait, and only the latest are asked next, as each ask reads the `themes` folder. An
    * answer for values changed since doesn't show. One the core refuses leaves the window as it was, and
-   * `previewProblem` says why. It answers once no values wait. */
+   * `previewProblem` says why. It answers once no values wait. While Apply reads the themes for values it
+   * saved, it asks nothing. */
   previewSettings(appearance: AppearanceSettings): Promise<void> {
+    if (this.#dialog.kind === "ending") return Promise.resolve();
     if (this.#dialog.kind === "off") this.#dialog = { kind: "on" };
     this.#previews += 1;
     this.#wanted = appearance;
@@ -268,17 +272,19 @@ export class ThemeState {
     return this.#dialog.kind === "off" ? undefined : this.#dialog.shown;
   }
 
-  /** Turns the window to the side of the themes it shows: the Settings dialog's, or else those in force. */
+  /** Turns the window to the side of the themes it shows: the Settings dialog's, or else those in force, once
+   * the load on its way, which may have turned the window to themes it hasn't stored yet, has answered. */
   async #align(): Promise<void> {
+    await this.#latest;
     const themes = this.#dialogShown()?.themes ?? this.themes;
     if (themes) this.#take(await this.#turn(themes.theme));
   }
 
-  /** Turns the window to the side of the theme in force, as `#turn` does, unless the Settings dialog shows
-   * themes for its `[appearance]`, which keep the window to their side. */
-  #turnInForce(theme: ThemeInForce): Promise<ThemeKind | undefined> {
+  /** Turns the window to the side of the theme in force of the load that's `latest`, as `#turn` does, unless
+   * the Settings dialog shows themes for its `[appearance]`, which keep the window to their side. */
+  #turnInForce(theme: ThemeInForce, latest: () => boolean): Promise<ThemeKind | undefined> {
     const dialog = this.#dialog;
-    return dialog.kind === "on" && dialog.shown ? Promise.resolve(undefined) : this.#turn(theme);
+    return dialog.kind === "on" && dialog.shown ? Promise.resolve(undefined) : this.#turn(theme, latest);
   }
 
   /** Takes `side` as the one Windows is on, when the window said it. */
@@ -287,10 +293,11 @@ export class ThemeState {
   }
 
   /** Turns the window to the side `theme` keeps, its title bar with it, or back to following Windows, once
-   * the turns asked before have answered. Back to Windows, it gives the side the window said it is on. */
-  #turn(theme: ThemeInForce): Promise<ThemeKind | undefined> {
+   * the turns asked before have answered, if it `goes` still then. Back to Windows, it gives the side the
+   * window said it is on. */
+  #turn(theme: ThemeInForce, goes = () => true): Promise<ThemeKind | undefined> {
     const side = theme.kind === "system" ? null : theme.side;
-    const turned = this.#turning.then(() => this.#turnNow(side));
+    const turned = this.#turning.then(() => (goes() ? this.#turnNow(side) : undefined));
     this.#turning = turned;
     return turned;
   }

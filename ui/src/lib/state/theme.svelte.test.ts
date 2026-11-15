@@ -679,6 +679,83 @@ describe("ThemeState", () => {
     expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
   });
 
+  it("asks nothing while Apply reads the themes for values it saved", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "ok",
+      data: { ...structuredClone(THEMES), theme: NAMED_DARK },
+    });
+    await state.previewSettings(APPEARANCE);
+    const reading = Promise.withResolvers<{ status: "ok"; data: Themes }>();
+    vi.mocked(commands.themes).mockReturnValueOnce(reading.promise);
+
+    const ending = state.endPreview({ ...APPEARANCE, theme: "system" });
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(2);
+    });
+    await state.previewSettings({ ...APPEARANCE, theme: "Gruvbox Light Hard" });
+    reading.resolve({ status: "ok", data: structuredClone(THEMES) });
+
+    expect(await ending).toBeUndefined();
+    expect(commands.previewThemes).toHaveBeenCalledOnce();
+    expect(state.shown?.name).toBe("VS Code Light Modern");
+    expect(commands.turnWindow).toHaveBeenLastCalledWith(null);
+  });
+
+  it("turns the window back, when the dialog stops, to the side of the themes a load turned it to", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.previewThemes).mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "access denied" },
+    });
+    await state.previewSettings(APPEARANCE);
+    const turning = Promise.withResolvers<null>();
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(turning.promise);
+    vi.mocked(commands.themes).mockResolvedValueOnce({
+      status: "ok",
+      data: { ...structuredClone(THEMES), theme: NAMED_DARK },
+    });
+
+    const loading = state.load();
+    await vi.waitFor(() => {
+      expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
+    });
+    const ending = state.endPreview();
+    turning.resolve(null);
+    await loading;
+    await ending;
+
+    expect(commands.turnWindow).toHaveBeenLastCalledWith("dark");
+    expect(state.shown?.name).toBe("Gruvbox Dark Hard");
+  });
+
+  it("doesn't turn the window for a load a later one crossed before its turn reached the window", async () => {
+    const turning = Promise.withResolvers<null>();
+    vi.mocked(commands.turnWindow).mockReturnValueOnce(turning.promise);
+    vi.mocked(commands.themes)
+      .mockResolvedValueOnce({ status: "ok", data: structuredClone(THEMES) })
+      .mockResolvedValueOnce({ status: "ok", data: { ...structuredClone(THEMES), theme: NAMED_DARK } })
+      .mockReturnValueOnce(new Promise(() => {}));
+    const state = new ThemeState(sides(false).query);
+    void state.load();
+    await vi.waitFor(() => {
+      expect(commands.turnWindow).toHaveBeenCalledOnce();
+    });
+
+    void state.load();
+    // Lets the second load's answer reach its turn, which waits behind the first load's.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    void state.load();
+    await vi.waitFor(() => {
+      expect(commands.themes).toHaveBeenCalledTimes(3);
+    });
+    turning.resolve(null);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(commands.turnWindow).toHaveBeenCalledOnce();
+    expect(commands.turnWindow).not.toHaveBeenCalledWith("dark");
+  });
+
   it("shows the theme in force from the last read once Apply's can't be shown, and has nothing to put back", async () => {
     const state = await loaded(THEMES, false);
     vi.mocked(commands.previewThemes).mockResolvedValue({

@@ -2,10 +2,11 @@
 // whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), the list's
 // order (#592), how many rows tall they dragged the Definition peek (#458), how many pixels tall they
 // dragged the split one (#459), and how wide they dragged the PR view's rail (#603). The core keeps the
-// layout in `machine.toml`, so it stays on this machine and isn't synced. Whether the rail shows lasts only
-// the session.
+// layout in `machine.toml`, so it stays on this machine and isn't synced. Whether the rail shows, and on
+// which tab, lasts only the session.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
 import { PEEK_ROWS } from "./peek";
+import { RAIL_ORDER, RailState, type RailTabId } from "./rail.svelte";
 
 export type { ListOrder };
 
@@ -52,14 +53,9 @@ export class PanesState {
   splitPeek = $state<number | null>(null);
   /** The rail's width beside the PR's tabs, or nothing for its default, `RAIL_WIDTH`. */
   rail = $state<number | null>(null);
-  /** Whether the rail shows beside the PR's tabs. It stays open from tab to tab and PR to PR, for the
-   * session, and the layout doesn't save it. */
-  railOpen = $state(false);
-
-  /** Opens the rail, or closes it: the Files button, ×, `Ctrl+K F` and its palette command. */
-  toggleRail() {
-    this.railOpen = !this.railOpen;
-  }
+  /** Whether the rail shows beside the PR's tabs, and on which tab. It stays open from tab to tab and PR to
+   * PR, for the session, and the layout doesn't save it. */
+  readonly railState = new RailState<RailTabId>(...RAIL_ORDER);
   /** Whether `Ctrl+B` hid the Sidebar and `Ctrl+Alt+B` the list, each nothing until the core or the user
    * says. */
   #hidden = $state<Record<Pane, boolean | null>>({ sidebar: null, list: null });

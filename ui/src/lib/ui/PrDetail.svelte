@@ -10,10 +10,11 @@
     RAIL_WIDTH,
   } from "$lib/state/panes.svelte";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
+  import { RAIL_TABS, type RailTab, railTabLabel, type RailTabId } from "$lib/state/rail.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
   import { focusBesideRail } from "./focus";
-  import { actionLabel, currentOs } from "./keys";
+  import { currentOs, withKey } from "./keys";
   import MarkButton from "./MarkButton.svelte";
   import { prIcon } from "./octicons";
   import PaneEdge from "./PaneEdge.svelte";
@@ -66,11 +67,13 @@
   // Svelte sets each to null as its element goes.
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
-  /** The rail's key, which its button and × name. */
-  // The rail's key as `[keys]` gives it, or null while it has none (#549).
-  const railKey = $derived(actionLabel("toggle_rail_files", currentOs()));
+  /** The rail's tabs, each with the pane it draws. Derived, so that a count a tab takes from the PR, as
+   * #413's Review will, follows it. */
+  const railTabs: Readonly<Record<RailTabId, RailTab>> = $derived({
+    files: { ...RAIL_TABS.files, pane: filesPane },
+  });
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
-  const railed = $derived(panes.railOpen && Boolean(pr.view));
+  const railed = $derived(panes.railState.open && Boolean(pr.view));
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
    * scrolls it, under the header. */
   const conversationScrolls = $derived(railed && pr.tab === "conversation");
@@ -100,7 +103,7 @@
   // the top, so each reads where the Conversation was before the page changes, and scrolls the new scroller
   // there after. And the Conversation beside the rail holds the focus as only a scroller does, so a focus on
   // it that the change leaves on a tab that no longer scrolls goes to what the rail sits beside, or the
-  // Files button: on the page, the arrows would move the Issue list's cursor.
+  // button of the rail's tab: on the page, the arrows would move the Issue list's cursor.
   let readTo = 0;
   let panelFocused = false;
   $effect.pre(() => {
@@ -114,7 +117,7 @@
     void [railed, pr.tab];
     untrack(() => {
       showConversationAt(readTo);
-      if (panelFocused && !conversationScrolls) focusBesideRail(section);
+      if (panelFocused && !conversationScrolls) focusBesideRail(section, panes.railState.tab);
       handOnFocus();
     });
   });
@@ -133,6 +136,9 @@
     browserProblem = await openLink(address);
   };
 </script>
+
+<!-- The rail's Files tab, which the tree of the PR's changed files fills (#604). -->
+{#snippet filesPane()}{/snippet}
 
 <section
   bind:this={section}
@@ -183,7 +189,8 @@
     <p class="by"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
     <MarkButton seen={view.seen} {onmark} />
 
-    <!-- The tabs, and at the right the button that opens the rail beside them, or closes it. -->
+    <!-- The tabs, and at the right a button for each of the rail's tabs, which opens the rail beside them on
+         that tab, or closes it there. -->
     <div class="tab-row">
       <div class="tabs" role="tablist">
         {#each TABS as { tab, name } (tab)}
@@ -200,17 +207,20 @@
           </button>
         {/each}
       </div>
-      <button
-        type="button"
-        class="rail-button"
-        data-opens-rail
-        aria-label="Files in the rail"
-        aria-pressed={panes.railOpen}
-        title={railKey === null ? "Files in the rail" : `Files in the rail (${railKey})`}
-        onclick={() => {
-          panes.toggleRail();
-        }}>Files</button
-      >
+      {#each panes.railState.order as id (id)}
+        {@const label = railTabLabel(railTabs[id])}
+        <button
+          type="button"
+          class="rail-button"
+          data-opens-rail={id}
+          aria-label={`${railTabs[id].name} in the rail`}
+          aria-pressed={panes.railState.open && panes.railState.tab === id}
+          title={withKey(`${label} in the rail`, railTabs[id].action, currentOs())}
+          onclick={() => {
+            panes.railState.toggle(id);
+          }}>{label}</button
+        >
+      {/each}
     </div>
     {#if stale !== undefined}
       <p class="stale">
@@ -261,12 +271,10 @@
       </div>
       {#if railed}
         <Rail
-          closeKey={railKey}
-          onclose={() => {
-            panes.toggleRail();
-          }}
+          tabs={railTabs}
+          rail={panes.railState}
           onleave={() => {
-            focusBesideRail(section);
+            focusBesideRail(section, panes.railState.tab);
           }}
         >
           {#snippet edge()}

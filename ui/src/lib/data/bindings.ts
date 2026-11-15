@@ -214,10 +214,10 @@ export const commands = {
 	 */
 	pullRequestRow: (line: DiffLine) => typedError<LineInDiff | null, Error_Serialize>(__TAURI_INVOKE("pull_request_row", { line })),
 	/**
-	 *  The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first. This
-	 *  waits on the database and never on GitHub (ADR 0018).
+	 *  The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first, with the
+	 *  one the text names by its number apart. This waits on the database and never on GitHub (ADR 0018).
 	 */
-	quickOpen: (repository: string, typed: string) => typedError<TitledItem_Serialize[], Error_Serialize>(__TAURI_INVOKE("quick_open", { repository, typed })),
+	quickOpen: (repository: string, typed: string) => typedError<QuickOpenFound_Serialize, Error_Serialize>(__TAURI_INVOKE("quick_open", { repository, typed })),
 	/**
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
@@ -2109,6 +2109,34 @@ export type Query = {
 	case: Case,
 	words: Words,
 	syntax: Syntax,
+};
+
+/**
+ *  What quick open finds for a text: the item the text names by its number, apart, so the window can put it
+ *  ahead of the files of the PR on show (#558), and the other items.
+ */
+export type QuickOpenFound = QuickOpenFound_Serialize | QuickOpenFound_Deserialize;
+
+/**
+ *  What quick open finds for a text: the item the text names by its number, apart, so the window can put it
+ *  ahead of the files of the PR on show (#558), and the other items.
+ */
+export type QuickOpenFound_Deserialize = {
+	/**  The Issue or PR whose number the whole text names, if the cache holds it. */
+	named?: TitledItem_Deserialize | null,
+	/**  The items whose titles hold every word typed: the open first, then the newest. */
+	others: TitledItem_Deserialize[],
+};
+
+/**
+ *  What quick open finds for a text: the item the text names by its number, apart, so the window can put it
+ *  ahead of the files of the PR on show (#558), and the other items.
+ */
+export type QuickOpenFound_Serialize = {
+	/**  The Issue or PR whose number the whole text names, if the cache holds it. */
+	named: TitledItem_Serialize | null,
+	/**  The items whose titles hold every word typed: the open first, then the newest. */
+	others: TitledItem_Serialize[],
 };
 
 /**

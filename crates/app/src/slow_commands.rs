@@ -25,12 +25,13 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
-use tsugiki_core::store::{StoreReader, TitledItem};
+use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
+use tsugiki_core::workbench::quick_open::QuickOpenFound;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 /// Whether Tsugiki has the Repository the user typed, and if not, what adding it would load.
@@ -288,15 +289,15 @@ pub(crate) fn pull_request(
     crate::read_pull_request(repository, number, &owner, &reader)
 }
 
-/// The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first. This
-/// waits on the database and never on GitHub (ADR 0018).
+/// The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first, with the
+/// one the text names by its number apart. This waits on the database and never on GitHub (ADR 0018).
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn quick_open(
     repository: &str,
     typed: &str,
     reader: State<'_, StoreReader>,
-) -> Result<Vec<TitledItem>, Error> {
+) -> Result<QuickOpenFound, Error> {
     crate::find_items(repository, typed, &reader)
 }
 

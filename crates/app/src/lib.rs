@@ -44,7 +44,7 @@ use tsugiki_core::settings::{
     CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
-use tsugiki_core::store::{StoreReader, TitledItem};
+use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -560,7 +560,7 @@ fn find_items(
     repository: &str,
     typed: &str,
     reader: &StoreReader,
-) -> Result<Vec<TitledItem>, Error> {
+) -> Result<quick_open::QuickOpenFound, Error> {
     quick_open::find(reader, &RepositoryName::parse(repository)?, typed)
 }
 

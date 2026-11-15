@@ -178,13 +178,17 @@ describe("the Settings dialog", () => {
 
   it("shows the page picked in its left column", async () => {
     render(Settings, props());
-    for (const page of ["Repositories", "Sync", "Keyboard"]) {
+    for (const page of ["Repositories", "Sync"]) {
       await go(page);
       expect(within(nav()).getByRole("button", { name: page }).getAttribute("aria-current")).toBe("page");
       expect(
         within(screen.getByRole("region", { name: page })).getByText("Nothing to set here yet."),
       ).toBeTruthy();
     }
+
+    await go("Keyboard");
+    const keyboard = screen.getByRole("region", { name: "Keyboard" });
+    expect(within(keyboard).getByRole("searchbox", { name: "Filter keys" })).toBeTruthy();
 
     await go("python/cpython");
     const repository = screen.getByRole("region", { name: "python/cpython" });
@@ -295,6 +299,19 @@ describe("the Settings dialog", () => {
     // A browser would move the focus to the body after the dialog gave it back, if not stopped.
     expect(await fireEvent.mouseDown(screen.getByTestId("settings-scrim"))).toBe(false);
     expect(onclose).toHaveBeenCalledTimes(3);
+  });
+
+  it("stays open on an Esc that clears Keyboard's filter box, and closes on the next", async () => {
+    const onclose = vi.fn();
+    render(Settings, props(onclose));
+    await go("Keyboard");
+    const box = screen.getByRole("searchbox", { name: "Filter keys" });
+    await fireEvent.input(box, { target: { value: "archive" } });
+
+    await fireEvent.keyDown(box, { key: "Escape" });
+    expect([box, onclose.mock.calls.length]).toEqual([expect.objectContaining({ value: "" }), 0]);
+    await fireEvent.keyDown(box, { key: "Escape" });
+    expect(onclose).toHaveBeenCalledOnce();
   });
 });
 

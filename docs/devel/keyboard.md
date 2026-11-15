@@ -75,6 +75,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   survives a restart and stays on its machine. A command whose title flips, such as Hide Sidebar and Show
   Sidebar, keeps one place under both titles. The palette's rows that switch to a Repository stay out of the
   history and come most recently opened first, as the Repository picker lists them.
+- Settings › Keyboard lists every action in a table, in the order of the core's key table: its title, its key
+  in force, or No key, and where the key works, Anywhere, Issue list, Diff or Composer. An action `[keys]`
+  gives another key than its default, or none, is marked remapped, with its default in the mark's tooltip;
+  a line that gives an action its own default isn't marked. An action whose key another action's line took,
+  its default or the key its own line gives, shows No key and says which action has the key now. A box
+  above the table filters its rows by what they hold, in any case: an action's title or its name in
+  `[keys]`, its key as the page shows it, No key included, or as `[keys]` writes it, so "ctrl+k" finds
+  `Cmd+K M` on macOS, or the note on a key another action took. Esc in the box clears it, and closes
+  Settings once the box holds nothing but spaces; an Esc that cancels an input method's candidates leaves
+  the box alone. The page says the
+  defaults follow VS Code, and that `Cmd` stands for `Ctrl` on macOS.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable
   config file.
@@ -103,4 +114,4 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   chords of the Repository screen's actions work there, outside a text box.
 - Until two actions on one key are settled (#550), a remapped action keeps its key over an action that has
   it by default, which is left with no key: after `archive = "f7"`, F7 runs Archive, and Next Change shows no
-  key.
+  key. Of two remapped actions on one key, the later in the key table keeps it, and the other shows no key.

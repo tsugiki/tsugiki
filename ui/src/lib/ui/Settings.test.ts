@@ -178,13 +178,17 @@ describe("the Settings dialog", () => {
 
   it("shows the page picked in its left column", async () => {
     render(Settings, props());
-    for (const page of ["Repositories", "Sync", "Keyboard"]) {
+    for (const page of ["Repositories", "Sync"]) {
       await go(page);
       expect(within(nav()).getByRole("button", { name: page }).getAttribute("aria-current")).toBe("page");
       expect(
         within(screen.getByRole("region", { name: page })).getByText("Nothing to set here yet."),
       ).toBeTruthy();
     }
+
+    await go("Keyboard");
+    const keyboard = screen.getByRole("region", { name: "Keyboard" });
+    expect(within(keyboard).getByRole("searchbox", { name: "Filter keys" })).toBeTruthy();
 
     await go("python/cpython");
     const repository = screen.getByRole("region", { name: "python/cpython" });

@@ -8,9 +8,17 @@ type Default = (typeof KEYMAP)[number];
 /** An action the user can bind a key to, named as `[keys]` in settings.toml names it. */
 export type Action = Default["action"];
 
-/** A row of the table: an action, its title and where its key works, with its key in force, null for none.
- * A key is named as `keyName` and `chordName` name them: "ctrl+shift+p", "ctrl+k m". */
-export type Row = Omit<Default, "key"> & { readonly key: string | null };
+/** What `[keys]` did to an action's key, which the Keyboard page marks: nothing; gave it another key or none
+ * in place of `default`; or left it with none, as `by` took its default key. */
+export type Remapped =
+  | { readonly kind: "default" }
+  | { readonly kind: "remapped"; readonly default: string | null }
+  | { readonly kind: "taken"; readonly default: string; readonly by: Action };
+
+/** A row of the table: an action, its title and where its key works, with its key in force, null for none,
+ * and what `[keys]` did to it. A key is named as `keyName` and `chordName` name them: "ctrl+shift+p",
+ * "ctrl+k m". */
+export type Row = Omit<Default, "key"> & { readonly key: string | null; readonly remapped: Remapped };
 
 /** A row whose action has a key in force. */
 export type KeyedRow = Row & { readonly key: string };
@@ -22,6 +30,16 @@ export type Context = Default["context"];
 /** The keys `[keys]` gives the actions it names in place of their defaults, as the core read them: a key, or
  * `""` for none. */
 export type Remaps = Partial<Record<Action, string>>;
+
+/** Where each context's keys work, as the Keyboard page and the `?` list name it. */
+export const CONTEXT_NAMES: Readonly<Record<Context, string>> = {
+  anywhere: "Anywhere",
+  issue_list: "Issue list",
+  diff: "Diff",
+  composer: "Composer",
+};
+
+const UNTOUCHED: Remapped = { kind: "default" };
 
 /**
  * The keys the window's guard leaves alone, whichever action has them. The bare ← and → that fold the Issue
@@ -47,11 +65,22 @@ class Keymap {
   /** Every row, in the order the Keyboard page lists them. A remapped action keeps its key over an action
    * that has it by default, which is left with no key. */
   readonly rows: readonly Row[] = $derived.by(() => {
-    const taken = new Set<string | null>(Object.values(this.#remaps));
-    return KEYMAP.map((row) => {
+    // The remapped action on each key, the later in the table where two share one, as `#actionOn` finds.
+    const takers = new Map<string, { key: string; by: Action }>(
+      KEYMAP.flatMap((row) => {
+        const given = this.#remaps[row.action];
+        return given ? [[given, { key: given, by: row.action }]] : [];
+      }),
+    );
+    return KEYMAP.map((row): Row => {
       const given = this.#remaps[row.action];
-      if (given !== undefined) return { ...row, key: given === "" ? null : given };
-      return taken.has(row.key) ? { ...row, key: null } : row;
+      if (given !== undefined) {
+        return { ...row, key: given === "" ? null : given, remapped: { kind: "remapped", default: row.key } };
+      }
+      const taker = takers.get(row.key ?? "");
+      return taker === undefined
+        ? { ...row, remapped: UNTOUCHED }
+        : { ...row, key: null, remapped: { kind: "taken", default: taker.key, by: taker.by } };
     });
   });
 

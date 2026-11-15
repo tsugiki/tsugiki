@@ -65,6 +65,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   survives a restart and stays on its machine. A command whose title flips, such as Hide Sidebar and Show
   Sidebar, keeps one place under both titles. The palette's rows that switch to a Repository stay out of the
   history and come most recently opened first, as the Repository picker lists them.
+- Settings › Keyboard lists every action in a table, in the order of the core's key table: its title, its key
+  in force, or No key, and where the key works, Anywhere, Issue list, Diff or Composer. A key `[keys]` remaps
+  is marked remapped, with the action's default in its tooltip, and an action whose default key a remap took
+  says which action has it now. A box above the table filters its rows by what they hold, in any case: an
+  action's title or its name in `[keys]`, or its key as the page shows it or as `[keys]` writes it, so
+  "ctrl+k" finds `Cmd+K M` on macOS. The page says the defaults follow VS Code, and that `Cmd` stands for
+  `Ctrl` on macOS.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable
   config file.

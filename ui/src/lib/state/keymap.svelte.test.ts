@@ -97,6 +97,18 @@ describe("the key table", () => {
     expect(listed).not.toContain("archive");
   });
 
+  it("says what `[keys]` did to each key: nothing, a remap, or a default another remap took", () => {
+    remapKeys({ archive: "f7", mute: "f7", local_mark: "" });
+    const remapped = (action: string) => keyTable().find((row) => row.action === action)?.remapped;
+    expect([remapped("archive"), remapped("local_mark"), remapped("next_change"), remapped("pin")]).toEqual([
+      { kind: "remapped", default: "e" },
+      { kind: "remapped", default: "ctrl+k m" },
+      // Of two remapped actions on its key, the one the key runs.
+      { kind: "taken", default: "f7", by: "mute" },
+      { kind: "default" },
+    ]);
+  });
+
   it("puts each default back once the remaps change again", () => {
     remapKeys({ archive: "a", reset_layout: "ctrl+k l" });
     remapKeys({});

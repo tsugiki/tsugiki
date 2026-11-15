@@ -415,7 +415,8 @@ test("Ctrl+B and the palette hide the Sidebar, and the Issue list takes its room
   const shown = await width();
   const palette = async (title: string) => {
     await page.keyboard.press("ControlOrMeta+Shift+P");
-    await page.getByRole("combobox", { name: "Command" }).fill(title);
+    // The box opens with `>` typed, which marks the commands, and `fill` replaces it.
+    await page.getByRole("combobox", { name: "Command" }).fill(`>${title}`);
     await expect(page.getByRole("option")).toHaveText([title]);
     await page.keyboard.press("Enter");
   };
@@ -516,7 +517,7 @@ test("Reset Layout in the palette brings back both panes, with the focus on the 
   await expect(row).toHaveCount(0);
 
   await page.keyboard.press("ControlOrMeta+Shift+P");
-  await page.getByRole("combobox", { name: "Command" }).fill("Reset Layout");
+  await page.getByRole("combobox", { name: "Command" }).fill(">Reset Layout");
   await page.keyboard.press("Enter");
 
   await expect(sidebar).toBeVisible();

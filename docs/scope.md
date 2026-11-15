@@ -156,7 +156,8 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 - Every action from the keyboard, with default keys, and remapping.
 - `[keys]` in `settings.toml`, one line per remapped action: `archive = "a"`, `local_mark = "ctrl+k m"`, or
   `""` for no key. A line Tsugiki can't read shows in the status bar, and its action keeps its default.
-- The command palette, quick open, and the list of the current view's keys.
+- The command palette, quick open of the Repository's Issues and PRs by number or title words and of the
+  files in the current PR, and the list of the current view's keys.
 - `Ctrl+K` chords, such as `Ctrl+K T` for the theme picker and `Ctrl+K R` to reload themes.
 - `Alt+F12`, which opens the Definition peek on the picked word, in the diff, the file view or the peek, and
   Esc, which closes it.

@@ -25,7 +25,7 @@ use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
-use tsugiki_core::store::StoreReader;
+use tsugiki_core::store::{StoreReader, TitledItem};
 use tsugiki_core::theme::{GivenTheme, ThemeKind, ThemeLibrary, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -286,6 +286,18 @@ pub(crate) fn pull_request(
     reader: State<'_, StoreReader>,
 ) -> Result<Option<PrView>, Error> {
     crate::read_pull_request(repository, number, &owner, &reader)
+}
+
+/// The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first. This
+/// waits on the database and never on GitHub (ADR 0018).
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn quick_open(
+    repository: &str,
+    typed: &str,
+    reader: State<'_, StoreReader>,
+) -> Result<Vec<TitledItem>, Error> {
+    crate::find_items(repository, typed, &reader)
 }
 
 /// Opens an Issue or a PR on GitHub in the system browser.

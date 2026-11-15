@@ -29,15 +29,17 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use rusqlite::{OpenFlags, OptionalExtension, Transaction, named_params};
+use serde::Serialize;
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::filters::FilterQuery;
 use crate::github::activity::ItemActivity;
 use crate::github::issue_content::IssueContent;
-use crate::github::issues::IssueFacts;
+use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_request_content::PullRequestContent;
-use crate::github::pull_requests::{PullRequestFacts, ReviewedCommit};
+use crate::github::pull_requests::{PrState, PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
 use crate::patch_ids::{CommitPatches, UncheckedCommit};
 use crate::repository::RepositoryName;
@@ -548,6 +550,35 @@ pub struct WorkFacts {
     pub reviews: ReviewFacts,
 }
 
+/// An Issue or a PR as quick open reads it and lists it. Quick open hands it to the window as it is, so a
+/// field added here reaches the window unless it is skipped, as `updated_at` is; a test of quick open pins
+/// what the window gets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct TitledItem {
+    pub number: u32,
+    pub title: String,
+    /// What quick open orders by, which the window doesn't show.
+    #[serde(skip)]
+    #[specta(skip)]
+    pub updated_at: OffsetDateTime,
+    #[serde(flatten)]
+    pub kind: TitledKind,
+}
+
+/// Whether a `TitledItem` is an Issue or a PR, with its state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TitledKind {
+    Issue {
+        /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
+        state: Option<IssueState>,
+    },
+    PullRequest {
+        state: PrState,
+        is_draft: bool,
+    },
+}
+
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {
     connection
         .query_row("SELECT login FROM viewer WHERE id = 1", [], |row| {
@@ -615,6 +646,17 @@ fn read_pull_request_facts(
     Ok((facts, content))
 }
 
+/// The Issues and the PRs that quick open searches, from one transaction (ADR 0018).
+fn read_titled(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<Vec<TitledItem>> {
+    let transaction = connection.transaction()?;
+    let mut titled = issues::read_titled(&transaction, repository)?;
+    titled.extend(pull_requests::read_titled(&transaction, repository)?);
+    Ok(titled)
+}
+
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
 #[derive(Clone)]
 pub struct StoreReader {
@@ -650,6 +692,13 @@ impl StoreReader {
         let repository = repository.clone();
         let read =
             self.call(move |connection| read_pull_request_facts(connection, &repository, number))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The number, title, state and last update of each Issue and PR of `repository`, in no order.
+    pub fn titled_items(&self, repository: &RepositoryName) -> Result<Vec<TitledItem>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| read_titled(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 

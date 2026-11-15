@@ -864,8 +864,15 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
     drop(offline.ask("mark_seen", mark).unwrap());
     wait_for_change_to(&offline.workbenches, &number);
     let seen = offline.ask("issue", issue).unwrap();
+    let typed = json!({ "repository": CPYTHON, "typed": "#154019" });
+    let found = offline.ask("quick_open", typed).unwrap();
     drop(offline.stop());
 
+    assert_eq!(
+        (&found[0]["kind"], &found[0]["number"]),
+        (&json!("pull_request"), &json!(154_019)),
+        "quick open finds the PR the database holds: {found}"
+    );
     assert_is_the_recorded_work(&workbench);
     let tree = held["pull_requests"].as_array().unwrap();
     assert!(
@@ -932,6 +939,8 @@ fn a_name_that_isnt_a_repository_opens_nothing() {
     let open = wired.ask("open_issue", bad.clone()).unwrap_err();
     let fetch = wired.ask("fetch_issue", bad.clone()).unwrap_err();
     let read = wired.ask("issue", bad.clone()).unwrap_err();
+    let typed = json!({ "repository": "not a name", "typed": "7" });
+    let found = wired.ask("quick_open", typed).unwrap_err();
     let pr_errors: Vec<Value> = ["open_pull_request", "fetch_pull_request", "pull_request"]
         .into_iter()
         .map(|command| wired.ask(command, bad.clone()).unwrap_err()["kind"].clone())
@@ -942,6 +951,7 @@ fn a_name_that_isnt_a_repository_opens_nothing() {
     assert_eq!(open["kind"], "not_found");
     assert_eq!(fetch["kind"], "not_found");
     assert_eq!(read["kind"], "not_found");
+    assert_eq!(found["kind"], "not_found");
     assert_eq!(pr_errors, ["not_found", "not_found", "not_found"]);
     assert!(page.is_err());
 }

@@ -362,3 +362,133 @@ it("leaves other keys to the text box", async () => {
   expect(ran).toEqual([]);
   expect(onclose).not.toHaveBeenCalled();
 });
+
+describe("with quick open", () => {
+  /** The palette with quick open and two commands, opened with `text` in its box, and what it asked and
+   * ran. */
+  function withQuickOpen(text = "") {
+    const ran: string[] = [];
+    const row = (title: string) => ({
+      title,
+      run: () => {
+        ran.push(title);
+      },
+    });
+    const find = vi.fn();
+    const onclose = vi.fn();
+    const view = render(Palette, {
+      commands: [row("Open Settings"), row("Reload Themes")],
+      onclose,
+      text,
+      find,
+    });
+    const answer = (typed: string, ...titles: string[]) =>
+      view.rerender({ found: { typed, rows: titles.map(row) } });
+    return { ran, find, onclose, answer, rerender: view.rerender };
+  }
+  const titles = () => screen.queryAllByRole("option").map((option) => option.textContent);
+
+  it("asks what the text finds, and lists the rows of the answer in their order", async () => {
+    const { find, answer } = withQuickOpen();
+    const opened = screen.getByRole("dialog", { name: "Quick open" });
+    const asked = [...find.mock.calls];
+    await answer("", "#9 Newest", "#7 Older");
+
+    expect(opened).toBeTruthy();
+    expect(asked).toEqual([[""]]);
+    expect(titles()).toEqual(["#9 Newest", "#7 Older"]);
+    expect(screen.getByRole("combobox", { name: "Issue or PR" })).toBeTruthy();
+  });
+
+  it("switches to the commands on `>`, which it doesn't ask about, and back once `>` goes", async () => {
+    const { find, answer } = withQuickOpen();
+    await answer("", "#9 Newest");
+    const input = screen.getByRole("combobox");
+
+    await fireEvent.input(input, { target: { value: ">reload" } });
+    const commands = titles();
+    const name = screen.getByRole("dialog").getAttribute("aria-label");
+    await fireEvent.input(input, { target: { value: "9" } });
+
+    expect([commands, name]).toEqual([["Reload Themes"], "Command palette"]);
+    expect(find.mock.calls).toEqual([[""], ["9"]]);
+    // The answer to the last text shows until the answer to this one comes.
+    expect(titles()).toEqual(["#9 Newest"]);
+  });
+
+  it("opens on the commands with `>` typed", () => {
+    const { find } = withQuickOpen(">");
+    expect(screen.getByRole("dialog", { name: "Command palette" })).toBeTruthy();
+    expect(titles()).toEqual(["Open Settings", "Reload Themes"]);
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it("says nothing matches only once the answer to the text in the box has come", async () => {
+    const { answer } = withQuickOpen();
+    const waiting = screen.queryByText("No Issue or PR matches");
+    await answer("");
+    expect(waiting).toBeNull();
+    expect(screen.getByText("No Issue or PR matches")).toBeTruthy();
+  });
+
+  it("says why it couldn't search", async () => {
+    const { rerender } = withQuickOpen();
+    await rerender({ found: { typed: "", problem: "Tsugiki can't search the Issues and PRs: gone" } });
+    expect(screen.getByRole("alert").textContent).toBe("Tsugiki can't search the Issues and PRs: gone");
+    expect(titles()).toEqual([]);
+  });
+
+  it("runs the first row of the answer to the text in the box on an Enter that came before it", async () => {
+    const { ran, onclose, answer } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    await answer("", "#1 First");
+    await fireEvent.input(input, { target: { value: "12" } });
+    await answer("12", "#12 Twelve");
+    await fireEvent.input(input, { target: { value: "123" } });
+
+    await fireEvent.keyDown(input, { key: "Enter" });
+    const early = [...ran];
+    await answer("123", "#123 The one", "#1234 Another");
+    await tick();
+
+    expect(early).toEqual([]);
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(ran).toEqual(["#123 The one"]);
+  });
+
+  it("stays open when the answer an early Enter waited for finds nothing", async () => {
+    const { ran, onclose, answer } = withQuickOpen();
+    await fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    await answer("");
+    await tick();
+    expect([ran, onclose.mock.calls]).toEqual([[], []]);
+    expect(screen.getByText("No Issue or PR matches")).toBeTruthy();
+  });
+
+  it("forgets an early Enter once the user moves the pick", async () => {
+    const { ran, onclose, answer } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    await answer("", "#1 First", "#2 Second");
+    await fireEvent.input(input, { target: { value: "s" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await answer("s", "#2 Second", "#3 Third");
+    await tick();
+    const waited = [...ran];
+    await fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(waited).toEqual([]);
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(ran).toEqual(["#2 Second"]);
+  });
+
+  it("forgets an early Enter once the user types on", async () => {
+    const { ran, answer } = withQuickOpen();
+    const input = screen.getByRole("combobox");
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await fireEvent.input(input, { target: { value: "1" } });
+    await answer("1", "#1 First");
+    await tick();
+    expect(ran).toEqual([]);
+  });
+});

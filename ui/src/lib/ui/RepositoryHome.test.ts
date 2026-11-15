@@ -1166,6 +1166,55 @@ it("names the views whose keys work where a press goes, for the `?` list", async
   expect(keysIn("diff").every((row) => here.works(row.action))).toBe(true);
 });
 
+it("opens what quick open found on its line, unfolded, which takes the focus, or one the list hasn't", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...issue, attention: null }],
+      quiet: [{ ...standalone, attention: null }],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
+  });
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+    onadd: () => {},
+  });
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+
+  component.openFound("pull_request", 160662);
+  await tick();
+  const underIssue = screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(underIssue);
+  });
+  const tab = () => screen.getByRole("tab", { selected: true }).textContent;
+  await screen.findByRole("tab", { name: "Files" });
+  const opened = tab();
+  // Picking the PR on show leaves it on its tab, where a click on its row would switch.
+  component.openFound("pull_request", 160662);
+  await tick();
+  expect([opened, tab()]).toEqual(["Conversation", "Conversation"]);
+  component.openFound("pull_request", 5);
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "#5 Alone" }));
+  });
+  const alone = document.activeElement;
+  component.openFound("issue", 99);
+  expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
+
+  expect(document.activeElement).toBe(alone);
+  expect(core.openPullRequest.mock.calls).toEqual([
+    ["python/cpython", 160662],
+    ["python/cpython", 5],
+  ]);
+  expect(core.openIssue).toHaveBeenCalledWith("python/cpython", 99);
+});
+
 it("lists for `?` only the keys that would run: the PR view's while a PR shows, a text box's in one", async () => {
   const { component, issueRow, treeRow } = await listing();
   const box = document.createElement("input");
@@ -1507,6 +1556,41 @@ const arrowTitle = (way: -1 | 1 = -1) =>
   within(screen.getByRole("navigation", { name: "History" }))
     .getByRole("button", { name: way < 0 ? "Back" : "Forward" })
     .getAttribute("title");
+
+it("closes the file view over the PR on show when quick open picks that PR, on the same tab, and records it", async () => {
+  const view = eggsView();
+  vi.spyOn(PrFilesState.prototype, "goToDefinition").mockImplementation(function (this: PrFilesState) {
+    this.openFileView(view);
+    return Promise.resolve();
+  });
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
+  await screen.findByRole("region", { name: "Diff" });
+  await press("F12");
+  await screen.findByRole("region", { name: "File view" });
+
+  component.openFound("pull_request", 160662);
+  await settled();
+
+  expect(screen.queryByRole("region", { name: "File view" })).toBeNull();
+  expect(screen.getByRole("tab", { selected: true }).textContent).toBe("Files");
+  expect(document.activeElement).toBe(treeRow);
+  // The pick is the history's latest place, so Back goes to the file view it closed.
+  expect(arrowTitle()).toMatch(/^Back to Lib\/eggs\.py /);
+});
 
 it("goes back to the diff with Alt+← from the file view, and forward to the file view, each as it was", async () => {
   const { diff, view, opened } = await goIntoFileView();

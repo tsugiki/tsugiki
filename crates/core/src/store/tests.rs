@@ -328,6 +328,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     assert_eq!(kept, Some(content));
     let (_, kept) = read_pull_request_facts(connection, &cpython, 1).unwrap();
     assert_eq!(kept, Some(reviewed));
+    assert_eq!(read_titled(connection, &cpython).unwrap().len(), 2);
     let no_trace = None::<fn(TraceEvent<'_>)>;
     connection.trace_v2(codes, no_trace).unwrap();
     statements.try_iter().collect()

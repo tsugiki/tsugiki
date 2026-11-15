@@ -163,17 +163,22 @@
     if (shownTitle !== undefined) untrack(() => pickedCommand?.preview?.());
   });
   let list = $state<HTMLElement>();
-  // The list scrolls past a height, so the picked row stays in sight as the arrows move the pick.
+  // The list scrolls past a height, so the picked row stays in sight as the arrows move the pick, and as the
+  // rows change under it, as typing or quick open's answer changes them.
   $effect(() => {
+    if (matching.length === 0) return;
     const row = list?.querySelector<HTMLElement>(`#palette-command-${String(picked)}`);
-    if (list && row) keepInSight(list, row);
+    if (list && row) keepInSight(list, row, picked === 0);
   });
 
-  /** Scrolls `list` as little as it takes to show `row`. `scrollIntoView` would scroll the page under the
-   * palette too. The list is the offset parent of its rows. */
-  function keepInSight(list: HTMLElement, row: HTMLElement) {
-    const top = row.offsetTop;
-    const bottom = top + row.offsetHeight;
+  /** Scrolls `list` as little as it takes to show `row`, and the heading over it when it is its group's
+   * first, or the top of the list for its first row. `scrollIntoView` would scroll the page under the
+   * palette too. The list is the offset parent of its rows and groups. */
+  function keepInSight(list: HTMLElement, row: HTMLElement, first: boolean) {
+    const group = row.closest<HTMLElement>(".group");
+    const heads = group?.querySelector('[role="option"]') === row;
+    const top = first ? 0 : (heads && group ? group : row).offsetTop;
+    const bottom = row.offsetTop + row.offsetHeight;
     if (top < list.scrollTop) list.scrollTop = top;
     else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
   }

@@ -449,8 +449,56 @@ describe("ThemeState", () => {
   });
 });
 
+/** A save that answers when the test says, with what the test gives. */
+const held = () => {
+  let answer: (answer: SaveAnswer) => void = () => {};
+  const saving = new Promise<SaveAnswer>((resolve) => {
+    answer = resolve;
+  });
+  return { saving, answer };
+};
+type SaveAnswer =
+  { status: "ok"; data: null } | { status: "error"; error: { kind: "internal"; message: string } };
+const SAVED: SaveAnswer = { status: "ok", data: null };
+const REFUSED: SaveAnswer = { status: "error", error: { kind: "internal", message: "the drive went away" } };
+
 describe("ThemeState's saves", () => {
-  it("leave a newer pick in place when an older save fails after it", async () => {
+  it("go one after the other, in the order picked", async () => {
+    const state = await loaded(THEMES, false);
+    const first = held();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(first.saving).mockResolvedValueOnce(SAVED);
+
+    const picks = Promise.all([state.pick(GRUVBOX_DARK), state.pick(GRUVBOX_LIGHT)]);
+    await vi.waitFor(() => {
+      expect(commands.saveTheme).toHaveBeenCalledOnce();
+    });
+    first.answer(SAVED);
+    await picks;
+
+    expect(vi.mocked(commands.saveTheme).mock.calls).toEqual([
+      [{ kind: "named", name: "Gruvbox Dark Hard" }],
+      [{ kind: "named", name: "Gruvbox Light Hard" }],
+    ]);
+    expect(state.current?.name).toBe("Gruvbox Light Hard");
+  });
+
+  it("put back the theme an earlier pick saved when a later one fails", async () => {
+    const state = await loaded(THEMES, false);
+    const first = held();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(first.saving).mockResolvedValueOnce(REFUSED);
+
+    const picks = Promise.all([state.pick(GRUVBOX_DARK), state.pick(GRUVBOX_LIGHT)]);
+    await vi.waitFor(() => {
+      expect(commands.saveTheme).toHaveBeenCalledOnce();
+    });
+    first.answer(SAVED);
+    await picks;
+
+    expect(state.themes?.theme).toEqual(NAMED_DARK);
+    expect(state.problem).toBe("Tsugiki can't save the theme: the drive went away");
+  });
+
+  it("leave a newer pick in place when an older save fails", async () => {
     const third = view("Solarized Dark", "dark", "#002b36");
     const state = await loaded(
       { ...THEMES, dark: { ...THEMES.dark, all: [...THEMES.dark.all, third] } },
@@ -468,13 +516,16 @@ describe("ThemeState's saves", () => {
       )
       .mockResolvedValueOnce({ status: "ok", data: null });
 
-    const first = state.pick(GRUVBOX_DARK);
-    await state.pick(third);
+    const picks = Promise.all([state.pick(GRUVBOX_DARK), state.pick(third)]);
+    await vi.waitFor(() => {
+      expect(commands.saveTheme).toHaveBeenCalledOnce();
+    });
     failFirst({ status: "error", error: { kind: "internal", message: "the drive went away" } });
-    await first;
+    await picks;
 
     expect(state.current?.name).toBe("Solarized Dark");
-    expect(state.problem).toBe("Tsugiki can't save the theme: the drive went away");
+    // The newer save answered after the one that failed.
+    expect(state.problem).toBeUndefined();
   });
 
   it("keep a pick made while a load was on its way, which read the settings before it", async () => {
@@ -532,9 +583,15 @@ describe("ThemeState's saves", () => {
 
     const first = state.pick(GRUVBOX_DARK);
     const second = state.pick(GRUVBOX_LIGHT);
+    await vi.waitFor(() => {
+      expect(fails).toHaveLength(1);
+    });
     fails[0]?.(failure);
     await first;
     expect(state.current?.name).toBe("Gruvbox Light Hard");
+    await vi.waitFor(() => {
+      expect(fails).toHaveLength(2);
+    });
     fails[1]?.(failure);
     await second;
 
@@ -543,7 +600,35 @@ describe("ThemeState's saves", () => {
     expect(vi.mocked(commands.turnWindow).mock.calls.at(-1)).toEqual([null]);
   });
 
-  it("put the saved theme back over a load that kept the pick while the window turned", async () => {
+  it("let a load asked while a save is on its way read what the save wrote", async () => {
+    const state = await loaded(THEMES, false);
+    const save = held();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.saving).mockResolvedValueOnce(REFUSED);
+    // The core answers with what the file holds.
+    let written = false;
+    vi.mocked(commands.themes).mockImplementation(async () => ({
+      status: "ok",
+      data: structuredClone(written ? { ...THEMES, theme: NAMED_DARK } : THEMES),
+    }));
+
+    const picking = state.pick(GRUVBOX_DARK);
+    const reload = state.load();
+    await vi.waitFor(() => {
+      expect(commands.saveTheme).toHaveBeenCalledOnce();
+    });
+    expect(commands.themes).toHaveBeenCalledOnce();
+    written = true;
+    save.answer(SAVED);
+    await Promise.all([picking, reload]);
+    expect(commands.themes).toHaveBeenCalledTimes(2);
+    expect(state.themes?.theme).toEqual(NAMED_DARK);
+
+    // The load read the file as the save left it, so a pick that fails puts back what the save wrote.
+    await state.pick(GRUVBOX_LIGHT);
+    expect(state.themes?.theme).toEqual(NAMED_DARK);
+  });
+
+  it("put the saved theme back before a load that waited for the save reads it", async () => {
     const state = await loaded(THEMES, false);
     let turned: (side: null) => void = () => {};
     vi.mocked(commands.turnWindow).mockReturnValueOnce(
@@ -551,46 +636,24 @@ describe("ThemeState's saves", () => {
         turned = resolve;
       }),
     );
-    let fail: (answer: { status: "error"; error: { kind: "internal"; message: string } }) => void = () => {};
-    vi.mocked(commands.saveTheme).mockReturnValueOnce(
-      new Promise((resolve) => {
-        fail = resolve;
-      }),
-    );
+    const save = held();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.saving);
 
     const picking = state.pick(GRUVBOX_DARK);
     const reload = state.load();
-    // The load has its answer, and waits on its turn behind the pick's.
+    await vi.waitFor(() => {
+      expect(commands.turnWindow).toHaveBeenCalledTimes(2);
+    });
+    save.answer(REFUSED);
     await vi.waitFor(() => {
       expect(commands.themes).toHaveBeenCalledTimes(2);
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    fail({ status: "error", error: { kind: "internal", message: "the drive went away" } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
     turned(null);
     await Promise.all([picking, reload]);
 
     expect(state.themes?.theme).toEqual({ kind: "system" });
     expect(state.current?.name).toBe("VS Code Light Modern");
     expect(vi.mocked(commands.turnWindow).mock.calls).toEqual([[null], ["dark"], [null]]);
-  });
-
-  it("put the old theme back on the themes a load brought while the save was on its way", async () => {
-    const state = await loaded(THEMES, true);
-    let fail: (answer: { status: "error"; error: { kind: "internal"; message: string } }) => void = () => {};
-    vi.mocked(commands.saveTheme).mockReturnValueOnce(
-      new Promise((resolve) => {
-        fail = resolve;
-      }),
-    );
-
-    const choice = state.pick(GRUVBOX_DARK);
-    await state.load();
-    expect(state.current?.name).toBe("Gruvbox Dark Hard");
-    fail({ status: "error", error: { kind: "internal", message: "the drive went away" } });
-    await choice;
-
-    expect(state.current?.name).toBe("VS Code Dark Modern");
   });
 });
 

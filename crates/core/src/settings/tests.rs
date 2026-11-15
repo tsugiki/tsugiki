@@ -2988,18 +2988,61 @@ fn a_command_run_reads_neither_file_again() {
     let mut files = SettingsFiles::load(folders.clone());
     fs::write(folders.settings_file(), "[status_bar]\nvisible = false\n").unwrap();
 
-    files
+    let saved = files
         .remember_command(&CommandId::new("Reset Layout"))
         .unwrap();
 
     // The hand edit waits for the next read (ADR 0014).
     assert_eq!(files.loaded().settings, Settings::default());
-    assert_eq!(files.recent_commands(), commands(&["Reset Layout"]));
+    assert_eq!(saved, commands(&["Reset Layout"]));
+    assert_eq!(files.recent_commands(), saved);
 }
 
 #[test]
-fn recent_commands_pass_over_an_entry_that_isnt_text_and_twice_written_ones_and_keep_the_users_comments()
- {
+fn a_command_run_after_a_broken_machine_toml_was_mended_answers_with_the_list_it_saved() {
+    let (folders, _root) = temp_folders("commands-mended");
+    fs::write(folders.machine_file(), "recent_commands = [\n").unwrap();
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    fs::write(folders.machine_file(), "recent_commands = []\n").unwrap();
+
+    let saved = owner
+        .remember_command(CommandId::new("Reset Layout"))
+        .unwrap();
+
+    assert_eq!(saved, commands(&["Reset Layout"]));
+    assert_eq!(owner.recent_commands(), saved);
+}
+
+#[test]
+fn a_reread_takes_in_a_hand_edit_to_recent_commands() {
+    let (folders, _root) = temp_folders("commands-reread");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    drop(
+        owner
+            .remember_command(CommandId::new("Reset Layout"))
+            .unwrap(),
+    );
+    fs::write(
+        folders.machine_file(),
+        "recent_commands = [\"Open Settings\", \"Reset Layout\"]\n",
+    )
+    .unwrap();
+
+    drop(owner.save_panes(WIDE).unwrap());
+    let after_panes = owner.recent_commands();
+    fs::write(
+        folders.machine_file(),
+        "recent_commands = [\"Pick a Theme\"]\n",
+    )
+    .unwrap();
+    drop(owner.reread().unwrap());
+
+    assert_eq!(after_panes, commands(&["Open Settings", "Reset Layout"]));
+    assert_eq!(owner.recent_commands(), commands(&["Pick a Theme"]));
+}
+
+#[test]
+fn recent_commands_skip_what_isnt_text_and_twice_written_ones_and_keep_the_users_comments() {
     let (folders, _root) = temp_folders("commands-hand");
     let mine = "recent_commands = [
     \"Pick a Theme\",
@@ -3015,7 +3058,7 @@ fn recent_commands_pass_over_an_entry_that_isnt_text_and_twice_written_ones_and_
     let read = files.recent_commands();
     let problems = files.loaded().problems.clone();
 
-    files
+    let saved = files
         .remember_command(&CommandId::new("Open Settings"))
         .unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
@@ -3024,10 +3067,8 @@ fn recent_commands_pass_over_an_entry_that_isnt_text_and_twice_written_ones_and_
         (read, problems),
         (commands(&["Pick a Theme", "Open Settings"]), Vec::new())
     );
-    assert_eq!(
-        files.recent_commands(),
-        commands(&["Open Settings", "Pick a Theme"])
-    );
+    assert_eq!(saved, commands(&["Open Settings", "Pick a Theme"]));
+    assert_eq!(files.recent_commands(), saved);
     assert_eq!(
         machine,
         "recent_commands = [
@@ -3051,12 +3092,12 @@ fn recent_commands_that_arent_a_list_count_as_none_and_a_run_puts_a_list_in_thei
     let mut files = SettingsFiles::load(folders.clone());
     let read = files.recent_commands();
 
-    files
+    let saved = files
         .remember_command(&CommandId::new("Open Settings"))
         .unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
-    assert_eq!(read, Vec::new());
+    assert_eq!((read, saved), (Vec::new(), commands(&["Open Settings"])));
     assert_eq!(
         machine,
         "# Mine.\nrecent_commands = [\n    \"Open Settings\",\n]\n"
@@ -3070,9 +3111,11 @@ fn recent_commands_keep_the_50_run_last_and_an_entry_that_isnt_text_doesnt_count
     let mut files = SettingsFiles::load(folders.clone());
 
     let mut run = |count: usize| {
-        files
-            .remember_command(&CommandId::new(&format!("Command {count}")))
-            .unwrap();
+        drop(
+            files
+                .remember_command(&CommandId::new(&format!("Command {count}")))
+                .unwrap(),
+        );
     };
     for count in 0..COMMANDS_KEPT - 1 {
         run(count);

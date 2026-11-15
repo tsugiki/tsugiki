@@ -328,7 +328,10 @@
 {#if settingsOpen}
   <Settings
     {settings}
-    onreread={() => void theme.load()}
+    onreread={() => {
+      void theme.load();
+      void recentCommands.load();
+    }}
     status={status.status}
     about={about.about}
     repository={openName}

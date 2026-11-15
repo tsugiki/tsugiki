@@ -687,6 +687,21 @@ describe("the palette's order", () => {
     ).toBeTruthy();
   });
 
+  it("takes a hand edit to the list once the Settings dialog has read the files again", async () => {
+    core.recentCommands.mockResolvedValueOnce([]).mockResolvedValueOnce(["Open Settings"]);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+
+    await fireEvent.keyDown(document.body, { key: ",", code: "Comma", ctrlKey: true });
+    await vi.waitFor(() => {
+      expect(core.recentCommands).toHaveBeenCalledTimes(2);
+    });
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await palette();
+
+    expect(titles()[0]).toBe("Open Settings");
+  });
+
   it("leaves the Repository picker in its own order, and a switch there out of the history", async () => {
     core.recentCommands.mockResolvedValue(["Add repository…", "python/peps"]);
     core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });

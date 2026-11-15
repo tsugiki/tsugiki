@@ -1141,18 +1141,19 @@ impl SettingsFiles {
     /// Puts `command` at the head of `recent_commands` in `machine.toml`, keeping everything else in it. It
     /// refuses while `machine.toml` can't be used.
     ///
-    /// It takes in the list it saved and nothing else: a palette run is no moment to read the files again
-    /// (ADR 0014), and `settings.toml` may sit on a slow drive. Until a good `machine.toml` has been read,
-    /// the list waits for the next read.
-    pub fn remember_command(&mut self, command: &CommandId) -> Result<(), Error> {
+    /// It answers with the list it saved, and takes in that list and nothing else: a palette run is no
+    /// moment to read the files again (ADR 0014), and `settings.toml` may sit on a slow drive. Until a good
+    /// `machine.toml` has been read, only the answer holds the list, and `recent_commands` waits for the next
+    /// read.
+    pub fn remember_command(&mut self, command: &CommandId) -> Result<Vec<CommandId>, Error> {
         let path = self.folders.machine_file();
         let mut edit = TomlEdit::open_machine(&path)?;
         let saved = put_first_in_recent_commands(edit.document.as_table_mut(), command);
         edit.save()?;
         if let Some(machine) = &mut self.machine {
-            machine.recent_commands = saved;
+            machine.recent_commands.clone_from(&saved);
         }
-        Ok(())
+        Ok(saved)
     }
 
     /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
@@ -1216,8 +1217,24 @@ pub struct SettingsOwner {
     commands: LatestReader<Vec<CommandId>>,
 }
 
-/// What the owner's thread saves, and where it answers with what the settings say after.
+/// What the owner's thread is asked.
 enum Request {
+    Change(Change),
+    /// The palette ran `command`. The answer is the list saved, as no one needs the view after a run.
+    Command {
+        command: CommandId,
+        reply: Sender<Result<Vec<CommandId>, Error>>,
+    },
+}
+
+impl From<Change> for Request {
+    fn from(change: Change) -> Self {
+        Self::Change(change)
+    }
+}
+
+/// What the owner's thread saves, and where it answers with what the settings say after.
+enum Change {
     Add {
         name: RepositoryName,
         access: RepositoryAccess,
@@ -1231,10 +1248,6 @@ enum Request {
     },
     Panes {
         layout: PaneLayout,
-        reply: Sender<Result<SettingsView, Error>>,
-    },
-    Command {
-        command: CommandId,
         reply: Sender<Result<SettingsView, Error>>,
     },
     Theme {
@@ -1260,15 +1273,33 @@ impl SettingsOwner {
     pub fn start(mut files: Result<SettingsFiles, Error>) -> Self {
         let first = files.as_ref().map(SettingsFiles::view).unwrap_or_default();
         let (mut writer, view) = latest::channel(first);
-        let commands = files.as_ref().map(SettingsFiles::recent_commands);
-        let (mut commands_writer, commands) = latest::channel(commands.unwrap_or_default());
+        let mut published = files
+            .as_ref()
+            .map(SettingsFiles::recent_commands)
+            .unwrap_or_default();
+        let (mut commands_writer, commands) = latest::channel(published.clone());
         let (requests, incoming) = mpsc::channel::<Request>();
         let _ = thread::spawn(move || {
             for request in incoming {
-                let (saved, reply) = match (&mut files, request) {
+                let change = match request {
+                    Request::Change(change) => change,
+                    Request::Command { command, reply } => {
+                        let saved = match &mut files {
+                            Ok(files) => files.remember_command(&command),
+                            Err(problem) => Err(problem.clone()),
+                        };
+                        if let Ok(saved) = &saved {
+                            commands_writer.set(saved);
+                            published.clone_from(saved);
+                        }
+                        answer(&reply, saved);
+                        continue;
+                    }
+                };
+                let (saved, reply) = match (&mut files, change) {
                     (
                         Ok(files),
-                        Request::Add {
+                        Change::Add {
                             name,
                             access,
                             source,
@@ -1284,7 +1315,7 @@ impl SettingsOwner {
                     }
                     (
                         Ok(files),
-                        Request::MirrorSource {
+                        Change::MirrorSource {
                             name,
                             source,
                             reply,
@@ -1293,50 +1324,46 @@ impl SettingsOwner {
                         let saved = files.save_mirror_source(&name, &source);
                         (saved.map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Panes { layout, reply }) => {
+                    (Ok(files), Change::Panes { layout, reply }) => {
                         (files.save_panes(layout).map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Command { command, reply }) => {
-                        let saved = files.remember_command(&command);
-                        (saved.map(|()| files.view()), reply)
-                    }
-                    (Ok(files), Request::Theme { kind, name, reply }) => {
+                    (Ok(files), Change::Theme { kind, name, reply }) => {
                         (files.save_theme(kind, &name).map(|()| files.view()), reply)
                     }
-                    (Ok(files), Request::Open { name, reply }) => {
+                    (Ok(files), Change::Open { name, reply }) => {
                         let opened = files.open_repository(&name, OffsetDateTime::now_utc());
                         (opened.map(|_| files.view()), reply)
                     }
-                    (Ok(files), Request::Reread { reply }) => {
+                    (Ok(files), Change::Reread { reply }) => {
                         files.reload();
                         (Ok(files.view()), reply)
                     }
-                    (Ok(files), Request::Apply { changes, reply }) => {
+                    (Ok(files), Change::Apply { changes, reply }) => {
                         (files.apply(changes).map(|()| files.view()), reply)
                     }
                     (
                         Err(problem),
-                        Request::Add { reply, .. }
-                        | Request::MirrorSource { reply, .. }
-                        | Request::Panes { reply, .. }
-                        | Request::Command { reply, .. }
-                        | Request::Theme { reply, .. }
-                        | Request::Open { reply, .. }
-                        | Request::Reread { reply }
-                        | Request::Apply { reply, .. },
+                        Change::Add { reply, .. }
+                        | Change::MirrorSource { reply, .. }
+                        | Change::Panes { reply, .. }
+                        | Change::Theme { reply, .. }
+                        | Change::Open { reply, .. }
+                        | Change::Reread { reply }
+                        | Change::Apply { reply, .. },
                     ) => (Err(problem.clone()), reply),
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
                 // one at a time, so an older one can't replace a newer one.
                 if let (Ok(saved), Ok(files)) = (&saved, &files) {
                     writer.set(saved);
-                    commands_writer.set(&files.recent_commands());
+                    // Each change reads `machine.toml` again, which may hold a hand edit to the list.
+                    let commands = files.recent_commands();
+                    if commands != published {
+                        commands_writer.set(&commands);
+                        published = commands;
+                    }
                 }
-                #[expect(
-                    clippy::let_underscore_must_use,
-                    reason = "this fails only if the caller has gone, and it waits for this answer"
-                )]
-                let _ = reply.send(saved);
+                answer(&reply, saved);
             }
         });
         Self {
@@ -1371,7 +1398,7 @@ impl SettingsOwner {
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
-            Request::Add {
+            Change::Add {
                 name,
                 access,
                 source,
@@ -1390,7 +1417,7 @@ impl SettingsOwner {
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
-            Request::MirrorSource {
+            Change::MirrorSource {
                 name,
                 source,
                 reply,
@@ -1402,43 +1429,41 @@ impl SettingsOwner {
     /// Saves the panes' layout in `machine.toml`, and answers with what the settings say now.
     pub fn save_panes(&self, layout: PaneLayout) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Panes { layout, reply }, &answer)
+        self.ask(Change::Panes { layout, reply }, &answer)
     }
 
     /// Puts `command` at the head of the palette's recent commands in `machine.toml`, and answers with the
     /// list saved, most recently run first.
     pub fn remember_command(&self, command: CommandId) -> Result<Vec<CommandId>, Error> {
         let (reply, answer) = mpsc::channel();
-        // The thread set the list before it answered.
         self.ask(Request::Command { command, reply }, &answer)
-            .map(|_| self.recent_commands())
     }
 
     /// Saves the theme the picker chose for its side in `settings.toml`, and answers with what the settings
     /// say now.
     pub fn save_theme(&self, kind: ThemeKind, name: ThemeName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Theme { kind, name, reply }, &answer)
+        self.ask(Change::Theme { kind, name, reply }, &answer)
     }
 
     /// Reads both files again, as the Settings dialog opens, so a hand edit made since shows in it and takes
     /// effect, and answers with what they say now (ADR 0014).
     pub fn reread(&self) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Reread { reply }, &answer)
+        self.ask(Change::Reread { reply }, &answer)
     }
 
     /// Saves what the Settings dialog's Apply changed (`SettingsFiles::apply`), and answers with what the
     /// settings say now.
     pub fn apply(&self, changes: SettingsChanges) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Apply { changes, reply }, &answer)
+        self.ask(Change::Apply { changes, reply }, &answer)
     }
 
     /// Makes `name` the open Repository, and answers with what the settings say now.
     pub fn open_repository(&self, name: RepositoryName) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
-        self.ask(Request::Open { name, reply }, &answer)
+        self.ask(Change::Open { name, reply }, &answer)
     }
 
     /// What Add repository says about `name` (`Settings::check_name`), from what the files say now: a
@@ -1453,17 +1478,26 @@ impl SettingsOwner {
         view.loaded.settings.check_name(name, ask_github)
     }
 
-    fn ask(
+    fn ask<T>(
         &self,
-        request: Request,
-        answer: &Receiver<Result<SettingsView, Error>>,
-    ) -> Result<SettingsView, Error> {
+        request: impl Into<Request>,
+        answer: &Receiver<Result<T, Error>>,
+    ) -> Result<T, Error> {
         self.requests
-            .send(request)
+            .send(request.into())
             .ok()
             .and_then(|()| answer.recv().ok())
             .unwrap_or_else(|| Err(Error::new(ErrorKind::Internal, STOPPED_SAVING)))
     }
+}
+
+/// Hands `saved` to whoever asked the owner's thread.
+fn answer<T>(reply: &Sender<T>, saved: T) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fails only if the caller has gone, and it waits for this answer"
+    )]
+    let _ = reply.send(saved);
 }
 
 /// A settings file as it says now, open for changes that keep the user's comments and order.

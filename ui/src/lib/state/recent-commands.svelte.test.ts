@@ -166,14 +166,39 @@ it("says why the history can't be read, and keeps the rows' own order", async ()
   ]);
 });
 
-it("still says why the history can't be read after a save works", async () => {
-  core.recentCommands.mockRejectedValue(new Error("the core stopped"));
+it("forgets why the history couldn't be read once a save answers with the core's list", async () => {
+  core.recentCommands.mockRejectedValueOnce(new Error("the core stopped"));
   const recent = new RecentCommands();
   await recent.load();
+  const unread = recent.problem;
 
   await recent.ran({ title: "Reset Layout" });
 
-  expect(recent.problem).toBe("Tsugiki can't read the palette's recent commands: Error: the core stopped");
+  expect(unread).toBe("Tsugiki can't read the palette's recent commands: Error: the core stopped");
+  expect(recent.problem).toBeUndefined();
+});
+
+it("forgets why the history couldn't be read once a later read works", async () => {
+  core.recentCommands.mockRejectedValueOnce(new Error("the core stopped"));
+  const recent = new RecentCommands();
+  await recent.load();
+
+  await recent.load();
+
+  expect(recent.problem).toBeUndefined();
+});
+
+it("takes a read asked after a save answered, as after the Settings dialog read a hand edit", async () => {
+  const recent = new RecentCommands();
+  await recent.ran({ title: "Reset Layout" });
+  kept = ["Pick a Theme"];
+
+  await recent.load();
+
+  expect(titles(recent.order(rows("Reset Layout", "Pick a Theme")))).toEqual([
+    "Pick a Theme",
+    "Reset Layout",
+  ]);
 });
 
 it("says why a run can't be saved, puts it back where the core has it, and forgets the problem once a save works", async () => {

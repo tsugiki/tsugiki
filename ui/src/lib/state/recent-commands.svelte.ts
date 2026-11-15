@@ -17,18 +17,27 @@ export interface Remembered {
 }
 
 export class RecentCommands {
-  /** The ids in the palette's order: the runs not saved yet, then the core's list. */
-  #ids = $state<string[]>([]);
   /** The core's list, as it last said. */
-  #core: string[] = [];
+  #core = $state<string[]>([]);
   /** The runs whose save hasn't answered, most recent first. */
-  #unsaved: string[] = [];
-  /** Whether a save has answered, whose list is newer than the first read's. */
-  #saved = false;
+  #unsaved = $state<string[]>([]);
+  /** Each id's place in the palette's order: the runs not saved yet, then the core's list. It is built anew
+   * whenever either changes, so it needn't be reactive itself. */
+  readonly #places = $derived(
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
+    new Map<string, number>(
+      [...this.#unsaved, ...this.#core]
+        .filter((id, at, all) => all.indexOf(id) === at)
+        .map((id, at) => [id, at]),
+    ),
+  );
+  /** How many saves have answered with the core's list. A read asked before one of them answered is older
+   * than its answer. */
+  #saves = 0;
   #readProblem = $state<string>();
   #saveProblem = $state<string>();
   /** The last save, which the next one waits for, so the saves reach the file in the order the user ran
-   * the commands. The first doesn't wait for the read. */
+   * the commands. The first doesn't wait for a read. */
   #saving: Promise<void> = Promise.resolve();
 
   /** Why the last run couldn't be saved, or else why the history couldn't be read. */
@@ -36,11 +45,14 @@ export class RecentCommands {
     return this.#saveProblem ?? this.#readProblem;
   }
 
-  /** Reads the list the core keeps, unless a save has answered with a newer one already. */
+  /** Reads the list the core keeps: at start-up, and once the Settings dialog has read the files again, as
+   * the user may have edited it by hand. A save that answers meanwhile has the newer list. */
   async load(): Promise<void> {
+    const saves = this.#saves;
     try {
       const read = await commands.recentCommands();
-      if (!this.#saved) this.#take(read);
+      if (this.#saves === saves) this.#core = read;
+      this.#readProblem = undefined;
     } catch (e) {
       this.#readProblem = `Tsugiki can't read the palette's recent commands: ${String(e)}`;
     }
@@ -51,7 +63,6 @@ export class RecentCommands {
   ran(row: Remembered): Promise<void> {
     const id = row.id ?? row.title;
     this.#unsaved = [id, ...this.#unsaved];
-    this.#take(this.#core);
     this.#saving = this.#saving.then(() => this.#save(id));
     return this.#saving;
   }
@@ -66,30 +77,23 @@ export class RecentCommands {
       answer = { status: "error", error: { message: String(e) } };
     }
     // The oldest run waiting, as the saves go in the order of the runs.
-    this.#unsaved.splice(this.#unsaved.lastIndexOf(id), 1);
+    this.#unsaved = this.#unsaved.toSpliced(this.#unsaved.lastIndexOf(id), 1);
     if (answer.status === "ok") {
-      this.#saved = true;
+      this.#saves += 1;
+      this.#core = answer.data;
       this.#saveProblem = undefined;
-      this.#take(answer.data);
+      // The core's answer is the whole list, so whatever kept the read from it has passed.
+      this.#readProblem = undefined;
     } else {
       this.#saveProblem = `Tsugiki can't save the palette's recent commands: ${answer.error.message}`;
-      this.#take(this.#core);
     }
-  }
-
-  /** Takes `core` as the core's list, with the runs not saved yet in front. */
-  #take(core: string[]) {
-    this.#core = core;
-    this.#ids = [...this.#unsaved, ...core].filter((id, at, all) => all.indexOf(id) === at);
   }
 
   /** `rows` in the palette's order: those run, most recently run first, then the others in their own
    * order. */
   order<Row extends Remembered>(rows: readonly Row[]): Row[] {
-    const place = (row: Row) => {
-      const at = this.#ids.indexOf(row.id ?? row.title);
-      return at === -1 ? this.#ids.length : at;
-    };
+    const places = this.#places;
+    const place = (row: Row) => places.get(row.id ?? row.title) ?? places.size;
     return rows.toSorted((one, other) => place(one) - place(other));
   }
 }

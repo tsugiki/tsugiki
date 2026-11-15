@@ -159,38 +159,11 @@ impl SettingsChanges {
 /// (#519). It stays as the user wrote it: the folder can change while Tsugiki runs, so the `themes` command
 /// checks it against the folder each time. A side's name no theme has shows the side's default until one
 /// does, and a `theme` no theme has follows the system.
-///
-/// `theme` goes to the file and to the UI as its text: `"system"` or a theme's name. A mode from a file
-/// written before goes as the name its side holds, so a save writes that name in its place (#755).
-#[derive(Debug, Clone, PartialEq, Eq, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct AppearanceSettings {
-    #[specta(type = String)]
     pub theme: ThemeChoice,
     pub light_theme: ThemeName,
     pub dark_theme: ThemeName,
-}
-
-impl Serialize for AppearanceSettings {
-    fn serialize<S: serde::Serializer>(&self, to: S) -> Result<S::Ok, S::Error> {
-        /// The table as the file writes it.
-        #[derive(Serialize)]
-        struct Written<'a> {
-            theme: &'a str,
-            light_theme: &'a ThemeName,
-            dark_theme: &'a ThemeName,
-        }
-        let theme = match &self.theme {
-            ThemeChoice::System => ThemeChoice::SYSTEM,
-            ThemeChoice::Side(side) => self.side(*side).as_str(),
-            ThemeChoice::Theme(name) => name.as_str(),
-        };
-        let written = Written {
-            theme,
-            light_theme: &self.light_theme,
-            dark_theme: &self.dark_theme,
-        };
-        written.serialize(to)
-    }
 }
 
 impl Default for AppearanceSettings {
@@ -199,16 +172,6 @@ impl Default for AppearanceSettings {
             theme: ThemeChoice::default(),
             light_theme: ThemeName::default_of(ThemeKind::Light),
             dark_theme: ThemeName::default_of(ThemeKind::Dark),
-        }
-    }
-}
-
-impl AppearanceSettings {
-    /// The name of the theme chosen for side `kind`.
-    fn side(&self, kind: ThemeKind) -> &ThemeName {
-        match kind {
-            ThemeKind::Light => &self.light_theme,
-            ThemeKind::Dark => &self.dark_theme,
         }
     }
 }
@@ -355,52 +318,61 @@ impl DiffRead {
 /// The problems with the `[appearance]` and `[diff]` of the settings file `text`, from `path`, in words for
 /// the status bar. Each names its line, when the parser knows it.
 fn unread_problems(path: &Path, text: &str) -> Vec<String> {
-    /// Only the tables of the file whose values fall back to their defaults.
-    #[derive(Default, Deserialize)]
-    #[serde(default)]
-    struct File {
-        appearance: AppearanceRead,
-        diff: DiffRead,
+    SettingsText::parse(path, text).unread_problems()
+}
+
+/// A settings file's text, parsed once for the places of its keys.
+struct SettingsText<'a> {
+    path: &'a Path,
+    text: &'a str,
+    document: Option<toml_edit::Document<&'a str>>,
+}
+
+impl<'a> SettingsText<'a> {
+    fn parse(path: &'a Path, text: &'a str) -> Self {
+        Self {
+            path,
+            text,
+            document: toml_edit::Document::parse(text).ok(),
+        }
     }
-    // Each caller has read the whole file by now, so this read finds what that one did.
-    let file = toml_edit::de::from_str::<File>(text).unwrap_or_default();
-    let document = toml_edit::Document::parse(text).ok();
-    [
-        (APPEARANCE, file.appearance.settle().1),
-        (DIFF, file.diff.settle().1),
-    ]
-    .into_iter()
-    .flat_map(|(name, unread)| {
-        let table = document
-            .as_ref()
-            .and_then(|document| document.get(name))
-            .and_then(Item::as_table_like);
-        unread.into_iter().map(move |(key, problem)| {
-            format!("{}: {key} {problem}", place_of(path, text, table, key))
+
+    /// The problems with the `[appearance]` and `[diff]` of the file, as `unread_problems` gives them.
+    fn unread_problems(&self) -> Vec<String> {
+        /// Only the tables of the file whose values fall back to their defaults.
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct File {
+            appearance: AppearanceRead,
+            diff: DiffRead,
+        }
+        // Each caller has read the whole file by now, so this read finds what that one did.
+        let file = toml_edit::de::from_str::<File>(self.text).unwrap_or_default();
+        [
+            (APPEARANCE, file.appearance.settle().1),
+            (DIFF, file.diff.settle().1),
+        ]
+        .into_iter()
+        .flat_map(|(table, unread)| {
+            unread
+                .into_iter()
+                .map(move |(key, problem)| format!("{}: {key} {problem}", self.place(table, key)))
         })
-    })
-    .collect()
-}
+        .collect()
+    }
 
-/// The place of `[appearance] theme` in the settings file `text`, from `path`, for a problem with the theme
-/// it names (#755).
-fn theme_place(path: &Path, text: &str) -> String {
-    let document = toml_edit::Document::parse(text).ok();
-    let table = document
-        .as_ref()
-        .and_then(|document| document.get(APPEARANCE))
-        .and_then(Item::as_table_like);
-    place_of(path, text, table, "theme")
-}
-
-/// The file at `path` and, when the parser knows it, the line of `key` in `table`, a table of the file's
-/// text `text`.
-fn place_of(path: &Path, text: &str, table: Option<&dyn TableLike>, key: &str) -> String {
-    let line = table
-        .and_then(|table| table.get_key_value(key))
-        .and_then(|(key, _)| key.span())
-        .map_or_else(String::new, |span| line_of(text, span.start));
-    format!("{}{line}", path.display())
+    /// The file and, when the parser knows it, the line of `key` in the table `table`.
+    fn place(&self, table: &str, key: &str) -> String {
+        let line = self
+            .document
+            .as_ref()
+            .and_then(|document| document.get(table))
+            .and_then(Item::as_table_like)
+            .and_then(|table| table.get_key_value(key))
+            .and_then(|(key, _)| key.span())
+            .map_or_else(String::new, |span| line_of(self.text, span.start));
+        format!("{}{line}", self.path.display())
+    }
 }
 
 /// The settings in force, and what is wrong with the files they came from, in words for the status bar.
@@ -1050,8 +1022,8 @@ impl SettingsFiles {
     /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
     /// say now and refuses while either can't be used.
     ///
-    /// A `theme = "light"` or `"dark"` from before (#755) gives way to the name of the theme it shows after
-    /// the save, so the window shows what it would have.
+    /// A `theme = "light"` or `"dark"` from before (#755) of the side picked gives way to the name picked,
+    /// which the window then shows as it would have. A mode of the other side stays.
     pub fn save_theme(&mut self, kind: ThemeKind, name: &ThemeName) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
@@ -1065,13 +1037,9 @@ impl SettingsFiles {
                 &toml_edit::value(name.as_str()),
                 Some(&toml_edit::value(default.as_str())),
             );
-            if let ThemeChoice::Side(side) = appearance.theme {
-                let shown = if side == kind {
-                    name
-                } else {
-                    appearance.side(side)
-                };
-                merge_value(section, "theme", &toml_edit::value(shown.as_str()), None);
+            // The picker checked the name against the folder, so it is the theme the window shows next.
+            if appearance.theme == ThemeChoice::Side(kind) {
+                merge_value(section, "theme", &toml_edit::value(name.as_str()), None);
             }
         });
         edit.save()?;
@@ -1724,13 +1692,9 @@ fn read_settings(
         Some(text) => {
             let settings: Settings =
                 toml_edit::de::from_str(&text).map_err(|cause| located(&path, &text, &cause))?;
-            let problems = unread_problems(&path, &text);
-            // Only a theme's name can be one no theme has, which the status bar points at.
-            let place = match settings.appearance.theme {
-                ThemeChoice::Theme(_) => theme_place(&path, &text),
-                ThemeChoice::System | ThemeChoice::Side(_) => path.display().to_string(),
-            };
-            Ok((settings, problems, place))
+            let parsed = SettingsText::parse(&path, &text);
+            let place = parsed.place(APPEARANCE, "theme");
+            Ok((settings, parsed.unread_problems(), place))
         }
         None if machine.settings_path.is_none() => {
             let place = path.display().to_string();

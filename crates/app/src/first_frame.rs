@@ -81,13 +81,11 @@ pub struct ThemedWindow<'a> {
 /// Every theme for the window, with the theme in force, from the `themes` folder and the settings `owner`
 /// holds, and turns `window` to the side of the theme in force (#755).
 ///
-/// It takes the settings once the folder is read, which may sit on a synced drive, so of two asks that cross,
-/// the one that finishes last read the settings last: the page and the title bar both end on its answer.
 /// While the window follows the system, it says the side the window is on once it has turned back, which the
 /// page's media query reports only a moment later.
 pub fn themes(owner: &SettingsOwner, window: &ThemedWindow<'_>) -> Result<Themes, Error> {
-    let library = ThemeLibrary::read(&owner.view().themes_folder)?;
     let view = owner.view();
+    let library = ThemeLibrary::read(&view.themes_folder)?;
     let AppearanceSettings {
         theme,
         light_theme,

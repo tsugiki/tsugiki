@@ -19,7 +19,7 @@ dark_theme = "Gruvbox Dark Hard"
 Theme whatever the system says, and turns the title bar and the native controls to its `kind`. `light_theme`
 and `dark_theme` say only what `"system"` shows. In the core, `ThemeChoice` holds a variant for System and
 one that holds a `ThemeName`, in place of #517's `ThemeMode`, and a third for a mode a file written before
-holds, until a save writes the name in its place.
+holds, until a pick writes a name in its place.
 
 ## Considered Options
 
@@ -33,10 +33,11 @@ holds, until a save writes the name in its place.
 
 ## Consequences
 
-- `"light"` and `"dark"`, from files written before, show the Theme `light_theme` or `dark_theme` names,
-  and the next save writes that name: an Apply of the Settings dialog, or a pick that saves the side's key,
-  which writes the name the window then shows. The core keeps such a mode apart from a name until then, so a
-  pick for its side shows at once, as it did before. A Theme can't take the names `system`, `light` or
+- `"light"` and `"dark"`, from files written before, show the Theme `light_theme` or `dark_theme` names. A
+  pick for that side writes the name picked in its place, which the picker found in the `themes` folder, so
+  the window shows it at once, as it did before. Any other save keeps the mode: the ticket asked for the next
+  save to write the side's name, but that name may be one no Theme has, as when its file is gone, and
+  writing it would turn the window to the system's side. A Theme can't take the names `system`, `light` or
   `dark`, as it can't take a built-in Theme's name, so `theme` never reads one name two ways.
 - A name no Theme has stays in the file, as its Theme file may be mended. The window follows the system until
   then, and the status bar names the file and the line.

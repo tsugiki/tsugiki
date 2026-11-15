@@ -23,10 +23,11 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   `set_theme`. `light_theme` and `dark_theme` say only what `"system"` shows. One key holds the choice, where
   VS Code spreads it over `workbench.colorTheme` and `window.autoDetectColorScheme`, so the file can't follow
   the system and name a Theme as well. `"light"` and `"dark"`, from files written before
-  ([#755](https://github.com/tsugiki/tsugiki/issues/755)), read as the name in `light_theme` or
-  `dark_theme`, and the next save writes that name. A key left out takes its default: `"system"`, VS Code
-  Light Modern and VS Code Dark Modern. A value that isn't text keeps that key's default, and the status bar
-  names the file and the line. A name no Theme has stays in the settings, as its file may be mended: until
+  ([#755](https://github.com/tsugiki/tsugiki/issues/755)), show the Theme in `light_theme` or `dark_theme`,
+  and a pick for that side writes the name picked in their place. A key left out takes its default:
+  `"system"`, VS Code Light Modern and VS Code Dark Modern. A value that isn't text keeps that key's default,
+  and the status bar names the file and the line. A name no Theme has stays in the settings, as its file may
+  be mended: until
   then a `theme` follows the system, and a side shows its default, and the status bar says so, with the file
   and the line for `theme`. Tsugiki reads `settings.toml` at start and as the Settings dialog opens, and the
   window takes the Theme when it asks for its themes: at start, when the picker opens, and on Reload themes.

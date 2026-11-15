@@ -45,8 +45,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - `[appearance]` in `settings.toml` holds `theme`, the Theme the window shows or `"system"` to follow the
   system, and `light_theme` and `dark_theme`, which following the system shows
   ([themes.md](themes.md), [ADR 0021](../adr/0021-appearance-theme-names-a-theme-or-follows-the-system.md)).
-  A `"light"` or `"dark"` from a file written before reads as the name in `light_theme` or `dark_theme`, and
-  the next save, an Apply or a pick in the theme picker, writes that name. A value that isn't text keeps its
+  A `"light"` or `"dark"` from a file written before shows the Theme in `light_theme` or `dark_theme`. A pick
+  for that side in the theme picker writes the name picked in its place, and an Apply keeps it, as only the
+  `themes` folder can say which Theme the side's name gives. A value that isn't text keeps its
   key's default and shows in the status bar, and an Apply refuses until it is mended, as for `[diff]`. For
   now only a hand edit sets `theme`, and the theme picker sets a side's key: General gets the three rows later
   (#757).

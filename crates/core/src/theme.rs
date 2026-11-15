@@ -26,16 +26,29 @@ const GRUVBOX_DARK_HARD: &str = include_str!("../themes/gruvbox-dark-hard.toml")
 
 /// What `[appearance] theme` in `settings.toml` asks the window to show (#755): the Theme `light_theme` or
 /// `dark_theme` names, whichever side the system is on, or one Theme whatever the system says. One key holds
-/// the choice, so the file can't follow the system and name a Theme as well. `AppearanceSettings` writes it,
-/// to the file and to the UI, as `"system"` or a Theme's name, which no Theme may take.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// the choice, so the file can't follow the system and name a Theme as well. It reaches the file and the UI
+/// as the text the file holds: `"system"`, a mode, or a Theme's name, which no Theme may take.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+#[serde(into = "String")]
+#[specta(type = String)]
 pub enum ThemeChoice {
     #[default]
     System,
     /// `"light"` or `"dark"`, a mode from a file written before (#517): the Theme `light_theme` or
-    /// `dark_theme` names. A save writes that name in its place.
+    /// `dark_theme` names. A pick for that side writes the name picked in its place. Any other save keeps
+    /// the mode, as only the `themes` folder can say which Theme the side's name gives.
     Side(ThemeKind),
     Theme(ThemeName),
+}
+
+impl From<ThemeChoice> for String {
+    fn from(choice: ThemeChoice) -> Self {
+        match choice {
+            ThemeChoice::System => ThemeChoice::SYSTEM.to_owned(),
+            ThemeChoice::Side(side) => side.name().to_owned(),
+            ThemeChoice::Theme(name) => name.0,
+        }
+    }
 }
 
 impl ThemeChoice {
@@ -54,21 +67,19 @@ impl ThemeChoice {
     /// The side the window keeps, when Tsugiki can tell it without the `themes` folder: a mode's, or a
     /// built-in Theme's. The window turns to it at start, before the page asks for its themes.
     pub fn known_side(&self) -> Option<ThemeKind> {
-        let built_in = |name: &ThemeName| {
-            let light = LightTheme::ALL
-                .map(LightTheme::name)
-                .map(|one| (one, ThemeKind::Light));
-            let dark = DarkTheme::ALL
-                .map(DarkTheme::name)
-                .map(|one| (one, ThemeKind::Dark));
-            let mut all = light.into_iter().chain(dark);
-            all.find(|&(one, _)| one == name.as_str())
-                .map(|(_, kind)| kind)
-        };
         match self {
             Self::System => None,
             Self::Side(side) => Some(*side),
-            Self::Theme(name) => built_in(name),
+            Self::Theme(name) => {
+                let named = |built_in: &str| built_in == name.as_str();
+                if LightTheme::ALL.into_iter().map(LightTheme::name).any(named) {
+                    Some(ThemeKind::Light)
+                } else if DarkTheme::ALL.into_iter().map(DarkTheme::name).any(named) {
+                    Some(ThemeKind::Dark)
+                } else {
+                    None
+                }
+            }
         }
     }
 

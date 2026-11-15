@@ -320,12 +320,9 @@ export type Answer_Serialize =
  *  (#519). It stays as the user wrote it: the folder can change while Tsugiki runs, so the `themes` command
  *  checks it against the folder each time. A side's name no theme has shows the side's default until one
  *  does, and a `theme` no theme has follows the system.
- * 
- *  `theme` goes to the file and to the UI as its text: `"system"` or a theme's name. A mode from a file
- *  written before goes as the name its side holds, so a save writes that name in its place (#755).
  */
 export type AppearanceSettings = {
-	theme: string,
+	theme: ThemeChoice,
 	light_theme: ThemeName,
 	dark_theme: ThemeName,
 };
@@ -2635,6 +2632,14 @@ export type SyncPart = "your_work" |
  *  when it has to wait.
  */
 "refresh";
+
+/**
+ *  What `[appearance] theme` in `settings.toml` asks the window to show (#755): the Theme `light_theme` or
+ *  `dark_theme` names, whichever side the system is on, or one Theme whatever the system says. One key holds
+ *  the choice, so the file can't follow the system and name a Theme as well. It reaches the file and the UI
+ *  as the text the file holds: `"system"`, a mode, or a Theme's name, which no Theme may take.
+ */
+export type ThemeChoice = string;
 
 /**  The theme the window shows, from `[appearance] theme` (#755). */
 export type ThemeInForce = 

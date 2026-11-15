@@ -216,11 +216,9 @@ fn a_mode_from_before_reads_as_the_theme_its_side_names() {
         ThemeChoice::Side(ThemeKind::Light)
     );
     assert_eq!(dark.problems, Vec::<String>::new());
-    // The file and the UI get the name in its place.
+    // The UI gets the mode as the file holds it.
     let written = serde_json::to_value(appearance).unwrap();
-    assert_eq!(written["theme"], "Gruvbox Dark Hard");
-    let written = serde_json::to_value(&light.settings.appearance).unwrap();
-    assert_eq!(written["theme"], "VS Code Light Modern");
+    assert_eq!(written["theme"], "dark");
 }
 
 /// The name stays as written: the `themes` command checks it against the folder (#755).
@@ -472,28 +470,28 @@ fn appearance_is_saved_by_name_and_only_where_it_differs_from_the_default() {
     );
 }
 
-/// A file from before #755 held a mode, and the Settings dialog's Apply writes the name it read as.
+/// A file from before #755 held a mode. Only the `themes` folder can say which theme the side's name gives,
+/// as its file may be gone, so the Settings dialog's Apply keeps the mode and what the window shows.
 #[test]
-fn a_save_writes_the_name_a_mode_from_before_read_as() {
-    let before = "[appearance]\ntheme = \"light\" # by day\nlight_theme = \"Gruvbox Light Hard\"\n";
+fn an_apply_keeps_a_mode_from_before() {
+    let before = "[appearance]\ntheme = \"dark\" # by night\ndark_theme = \"Night\"\n";
     let (folders, _root) = temp_folders("appearance-mode-save");
     fs::write(folders.settings_file(), before).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    let settings = files.loaded().settings.clone();
+    let mut settings = files.loaded().settings.clone();
+    settings.status_bar.visible = false;
     files.write(&settings).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
 
-    assert_eq!(
-        after,
-        "[appearance]\ntheme = \"Gruvbox Light Hard\" # by day\nlight_theme = \"Gruvbox Light Hard\"\n"
-    );
+    assert_eq!(after, format!("{before}\n[status_bar]\nvisible = false\n"));
 }
 
-/// The theme picker saves one side's key, and a mode from before (#755) gives way to the name of the theme
-/// it shows after the pick, so the window shows what it would have.
+/// The theme picker saves one side's key. A mode from before (#755) of that side gives way to the name
+/// picked, which the picker found in the folder, so the window shows what it would have. A mode of the other
+/// side stays.
 #[test]
-fn a_picked_theme_writes_the_name_a_mode_from_before_shows_after_it() {
+fn a_pick_for_a_modes_side_writes_the_name_picked_in_its_place() {
     let (folders, _root) = temp_folders("appearance-mode-picked");
     let file = folders.settings_file();
     let mut files = SettingsFiles::load(folders.clone());
@@ -519,7 +517,7 @@ fn a_picked_theme_writes_the_name_a_mode_from_before_shows_after_it() {
     );
     assert_eq!(
         other_side,
-        "[appearance]\ntheme = \"Gruvbox Light Hard\"\nlight_theme = \"Gruvbox Light Hard\"\n\
+        "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n\
          dark_theme = \"Gruvbox Dark Hard\"\n"
     );
 }

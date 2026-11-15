@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { type KeyedRow, remapKeys } from "$lib/state/keymap.svelte";
+import { type Action, keyTable, remapKeys } from "$lib/state/keymap.svelte";
 import KeyList, { type View } from "./KeyList.svelte";
 
 beforeEach(() => {
@@ -12,9 +12,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const show = (views: readonly View[], works: (row: KeyedRow) => boolean = () => true) => {
+/** Shows the list for a press in `views`, where `works` says which actions run, every one unless it says. */
+const show = (views: readonly View[], works: (action: Action) => boolean = () => true) => {
   const onclose = vi.fn();
-  render(KeyList, { here: { views, works }, onclose });
+  const actions = new Set(keyTable().flatMap((row) => (works(row.action) ? [row.action] : [])));
+  render(KeyList, { here: { views, actions }, onclose });
   return onclose;
 };
 
@@ -59,7 +61,10 @@ it("lists the Issue list's keys, and leaves out an action with no key and the co
 });
 
 it("leaves out each key that doesn't work there, and a view with none", () => {
-  show(["issue_list", "diff"], (row) => row.context !== "issue_list" && row.action !== "next_change");
+  show(
+    ["issue_list", "diff"],
+    (action) => !["unfold", "fold", "archive", "mute", "next_change"].includes(action),
+  );
 
   expect(sections()).toEqual(["Diff", "Anywhere"]);
   expect(keysOf("Diff")).not.toContain("F7 Next Change");

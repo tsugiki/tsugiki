@@ -2,16 +2,23 @@
      the core's key table with the user's remaps. The view's own keys come first, then those that work
      anywhere. It closes on Esc, Close or a press outside, and gives the focus back. -->
 <script lang="ts" module>
-  import type { Context, KeyedRow } from "$lib/state/keymap.svelte";
+  import type { Action, Context } from "$lib/state/keymap.svelte";
 
   /** A view whose keys work only there, which the list names. The composer has none to list yet. */
   export type View = Exclude<Context, "anywhere" | "composer">;
 
-  /** Which keys work where a press went: the views it went to, whose keys the list shows before those that
-   * work anywhere, and whether each row's key runs its action there. */
+  /** Which keys work where a press went, as worked out at the press: the views it went to, whose keys the
+   * list shows before those that work anywhere, and the actions whose key runs them there. */
   export interface KeysHere {
     views: readonly View[];
-    works: (row: KeyedRow) => boolean;
+    actions: ReadonlySet<Action>;
+  }
+
+  /** What the Repository's screen says of a press: the views it went to, and whether each of the screen's
+   * actions would run. It says yes of any other action, which the page decides on. */
+  export interface ScreenKeys {
+    views: readonly View[];
+    works: (action: Action) => boolean;
   }
 </script>
 
@@ -32,7 +39,10 @@
   /** Each view's keys that work, and a view with none goes. */
   const groups = $derived(
     [...here.views, "anywhere" as const]
-      .map((context) => ({ heading: HEADINGS[context], rows: keysIn(context).filter(here.works) }))
+      .map((context) => ({
+        heading: HEADINGS[context],
+        rows: keysIn(context).filter((row) => here.actions.has(row.action)),
+      }))
       .filter((group) => group.rows.length > 0),
   );
 

@@ -1163,7 +1163,7 @@ it("names the views whose keys work where a press goes, for the `?` list", async
   // The diff's keys work from the list too, while the Files tab shows, every one of them.
   expect([views(detail), views(treeRow)]).toEqual([["diff"], ["issue_list", "diff"]]);
   const here = component.keysHere(detail);
-  expect(keysIn("diff").every((row) => here.works(row))).toBe(true);
+  expect(keysIn("diff").every((row) => here.works(row.action))).toBe(true);
 });
 
 it("lists for `?` only the keys that would run: the PR view's while a PR shows, a text box's in one", async () => {
@@ -1173,7 +1173,7 @@ it("lists for `?` only the keys that would run: the PR view's while a PR shows, 
   /** Whether each key that works anywhere would run for a press on `target`. */
   const works = (target: EventTarget | null) => {
     const here = component.keysHere(target);
-    return Object.fromEntries(keysIn("anywhere").map((row) => [row.action, here.works(row)]));
+    return Object.fromEntries(keysIn("anywhere").map((row) => [row.action, here.works(row.action)]));
   };
   const inBox = works(box);
   box.remove();
@@ -1617,7 +1617,7 @@ it("leaves the diff's lookups alone of its keys for `?` while the file view cove
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
   const here = component.keysHere(await screen.findByRole("region", { name: "File view" }));
-  const works = Object.fromEntries(keysIn("diff").map((row) => [row.action, here.works(row)]));
+  const works = Object.fromEntries(keysIn("diff").map((row) => [row.action, here.works(row.action)]));
 
   expect(here.views).toEqual(["diff"]);
   expect(works).toMatchObject({
@@ -1626,7 +1626,7 @@ it("leaves the diff's lookups alone of its keys for `?` while the file view cove
     next_change: false,
     find_in_diff: false,
   });
-  expect(keysIn("anywhere").every((row) => here.works(row))).toBe(true);
+  expect(keysIn("anywhere").every((row) => here.works(row.action))).toBe(true);
 });
 
 it("adds a history entry for a file view F12 opens from another, and Alt+← comes back to the first", async () => {

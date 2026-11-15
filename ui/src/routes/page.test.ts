@@ -1336,6 +1336,35 @@ describe("the key list", () => {
     ]);
   });
 
+  it("leaves out a key a chord's wait takes, and lists it where no chord starts on it", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    const remapped = structuredClone(SETTINGS);
+    // Ctrl+K starts the screen's chords, such as Ctrl+K Z, so the wait takes it, but none in a text box.
+    remapped.settings.keys = {
+      open_settings: "ctrl+k",
+      pick_theme: "",
+      reload_themes: "",
+      show_keys: "ctrl+/",
+    };
+    core.settings.mockResolvedValue(remapped);
+    render(Page);
+    await screen.findByRole("heading", { name: gcmon.name });
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+k")).toBe("open_settings");
+    });
+    const ctrlSlash = (target: Element) =>
+      fireEvent.keyDown(target, { key: "/", code: "Slash", ctrlKey: true });
+    await ctrlSlash(document.body);
+    const onScreen = titles();
+    await fireEvent.keyDown(window, { key: "Escape" });
+    const box = document.createElement("input");
+    document.body.append(box);
+    await ctrlSlash(box);
+    box.remove();
+
+    expect([onScreen.includes("Open Settings"), titles().includes("Open Settings")]).toEqual([false, true]);
+  });
+
   it("lists in a text box only the keys that work there", async () => {
     core.home.mockResolvedValue(gcmonHome);
     const remapped = structuredClone(SETTINGS);

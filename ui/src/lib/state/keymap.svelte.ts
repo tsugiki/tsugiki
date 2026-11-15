@@ -113,15 +113,11 @@ export function keyTable(): readonly Row[] {
 }
 
 /** The rows of the actions whose key works in `context` and runs them, in the table's order: of two remapped
- * actions on one key, only the one `actionOn` finds there, and not a key of one press that also starts a
- * chord, whose wait takes the press. The `?` list shows them. */
+ * actions on one key, only the one `actionOn` finds there. The `?` list shows them. */
 export function keysIn(context: Context): readonly KeyedRow[] {
   return keymap.rows.filter(
     (row): row is KeyedRow =>
-      row.context === context &&
-      row.key !== null &&
-      keymap.actionOn(row.key) === row.action &&
-      (isChord(row.key) || !keymap.isChordStart(row.key)),
+      row.context === context && row.key !== null && keymap.actionOn(row.key) === row.action,
   );
 }
 

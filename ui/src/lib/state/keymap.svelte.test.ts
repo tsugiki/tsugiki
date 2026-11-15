@@ -90,11 +90,10 @@ describe("the key table", () => {
     expect(chordFirst("ctrl+k z")).toBe("ctrl+k");
   });
 
-  it("lists in a context only the keys that run their action, not one a chord's wait takes", () => {
-    remapKeys({ toggle_hud: "ctrl+k", archive: "x", mute: "x" });
-    const listed = [...keysIn("anywhere"), ...keysIn("issue_list")].map((row) => row.action);
-    expect(listed).toEqual(expect.arrayContaining(["mute", "pick_theme"]));
-    expect(listed).not.toContain("toggle_hud");
+  it("lists in a context only the keys that run their action", () => {
+    remapKeys({ archive: "x", mute: "x" });
+    const listed = keysIn("issue_list").map((row) => row.action);
+    expect(listed).toContain("mute");
     expect(listed).not.toContain("archive");
   });
 

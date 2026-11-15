@@ -27,9 +27,9 @@ export function chordName(first: string, second: string): string {
   return `${first} ${second}`;
 }
 
-/** The actions whose key works in a text box though it holds Ctrl and Alt, which AltGr sends on Windows to
- * type: the page's own, which the guard runs, and those the Repository screen runs before it leaves a text
- * box its keys. Unified or Side by Side is one, on Ctrl+Alt+U. */
+/** The actions whose key works in a text box, as long as it types nothing there: the page's own, which the
+ * guard runs, and those the Repository screen runs in one. Their key works there though it holds Ctrl and
+ * Alt, which AltGr sends on Windows to type: Unified or Side by Side is one, on Ctrl+Alt+U. */
 const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "command_palette",
   "switch_repository",
@@ -43,6 +43,11 @@ const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "find_in_diff",
   "show_keys",
 ]);
+
+/** Whether the key of `action` works in a text box, as long as it types nothing there. */
+export function worksInTextBox(action: Action): boolean {
+  return IN_TEXT_BOX.has(action);
+}
 
 /** Whether `name` types in a text box: a plain key, Backspace and Delete, a capital letter such as Shift+Q,
  * and Ctrl+Alt with a key that types, which AltGr sends on Windows, as on Ctrl+Alt+B or a German Ctrl+Alt+Q,
@@ -185,6 +190,12 @@ export function isTextBox(target: EventTarget | null): boolean {
   );
 }
 
+/** Whether a text box keeps press `name` on `target` for itself, as `typesInTextBox` says, whatever its
+ * action. */
+export function keptByTextBox(name: string, target: EventTarget | null): boolean {
+  return typesInTextBox(name) && isTextBox(target);
+}
+
 /**
  * The handler for the window's capture phase. In a text box a key that types there, as `typesInTextBox`
  * says, is the box's, and any other key with a modifier is still Tsugiki's. Every build owns F12, which is
@@ -194,7 +205,7 @@ export function isTextBox(target: EventTarget | null): boolean {
 export function keyGuard(bindings: Bindings, os: Os): (e: KeyboardEvent) => void {
   return (e) => {
     const name = keyName(e, os);
-    if (name === null || !ownsKey(name) || (typesInTextBox(name) && isTextBox(e.target))) return;
+    if (name === null || !ownsKey(name) || keptByTextBox(name, e.target)) return;
     e.preventDefault();
     const action = actionOn(name);
     if (action !== undefined) bindings[action]?.(e);

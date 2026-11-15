@@ -177,24 +177,32 @@ fn a_query_searches_none_of_a_checkout_at_another_diff() {
 
 #[test]
 fn queries_on_older_and_newer_diffs_move_no_checkout_whatever_order_their_threads_run_in() {
-    let fixture = pr("search-owner-overtaken");
-    let (search, heard, _) = started();
-    // A query on the diff before, then one on the diff the PR now shows, whose threads ask for the
-    // checkout in either order.
-    let _older = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
-    let older_reply = asked(&heard);
-    let newer = search_in(&search, &fixture, "eggs");
-    let newer_reply = asked(&heard);
-    newer_reply.send(Some(fixture.checkout.clone())).unwrap();
-    older_reply.send(Some(fixture.checkout.clone())).unwrap();
-    let (files, end, _) = ended(&search, newer);
-    assert_eq!(
-        (files, end),
-        (vec![("b.py".to_owned(), vec![2])], End::Done)
-    );
-    assert!(heard.look_ups().is_empty());
+    for newer_first in [true, false] {
+        let fixture = pr(&format!("search-owner-overtaken-{newer_first}"));
+        let (search, heard, _) = started();
+        // A query on the diff before, then one on the diff the PR now shows, whose threads hear where the
+        // checkout is in the order the loop gives.
+        let _older = search
+            .search(repository(), ends(1), &query("spam"))
+            .unwrap();
+        let older_reply = asked(&heard);
+        let newer = search_in(&search, &fixture, "eggs");
+        let newer_reply = asked(&heard);
+        let mut replies = [newer_reply, older_reply];
+        if !newer_first {
+            replies.reverse();
+        }
+        for reply in replies {
+            reply.send(Some(fixture.checkout.clone())).unwrap();
+        }
+        let (files, end, _) = ended(&search, newer);
+        assert_eq!(
+            (files, end),
+            (vec![("b.py".to_owned(), vec![2])], End::Done),
+            "newer first: {newer_first}"
+        );
+        assert!(heard.look_ups().is_empty());
+    }
 }
 
 #[test]

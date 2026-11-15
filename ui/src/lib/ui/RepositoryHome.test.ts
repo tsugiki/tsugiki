@@ -1320,6 +1320,15 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   await searchKey();
   await tick();
   const again = [railTab(), box().value, document.activeElement === box()];
+  await vi.waitFor(() => {
+    expect(core.textSearch.mock.lastCall?.[0]).toMatchObject({ query: { text: "gc_collect" } });
+  });
+  // The same selection again runs nothing again, which would lose the folds and the cursor.
+  const runs = core.textSearch.mock.calls.length;
+  box().blur();
+  await searchKey();
+  await tick();
+  const rerun = core.textSearch.mock.calls.length - runs;
   // While the box has the focus, the selection is the box's own text, which stays as the user typed it.
   await fireEvent.input(box(), { target: { value: "gc_.*" } });
   box().focus();
@@ -1357,7 +1366,7 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
 
   expect(before).toEqual([undefined, null]);
   expect(fromSelection).toEqual(["Search", "gc_debug", true]);
-  expect([again, typed]).toEqual([["Search", "gc_collect", true], "gc_.*"]);
+  expect([again, rerun, typed]).toEqual([["Search", "gc_collect", true], 0, "gc_.*"]);
   expect([fromDiff, kept, box().value, command()?.note]).toEqual([
     "gc_list",
     "gc_list",

@@ -12,15 +12,14 @@ import {
   type End,
   type FileHits,
   type LineHit,
-  type PrFiles,
   type Query,
   type SearchId,
   type SearchState,
-  type Unfetched,
 } from "$lib/data/bindings";
 import { type DiffEnds, diffKey } from "./diff-ends";
+import type { PrFilesState } from "./pr-files.svelte";
 
-export type { DiffEnds, FileHits, LineHit, SearchState };
+export type { FileHits, LineHit, SearchState };
 
 /** How long the keys pause before the query runs, in milliseconds. */
 export const SEARCH_PAUSE = 250;
@@ -38,25 +37,30 @@ export type SearchRow =
 export type Match = { path: string; line: number; ends: DiffEnds };
 
 /** What the search can run on, from the Files tab: the diff's ends once it is ready, or why there are none
- * yet. `loading` comes on its own, `asking` once the user answers the clone's question in the Files tab,
- * and `absent` and `failed` never on their own. */
+ * yet. `loading` and `offline` come on their own, `asking` once the user answers the clone's question in
+ * the Files tab, and `absent` and `failed` never on their own. */
 export type SearchDiff =
   | ({ kind: "ready" } & DiffEnds)
   | { kind: "loading" }
+  | { kind: "offline" }
   | { kind: "asking" }
   | { kind: "absent" }
   | { kind: "failed" };
 
-/** What the Files tab's diff, `view`, gives the search to run on, with the problem its last read had,
- * `error`, and why the mirror stopped fetching the PR's head without it, `unfetched`. */
+/** What the Files tab, `files`, gives the search to run on: its diff, or why it has none, as the tab says
+ * it. PR commits that wait for the network wait, as the tab tries again by itself, and so does a fetch
+ * the network explains. A failed read, or a fetch that stopped for another reason, has failed.
+ *
+ * A failed fetch's word that comes after Try again, from the fetch before it, says the diff failed while
+ * the new fetch runs: the tab can't tell it from the new fetch's own, and nor can this. */
 export function searchDiff(
-  view: PrFiles | null | undefined,
-  error: string | undefined,
-  unfetched: Unfetched | undefined,
+  files: Pick<PrFilesState, "view" | "error" | "unfetched" | "waitsForNetwork">,
 ): SearchDiff {
+  const view = files.view;
   if (view?.state === "ready") return { kind: "ready", base: view.base, head: view.head };
   if (view === null) return { kind: "absent" };
-  if (error !== undefined || unfetched !== undefined) return { kind: "failed" };
+  if (view?.state === "fetching" && files.waitsForNetwork) return { kind: "offline" };
+  if (files.error !== undefined || files.unfetched !== undefined) return { kind: "failed" };
   return view?.state === "asking" ? { kind: "asking" } : { kind: "loading" };
 }
 
@@ -92,6 +96,8 @@ export class TextSearchState {
   wantsFocus = $state(false);
   /** How many queries the core has taken, so the list goes back to its top for each one's results. */
   answered = $state(0);
+  /** Whether the box has the focus, when the selection is the box's own text. */
+  boxFocused = false;
   #shown = $state.raw<Shown>({ kind: "empty" });
   #folded = new SvelteSet<string>();
   #cursorKey = $state.raw<RowKey>();
@@ -108,14 +114,23 @@ export class TextSearchState {
   /** The core said something changed while a read was under way, which may have missed it. */
   #again = false;
   #stopped = false;
+  /** Reads the PR's diff again, which moves the Lookup checkout back to it. */
+  readonly #reread: () => Promise<void>;
+  /** Whether the query on show has read the diff again once already, after the core found no checkout of
+   * it. */
+  #rereadDone = false;
 
-  constructor(repository: string) {
+  /** A search in `repository`'s PR, which calls `reread` to read the PR's diff again when the core finds no
+   * checkout of it: another PR's read may have moved the checkout away. */
+  constructor(repository: string, reread: () => Promise<void> = () => Promise.resolve()) {
     this.#repository = repository;
+    this.#reread = reread;
   }
 
   /** The box's text as the user types it: the query runs once the keys pause. */
   type(text: string) {
     this.text = text;
+    this.#rereadDone = false;
     clearTimeout(this.#timer);
     this.#timer = setTimeout(() => void this.#run(), SEARCH_PAUSE);
   }
@@ -125,13 +140,20 @@ export class TextSearchState {
     if (option === "case") this.matchCase = !this.matchCase;
     else if (option === "words") this.wholeWord = !this.wholeWord;
     else this.regex = !this.regex;
+    this.#rereadDone = false;
     void this.#run();
+  }
+
+  /** Whether the box holds `text` as `seed` would put it there. */
+  holds(text: string): boolean {
+    return this.text === (this.regex ? literalRegex(text) : text);
   }
 
   /** Puts `text`, the picked word or the selected text, in the box, as a regex matches it with regex on, and
    * runs the query at once. */
   seed(text: string) {
     this.text = this.regex ? literalRegex(text) : text;
+    this.#rereadDone = false;
     void this.#run();
   }
 
@@ -140,6 +162,7 @@ export class TextSearchState {
   follow(diff: SearchDiff) {
     if (keyOf(diff) === keyOf(this.#diff)) return;
     this.#diff = diff;
+    this.#rereadDone = false;
     void this.#run();
   }
 
@@ -345,11 +368,20 @@ export class TextSearchState {
     }
   }
 
-  /** Shows `state` if it answers the query asked last. */
+  /** Shows `state` if it answers the query asked last. The first time the core finds no checkout of the
+   * query's diff, this reads the diff again, which moves the checkout back to it, and runs the query once
+   * more. */
   #heard(state: SearchState) {
     const asking = this.#asking;
     if (state.state === "idle" || state.id !== asking?.id) return;
-    if (state.state === "results") {
+    if (state.state === "no_checkout" && !this.#rereadDone) {
+      this.#rereadDone = true;
+      this.#shown = { kind: "waiting" };
+      const asked = this.#asked;
+      void this.#reread().then(() => {
+        if (asked === this.#asked) void this.#run();
+      });
+    } else if (state.state === "results") {
       const { files, matches, end } = state;
       this.#shown = { kind: "results", files, matches, end, ends: asking.ends };
     } else {
@@ -361,6 +393,7 @@ export class TextSearchState {
 /** What the line under the box says while the search has no diff to run on. */
 const UNREADY: Record<Exclude<SearchDiff["kind"], "ready">, string> = {
   loading: "Waiting for the checkout…",
+  offline: "The search waits for the PR's commits, which come once GitHub answers.",
   asking: "The search waits for the Repository's clone, which waits for an answer in the Files tab.",
   absent: "Tsugiki doesn't hold this PR, so there's nothing to search.",
   failed: "The PR's diff didn't load, so there's nothing to search. The Files tab says why.",

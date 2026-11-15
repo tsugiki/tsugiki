@@ -16,6 +16,7 @@
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
+  import type { TextSearchState } from "$lib/state/text-search.svelte";
   import { RAIL_ORDER, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
@@ -410,22 +411,21 @@
   /** `Ctrl+Shift+F` or "View: Search in the Rail", which open the rail on Search in `view`, with the focus in
    * its box, as in VS Code (#686). The box takes the text selected on one line, or else the word picked in
    * the Files tab on show. With Search on show it takes only a selection, and the rail stays open, so the
-   * query the user typed stays unless they selected other text. */
+   * query the user typed stays unless they selected other text. Text the box holds already runs no query
+   * again, which keeps the folds and the cursor. */
   function searchInRail(view: PrViewState) {
     const rail = panes.railState;
-    const seed = seedText(rail.open && rail.tab === "search");
-    if (seed !== undefined) view.search.seed(seed);
+    const seed = seedText(view.search, rail.open && rail.tab === "search");
+    if (seed !== undefined && !view.search.holds(seed)) view.search.seed(seed);
     view.search.wantsFocus = true;
     panes.railState.pick("search");
   }
 
   /** The text selected on one line, or else, unless `selectionOnly`, the word picked in the file view or
-   * the diff of the Files tab on show, as `Ctrl+Shift+F` puts it in the Search box. While the box has the
+   * the diff of the Files tab on show, as `Ctrl+Shift+F` puts it in `search`'s box. While the box has the
    * focus, the selection is the box's own text, which goes nowhere. */
-  function seedText(selectionOnly: boolean): string | undefined {
-    const focused = document.activeElement;
-    const inBox = focused instanceof HTMLInputElement && focused.dataset.railSearch !== undefined;
-    const selected = inBox ? "" : (window.getSelection()?.toString() ?? "");
+  function seedText(search: TextSearchState, selectionOnly: boolean): string | undefined {
+    const selected = search.boxFocused ? "" : (window.getSelection()?.toString() ?? "");
     if (selected !== "" && !selected.includes("\n")) return selected;
     if (selectionOnly) return undefined;
     const tab = filesTab();

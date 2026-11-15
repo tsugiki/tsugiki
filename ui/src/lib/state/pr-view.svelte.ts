@@ -59,7 +59,7 @@ export class PrViewState extends DetailState<PrView> {
     });
     this.issue = issue;
     this.files = new PrFilesState(repository, number, panes, hud, choice, mode, fileViewMoved, peekLayout);
-    this.search = new TextSearchState(repository);
+    this.search = new TextSearchState(repository, () => this.files.ask());
   }
 
   /** Hands the Files tab the user's Review, which marks and collapses its files while it's a Stale review

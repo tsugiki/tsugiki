@@ -55,10 +55,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     line outside it, as in VS Code: the query the user typed stays otherwise. The box has three toggles,
     match case, whole word and regex, on `Alt+C`, `Alt+W` and `Alt+R` while it has the focus, and it
     searches 250 ms after the last key. The tab reads the PR's diff on either of the PR's tabs, as each
-    query names the diff's base and head, and searches the checkout that reading moved there. It searches
-    again once a diff with another base or head shows, as a PR moved to another Target branch gets
-    ([#211](https://github.com/tsugiki/tsugiki/issues/211)). A query nobody wants any more, as the box
-    empties or the PR closes, stops.
+    query names the diff's base and head, and searches the checkout that reading moved there. A query
+    that finds the checkout at another PR's diff reads the diff again, once, which moves it back. It
+    searches again once a diff with another base or head shows, as a PR moved to another Target branch
+    gets ([#211](https://github.com/tsugiki/tsugiki/issues/211)). A query nobody wants any more, as the
+    box empties or the PR closes, stops. A second press with text the box holds already runs nothing
+    again, so the folds and the cursor stay.
   - A line under the box says "312 results in 41 files", "Stopped at 5,000 results", "Waiting for the
     checkout…", why the diff the search needs isn't there, or the regex's error. A match opens only in
     the diff it was found in. The results group by file: a row with the path, the count and a fold

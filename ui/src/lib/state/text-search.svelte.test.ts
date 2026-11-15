@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { FileHits, LineHit, PrFiles, SearchState } from "$lib/data/bindings";
+import type { FileHits, LineHit, SearchState } from "$lib/data/bindings";
 import {
   literalRegex,
   SEARCH_PAUSE,
@@ -176,6 +176,7 @@ it("says why it waits for a diff that won't come on its own, and cancels the que
 
   const words = [
     said({ kind: "loading" }),
+    said({ kind: "offline" }),
     said({ kind: "asking" }),
     said({ kind: "absent" }),
     said({ kind: "failed" }),
@@ -183,6 +184,7 @@ it("says why it waits for a diff that won't come on its own, and cancels the que
 
   expect(words).toEqual([
     ["Waiting for the checkout…", false],
+    ["The search waits for the PR's commits, which come once GitHub answers.", false],
     ["The search waits for the Repository's clone, which waits for an answer in the Files tab.", false],
     ["Tsugiki doesn't hold this PR, so there's nothing to search.", true],
     ["The PR's diff didn't load, so there's nothing to search. The Files tab says why.", true],
@@ -192,17 +194,25 @@ it("says why it waits for a diff that won't come on its own, and cancels the que
 });
 
 it("gives the search the Files tab's diff once it is ready, or why there is none", () => {
-  const ready = { state: "ready", base: "b0", head: "abc" } as PrFiles;
+  type Files = Parameters<typeof searchDiff>[0];
+  const ready = { state: "ready", base: "b0", head: "abc" } as Files["view"];
+  const fetching: Files["view"] = { state: "fetching" };
+  const files = (view: Files["view"], more: Partial<Files> = {}) =>
+    searchDiff({ view, error: undefined, unfetched: undefined, waitsForNetwork: false, ...more });
 
   expect([
-    searchDiff(ready, "a chunk didn't come", undefined),
-    searchDiff(undefined, undefined, undefined),
-    searchDiff({ state: "fetching" }, undefined, undefined),
-    searchDiff({ state: "asking" }, undefined, undefined),
-    searchDiff(null, undefined, undefined),
-    searchDiff(undefined, "no network", undefined),
-    // The mirror stopped fetching the PR's head without it, so the diff won't come on its own.
-    searchDiff({ state: "fetching" }, undefined, { kind: "not_on_github" }),
+    files(ready, { error: "a chunk didn't come" }),
+    files(undefined),
+    files(fetching),
+    files({ state: "asking" }),
+    files(null),
+    files(undefined, { error: "no network" }),
+    // The mirror stopped fetching the PR's head without it, so the diff won't come on its own, unless the
+    // network explains it, and the Files tab tries again by itself.
+    files(fetching, { unfetched: { kind: "not_on_github" } }),
+    files(fetching, { unfetched: { kind: "git", words: "timed out" }, waitsForNetwork: true }),
+    // Only the PR's commits wait for the network here: a clone that does says so as `loading`.
+    files({ state: "cloning" }, { waitsForNetwork: true }),
   ]).toEqual([
     READY,
     { kind: "loading" },
@@ -211,6 +221,8 @@ it("gives the search the Files tab's diff once it is ready, or why there is none
     { kind: "absent" },
     { kind: "failed" },
     { kind: "failed" },
+    { kind: "offline" },
+    { kind: "loading" },
   ]);
 });
 
@@ -325,19 +337,68 @@ it("says what the core says of each state of the query, and the limit", async ()
     await said({ state: "waiting", id: 1 }),
     await said(results(1, [], "running")),
     await said(results(1, [fileHits("a.py", hit(1))], "running")),
-    await said({ state: "no_checkout", id: 1 }),
     await said({ state: "failed", id: 1 }),
     await said({ ...results(1, [fileHits("a.py", hit(1))], "stopped"), matches: 5000 }),
+    // The diff is read again, and the query runs once more: see the next test.
+    await said({ state: "no_checkout", id: 1 }),
   ];
 
   expect(words).toEqual([
     ["Waiting for the checkout…", false],
     ["Searching…", false],
     ["1 result in 1 file", false],
-    ["There's no checkout of the PR to search. tsugiki.log may say why.", true],
     ["Tsugiki couldn't read the PR's files. tsugiki.log says why.", true],
     ["Stopped at 5,000 results", false],
+    ["Waiting for the checkout…", false],
   ]);
+});
+
+it("reads the diff again once when the core finds no checkout of it, and runs the query once more", async () => {
+  const reread = vi.fn(() => Promise.resolve());
+  let id = 0;
+  core.textSearch.mockImplementation(() => {
+    id += 1;
+    return Promise.resolve(running(id));
+  });
+  const search = new TextSearchState("python/cpython", reread);
+  search.follow(READY);
+  const noCheckout = async () => {
+    core.textSearchState.mockResolvedValueOnce({ state: "no_checkout", id });
+    core.changed();
+    await settled();
+    return [search.summary, search.troubled, reread.mock.calls.length, core.textSearch.mock.calls.length];
+  };
+  core.textSearchState.mockResolvedValue({ state: "waiting", id: 1 });
+  search.seed("spam");
+  await settled();
+
+  const first = await noCheckout();
+  const second = await noCheckout();
+  // A new query reads the diff again once more, but not if the user typed meanwhile.
+  const later = Promise.withResolvers<undefined>();
+  reread.mockReturnValueOnce(later.promise);
+  search.seed("eggs");
+  await settled();
+  const third = await noCheckout();
+  search.seed("ham");
+  await settled();
+  later.resolve(undefined);
+  await settled();
+
+  expect(first).toEqual(["Waiting for the checkout…", false, 1, 2]);
+  expect(second).toEqual(["There's no checkout of the PR to search. tsugiki.log may say why.", true, 1, 2]);
+  expect(third).toEqual(["Waiting for the checkout…", false, 2, 3]);
+  expect(core.textSearch).toHaveBeenCalledTimes(4);
+});
+
+it("knows the text the box holds, as a regex with regex on", () => {
+  const search = new TextSearchState("python/cpython");
+  search.text = "a.b";
+  const literal = [search.holds("a.b"), search.holds("a")];
+  search.regex = true;
+  search.text = "a\\.b";
+
+  expect([...literal, search.holds("a.b")]).toEqual([true, false, true]);
 });
 
 it("shows only what answers the query asked last, and drops a late answer to an older one", async () => {

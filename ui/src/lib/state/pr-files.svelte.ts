@@ -1118,6 +1118,34 @@ export class PrFilesState {
     if (goal.kind === "diff") this.diffWantsFocus = true;
   }
 
+  /** Goes to line `line` of file `path` at the PR's head, where the rail's Search found a match (#686), as
+   * Go to definition goes to a single hit: to its line in a file the diff shows lines of, opening the lines
+   * around it if no hunk shows it, and handing the diff the focus, and to the file view of any other file,
+   * at the base for a file the PR doesn't touch, as a lookup names one. A line the core can't find, or
+   * whose lines don't come, is said over the diff for a moment. A newer diff by then leaves it be. */
+  async openMatch(path: string, line: number) {
+    const view = this.view;
+    if (view?.state !== "ready") return;
+    const touched = view.files.some((file) => file.path === path);
+    const place = touched
+      ? { kind: "repository" as const, path, side: "head" as const, commit: view.head }
+      : { kind: "repository" as const, path, side: "base" as const, commit: view.base };
+    const hit: RepositoryHit = { place, line, column: 0, text: "" };
+    const goal = await this.#goal(hit, view, new HitCode(this.#repository, hit, 0), undefined);
+    if (this.#diff(this.view) !== this.#diff(view)) return;
+    if (goal === undefined) {
+      this.#say(`No line of the diff shows ${path}:${String(line)}.`, NOTICE_MS);
+    } else if (goal.kind === "diff") {
+      if (this.#fileView !== undefined) this.closeFileView();
+      this.#dropPeek();
+      this.#land(goal.landing, view);
+      this.diffWantsFocus = true;
+    } else {
+      // With no lookup to have asked from, the goal is a file view of its own.
+      this.openFileView(goal.view);
+    }
+  }
+
   /** Goes to `goal`, which lookup `lookup` found in the diff `view`, and closes the peek. A line of the
    * diff found from the file view closes the view, as Back does (#457). */
   #go(goal: Goal, view: Ready, lookup: number) {

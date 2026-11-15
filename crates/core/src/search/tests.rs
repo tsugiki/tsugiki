@@ -232,3 +232,23 @@ fn a_search_at_once_refuses_a_bad_query_and_a_commit_git_lacks() {
     let failed = search_checkout(&fixture.checkout, &query("spam")).unwrap_err();
     assert_eq!(failed.message, "Tsugiki couldn't read the PR's files.");
 }
+
+#[test]
+fn the_window_reads_the_state_with_each_file_whole_under_a_tag_of_its_state() {
+    let fixture = pr("search-serialize");
+    let (search, heard, _) = started();
+    let idle = serde_json::to_value(search.state()).unwrap();
+    let id = search.search(repository(), &query("eggs")).unwrap();
+    asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
+    let _ = ended(&search, id);
+    let found = serde_json::to_value(search.state()).unwrap();
+    let waiting = serde_json::to_value(SearchState::Waiting { id }).unwrap();
+    assert_eq!(idle, serde_json::json!({ "state": "idle" }));
+    let line = serde_json::json!({ "line": 2, "text": "eggs", "cut": "neither", "ranges": [{ "start": 0, "end": 4 }] });
+    let file = serde_json::json!({ "path": "b.py", "generated": false, "lines": [line] });
+    assert_eq!(
+        found,
+        serde_json::json!({ "state": "results", "id": id, "files": [file], "matches": 1, "end": "done" })
+    );
+    assert_eq!(waiting, serde_json::json!({ "state": "waiting", "id": id }));
+}

@@ -18,7 +18,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use specta::Type;
 
 use crate::error::{Error, ErrorKind};
@@ -130,8 +130,10 @@ pub struct MatchRange {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 pub struct SearchId(u32);
 
-/// What the window shows of the latest query.
-#[derive(Debug, Clone, Default)]
+/// What the window shows of the latest query. The window asks for it each time the thread says it may have
+/// changed, and shows it only while it answers the window's latest query.
+#[derive(Debug, Clone, Default, Serialize, Type)]
+#[serde(tag = "state", rename_all = "snake_case")]
 pub enum SearchState {
     /// No query has run since launch.
     #[default]
@@ -148,10 +150,12 @@ pub enum SearchState {
 }
 
 /// What a query found.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Type)]
 pub struct Results {
     pub id: SearchId,
     /// The files that hold a match, by path. Each is shared, so a copy of the state copies no line.
+    #[serde(serialize_with = "shared_files")]
+    #[specta(type = Vec<FileHits>)]
     pub files: Vec<Arc<FileHits>>,
     /// The matches in `files`.
     pub matches: u32,
@@ -178,6 +182,12 @@ impl Results {
             self.files.insert(at, Arc::new(hits));
         }
     }
+}
+
+/// Writes the files `Results` shares as the files themselves, as serde writes an `Arc` only with a feature
+/// that would let it read one back as a copy.
+fn shared_files<S: Serializer>(files: &[Arc<FileHits>], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(files.iter().map(|file| &**file))
 }
 
 /// Whether a search has ended, and how.

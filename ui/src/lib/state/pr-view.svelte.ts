@@ -1,4 +1,5 @@
-// The PR on show in the Detail pane, on its Conversation or its Files tab.
+// The PR on show in the Detail pane, on its Conversation or its Files tab, and the rail's Search of its
+// code.
 import {
   commands,
   type PrView_Serialize,
@@ -13,6 +14,7 @@ import { hud } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
 import type { PeekLayout } from "./peek";
 import { DiffViewChoice, PrFilesState, type FilesMode } from "./pr-files.svelte";
+import { type Match, TextSearchState } from "./text-search.svelte";
 import type { Stop } from "./workbench.svelte";
 
 export type PrView = PrView_Serialize;
@@ -29,6 +31,8 @@ export class PrViewState extends DetailState<PrView> {
   /** Its Files tab, which reads the diff the first time it shows. Opening the PR has already handed a head
    * the mirror lacks to the mirror. */
   readonly files: PrFilesState;
+  /** The rail's Search, whose query and toggles stay while the view lasts (#686). */
+  readonly search: TextSearchState;
   /** A PR opens on its Conversation. */
   #tab = $state<PrTab>("conversation");
   #filesLoaded = false;
@@ -55,6 +59,7 @@ export class PrViewState extends DetailState<PrView> {
     });
     this.issue = issue;
     this.files = new PrFilesState(repository, number, panes, hud, choice, mode, fileViewMoved, peekLayout);
+    this.search = new TextSearchState(repository);
   }
 
   /** Hands the Files tab the user's Review, which marks and collapses its files while it's a Stale review
@@ -69,15 +74,28 @@ export class PrViewState extends DetailState<PrView> {
 
   set tab(tab: PrTab) {
     this.#tab = tab;
-    if (tab === "files" && !this.#filesLoaded) {
-      this.#filesLoaded = true;
-      void this.files.load();
-    }
+    if (tab === "files") this.loadFiles();
+  }
+
+  /** Reads the Files tab's diff, unless it has been read: the rail's Search asks for it on either tab, as the
+   * checkout it searches follows the diff on show (#686). */
+  loadFiles() {
+    if (this.#filesLoaded) return;
+    this.#filesLoaded = true;
+    void this.files.load();
   }
 
   override stop() {
     super.stop();
     this.files.stop();
+    this.search.stop();
+  }
+
+  /** Opens `match`, which the rail's Search found, in the Files tab: at its line in the diff, or in the file
+   * view of a file the PR doesn't change (#686). */
+  async openMatch(match: Match) {
+    this.tab = "files";
+    await this.files.openMatch(match.path, match.line);
   }
 
   /** The line of the list the user opened this PR from. A PR that fixes two Issues has a line under each. */

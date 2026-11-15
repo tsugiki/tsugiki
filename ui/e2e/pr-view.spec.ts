@@ -406,8 +406,8 @@ test("the Files button, Ctrl+K F and × open and close the rail, its left edge s
   await page.mouse.move(edge.x + 8 - 100, edge.y + 20, { steps: 4 });
   await page.mouse.up();
   const dragged = await width();
-  // It stays open, at its width, on the Files tab.
-  await pane.getByRole("tab", { name: "Files" }).click();
+  // It stays open, at its width, on the Files tab, the PR's and not the rail's.
+  await pane.locator("#pr-tab-files").click();
   const diff = pane.getByRole("region", { name: "Diff" });
   await expect(diff).toContainText("And more");
   const onFiles = await width();
@@ -451,6 +451,60 @@ test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives th
   await page.keyboard.press("Escape");
   await expect(search).toHaveCount(0);
   await expect(pane.getByRole("region", { name: "Diff" })).toBeFocused();
+});
+
+test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at its line in the diff or the file view", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 700 });
+  const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
+  const line = (number: number, text: string, start: number, end: number) => ({
+    line: number,
+    text,
+    cut: "neither" as const,
+    ranges: [{ start, end }],
+  });
+  await changeAnswer(page, "textSearch", { status: "ok", data: { kind: "running", id: 1 } });
+  await changeAnswer(page, "textSearchState", {
+    state: "results",
+    id: 1,
+    files: [
+      { path: "Lib/os.py", generated: false, lines: [line(12, "# more to come", 2, 6)] },
+      { path: "NEWS", generated: false, lines: [line(2, "And more", 4, 8)] },
+    ],
+    matches: 2,
+    end: "done",
+  });
+  await changeAnswer(page, "pullRequestRow", { status: "ok", data: { kind: "row", row: 3 } });
+  await changeAnswer(page, "definitionCode", {
+    status: "ok",
+    data: { count: 12, lines: Array.from({ length: 12 }, (_, at) => (at === 11 ? "# more to come" : "")) },
+  });
+  await changeAnswer(page, "definitionSpans", { status: "ok", data: Array.from({ length: 12 }, () => []) });
+
+  await page.keyboard.press("ControlOrMeta+Shift+f");
+  const rail = pane.getByRole("complementary", { name: "Rail" });
+  const box = rail.getByRole("textbox", { name: "Search the PR's code" });
+  await expect(box).toBeFocused();
+  await page.keyboard.type("more");
+  await expect(rail).toContainText("2 results in 2 files");
+  const results = rail.getByRole("tree", { name: "Search results" });
+  await expect(results.getByRole("treeitem")).toHaveCount(4);
+  await expect(results.locator("mark").first()).toHaveText("more");
+  // ↓ goes to the list, and Enter on NEWS's line lands on it in the diff, which takes the focus.
+  await page.keyboard.press("ArrowDown");
+  await expect(results).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  const diff = pane.getByRole("region", { name: "Diff" });
+  await expect(diff).toBeFocused();
+  await expect(pane.locator("#pr-tab-files")).toHaveAttribute("aria-selected", "true");
+  await expect(rail).toBeVisible();
+  // A click on the match in a file the PR doesn't change opens the file view at its line.
+  await results.getByRole("treeitem").nth(1).click();
+
+  await expect(pane.getByRole("region", { name: "File view" })).toContainText("# more to come");
+  await expect(pane.getByRole("button", { name: "← Back to PR #10's diff" })).toBeVisible();
 });
 
 /** A new file at `path` whose header is row `row`, adding `added` lines, which together are taller than the

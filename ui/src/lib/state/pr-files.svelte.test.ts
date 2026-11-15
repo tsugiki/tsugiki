@@ -3688,3 +3688,81 @@ it("lets a lookup from the file view go nowhere once the PR leaves the Detail pa
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(core.cancelDefinitions.mock.calls).toEqual([[ticketOf(0)], [ticketOf(1)]]);
 });
+
+it("opens a match the rail's Search found in a file the PR changes at its line at the head, and focuses the diff", async () => {
+  core.pullRequestRow.mockResolvedValue(inRow(4));
+  const files = await pickable();
+
+  await files.openMatch("a.py", 9);
+
+  expect(core.pullRequestRow.mock.calls).toEqual([[lineOf("a.py", "head", 9)]]);
+  expect(files.jump).toEqual({ row: 4 });
+  expect(files.marked).toEqual(landed(4, "head"));
+  expect(files.diffWantsFocus).toBe(true);
+  expect(files.fileView).toBeUndefined();
+});
+
+it("closes the file view to open a match in a file the PR changes, and opens the lines around a hidden one", async () => {
+  const { files } = await inFileView();
+  core.pullRequestRow.mockResolvedValue(gapHides(3));
+  core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
+
+  await files.openMatch("a.py", 3);
+
+  expect(core.pullRequestLines.mock.calls.map(([lines]) => [lines.file, lines.start, lines.end])).toEqual([
+    [0, 1, 7],
+  ]);
+  expect(files.fileView).toBeUndefined();
+  expect(files.jump).toEqual({ file: 0, line: 3 });
+  expect(files.marked).toEqual({ at: { kind: "hidden", file: 0, head_line: 3 }, side: "head" });
+});
+
+it("opens a match in a file the PR doesn't touch in the file view at the base, and one it only renames at the head", async () => {
+  const renamed: DiffFile = {
+    ...file("Lib/forms.py", picking.length),
+    old_path: "Lib/shapes.py",
+    change: { kind: "lines", added: 0, removed: 0 },
+  };
+  const files = await pickable("abc", [renamed]);
+
+  await files.openMatch("Lib/os.py", 12);
+  const untouched = files.fileView;
+  await files.openMatch("Lib/forms.py", 3);
+
+  expect(untouched).toMatchObject({
+    place: { kind: "repository", path: "Lib/os.py", side: "base", commit: "base" },
+    landing: { line: 12 },
+  });
+  expect(files.fileView).toMatchObject({
+    place: { kind: "repository", path: "Lib/forms.py", side: "head", commit: "abc" },
+    landing: { line: 3 },
+  });
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+});
+
+it("says for a moment that no line shows a match the core can't find, and goes nowhere on a newer diff", async () => {
+  core.pullRequestRow.mockResolvedValueOnce(ok(null));
+  const files = await pickable();
+  await files.openMatch("a.py", 99);
+  const said = files.notice;
+  const row = Promise.withResolvers<unknown>();
+  core.pullRequestRow.mockReturnValueOnce(row.promise);
+
+  const going = files.openMatch("a.py", 9);
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  await files.ask();
+  row.resolve(inRow(4));
+  await going;
+
+  expect(said).toBe("No line of the diff shows a.py:99.");
+  expect(files.marked).toBeUndefined();
+});
+
+it("opens no match before the diff is ready", async () => {
+  const files = await loaded();
+
+  await files.openMatch("a.py", 9);
+
+  expect([files.fileView, files.marked]).toEqual([undefined, undefined]);
+  expect(core.pullRequestRow).not.toHaveBeenCalled();
+});

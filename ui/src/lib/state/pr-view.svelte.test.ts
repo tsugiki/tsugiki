@@ -229,4 +229,21 @@ describe("PrViewState", () => {
     expect([state.files.sinceReview(0), state.files.sinceReview(1)]).toEqual(["unchanged", "changed"]);
     state.stop();
   });
+
+  it("reads the diff once for the rail's Search on the Conversation, and opens a match on the Files tab", async () => {
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
+    const opened = vi.spyOn(state.files, "openMatch").mockResolvedValue();
+
+    state.loadFiles();
+    state.loadFiles();
+    const onConversation = state.tab;
+    await state.openMatch({ path: "Lib/os.py", line: 12 });
+
+    expect(onConversation).toBe("conversation");
+    await vi.waitFor(() => expect(commands.pullRequestFiles).toHaveBeenCalled());
+    expect(commands.pullRequestFiles).toHaveBeenCalledOnce();
+    expect(state.tab).toBe("files");
+    expect(opened).toHaveBeenCalledWith("Lib/os.py", 12);
+    state.stop();
+  });
 });

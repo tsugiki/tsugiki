@@ -1863,6 +1863,50 @@ fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds(
     assert_eq!(refused.unwrap_err()["message"], "\"main\" isn't a commit.");
 }
 
+#[test]
+fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window_as_it_goes() {
+    let (folders, root) = temp_folders("wiring-offline-search");
+    let head = mirror_with_pr_1(&folders, &root);
+    someone_elses_pr_1(&folders, &head);
+    let wired = Wired::start(Ok(folders), no_network());
+    let changes = hear(&wired._app, "text-search-changed");
+
+    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    let before = wired.ask("text_search_state", json!({}));
+    // The Files tab's read moves the Lookup checkout to the diff on show.
+    let pr = json!({ "repository": CPYTHON, "number": 1 });
+    let _files = wired.ask("pull_request_files", pr).unwrap();
+    let search = |repository: &str, text: &str, syntax: &str| {
+        let query = json!({ "text": text, "case": "ignored", "words": "within", "syntax": syntax });
+        wired.ask(
+            "text_search",
+            json!({ "repository": repository, "query": query }),
+        )
+    };
+    let bad = search(CPYTHON, "(", "regex");
+    let not_a_repository = search("cpython", "x", "literal");
+    let asked = search(CPYTHON, "FIFTEEN", "literal").unwrap();
+    let found = loop {
+        let _changed = changes.recv_timeout(PLENTY).unwrap();
+        let state = wired.ask("text_search_state", json!({})).unwrap();
+        if state["state"] == "results" && state["end"] != "running" {
+            break state;
+        }
+    };
+    drop(wired.stop());
+
+    assert_eq!(before, Ok(json!({ "state": "idle" })));
+    assert_eq!(bad.unwrap()["kind"], "bad_query");
+    assert_eq!(not_a_repository.unwrap_err()["kind"], "not_found");
+    assert_eq!(asked["kind"], "running");
+    let line = json!({ "line": 15, "text": "x15 = 'fifteen'", "cut": "neither", "ranges": [{ "start": 7, "end": 14 }] });
+    let file = json!({ "path": "Lib/spam.py", "generated": false, "lines": [line] });
+    assert_eq!(
+        found,
+        json!({ "state": "results", "id": asked["id"], "files": [file], "matches": 1, "end": "done" })
+    );
+}
+
 /// The first row the window hears for `server` that `wanted` accepts.
 fn server_row(wired: &Wired, server: &str, wanted: impl Fn(&Value) -> bool) -> Value {
     loop {

@@ -395,13 +395,49 @@
 
   /** Whether the Detail pane shows a PR's view, with the tabs the rail sits beside. The key and the palette
    * command wait for it, as the PR view's button does by coming with the tabs. */
-  const showsPr = () => detail instanceof PrViewState && Boolean(detail.view);
+  const showsPr = () => shownPr() !== undefined;
+
+  /** The PR view on show, while it shows the tabs the rail sits beside. */
+  const shownPr = () => (detail instanceof PrViewState && detail.view ? detail : undefined);
 
   /** A rail tab's key or palette command, as `Ctrl+K F` is Files': opens the rail beside the tabs of the PR
    * on show on `tab`, or closes it while it shows `tab` (#603, #727). The rail hands on the focus it holds as
    * it goes. The key and the palette offer it only while `showsPr` says so. */
   function toggleRail(tab: RailTabId) {
     panes.railState.toggle(tab);
+  }
+
+  /** `Ctrl+Shift+F` or "View: Search in the Rail", which open the rail on Search in `view`, with the focus in
+   * its box, as in VS Code (#686). The box takes the text selected on one line, or else the word picked in
+   * the Files tab on show. With Search on show the key focuses the box, and the rail stays open. */
+  function searchInRail(view: PrViewState) {
+    const seed = seedText();
+    if (seed !== undefined) view.search.seed(seed);
+    view.search.wantsFocus = true;
+    panes.railState.pick("search");
+  }
+
+  /** The text selected on one line, or else the word picked in the file view or the diff of the Files tab
+   * on show, as `Ctrl+Shift+F` puts it in the Search box. */
+  function seedText(): string | undefined {
+    const selected = window.getSelection()?.toString() ?? "";
+    if (selected !== "" && !selected.includes("\n")) return selected;
+    const tab = filesTab();
+    return (tab?.fileView ? tab.fileView.code.pick : tab?.picked)?.word;
+  }
+
+  /** The palette's commands that open the rail on each of its tabs, while a PR shows its tabs. */
+  function railCommands(): PaletteAction[] {
+    const view = shownPr();
+    if (view === undefined) return [];
+    return RAIL_ORDER.map((id) => ({
+      title: `View: ${RAIL_TABS[id].name} in the Rail`,
+      note: actionLabel(RAIL_TABS[id].action, currentOs()),
+      run: () => {
+        if (id === "search") searchInRail(view);
+        else toggleRail(id);
+      },
+    }));
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
@@ -505,15 +541,7 @@
           ]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
-      ...(showsPr()
-        ? RAIL_ORDER.map((id) => ({
-            title: `View: ${RAIL_TABS[id].name} in the Rail`,
-            note: actionLabel(RAIL_TABS[id].action, currentOs()),
-            run: () => {
-              toggleRail(id);
-            },
-          }))
-        : []),
+      ...railCommands(),
       ...filesCommands(),
     ];
   }
@@ -681,6 +709,17 @@
             : undefined,
       ]),
     ),
+    // Search's key opens the rail on Search and focuses its box, and doesn't close the rail (#686).
+    search_in_rail: () => {
+      const view = shownPr();
+      return (
+        view &&
+        ((e) => {
+          e.preventDefault();
+          searchInRail(view);
+        })
+      );
+    },
     mark_seen: marking((marked, target) => markSeen(marked, !forDetail(target))),
     mark_unseen: marking((marked) => markUnseen(marked)),
     toggle_issue_list: () => (e) => {

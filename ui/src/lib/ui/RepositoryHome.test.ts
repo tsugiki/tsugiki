@@ -31,6 +31,8 @@ const core = vi.hoisted(() => ({
   savePaneLayout: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
+  textSearch: vi.fn(),
+  textSearchState: vi.fn(),
   listen: vi.fn(),
   stopListening: vi.fn(),
 }));
@@ -67,9 +69,12 @@ vi.mock("$lib/data/bindings", () => ({
     paneLayout: core.paneLayout,
     savePaneLayout: core.savePaneLayout,
     recordMiss: core.recordMiss,
+    textSearch: core.textSearch,
+    textSearchState: core.textSearchState,
   },
   events: {
     changed: { listen: core.listen },
+    textSearchChanged: { listen: core.listen },
     readFailed: { listen: core.listen },
     headsFetched: { listen: core.listen },
     headsFetchFailed: { listen: core.listen },
@@ -1267,6 +1272,78 @@ it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it
     null,
     "Ctrl+K F",
   ]);
+});
+
+it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selection or the picked word in its box, and focuses it", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  core.pullRequestFiles.mockResolvedValue({
+    status: "ok",
+    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
+  });
+  core.textSearch.mockResolvedValue({ status: "ok", data: { kind: "running", id: 1 } });
+  core.textSearchState.mockResolvedValue({ state: "results", id: 1, files: [], matches: 0, end: "done" });
+  const selection = vi.spyOn(window, "getSelection");
+  const selected = (text: string) => selection.mockReturnValue({ toString: () => text } as Selection);
+  const picked = vi.spyOn(PrFilesState.prototype, "picked", "get");
+  const inView = vi.spyOn(PrFilesState.prototype, "fileView", "get");
+  const { component, treeRow } = await listing();
+  const command = () =>
+    component.paletteCommands().find((found) => found.title === "View: Search in the Rail");
+  const searchKey = () => press("F", { ctrlKey: true, shiftKey: true });
+  const box = () => screen.getByRole("textbox", { name: "Search the PR's code" }) as HTMLInputElement;
+  const railTab = () =>
+    within(screen.getByRole("complementary", { name: "Rail" })).getByRole("tab", { selected: true })
+      .textContent;
+  // With no PR on show there is no rail to open.
+  await searchKey();
+  const before = [command(), screen.queryByRole("complementary", { name: "Rail" })];
+  await fireEvent.click(treeRow);
+  await screen.findByRole("tab", { name: "Conversation" });
+
+  selected("gc_debug");
+  await searchKey();
+  await tick();
+  const fromSelection = [railTab(), box().value, document.activeElement === box()];
+  // Again with Search on show, it focuses the box and leaves the rail open. A selection over two lines
+  // puts nothing in the box, and the Conversation has no picked word.
+  box().blur();
+  selected("two\nlines");
+  await fireEvent.keyDown(box(), { key: "F", ctrlKey: true, shiftKey: true });
+  await tick();
+  const again = [railTab(), box().value, document.activeElement === box()];
+  // On the Files tab the word picked in the diff goes in, or the one in the file view over it.
+  selected("");
+  await fireEvent.click(document.getElementById("pr-tab-files") as HTMLElement);
+  picked.mockReturnValue({ word: "gc_list" } as never);
+  command()?.run();
+  await tick();
+  const fromDiff = box().value;
+  // A window with no selection at all, as one with no browsing context, has none to give.
+  selection.mockReturnValue(null);
+  inView.mockReturnValue({ code: { pick: { word: "visit" } } } as never);
+  command()?.run();
+  await tick();
+
+  expect(before).toEqual([undefined, null]);
+  expect(fromSelection).toEqual(["Search", "gc_debug", true]);
+  expect(again).toEqual(["Search", "gc_debug", true]);
+  expect([fromDiff, box().value, command()?.note]).toEqual(["gc_list", "visit", "Ctrl+Shift+F"]);
+  await vi.waitFor(() => {
+    expect(core.textSearch).toHaveBeenCalledWith("python/cpython", {
+      text: "visit",
+      case: "ignored",
+      words: "within",
+      syntax: "literal",
+    });
+  });
 });
 
 it("offers no rail for a PR Tsugiki doesn't hold, which has no tabs to sit beside", async () => {

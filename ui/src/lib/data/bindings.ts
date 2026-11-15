@@ -248,6 +248,17 @@ export const commands = {
 	 *  for its parse, so the window shows the lines first. It never waits for a lookup, nor for GitHub.
 	 */
 	definitionSpans: (code: DefinitionCode) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("definition_spans", { code })),
+	/**
+	 *  Searches the code of `repository`'s PR on screen for `query`, in place of the query running (#686). It
+	 *  searches the Lookup checkout, which follows the diff the Files tab shows. This never waits: the
+	 *  `text-search-changed` event says when to ask `text_search_state` what it found.
+	 */
+	textSearch: (repository: string, query: Query) => typedError<SearchAsked, Error_Serialize>(__TAURI_INVOKE("text_search", { repository, query })),
+	/**
+	 *  What the latest query found, or why it found nothing, as the text search's thread last wrote it. This
+	 *  never waits.
+	 */
+	textSearchState: () => __TAURI_INVOKE<SearchState_Serialize>("text_search_state"),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -273,6 +284,7 @@ export const events = {
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
+	textSearchChanged: makeEvent<TextSearchChanged, TextSearchChanged>("text-search-changed"),
 };
 
 /* Types */
@@ -292,7 +304,7 @@ export type About = {
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
  *  `local_mark`.
  */
-export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
+export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
 
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
@@ -408,6 +420,9 @@ export type CantCheck =
 { kind: "old_git"; version: string; needed: string } | 
 /**  GitHub refused to send the commit. */
 { kind: "refused" };
+
+/**  Whether a match keeps the query's case. */
+export type Case = "ignored" | "matched";
 
 /**
  *  The last thing that happened before a long frame. A key isn't named, so the log holds nothing the
@@ -533,6 +548,11 @@ export type Comment_Serialize = {
 
 /**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
 export type Conventions = "cpython" | "github";
+
+/**  Which ends of a long line its text leaves out. */
+export type Cut = 
+/**  The text is the whole line. */
+"neither" | "start" | "end" | "both";
 
 /**
  *  Some lines of a hit's file, which the Definition peek shows (#439): lines `start` to `end` of `file`,
@@ -760,6 +780,15 @@ export type DiffThreads_Serialize =
  */
 { kind: "held_back"; newer: string; count: number };
 
+/**  Whether a search has ended, and how. */
+export type End = 
+/**  It still reads files, so more may come. */
+"running" | 
+/**  It read every file. */
+"done" | 
+/**  It found [`MOST_MATCHES`] matches and stopped there, so some files may hold more. */
+"stopped";
+
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */
 export type Error = Error_Serialize | Error_Deserialize;
 
@@ -819,6 +848,18 @@ export type FailedThemeView = {
 export type FileChange = { kind: "lines"; added: number; removed: number } | 
 /**  git doesn't count the lines of a binary file. */
 { kind: "binary" };
+
+/**  The lines of one file that hold a match. */
+export type FileHits = {
+	/**  The path from the top of the Repository, with `/` between folders. */
+	path: string,
+	/**
+	 *  Whether the `.gitattributes` in the Lookup checkout mark it `linguist-generated`, as the Files tab
+	 *  marks a Generated file. Its matches count as any other's.
+	 */
+	generated: boolean,
+	lines: LineHit[],
+};
 
 /**  A saved GitHub search, as `settings.toml` holds it. */
 export type Filter = {
@@ -1285,6 +1326,17 @@ export type LastSync_Serialize = {
 	at: string | null,
 };
 
+/**  A line that holds a match. */
+export type LineHit = {
+	/**  Its number, from 1. */
+	line: number,
+	/**  Its text with no line ending: all of it, or [`LONGEST_LINE`] characters around its first match. */
+	text: string,
+	cut: Cut,
+	/**  Where each match is in `text`, in order. A match across the edge of a cut line is cut with it. */
+	ranges: MatchRange[],
+};
+
 /**  A line of one of the diff's files as the diff on show has it, which Go to definition goes to. */
 export type LineInDiff = 
 /**  Row `row` of the diff shows it (#444). */
@@ -1401,6 +1453,12 @@ export type LongFrame_Serialize = {
  */
 export type Match = {
 	row: number,
+	start: number,
+	end: number,
+};
+
+/**  From `start` to `end` in a line's text, in UTF-16 code units, as the webview counts. */
+export type MatchRange = {
 	start: number,
 	end: number,
 };
@@ -2023,6 +2081,17 @@ export type PullRequestContent_Serialize = {
 } & IssueContent_Serialize;
 
 /**
+ *  What to look for, and how, with VS Code's options. By default a query is a literal that matches
+ *  whatever the case, inside a longer word too.
+ */
+export type Query = {
+	text: string,
+	case: Case,
+	words: Words,
+	syntax: Syntax,
+};
+
+/**
  *  Sent when a read of an Issue or a PR on screen fails, so a view still waiting for what it says can say
  *  why (#189).
  */
@@ -2187,6 +2256,29 @@ export type Rest = {
 	new: number,
 };
 
+/**  What a query found. */
+export type Results = Results_Serialize | Results_Deserialize;
+
+/**  What a query found. */
+export type Results_Deserialize = {
+	id: SearchId,
+	/**  The files that hold a match, by path. Each is shared, so a copy of the state copies no line. */
+	files: FileHits[],
+	/**  The matches in `files`. */
+	matches: number,
+	end: End,
+};
+
+/**  What a query found. */
+export type Results_Serialize = {
+	id: SearchId,
+	/**  The files that hold a match, by path. Each is shared, so a copy of the state copies no line. */
+	files: FileHits[],
+	/**  The matches in `files`. */
+	matches: number,
+	end: End,
+};
+
 /**  Someone's Review of a PR, as the Conversation shows it. */
 export type Review = Review_Serialize | Review_Deserialize;
 
@@ -2264,6 +2356,64 @@ export type Script_Serialize = {
 	source: string | null,
 	ms: number | null,
 };
+
+/**  What became of a query the window asked the text search for (#686). */
+export type SearchAsked = 
+/**  It runs, and the state answers it with `id`. */
+{ kind: "running"; id: SearchId } | 
+/**  It can't run, in the regex crate's words, and the query running goes on. */
+{ kind: "bad_query"; message: string };
+
+/**  Which query a [`SearchState`] answers, as [`TextSearch::search`] numbered it. */
+export type SearchId = number;
+
+/**
+ *  What the window shows of the latest query. The window asks for it each time the thread says it may have
+ *  changed, and shows it only while it answers the window's latest query.
+ */
+export type SearchState = SearchState_Serialize | SearchState_Deserialize;
+
+/**
+ *  What the window shows of the latest query. The window asks for it each time the thread says it may have
+ *  changed, and shows it only while it answers the window's latest query.
+ */
+export type SearchState_Deserialize = 
+/**  No query has run since launch. */
+({ state: "idle" }) & { id?: never } | 
+/**  The query waits for the Lookup checkout to move to the PR. */
+{ state: "waiting"; id: SearchId } | 
+/**
+ *  No move has put the Repository's Lookup checkout anywhere, the last one failed, or the Mirror worker
+ *  has stopped, so there is nothing to search.
+ */
+{ state: "no_checkout"; id: SearchId } | 
+/**  git couldn't list or read the PR's files, which the log says more of. */
+{ state: "failed"; id: SearchId } | 
+/**  What the query found so far, or in all. */
+{
+	state: "results",
+} & Results_Deserialize;
+
+/**
+ *  What the window shows of the latest query. The window asks for it each time the thread says it may have
+ *  changed, and shows it only while it answers the window's latest query.
+ */
+export type SearchState_Serialize = 
+/**  No query has run since launch. */
+({ state: "idle" }) & { id?: never } | 
+/**  The query waits for the Lookup checkout to move to the PR. */
+{ state: "waiting"; id: SearchId } | 
+/**
+ *  No move has put the Repository's Lookup checkout anywhere, the last one failed, or the Mirror worker
+ *  has stopped, so there is nothing to search.
+ */
+{ state: "no_checkout"; id: SearchId } | 
+/**  git couldn't list or read the PR's files, which the log says more of. */
+{ state: "failed"; id: SearchId } | 
+/**  What the query found so far, or in all. */
+{
+	state: "results",
+} & Results_Serialize;
 
 /**  An item's part in Mark Seen and Mark Unseen: what Mark Seen sends, and which of the two its button offers. */
 export type Seen = Seen_Serialize | Seen_Deserialize;
@@ -2677,6 +2827,19 @@ export type SyncPart = "your_work" |
  */
 "refresh";
 
+/**  How a query's text reads. */
+export type Syntax = 
+/**  Each character stands for itself. */
+"literal" | 
+/**  A regex in the Rust regex crate's syntax. */
+"regex";
+
+/**
+ *  Sent when what the latest text search found may have changed: it waits, runs, found more or ended
+ *  (#686). The window then asks `text_search_state`.
+ */
+export type TextSearchChanged = null;
+
 /**
  *  What `[appearance] theme` in `settings.toml` asks the window to show (#755): the Theme `light_theme` or
  *  `dark_theme` names, whichever side the system is on, or one Theme whatever the system says. One key holds
@@ -2869,6 +3032,13 @@ export type Why = { kind: "review_requested" } |
 { kind: "ci_failed"; checks: string[] } | { kind: "ci_passed" } | { kind: "changes_requested"; by: Login } | { kind: "approved"; by: Login } | { kind: "reviewed"; by: Login } | { kind: "comment"; by: Login } | { kind: "commits"; by: Login } | { kind: "ready_for_review"; by: Login } | { kind: "mentioned" } | { kind: "backport_failed"; target: string } | 
 /**  The user marked the item unseen. */
 { kind: "marked_unseen" };
+
+/**  Whether a match can sit inside a longer word. */
+export type Words = 
+/**  Anywhere, as in `spam` inside `spammer`. */
+"within" | 
+/**  Only a whole word, with no letter, digit or `_` on either side. */
+"whole";
 
 /**  The reason a PR is on the user's Workbench. */
 export type WorkReason = 

@@ -4,10 +4,12 @@
 //! Each Repository gets its own server for each language, which reads that Repository's **Lookup
 //! checkout**: the PR's base on disk, with the files the PR adds. ty and clangd start when a PR that changes
 //! a file in their language opens, and rust-analyzer on the first lookup in Rust. Each file the PR changes
-//! in the server's language is open on it with its text at the head. A lookup from a removed line first
-//! gives those files their text at the base, and the next lookup from another line puts the head's back. A
-//! PR at other commits gets new servers, as its checkout has moved. A server that no lookup has reached for
-//! the idle time stops until the next lookup starts it again, and a removed Repository's servers stop.
+//! in the server's language is open on it with its text at the head. clangd, which answers only in an open
+//! file, also has the last 16 other files a lookup asked in open, with their text in the checkout. A lookup
+//! from a removed line first gives the PR's files their text at the base, and the next lookup from another
+//! line puts the head's back. A PR at other commits gets new servers, as its checkout has moved. A server
+//! that no lookup has reached for the idle time stops until the next lookup starts it again, and a removed
+//! Repository's servers stop.
 //!
 //! One thread owns the servers, and each lookup is a message to it, so the window never waits on a server.
 //! The thread sends the server the request and goes on, and a thread of the lookup's own waits for the

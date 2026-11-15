@@ -18,7 +18,7 @@ use std::{env, fs};
 use serde_json::{Value, json};
 use tsugiki_lsp::{Diagnostics, Language, Progress, ProgressToken, Uri, WorkDone};
 
-use super::server::{Indexing, Ready, Setup};
+use super::server::{Indexing, Ready, Setup, Unopened};
 use super::{CPYTHON_MARK, IndexedFiles, ServerProblem, failed};
 use crate::error::Error;
 use crate::folders::servers_beside;
@@ -99,6 +99,7 @@ pub(super) fn setup(folder: &Path, program: &Path) -> Result<Setup, Error> {
         settings: json!({}),
         language: Language::C,
         ready: Ready::Initialized,
+        unopened: Unopened::Refused,
         index: Some(indexing),
         troubles: Some(Troubles {
             program: program.to_owned(),
@@ -153,7 +154,7 @@ pub(super) struct Headers {
     open: Vec<(Uri, Vec<Arc<str>>)>,
     /// Whether clangd's built-in headers are beside it, once a header is missing.
     built_ins: Option<bool>,
-    /// The text of each file a note has named, which says how it includes a header.
+    /// The text of each file a note has named, or a lookup opened, which says how it includes a header.
     included: HashMap<String, String>,
     /// The paths of the Repository's files, once git has listed them.
     own: Option<Vec<String>>,
@@ -201,19 +202,21 @@ impl Headers {
     }
 
     /// Whether the file that includes the `missing` header includes it in angle brackets: the open file at
-    /// `uri`, at either side, or the file a note names.
+    /// `uri`, at either side, or the file a note names. A file the PR doesn't change, which a lookup opened
+    /// (#750), is read from the checkout, where its text is the one clangd has.
     fn bracketed(&mut self, missing: &Missing<'_>, uri: &Uri) -> bool {
-        match missing.includer {
-            Includer::Diagnosed => (self.open.iter())
-                .filter(|(open, _)| open == uri)
-                .flat_map(|(_, texts)| texts)
-                .any(|text| includes_bracketed(text, missing.header)),
-            Includer::File(path) => {
-                let text = (self.included.entry(path.to_owned()))
-                    .or_insert_with(|| fs::read_to_string(path).unwrap_or_default());
-                includes_bracketed(text, missing.header)
+        let path = match missing.includer {
+            Includer::Diagnosed => {
+                if let Some((_, texts)) = self.open.iter().find(|(open, _)| open == uri) {
+                    return (texts.iter()).any(|text| includes_bracketed(text, missing.header));
+                }
+                uri.to_path().unwrap_or_default().display().to_string()
             }
-        }
+            Includer::File(path) => path.to_owned(),
+        };
+        let text = (self.included.entry(path))
+            .or_insert_with_key(|path| fs::read_to_string(path).unwrap_or_default());
+        includes_bracketed(text, missing.header)
     }
 
     /// Whether the Repository holds a file at `header`, or at a path that ends in it, as

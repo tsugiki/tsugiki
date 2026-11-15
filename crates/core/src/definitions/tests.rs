@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::server::Ready;
-use super::testing::{FakeClangd, Fixture, Initialize, ty};
+use super::testing::{FakeClangd, Fixture, Initialize, Notified, ty};
 use super::*;
 use crate::diff::FileChange;
 
@@ -1261,6 +1261,12 @@ int eggs(void)
 }
 ";
 
+/// A file the PR in [`c_files`] doesn't change.
+const OTHER_C: &str = "Objects/other.c";
+
+const OTHER_C_TEXT: &str =
+    "#include \"spam.h\"\n\nint spam_count(int limit)\n{\n    return limit + 1;\n}\n";
+
 /// A Repository with CPython's layout, whose `Objects/other.c` defines what `Include/spam.h` declares. The PR
 /// changes `Objects/eggs.c`.
 fn c_files(name: &str) -> Fixture {
@@ -1272,10 +1278,7 @@ fn c_files(name: &str) -> Fixture {
                 "Include/spam.h",
                 "#define SPAM_LIMIT 10\n\nint spam_count(int limit);\n",
             ),
-            (
-                "Objects/other.c",
-                "#include \"spam.h\"\n\nint spam_count(int limit)\n{\n    return limit + 1;\n}\n",
-            ),
+            (OTHER_C, OTHER_C_TEXT),
             (EGGS_C, EGGS_C_AT_BASE),
         ],
         &[(EGGS_C, Some(EGGS_C_AT_HEAD))],
@@ -1306,6 +1309,16 @@ fn c_lookup(fixture: &Fixture, side: DiffEnd, line: u32, word: &str) -> Lookup {
         DiffEnd::Base => EGGS_C_AT_BASE,
         DiffEnd::Head => EGGS_C_AT_HEAD,
     };
+    lookup_in(fixture, (EGGS_C, side), (line, word), text)
+}
+
+/// A lookup of `word` on line `line` of `path` at `side`, whose text there is `text`.
+fn lookup_in(
+    fixture: &Fixture,
+    (path, side): (&str, DiffEnd),
+    (line, word): (u32, &str),
+    text: &str,
+) -> Lookup {
     let found = (text.lines())
         .nth(usize::try_from(line - 1).unwrap())
         .unwrap();
@@ -1313,7 +1326,7 @@ fn c_lookup(fixture: &Fixture, side: DiffEnd, line: u32, word: &str) -> Lookup {
     Lookup {
         repository: repository(),
         at: fixture.checkout.at.clone(),
-        path: EGGS_C.to_owned(),
+        path: path.to_owned(),
         side,
         line,
         column: tsugiki_lsp::utf16::column_of(found, byte),
@@ -1349,6 +1362,25 @@ fn clangd_finds_a_local_a_parameter_a_macro_a_static_function_and_a_name_at_eith
     assert_eq!(head, at(DiffEnd::Head, (EGGS_C, 3, 11), only_head));
     let old_helper = "static int old_helper(void)";
     assert_eq!(base, at(DiffEnd::Base, (EGGS_C, 3, 11), old_helper));
+}
+
+/// clangd builds an AST only for a document it was sent, and the PR doesn't change `Objects/other.c`.
+#[test]
+fn clangd_finds_a_name_in_a_file_the_pr_doesnt_change() {
+    let fixture = c_files("definitions-c-unchanged");
+    let mut owner = c_opened(&fixture);
+    let lookup = lookup_in(
+        &fixture,
+        (OTHER_C, DiffEnd::Head),
+        (5, "limit"),
+        OTHER_C_TEXT,
+    );
+
+    let found = hits(look(&mut owner, &lookup));
+
+    let defined = (OTHER_C, 3, 19);
+    let text = "int spam_count(int limit)";
+    assert_eq!(found, [hit(&fixture, DiffEnd::Base, defined, text)]);
 }
 
 /// Until its index has `Objects/other.c`, clangd names the declaration in `Include/spam.h`.
@@ -1581,6 +1613,136 @@ fn an_answer_while_clangd_indexes_hears_how_far_it_has_got_and_the_answer_once_t
     assert_eq!(found_later, hits);
     assert_eq!(later.indexed.try_iter().count(), 0);
     assert_eq!(fake.asked(), 3);
+}
+
+/// The URI of `path` in the fixture's checkout, as the core names it to a server.
+fn document(fixture: &Fixture, path: &str) -> Uri {
+    Uri::from_path(&plain(&fixture.checkout.folder).join(path)).unwrap()
+}
+
+#[test]
+fn a_lookup_in_a_file_the_pr_doesnt_change_opens_it_on_clangd_once() {
+    let fixture = c_files("definitions-unchanged-open");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let at_head = (OTHER_C, DiffEnd::Head);
+    let lookup = lookup_in(&fixture, at_head, (3, "spam_count"), OTHER_C_TEXT);
+
+    let first = hits(look(&mut owner, &lookup));
+    let again = hits(look(&mut owner, &lookup));
+
+    // clangd refuses a lookup in a document it wasn't sent, as the fake does.
+    assert_eq!(first, declaration(&fixture));
+    assert_eq!(again, definition(&fixture));
+    assert_eq!(
+        fake.documents(),
+        [
+            Notified::Opened(document(&fixture, EGGS_C)),
+            Notified::Opened(document(&fixture, OTHER_C)),
+        ]
+    );
+}
+
+#[test]
+fn a_lookup_in_a_seventeenth_file_the_pr_doesnt_change_closes_the_one_asked_about_longest_ago() {
+    let paths: Vec<String> = (0..17).map(|n| format!("Objects/file{n:02}.c")).collect();
+    let text = "int spam_count(int limit);\n";
+    let mut base: Vec<(&str, &str)> = vec![(EGGS_C, EGGS_C_AT_BASE)];
+    base.extend(paths.iter().map(|path| (path.as_str(), text)));
+    let fixture = Fixture::new(
+        "definitions-unchanged-close",
+        &base,
+        &[(EGGS_C, Some(EGGS_C_AT_HEAD))],
+    );
+    let answer = location(&fixture, "Objects/file00.c", (0, 4));
+    let (mut owner, fake) = fake_clangd_answering(&fixture, vec![answer]);
+    let in_file = |path: &str| lookup_in(&fixture, (path, DiffEnd::Head), (1, "spam_count"), text);
+
+    for path in &paths[..16] {
+        let _found = hits(look(&mut owner, &in_file(path)));
+    }
+    // Asked about again, the first file counts as the latest, so the second has waited longest.
+    let _found = hits(look(&mut owner, &in_file(&paths[0])));
+    let before = fake.documents().len();
+    let _found = hits(look(&mut owner, &in_file(&paths[16])));
+
+    let sent = fake.documents();
+    assert_eq!(before, 17);
+    assert_eq!(
+        sent[before..],
+        [
+            Notified::Closed(document(&fixture, &paths[1])),
+            Notified::Opened(document(&fixture, &paths[16])),
+        ]
+    );
+}
+
+#[test]
+fn a_file_the_checkout_can_t_give_stays_closed() {
+    let fixture = c_files("definitions-unchanged-unreadable");
+    let (mut owner, fake) = fake_clangd(&fixture);
+    let missing = "Objects/missing.c";
+    let lookup = lookup_in(&fixture, (missing, DiffEnd::Head), (1, "x"), "x");
+
+    let refused = look(&mut owner, &lookup);
+
+    // Opened empty, it would hide the file from clangd once the checkout could give it.
+    assert!(!matches!(refused, Ok(Answer::Found { .. })), "{refused:?}");
+    let opened = Notified::Opened(document(&fixture, EGGS_C));
+    assert_eq!(fake.documents(), [opened]);
+}
+
+#[test]
+fn a_clangd_started_with_no_file_open_waits_for_its_index_from_the_first_file_a_lookup_opens() {
+    // The PR deletes its only C file, so clangd starts with nothing to open.
+    let fixture = Fixture::new(
+        "definitions-unchanged-index-due",
+        &[(EGGS_C, EGGS_C_AT_BASE), (OTHER_C, OTHER_C_TEXT)],
+        &[(EGGS_C, None)],
+    );
+    let (program, _clangd_folder) =
+        clangd_folder("definitions-unchanged-index-due-clangd", &[BUILT_INS]);
+    let soon = Duration::from_millis(300);
+    let (mut owner, _fake) = clangd_finding_nothing(&fixture, program, soon);
+    let lookup = lookup_in(
+        &fixture,
+        (OTHER_C, DiffEnd::Head),
+        (5, "limit"),
+        OTHER_C_TEXT,
+    );
+
+    thread::sleep(soon * 2);
+    let before: Vec<Message> = owner.incoming.try_iter().collect();
+    // Not waiting for the answer, so the problem can't come while the owner waits for it.
+    let _asked = ask(&mut owner, &lookup, Ticket(1));
+    let status = troubled_next(&mut owner);
+
+    assert!(
+        !before
+            .iter()
+            .any(|message| matches!(message, Message::Troubled(..)))
+    );
+    let problem = ServerProblem::NotIndexing;
+    assert_eq!(status, ServerStatus::Problem { problem });
+}
+
+#[test]
+fn a_system_header_clangd_can_t_find_in_a_file_a_lookup_opened_says_so() {
+    let fixture = c_including("definitions-unchanged-system-headers", INCLUDES);
+    let (program, _clangd_folder) =
+        clangd_folder("definitions-unchanged-system-headers-clangd", &[BUILT_INS]);
+    let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
+    let wrap = "Include/wrap.h";
+    let text = "#include <corecrt_spam.h>\n";
+    let lookup = lookup_in(&fixture, (wrap, DiffEnd::Head), (1, "corecrt_spam"), text);
+
+    let _answer = look(&mut owner, &lookup);
+    let file = plain(&fixture.checkout.folder).join(wrap);
+    fake.diagnose(&file, (0, "'corecrt_spam.h' file not found"));
+    let status = troubled_next(&mut owner);
+
+    let header = "corecrt_spam.h".to_owned();
+    let problem = ServerProblem::SystemHeadersMissing { header };
+    assert_eq!(status, ServerStatus::Problem { problem });
 }
 
 #[test]

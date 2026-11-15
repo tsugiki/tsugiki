@@ -12,7 +12,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   word is defined: ty for Python, clangd for C and rust-analyzer for Rust
   ([ADR 0020](../adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)). The
   server reads the **Lookup checkout**, which holds the PR's base and its added files, and sees each file
-  the PR changes as an open document. A removed line asks at the base, and every other line at the PR's head.
+  the PR changes as an open document. clangd sees each other file a lookup asks in as one too (see "Go to
+  definition in C"). A removed line asks at the base, and every other line at the PR's head.
   A lookup never runs the PR's code. A definition in a file the PR changes is shown in the diff; elsewhere,
   Go to definition opens that file read-only at the same commit in the Detail pane, and `Alt+←` returns to
   the diff.
@@ -259,6 +260,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 
 - Go to definition and the Definition peek work in `.c` and `.h` files as they do in Python, through clangd.
   The PR's changed C files open on it and switch views as Python's do on ty.
+- clangd answers only in a document it was sent, where ty and rust-analyzer read a file from disk (#750). So
+  a lookup in a file the PR doesn't change, such as a header Go to definition opened in the file view, first
+  opens that file with its text in the Lookup checkout. Its text is the same at the base and the head, so a
+  lookup from the other side leaves it be. Each such file opens once, and the last 16 asked about stay open:
+  a 17th closes the one asked about longest ago. A file the checkout can't give stays closed, and the next
+  lookup in it tries again. ty and rust-analyzer get none of this, and go on reading those files from disk.
 - clangd's binary is the one picked in Settings › Advanced, which `machine.toml` keeps as
   `[language_servers.clangd] path`. clangd reads its built-in headers from `lib/clang` beside its `bin`
   folder, so it stays in the folder its release unpacks to. We test with clangd 23.1.0, which
@@ -329,9 +336,10 @@ explains more, in this order.
   clangd.exe", which names `clangd` off Windows. The problem belongs to the program, so a start keeps it, and
   the row keeps the version `--version` printed. With MSVC's headers, clangd finds the UCRT's `stddef.h` and
   may never report one missing.
-- **System headers missing.** The thread that reads clangd's events hands its diagnostics on the PR's open
-  files to a thread of their own, which reads the disk and git. A header clangd can't find stops its parse
-  of the file, so it reports the first only: `'stdlib.h' file not found` on the include, or, for a header a
+- **System headers missing.** The thread that reads clangd's events hands its diagnostics on the open files,
+  the PR's and those lookups opened, to a thread of their own, which reads the disk and git. A header clangd
+  can't find stops its parse of the file, so it reports the first only: `'stdlib.h' file not found` on the
+  include, or, for a header a
   file the open one includes includes, `In included file: 'stdlib.h' file not found`, with a note after a
   blank line that names that file as `<path>:<line>:<column>:`. A header of the system's is `stddef.h`, or
   one written in angle brackets, in the open file or in the file the note names, that no file of the PR's
@@ -345,7 +353,8 @@ explains more, in this order.
   "clangd isn't indexing. Definitions in other files will land on header declarations". A report that comes
   later clears it. A clangd without a compile database never indexes, so outside CPython's layout this shows
   a minute after the first C file opens, unless the Repository holds a `compile_commands.json`. A clangd
-  started with no file open waits for nothing.
+  started with no file open, as for a PR that only deletes C files, waits from the first file a lookup opens
+  on it.
 
 Built-in headers missing from the program's folder belong to the program and show for every Repository,
 until a start finds them or the path changes. A problem a running clangd reports, missing built-in headers

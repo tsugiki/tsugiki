@@ -28,7 +28,7 @@ use crate::latest::{self, LatestReader};
 use crate::mirror::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
-use crate::theme::{ThemeKind, ThemeMode, ThemeName};
+use crate::theme::{ThemeChoice, ThemeKind, ThemeName};
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -150,17 +150,18 @@ impl SettingsChanges {
     }
 }
 
-/// The `[appearance]` table: whether the window follows the system to its light or dark side, and the theme
-/// of each side (#517). A key Tsugiki can't read takes its default, and `unread_problems` says why: a
-/// theme is too small a thing to lose the rest of `settings.toml` over. An `appearance` that isn't a table
-/// fails the file, as any other table does.
+/// The `[appearance]` table: the theme the window shows, or "system" to follow the system to its light or
+/// dark side, and the theme of each side, which following the system shows (#517, #755). A key Tsugiki
+/// can't read takes its default, and `unread_problems` says why: a theme is too small a thing to lose the
+/// rest of `settings.toml` over. An `appearance` that isn't a table fails the file, as any other table does.
 ///
 /// A theme's name may be a built-in theme's or a file's of the `themes` folder beside the settings file
 /// (#519). It stays as the user wrote it: the folder can change while Tsugiki runs, so the `themes` command
-/// checks it against the folder each time, and a name no theme has shows its side's default until one does.
+/// checks it against the folder each time. A side's name no theme has shows the side's default until one
+/// does, and a `theme` no theme has follows the system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct AppearanceSettings {
-    pub theme: ThemeMode,
+    pub theme: ThemeChoice,
     pub light_theme: ThemeName,
     pub dark_theme: ThemeName,
 }
@@ -168,10 +169,18 @@ pub struct AppearanceSettings {
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
-            theme: ThemeMode::default(),
+            theme: ThemeChoice::default(),
             light_theme: ThemeName::default_of(ThemeKind::Light),
             dark_theme: ThemeName::default_of(ThemeKind::Dark),
         }
+    }
+}
+
+/// The key of `[appearance]` that holds the theme chosen for side `kind`.
+fn side_key(kind: ThemeKind) -> &'static str {
+    match kind {
+        ThemeKind::Light => "light_theme",
+        ThemeKind::Dark => "dark_theme",
     }
 }
 
@@ -185,7 +194,7 @@ impl<'de> Deserialize<'de> for AppearanceSettings {
 #[derive(Default, Deserialize)]
 #[serde(default)]
 struct AppearanceRead {
-    theme: Option<Read<ThemeMode>>,
+    theme: Option<Read<String>>,
     light_theme: Option<Read<ThemeName>>,
     dark_theme: Option<Read<ThemeName>>,
 }
@@ -198,10 +207,16 @@ impl AppearanceRead {
     /// The values, with each one Tsugiki can't read at its default, and the keys that held those.
     fn settle(self) -> (AppearanceSettings, Vec<Unread>) {
         let mut unread = Vec::new();
-        let theme = given_or_default(self.theme, "theme", &mut unread, || {
-            r#"isn't "system", "light" or "dark", so Tsugiki follows the system."#.to_owned()
-        });
-        let mut side = |given: Option<Read<ThemeName>>, key: &'static str, kind: ThemeKind| {
+        let theme = match self.theme {
+            None => ThemeChoice::System,
+            Some(Read::Given(text)) => ThemeChoice::read(&text),
+            Some(Read::Other(_)) => {
+                let problem = r#"isn't "system" or a theme's name, so Tsugiki follows the system."#;
+                unread.push(("theme", problem.to_owned()));
+                ThemeChoice::System
+            }
+        };
+        let mut side = |given: Option<Read<ThemeName>>, kind: ThemeKind| {
             let default = ThemeName::default_of(kind);
             match given {
                 None => default,
@@ -209,13 +224,13 @@ impl AppearanceRead {
                 Some(Read::Other(_)) => {
                     let instead = default.as_str();
                     let problem = format!("isn't a theme's name, so Tsugiki uses {instead}.");
-                    unread.push((key, problem));
+                    unread.push((side_key(kind), problem));
                     default
                 }
             }
         };
-        let light_theme = side(self.light_theme, "light_theme", ThemeKind::Light);
-        let dark_theme = side(self.dark_theme, "dark_theme", ThemeKind::Dark);
+        let light_theme = side(self.light_theme, ThemeKind::Light);
+        let dark_theme = side(self.dark_theme, ThemeKind::Dark);
         let settings = AppearanceSettings {
             theme,
             light_theme,
@@ -303,35 +318,61 @@ impl DiffRead {
 /// The problems with the `[appearance]` and `[diff]` of the settings file `text`, from `path`, in words for
 /// the status bar. Each names its line, when the parser knows it.
 fn unread_problems(path: &Path, text: &str) -> Vec<String> {
-    /// Only the tables of the file whose values fall back to their defaults.
-    #[derive(Default, Deserialize)]
-    #[serde(default)]
-    struct File {
-        appearance: AppearanceRead,
-        diff: DiffRead,
+    SettingsText::parse(path, text).unread_problems()
+}
+
+/// A settings file's text, parsed once for the places of its keys.
+struct SettingsText<'a> {
+    path: &'a Path,
+    text: &'a str,
+    document: Option<toml_edit::Document<&'a str>>,
+}
+
+impl<'a> SettingsText<'a> {
+    fn parse(path: &'a Path, text: &'a str) -> Self {
+        Self {
+            path,
+            text,
+            document: toml_edit::Document::parse(text).ok(),
+        }
     }
-    // Each caller has read the whole file by now, so this read finds what that one did.
-    let file = toml_edit::de::from_str::<File>(text).unwrap_or_default();
-    let document = toml_edit::Document::parse(text).ok();
-    [
-        (APPEARANCE, file.appearance.settle().1),
-        (DIFF, file.diff.settle().1),
-    ]
-    .into_iter()
-    .flat_map(|(name, unread)| {
-        let table = document
-            .as_ref()
-            .and_then(|document| document.get(name))
-            .and_then(Item::as_table_like);
-        unread.into_iter().map(move |(key, problem)| {
-            let line = table
-                .and_then(|table| table.get_key_value(key))
-                .and_then(|(key, _)| key.span())
-                .map_or_else(String::new, |span| line_of(text, span.start));
-            format!("{}{line}: {key} {problem}", path.display())
+
+    /// The problems with the `[appearance]` and `[diff]` of the file, as `unread_problems` gives them.
+    fn unread_problems(&self) -> Vec<String> {
+        /// Only the tables of the file whose values fall back to their defaults.
+        #[derive(Default, Deserialize)]
+        #[serde(default)]
+        struct File {
+            appearance: AppearanceRead,
+            diff: DiffRead,
+        }
+        // Each caller has read the whole file by now, so this read finds what that one did.
+        let file = toml_edit::de::from_str::<File>(self.text).unwrap_or_default();
+        [
+            (APPEARANCE, file.appearance.settle().1),
+            (DIFF, file.diff.settle().1),
+        ]
+        .into_iter()
+        .flat_map(|(table, unread)| {
+            unread
+                .into_iter()
+                .map(move |(key, problem)| format!("{}: {key} {problem}", self.place(table, key)))
         })
-    })
-    .collect()
+        .collect()
+    }
+
+    /// The file and, when the parser knows it, the line of `key` in the table `table`.
+    fn place(&self, table: &str, key: &str) -> String {
+        let line = self
+            .document
+            .as_ref()
+            .and_then(|document| document.get(table))
+            .and_then(Item::as_table_like)
+            .and_then(|table| table.get_key_value(key))
+            .and_then(|(key, _)| key.span())
+            .map_or_else(String::new, |span| line_of(self.text, span.start));
+        format!("{}{line}", self.path.display())
+    }
 }
 
 /// The settings in force, and what is wrong with the files they came from, in words for the status bar.
@@ -376,6 +417,9 @@ pub struct SettingsView {
     pub mirror_sources: MirrorSources,
     /// The folder of the user's theme files, beside the settings file in use (#519).
     pub themes_folder: PathBuf,
+    /// The place of `[appearance] theme`: the settings file and, when it has the key, its line, for the
+    /// status bar to name when no theme has the name it gives (#755).
+    pub theme_place: String,
     pub language_servers: LanguageServers,
 }
 
@@ -680,6 +724,8 @@ pub struct SettingsFiles {
     /// The last good `machine.toml`. Until there is one, Tsugiki can't know which settings file is meant.
     machine: Option<Machine>,
     loaded: LoadedSettings,
+    /// The place of `[appearance] theme` in the settings file last read.
+    theme_place: String,
 }
 
 impl SettingsFiles {
@@ -689,6 +735,7 @@ impl SettingsFiles {
             folders,
             machine: None,
             loaded: LoadedSettings::default(),
+            theme_place: String::new(),
         };
         files.reload();
         files
@@ -714,6 +761,7 @@ impl SettingsFiles {
                 &self.folders,
                 self.machine.as_ref().unwrap_or(&Machine::default()),
             )),
+            theme_place: self.theme_place.clone(),
             language_servers: {
                 let given = &self.loaded.language_servers;
                 let path =
@@ -738,11 +786,17 @@ impl SettingsFiles {
         if let Some(machine) = &self.machine {
             self.loaded.language_servers = machine.servers.settings();
             match read_settings(&self.folders, machine, &self.loaded.settings) {
-                Ok((settings, unread)) => {
+                Ok((settings, unread, theme_place)) => {
                     self.loaded.settings = settings;
+                    self.theme_place = theme_place;
                     problems.extend(unread);
                 }
-                Err(problem) => problems.push(problem),
+                Err(problem) => {
+                    // The settings kept came from text the file no longer holds, so no line of it counts.
+                    let path = settings_file(&self.folders, machine);
+                    self.theme_place = path.display().to_string();
+                    problems.push(problem);
+                }
             }
         }
         for problem in &problems {
@@ -967,22 +1021,26 @@ impl SettingsFiles {
     /// Saves the theme the picker chose for its side to `light_theme` or `dark_theme`, keeping everything
     /// else in `settings.toml`, and reads the files again (#518). Like `write`, it works from what the files
     /// say now and refuses while either can't be used.
+    ///
+    /// A `theme = "light"` or `"dark"` from before (#755) of the side picked gives way to the name picked,
+    /// which the window then shows as it would have. A mode of the other side stays.
     pub fn save_theme(&mut self, kind: ThemeKind, name: &ThemeName) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
-        let key = match kind {
-            ThemeKind::Light => "light_theme",
-            ThemeKind::Dark => "dark_theme",
-        };
         let default = ThemeName::default_of(kind);
+        let appearance = &edit.values.appearance;
         edit_section(edit.document.as_table_mut(), APPEARANCE, |section| {
             merge_value(
                 section,
-                key,
+                side_key(kind),
                 &toml_edit::value(name.as_str()),
                 Some(&toml_edit::value(default.as_str())),
             );
+            // The picker checked the name against the folder, so it is the theme the window shows next.
+            if appearance.theme == ThemeChoice::Side(kind) {
+                merge_value(section, "theme", &toml_edit::value(name.as_str()), None);
+            }
         });
         edit.save()?;
         self.reload();
@@ -1622,20 +1680,26 @@ fn read_machine(path: &Path) -> Result<Machine, String> {
 
 /// The settings file's values. With no file in the usual place, the defaults are what the user asked for.
 /// With none where `settings_path` points, something is wrong, and it may only be a drive gone for now.
-/// Beside the values come the problems with values Tsugiki read as their defaults.
+/// Beside the values come the problems with values Tsugiki read as their defaults, and where the file gives
+/// `[appearance] theme`.
 fn read_settings(
     folders: &Folders,
     machine: &Machine,
     current: &Settings,
-) -> Result<(Settings, Vec<String>), String> {
+) -> Result<(Settings, Vec<String>, String), String> {
     let path = settings_file(folders, machine);
     match read_text(&path)? {
         Some(text) => {
-            let settings =
+            let settings: Settings =
                 toml_edit::de::from_str(&text).map_err(|cause| located(&path, &text, &cause))?;
-            Ok((settings, unread_problems(&path, &text)))
+            let parsed = SettingsText::parse(&path, &text);
+            let place = parsed.place(APPEARANCE, "theme");
+            Ok((settings, parsed.unread_problems(), place))
         }
-        None if machine.settings_path.is_none() => Ok((Settings::default(), Vec::new())),
+        None if machine.settings_path.is_none() => {
+            let place = path.display().to_string();
+            Ok((Settings::default(), Vec::new(), place))
+        }
         None => {
             let kept = if *current == Settings::default() {
                 "so Tsugiki is using the defaults"

@@ -21,6 +21,7 @@ const core = vi.hoisted(() => ({
   mirrorCost: vi.fn(),
   saveTheme: vi.fn(),
   themes: vi.fn(),
+  turnWindow: vi.fn(),
   tokenSource: vi.fn(),
   rereadSettings: vi.fn(),
   applySettings: vi.fn(),
@@ -41,7 +42,7 @@ const SETTINGS = {
 
 /** The themes the core sends unless a test says otherwise. */
 const THEMES = {
-  mode: "system",
+  theme: { kind: "system" },
   light: {
     chosen: "Light",
     all: [{ name: "Light", kind: "light", tokens: [{ property: "--bg", value: "#ffffff" }] }],
@@ -137,6 +138,7 @@ beforeEach(() => {
   core.chooseMirrorSource.mockResolvedValue({ status: "ok", data: null });
   core.saveTheme.mockResolvedValue({ status: "ok", data: null });
   core.themes.mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
+  core.turnWindow.mockResolvedValue(null);
   core.tokenSource.mockResolvedValue("gh");
   core.workbench.mockResolvedValue({
     status: "ok",
@@ -1001,6 +1003,17 @@ describe("the theme picker", () => {
       );
     });
     expect(bg()).toBe("#1f1f1f");
+  });
+
+  it("says in the status bar why the title bar couldn't turn, and shows the theme all the same", async () => {
+    core.turnWindow.mockRejectedValue(new Error("the window has gone"));
+    await opened();
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain(
+        "Tsugiki can't turn its title bar to the theme's side: Error: the window has gone",
+      );
+    });
   });
 
   /** The core's answer from now on: THEMES with a dark theme file named `name`, and `problems`. */

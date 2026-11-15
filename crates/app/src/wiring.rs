@@ -22,7 +22,7 @@ use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, HeadsFetchFailed, HeadsFetched,
     LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
     MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
-    ReadFailed, RepositoryWork, StartMode, StatusChanged, SyncActivityChanged,
+    ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -94,7 +94,7 @@ pub(crate) fn connect_core<R: Runtime>(
     // `settings_path` on a slow drive would delay the page. Without folders the defaults apply, and the
     // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
     let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
-    turn_to_start_appearance(app, &settings);
+    turn_to_start_theme(app, &settings);
     // Settings Tsugiki can't read fall back to the defaults, which check, though the file may turn the check
     // off. So only settings read without a problem start it.
     let check_releases_on = {
@@ -209,16 +209,24 @@ pub(crate) fn connect_core<R: Runtime>(
     }
 }
 
-/// Turns each window to the mode `settings` holds, and keeps the mode for `themes` (#517). `startup.rs`
-/// opened the window first, on the system's side, so a Light or Dark mode turns it now, before the page asks
-/// for its themes. Both keep to the mode the settings held at start, as the docs say, so a later read of the
-/// files can't turn the page without the title bar.
-fn turn_to_start_appearance<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner) {
-    let mode = settings.view().loaded.settings.appearance.theme;
+/// Turns each window to the side the settings keep, when Tsugiki can tell it without the `themes` folder: a
+/// built-in Theme's, or a mode's from a file written before (#755). `startup.rs` opened the window on the
+/// system's side, and this turns it before the page loads, so its title bar doesn't flip once the page has
+/// read the folder. The page asks `turn_window` to turn it for a Theme from the folder.
+fn turn_to_start_theme<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner) {
+    let Some(side) = settings
+        .view()
+        .loaded
+        .settings
+        .appearance
+        .theme
+        .known_side()
+    else {
+        return;
+    };
     for window in app.webview_windows().into_values() {
-        first_frame::turn(mode, &|theme| window.set_theme(theme));
+        first_frame::turn(Some(side), &|theme| window.set_theme(theme));
     }
-    assert!(app.manage(StartMode(mode)), "only this manages the mode");
 }
 
 /// Starts the check for a new version with `ask`. Without it Tsugiki sends Releases nothing, and the command

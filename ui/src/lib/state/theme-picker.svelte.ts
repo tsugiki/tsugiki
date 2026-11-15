@@ -42,7 +42,8 @@ export class ThemePicker {
   }
 
   #themeRows(): PickerRow[] {
-    const chosen = this.#theme.chosen(this.side);
+    // On the side in use that is the theme in force, which the settings may name over the side's choice.
+    const chosen = this.side === this.#theme.side ? this.#theme.current?.name : this.#theme.chosen(this.side);
     return this.#theme
       .themesOf(this.side)
       .map((theme) => ({ kind: "theme", title: theme.name, theme, chosen: theme.name === chosen }));

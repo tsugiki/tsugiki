@@ -24,15 +24,69 @@ const DARK_MODERN: &str = include_str!("../themes/vscode-dark-modern.toml");
 const GRUVBOX_LIGHT_HARD: &str = include_str!("../themes/gruvbox-light-hard.toml");
 const GRUVBOX_DARK_HARD: &str = include_str!("../themes/gruvbox-dark-hard.toml");
 
-/// Whether the window follows Windows to its light or dark side, or keeps one side whatever Windows says:
-/// `[appearance] theme` in `settings.toml` (#517).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum ThemeMode {
+/// What `[appearance] theme` in `settings.toml` asks the window to show (#755): the Theme `light_theme` or
+/// `dark_theme` names, whichever side the system is on, or one Theme whatever the system says. One key holds
+/// the choice, so the file can't follow the system and name a Theme as well. It reaches the file and the UI
+/// as the text the file holds: `"system"`, a mode, or a Theme's name, which no Theme may take.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+#[serde(into = "String")]
+#[specta(type = String)]
+pub enum ThemeChoice {
     #[default]
     System,
-    Light,
-    Dark,
+    /// `"light"` or `"dark"`, a mode from a file written before (#517): the Theme `light_theme` or
+    /// `dark_theme` names. A pick for that side writes the name picked in its place. Any other save keeps
+    /// the mode, as only the `themes` folder can say which Theme the side's name gives.
+    Side(ThemeKind),
+    Theme(ThemeName),
+}
+
+impl From<ThemeChoice> for String {
+    fn from(choice: ThemeChoice) -> Self {
+        match choice {
+            ThemeChoice::System => ThemeChoice::SYSTEM.to_owned(),
+            ThemeChoice::Side(side) => side.name().to_owned(),
+            ThemeChoice::Theme(name) => name.0,
+        }
+    }
+}
+
+impl ThemeChoice {
+    /// The text `theme` holds to follow the system.
+    pub const SYSTEM: &str = "system";
+
+    /// The choice `theme = "<text>"` makes.
+    pub fn read(text: &str) -> Self {
+        match ThemeKind::parse(text) {
+            Some(side) => Self::Side(side),
+            None if text == Self::SYSTEM => Self::System,
+            None => Self::Theme(ThemeName::new(text)),
+        }
+    }
+
+    /// The side the window keeps, when Tsugiki can tell it without the `themes` folder: a mode's, or a
+    /// built-in Theme's. The window turns to it at start, before the page asks for its themes.
+    pub fn known_side(&self) -> Option<ThemeKind> {
+        match self {
+            Self::System => None,
+            Self::Side(side) => Some(*side),
+            Self::Theme(name) => {
+                let named = |built_in: &str| built_in == name.as_str();
+                if LightTheme::ALL.into_iter().map(LightTheme::name).any(named) {
+                    Some(ThemeKind::Light)
+                } else if DarkTheme::ALL.into_iter().map(DarkTheme::name).any(named) {
+                    Some(ThemeKind::Dark)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Whether `[appearance] theme` gives `name` a meaning of its own, so no Theme may take it.
+    fn reserves(name: &str) -> bool {
+        name == Self::SYSTEM || ThemeKind::parse(name).is_some()
+    }
 }
 
 /// A built-in theme for the light side: `[appearance] light_theme` in `settings.toml`, by its name.
@@ -134,7 +188,8 @@ impl ThemeKind {
         }
     }
 
-    fn parse(text: &str) -> Option<Self> {
+    /// The kind `text` names, `"light"` or `"dark"`, as a theme file and `[appearance] theme` write it.
+    pub fn parse(text: &str) -> Option<Self> {
         [Self::Light, Self::Dark]
             .into_iter()
             .find(|kind| kind.name() == text)
@@ -597,17 +652,49 @@ pub struct TokenView {
     pub value: String,
 }
 
-/// The themes of each side, and the mode. In System mode the window shows the chosen theme of the side
-/// Windows is on, and turns to the other when Windows does. Light and Dark show that side's chosen theme
-/// whatever Windows says. The theme picker lists the rest (#518).
+/// The themes of each side, and the theme in force. Following the system, the window shows the chosen theme
+/// of the side the system is on, and turns to the other when the system does. The theme picker lists the
+/// rest (#518).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Themes {
-    pub mode: ThemeMode,
+    pub theme: ThemeInForce,
     pub light: SideThemes,
     pub dark: SideThemes,
     /// What is wrong with the files of the `themes` folder, in words for the status bar, each naming its file
     /// and, when the parser knows it, its line (#519).
     pub problems: Vec<String>,
+}
+
+/// `[appearance] theme` as the settings file gives it, for `ThemeLibrary::themes`.
+#[derive(Debug, Clone, Copy)]
+pub struct GivenTheme<'a> {
+    pub choice: &'a ThemeChoice,
+    /// The file that gives it and, when the file has the key, its line, for the status bar to name when no
+    /// theme has the name it gives.
+    pub place: &'a str,
+}
+
+/// The theme the window shows, from `[appearance] theme` (#755).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ThemeInForce {
+    /// The chosen theme of the side the system is on. A `theme` that names no usable theme gives this too.
+    System,
+    /// The chosen theme of `side`, whatever the system says, from a mode a file written before held. A pick
+    /// for that side shows at once, as the file then names the theme picked.
+    Side { side: ThemeKind },
+    /// The theme named, whatever the system says.
+    Named { name: ThemeName, side: ThemeKind },
+}
+
+impl ThemeInForce {
+    /// The side the window keeps, its title bar and native controls with it, or none to follow the system.
+    pub fn side(&self) -> Option<ThemeKind> {
+        match self {
+            Self::System => None,
+            Self::Side { side } | Self::Named { side, .. } => Some(*side),
+        }
+    }
 }
 
 /// The themes of one side, and the one `settings.toml` chose for it.
@@ -664,6 +751,8 @@ struct FailedTheme {
 enum ThemeFailure {
     /// A built-in theme has its name.
     BuiltInName,
+    /// `[appearance] theme` gives its name another meaning: `system`, `light` or `dark`.
+    ReservedName,
     /// The file named, by its file name, has its name and comes first.
     NameTaken(String),
     /// Following `extends` comes back to it, through the names given, it first and last.
@@ -680,6 +769,12 @@ impl FailedTheme {
     fn view(&self) -> FailedThemeView {
         let reason = match &self.why {
             ThemeFailure::BuiltInName => "a built-in theme has this name".to_owned(),
+            ThemeFailure::ReservedName => {
+                format!(
+                    "theme = \"{}\" in settings.toml means something else",
+                    self.name
+                )
+            }
             ThemeFailure::NameTaken(first) => format!("{first} names a theme {} first", self.name),
             ThemeFailure::Loop(names) => {
                 let names: Vec<&str> = names.iter().map(ThemeName::as_str).collect();
@@ -749,14 +844,37 @@ impl ThemeLibrary {
             })
     }
 
-    /// The themes for the window, with `light` and `dark` chosen. A name no usable theme of its side has, as
-    /// when its file has a mistake or has gone, gives way to the side's default, and the problems say so.
-    pub fn themes(&self, mode: ThemeMode, light: &ThemeName, dark: &ThemeName) -> Themes {
+    /// The themes for the window, showing what `given` asks for, with `light` and `dark` chosen. A name no
+    /// usable theme of its side has, as when its file has a mistake or has gone, gives way to the side's
+    /// default, and the problems say so. A `given` that names no usable theme follows the system, and the
+    /// problems say so where the settings file gives it.
+    pub fn themes(&self, given: GivenTheme<'_>, light: &ThemeName, dark: &ThemeName) -> Themes {
+        let GivenTheme { choice, place } = given;
         let mut problems = self.problems.clone();
+        let theme = match choice {
+            ThemeChoice::System => ThemeInForce::System,
+            ThemeChoice::Side(side) => ThemeInForce::Side { side: *side },
+            ThemeChoice::Theme(name) => {
+                let found = self.usable.iter().find(|theme| theme.name == name.as_str());
+                match found {
+                    Some(theme) => ThemeInForce::Named {
+                        name: name.clone(),
+                        side: theme.kind,
+                    },
+                    None => {
+                        let missing = name.as_str();
+                        problems.push(format!(
+                            "{place}: No theme is named {missing:?}, so Tsugiki follows the system."
+                        ));
+                        ThemeInForce::System
+                    }
+                }
+            }
+        };
         let light = self.side(ThemeKind::Light, light, &mut problems);
         let dark = self.side(ThemeKind::Dark, dark, &mut problems);
         Themes {
-            mode,
+            theme,
             light,
             dark,
             problems,
@@ -866,6 +984,8 @@ fn resolve(built_in: &[Theme], files: &[(String, Theme)]) -> (Vec<Theme>, Vec<Fa
     for (file, theme) in files {
         let taken = if built_in.iter().any(|built| built.name == theme.name) {
             Some(ThemeFailure::BuiltInName)
+        } else if ThemeChoice::reserves(&theme.name) {
+            Some(ThemeFailure::ReservedName)
         } else {
             let earlier = first.get(theme.name.as_str());
             earlier.map(|&earlier| ThemeFailure::NameTaken(earlier.to_owned()))
@@ -957,6 +1077,7 @@ impl<'a> Resolver<'a> {
                     ThemeFailure::Loop(names) if in_loop(&names) => ThemeFailure::Loop(names),
                     ThemeFailure::Loop(_)
                     | ThemeFailure::BuiltInName
+                    | ThemeFailure::ReservedName
                     | ThemeFailure::NameTaken(_)
                     | ThemeFailure::NoSuchTheme(_)
                     | ThemeFailure::OtherSide(..)

@@ -44,7 +44,7 @@ use tsugiki_core::settings::{
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
-use tsugiki_core::theme::ThemeMode;
+use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::issue_view::IssueView;
@@ -344,8 +344,24 @@ fn settings(owner: State<'_, SettingsOwner>) -> LoadedSettings {
     owner.view().loaded
 }
 
-/// The mode `settings.toml` held when Tsugiki started, which the window turned to (#517).
-struct StartMode(ThemeMode);
+/// Turns the window that asks to `side`, its title bar and native controls with it, or back to following
+/// the system with none (#755). The page asks for the side of the theme it is about to show, once it has the
+/// `themes` answer, and sends the next ask only after this one answers. Back to the system, it says the side
+/// the window is on, or none if the window can't say.
+///
+/// It doesn't wait, so Tauri runs it on the main thread, where the window's theme is read at once.
+#[tauri::command]
+#[specta::specta]
+fn turn_window<R: tauri::Runtime>(
+    side: Option<ThemeKind>,
+    window: tauri::WebviewWindow<R>,
+) -> Option<ThemeKind> {
+    let themed = first_frame::ThemedWindow {
+        set_theme: &|theme| window.set_theme(theme),
+        theme: &|| window.theme(),
+    };
+    first_frame::turn_window(side, &themed)
+}
 
 /// What the window opens on.
 #[tauri::command]
@@ -950,6 +966,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_unseen,
             settings,
             slow_commands::themes,
+            turn_window::<tauri::Wry>,
             home,
             token_source,
             pane_layout,

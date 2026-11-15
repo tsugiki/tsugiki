@@ -7,31 +7,48 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   light or the dark side, and when Windows changes sides while Tsugiki runs, the window jumps to the other
   Theme with no fade. The root's `color-scheme` takes the Theme's kind, so scroll bars and form controls
   follow too.
-- `settings.toml` picks the mode and one Theme for each side
-  ([#517](https://github.com/tsugiki/tsugiki/issues/517)):
+- `settings.toml` names the Theme the window shows, or follows the system, and picks one Theme for each side
+  ([#517](https://github.com/tsugiki/tsugiki/issues/517), [ADR
+  0021](../adr/0021-appearance-theme-names-a-theme-or-follows-the-system.md)):
 
   ```toml
   [appearance]
-  theme = "system"   # "system", "light" or "dark"
+  theme = "Gruvbox Light Hard"   # or "system", the default
   light_theme = "VS Code Light Modern"
   dark_theme = "Gruvbox Dark Hard"
   ```
 
-  System, the default, takes the side Windows is on. Light and Dark keep their side whatever Windows says,
-  and turn the title bar and the native controls with it through Tauri's `set_theme`. A key left out takes
-  its default: System, VS Code Light Modern and VS Code Dark Modern. A `theme` other than the three, or a
-  name that isn't text, keeps that key's default, and the status bar names the file and the line. A name
-  no Theme of that side has stays in the settings, as its file may be mended: until then the window shows
-  the side's default, and the status bar says so. Tsugiki reads `settings.toml` at start, so a hand edit
-  takes effect at the next one.
+  `"system"` shows `light_theme` or `dark_theme`, whichever side Windows is on. A Theme's name shows that
+  Theme whatever Windows says, and turns the title bar and the native controls to its `kind` through Tauri's
+  `set_theme`. `light_theme` and `dark_theme` say only what `"system"` shows. One key holds the choice, where
+  VS Code spreads it over `workbench.colorTheme` and `window.autoDetectColorScheme`, so the file can't follow
+  the system and name a Theme as well. `"light"` and `"dark"`, from files written before
+  ([#755](https://github.com/tsugiki/tsugiki/issues/755)), show the Theme in `light_theme` or `dark_theme`,
+  and a pick for that side writes the name picked in their place. Any other save keeps the mode, since the
+  side's name may be one no Theme has, and writing it would turn the window to the system's side. A key left
+  out takes its default:
+  `"system"`, VS Code Light Modern and VS Code Dark Modern. A value that isn't text keeps that key's default,
+  and the status bar names the file and the line. A name no Theme has stays in the settings, as its file may
+  be mended: until
+  then a `theme` follows the system, and a side shows its default, and the status bar says so, with the file
+  and the line for `theme`. Tsugiki reads `settings.toml` at start and as the Settings dialog opens, and the
+  window takes the Theme when it asks for its themes: at start, when the picker opens, and on Reload themes.
+  Of asks that cross, the page keeps the answer to the one it asked last. It asks `turn_window` to turn the
+  window to the side of that answer's Theme, one turn at a time and none to the side asked last, and shows
+  the Theme once the window has answered. So the title bar and the page show the same answer, and a failed
+  ask leaves both as they were. `set_theme` keeps the page's `prefers-color-scheme` on the side kept too, so
+  when the window follows the system again, `turn_window` says which side the window is on. The page takes
+  it unless its media query has heard the system change sides since it asked: an event that reports the
+  side kept may be the webview catching up, and doesn't count.
 - `Ctrl+K T`, or Pick a Theme in the command palette, opens the theme picker in the palette, as VS Code's
   `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518)). It lists the Themes of the
   side in use, opens on the one in force and marks it "chosen". Each Theme the list moves to shows on the
   whole window, with no fade. Enter saves the Theme picked to `light_theme` or `dark_theme` at once, as
-  Tsugiki saves the panes' layout, without Settings' Apply. Esc or a click outside puts the Theme in force
-  back, and so does moving to the last row. That row,
+  Tsugiki saves the panes' layout, without Settings' Apply. While `theme` names a Theme, that Theme stays in
+  force after the pick, until [#756](https://github.com/tsugiki/tsugiki/issues/756) has the picker save
+  `theme`. Esc or a click outside puts the Theme in force back, and so does moving to the last row. That row,
   "Dark themes…" on the light side or "Light themes…" on the dark side, lists the other side's Themes with
-  that side's choice marked: a pick there saves that side's setting and leaves the mode alone, so the window
+  that side's choice marked: a pick there saves that side's setting and leaves `theme` alone, so the window
   goes back to the Theme in force. A save that fails puts the old choice back, and the status bar says why.
   The user's own Themes come after the built-in ones, in name order, and then each file that can't be used,
   greyed, with its file and why. Enter on it does nothing. Then comes "Reload themes", which reads the
@@ -44,8 +61,9 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   `app/src/first_frame.rs` does it. Four gaps remain:
   - Tauri reads high contrast as the light side, so a dark contrast theme still opens white.
   - On macOS Tauri can't colour the webview, so WKWebView paints white until the page loads.
-  - The window opens before the core reads the settings, so it opens on the side Windows is on, and a Light
-    or Dark mode turns it a moment later.
+  - The window opens before the core reads the settings, so it opens on the side Windows is on. A built-in
+    Theme of the other side, or a mode from a file written before, turns its title bar before the page
+    loads, and a Theme from the `themes` folder turns it once the page has taken its themes.
   - The window's own background is the `bg` of VS Code's Theme for its side, whichever Theme the settings
     pick. The page covers it, and it shows only at the edge of a resize.
 - Four Themes are built in. VS Code Light Modern and Gruvbox Light Hard are for the light side, and VS Code
@@ -59,8 +77,8 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   are in `crates/core/themes/`, compiled in.
 - The user's own Themes are `.toml` files in a `themes` folder beside the settings file in use, so a
   `settings_path` synced from elsewhere brings its Themes along
-  ([#519](https://github.com/tsugiki/tsugiki/issues/519)). Each joins its `kind`'s list, and `light_theme`
-  and `dark_theme` can name it:
+  ([#519](https://github.com/tsugiki/tsugiki/issues/519)). Each joins its `kind`'s list, and `theme`, and
+  `light_theme` or `dark_theme`, can name it:
 
   ```toml
   name = "Solarized Dark"
@@ -79,8 +97,8 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   another file, or else from its `kind`'s default: VS Code Light Modern or VS Code Dark Modern. A file of
   five colours then works, and a token added later gets a value in old files. An `extends` that loops, names
   no Theme, names a Theme of the other side, or names a file that can't be used fails the whole file. A
-  file can't take a built-in Theme's name. When two files share a name, the first in file-name order keeps
-  it, and the later one fails.
+  file can't take a built-in Theme's name, nor `system`, `light` or `dark`, which `theme` reads otherwise.
+  When two files share a name, the first in file-name order keeps it, and the later one fails.
 - Tsugiki reads the folder when it starts, when the picker opens, and on Reload themes: `Ctrl+K R`, the
   palette command or the picker's row. It has no watcher. A skipped line, or a file that isn't a Theme,
   shows in the status bar with its file and line, and a skipped line names its key too. So does a folder

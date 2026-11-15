@@ -398,7 +398,7 @@ fn assert_releases_hear_nothing(name: &str, settings: &str) {
 }
 
 #[test]
-fn themes_answers_with_the_mode_and_the_theme_of_each_side_the_settings_chose() {
+fn themes_answers_with_the_theme_in_force_and_the_theme_of_each_side_the_settings_chose() {
     let (folders, _root) = temp_folders("wired-themes");
     let settings = "[appearance]\ntheme = \"light\"\ndark_theme = \"Gruvbox Dark Hard\"\n";
     std::fs::write(folders.settings_file(), settings).unwrap();
@@ -408,11 +408,46 @@ fn themes_answers_with_the_mode_and_the_theme_of_each_side_the_settings_chose() 
     drop(wired.stop());
 
     let answer = answer.unwrap();
-    assert_eq!(answer["mode"], "light");
+    assert_eq!(answer["theme"], json!({ "kind": "side", "side": "light" }));
     assert_eq!(answer["light"]["chosen"], "VS Code Light Modern");
     assert_eq!(answer["dark"]["chosen"], "Gruvbox Dark Hard");
     assert_eq!(answer["dark"]["all"][1]["name"], "Gruvbox Dark Hard");
     assert_eq!(answer["dark"]["all"][1]["tokens"][0]["value"], "#1d2021");
+}
+
+/// The name stays in the file, as a theme file may be mended, and the window follows the system until then
+/// (#755).
+#[test]
+fn a_theme_no_theme_has_follows_the_system_and_names_the_file_and_the_line() {
+    let (folders, _root) = temp_folders("wired-theme-missing");
+    let file = folders.settings_file();
+    std::fs::write(&file, "[appearance]\n\ntheme = \"Dusk\"\n").unwrap();
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let answer = wired.ask("themes", json!({}));
+    drop(wired.stop());
+
+    let answer = answer.unwrap();
+    assert_eq!(answer["theme"], json!({ "kind": "system" }));
+    let problem = format!(
+        "{}, line 3: No theme is named \"Dusk\", so Tsugiki follows the system.",
+        file.display()
+    );
+    assert_eq!(answer["problems"], json!([problem]));
+}
+
+/// The page turns the window after each `themes` answer it takes. Kept on a side, the window says nothing of
+/// the system, and back to following it, the side it is on, which Tauri's mock window gives as light.
+#[test]
+fn turn_window_turns_the_window_that_asks_and_says_the_side_it_turned_back_to() {
+    let wired = Wired::start(Err(no_folders()), no_network());
+
+    let kept = wired.ask("turn_window", json!({ "side": "dark" }));
+    let back = wired.ask("turn_window", json!({ "side": null }));
+    drop(wired.stop());
+
+    assert_eq!(kept, Ok(Value::Null));
+    assert_eq!(back, Ok(json!("light")));
 }
 
 /// The themes come from the folder beside the settings file in use, read again on each ask, so an edited

@@ -70,9 +70,9 @@ Once an agent reports its build, write its build time into the log, and run `/co
 diff over `origin/main` in its worktree. Send the findings to that agent with SendMessage. It fixes each or
 declines it with a reason; judge the reasons, and send back any you don't accept.
 
-Then tell it to run its pre-push gates. Let one agent run them at a time: each runs the full vitest and
-`rust-coverage`, which AGENTS.md leaves to CI outside a wave. In a wave a CI round trip costs more, and in
-0.3.1 two of three first pushes failed coverage without them.
+Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time: each runs the
+full vitest and `rust-coverage`, which AGENTS.md leaves to CI outside a wave. In a wave a CI round trip
+costs more, and in 0.3.1 two of three first pushes failed coverage without them.
 
 Done when the agent reports the review fixed and its gates passed.
 

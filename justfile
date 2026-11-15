@@ -78,9 +78,24 @@ fmt:
 # Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs
 check: lint doc-width svelte-check vitest rust-gates release-check e2e
 
+# The fastest gates go first. The Vitest and Rust tests run in full: their coverage gates count every file.
+# Like `check`, it skips Clippy and `rust-coverage` on a branch that changes only `ui/` and docs. It leaves
+# out the rest of `check`: ESLint, token-deps, pre-commit, deny, machete, release-check and e2e.
+# Run the gates a first push most often fails on, one at a time, and stop at the first that fails
+preflight: rustfmt prettier doc-width svelte-check vitest
+    node scripts/rust-gates.ts clippy rust-coverage
+
 # Check the formatting, lint with ESLint, and run the pre-commit hooks on the workflows and the spelling
 lint:
     npm run lint
+
+# Check the Rust formatting
+rustfmt:
+    npm run rustfmt
+
+# Check the formatting of the UI, the scripts and the workflows with Prettier
+prettier:
+    npm run prettier
 
 # Fail on a line of Markdown, a comment or a docstring past 110 columns
 doc-width:

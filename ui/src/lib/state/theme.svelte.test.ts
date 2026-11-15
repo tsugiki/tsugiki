@@ -6,9 +6,10 @@ vi.mock("$lib/data/bindings", () => ({
   commands: { themes: vi.fn(), saveTheme: vi.fn(), turnWindow: vi.fn() },
 }));
 
-// The window turns without saying a side, unless a test says otherwise.
+// The window turns without saying a side, and saves work, unless a test says otherwise.
 beforeEach(() => {
   vi.mocked(commands.turnWindow).mockReset().mockResolvedValue(null);
+  vi.mocked(commands.saveTheme).mockReset().mockResolvedValue({ status: "ok", data: null });
 });
 
 /** A theme of side `kind` named `name`, with background `bg`. */
@@ -449,30 +450,67 @@ describe("ThemeState", () => {
   });
 });
 
-/** A save that answers when the test says, with what the test gives. */
-const held = () => {
-  let answer: (answer: SaveAnswer) => void = () => {};
-  const saving = new Promise<SaveAnswer>((resolve) => {
-    answer = resolve;
-  });
-  return { saving, answer };
-};
+/** The core's answer to a save, which a test holds with `Promise.withResolvers`. */
 type SaveAnswer =
   { status: "ok"; data: null } | { status: "error"; error: { kind: "internal"; message: string } };
 const SAVED: SaveAnswer = { status: "ok", data: null };
 const REFUSED: SaveAnswer = { status: "error", error: { kind: "internal", message: "the drive went away" } };
 
 describe("ThemeState's saves", () => {
+  it("go on, and so do loads, after a call that throws", async () => {
+    const state = await loaded(THEMES, false);
+    vi.mocked(commands.saveTheme)
+      .mockImplementationOnce(() => {
+        throw new Error("no such command");
+      })
+      .mockResolvedValueOnce(SAVED);
+
+    await state.pick(GRUVBOX_DARK);
+    expect(state.problem).toBe("Tsugiki can't save the theme: Error: no such command");
+    expect(state.themes?.theme).toEqual({ kind: "system" });
+    await state.pick(GRUVBOX_LIGHT);
+    await state.load();
+
+    expect(commands.saveTheme).toHaveBeenCalledTimes(2);
+    expect(state.problem).toBeUndefined();
+    expect(commands.themes).toHaveBeenCalledTimes(2);
+  });
+
+  it("take the side the window turned back to as it says it, not once the save answers", async () => {
+    const { query, turn } = sides(true);
+    vi.mocked(commands.themes).mockResolvedValue({
+      status: "ok",
+      data: structuredClone({ ...THEMES, theme: NAMED_DARK }),
+    });
+    const state = new ThemeState(query);
+    await state.load();
+    const save = Promise.withResolvers<SaveAnswer>();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.promise);
+    vi.mocked(commands.turnWindow).mockResolvedValueOnce("light");
+
+    const picking = state.pick("system");
+    await vi.waitFor(() => {
+      expect(state.dark).toBe(false);
+    });
+    // Windows changes sides while the save is on its way.
+    turn(true);
+    save.resolve(SAVED);
+    await picking;
+
+    expect(state.dark).toBe(true);
+    expect(state.current?.name).toBe("VS Code Dark Modern");
+  });
+
   it("go one after the other, in the order picked", async () => {
     const state = await loaded(THEMES, false);
-    const first = held();
-    vi.mocked(commands.saveTheme).mockReturnValueOnce(first.saving).mockResolvedValueOnce(SAVED);
+    const first = Promise.withResolvers<SaveAnswer>();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(first.promise).mockResolvedValueOnce(SAVED);
 
     const picks = Promise.all([state.pick(GRUVBOX_DARK), state.pick(GRUVBOX_LIGHT)]);
     await vi.waitFor(() => {
       expect(commands.saveTheme).toHaveBeenCalledOnce();
     });
-    first.answer(SAVED);
+    first.resolve(SAVED);
     await picks;
 
     expect(vi.mocked(commands.saveTheme).mock.calls).toEqual([
@@ -484,14 +522,14 @@ describe("ThemeState's saves", () => {
 
   it("put back the theme an earlier pick saved when a later one fails", async () => {
     const state = await loaded(THEMES, false);
-    const first = held();
-    vi.mocked(commands.saveTheme).mockReturnValueOnce(first.saving).mockResolvedValueOnce(REFUSED);
+    const first = Promise.withResolvers<SaveAnswer>();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(first.promise).mockResolvedValueOnce(REFUSED);
 
     const picks = Promise.all([state.pick(GRUVBOX_DARK), state.pick(GRUVBOX_LIGHT)]);
     await vi.waitFor(() => {
       expect(commands.saveTheme).toHaveBeenCalledOnce();
     });
-    first.answer(SAVED);
+    first.resolve(SAVED);
     await picks;
 
     expect(state.themes?.theme).toEqual(NAMED_DARK);
@@ -602,8 +640,8 @@ describe("ThemeState's saves", () => {
 
   it("let a load asked while a save is on its way read what the save wrote", async () => {
     const state = await loaded(THEMES, false);
-    const save = held();
-    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.saving).mockResolvedValueOnce(REFUSED);
+    const save = Promise.withResolvers<SaveAnswer>();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.promise).mockResolvedValueOnce(REFUSED);
     // The core answers with what the file holds.
     let written = false;
     vi.mocked(commands.themes).mockImplementation(async () => ({
@@ -618,7 +656,7 @@ describe("ThemeState's saves", () => {
     });
     expect(commands.themes).toHaveBeenCalledOnce();
     written = true;
-    save.answer(SAVED);
+    save.resolve(SAVED);
     await Promise.all([picking, reload]);
     expect(commands.themes).toHaveBeenCalledTimes(2);
     expect(state.themes?.theme).toEqual(NAMED_DARK);
@@ -636,15 +674,15 @@ describe("ThemeState's saves", () => {
         turned = resolve;
       }),
     );
-    const save = held();
-    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.saving);
+    const save = Promise.withResolvers<SaveAnswer>();
+    vi.mocked(commands.saveTheme).mockReturnValueOnce(save.promise);
 
     const picking = state.pick(GRUVBOX_DARK);
     const reload = state.load();
     await vi.waitFor(() => {
       expect(commands.turnWindow).toHaveBeenCalledTimes(2);
     });
-    save.answer(REFUSED);
+    save.resolve(REFUSED);
     await vi.waitFor(() => {
       expect(commands.themes).toHaveBeenCalledTimes(2);
     });

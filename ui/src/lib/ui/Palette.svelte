@@ -163,21 +163,32 @@
     if (shownTitle !== undefined) untrack(() => pickedCommand?.preview?.());
   });
   let list = $state<HTMLElement>();
-  // The list scrolls past a height, so the picked row stays in sight as the arrows move the pick, and as the
-  // rows change under it, as typing or quick open's answer changes them.
+  /** The text typed, the pick, and the rows by their titles, as they were when the list last showed the
+   * picked row. */
+  let placed = "";
+  // The list scrolls past a height, so the picked row stays in sight as the text, the pick or the rows
+  // change, and not as the user scrolls away from it. Rows that come again as they were, as a reload brings
+  // them, leave the list where it is.
   $effect(() => {
+    const now = JSON.stringify([typed, picked, matching.map((command) => command.title)]);
+    if (now === placed) return;
+    placed = now;
+    untrack(keepPickInSight);
+  });
+
+  function keepPickInSight() {
     if (matching.length === 0) return;
     const row = list?.querySelector<HTMLElement>(`#palette-command-${String(picked)}`);
     if (list && row) keepInSight(list, row, picked === 0);
-  });
+  }
 
   /** Scrolls `list` as little as it takes to show `row`, and the heading over it when it is its group's
    * first, or the top of the list for its first row. `scrollIntoView` would scroll the page under the
    * palette too. The list is the offset parent of its rows and groups. */
   function keepInSight(list: HTMLElement, row: HTMLElement, first: boolean) {
     const group = row.closest<HTMLElement>(".group");
-    const heads = group?.querySelector('[role="option"]') === row;
-    const top = first ? 0 : (heads && group ? group : row).offsetTop;
+    const heading = group?.querySelector('[role="option"]') === row ? group : undefined;
+    const top = first ? 0 : (heading ?? row).offsetTop;
     const bottom = row.offsetTop + row.offsetHeight;
     if (top < list.scrollTop) list.scrollTop = top;
     else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;

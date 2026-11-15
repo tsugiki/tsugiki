@@ -560,3 +560,25 @@ it("shows a group's heading with its first row, the list's top with the first ro
   await fireEvent.input(input, { target: { value: "Command" } });
   expect(scrolled).toBe(0);
 });
+
+it("leaves the list where the user scrolled it when the rows come again as they were", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(20);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
+  const commands = () =>
+    Array.from({ length: 12 }, (_, i) => ({ title: `Command ${String(i)}`, run: () => {} }));
+  const { rerender } = render(Palette, { commands: commands(), onclose: () => {} });
+  const list = screen.getByRole("listbox");
+  let scrolled = 0;
+  Object.defineProperty(list, "scrollTop", {
+    get: () => scrolled,
+    set: (top: number) => {
+      scrolled = top;
+    },
+  });
+
+  scrolled = 200;
+  await rerender({ commands: commands() });
+  expect(scrolled).toBe(200);
+  await rerender({ commands: [{ title: "Command new", run: () => {} }, ...commands()] });
+  expect(scrolled).toBe(0);
+});

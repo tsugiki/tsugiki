@@ -35,11 +35,11 @@ export class ThemeState {
    * back only if none came after it. */
   #picks = 0;
   /** The picks' saves, one after the other, so the file takes them, and they answer, in the order picked. A
-   * load waits for those asked before it, so it reads what they wrote. */
+   * load waits for those asked before it, so it reads what they wrote. It never rejects. */
   #saves = Promise.resolve<unknown>(undefined);
-  /** The theme in force that `settings.toml` holds, as the last load that crossed no pick read it, or a save
-   * that worked since wrote it. A save that fails puts this back, not a pick whose save hasn't answered. No
-   * pick comes before the first load. */
+  /** The theme in force that `settings.toml` holds, as the last load that crossed no later pick read it, or
+   * a save that worked since wrote it. A save that fails puts this back, not a pick whose save hasn't
+   * answered. No pick comes before the first load. */
   #saved: ThemeInForce = { kind: "system" };
   /** The count of loads asked, so only the last one asked shows: one asked later read settings no older. */
   #loads = 0;
@@ -186,8 +186,14 @@ export class ThemeState {
             { kind: "named", name: theme.name },
           ];
     this.themes.theme = inForce;
-    const turned = this.#turn(inForce);
-    const saving = this.#saves.then(() => ask(commands.saveTheme(saved)));
+    // The side the window says it turned to counts when it says it, as Windows may change sides after.
+    const turned = this.#turn(inForce).then((side) => {
+      this.#take(side);
+    });
+    // A save waits for the one before it, and a load for both. A save that doesn't answer would hold them,
+    // but the settings thread writes a small file, and a drive slow enough to hold it holds the `themes`
+    // folder beside it too, which every load reads. A broken call answers as a refusal, so the chain goes on.
+    const saving = this.#saves.then(() => ask(Promise.resolve().then(() => commands.saveTheme(saved))));
     this.#saves = saving;
     const answer = await saving;
     const putBack = answer.status !== "ok" && this.#picks === pick;
@@ -198,14 +204,12 @@ export class ThemeState {
       this.problem = `Tsugiki can't save the theme: ${answer.error.message}`;
     }
     // On the themes a reload brought since, not the ones the pick was made on. The turn back goes in the
-    // queue now, before any pick that comes while the pick's own turn answers.
-    let back: Promise<ThemeKind | undefined> = Promise.resolve(undefined);
+    // queue at once, behind the pick's own turn.
     if (putBack) {
       this.themes.theme = this.#saved;
-      back = this.#turn(this.#saved);
+      this.#take(await this.#turn(this.#saved));
     }
-    this.#take(await turned);
-    this.#take(await back);
+    await turned;
   }
 }
 

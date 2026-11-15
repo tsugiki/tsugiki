@@ -754,6 +754,28 @@ fn apply_saves_a_changed_light_theme_and_leaves_theme_alone() {
 }
 
 #[test]
+fn apply_saves_a_changed_dark_theme() {
+    let (folders, _root) = temp_folders("apply-dark-theme");
+    let mut files = SettingsFiles::load(folders.clone());
+
+    files
+        .apply(SettingsChanges {
+            appearance: Some(AppearanceChanges {
+                dark_theme: Some(named("Gruvbox Dark Hard")),
+                ..AppearanceChanges::default()
+            }),
+            ..SettingsChanges::default()
+        })
+        .unwrap();
+
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    assert_eq!(after, "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n");
+    let appearance = &files.loaded().settings.appearance;
+    assert_eq!(appearance.dark_theme, named("Gruvbox Dark Hard"));
+    assert_eq!(appearance.theme, ThemeChoice::System);
+}
+
+#[test]
 fn apply_saves_the_theme_picked_and_takes_following_the_system_out_of_the_file() {
     let (folders, _root) = temp_folders("apply-theme");
     let mut files = SettingsFiles::load(folders.clone());

@@ -2,12 +2,13 @@
 // for each side and the theme in force (#755). Following the system, the window shows the chosen theme for
 // the side Windows is on, jumping to the other when Windows changes sides. A theme the settings name shows
 // whatever Windows says, and so does the chosen theme of the side a mode from a file written before keeps.
-// The theme picker previews a theme over the one in force, and saves a side's choice (#518).
+// The theme picker previews a theme over the one in force, and saves the theme in force (#518, #756).
 import {
   commands,
   type FailedThemeView,
   type ThemeInForce,
   type ThemeKind,
+  type ThemePick,
   type Themes,
   type ThemeView,
 } from "$lib/data/bindings";
@@ -26,14 +27,20 @@ export class ThemeState {
   dark = $state(false);
   /** A theme the picker shows on the window for now, over the one in force. */
   preview = $state<ThemeView>();
-  /** Why the last choice couldn't be saved, until one is. */
+  /** Why the last pick couldn't be saved, until one is. */
   problem = $state<string>();
   /** Why the window's title bar couldn't turn to the side of the theme in force, until a turn works. */
   turnProblem = $state<string>();
-  /** How many choices have been made, so a load that crossed one keeps it. */
-  #choices = 0;
-  /** How many saves are on their way, which a load may have read the settings before. */
-  #saving = 0;
+  /** How many picks have been made, so a load that crossed one keeps it, and a failed save puts the theme
+   * back only if none came after it. */
+  #picks = 0;
+  /** The picks' saves, one after the other, so the file takes them, and they answer, in the order picked. A
+   * load waits for those asked before it, so it reads what they wrote. It never rejects. */
+  #saves = Promise.resolve<unknown>(undefined);
+  /** The theme in force that `settings.toml` holds, as the last load that crossed no later pick read it, or
+   * a save that worked since wrote it. A save that fails puts this back, not a pick whose save hasn't
+   * answered. No pick comes before the first load. */
+  #saved: ThemeInForce = { kind: "system" };
   /** The count of loads asked, so only the last one asked shows: one asked later read settings no older. */
   #loads = 0;
   /** The window's turns, one after the other, so each reaches the window after the one before it. */
@@ -58,9 +65,13 @@ export class ThemeState {
    * use. */
   current = $derived.by(() => {
     const theme = this.themes?.theme;
-    const name = theme?.kind === "named" ? theme.name : this.chosen(this.side);
-    return this.themesOf(this.side).find((one) => one.name === name);
+    if (theme?.kind !== "named") return this.#chosenOf(this.side);
+    return this.themesOf(this.side).find((one) => one.name === theme.name);
   });
+  /** The theme following the system shows: the chosen theme of the side Windows is on, as far as the page
+   * knows. While a theme keeps the window on one side, the page hears that side, and learns Windows' own
+   * only as the window turns back to it. */
+  following = $derived(this.#chosenOf(this.dark ? "dark" : "light"));
   /** What the window shows: the preview, or else the theme in force. */
   shown = $derived(this.preview ?? this.current);
 
@@ -78,10 +89,12 @@ export class ThemeState {
   /** Asks the core for the themes, turns the window to the side of the theme in force, and then shows them,
    * so the page shows the theme with the side the window said. The core reads the `themes` folder each
    * time, so this is also Reload themes (#519). Of loads that cross, the one asked last shows. Themes that
-   * don't come keep the page on the themes it had, and the window on their side. */
+   * don't come keep the page on the themes it had, and the window on their side. It asks once the saves
+   * picked before it have answered. */
   async load() {
     const asked = ++this.#loads;
-    const choices = this.#choices;
+    const picks = this.#picks;
+    await this.#saves;
     const answer = await ask(commands.themes());
     if (asked !== this.#loads) return;
     if (answer.status !== "ok") {
@@ -90,15 +103,19 @@ export class ThemeState {
       if (this.themes) this.#take(await this.#turn(this.themes.theme));
       return;
     }
-    this.#take(await this.#turn(answer.data.theme));
+    const data = answer.data;
+    // The core may have read the settings before the save of a pick made since, so the theme on the window
+    // stands, and so it does if one comes while the window turns. Otherwise the answer says what the file
+    // holds.
+    const keepPicks = () => {
+      if (this.#picks !== picks && this.themes) data.theme = $state.snapshot(this.themes.theme);
+    };
+    if (this.#picks === picks) this.#saved = data.theme;
+    keepPicks();
+    this.#take(await this.#turn(data.theme));
     if (asked !== this.#loads) return;
-    // The core may have read the settings before a choice made since, or before a save that is on its way,
-    // so the choices on the window stand.
-    if (this.themes && (this.#choices !== choices || this.#saving > 0)) {
-      answer.data.light.chosen = this.themes.light.chosen;
-      answer.data.dark.chosen = this.themes.dark.chosen;
-    }
-    this.themes = answer.data;
+    keepPicks();
+    this.themes = data;
     this.error = undefined;
   }
 
@@ -148,30 +165,51 @@ export class ThemeState {
     return this.themes?.[kind].failed ?? [];
   }
 
-  /** The name of the theme chosen for side `kind`. */
-  chosen(kind: ThemeKind): string | undefined {
-    return this.themes?.[kind].chosen;
+  /** The theme chosen for side `kind`, which following the system shows on that side. */
+  #chosenOf(kind: ThemeKind): ThemeView | undefined {
+    const name = this.themes?.[kind].chosen;
+    return this.themesOf(kind).find((one) => one.name === name);
   }
 
-  /** Chooses the theme named `name` for side `kind`, and saves it to `settings.toml` at once, without
-   * Settings' Apply. One that can't be saved puts the old choice back, unless the user has chosen again
-   * since, and `problem` says why. */
-  async choose(kind: ThemeKind, name: string): Promise<void> {
+  /** Makes `theme` the theme in force, or follows the system, and saves it to `settings.toml` at once,
+   * without Settings' Apply (#756). The window turns to the side it keeps. One that can't be saved puts the
+   * theme the file holds back, unless the user has picked again since, and `problem` says why. Its save
+   * goes once the saves picked before it have answered. */
+  async pick(theme: ThemeView | "system"): Promise<void> {
     if (!this.themes) return;
-    this.#choices += 1;
-    this.#saving += 1;
-    const before = this.themes[kind].chosen;
-    this.themes[kind].chosen = name;
-    const answer = await ask(commands.saveTheme(kind, name));
-    this.#saving -= 1;
+    const pick = ++this.#picks;
+    const [inForce, saved]: [ThemeInForce, ThemePick] =
+      theme === "system"
+        ? [{ kind: "system" }, { kind: "system" }]
+        : [
+            { kind: "named", name: theme.name, side: theme.kind },
+            { kind: "named", name: theme.name },
+          ];
+    this.themes.theme = inForce;
+    // The side the window says it turned to counts when it says it, as Windows may change sides after.
+    const turned = this.#turn(inForce).then((side) => {
+      this.#take(side);
+    });
+    // A save waits for the one before it, and a load for both. A save that doesn't answer would hold them,
+    // but the settings thread writes a small file, and a drive slow enough to hold it holds the `themes`
+    // folder beside it too, which every load reads. A broken call answers as a refusal, so the chain goes on.
+    const saving = this.#saves.then(() => ask(Promise.resolve().then(() => commands.saveTheme(saved))));
+    this.#saves = saving;
+    const answer = await saving;
+    const putBack = answer.status !== "ok" && this.#picks === pick;
     if (answer.status === "ok") {
+      this.#saved = inForce;
       this.problem = undefined;
     } else {
-      // The themes a reload brought since, not the ones the choice was made on.
-      const side = this.themes[kind];
-      if (side.chosen === name) side.chosen = before;
       this.problem = `Tsugiki can't save the theme: ${answer.error.message}`;
     }
+    // On the themes a reload brought since, not the ones the pick was made on. The turn back goes in the
+    // queue at once, behind the pick's own turn.
+    if (putBack) {
+      this.themes.theme = this.#saved;
+      this.#take(await this.#turn(this.#saved));
+    }
+    await turned;
   }
 }
 

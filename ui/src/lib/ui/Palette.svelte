@@ -25,8 +25,11 @@
     note?: string | null;
     /** Runs while the row is the one picked, such as a theme that shows on the window before it's chosen. */
     preview?: () => void;
-    /** Runs without closing, such as the theme picker's row that lists the other side. */
+    /** Runs without closing, such as the theme picker's Reload themes. */
     keepsOpen?: boolean;
+    /** The heading the row lists under, such as a theme's side in the theme picker. Rows next to each other
+     * with the same heading list under one, and the rows of a heading come next to each other. */
+    group?: string | undefined;
   }
 
   /** What a quick pick calls itself, its text box, its list, a list with nothing in it, and the current
@@ -144,6 +147,19 @@
   const matching = $derived(
     quick ? (found?.rows ?? []) : commands.filter((command) => command.title.toLowerCase().includes(filter)),
   );
+  /** The rows listed, in runs from `start`, their index in `matching`: rows next to each other with the same
+   * `group` list under one heading, and rows without one under none. */
+  const sections = $derived(
+    matching.reduce<{ group: string | undefined; start: number; rows: PaletteCommand[] }[]>(
+      (all, command, index) => {
+        const last = all.at(-1);
+        if (last && last.group === command.group) last.rows.push(command);
+        else all.push({ group: command.group, start: index, rows: [command] });
+        return all;
+      },
+      [],
+    ),
+  );
   /** Whether quick open's answer to the text in the box hasn't come yet, or not all of it while the rows
    * still on their way could change which row is picked: unless the user picked one of the rows on show,
    * the pick is the first row. The last answer shows meanwhile. */
@@ -183,6 +199,37 @@
   $effect(() => {
     if (shownKey !== undefined) untrack(() => pickedCommand?.preview?.());
   });
+  let list = $state<HTMLElement>();
+  /** The text typed, the pick, and the rows by their titles, as they were when the list last showed the
+   * picked row. */
+  let placed = "";
+  // The list scrolls past a height, so the picked row stays in sight as the text, the pick or the rows
+  // change, and not as the user scrolls away from it. Rows that come again as they were, as a reload brings
+  // them, leave the list where it is.
+  $effect(() => {
+    const now = JSON.stringify([typed, picked, matching.map(keyOf)]);
+    if (now === placed) return;
+    placed = now;
+    untrack(keepPickInSight);
+  });
+
+  function keepPickInSight() {
+    if (matching.length === 0) return;
+    const row = list?.querySelector<HTMLElement>(`#palette-command-${String(picked)}`);
+    if (list && row) keepInSight(list, row, picked === 0);
+  }
+
+  /** Scrolls `list` as little as it takes to show `row`, and the heading over it when it is its group's
+   * first, or the top of the list for its first row. `scrollIntoView` would scroll the page under the
+   * palette too. The list is the offset parent of its rows and groups. */
+  function keepInSight(list: HTMLElement, row: HTMLElement, first: boolean) {
+    const group = row.closest<HTMLElement>(".group");
+    const heading = group?.querySelector('[role="option"]') === row ? group : undefined;
+    const top = first ? 0 : (heading ?? row).offsetTop;
+    const bottom = row.offsetTop + row.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+  }
 
   /** Closes, and runs `command` once the palette has gone and handed the focus back, so the command finds
    * the focus where the user left it: a pane command then moves it as its key would. A row that keeps it
@@ -258,24 +305,41 @@
       aria-label={shownWords.input}
       placeholder={shownWords.placeholder}
     />
+    {#snippet option(command: PaletteCommand, i: number)}
+      <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <li
+        id={`palette-command-${String(i)}`}
+        role="option"
+        aria-selected={i === picked}
+        aria-current={command.current ? "true" : undefined}
+        aria-disabled={command.disabled ? "true" : undefined}
+        onclick={() => {
+          run(command);
+        }}
+      >
+        {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
+          >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
+      </li>
+    {/snippet}
     {#if matching.length > 0}
-      <ul id="palette-commands" role="listbox" aria-label={shownWords.list}>
-        {#each matching as command, i (keyOf(command))}
-          <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <li
-            id={`palette-command-${String(i)}`}
-            role="option"
-            aria-selected={i === picked}
-            aria-current={command.current ? "true" : undefined}
-            aria-disabled={command.disabled ? "true" : undefined}
-            onclick={() => {
-              run(command);
-            }}
-          >
-            {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
-              >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
-          </li>
+      <ul id="palette-commands" role="listbox" aria-label={shownWords.list} bind:this={list}>
+        {#each sections as section (section.group ?? section.start)}
+          {#if section.group === undefined}
+            {#each section.rows as command, i (keyOf(command))}
+              {@render option(command, section.start + i)}
+            {/each}
+          {:else}
+            <!-- The group's label names it to a screen reader, so the heading is only for the eye. -->
+            <li class="group" role="group" aria-label={section.group}>
+              <div class="heading" aria-hidden="true">{section.group}</div>
+              <ul role="none">
+                {#each section.rows as command, i (keyOf(command))}
+                  {@render option(command, section.start + i)}
+                {/each}
+              </ul>
+            </li>
+          {/if}
         {/each}
       </ul>
     {/if}
@@ -322,6 +386,13 @@
     list-style: none;
   }
 
+  /* A long list scrolls inside the palette, which stays in the window, and its rows measure from its top. */
+  [role="listbox"] {
+    position: relative;
+    max-height: min(480px, calc(100vh - 140px));
+    overflow-y: auto;
+  }
+
   li {
     padding: 4px 10px;
     font-size: 13px;
@@ -330,6 +401,27 @@
 
   li[aria-selected="true"] {
     background: var(--selected);
+  }
+
+  /* A heading over its rows, with a line between it and the rows above. */
+  .group {
+    padding: 0;
+  }
+
+  .group > ul {
+    padding: 0;
+  }
+
+  .group:not(:first-child),
+  .group + li {
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  .heading {
+    padding: 6px 10px 2px;
+    font-size: 11px;
+    color: var(--fg-muted);
   }
 
   /* Greyed text, as muted text is: its note says why it can't run. */

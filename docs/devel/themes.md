@@ -24,9 +24,9 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   VS Code spreads it over `workbench.colorTheme` and `window.autoDetectColorScheme`, so the file can't follow
   the system and name a Theme as well. `"light"` and `"dark"`, from files written before
   ([#755](https://github.com/tsugiki/tsugiki/issues/755)), show the Theme in `light_theme` or `dark_theme`,
-  and a pick for that side writes the name picked in their place. Any other save keeps the mode, since the
-  side's name may be one no Theme has, and writing it would turn the window to the system's side. A key left
-  out takes its default:
+  and a pick in the theme picker writes its own choice in their place. Any other save keeps the mode, since
+  the side's name may be one no Theme has, and writing it would turn the window to the system's side. A key
+  left out takes its default:
   `"system"`, VS Code Light Modern and VS Code Dark Modern. A value that isn't text keeps that key's default,
   and the status bar names the file and the line. A name no Theme has stays in the settings, as its file may
   be mended: until
@@ -41,16 +41,19 @@ Decided in [#374](https://github.com/tsugiki/tsugiki/issues/374), with the proto
   it unless its media query has heard the system change sides since it asked: an event that reports the
   side kept may be the webview catching up, and doesn't count.
 - `Ctrl+K T`, or Pick a Theme in the command palette, opens the theme picker in the palette, as VS Code's
-  `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518)). It lists the Themes of the
-  side in use, opens on the one in force and marks it "chosen". Each Theme the list moves to shows on the
-  whole window, with no fade. Enter saves the Theme picked to `light_theme` or `dark_theme` at once, as
-  Tsugiki saves the panes' layout, without Settings' Apply. While `theme` names a Theme, that Theme stays in
-  force after the pick, until [#756](https://github.com/tsugiki/tsugiki/issues/756) has the picker save
-  `theme`. Esc or a click outside puts the Theme in force back, and so does moving to the last row. That row,
-  "Dark themes…" on the light side or "Light themes…" on the dark side, lists the other side's Themes with
-  that side's choice marked: a pick there saves that side's setting and leaves `theme` alone, so the window
-  goes back to the Theme in force. A save that fails puts the old choice back, and the status bar says why.
-  The user's own Themes come after the built-in ones, in name order, and then each file that can't be used,
+  `Ctrl+K Ctrl+T` does ([#518](https://github.com/tsugiki/tsugiki/issues/518),
+  [#756](https://github.com/tsugiki/tsugiki/issues/756)). It lists "Follow system" first, then every light
+  Theme under a Light heading and every dark Theme under a Dark heading. Under each heading the built-in
+  Themes come first, then the user's own in name order. The row in force is marked "chosen", and the list
+  opens on it: "Follow system" while `theme = "system"`, or else the Theme in force. Each row the list moves
+  to shows on the whole window, with no fade. "Follow system" shows the Theme chosen for the side the page
+  last heard Windows on: while a Theme keeps the window on its side, the page hears that side, so the preview
+  may show the other side's Theme until Enter turns the window back to the system. Enter saves
+  `theme = "<name>"`, or `theme = "system"` on "Follow system", at once, as Tsugiki saves the panes' layout,
+  without Settings' Apply. Following the system is the default, so its save takes the key out of the file
+  unless the user wrote a comment on it. Neither touches `light_theme` or `dark_theme`, which only Settings
+  and a hand edit change. Esc or a click outside puts the Theme in force back. A save that fails puts the
+  old choice back, and the status bar says why. After both headings comes each file that can't be used,
   greyed, with its file and why. Enter on it does nothing. Then comes "Reload themes", which reads the
   `themes` folder again and keeps the list open. `ui/src/lib/state/theme-picker.svelte.ts` decides what each
   row does.

@@ -42,3 +42,24 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
 });
+
+// The picker hands the focus back to the button as it closes, and Chromium clicks a focused button on the
+// keypress after Enter's keydown, which opened the picker again.
+test("Enter in the picker opened from the Sidebar's button leaves it closed", async ({ page }) => {
+  await mockCore(page, {
+    home: { screen: "repository", repository: cpython, others: [peps.name] },
+    openRepository: {
+      status: "ok",
+      data: { screen: "repository", repository: peps, others: [cpython.name] },
+    },
+    workbench: { status: "ok", data: workbench },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "python/cpython" }).click();
+  const picker = page.getByRole("dialog", { name: "Repository picker" });
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("heading", { name: "python/peps" })).toBeVisible();
+  await expect(picker).toBeHidden();
+});

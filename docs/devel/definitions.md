@@ -51,9 +51,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   `ty.configuration` and, in serde's words, "unknown variant `3.16`", and Tsugiki looks for those two
   parts. The rest of the error lists the versions ty knows, so the version alone wouldn't do. It then answers
   `workspace/configuration` with `Lib` alone, and has ty ask again by taking its workspace folder away and
-  giving it back, as ty 0.0.103 ignores `workspace/didChangeConfiguration` and says it hears folder
-  changes. It does this once each time ty starts, and a new start meets the refusal again. A lookup in the
-  moment between the refusal and ty's second ask still gets the answer without `Lib`.
+  giving it back, as ty 0.0.103 ignores `workspace/didChangeConfiguration`. Tsugiki does that only when
+  ty's answer to `initialize` sets `workspace.workspaceFolders.changeNotifications` to `true`, as 0.0.103
+  does; any other value, or none, means ty gets `Lib` alone only if it asks again by itself. A refusal that
+  comes before that answer waits for it, and the folder goes and comes back right after `initialized`. Once
+  `shutdown` has gone out, a refusal still switches the settings and nothing more is sent. All this
+  happens once each time ty starts, and a new start meets the refusal again. A lookup in the moment
+  between the refusal and ty's second ask still gets the answer without `Lib`.
 - The PR's changed Python files open on ty with their text at the head, read from the **Mirror**, and stay
   open while ty runs. A lookup from a removed line first gives them their text at the base through
   `didChange`, and the next lookup from another line puts the head's back. A file the PR adds keeps its

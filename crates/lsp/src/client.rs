@@ -525,6 +525,8 @@ struct Waiting {
 enum Life {
     /// The server reads what the client writes.
     Running,
+    /// The client has sent `shutdown`, after which LSP lets it send `exit` alone.
+    ShuttingDown,
     /// The client has sent `exit`, so the server is on its way out.
     Exiting,
     /// The server stopped reading, so nothing more can be asked, and its process is still there.
@@ -554,7 +556,6 @@ struct Owner {
 
 /// Whether the client can have the server ask for its settings again, by taking its workspace folder away
 /// and giving it back.
-#[derive(Clone, Copy, PartialEq, Eq)]
 enum Folders {
     /// The server hasn't answered `initialize`, which says. `owed` once it has refused its settings.
     Unknown { owed: bool },
@@ -649,6 +650,9 @@ impl Owner {
         if self.life == Life::Running {
             self.write(rpc::request(id, method.name(), params));
             let _none = self.waiting.insert(id, Waiting { answer, then });
+            if let Method::Shutdown = method {
+                self.life = Life::ShuttingDown;
+            }
         } else {
             answer(Err(RequestError::Exited));
         }
@@ -695,7 +699,7 @@ impl Owner {
                 match then {
                     Some(Then::Initialized) => {
                         self.write(rpc::notification(Method::Initialized.name(), json!({})));
-                        let owed = self.folders == Folders::Unknown { owed: true };
+                        let owed = matches!(self.folders, Folders::Unknown { owed: true });
                         self.folders = if hears_folder_changes(&result) {
                             Folders::Heard
                         } else {
@@ -806,14 +810,18 @@ impl Owner {
     }
 
     /// Has the server ask for its settings again, by taking its workspace folder away and giving it back,
-    /// once it has said it hears that: after its answer to `initialize`, if that comes later.
+    /// once it has said it hears that: after its answer to `initialize`, if that comes later. Nothing goes
+    /// out once `shutdown` has.
     fn ask_again(&mut self) {
         match self.folders {
             Folders::Unknown { .. } => self.folders = Folders::Unknown { owed: true },
             Folders::Heard if self.life == Life::Running => self.push_folders(),
-            Folders::Heard | Folders::Unheard => log::warn!(
-                "A language server refused its settings, and can't be told to ask for others: it gets them \
-                 only if it asks again"
+            Folders::Heard => log::info!(
+                "A language server refused its settings on its way out, so the client tells it nothing more"
+            ),
+            Folders::Unheard => log::warn!(
+                "A language server refused its settings, and doesn't hear folder changes, which would have \
+                 it ask for others: it gets them only if it asks again"
             ),
         }
     }

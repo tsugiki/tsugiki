@@ -306,6 +306,53 @@ fn a_refusal_before_the_answer_to_initialize_is_pushed_once_the_answer_says_the_
 }
 
 #[test]
+fn a_refusal_before_the_answer_to_initialize_isn_t_pushed_when_the_answer_says_the_server_doesn_t_hear()
+ {
+    let (starting, _events, mut fake) = connect();
+    let init = Init {
+        root: uri("file:///work/lookup"),
+        options: json!({}),
+        settings: json!({"ty": {"root": ["Lib"], "python-version": "3.99"}}),
+        experimental: json!({}),
+        fallback: Some(fallback()),
+    };
+    let initializing = initialize(starting, init, PATIENCE);
+    let asked = fake.expect("initialize");
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+    fake.reply(&asked, json!({"capabilities": {}}));
+
+    let _initialized = initializing.join().unwrap().unwrap();
+    let _sent = fake.expect("initialized");
+    // The next message the client writes is its answer, with nothing pushed before it.
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+}
+
+#[test]
+fn a_refusal_after_shutdown_has_gone_out_switches_the_settings_and_pushes_nothing() {
+    let settings = json!({"ty": {"root": ["Lib"], "python-version": "3.99"}});
+    let folder_changes = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
+    let (server, _events, mut fake) = initialized_with(settings, Some(fallback()), folder_changes);
+    server.stop(PATIENCE);
+    let asked = fake.expect("shutdown");
+
+    show(
+        &mut fake,
+        1,
+        "Invalid `ty.configuration` options: unknown variant `3.99`",
+    );
+    // LSP lets the client send `exit` alone after `shutdown`: the next message it writes is its answer.
+    assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
+    fake.reply(&asked, Value::Null);
+    let _exit = fake.expect("exit");
+    fake.exit(Some(0));
+}
+
+#[test]
 fn workspace_folders_are_the_root_the_client_gave() {
     let (_server, _events, mut fake) = initialized(json!({}));
     fake.send(&json!({"jsonrpc": "2.0", "id": 5, "method": "workspace/workspaceFolders"}));

@@ -1,7 +1,9 @@
 //! A language server that answers lookups in one language: ty, rust-analyzer or clangd. One reads a Lookup
 //! checkout, with the PR's changed files in its language open on it, and gives the open files the text of
-//! the side a lookup is from.
+//! the side a lookup is from. On clangd, which answers only in a file it was sent, a file the PR doesn't
+//! change opens once a lookup asks in it, and the last 16 asked about stay open.
 
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
@@ -43,11 +45,23 @@ pub(super) struct Setup {
     /// The language of the files it opens.
     pub(super) language: Language,
     pub(super) ready: Ready,
+    /// How it reads a file that isn't open on it.
+    pub(super) unopened: Unopened,
     /// Reads how far the server's index has got from a `$/progress`, for a server whose answers may miss
     /// what its index doesn't hold yet, as clangd's do.
     pub(super) index: Option<fn(&Progress) -> Option<Indexing>>,
     /// What Tsugiki watches the server's events for, to say why it can't answer, which only clangd has.
     pub(super) troubles: Option<Troubles>,
+}
+
+/// How a server reads a file that isn't open on it, such as one the PR doesn't change.
+#[derive(Clone, Copy)]
+pub(super) enum Unopened {
+    /// From disk, as ty and rust-analyzer do.
+    FromDisk,
+    /// Not at all: clangd builds an AST only for a document it was sent, and refuses a lookup in another
+    /// with "trying to get AST for non-added document" (#750). A lookup in such a file opens it first.
+    Refused,
 }
 
 /// A server's progress with its index, as its `$/progress` says.
@@ -123,7 +137,14 @@ pub(super) struct LanguageServer {
     version: Option<String>,
     folder: PathBuf,
     at: LookupAt,
+    /// The language of the files it opens.
+    language: Language,
     open: Vec<Open>,
+    /// The files the PR doesn't change that lookups asked in, open with their text in the checkout, the one
+    /// asked about longest ago first. None for a server that reads such a file from disk.
+    visited: Option<VecDeque<Document>>,
+    /// The thread that reads the server's events, which hears when a lookup opens a file.
+    watcher: Sender<Heard>,
     /// Which side's text the open files have.
     showing: DiffEnd,
     /// The moment the server started, or a lookup last asked it or got its answer.
@@ -139,6 +160,9 @@ pub(super) struct Request {
     at: Position,
     side: DiffEnd,
 }
+
+/// The most files the PR doesn't change that stay open on a server once lookups asked in them.
+const VISITED: usize = 16;
 
 /// A server asked to stop, whose end the caller may wait for.
 pub(super) struct Stopping(Receiver<Event>);
@@ -338,9 +362,11 @@ impl LanguageServer {
         let (writer, indexing) = latest::channel(Indexing::Built);
         let watched = Watched {
             index: setup.index,
-            index_due: (setup.troubles.as_ref())
-                .filter(|_| !open.is_empty())
-                .and_then(|troubles| Instant::now().checked_add(troubles.index_within)),
+            index_due: match &setup.troubles {
+                None => IndexDue::Never,
+                Some(troubles) if open.is_empty() => IndexDue::AfterOpen(troubles.index_within),
+                Some(troubles) => IndexDue::from_now(troubles.index_within),
+            },
             headers: setup.troubles.map(|troubles| {
                 let texts = (open.iter())
                     .map(|open| {
@@ -351,14 +377,21 @@ impl LanguageServer {
                 Headers::new(troubles.program, (folder.clone(), at.head.clone()), texts)
             }),
         };
-        let events = watch(events, watched, writer, news);
+        let (events, watcher) = watch(events, watched, writer, news);
+        let visited = match setup.unopened {
+            Unopened::FromDisk => None,
+            Unopened::Refused => Some(VecDeque::new()),
+        };
         Ok(Self {
             server,
             events,
             version,
             folder,
             at,
+            language: setup.language,
             open,
+            visited,
+            watcher,
             showing: DiffEnd::Head,
             used: Instant::now(),
             indexing,
@@ -418,11 +451,12 @@ impl LanguageServer {
     }
 
     /// Sends the server `request`, with the open files at the request's side, and returns at once with what
-    /// turns its answer into hits.
+    /// turns its answer into hits. On clangd, a file the PR doesn't change opens first, if it isn't open.
     pub(super) fn ask(&mut self, request: &Request) -> (Pending<Definitions>, Hits) {
         self.used = Instant::now();
         let _unread = self.events.try_iter().count();
         self.show(request.side);
+        self.visit(&request.document);
         let pending = self.server.definition(&request.document, request.at);
         let open = (self.open.iter())
             .map(|open| {
@@ -436,6 +470,40 @@ impl LanguageServer {
             open,
         };
         (pending, hits)
+    }
+
+    /// On a server that refuses a lookup in a file that isn't open, opens `document` with its text in the
+    /// checkout, unless it is open already. Its text is the same at the base and the head, so
+    /// [`LanguageServer::show`] leaves it be. Once [`VISITED`] such files are open, the one asked about
+    /// longest ago closes, and a file asked about again counts as the latest. A file the checkout can't give
+    /// stays closed, so the next lookup in it tries again.
+    ///
+    /// It reads the file on the servers' thread, once per file while it stays open: a file of the checkout,
+    /// on the local disk, as a start reads the PR's files from the Mirror on that thread too.
+    fn visit(&mut self, document: &Uri) {
+        let Some(visited) = self.visited.as_mut() else {
+            return;
+        };
+        if (self.open.iter()).any(|open| open.document.uri() == document) {
+            return;
+        }
+        let again = (visited.iter().position(|file| file.uri() == document))
+            .and_then(|at| visited.remove(at));
+        if let Some(file) = again {
+            visited.push_back(file);
+            return;
+        }
+        let Some(text) = document.to_path().and_then(|path| fs::read(path).ok()) else {
+            return;
+        };
+        if visited.len() >= VISITED {
+            // Dropping it sends `didClose`.
+            let _closed = visited.pop_front();
+        }
+        let text = String::from_utf8_lossy(&text);
+        visited.push_back(self.server.open(document.clone(), self.language, &text));
+        // clangd reads its compile database, and starts its index, once a file is open on it.
+        let _heard = self.watcher.send(Heard::Opened);
     }
 
     /// Gives the open files their text at `side`, if they don't have it.
@@ -465,10 +533,46 @@ fn located(folder: &Path) -> Result<(PathBuf, Uri), Error> {
 struct Watched {
     /// How far its index has got, from a `$/progress`, for a server whose index Tsugiki reads.
     index: Option<fn(&Progress) -> Option<Indexing>>,
-    /// The moment by which clangd has to have reported its index, once a file is open on it (#684).
-    index_due: Option<Instant>,
+    /// The moment clangd has to have reported its index by, once a file is open on it (#684).
+    index_due: IndexDue,
     /// What clangd's diagnostics say of the headers it can't find (#684).
     headers: Option<Headers>,
+}
+
+/// The moment clangd has to have reported its index by (#684).
+#[derive(Clone, Copy)]
+enum IndexDue {
+    /// Within this long of the first file a lookup opens on it, as it started with none open.
+    AfterOpen(Duration),
+    At(Instant),
+    /// Never: the server isn't clangd, or the moment has passed.
+    Never,
+}
+
+impl IndexDue {
+    /// `within` from now.
+    fn from_now(within: Duration) -> Self {
+        Instant::now()
+            .checked_add(within)
+            .map_or(Self::Never, Self::At)
+    }
+
+    /// The moment, if one is set.
+    fn at(self) -> Option<Instant> {
+        match self {
+            Self::At(due) => Some(due),
+            Self::AfterOpen(_) | Self::Never => None,
+        }
+    }
+}
+
+/// A message to the thread that reads a server's events.
+enum Heard {
+    Event(Event),
+    /// A lookup opened a file on the server.
+    Opened,
+    /// The server's events have ended.
+    Ended,
 }
 
 /// Reads the server's `events` on a thread of their own as they come, and hands each on through the
@@ -477,14 +581,23 @@ struct Watched {
 /// back as too soon it tells once [`NEWS_EVERY`] has passed, though the server says nothing more. It tells
 /// `news` of a problem clangd's events show, or the lack of them. When the server exits, it writes
 /// [`Indexing::Ended`] first, then tells `news` how. Once the server has exited, or its events end, it
-/// writes [`Indexing::Ended`] and tells `news` that.
+/// writes [`Indexing::Ended`] and tells `news` that. The sender it gives tells the thread when a lookup
+/// opens a file, which starts the wait for clangd's index if it is the first.
 fn watch(
     events: Receiver<Event>,
     watched: Watched,
     mut indexing: LatestWriter<Indexing>,
     news: OnNews,
-) -> Receiver<Event> {
+) -> (Receiver<Event>, Sender<Heard>) {
     let (passes, passed) = mpsc::channel();
+    // A thread of their own hands the events on, so the watcher hears a file opened while it waits.
+    let (hears, heard) = mpsc::channel();
+    let forwards = hears.clone();
+    let _forwards = thread::spawn(move || {
+        let _gone = (events.into_iter().map(Heard::Event))
+            .chain([Heard::Ended])
+            .try_for_each(|heard| forwards.send(heard));
+    });
     let first = if watched.index.is_some() {
         Indexing::Unreported
     } else {
@@ -503,13 +616,17 @@ fn watch(
     };
     let _reads = thread::spawn(move || {
         loop {
-            let event = match events.recv_timeout(watcher.wait()) {
-                Ok(event) => event,
+            let event = match heard.recv_timeout(watcher.wait()) {
+                Ok(Heard::Event(event)) => event,
+                Ok(Heard::Opened) => {
+                    watcher.opened();
+                    continue;
+                }
                 Err(RecvTimeoutError::Timeout) => {
                     watcher.due();
                     continue;
                 }
-                Err(RecvTimeoutError::Disconnected) => break,
+                Ok(Heard::Ended) | Err(RecvTimeoutError::Disconnected) => break,
             };
             watcher.read(&event);
             // Once a deadline has passed, events already queued would come first for as long as they last.
@@ -522,7 +639,7 @@ fn watch(
         }
         watcher.ended();
     });
-    passed
+    (passed, hears)
 }
 
 /// Reads the diagnostics it is sent with `headers` on a thread of their own, which reads the disk and git,
@@ -543,8 +660,8 @@ fn read_headers(mut headers: Headers, news: OnNews) -> Sender<Diagnostics> {
 struct Watcher {
     /// How far its index has got, from a `$/progress`, for a server whose index Tsugiki reads.
     index: Option<fn(&Progress) -> Option<Indexing>>,
-    /// The moment by which clangd has to have reported its index, until it has passed.
-    index_due: Option<Instant>,
+    /// The moment clangd has to have reported its index by.
+    index_due: IndexDue,
     /// Where clangd's diagnostics go to be read for the headers it can't find.
     headers: Option<Sender<Diagnostics>>,
     indexing: LatestWriter<Indexing>,
@@ -562,7 +679,7 @@ impl Watcher {
         let news = (self.latest != self.told.0)
             .then(|| self.told.1.checked_add(NEWS_EVERY))
             .flatten();
-        let due = news.into_iter().chain(self.index_due).min();
+        let due = news.into_iter().chain(self.index_due.at()).min();
         due.map_or(Duration::MAX, |due| {
             due.saturating_duration_since(Instant::now())
         })
@@ -572,8 +689,8 @@ impl Watcher {
     /// count held back as too soon.
     fn due(&mut self) {
         let now = Instant::now();
-        if (self.index_due).is_some_and(|due| due <= now) {
-            self.index_due = None;
+        if (self.index_due.at()).is_some_and(|due| due <= now) {
+            self.index_due = IndexDue::Never;
             if self.latest == Indexing::Unreported {
                 (self.news)(News::Troubled(ServerProblem::NotIndexing));
             }
@@ -581,6 +698,14 @@ impl Watcher {
         if self.latest != self.told.0 && self.told.1.elapsed() >= NEWS_EVERY {
             self.told = (self.latest, now);
             (self.news)(News::Indexing);
+        }
+    }
+
+    /// Notes that a lookup opened a file on the server, which starts the wait for clangd's index if it
+    /// started with none open.
+    fn opened(&mut self) {
+        if let IndexDue::AfterOpen(within) = self.index_due {
+            self.index_due = IndexDue::from_now(within);
         }
     }
 

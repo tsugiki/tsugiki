@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tsugiki_lsp::Language;
 
 use super::failed;
-use super::server::{Ready, Setup};
+use super::server::{Ready, Setup, Unopened};
 use crate::error::Error;
 
 #[cfg(test)]
@@ -37,6 +37,7 @@ pub(super) fn setup(program: &Path) -> Result<Setup, Error> {
         settings: json!({"rust-analyzer": config}),
         language: Language::Rust,
         ready: Ready::Quiescent,
+        unopened: Unopened::FromDisk,
         index: None,
         troubles: None,
     })

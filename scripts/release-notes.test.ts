@@ -155,4 +155,42 @@ describe("releasePage", () => {
     expect(verifyCommands(page)).toHaveLength(1);
     expect(verifyCommands(page)).toEqual(verifyCommands(readme));
   });
+
+  describe("joins the lines the changelog wraps, since GitHub breaks a release's lines where its body does", () => {
+    /** The notes as the release page shows them, without the footer. */
+    const notesOn = (notes: string): string => releasePage(notes).split("\n\n### Download\n")[0] ?? "";
+
+    it("joins a wrapped paragraph into one line", () => {
+      expect(notesOn("The first half of a sentence\nand its second half.\n\nA second paragraph.")).toBe(
+        "The first half of a sentence and its second half.\n\nA second paragraph.",
+      );
+    });
+
+    it("joins a list item's indented lines into the item", () => {
+      expect(
+        notesOn("- A click on a word picks it, and a\n  double-click selects it.\n- Another item."),
+      ).toBe("- A click on a word picks it, and a double-click selects it.\n- Another item.");
+    });
+
+    it("keeps a heading on its own line, whether a paragraph comes before it or after it", () => {
+      expect(notesOn("A paragraph\nwrapped.\n### Added\nA list follows.")).toBe(
+        "A paragraph wrapped.\n### Added\nA list follows.",
+      );
+    });
+
+    it("joins a line that starts with a ticket's number, which isn't a heading", () => {
+      expect(notesOn("- The fix that\n  #749 asked for.")).toBe("- The fix that #749 asked for.");
+      expect(notesOn("A paragraph that\n#749 asked for.")).toBe("A paragraph that #749 asked for.");
+    });
+
+    it("keeps a nested list item on its own line", () => {
+      expect(notesOn("- An item\n  - A nested one")).toBe("- An item\n  - A nested one");
+    });
+
+    it("keeps the lines inside a fence as they are, and starts a paragraph after it", () => {
+      expect(notesOn("Run this:\n\n```\nfirst line\n  second line\n```\nThen\nthis.")).toBe(
+        "Run this:\n\n```\nfirst line\n  second line\n```\nThen this.",
+      );
+    });
+  });
 });

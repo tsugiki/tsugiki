@@ -94,9 +94,43 @@ const DOWNLOADS = [
   "If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and open an issue.",
 ].join("\n");
 
+/** A heading, or a fence's first or last line: a line no other line joins. */
+const STANDS_ALONE = /^(#{1,6} |\s*```)/;
+
+/** A line that starts a block of its own: a heading, a list item or a fence. */
+const STARTS_BLOCK = /^(#{1,6} |\s*- |\s*```)/;
+
+/**
+ * `markdown` with each line it wraps joined onto the line above, since GitHub breaks a release's lines where
+ * its body does. A list item's indented lines join the item, and the lines inside a fence stay as they are.
+ */
+function unwrapped(markdown: string): string {
+  const lines: string[] = [];
+  let fenced = false;
+  for (const line of markdown.split("\n")) {
+    const previous = lines.at(-1);
+    const continues =
+      !fenced &&
+      line !== "" &&
+      !STARTS_BLOCK.test(line) &&
+      previous !== undefined &&
+      previous !== "" &&
+      !STANDS_ALONE.test(previous);
+    if (continues) {
+      lines[lines.length - 1] = `${previous} ${line.trimStart()}`;
+    } else {
+      lines.push(line);
+    }
+    if (/^\s*```/.test(line)) {
+      fenced = !fenced;
+    }
+  }
+  return lines.join("\n");
+}
+
 /** The text of a release page: the changelog's `notes`, then how to pick and check a download. */
 export function releasePage(notes: string): string {
-  return `${notes}\n\n${DOWNLOADS}`;
+  return `${unwrapped(notes)}\n\n${DOWNLOADS}`;
 }
 
 /** The notes of the version Cargo.toml says, or of the work so far when nothing has been released. */

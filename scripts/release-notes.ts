@@ -72,31 +72,79 @@ export function notesFor(changelog: string, version: string): string {
 /**
  * What each release page says after its notes: which file is for which system, and how to check one. It
  * names the files by extension, so it stays right when Tauri or `portable-zip.ts` changes a name. The command
- * is the README's, as a test checks. Each paragraph is one line, since GitHub breaks a release's lines where
- * its body does. The headings sit at the level of the changelog's Added and Fixed.
+ * is the README's, as a test checks. The headings sit at the level of the changelog's Added and Fixed.
  */
-const DOWNLOADS = [
-  "### Download",
-  "",
-  "- Windows: the `.zip`",
-  "- Apple silicon Macs: the `.dmg`",
-  "",
-  "### Checking a download",
-  "",
-  "These files aren't code-signed, so Windows and macOS warn you when you open one. Each file has an " +
-    "attestation, which shows that Tsugiki's release workflow built it. Check it with the " +
-    "[GitHub CLI](https://cli.github.com/):",
-  "",
-  "```",
-  "gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml",
-  "```",
-  "",
-  "If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and open an issue.",
-].join("\n");
+const DOWNLOADS = `### Download
+
+- Windows: the \`.zip\`
+- Apple silicon Macs: the \`.dmg\`
+
+### Checking a download
+
+These files aren't code-signed, so Windows and macOS warn you when you open one. Each file has an
+attestation, which shows that Tsugiki's release workflow built it. Check it with the
+[GitHub CLI](https://cli.github.com/):
+
+\`\`\`
+gh attestation verify <file> --repo tsugiki/tsugiki --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml
+\`\`\`
+
+If this fails, the file isn't the one Tsugiki's workflow built, so don't run it, and open an issue.`;
+
+/** A fence's first or last line, with its run of backticks or tildes. Four spaces in, it would be code. */
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+/** A line that starts a block of its own: a heading, a list item, a quote, a table row or a rule. */
+const STARTS_BLOCK = /^ {0,3}#{1,6}( |$)|^\s*([-*+]|\d+[.)])( |$)|^\s*[>|]|^ {0,3}([-=*_] *)+$/;
+
+/** A line that the next one never joins: a heading, a rule or setext underline, or a hard break. */
+const ENDS_BLOCK = /^ {0,3}#{1,6}( |$)|^ {0,3}([-=*_] *)+$|( {2}|\\)$/;
+
+/** Whether `line` closes the fence that `opening` started: only the same character, at least as many. */
+function closes(line: string, opening: string): boolean {
+  const run = line.trim();
+  return FENCE.test(line) && run.length >= opening.length && [...run].every((char) => char === opening[0]);
+}
+
+/**
+ * `markdown` with each line it wraps joined onto the line above, since GitHub breaks a release's lines where
+ * its body does. A list item's indented lines join the item, and the lines inside a fence stay as they are.
+ * An indented code block isn't told apart from a list item's indented paragraph, so it gets joined: fence
+ * code instead.
+ */
+function unwrapped(markdown: string): string {
+  const lines: string[] = [];
+  let fence: string | undefined;
+  for (const line of markdown.split("\n")) {
+    const previous = lines.at(-1);
+    const opening = FENCE.exec(line)?.[1];
+    if (fence !== undefined) {
+      lines.push(line);
+      if (closes(line, fence)) {
+        fence = undefined;
+      }
+    } else if (opening !== undefined) {
+      lines.push(line);
+      fence = opening;
+    } else if (
+      previous === undefined ||
+      previous.trim() === "" ||
+      line.trim() === "" ||
+      STARTS_BLOCK.test(line) ||
+      ENDS_BLOCK.test(previous) ||
+      FENCE.test(previous)
+    ) {
+      lines.push(line);
+    } else {
+      lines[lines.length - 1] = `${previous} ${line.trimStart()}`;
+    }
+  }
+  return lines.join("\n");
+}
 
 /** The text of a release page: the changelog's `notes`, then how to pick and check a download. */
 export function releasePage(notes: string): string {
-  return `${notes}\n\n${DOWNLOADS}`;
+  return unwrapped(`${notes}\n\n${DOWNLOADS}`);
 }
 
 /** The notes of the version Cargo.toml says, or of the work so far when nothing has been released. */

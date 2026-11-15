@@ -155,4 +155,75 @@ describe("releasePage", () => {
     expect(verifyCommands(page)).toHaveLength(1);
     expect(verifyCommands(page)).toEqual(verifyCommands(readme));
   });
+
+  describe("joins the lines the changelog wraps, since GitHub breaks a release's lines where its body does", () => {
+    /** The notes as the release page shows them, without the footer. */
+    const notesOn = (notes: string): string => releasePage(notes).split("\n\n### Download\n")[0] ?? "";
+
+    it("joins a wrapped paragraph into one line", () => {
+      expect(notesOn("The first half of a sentence\nand its second half.\n\nA second paragraph.")).toBe(
+        "The first half of a sentence and its second half.\n\nA second paragraph.",
+      );
+    });
+
+    it("joins a list item's indented lines into the item", () => {
+      expect(
+        notesOn("- A click on a word picks it, and a\n  double-click selects it.\n- Another item."),
+      ).toBe("- A click on a word picks it, and a double-click selects it.\n- Another item.");
+    });
+
+    it("keeps a heading on its own line, whether a paragraph comes before it or after it", () => {
+      expect(notesOn("A paragraph\nwrapped.\n### Added\nA list follows.")).toBe(
+        "A paragraph wrapped.\n### Added\nA list follows.",
+      );
+    });
+
+    it("joins a line that starts with a ticket's number, which isn't a heading", () => {
+      expect(notesOn("- The fix that\n  #749 asked for.")).toBe("- The fix that #749 asked for.");
+      expect(notesOn("A paragraph that\n#749 asked for.")).toBe("A paragraph that #749 asked for.");
+    });
+
+    it("takes a line of spaces for a blank one, so the paragraphs around it stay apart", () => {
+      expect(notesOn("First paragraph.\n  \nSecond paragraph.")).toBe(
+        "First paragraph.\n  \nSecond paragraph.",
+      );
+    });
+
+    it.each([
+      ["a nested list item", "- An item\n  - A nested one"],
+      ["an ordered list", "Steps:\n1. Unpack.\n2) Run."],
+      ["bullets drawn with * and +", "Two kinds:\n* one\n+ two"],
+      ["a quote", "As said:\n> a\n> b"],
+      ["a table", "| a | b |\n|---|---|\n| 1 | 2 |"],
+      ["a setext heading and the line after it", "Title\n=====\nText"],
+      ["a rule and the line after it", "Before\n\n---\nAfter"],
+      ["a hard break drawn with two spaces", "Line one  \nLine two"],
+      ["a hard break drawn with a backslash", "Line one\\\nLine two"],
+    ])("keeps %s on lines of their own", (_, notes) => {
+      expect(notesOn(notes)).toBe(notes);
+    });
+
+    it("keeps the lines inside a fence as they are, and starts a paragraph after it", () => {
+      expect(notesOn("Run this:\n\n```\nfirst line\n  second line\n```\nThen\nthis.")).toBe(
+        "Run this:\n\n```\nfirst line\n  second line\n```\nThen this.",
+      );
+    });
+
+    it.each([
+      ["a tilde fence", "~~~\ncmd one\ncmd two\n~~~"],
+      ["a longer fence around a shorter one", "````\n```\ninside\n```\n````"],
+      ["a fence that a line with an info string doesn't close", "```\nfirst\n```python\nsecond\n```"],
+      ["a fence that a line four spaces in doesn't close", "```\nfirst\n    ```\nsecond\n```"],
+    ])("keeps the lines of %s as they are", (_, notes) => {
+      expect(notesOn(notes)).toBe(notes);
+    });
+
+    it("takes a run of backticks four spaces in for code, not a fence", () => {
+      expect(notesOn("Text\n    ```\nmore")).toBe("Text ``` more");
+    });
+
+    it("joins the footer's wrapped lines too", () => {
+      expect(page).toContain("open one. Each file has an attestation, which shows");
+    });
+  });
 });

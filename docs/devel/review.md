@@ -51,19 +51,24 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     the diff the Files tab shows, as the core's text search does ([definitions.md](definitions.md)).
     `Ctrl+Shift+F` and "View: Search in the Rail" open the rail on it with the focus in its query box,
     filled with the text selected on one line, or else the word picked in the diff or the file view.
-    Pressed again with Search on show, the key focuses the box, as in VS Code. The box has three toggles,
-    match case, whole word and regex, on `Alt+C`, `Alt+W` and `Alt+R` while it has the focus, and it
-    searches 250 ms after the last key. The tab reads the PR's diff on either of the PR's tabs, as the
-    checkout it searches follows that diff, and searches again once a newer diff shows.
+    Pressed again with Search on show, the key only focuses the box, and leaves the query in it. The box
+    has three toggles, match case, whole word and regex, on `Alt+C`, `Alt+W` and `Alt+R` while it has the
+    focus, and it searches 250 ms after the last key. The tab reads the PR's diff on either of the PR's
+    tabs, as each query names the diff's base and head, and the core moves the checkout there. It searches
+    again once a diff with another base or head shows, as a PR moved to another Target branch gets
+    ([#211](https://github.com/tsugiki/tsugiki/issues/211)). A query nobody wants any more, as the box
+    empties or the PR closes, stops.
   - A line under the box says "312 results in 41 files", "Stopped at 5,000 results", "Waiting for the
-    checkout…" or the regex's error. The results group by file: a row with the path, the count and a fold
+    checkout…", why the diff the search needs isn't there, or the regex's error. A match opens only in
+    the diff it was found in. The results group by file: a row with the path, the count and a fold
     arrow, then a row for each line with its number and text, each match marked. A Generated file's rows
     are greyed and say so, as in the Files tab. The list draws only the rows on screen.
   - A click or Enter on a match in a file the PR changes shows the Files tab at that line, as Go to
     definition lands, opening the lines around it if no hunk shows it. In any other file it opens the file
-    view at the line, as Go to definition does. ↑ ↓ move through the rows, ← → fold and unfold a file, and
-    Enter opens. The query, its toggles and what it found stay while the PR's view
-    lasts, so closing and reopening the rail keeps them.
+    view at the line, as Go to definition does, or lands on the line in the file view on show if it shows
+    that file. ↑ ↓ move through the rows, ← → fold and unfold a file, and Enter opens. The query, its
+    toggles and what it found stay while the PR's view lasts, so closing and reopening the rail keeps
+    them.
 - Hidden lines around each change can be shown, as on GitHub: 20 more above or below a hunk, the rest of a
   short gap, or the whole file. They are read from the file at the PR’s head in the mirror, so expanding costs
   no API call. New line comments stay on lines of the diff, because GitHub's API accepts them only there; the

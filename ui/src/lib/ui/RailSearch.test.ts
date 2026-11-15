@@ -17,9 +17,16 @@ const core = vi.hoisted(() => ({
 }));
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { textSearch: core.textSearch, textSearchState: core.textSearchState },
+  commands: {
+    textSearch: core.textSearch,
+    textSearchState: core.textSearchState,
+    textSearchCancel: () => Promise.resolve(null),
+  },
   events: { textSearchChanged: { listen: core.listen } },
 }));
+
+/** The ends of the diff the tab searches. */
+const ENDS = { base: "b0", head: "abc" };
 
 const hit = (
   line: number,
@@ -41,9 +48,9 @@ const found = (...files: FileHits[]): SearchState => ({
   end: "done",
 });
 
-/** The PR view the tab sits in, with the diff at `head`, or none ready, and the matches it opened. */
-const prView = (head: string | null = "abc") => {
-  const files = { view: head === null ? { state: "fetching" } : { state: "ready", head } };
+/** The PR view the tab sits in, with the diff at `ENDS` or none ready yet, and the matches it opened. */
+const prView = (ready = true) => {
+  const files = { view: ready ? { state: "ready", ...ENDS } : { state: "fetching" }, error: undefined };
   const pr = {
     search: new TextSearchState("python/cpython"),
     files,
@@ -90,7 +97,7 @@ afterEach(() => {
 });
 
 it("reads the PR's diff, waits for it, then searches and shows the results grouped by file, matches marked", async () => {
-  const pr = prView(null);
+  const pr = prView(false);
   core.textSearchState.mockResolvedValue(
     found(
       {
@@ -106,9 +113,9 @@ it("reads the PR's diff, waits for it, then searches and shows the results group
   await tick();
   const waiting = document.querySelector(".summary")?.textContent;
 
-  pr.files.view = { state: "ready", head: "abc" };
-  // The view isn't reactive here, so the tab hears the head as PrDetail's would.
-  pr.search.follow("abc");
+  pr.files.view = { state: "ready", ...ENDS };
+  // The view isn't reactive here, so the tab hears the diff as PrDetail's would.
+  pr.search.follow({ kind: "ready", ...ENDS });
   await vi.waitFor(() => {
     expect(screen.queryByRole("tree")).not.toBeNull();
   });
@@ -234,7 +241,7 @@ it("goes from the box to the list on ↓, where the keys move, fold, unfold and 
     "1spam",
     3,
   ]);
-  expect(pr.openMatch.mock.calls).toEqual([[{ path: "a.py", line: 4 }]]);
+  expect(pr.openMatch.mock.calls).toEqual([[{ path: "a.py", line: 4, ends: ENDS }]]);
   // Only the keys the list doesn't use, and the one the box doesn't, go on.
   expect(heard).toHaveBeenCalledTimes(3);
   expect(tree().getAttribute("aria-activedescendant")).toBe(items()[0]?.id);
@@ -260,7 +267,7 @@ it("opens a match on a click, and folds a file on a click on its row", async () 
   const cursor = cursorText();
   await fireEvent.click(items()[0] as HTMLElement);
 
-  expect(pr.openMatch.mock.calls).toEqual([[{ path: "a.py", line: 7 }]]);
+  expect(pr.openMatch.mock.calls).toEqual([[{ path: "a.py", line: 7, ends: ENDS }]]);
   expect(cursor).toBe("7spam");
   expect(items().map((item) => item.getAttribute("aria-expanded"))).toEqual(["false"]);
 });
@@ -300,6 +307,45 @@ it("draws only the rows near what shows of 5,000 results, and scrolls the list t
   ]);
   expect(atEnd).toEqual([5001 * 22 - 220, true]);
   expect((list.firstElementChild as HTMLElement).style.height).toBe(`${String(5001 * 22)}px`);
+});
+
+it("puts the list back at its top for a new query's results, and when it draws the list anew", async () => {
+  const lines = Array.from({ length: 5000 }, (_, i) => hit(i + 1, "spam", [[0, 4]]));
+  const big = found({ path: "big.c", generated: false, lines });
+  const pr = await shown(big);
+  const scrolled = async () => {
+    tree().scrollTop = 2200;
+    await fireEvent.scroll(tree());
+  };
+  const top = () => [
+    tree().scrollTop,
+    items().some((item) => item.textContent?.replace(/\s+/g, "") === "1spam"),
+  ];
+
+  await scrolled();
+  pr.search.seed("eggs");
+  await vi.waitFor(() => {
+    expect(pr.search.answered).toBe(2);
+  });
+  await tick();
+  const newQuery = top();
+  await scrolled();
+  core.textSearchState.mockResolvedValue(found());
+  pr.search.seed("ham");
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("tree")).toBeNull();
+  });
+  core.textSearchState.mockResolvedValue(big);
+  pr.search.seed("spam");
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("tree")).not.toBeNull();
+  });
+  await tick();
+
+  expect([newQuery, top()]).toEqual([
+    [0, true],
+    [0, true],
+  ]);
 });
 
 it("marks the line under the box as trouble when the query can't run", async () => {

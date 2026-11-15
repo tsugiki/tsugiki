@@ -71,6 +71,7 @@ vi.mock("$lib/data/bindings", () => ({
     recordMiss: core.recordMiss,
     textSearch: core.textSearch,
     textSearchState: core.textSearchState,
+    textSearchCancel: () => Promise.resolve(null),
   },
   events: {
     changed: { listen: core.listen },
@@ -1312,21 +1313,29 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   await searchKey();
   await tick();
   const fromSelection = [railTab(), box().value, document.activeElement === box()];
-  // Again with Search on show, it focuses the box and leaves the rail open. A selection over two lines
-  // puts nothing in the box, and the Conversation has no picked word.
+  // Again with Search on show, it only focuses the box and leaves the rail open: what the box holds stays,
+  // whatever is selected.
   box().blur();
-  selected("two\nlines");
+  selected("gc_collect");
   await fireEvent.keyDown(box(), { key: "F", ctrlKey: true, shiftKey: true });
   await tick();
   const again = [railTab(), box().value, document.activeElement === box()];
-  // On the Files tab the word picked in the diff goes in, or the one in the file view over it.
-  selected("");
+  const railOnFiles = () =>
+    component
+      .paletteCommands()
+      .find((found) => found.title === "View: Files in the Rail")
+      ?.run();
+  // On the Files tab the word picked in the diff goes in, as a selection over two lines puts nothing in
+  // the box, or else the word picked in the file view over the diff.
+  railOnFiles();
+  selected("two\nlines");
   await fireEvent.click(document.getElementById("pr-tab-files") as HTMLElement);
   picked.mockReturnValue({ word: "gc_list" } as never);
   command()?.run();
   await tick();
   const fromDiff = box().value;
   // A window with no selection at all, as one with no browsing context, has none to give.
+  railOnFiles();
   selection.mockReturnValue(null);
   inView.mockReturnValue({ code: { pick: { word: "visit" } } } as never);
   command()?.run();
@@ -1337,11 +1346,11 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
   expect(again).toEqual(["Search", "gc_debug", true]);
   expect([fromDiff, box().value, command()?.note]).toEqual(["gc_list", "visit", "Ctrl+Shift+F"]);
   await vi.waitFor(() => {
-    expect(core.textSearch).toHaveBeenCalledWith("python/cpython", {
-      text: "visit",
-      case: "ignored",
-      words: "within",
-      syntax: "literal",
+    expect(core.textSearch).toHaveBeenCalledWith({
+      repository: "python/cpython",
+      base: "base",
+      head: "abc",
+      query: { text: "visit", case: "ignored", words: "within", syntax: "literal" },
     });
   });
 });

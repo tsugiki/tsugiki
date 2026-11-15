@@ -1873,19 +1873,19 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
 
     let _held = wired.held.recv_timeout(PLENTY).unwrap();
     let before = wired.ask("text_search_state", json!({}));
-    // The Files tab's read moves the Lookup checkout to the diff on show.
+    // The query names the ends of the diff the Files tab shows.
     let pr = json!({ "repository": CPYTHON, "number": 1 });
-    let _files = wired.ask("pull_request_files", pr).unwrap();
-    let search = |repository: &str, text: &str, syntax: &str| {
+    let files = wired.ask("pull_request_files", pr).unwrap();
+    let search = |repository: &str, base: &Value, text: &str, syntax: &str| {
         let query = json!({ "text": text, "case": "ignored", "words": "within", "syntax": syntax });
-        wired.ask(
-            "text_search",
-            json!({ "repository": repository, "query": query }),
-        )
+        let asked = json!({ "repository": repository, "base": base, "head": files["head"], "query": query });
+        wired.ask("text_search", json!({ "asked": asked }))
     };
-    let bad = search(CPYTHON, "(", "regex");
-    let not_a_repository = search("cpython", "x", "literal");
-    let asked = search(CPYTHON, "FIFTEEN", "literal").unwrap();
+    let base = &files["base"];
+    let bad = search(CPYTHON, base, "(", "regex");
+    let not_a_repository = search("cpython", base, "x", "literal");
+    let not_a_commit = search(CPYTHON, &json!("main"), "x", "literal");
+    let asked = search(CPYTHON, base, "FIFTEEN", "literal").unwrap();
     let found = loop {
         let _changed = changes.recv_timeout(PLENTY).unwrap();
         let state = wired.ask("text_search_state", json!({})).unwrap();
@@ -1893,11 +1893,17 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
             break state;
         }
     };
+    // A query that has ended has nothing to cancel, and its results stay.
+    let cancelled = wired.ask("text_search_cancel", json!({ "id": asked["id"] }));
+    let _changed = changes.recv_timeout(PLENTY).unwrap();
+    let after = wired.ask("text_search_state", json!({})).unwrap();
     drop(wired.stop());
 
     assert_eq!(before, Ok(json!({ "state": "idle" })));
+    assert_eq!((cancelled, &after), (Ok(Value::Null), &found));
     assert_eq!(bad.unwrap()["kind"], "bad_query");
     assert_eq!(not_a_repository.unwrap_err()["kind"], "not_found");
+    assert_eq!(not_a_commit.unwrap_err()["kind"], "not_found");
     assert_eq!(asked["kind"], "running");
     let line = json!({ "line": 15, "text": "x15 = 'fifteen'", "cut": "neither", "ranges": [{ "start": 7, "end": 14 }] });
     let file = json!({ "path": "Lib/spam.py", "generated": false, "lines": [line] });

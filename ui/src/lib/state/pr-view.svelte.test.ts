@@ -237,13 +237,13 @@ describe("PrViewState", () => {
     state.loadFiles();
     state.loadFiles();
     const onConversation = state.tab;
-    await state.openMatch({ path: "Lib/os.py", line: 12 });
+    await state.openMatch({ path: "Lib/os.py", line: 12, ends: { base: "b0", head: "abc" } });
 
     expect(onConversation).toBe("conversation");
     await vi.waitFor(() => expect(commands.pullRequestFiles).toHaveBeenCalled());
     expect(commands.pullRequestFiles).toHaveBeenCalledOnce();
     expect(state.tab).toBe("files");
-    expect(opened).toHaveBeenCalledWith("Lib/os.py", 12);
+    expect(opened).toHaveBeenCalledWith("Lib/os.py", 12, { base: "b0", head: "abc" });
     state.stop();
   });
 });

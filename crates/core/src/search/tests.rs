@@ -18,6 +18,22 @@ fn repository() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
 }
 
+/// Asks `search` for `text` in `fixture`'s PR, at the ends its checkout holds.
+fn search_in(search: &TextSearch, fixture: &Fixture, text: &str) -> SearchId {
+    (search.search(repository(), fixture.checkout.at.clone(), &query(text))).unwrap()
+}
+
+/// The ends of a diff no fixture holds, each commit a run of `digit`.
+fn ends(digit: u8) -> LookupAt {
+    let commit = |digit: u8| {
+        crate::github::CommitSha::parse(&char::from(b'0' + digit).to_string().repeat(40)).unwrap()
+    };
+    LookupAt {
+        base: commit(digit),
+        head: commit(digit + 1),
+    }
+}
+
 /// Waits up to 10 seconds for `done` to hold.
 fn wait_until(mut done: impl FnMut() -> bool) {
     let until = Instant::now() + Duration::from_secs(10);
@@ -89,7 +105,7 @@ fn pr(name: &str) -> Fixture {
 fn a_query_finds_the_files_by_path_with_their_matches_and_says_it_is_done() {
     let fixture = pr("search-owner");
     let (search, heard, announced) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     let (files, end, matches) = ended(&search, id);
     assert_eq!(
@@ -107,7 +123,7 @@ fn a_query_finds_the_files_by_path_with_their_matches_and_says_it_is_done() {
 fn a_query_says_that_it_waits_for_the_checkout_to_move() {
     let fixture = pr("search-owner-waits");
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search_in(&search, &fixture, "spam");
     let reply = asked(&heard);
     wait_until(|| matches!(search.state(), SearchState::Waiting { id: waiting } if waiting == id));
     reply.send(Some(fixture.checkout.clone())).unwrap();
@@ -119,9 +135,9 @@ fn a_query_says_that_it_waits_for_the_checkout_to_move() {
 fn a_second_query_cancels_the_first() {
     let fixture = pr("search-owner-cancels");
     let (search, heard, _) = started();
-    let first = search.search(repository(), &query("spam")).unwrap();
+    let first = search_in(&search, &fixture, "spam");
     let first_reply = asked(&heard);
-    let second = search.search(repository(), &query("eggs")).unwrap();
+    let second = search_in(&search, &fixture, "eggs");
     assert_ne!(first, second);
     let second_reply = asked(&heard);
     second_reply.send(Some(fixture.checkout.clone())).unwrap();
@@ -140,9 +156,54 @@ fn a_second_query_cancels_the_first() {
 #[test]
 fn a_query_with_no_checkout_says_so() {
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search
+        .search(repository(), ends(1), &query("spam"))
+        .unwrap();
     asked(&heard).send(None).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
+}
+
+#[test]
+fn a_query_moves_the_checkout_to_its_diff_and_searches_none_of_another() {
+    let fixture = pr("search-owner-elsewhere");
+    let (search, heard, _) = started();
+    let id = search
+        .search(repository(), ends(1), &query("spam"))
+        .unwrap();
+    // A newer move took the checkout to another diff, the fixture's, while the query waited.
+    asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
+    wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
+    assert_eq!(heard.look_ups(), [(repository(), ends(1))]);
+}
+
+#[test]
+fn a_cancel_stops_its_query_while_it_runs_and_leaves_the_state_idle() {
+    let fixture = pr("search-owner-cancel");
+    let (search, heard, _) = started();
+    let id = search_in(&search, &fixture, "spam");
+    let reply = asked(&heard);
+    search.cancel(id);
+    wait_until(|| matches!(search.state(), SearchState::Idle));
+    reply.send(Some(fixture.checkout.clone())).unwrap();
+    thread::sleep(Duration::from_millis(200));
+    assert!(matches!(search.state(), SearchState::Idle));
+}
+
+#[test]
+fn a_cancel_of_an_older_query_leaves_the_newer_one_running() {
+    let fixture = pr("search-owner-cancel-older");
+    let (search, heard, _) = started();
+    let older = search_in(&search, &fixture, "spam");
+    let _older_reply = asked(&heard);
+    let newer = search_in(&search, &fixture, "eggs");
+    let reply = asked(&heard);
+    search.cancel(older);
+    reply.send(Some(fixture.checkout.clone())).unwrap();
+    let (files, end, _) = ended(&search, newer);
+    assert_eq!(
+        (files, end),
+        (vec![("b.py".to_owned(), vec![2])], End::Done)
+    );
 }
 
 #[test]
@@ -150,7 +211,7 @@ fn a_query_whose_files_git_cannot_list_fails() {
     let mut fixture = pr("search-owner-fails");
     fixture.checkout.at.head = crate::github::CommitSha::parse(&"0".repeat(40)).unwrap();
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     wait_until(|| matches!(search.state(), SearchState::Failed { id: failed } if failed == id));
 }
@@ -159,12 +220,15 @@ fn a_query_whose_files_git_cannot_list_fails() {
 fn a_bad_regex_returns_its_error_and_leaves_the_query_running_alone() {
     let fixture = pr("search-owner-bad");
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search_in(&search, &fixture, "spam");
     let bad = Query {
         syntax: Syntax::Regex,
         ..query("(")
     };
-    let refused = search.search(repository(), &bad).err().unwrap();
+    let refused = search
+        .search(repository(), fixture.checkout.at.clone(), &bad)
+        .err()
+        .unwrap();
     assert!(
         refused.message.contains("unclosed group"),
         "{}",
@@ -190,7 +254,7 @@ fn with_no_network_a_query_searches_a_commit_the_mirror_holds() {
         ],
     );
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     let (files, end, _) = ended(&search, id);
     assert_eq!((files.len(), end), (2, End::Done));
@@ -201,7 +265,7 @@ fn a_search_past_the_most_matches_stops_and_says_so() {
     let text = format!("{}\n", "spam ".repeat(40)).repeat(150);
     let fixture = Fixture::new("search-owner-most", &[("many.txt", text.as_bytes())], &[]);
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     let (_, end, matches) = ended(&search, id);
     assert_eq!((end, matches), (End::Stopped, MOST_MATCHES));
@@ -210,7 +274,9 @@ fn a_search_past_the_most_matches_stops_and_says_so() {
 #[test]
 fn a_worker_that_stops_without_an_answer_leaves_no_checkout() {
     let (search, heard, _) = started();
-    let id = search.search(repository(), &query("spam")).unwrap();
+    let id = search
+        .search(repository(), ends(1), &query("spam"))
+        .unwrap();
     drop(asked(&heard));
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }
@@ -238,7 +304,7 @@ fn the_window_reads_the_state_with_each_file_whole_under_a_tag_of_its_state() {
     let fixture = pr("search-serialize");
     let (search, heard, _) = started();
     let idle = serde_json::to_value(search.state()).unwrap();
-    let id = search.search(repository(), &query("eggs")).unwrap();
+    let id = search_in(&search, &fixture, "eggs");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     let _ = ended(&search, id);
     let found = serde_json::to_value(search.state()).unwrap();

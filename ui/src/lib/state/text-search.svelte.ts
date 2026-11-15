@@ -1,9 +1,10 @@
-// The rail's Search tab (#686): a query over the code of the PR on show, at the head of the diff its Files
-// tab shows, as the core's text search runs it in the Lookup checkout (#685). The checkout follows that
-// diff, so a query waits until the diff is ready, and runs again on a newer one. Typing runs the query once
-// the keys pause, and each toggle runs it at once. The core numbers each query and says when what it found
-// may have changed, and this shows only what answers the query it asked last. The results group by file,
-// and the keys move a cursor through the rows, fold and unfold a file, and open a match.
+// The rail's Search tab (#686): a query over the code of the PR on show, at the ends of the diff its Files
+// tab shows, as the core's text search runs it in the Lookup checkout (#685). Each query names those ends,
+// so a query waits until the diff is ready, and runs again on a newer one. Typing runs the query once the
+// keys pause, and each toggle runs it at once. The core numbers each query and says when what it found may
+// have changed, and this shows only what answers the query it asked last, and cancels a query nobody wants
+// any more. The results group by file, and the keys move a cursor through the rows, fold and unfold a file,
+// and open a match.
 import { SvelteSet } from "svelte/reactivity";
 import {
   commands,
@@ -11,7 +12,9 @@ import {
   type End,
   type FileHits,
   type LineHit,
+  type PrFiles,
   type Query,
+  type SearchId,
   type SearchState,
 } from "$lib/data/bindings";
 
@@ -29,18 +32,41 @@ export type SearchRow =
   | { kind: "file"; file: FileHits; matches: number; folded: boolean }
   | { kind: "line"; file: FileHits; hit: LineHit };
 
-/** A match to open: the file's path and the line's number, at the head of the diff on show. */
-export type Match = { path: string; line: number };
+/** The ends of a diff: its merge base and its head. */
+export type DiffEnds = { base: string; head: string };
+
+/** A match to open: the file's path and the line's number at the head of the diff the query searched. */
+export type Match = { path: string; line: number; ends: DiffEnds };
+
+/** What the search can run on, from the Files tab: the diff's ends once it is ready, or why there are none
+ * yet. `loading` comes on its own, `asking` once the user answers the clone's question in the Files tab,
+ * and `absent` and `failed` never on their own. */
+export type SearchDiff =
+  | ({ kind: "ready" } & DiffEnds)
+  | { kind: "loading" }
+  | { kind: "asking" }
+  | { kind: "absent" }
+  | { kind: "failed" };
+
+/** What the Files tab's diff, `view`, and the problem its last read had, `error`, give the search to run
+ * on. */
+export function searchDiff(view: PrFiles | null | undefined, error: string | undefined): SearchDiff {
+  if (view?.state === "ready") return { kind: "ready", base: view.base, head: view.head };
+  if (view === null) return { kind: "absent" };
+  if (error !== undefined) return { kind: "failed" };
+  return view?.state === "asking" ? { kind: "asking" } : { kind: "loading" };
+}
 
 /** What the tab shows under the box. */
 type Shown =
   | { kind: "empty" }
+  | { kind: "unready"; why: Exclude<SearchDiff["kind"], "ready"> }
   | { kind: "waiting" }
   | { kind: "bad_query"; message: string }
   | { kind: "problem"; message: string }
   | { kind: "no_checkout" }
   | { kind: "failed" }
-  | { kind: "results"; files: FileHits[]; matches: number; end: End };
+  | { kind: "results"; files: FileHits[]; matches: number; end: End; ends: DiffEnds };
 
 /** A row by what it shows, so the cursor stays on it as results come in above it. */
 type RowKey = { path: string; line: number | undefined };
@@ -61,14 +87,16 @@ export class TextSearchState {
   regex = $state(false);
   /** Whether the box should take the focus, as `Ctrl+Shift+F` asks. The box takes it once it shows. */
   wantsFocus = $state(false);
+  /** How many queries the core has taken, so the list goes back to its top for each one's results. */
+  answered = $state(0);
   #shown = $state.raw<Shown>({ kind: "empty" });
   #folded = new SvelteSet<string>();
-  #cursor = $state.raw<RowKey>();
+  #cursorKey = $state.raw<RowKey>();
   readonly #repository: string;
-  /** The head of the diff on show, once it is ready. Until then the checkout may be another PR's. */
-  #head: string | undefined;
-  /** The core's number for the query asked last, once it has answered. */
-  #id: number | undefined;
+  /** What the search can run on, which the Files tab's diff gives. */
+  #diff: SearchDiff = { kind: "loading" };
+  /** The core's number for the query asked last, once it has answered, with the ends it searches. */
+  #asking: { id: SearchId; ends: DiffEnds } | undefined;
   /** How many queries this has asked, so a late answer to an older one changes nothing. */
   #asked = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
@@ -104,18 +132,22 @@ export class TextSearchState {
     void this.#run();
   }
 
-  /** Hears the head of the diff on show, or that none is ready: the checkout follows the diff, so the query
-   * runs again on a newer one. */
-  follow(head: string | undefined) {
-    if (head === this.#head) return;
-    this.#head = head;
+  /** Hears what the search can run on, `diff`: the query runs again on a diff with other ends, and says why
+   * it waits while there is none. */
+  follow(diff: SearchDiff) {
+    if (sameDiff(diff, this.#diff)) return;
+    this.#diff = diff;
     void this.#run();
   }
 
-  /** Stops listening to the core, as the PR view goes. */
+  /** Stops listening to the core, and cancels the query running, as the PR view goes. */
   stop() {
     this.#stopped = true;
     clearTimeout(this.#timer);
+    // An answer on its way is then to an older query, and cancels itself.
+    this.#asked += 1;
+    this.#cancel(this.#asking?.id);
+    this.#asking = undefined;
     void this.#listening?.then((stop) => {
       stop();
     });
@@ -127,8 +159,10 @@ export class TextSearchState {
     switch (shown.kind) {
       case "empty":
         return "";
+      case "unready":
+        return UNREADY[shown.why];
       case "waiting":
-        return "Waiting for the checkout…";
+        return UNREADY.loading;
       case "bad_query":
         return shown.message;
       case "problem":
@@ -143,9 +177,11 @@ export class TextSearchState {
   }
 
   /** Whether the line under the box says why the query can't run or found nothing, rather than what it
-   * found. */
+   * found or what it waits for. */
   get troubled(): boolean {
-    return !["empty", "waiting", "results"].includes(this.#shown.kind);
+    const shown = this.#shown;
+    if (shown.kind === "unready") return shown.why === "absent" || shown.why === "failed";
+    return !["empty", "waiting", "results"].includes(shown.kind);
   }
 
   /** The rows of the results: each file, then each line of it unless it is folded. */
@@ -161,26 +197,26 @@ export class TextSearchState {
   });
 
   /** The row the cursor is on, which ↑ and ↓ move: the first, until the user moves it, and when the row it
-   * was on has gone. */
-  get cursor(): number {
-    const at = this.#cursor;
+   * was on has gone. Each row drawn reads it, so it is found once for the rows and the cursor. */
+  readonly cursor: number = $derived.by(() => {
+    const at = this.#cursorKey;
     if (at === undefined) return 0;
     return Math.max(
       0,
       this.rows.findIndex((row) => row.file.path === at.path && lineOf(row) === at.line),
     );
-  }
+  });
 
   /** Puts the cursor on row `index`, held within the rows. */
   moveTo(index: number) {
     const row = this.rows[Math.min(Math.max(index, 0), this.rows.length - 1)];
-    if (row !== undefined) this.#cursor = { path: row.file.path, line: lineOf(row) };
+    if (row !== undefined) this.#cursorKey = { path: row.file.path, line: lineOf(row) };
   }
 
   /** ←: folds the file under the cursor, or moves the cursor from a line to its file. */
   fold() {
     const row = this.rows[this.cursor];
-    if (row?.kind === "line") this.#cursor = { path: row.file.path, line: undefined };
+    if (row?.kind === "line") this.#cursorKey = { path: row.file.path, line: undefined };
     else if (row !== undefined) this.#folded.add(row.file.path);
   }
 
@@ -200,25 +236,33 @@ export class TextSearchState {
 
   /** Enter on the row under the cursor: the match on a line's row, or else the file's fold flips. */
   pick(): Match | undefined {
+    const shown = this.#shown;
     const row = this.rows[this.cursor];
-    if (row?.kind === "line") return { path: row.file.path, line: row.hit.line };
+    if (row?.kind === "line" && shown.kind === "results")
+      return { path: row.file.path, line: row.hit.line, ends: shown.ends };
     if (row !== undefined) this.toggleFile(row.file.path);
     return undefined;
   }
 
   /** Runs the query in the box with the options on, in place of the one asked before, once the diff is ready
-   * for the checkout to follow. An empty box shows nothing, and asks the core nothing. */
+   * to name the ends it searches. An empty box shows nothing, and asks the core nothing. A query nobody
+   * wants any more, as the box empties or the diff goes, is cancelled, and so is one a bad query leaves
+   * running. */
   async #run() {
     clearTimeout(this.#timer);
     this.#asked += 1;
     const asked = this.#asked;
-    this.#id = undefined;
+    const before = this.#asking?.id;
+    this.#asking = undefined;
+    const diff = this.#diff;
     if (this.text === "") {
       this.#shown = { kind: "empty" };
+      this.#cancel(before);
       return;
     }
-    if (this.#head === undefined) {
-      this.#shown = { kind: "waiting" };
+    if (diff.kind !== "ready") {
+      this.#shown = { kind: "unready", why: diff.kind };
+      this.#cancel(before);
       return;
     }
     const query: Query = {
@@ -227,26 +271,41 @@ export class TextSearchState {
       words: this.wholeWord ? "whole" : "within",
       syntax: this.regex ? "regex" : "literal",
     };
-    // The listener is in place before the query goes, so nothing the core says of it is missed. Queries
-    // that wait for it go in the order they were asked, so the core numbers the last one last.
-    if (!(await this.#listen())) return;
-    const answer = await commands.textSearch(this.#repository, query).catch(problem);
-    if (asked !== this.#asked) return;
+    const ends = { base: diff.base, head: diff.head };
+    // The listener is in place before the query goes, so nothing the core says of it is missed. A newer
+    // query asked meanwhile goes in place of this one, which then asks nothing.
+    if (!(await this.#listen()) || asked !== this.#asked) return;
+    const answer = await commands.textSearch({ repository: this.#repository, ...ends, query }).catch(problem);
+    const running = answer.status === "ok" && answer.data.kind === "running" ? answer.data.id : undefined;
+    if (asked !== this.#asked) {
+      this.#cancel(running);
+      return;
+    }
     if (answer.status === "error") {
       this.#shown = { kind: "problem", message: answer.error.message };
+      this.#cancel(before);
     } else if (answer.data.kind === "bad_query") {
       this.#shown = { kind: "bad_query", message: answer.data.message };
+      this.#cancel(before);
     } else {
-      this.#id = answer.data.id;
+      this.#asking = { id: answer.data.id, ends };
+      this.answered += 1;
       this.#folded.clear();
-      this.#cursor = undefined;
+      this.#cursorKey = undefined;
       await this.#read();
     }
   }
 
+  /** Asks the core to cancel query `id`, if there is one, which it does only while that query runs. */
+  #cancel(id: SearchId | undefined) {
+    if (id !== undefined) void commands.textSearchCancel(id).catch(problem);
+  }
+
   /** Listens to the core's word that what it found may have changed, once. False when Tsugiki can't hear
-   * it, which the line under the box then says, and once the view has gone, which stops the listener. */
+   * it, which the line under the box then says, and once the view has gone, which places no listener and
+   * stops one on its way. */
   async #listen(): Promise<boolean> {
+    if (this.#stopped) return false;
     this.#listening ??= events.textSearchChanged.listen(() => void this.#read());
     try {
       await this.#listening;
@@ -261,7 +320,7 @@ export class TextSearchState {
   /** Asks the core what the latest query found. One read at a time: a change it hears during one reads
    * once more after it, so a burst of batches costs two reads and not one each. */
   async #read() {
-    if (this.#id === undefined) return;
+    if (this.#asking === undefined) return;
     if (this.#reading) {
       this.#again = true;
       return;
@@ -281,13 +340,30 @@ export class TextSearchState {
 
   /** Shows `state` if it answers the query asked last. */
   #heard(state: SearchState) {
-    if (state.state === "idle" || state.id !== this.#id) return;
+    const asking = this.#asking;
+    if (state.state === "idle" || state.id !== asking?.id) return;
     if (state.state === "results") {
-      this.#shown = { kind: "results", files: state.files, matches: state.matches, end: state.end };
+      const { files, matches, end } = state;
+      this.#shown = { kind: "results", files, matches, end, ends: asking.ends };
     } else {
       this.#shown = { kind: state.state };
     }
   }
+}
+
+/** What the line under the box says while the search has no diff to run on. */
+const UNREADY: Record<Exclude<SearchDiff["kind"], "ready">, string> = {
+  loading: "Waiting for the checkout…",
+  asking: "The search waits for the Repository's clone, which waits for an answer in the Files tab.",
+  absent: "Tsugiki doesn't hold this PR, so there's nothing to search.",
+  failed: "The PR's diff didn't load, so there's nothing to search. The Files tab says why.",
+};
+
+/** Whether `one` and `other` give the search the same thing to run on. */
+function sameDiff(one: SearchDiff, other: SearchDiff): boolean {
+  if (one.kind === "ready" && other.kind === "ready")
+    return one.base === other.base && one.head === other.head;
+  return one.kind === other.kind;
 }
 
 /** The line's number of a line's row, or nothing for a file's. */

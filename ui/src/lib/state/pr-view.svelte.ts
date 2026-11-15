@@ -77,8 +77,8 @@ export class PrViewState extends DetailState<PrView> {
     if (tab === "files") this.loadFiles();
   }
 
-  /** Reads the Files tab's diff, unless it has been read: the rail's Search asks for it on either tab, as the
-   * checkout it searches follows the diff on show (#686). */
+  /** Reads the Files tab's diff, unless it has been read: the rail's Search asks for it on either tab, as
+   * each query names the ends of the diff on show (#686). */
   loadFiles() {
     if (this.#filesLoaded) return;
     this.#filesLoaded = true;
@@ -95,7 +95,7 @@ export class PrViewState extends DetailState<PrView> {
    * view of a file the PR doesn't change (#686). */
   async openMatch(match: Match) {
     this.tab = "files";
-    await this.files.openMatch(match.path, match.line);
+    await this.files.openMatch(match.path, match.line, match.ends);
   }
 
   /** The line of the list the user opened this PR from. A PR that fixes two Issues has a line under each. */

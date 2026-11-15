@@ -1118,18 +1118,30 @@ export class PrFilesState {
     if (goal.kind === "diff") this.diffWantsFocus = true;
   }
 
-  /** Goes to line `line` of file `path` at the PR's head, where the rail's Search found a match (#686), as
-   * Go to definition goes to a single hit: to its line in a file the diff shows lines of, opening the lines
-   * around it if no hunk shows it, and handing the diff the focus, and to the file view of any other file,
-   * at the base for a file the PR doesn't touch, as a lookup names one. A line the core can't find, or
-   * whose lines don't come, is said over the diff for a moment. A newer diff by then leaves it be. */
-  async openMatch(path: string, line: number) {
+  /** Goes to line `line` of file `path` at the head of the diff between `ends`, where the rail's Search
+   * found a match (#686), as Go to definition goes to a single hit: to its line in a file the diff shows
+   * lines of, opening the lines around it if no hunk shows it, and handing the diff the focus, and to the
+   * file view of any other file, at the base for a file the PR doesn't touch, as a lookup names one. The
+   * file view on show lands on the line if it shows that file at that commit. A line the core can't find,
+   * or whose lines don't come, is said over the diff for a moment, and so is a match the search found in an
+   * older diff. A newer diff by then leaves it be. */
+  async openMatch(path: string, line: number, ends: { base: string; head: string }) {
     const view = this.view;
     if (view?.state !== "ready") return;
+    if (view.base !== ends.base || view.head !== ends.head) {
+      this.#say("The search ran on an older diff of the PR, and runs again on this one.", NOTICE_MS);
+      return;
+    }
     const touched = view.files.some((file) => file.path === path);
     const place = touched
       ? { kind: "repository" as const, path, side: "head" as const, commit: view.head }
       : { kind: "repository" as const, path, side: "base" as const, commit: view.base };
+    const open = this.#fileView;
+    if (open?.place.path === path && open.place.commit === place.commit) {
+      open.land(line, 0);
+      this.viewWantsFocus = true;
+      return;
+    }
     const hit: RepositoryHit = { place, line, column: 0, text: "" };
     const goal = await this.#goal(hit, view, new HitCode(this.#repository, hit, 0), undefined);
     if (this.#diff(this.view) !== this.#diff(view)) return;

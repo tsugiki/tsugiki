@@ -1,12 +1,11 @@
 <!-- The rail's Search tab (#686): a box for a query over the PR's code, with toggles for match case, whole
      word and regex, a line that says what it found, and the results grouped by file. The list draws only the
      rows on screen. ↓ in the box goes to the list, where ↑ ↓ move, ← → fold and unfold a file, and Enter or
-     a click opens a match. The PR's diff is read once the tab shows, as the checkout it searches follows
-     it. -->
+     a click opens a match. The PR's diff is read once the tab shows, as each query names its ends. -->
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import type { PrViewState } from "$lib/state/pr-view.svelte";
-  import type { LineHit, SearchOption } from "$lib/state/text-search.svelte";
+  import { type LineHit, type SearchOption, searchDiff } from "$lib/state/text-search.svelte";
   import { currentOs, keyLabel, keyName } from "./keys";
 
   let { pr }: { pr: PrViewState } = $props();
@@ -19,10 +18,15 @@
   const id = $props.id();
 
   const search = $derived(pr.search);
-  /** The head of the diff on show, once it is ready, which the checkout follows. */
-  const head = $derived(pr.files.view?.state === "ready" ? pr.files.view.head : undefined);
+  /** What the search can run on: the ends of the diff the Files tab shows, or why there are none yet. */
+  const diff = $derived(searchDiff(pr.files.view, pr.files.error));
 
-  // Each runs again for another PR, or another head, and for nothing the call itself reads.
+  let list = $state<HTMLElement | null>(null);
+  let scrollTop = $state(0);
+  let height = $state(0);
+
+  // Each runs again for another PR, another diff, and a new list or query, and for nothing the call itself
+  // reads.
   $effect(() => {
     const view = pr;
     untrack(() => {
@@ -30,15 +34,19 @@
     });
   });
   $effect(() => {
-    const [query, at] = [search, head];
+    const [query, on] = [search, diff];
     untrack(() => {
-      query.follow(at);
+      query.follow(on);
     });
   });
-
-  let list = $state<HTMLElement | null>(null);
-  let scrollTop = $state(0);
-  let height = $state(0);
+  // A list drawn anew, or the results of a new query, start at the top.
+  $effect(() => {
+    const [scroller] = [list, search.answered];
+    untrack(() => {
+      if (scroller !== null) scroller.scrollTop = 0;
+      scrollTop = 0;
+    });
+  });
   const rows = $derived(search.rows);
   const first = $derived(Math.max(0, Math.floor(scrollTop / ROW) - OVERSCAN));
   const last = $derived(Math.ceil((scrollTop + height) / ROW) + OVERSCAN);

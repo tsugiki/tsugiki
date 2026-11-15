@@ -409,9 +409,12 @@
 
   /** `Ctrl+Shift+F` or "View: Search in the Rail", which open the rail on Search in `view`, with the focus in
    * its box, as in VS Code (#686). The box takes the text selected on one line, or else the word picked in
-   * the Files tab on show. With Search on show the key focuses the box, and the rail stays open. */
+   * the Files tab on show. With Search on show the key only focuses the box, and the rail stays open: the
+   * query the user typed stays, and the box's own text, which the selection may then hold, isn't put back
+   * in it. */
   function searchInRail(view: PrViewState) {
-    const seed = seedText();
+    const rail = panes.railState;
+    const seed = rail.open && rail.tab === "search" ? undefined : seedText();
     if (seed !== undefined) view.search.seed(seed);
     view.search.wantsFocus = true;
     panes.railState.pick("search");

@@ -249,16 +249,21 @@ export const commands = {
 	 */
 	definitionSpans: (code: DefinitionCode) => typedError<Span[][], Error_Serialize>(__TAURI_INVOKE("definition_spans", { code })),
 	/**
-	 *  Searches the code of `repository`'s PR on screen for `query`, in place of the query running (#686). It
-	 *  searches the Lookup checkout, which follows the diff the Files tab shows. This never waits: the
-	 *  `text-search-changed` event says when to ask `text_search_state` what it found.
+	 *  Searches the code of the PR on screen for `asked`'s query, in place of the query running (#686), in the
+	 *  Lookup checkout once it holds the diff the query names. This never waits: the `text-search-changed`
+	 *  event says when to ask `text_search_state` what it found.
 	 */
-	textSearch: (repository: string, query: Query) => typedError<SearchAsked, Error_Serialize>(__TAURI_INVOKE("text_search", { repository, query })),
+	textSearch: (asked: CodeSearch) => typedError<SearchAsked, Error_Serialize>(__TAURI_INVOKE("text_search", { asked })),
 	/**
 	 *  What the latest query found, or why it found nothing, as the text search's thread last wrote it. This
 	 *  never waits.
 	 */
 	textSearchState: () => __TAURI_INVOKE<SearchState_Serialize>("text_search_state"),
+	/**
+	 *  Cancels query `id` while it runs, as the window wants nothing it finds any more: the box was emptied,
+	 *  the diff it searched went, or the PR closed. The state then goes back to idle.
+	 */
+	textSearchCancel: (id: SearchId) => __TAURI_INVOKE<void>("text_search_cancel", { id }),
 	/**  Opens an Issue or a PR on GitHub in the system browser. */
 	openOnGithub: (repository: string, item: GitHubItem) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_on_github", { repository, item })),
 	/**
@@ -508,6 +513,16 @@ export type CodeFile =
  *  a missing newline at the end.
  */
 export type CodeRow = { kind: "hunk"; text: string } | { kind: "context"; old: number; new: number; text: string } | { kind: "added"; new: number; text: string } | { kind: "removed"; old: number; text: string } | { kind: "note"; text: string };
+
+/**  A query over the code of a PR on screen, as the rail's Search asks it (#686). */
+export type CodeSearch = {
+	repository: string,
+	/**  The merge base the diff the Files tab shows starts from. */
+	base: string,
+	/**  The commit that diff ends at. */
+	head: string,
+	query: Query,
+};
 
 /**
  *  A command of the command palette, by the id the window gives it. The window names its commands, so the
@@ -2364,7 +2379,10 @@ export type SearchAsked =
 /**  It can't run, in the regex crate's words, and the query running goes on. */
 { kind: "bad_query"; message: string };
 
-/**  Which query a [`SearchState`] answers, as [`TextSearch::search`] numbered it. */
+/**
+ *  Which query a [`SearchState`] answers, as [`TextSearch::search`] numbered it, and which the window names
+ *  to cancel.
+ */
 export type SearchId = number;
 
 /**
@@ -2383,8 +2401,9 @@ export type SearchState_Deserialize =
 /**  The query waits for the Lookup checkout to move to the PR. */
 { state: "waiting"; id: SearchId } | 
 /**
- *  No move has put the Repository's Lookup checkout anywhere, the last one failed, or the Mirror worker
- *  has stopped, so there is nothing to search.
+ *  No move has put the Repository's Lookup checkout at the query's diff: none has put it anywhere, the
+ *  last one failed, a newer one took it to another diff, or the Mirror worker has stopped. So there is
+ *  nothing to search.
  */
 { state: "no_checkout"; id: SearchId } | 
 /**  git couldn't list or read the PR's files, which the log says more of. */
@@ -2404,8 +2423,9 @@ export type SearchState_Serialize =
 /**  The query waits for the Lookup checkout to move to the PR. */
 { state: "waiting"; id: SearchId } | 
 /**
- *  No move has put the Repository's Lookup checkout anywhere, the last one failed, or the Mirror worker
- *  has stopped, so there is nothing to search.
+ *  No move has put the Repository's Lookup checkout at the query's diff: none has put it anywhere, the
+ *  last one failed, a newer one took it to another diff, or the Mirror worker has stopped. So there is
+ *  nothing to search.
  */
 { state: "no_checkout"; id: SearchId } | 
 /**  git couldn't list or read the PR's files, which the log says more of. */

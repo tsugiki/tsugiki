@@ -14,6 +14,9 @@ export type PaletteId = Action | "sort_list" | "toggle_quiet";
 export interface Remembered {
   title: string;
   id?: PaletteId;
+  /** Keeps the row out of the history, as a switch to a Repository: those come in the order the
+   * Repositories were opened, which the core keeps already. */
+  history?: false;
 }
 
 export class RecentCommands {
@@ -46,21 +49,29 @@ export class RecentCommands {
   }
 
   /** Reads the list the core keeps: at start-up, and once the Settings dialog has read the files again, as
-   * the user may have edited it by hand. A save that answers meanwhile has the newer list. */
+   * the user may have edited it by hand. A save that answers meanwhile has the newer list, and the read
+   * goes, with what it would have said.
+   *
+   * A read taken forgets why the last run couldn't be saved too. That problem lay in `machine.toml`, and the
+   * dialog, which read the file just now, names any problem the file still has in the status bar. The next
+   * run says again if it still can't save. */
   async load(): Promise<void> {
     const saves = this.#saves;
     try {
       const read = await commands.recentCommands();
-      if (this.#saves === saves) this.#core = read;
+      if (this.#saves !== saves) return;
+      this.#core = read;
       this.#readProblem = undefined;
+      this.#saveProblem = undefined;
     } catch (e) {
       this.#readProblem = `Tsugiki can't read the palette's recent commands: ${String(e)}`;
     }
   }
 
   /** Puts `row` first until the core answers, and asks the core to save it once the save before has
-   * finished. */
+   * finished. A row the history leaves out runs with nothing saved. */
   ran(row: Remembered): Promise<void> {
+    if (row.history === false) return this.#saving;
     const id = row.id ?? row.title;
     this.#unsaved = [id, ...this.#unsaved];
     this.#saving = this.#saving.then(() => this.#save(id));
@@ -93,7 +104,8 @@ export class RecentCommands {
    * order. */
   order<Row extends Remembered>(rows: readonly Row[]): Row[] {
     const places = this.#places;
-    const place = (row: Row) => places.get(row.id ?? row.title) ?? places.size;
+    const place = (row: Row) =>
+      (row.history === false ? undefined : places.get(row.id ?? row.title)) ?? places.size;
     return rows.toSorted((one, other) => place(one) - place(other));
   }
 }

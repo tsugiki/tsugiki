@@ -13,6 +13,8 @@
     /** What the command palette's history knows the row by where its title changes with what it does.
      * Without one it goes by its title. */
     id?: PaletteId;
+    /** Keeps the row out of the command palette's history, as a switch to a Repository. */
+    history?: false;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
     current?: boolean;
     /** Words after the title, such as why a Repository's diffs aren't there yet. Typing doesn't match

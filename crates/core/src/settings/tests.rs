@@ -3138,3 +3138,21 @@ fn recent_commands_keep_the_50_run_last_and_an_entry_that_isnt_text_doesnt_count
     assert!(machine.ends_with("\"Command 1\",\n]\n"), "{machine}");
     assert_eq!(restarted, kept);
 }
+
+#[test]
+fn a_hand_written_list_of_more_than_50_reads_as_its_first_50() {
+    let (folders, _root) = temp_folders("commands-long");
+    let written: Vec<String> = (0..=COMMANDS_KEPT)
+        .map(|count| format!("\"Command {count}\""))
+        .collect();
+    fs::write(
+        folders.machine_file(),
+        format!("recent_commands = [{}]\n", written.join(", ")),
+    )
+    .unwrap();
+
+    let read = SettingsFiles::load(folders).recent_commands();
+
+    assert_eq!(read.len(), COMMANDS_KEPT);
+    assert_eq!(read.last(), Some(&CommandId::new("Command 49")));
+}

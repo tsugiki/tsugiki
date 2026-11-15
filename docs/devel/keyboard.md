@@ -60,7 +60,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   their usual order. Typing filters the list by substring and keeps that order. `machine.toml` keeps the
   last 50 commands run, newest first, in `recent_commands` beside the recent Repositories, so the order
   survives a restart and stays on its machine. A command whose title flips, such as Hide Sidebar and Show
-  Sidebar, keeps one place under both titles. The Repository picker keeps its own order.
+  Sidebar, keeps one place under both titles. The palette's rows that switch to a Repository stay out of the
+  history and come most recently opened first, as the Repository picker lists them.
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable
   config file.

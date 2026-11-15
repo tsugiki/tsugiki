@@ -161,7 +161,8 @@
     void home.open(name).then(() => settings.load());
   };
   /** A row that switches to each Repository but the open one, titled `prefix` and its name, with the note
-   * `noteOf` gives it. */
+   * `noteOf` gives it. They come most recently opened first, as `others` does, so the palette's history
+   * leaves them out. */
   const switchRows = (
     prefix: string,
     noteOf: (name: string) => string | null = () => null,
@@ -169,6 +170,7 @@
     others.map((name) => ({
       title: `${prefix}${name}`,
       note: noteOf(name),
+      history: false,
       run: () => {
         switchTo(name);
       },

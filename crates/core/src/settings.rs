@@ -712,24 +712,37 @@ fn recent_or_skip<'de, D: Deserializer<'de>>(
 }
 
 /// The commands in `recent_commands`, leaving out an entry that isn't text, for the reason `sources_or_skip`
-/// gives, as `kept_commands` keeps them. A `recent_commands` that isn't a list counts as none.
+/// gives, as `KeptCommands` keeps them. A `recent_commands` that isn't a list counts as none.
 fn commands_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<Vec<CommandId>, D::Error> {
     let entries = Read::<Vec<Read<CommandId>>>::deserialize(given)?.given();
-    Ok(kept_commands(
-        entries.into_iter().flatten().filter_map(Read::given),
-    ))
-}
-
-/// `commands` as `recent_commands` keeps them: each once, where it first comes, and only the first
-/// `COMMANDS_KEPT`. A hand edit may have written one twice, or more than that.
-fn kept_commands(commands: impl IntoIterator<Item = CommandId>) -> Vec<CommandId> {
-    let mut kept: Vec<CommandId> = Vec::new();
-    for command in commands {
-        if kept.len() < COMMANDS_KEPT && !kept.contains(&command) {
-            kept.push(command);
+    let mut kept = KeptCommands::default();
+    for command in entries.into_iter().flatten().filter_map(Read::given) {
+        if !kept.keep(command) && kept.full() {
+            break;
         }
     }
-    kept
+    Ok(kept.0)
+}
+
+/// The commands `recent_commands` keeps, in its order: each once, where it first comes, and only the first
+/// `COMMANDS_KEPT`. A hand edit may have written one twice, or more than that. Reading the file and writing
+/// it both go through `keep`, so what a run saves is what the next read finds.
+#[derive(Default)]
+struct KeptCommands(Vec<CommandId>);
+
+impl KeptCommands {
+    /// Whether the list keeps `command`, which it then holds.
+    fn keep(&mut self, command: CommandId) -> bool {
+        let keeps = !self.full() && !self.0.contains(&command);
+        if keeps {
+            self.0.push(command);
+        }
+        keeps
+    }
+
+    fn full(&self) -> bool {
+        self.0.len() == COMMANDS_KEPT
+    }
 }
 
 /// Each Repository's answer of where its mirror gets its objects, leaving out an entry Tsugiki can't read:
@@ -1280,6 +1293,13 @@ impl SettingsOwner {
         let (mut commands_writer, commands) = latest::channel(published.clone());
         let (requests, incoming) = mpsc::channel::<Request>();
         let _ = thread::spawn(move || {
+            // Sends readers the palette's recent commands, unless they hold this list already.
+            let mut publish_if_changed = |commands: &Vec<CommandId>| {
+                if *commands != published {
+                    commands_writer.set(commands);
+                    published.clone_from(commands);
+                }
+            };
             for request in incoming {
                 let change = match request {
                     Request::Change(change) => change,
@@ -1289,8 +1309,7 @@ impl SettingsOwner {
                             Err(problem) => Err(problem.clone()),
                         };
                         if let Ok(saved) = &saved {
-                            commands_writer.set(saved);
-                            published.clone_from(saved);
+                            publish_if_changed(saved);
                         }
                         answer(&reply, saved);
                         continue;
@@ -1357,11 +1376,7 @@ impl SettingsOwner {
                 if let (Ok(saved), Ok(files)) = (&saved, &files) {
                     writer.set(saved);
                     // Each change reads `machine.toml` again, which may hold a hand edit to the list.
-                    let commands = files.recent_commands();
-                    if commands != published {
-                        commands_writer.set(&commands);
-                        published = commands;
-                    }
+                    publish_if_changed(&files.recent_commands());
                 }
                 answer(&reply, saved);
             }
@@ -1686,14 +1701,10 @@ fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) -> Vec<Co
         *head.decor_mut() = commands.remove(index).decor().clone();
     }
     commands.insert_formatted(0, head);
-    let mut kept: Vec<CommandId> = Vec::new();
-    commands.retain(|entry| match entry.as_str().map(CommandId::new) {
-        Some(text) if kept.len() == COMMANDS_KEPT || kept.contains(&text) => false,
-        Some(text) => {
-            kept.push(text);
-            true
-        }
-        None => kept.len() < COMMANDS_KEPT,
+    let mut kept = KeptCommands::default();
+    commands.retain(|entry| match entry.as_str() {
+        Some(text) => kept.keep(CommandId::new(text)),
+        None => !kept.full(),
     });
     one_per_line(&mut commands);
     merge_value(
@@ -1702,7 +1713,7 @@ fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) -> Vec<Co
         &Item::Value(Value::Array(commands)),
         None,
     );
-    kept
+    kept.0
 }
 
 /// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.

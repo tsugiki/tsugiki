@@ -52,12 +52,11 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
         },
       },
       savePaneLayout: { status: "ok", data: panes },
+      // What `machine.toml` holds of the palette's recent commands: a run changes it, as the core does.
       recentCommands: [] as string[],
       turnWindow: null,
       ...given,
     };
-    /** What `machine.toml` holds of the palette's recent commands, as the core's answers keep it. */
-    let recent = answers.recentCommands as string[];
     const listeners: MockWindow["mockEventListeners"] = {};
     const callbacks = new Map<number, Listener>();
     Object.assign(window, {
@@ -74,10 +73,12 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
             (listeners[args.event] ??= []).push(callbacks.get(args.handler) as Listener);
             return callbacks.size;
           }
-          // Unless the test answers it, a run comes first in the list the core keeps, which it answers with.
-          if (command === "remember_command" && !Object.hasOwn(given, "rememberCommand")) {
-            recent = [args.command, ...recent.filter((id) => id !== args.command)];
-            return recent;
+          // Unless the test answers it, a run comes first in the list `recentCommands` answers with, and the
+          // run answers with that list too.
+          if (command === "remember_command" && !Object.hasOwn(answers, "rememberCommand")) {
+            const recent = answers.recentCommands as string[];
+            answers.recentCommands = [args.command, ...recent.filter((id) => id !== args.command)];
+            return answers.recentCommands;
           }
           // The bindings name commands in camelCase, and the core in snake_case.
           const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());

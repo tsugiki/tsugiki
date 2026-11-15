@@ -220,6 +220,34 @@ it("says why a run can't be saved, puts it back where the core has it, and forge
   expect(recent.problem).toBeUndefined();
 });
 
+it("forgets why a run couldn't be saved once a read is taken, as after the Settings dialog read the files", async () => {
+  core.rememberCommand.mockResolvedValueOnce({
+    status: "error",
+    error: { kind: "internal", message: "machine.toml:1: expected `]`" },
+  });
+  const recent = new RecentCommands();
+  await recent.ran({ title: "Reset Layout" });
+  const problem = recent.problem;
+
+  await recent.load();
+
+  expect(problem).toBe("Tsugiki can't save the palette's recent commands: machine.toml:1: expected `]`");
+  expect(recent.problem).toBeUndefined();
+});
+
+it("leaves a row out of the history when the row says so, and lists it after the rows run", async () => {
+  kept = ["Repository: a/b", "Open Settings"];
+  const recent = new RecentCommands();
+  await recent.load();
+  const repository = { title: "Repository: a/b", history: false as const };
+
+  await recent.ran(repository);
+  const ordered = recent.order([{ title: "Pick a Theme" }, repository, { title: "Open Settings" }]);
+
+  expect(titles(ordered)).toEqual(["Open Settings", "Pick a Theme", "Repository: a/b"]);
+  expect(core.rememberCommand).not.toHaveBeenCalled();
+});
+
 it("goes on saving after a call that throws", async () => {
   core.rememberCommand.mockImplementationOnce(() => {
     throw new Error("no IPC");

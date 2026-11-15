@@ -592,6 +592,8 @@ describe("a switch from the palette", () => {
     expect(core.openRepository).toHaveBeenCalledWith("python/peps");
     expect(core.workbench).toHaveBeenLastCalledWith("python/peps", { kind: "whole" });
     expect(document.title).toBe("python/peps · Tsugiki");
+    // A switch keeps out of the palette's history: these rows come most recently opened first.
+    expect(core.rememberCommand).not.toHaveBeenCalled();
     // The core read the files again to switch, so a problem the user has since fixed can go.
     await vi.waitFor(() => {
       expect(core.settings).toHaveBeenCalledTimes(2);

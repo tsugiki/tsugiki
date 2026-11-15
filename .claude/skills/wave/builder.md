@@ -13,6 +13,10 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 
 - Run every command inside your worktree, with `CARGO_TARGET_DIR` unset, so Cargo builds into the
   worktree's own `target/`.
+- Put scratch files (probe scripts, copies of data, logs, message drafts) in your worktree's
+  `.temp/scratchpad/`, not the scratchpad folder your system prompt names, and delete them before you
+  report. In wave 6 of 0.3.2 a builder left 60 MB of probes in the session's temp folder, where it couldn't
+  delete them.
 - Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
   changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
   commands and components your branch touches.

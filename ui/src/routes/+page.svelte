@@ -33,6 +33,7 @@
     currentOs,
     isTextBox,
     keyGuard,
+    keyTarget,
     type KeyTarget,
     typesInTextBox,
   } from "$lib/ui/keys";
@@ -83,10 +84,13 @@
   hud.watchBrowser(globalThis.PerformanceObserver);
 
   let addOpen = $state(false);
-  /** The palette, while it's open: what its text box holds as it opens, `>` for its commands or nothing for
-   * quick open, and where the focus was, where the palette lists the actions that can run and runs them as
-   * their keys would (#555). */
-  let palette = $state.raw<{ text: string; at: KeyTarget }>();
+  /** What the palette's text box holds as it opens, while the palette is open: `>` for its commands, or
+   * nothing for quick open. */
+  let paletteText = $state<string>();
+  /** Where the focus was as the palette last opened: the palette lists the actions that can run there, and
+   * runs them as their keys would (#555). It holds no element, so it stays after the palette closes, and the
+   * palette's rows can read it until they go. */
+  let paletteAt = $state.raw<KeyTarget>(keyTarget(null));
   /** Quick open's search, a new one each time the palette opens on a Repository's screen. */
   let quickOpen = $state<QuickOpenState>();
   let pickerOpen = $state(false);
@@ -101,7 +105,7 @@
    * can still reach, does nothing. A command run from the palette runs once it has closed. */
   const dialogOpen = $derived(
     addOpen ||
-      palette !== undefined ||
+      paletteText !== undefined ||
       pickerOpen ||
       themePickerOpen ||
       settingsOpen ||
@@ -126,7 +130,8 @@
     if (dialogOpen) return;
     quickOpen =
       openName === undefined ? undefined : new QuickOpenState(openName, repositoryHome?.changedFiles());
-    palette = { text: quickOpen === undefined ? "" : text, at: keyTargetOf(document.activeElement) };
+    paletteAt = keyTargetOf(document.activeElement);
+    paletteText = quickOpen === undefined ? "" : text;
   };
   /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
   let settingsAt = $state<ServerName>();
@@ -241,8 +246,7 @@
   /** Whether `action` can run now, as far as the page says: its `when`, if it is the page's and has one. */
   const pageCanRun = (action: Action) => PAGE_ACTIONS.get(action)?.when?.() !== false;
   /** Where a press on `target` went: the Repository's screen says, and elsewhere no pane has it. */
-  const keyTargetOf = (target: EventTarget | null): KeyTarget =>
-    repositoryHome?.keyTarget(target) ?? { pane: null, textBox: isTextBox(target) };
+  const keyTargetOf = (target: EventTarget | null) => keyTarget(target, repositoryHome?.paneOf);
   const pageBindings: Bindings = Object.fromEntries(
     [...PAGE_ACTIONS].map(([action, { run }]) => [
       action,
@@ -505,16 +509,16 @@
     }}
   />
 {/if}
-{#if palette !== undefined}
+{#if paletteText !== undefined}
   <Palette
-    commands={paletteCommands(palette.at)}
-    text={palette.text}
+    commands={paletteCommands(paletteAt)}
+    text={paletteText}
     find={quickOpen?.find}
     found={foundRows}
     files={quickOpen?.files !== undefined}
     onrun={(command) => void recentCommands.ran(command)}
     onclose={() => {
-      palette = undefined;
+      paletteText = undefined;
       quickOpen?.stop();
       quickOpen = undefined;
     }}

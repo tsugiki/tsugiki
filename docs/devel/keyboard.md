@@ -85,8 +85,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   `Ctrl+P` does nothing and the command palette has no `>` to delete.
 - `?` lists the keys that work where the focus is, each with its action's title and the key in force: the
   Issue list's while the list has the focus, the diff's while the Files tab shows its diff, then those that
-  work anywhere. A key is listed only where it would run its action: Next Tab while a PR shows, and in a
-  text box only the keys that work there. Esc closes the list, and in a text box `?` types.
+  work anywhere. A key is listed only where it would run its action: Next Tab while a PR shows, `Q` and
+  `Shift+Q` while they have an item to mark, and in a text box only the keys that work there. Esc closes the
+  list, and in a text box `?` types.
 - The command palette lists each action of the key table that can run where the focus was as it opened, in
   the table's order, each with its key in force on the right, remaps included, or no key. Running one does
   what its key does there, once the palette has handed the focus back, and in a text box too, where the box

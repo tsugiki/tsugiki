@@ -39,10 +39,11 @@
   import {
     actionLabel,
     currentOs,
-    isTextBox,
     keptByTextBox,
     keyName,
+    keyTarget,
     type KeyTarget,
+    type Pane,
     worksInTextBox,
   } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
@@ -346,12 +347,13 @@
     return view ? { stop: detailLine(), number: view.number, seen: view.seen } : undefined;
   }
 
-  /** Where a press on `target` went. A press that reaches no control, on the page's body, goes to the list. */
-  export function keyTarget(target: EventTarget | null): KeyTarget {
+  /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
+   * page's body, goes to the list. */
+  export function paneOf(target: EventTarget | null): Pane {
     const inList =
       target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null);
     const inDetail = target instanceof Node && detailPane()?.contains(target) === true;
-    return { pane: inList ? "list" : inDetail ? "detail" : null, textBox: isTextBox(target) };
+    return inList ? "list" : inDetail ? "detail" : null;
   }
 
   /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓ then
@@ -518,8 +520,12 @@
       title: shownFiles()?.mode === "one" ? "View: All Files" : "View: One File at a Time",
       id: "toggle_files_mode",
     }),
-    unfold_unchanged: () =>
-      (shownFiles()?.foldedUnchanged ?? 0) > 0 ? { title: "View: Unfold Unchanged Files" } : undefined,
+    unfold_unchanged: () => {
+      const files = shownFiles();
+      return files !== undefined && files.foldedUnchanged > 0
+        ? { title: "View: Unfold Unchanged Files" }
+        : undefined;
+    },
   };
 
   /**
@@ -533,9 +539,10 @@
     at: KeyTarget,
   ): PaletteAction | undefined {
     const run = SCREEN_ACTIONS[action]?.(at);
+    if (run === undefined) return undefined;
     const named = PALETTE_NAMES[action];
     const name = named ? named() : { title };
-    return run && name && { ...name, action, run: () => run(false) };
+    return name && { ...name, action, run: () => run(false) };
   }
 
   /** The commands this screen adds to the palette that run no action, which follow the actions. */
@@ -664,19 +671,16 @@
       );
     };
 
-  /** Marks the item `Q` and `Shift+Q` act on, while there is one, as `keyMarked` says. A held key would ask
-   * the core again and again. */
+  /** Marks the item `Q` and `Shift+Q` act on, while there is one, as `keyMarked` says. It reads the item as
+   * it runs, so a sync that lands while the palette is open marks what the window shows by then. A held key
+   * would ask the core again and again. */
   const marking =
-    (mark: (marked: Marked, at: KeyTarget) => Promise<void>): ScreenAction =>
-    (at) => {
-      const marked = keyMarked(at);
-      return (
-        marked &&
-        ((held) => {
-          if (!held) void mark(marked, at);
-        })
-      );
-    };
+    (mark: (marked: Marked | undefined, at: KeyTarget) => Promise<void>): ScreenAction =>
+    (at) =>
+      keyMarked(at) &&
+      ((held) => {
+        if (!held) void mark(keyMarked(at), at);
+      });
 
   /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block
    * sideways. */
@@ -815,7 +819,7 @@
     // A key that types does so in a text box, whatever its action: `[keys]` may give Hide or Show the Sidebar
     // a plain key.
     if (key !== null && keptByTextBox(key, e.target)) return;
-    const at = keyTarget(e.target);
+    const at = keyTarget(e.target, paneOf);
     // An action's key comes before the keys below only because none of them can be one: the core refuses a
     // line of `[keys]` that puts an action on Enter, Esc, ↑ or ↓ without Ctrl or Alt. Were it to allow
     // `go_back = "escape"`, Escape would stop closing the peek, the search and the file view. A key that runs

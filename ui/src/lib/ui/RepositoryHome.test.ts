@@ -3,25 +3,24 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
-import { type Action, keysIn, keyTable, remapKeys, type Row } from "$lib/state/keymap.svelte";
-import type { KeyTarget } from "./keys";
-import type { PaletteAction } from "./Palette.svelte";
+import { type Action, keysIn, keyTable, remapKeys } from "$lib/state/keymap.svelte";
+import { keyTarget } from "./keys";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
 import RepositoryHome from "./RepositoryHome.svelte";
 
-/** What the page asks the screen for the palette's rows. */
-interface PaletteScreen {
-  paletteRow: (row: Row, at: KeyTarget) => PaletteAction | undefined;
-  keyTarget: (target: EventTarget | null) => KeyTarget;
-}
+/** What the page asks the screen for the palette's rows, from the screen's own exports. */
+type PaletteScreen = Pick<
+  ReturnType<typeof render<typeof RepositoryHome>>["component"],
+  "paletteRow" | "paneOf"
+>;
 
 /** The palette's row for `action` on `screen`, as the page asks for it, for the palette opened with the
  * focus on `target`: on no control at all, which goes to the list, unless it says. */
 function paletteRow(screen: PaletteScreen, action: Action, target: EventTarget | null = document.body) {
   const row = keyTable().find((one) => one.action === action);
-  return row && screen.paletteRow(row, screen.keyTarget(target));
+  return row && screen.paletteRow(row, keyTarget(target, screen.paneOf));
 }
 
 const core = vi.hoisted(() => ({
@@ -1172,7 +1171,7 @@ it("names the views whose keys work where a press goes, for the `?` list", async
     },
   );
   const { component, treeRow } = await listing();
-  const views = (target: EventTarget | null) => component.keysHere(component.keyTarget(target)).views;
+  const views = (target: EventTarget | null) => component.keysHere(keyTarget(target, component.paneOf)).views;
   const onList = [views(document.body), views(treeRow)];
   await fireEvent.click(treeRow);
   const detail = document.querySelector('[data-pane="detail"]');
@@ -1184,7 +1183,7 @@ it("names the views whose keys work where a press goes, for the `?` list", async
   expect([...onList, onConversation]).toEqual([["issue_list"], ["issue_list"], []]);
   // The diff's keys work from the list too, while the Files tab shows, every one of them.
   expect([views(detail), views(treeRow)]).toEqual([["diff"], ["issue_list", "diff"]]);
-  const here = component.keysHere(component.keyTarget(detail));
+  const here = component.keysHere(keyTarget(detail, component.paneOf));
   expect(keysIn("diff").every((row) => here.works(row.action))).toBe(true);
 });
 
@@ -1243,7 +1242,7 @@ it("lists for `?` only the keys that would run: the PR view's while a PR shows, 
   document.body.append(box);
   /** Whether each key that works anywhere would run for a press on `target`. */
   const works = (target: EventTarget | null) => {
-    const here = component.keysHere(component.keyTarget(target));
+    const here = component.keysHere(keyTarget(target, component.paneOf));
     return Object.fromEntries(keysIn("anywhere").map((row) => [row.action, here.works(row.action)]));
   };
   const inBox = works(box);
@@ -1847,7 +1846,7 @@ it("leaves the diff's lookups alone of its keys for `?` while the file view cove
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
   const here = component.keysHere(
-    component.keyTarget(await screen.findByRole("region", { name: "File view" })),
+    keyTarget(await screen.findByRole("region", { name: "File view" }), component.paneOf),
   );
   const works = Object.fromEntries(keysIn("diff").map((row) => [row.action, here.works(row.action)]));
 
@@ -2296,6 +2295,42 @@ it("lets Q and Shift+Q type in a text box", async () => {
   expect(core.markSeen).not.toHaveBeenCalled();
   expect(core.markUnseen).not.toHaveBeenCalled();
   box.remove();
+});
+
+it("marks from the palette the item as it is when the row runs, after a sync that came while it was open", async () => {
+  const changed = catchChanged();
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("button", { name: "Mark Seen" });
+  const markSeen = paletteRow(component, "mark_seen", document.querySelector('[data-pane="detail"]'));
+
+  core.pullRequest.mockResolvedValue({
+    status: "ok",
+    data: { ...row, seen: { mark: laterMark, state: "seen" }, content: null },
+  });
+  changed("python/cpython", [160662]);
+  await screen.findByRole("button", { name: "Mark Unseen" });
+  markSeen?.run();
+
+  await vi.waitFor(() => {
+    expect(core.markSeen).toHaveBeenCalledExactlyOnceWith("python/cpython", laterMark);
+  });
+});
+
+it("lists Q and Shift+Q on ? only while they have an item to mark", async () => {
+  const { component, issueRow } = await listing();
+  const works = () => {
+    const here = component.keysHere(keyTarget(document.body, component.paneOf));
+    return [here.works("mark_seen"), here.works("mark_unseen")];
+  };
+  // No line is under the cursor, and nothing is on show.
+  const nothing = works();
+  await fireEvent.click(issueRow);
+
+  expect([nothing, works()]).toEqual([
+    [false, false],
+    [true, true],
+  ]);
 });
 
 it("marks from the palette what Q and Shift+Q mark where the focus was: the line under the cursor, or the Detail pane's item", async () => {

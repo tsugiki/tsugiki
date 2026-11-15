@@ -19,8 +19,20 @@ export type Os = "mac" | "other";
  * Detail pane or neither, and whether into a text box. It is worked out from the press's target once, as the
  * key comes or the palette opens, so it holds while the element that had the focus is drawn again. */
 export interface KeyTarget {
-  readonly pane: "list" | "detail" | null;
+  readonly pane: Pane;
   readonly textBox: boolean;
+}
+
+/** A pane a press can go to, or null for neither. */
+export type Pane = "list" | "detail" | null;
+
+/** Where a press on `target` went: into the pane `paneOf` finds it in, none unless it's given, and whether
+ * into a text box. The Repository's screen knows its panes, and elsewhere a press goes to no pane. */
+export function keyTarget(
+  target: EventTarget | null,
+  paneOf: (target: EventTarget | null) => Pane = () => null,
+): KeyTarget {
+  return { pane: paneOf(target), textBox: isTextBox(target) };
 }
 
 /** What each bound action does, handed the key press that ran it. The guard runs the action of a key, and

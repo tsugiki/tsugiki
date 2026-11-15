@@ -9,6 +9,7 @@ const core: CoreAnswers = {
       releases: { check: true },
       appearance,
       diff: { files: "all", peek: "inline" },
+      keys: {},
       repositories: [],
     },
     language_servers: noServers,

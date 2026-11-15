@@ -67,7 +67,8 @@
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
   /** The rail's key, which its button and × name. */
-  const railKey = actionLabel("toggle_rail_files", currentOs());
+  // The rail's key as `[keys]` gives it, or null while it has none (#549).
+  const railKey = $derived(actionLabel("toggle_rail_files", currentOs()));
   /** Whether the rail shows: it opens beside the tabs, which come with the PR's view. */
   const railed = $derived(panes.railOpen && Boolean(pr.view));
   /** Whether the Conversation scrolls by itself, as it does beside the rail. Without the rail the whole pane
@@ -205,7 +206,7 @@
         data-opens-rail
         aria-label="Files in the rail"
         aria-pressed={panes.railOpen}
-        title={`Files in the rail (${railKey})`}
+        title={railKey === null ? "Files in the rail" : `Files in the rail (${railKey})`}
         onclick={() => {
           panes.toggleRail();
         }}>Files</button

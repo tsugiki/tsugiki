@@ -247,14 +247,15 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "error",
             "folders",
+            "keys",
             "latest",
             "mirror",
             "repository",
             "repository_settings",
             "theme",
         ],
-        why: "Reads and writes the Repositories, the mirror sources and the theme names, and shares them \
-              through `latest`.",
+        why: "Reads and writes the Repositories, the mirror sources and the theme names, reads the remapped \
+              keys, and shares them through `latest`.",
     },
     Layer {
         module: "workbench",

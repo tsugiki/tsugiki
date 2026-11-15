@@ -20,6 +20,7 @@ fn hidden() -> Settings {
             files: DiffFiles::All,
             peek: DiffPeek::Inline,
         },
+        keys: Remaps::default(),
         repositories: Vec::new(),
     }
 }
@@ -449,6 +450,71 @@ fn diff_peek_is_saved_only_when_it_isnt_inline() {
             &Settings::default()
         ),
         ""
+    );
+}
+
+#[test]
+fn keys_gives_actions_other_keys_or_none_in_the_files_order() {
+    let text = "[keys]\nlocal_mark = \"\"\narchive = \"a\"\npin = \"Ctrl+J P\"\n";
+    let loaded = loaded_from("keys", text);
+
+    assert_eq!(loaded.problems, Vec::<String>::new());
+    assert_eq!(
+        serde_json::to_string(&loaded.settings.keys).unwrap(),
+        r#"{"local_mark":"","archive":"a","pin":"ctrl+j p"}"#
+    );
+    assert_eq!(Settings::default().keys, Remaps::default());
+}
+
+#[test]
+fn a_keys_line_tsugiki_cant_read_keeps_its_actions_default_and_is_reported() {
+    let text = "[status_bar]\nvisible = false\n\n[keys]\narchive = \"tab\"\nfrobnicate = \"f\"\nmute = 3\n";
+    let loaded = loaded_from("keys-bad", text);
+
+    assert_eq!(
+        loaded.settings.status_bar,
+        hidden().status_bar,
+        "the rest of the file still counts"
+    );
+    assert_eq!(serde_json::to_string(&loaded.settings.keys).unwrap(), "{}");
+    let problems: Vec<&str> = loaded
+        .problems
+        .iter()
+        .map(|problem| problem.split_once("settings.toml").unwrap().1)
+        .collect();
+    assert_eq!(
+        problems,
+        [
+            r#", line 5: archive gives "tab", but without Ctrl or Alt that key keeps its own work, so Archive keeps "e"."#,
+            ", line 6: frobnicate isn't an action Tsugiki has, so Tsugiki skips the line.",
+            r#", line 7: mute needs a key in quotes, such as "ctrl+k m", so Mute keeps "m"."#,
+        ]
+    );
+}
+
+/// As with `[appearance]`, a `keys` that isn't a table fails the file.
+#[test]
+fn a_keys_that_isnt_a_table_fails_the_file() {
+    let failed = loaded_from("keys-not-a-table", "keys = \"e\"\n");
+
+    let problem = failed.problems.first().cloned().unwrap_or_default();
+    assert!(
+        problem.contains("settings.toml, line 1")
+            && problem.contains("a table of actions and their keys"),
+        "{problem}"
+    );
+    assert_eq!(failed.settings, Settings::default());
+}
+
+/// The Settings dialog doesn't edit `[keys]` yet, so a save leaves it as the user wrote it, a line Tsugiki
+/// can't read included: nothing would write over that line.
+#[test]
+fn a_save_leaves_keys_as_the_user_wrote_them() {
+    let before = "[keys]\nlocal_mark = \"Ctrl+K M\"\narchive = \"tab\"\n";
+
+    assert_eq!(
+        saved_over("keys-save", before, &hidden()),
+        format!("{before}\n[status_bar]\nvisible = false\n")
     );
 }
 

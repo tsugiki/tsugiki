@@ -44,10 +44,18 @@ fn bindings_are_up_to_date() {
 fn key_table_bindings_are_up_to_date() {
     let table =
         serde_json::to_string_pretty(tsugiki_core::keys::TABLE).expect("serialize the key table");
+    let shifted: serde_json::Map<String, serde_json::Value> =
+        tsugiki_core::keys::SHIFTED_ON_US_KEYBOARD
+            .iter()
+            .map(|(key, shifted)| (key.to_string(), shifted.to_string().into()))
+            .collect();
+    let shifted = serde_json::to_string_pretty(&shifted).expect("serialize the shifted keys");
     let fresh = format!(
         "// Generated from tsugiki-core's key table by `npm run bindings`. Do not edit.\n\n\
          /** Each action the user can bind, with its title, default key and where it works. */\n\
-         export const KEYMAP = {table} as const;\n"
+         export const KEYMAP = {table} as const;\n\n\
+         /** What Shift makes each key type on a US keyboard, by what the key types alone. */\n\
+         export const SHIFTED: Readonly<Record<string, string>> = {shifted};\n"
     );
     compare_or_update("ui/src/lib/data/keymap.ts", &fresh);
 }

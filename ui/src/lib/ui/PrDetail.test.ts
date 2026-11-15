@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
 import PrDetail from "./PrDetail.svelte";
@@ -445,6 +446,22 @@ it("opens the rail from the Files button at the right of the tabs, and closes it
   expect([rail(), railButton().getAttribute("aria-pressed"), panes.railOpen]).toEqual([null, "false", false]);
   // The button stands beside the tabs, not among them.
   expect(within(screen.getByRole("tablist")).queryByRole("button", { name: "Files in the rail" })).toBeNull();
+});
+
+it("names the rail's key as [keys] gives it, and none while it has none", async () => {
+  const panes = new PanesState();
+  panes.railOpen = true;
+  remapKeys({ toggle_rail_files: "ctrl+j f" });
+  await shown(view, 10, vi.fn(), vi.fn(), panes);
+  const close = screen.getByRole("button", { name: "Close the rail" });
+  const remapped = [railButton().title, close.title];
+  remapKeys({ toggle_rail_files: "" });
+  await tick();
+  const none = [railButton().title, close.title];
+  remapKeys({});
+
+  expect(remapped).toEqual(["Files in the rail (Ctrl+J F)", "Close (Ctrl+J F)"]);
+  expect(none).toEqual(["Files in the rail", "Close"]);
 });
 
 it("closes the rail on ×, and gives the focus to the Files button, as the whole pane scrolls the Conversation again", async () => {

@@ -9,7 +9,7 @@
     Status,
     SyncActivity,
   } from "$lib/state/status.svelte";
-  import { type ChordStart, currentOs, keyLabel } from "./keys";
+  import { currentOs, keyLabel } from "./keys";
   import {
     cloningWords,
     elsewhereWords,
@@ -55,7 +55,7 @@
     /** A version newer than the running one, whose release page a click opens. */
     newVersion?: NewVersion | null;
     /** The first key of the chord whose second key Tsugiki waits for. */
-    chord?: ChordStart | null;
+    chord?: string | null;
     onrefresh?: () => void;
     oncheckagain?: () => void;
     /** Asks where `repository`'s mirror gets its objects. */

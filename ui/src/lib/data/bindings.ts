@@ -277,6 +277,12 @@ export type About = {
 	source_ref: string,
 };
 
+/**
+ *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
+ *  `local_mark`.
+ */
+export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
+
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
 
@@ -2470,6 +2476,8 @@ export type Settings_Deserialize = {
 	releases?: ReleaseSettings_Deserialize,
 	appearance?: AppearanceSettings,
 	diff?: DiffSettings,
+	/**  `[keys]`: each action the user gave another key, or none, in the file's order (#549). */
+	keys?: Partial<{ [key in Action]: string }>,
 	repositories?: RepositorySettings_Deserialize[],
 };
 
@@ -2479,6 +2487,8 @@ export type Settings_Serialize = {
 	releases: ReleaseSettings_Serialize,
 	appearance: AppearanceSettings,
 	diff: DiffSettings,
+	/**  `[keys]`: each action the user gave another key, or none, in the file's order (#549). */
+	keys: Partial<{ [key in Action]: string }>,
 	repositories: RepositorySettings_Serialize[],
 };
 

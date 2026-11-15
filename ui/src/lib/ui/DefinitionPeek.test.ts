@@ -2,8 +2,10 @@ import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
+import { type Action, remapKeys } from "$lib/state/keymap.svelte";
 import type { Crumb, Peek } from "$lib/state/peek";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
+import { ChordAction } from "./chord.svelte";
 import DefinitionPeek from "./DefinitionPeek.svelte";
 
 /** A hit of a lookup, as the core gives it. */
@@ -272,6 +274,18 @@ it("goes to the hit it shows on Open, and on Enter or F12 while it has the focus
   expect(diff.mock.calls.map(([e]) => [e.key, e.altKey])).toEqual([["F12", true]]);
 });
 
+it("takes a chord on Go to definition to go to the hit it shows, and leaves the page any other chord", () => {
+  const onopen = vi.fn();
+  const props = { onclose: () => {}, onhit: () => {}, onopen, ...following };
+  render(DefinitionPeek, { peek: showing(hits, 1), open: "ready", ...props });
+  const list = screen.getByRole("listbox");
+  const actions: Action[] = ["go_to_definition", "toggle_files_mode"];
+  const untaken = actions.map((action) => list.dispatchEvent(new ChordAction(action)));
+
+  expect(untaken).toEqual([false, true]);
+  expect(onopen).toHaveBeenCalledOnce();
+});
+
 it("offers Open as the tab says, and waits while the tab finds the hit's row", async () => {
   const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, ...following };
   const shown = render(DefinitionPeek, { peek: showing(hits, 0), ...props });
@@ -285,6 +299,28 @@ it("offers Open as the tab says, and waits while the tab finds the hit's row", a
   expect(ready).toBe(false);
   expect(open.disabled).toBe(true);
   expect(open.title).toBe("Go to this definition (Enter, F12)");
+});
+
+it("names Go to Definition's key on Open as [keys] gives it, or only Enter while it has none", async () => {
+  const props = {
+    onclose: () => {},
+    onhit: () => {},
+    onopen: () => {},
+    open: "ready" as const,
+    ...following,
+  };
+  remapKeys({ go_to_definition: "ctrl+f12" });
+  render(DefinitionPeek, { peek: showing(hits, 0), ...props });
+  const open = screen.getByRole<HTMLButtonElement>("button", { name: "Open" });
+  const remapped = open.title;
+  remapKeys({ go_to_definition: "" });
+  await tick();
+
+  expect([remapped, open.title]).toEqual([
+    "Go to this definition (Enter, Ctrl+F12)",
+    "Go to this definition (Enter)",
+  ]);
+  remapKeys({});
 });
 
 it("names the peeks it followed from in a breadcrumb, and brings back the one a click on its crumb names", async () => {

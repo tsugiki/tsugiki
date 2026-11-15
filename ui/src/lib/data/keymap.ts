@@ -267,3 +267,28 @@ export const KEYMAP = [
     "context": "anywhere"
   }
 ] as const;
+
+/** What Shift makes each key type on a US keyboard, by what the key types alone. */
+export const SHIFTED: Readonly<Record<string, string>> = {
+  "'": "\"",
+  ",": "<",
+  "-": "_",
+  ".": ">",
+  "/": "?",
+  "0": ")",
+  "1": "!",
+  "2": "@",
+  "3": "#",
+  "4": "$",
+  "5": "%",
+  "6": "^",
+  "7": "&",
+  "8": "*",
+  "9": "(",
+  ";": ":",
+  "=": "+",
+  "[": "{",
+  "\\": "|",
+  "]": "}",
+  "`": "~"
+};

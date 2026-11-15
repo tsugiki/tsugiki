@@ -57,3 +57,29 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Keybindings can be remapped on the Settings Keyboard page: click a key and press the new one; chords such as
   `Ctrl+K M` work, and two actions on one key are flagged. Only remapped keys are written to the portable
   config file.
+- `[keys]` in `settings.toml` holds one line per remapped action, named as the core's key table names it:
+  `archive = "a"`, `local_mark = "ctrl+k m"`, or `""` for no key. A key is written as the window names it,
+  with Ctrl, Alt and Shift before the key and a space between a chord's two presses, in any case: `"Ctrl+K M"`
+  reads as `"ctrl+k m"`, `Cmd` and `Option` read as `Ctrl` and `Alt`, and `←` reads as `arrowleft`. Tsugiki
+  reads the table at start-up and when Settings opens ([ADR
+  0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)). A remapped key
+  works wherever its action does, and every tooltip, palette note and key hint shows it.
+- A line of `[keys]` that names no action, gives a key Tsugiki can't read, or puts an action on a key that
+  can't be remapped shows in the status bar with its line, and the action keeps its default key. The arrows,
+  Enter, Esc, Tab, Space, Home, End, Page Up and Page Down can't start a key without Ctrl or Alt, unless the
+  line gives the action its own default, as `unfold = "arrowright"` does; a chord's second press can be any
+  key. Shift with a symbol or a digit is refused with the character to write instead, `"?"` for
+  `"shift+/"`, as the window names such a press by what it types. A key the window names by where it is, on
+  a non-Latin layout or with macOS's Option, goes by what Shift types there on a US keyboard: Russian
+  `Ctrl+Shift+Б` is `"ctrl+<"`, and `Option+Shift+/` is `"alt+?"`, as Windows names `Alt+Shift+/`. Open
+  DevTools can't be remapped, and no key can hold `Ctrl+Shift+I`: WebView2 opens DevTools on it. A
+  plain key, Backspace and Delete still type in a text box, and so does `Ctrl+Alt` with a key that types, as
+  AltGr sends it, unless the action works in a text box, as Hide or Show the Sidebar does. The Settings
+  dialog's Apply leaves `[keys]` as the user wrote it.
+- Any action can take a chord or a key of one press, and a chord runs the action as its key of one press
+  would, in the Definition peek too. No chord starts under a dialog or the palette. A chord of an action the
+  window runs itself, such as `open_settings = "ctrl+k s"`, works on every screen and in a text box; the
+  chords of the Repository screen's actions work there, outside a text box.
+- Until two actions on one key are settled (#550), a remapped action keeps its key over an action that has
+  it by default, which is left with no key: after `archive = "f7"`, F7 runs Archive, and Next Change shows no
+  key.

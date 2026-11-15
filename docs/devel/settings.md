@@ -56,6 +56,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   was ([definitions.md](definitions.md)). A change applies to the next peek. A value Tsugiki can't read
   opens the peek inline and shows in the status bar, as a bad `[diff] files` does. Only a hand edit sets it
   for now: General gets the choice later (#370).
+- `[keys]` in `settings.toml` remaps keys, one line per action ([keyboard.md](keyboard.md)). A line Tsugiki
+  can't read keeps its action's default key and shows in the status bar, but doesn't refuse an Apply, which
+  leaves `[keys]` as the user wrote it. Only a hand edit sets it for now: the Keyboard page gets it later
+  (#551, #552).
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).

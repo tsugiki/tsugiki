@@ -499,6 +499,7 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
         releases: { check: true },
         appearance,
         diff: { files: "one", peek: "inline" },
+        keys: {},
         repositories: [],
       },
       language_servers: noServers,

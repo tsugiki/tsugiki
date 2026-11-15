@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
+  import { type Action, startsChordOf } from "$lib/state/keymap.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -10,8 +11,8 @@
   import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
   import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
-  import { ChordWait } from "$lib/ui/chord.svelte";
-  import { currentOs, keyGuard } from "$lib/ui/keys";
+  import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
+  import { type Bindings, currentOs, isTextBox, keyGuard, typesInTextBox } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
@@ -87,8 +88,8 @@
       settingsOpen = true;
     }
   });
-  /** Opens the theme picker, from `Ctrl+K T` or the palette. Neither reaches it with a dialog open: a chord
-   * starts only with none, and the palette has closed by then. It reads the themes folder again, so a file
+  /** Opens the theme picker, from `Ctrl+K T` or the palette. Neither reaches it with a dialog open: the key's
+   * binding asks for none, and the palette has closed by then. It reads the themes folder again, so a file
    * saved since shows up as the list fills in. */
   const openThemePicker = () => {
     themePickerOpen = true;
@@ -103,31 +104,46 @@
   const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
-  const guard = keyGuard(
-    {
-      command_palette: () => {
-        if (!dialogOpen) paletteOpen = true;
-      },
-      switch_repository: openPicker,
-      open_settings: openSettings,
-      toggle_hud: () => {
-        hud.toggle();
-      },
+  /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549). */
+  const pageBindings: Bindings = {
+    command_palette: () => {
+      if (!dialogOpen) paletteOpen = true;
     },
-    os,
-  );
-  /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. Chords
-   * start where the list's keys work: on a Repository's screen, with no dialog or palette on top. The
-   * screen says what most do, Pick a Theme opens the theme picker and Reload Themes reads the themes
-   * again. */
+    switch_repository: openPicker,
+    open_settings: openSettings,
+    toggle_hud: () => {
+      hud.toggle();
+    },
+    pick_theme: () => {
+      if (!dialogOpen) openThemePicker();
+    },
+    reload_themes: reloadThemes,
+  };
+  const guard = keyGuard(pageBindings, os);
+  const pageActions = Object.keys(pageBindings) as Action[];
+  const runPage: ChordRun = (action, e) => {
+    pageBindings[action]?.(e);
+  };
+  const runAll: ChordRun = (action, e) => {
+    const page = pageBindings[action];
+    if (page) page(e);
+    else repositoryHome?.runChord(action, e);
+  };
+  /**
+   * What a chord that `first` starts on press `e` runs, or null where none starts. No chord starts under a
+   * dialog or the palette, which keep their keys, nor on a press that types in a text box. A chord of the
+   * page's own works on every screen and in a text box, as a key of one press does. The screen's chords
+   * work where the list's keys do, on a Repository's screen outside a text box, and run what the screen runs
+   * on the action's key.
+   */
+  const chordStart = (first: string, e: KeyboardEvent): ChordRun | null => {
+    if (!keysActive || (isTextBox(e.target) && typesInTextBox(first))) return null;
+    if (home.current?.screen === "repository" && !isTextBox(e.target)) return runAll;
+    return startsChordOf(first, pageActions) ? runPage : null;
+  };
+  /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. */
   const readKey = (e: KeyboardEvent) => {
-    const canStart = home.current?.screen === "repository" && keysActive;
-    const bindings = {
-      ...repositoryHome?.chordBindings(),
-      pick_theme: openThemePicker,
-      reload_themes: reloadThemes,
-    };
-    if (!chord.read(e, canStart, bindings)) guard(e);
+    if (!chord.read(e, chordStart)) guard(e);
   };
   const endChord = () => {
     chord.end();

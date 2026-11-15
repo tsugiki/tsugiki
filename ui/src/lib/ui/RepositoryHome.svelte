@@ -31,8 +31,8 @@
   import { scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
-  import { actionOn } from "$lib/state/keymap";
-  import { actionLabel, type Bindings, currentOs, isTextBox, keyName } from "./keys";
+  import { type Action, actionOn } from "$lib/state/keymap.svelte";
+  import { actionLabel, currentOs, isTextBox, keyName, typesInTextBox } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import type { PaletteAction } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
@@ -385,18 +385,10 @@
     if (!panes.hidden("list") || detailPane()?.contains(document.activeElement) !== true) focusCursor();
   }
 
-  /** The chords this screen binds, each with the action the page runs once the chord's wait ends. */
-  export function chordBindings(): Bindings {
-    return {
-      unfold_unchanged: () => {
-        shownFiles()?.unfoldUnchanged();
-      },
-      toggle_files_mode: () => {
-        shownFiles()?.toggleMode();
-      },
-      toggle_detail_only: () => void toggleDetailOnly(),
-      toggle_rail_files: toggleRail,
-    };
+  /** Runs `action` at the end of its chord, press `e`, as its key of one press would, as `[keys]` can give
+   * any action a chord or a key of one press (#549). */
+  export function runChord(action: Action, e: KeyboardEvent): void {
+    runKey(null, action, e);
   }
 
   /** Whether the Detail pane shows a PR's view, with the tabs the rail sits beside. The key and the palette
@@ -597,16 +589,24 @@
   /**
    * The list's keys and the PR view's. A dialog on top keeps them, and a text box or a focused control
    * keeps its own. The window's guard has already stopped the browser for Ctrl+B, Ctrl+Shift+G, Ctrl+Alt+U
-   * and Ctrl+F, which work in a text box too, and for Ctrl+Alt+B outside one, as AltGr sends it to type.
+   * and Ctrl+F, which work in a text box too unless `[keys]` gives them a key that types there, and for
+   * Ctrl+Alt+B outside one, as AltGr sends it to type.
    * ↑ and ↓ go where the focus line shows (#602): they scroll the Detail pane while it holds the focus or
    * the list is hidden, and move the list's cursor otherwise. With the list hidden, Enter has no row to open.
    */
   function onkeydown(e: KeyboardEvent) {
     if (!keysActive) return;
     const key = keyName(e, currentOs());
-    const action = actionOn(key);
+    runKey(key, actionOn(key), e);
+  }
+
+  /** Runs what press `e` asks: the press `key`, null for a chord's, and its `action`. */
+  function runKey(key: string | null, action: Action | undefined, e: KeyboardEvent) {
     const files = shownFiles();
     const tab = filesTab();
+    // A key that types does so in a text box, whatever its action: `[keys]` may give Hide or Show the Sidebar
+    // a plain key.
+    if (key !== null && typesInTextBox(key) && isTextBox(e.target)) return;
     if (action === "toggle_sidebar") {
       // A held key would flicker the Sidebar and save the file each time.
       if (!e.repeat) void toggleSidebarByKey();
@@ -620,6 +620,14 @@
       files.openSearch();
     } else if (isTextBox(e.target)) {
       return;
+    } else if (action === "toggle_detail_only") {
+      void toggleDetailOnly();
+    } else if (action === "toggle_files_mode") {
+      files?.toggleMode();
+    } else if (action === "unfold_unchanged") {
+      files?.unfoldUnchanged();
+    } else if (action === "toggle_rail_files") {
+      toggleRail();
     } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;
@@ -974,11 +982,12 @@
       </PrDetail>
     {/key}
   {:else if panes.hidden("list")}
+    {@const key = actionLabel("toggle_issue_list", currentOs())}
     <section class="empty" aria-label="Detail pane" tabindex="-1" data-pane="detail">
       <p>
         Nothing open. <button class="link" onclick={() => void toggleListByKey()}
-          ><kbd>{actionLabel("toggle_issue_list", currentOs())}</kbd></button
-        > shows the Issue list.
+          >{#if key === null}Show the Issue list{:else}<kbd>{key}</kbd>{/if}</button
+        >{key === null ? "" : " shows the Issue list."}
       </p>
     </section>
   {/if}

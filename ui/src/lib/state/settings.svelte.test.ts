@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
+import { actionOn } from "./keymap.svelte";
 import { type LoadedSettings, SettingsState } from "./settings.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { settings: vi.fn() } }));
@@ -31,6 +32,7 @@ describe("SettingsState", () => {
           dark_theme: "VS Code Dark Modern",
         },
         diff: { files: "one", peek: "split" },
+        keys: {},
         repositories: [],
       },
       language_servers: { ...NO_SERVERS, ty: "tools/ty.exe" },
@@ -58,6 +60,7 @@ describe("SettingsState", () => {
           dark_theme: "VS Code Dark Modern",
         },
         diff: { files: "one", peek: "inline" },
+        keys: {},
         repositories: [],
       },
       language_servers: NO_SERVERS,
@@ -84,6 +87,7 @@ describe("SettingsState", () => {
       releases: { check: true },
       appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
       diff: { files: "all", peek: "inline" },
+      keys: {},
       repositories: [],
     },
     language_servers: NO_SERVERS,
@@ -114,5 +118,17 @@ describe("SettingsState", () => {
     state.preview(false);
     await state.load();
     expect(state.statusBarVisible).toBe(true);
+  });
+
+  it("puts the keys of [keys] in force each time it takes the settings", () => {
+    const state = new SettingsState();
+    const remapped = read(true);
+    remapped.settings.keys = { archive: "a", local_mark: "" };
+
+    state.take(remapped);
+    expect([actionOn("a"), actionOn("e"), actionOn("ctrl+k m")]).toEqual(["archive", undefined, undefined]);
+
+    state.take(read(true));
+    expect([actionOn("a"), actionOn("e")]).toEqual([undefined, "archive"]);
   });
 });

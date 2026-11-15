@@ -13,8 +13,8 @@
     onclose,
     onleave,
   }: {
-    /** The key that closes the rail, for the tooltip of ×. */
-    closeKey: string;
+    /** The key that closes the rail, for the tooltip of ×, or null while `[keys]` leaves it none. */
+    closeKey: string | null;
     /** The edge that sizes the rail, on its left. */
     edge: Snippet;
     onclose: () => void;
@@ -69,7 +69,7 @@
         type="button"
         class="close"
         aria-label="Close the rail"
-        title={`Close (${closeKey})`}
+        title={closeKey === null ? "Close" : `Close (${closeKey})`}
         onclick={onclose}>×</button
       >
     </header>

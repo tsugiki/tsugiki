@@ -15,6 +15,7 @@ import {
   type PrFiles,
 } from "$lib/state/pr-files.svelte";
 import type { YourReview } from "$lib/state/workbench.svelte";
+import { ChordAction } from "./chord.svelte";
 import FilesTab from "./FilesTab.svelte";
 
 const core = vi.hoisted(() => ({
@@ -2166,6 +2167,21 @@ it("follows the peek's word on Alt+F12 from its header too, once, and leaves Alt
   expect(heard).toHaveBeenCalledOnce();
   expect(core.definitions).toHaveBeenCalledTimes(2);
   expect(files.peek?.symbol).toBe("line");
+});
+
+it("follows the peek's word on a chord on Peek definition, and leaves the page the chord with no word picked", async () => {
+  const { files, twelve } = await peekOnTwelve();
+  const box = peekBox() as HTMLElement;
+  const before = box.dispatchEvent(new ChordAction("peek_definition"));
+  await clickAt(twelve, 2);
+  const other = box.dispatchEvent(new ChordAction("toggle_files_mode"));
+  const picked = box.dispatchEvent(new ChordAction("peek_definition"));
+
+  expect([before, other, picked]).toEqual([true, true, false]);
+  expect(core.definitions).toHaveBeenCalledTimes(2);
+  await vi.waitFor(() => {
+    expect(files.peek?.symbol).toBe("line");
+  });
 });
 
 it("selects only the diff's word on a double-click in the diff while a word is picked in the peek", async () => {

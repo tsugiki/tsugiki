@@ -62,7 +62,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     is open.
   - **Detail pane** (right): the selected item. That is either an **Issue view** or a **PR view**.
     - Under the title, a button reads "Mark Seen" while the item has New activity or is Marked unseen, and
-      "Mark Unseen" otherwise. The command palette's "Mark Seen" and "Mark Unseen" act on the item on show.
+      "Mark Unseen" otherwise. The command palette's "Mark Seen" and "Mark Unseen" act on what `Q` and
+      `Shift+Q` would where the focus was as it opened: the item on show from the Detail pane or with the
+      Issue list hidden, and otherwise the line under the cursor ([keyboard.md](keyboard.md)).
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the

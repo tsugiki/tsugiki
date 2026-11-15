@@ -35,10 +35,19 @@
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import type { ScreenKeys, View } from "./KeyList.svelte";
-  import { type Action, actionOn } from "$lib/state/keymap.svelte";
-  import { actionLabel, currentOs, isTextBox, keptByTextBox, keyName, worksInTextBox } from "./keys";
+  import { type Action, actionOn, type Row } from "$lib/state/keymap.svelte";
+  import {
+    actionLabel,
+    currentOs,
+    keptByTextBox,
+    keyName,
+    keyTarget,
+    type KeyTarget,
+    type Pane,
+    worksInTextBox,
+  } from "./keys";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
-  import type { PaletteAction } from "./Palette.svelte";
+  import type { PaletteAction, PaletteName } from "./Palette.svelte";
   import PaneEdge from "./PaneEdge.svelte";
   import PrDetail from "./PrDetail.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -338,15 +347,23 @@
     return view ? { stop: detailLine(), number: view.number, seen: view.seen } : undefined;
   }
 
-  /** Whether a key pressed on `target` goes to the Detail pane: the pane holds the focus, or the list is
-   * hidden. ↑ ↓ then scroll it, and `Q` marks its item. */
-  const forDetail = (target: EventTarget | null) =>
-    panes.hidden("list") || (target instanceof Node && detailPane()?.contains(target) === true);
+  /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
+   * page's body, goes to the list. */
+  export function paneOf(target: EventTarget | null): Pane {
+    const inList =
+      target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null);
+    const inDetail = target instanceof Node && detailPane()?.contains(target) === true;
+    return inList ? "list" : inDetail ? "detail" : null;
+  }
 
-  /** The item `Q` and `Shift+Q` act on: the Detail pane's item while it holds the focus or the list is
-   * hidden, and otherwise the line under the cursor. */
-  function keyMarked(target: EventTarget | null): Marked | undefined {
-    if (forDetail(target)) return detailMarked();
+  /** Whether a press `at` goes to the Detail pane: the pane holds the focus, or the list is hidden. ↑ ↓ then
+   * scroll it, and `Q` marks its item. */
+  const forDetail = (at: KeyTarget) => panes.hidden("list") || at.pane === "detail";
+
+  /** The item `Q` and `Shift+Q` act on for a press `at`: the Detail pane's item while it holds the focus or
+   * the list is hidden, and otherwise the line under the cursor. */
+  function keyMarked(at: KeyTarget): Marked | undefined {
+    if (forDetail(at)) return detailMarked();
     const stop = workbench.underCursor;
     const seen = stop && workbench.seenOf(stop);
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
@@ -461,20 +478,6 @@
     return (tab?.fileView ? tab.fileView.code.pick : tab?.picked)?.word;
   }
 
-  /** The palette's commands that open the rail on each of its tabs, while a PR shows its tabs. */
-  function railCommands(): PaletteAction[] {
-    const view = shownPr();
-    if (view === undefined) return [];
-    return RAIL_ORDER.map((id) => ({
-      title: `View: ${RAIL_TABS[id].name} in the Rail`,
-      note: actionLabel(RAIL_TABS[id].action, currentOs()),
-      run: () => {
-        if (id === "search") searchInRail(view);
-        else toggleRail(id);
-      },
-    }));
-  }
-
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
    * keys and commands wait until Back (#453). */
   function shownFiles(): PrFilesState | undefined {
@@ -487,82 +490,64 @@
     return detail instanceof PrViewState && detail.tab === "files" ? detail.files : undefined;
   }
 
-  /** The palette's commands for the Files tab on show: the one that switches it to one file at a time, or
-   * back, and while files unchanged since the user's Stale review are folded, the one that opens them
-   * (#387). */
-  function filesCommands(): PaletteAction[] {
-    const files = shownFiles();
-    if (files === undefined) return [];
-    const unfold = {
-      title: "View: Unfold Unchanged Files",
-      note: actionLabel("unfold_unchanged", currentOs()),
-      run: () => {
-        files.unfoldUnchanged();
-      },
-    };
-    return [
-      {
-        title: files.mode === "one" ? "View: All Files" : "View: One File at a Time",
-        id: "toggle_files_mode",
-        note: actionLabel("toggle_files_mode", currentOs()),
-        run: () => {
-          files.toggleMode();
-        },
-      },
-      ...(files.foldedUnchanged > 0 ? [unfold] : []),
-    ];
+  /**
+   * The palette's own name for each of the screen's actions that has one (#555): a title that changes with
+   * what the action does, with an id so the palette's history keeps one place for both titles, or the title
+   * the palette gave the command before the key table. Undefined leaves the action out of the palette where
+   * its key would still run: Unfold Unchanged Files waits for files unchanged since a Stale review to be
+   * folded (#387). Each other action goes by the key table's title.
+   */
+  const PALETTE_NAMES: Partial<Record<Action, () => PaletteName | undefined>> = {
+    toggle_sidebar: () => ({
+      title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
+      id: "toggle_sidebar",
+    }),
+    toggle_issue_list: () => ({
+      title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
+      id: "toggle_issue_list",
+    }),
+    toggle_detail_only: () => ({
+      title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",
+      id: "toggle_detail_only",
+    }),
+    ...Object.fromEntries(
+      RAIL_ORDER.map((id): [Action, () => PaletteName] => [
+        RAIL_TABS[id].action,
+        () => ({ title: `View: ${RAIL_TABS[id].name} in the Rail` }),
+      ]),
+    ),
+    toggle_files_mode: () => ({
+      title: shownFiles()?.mode === "one" ? "View: All Files" : "View: One File at a Time",
+      id: "toggle_files_mode",
+    }),
+    unfold_unchanged: () => {
+      const files = shownFiles();
+      return files !== undefined && files.foldedUnchanged > 0
+        ? { title: "View: Unfold Unchanged Files" }
+        : undefined;
+    },
+  };
+
+  /**
+   * The palette's row for `action`, whose title in the key table is `title`, for a press `at`, where the
+   * focus was as the palette opened (#555). Undefined where the action isn't the screen's, or can't run
+   * there. The row runs what the key runs, once the palette has handed the focus back, so the focus goes
+   * where the key would put it. The palette types nothing, so a row runs where a text box would keep the key.
+   */
+  export function paletteRow(
+    { action, title }: Pick<Row, "action" | "title">,
+    at: KeyTarget,
+  ): PaletteAction | undefined {
+    const run = SCREEN_ACTIONS[action]?.(at);
+    if (run === undefined) return undefined;
+    const named = PALETTE_NAMES[action];
+    const name = named ? named() : { title };
+    return name && { ...name, action, run: () => run(false) };
   }
 
-  /** What this screen adds to the command palette while it shows. Each command runs what its key runs. The
-   * palette runs it once it has handed the focus back, so the focus goes where the key would put it. A
-   * command whose title changes with what it does has an id, so the palette's history keeps one place for
-   * both titles. */
+  /** The commands this screen adds to the palette that run no action, which follow the actions. */
   export function paletteCommands(): PaletteAction[] {
     return [
-      {
-        title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
-        id: "toggle_sidebar",
-        run: () => void toggleSidebarByKey(),
-      },
-      {
-        title: panes.hidden("list") ? "Show Issue List" : "Hide Issue List",
-        id: "toggle_issue_list",
-        run: () => void toggleListByKey(),
-      },
-      {
-        title: panes.detailOnly ? "Show the Panes" : "Show Only the Detail Pane",
-        id: "toggle_detail_only",
-        run: () => void toggleDetailOnly(),
-      },
-      { title: "Reset Layout", run: () => void resetLayout() },
-      {
-        title: "Go Back",
-        note: actionLabel("go_back", currentOs()),
-        run: () => {
-          goThrough(-1);
-        },
-      },
-      {
-        title: "Go Forward",
-        note: actionLabel("go_forward", currentOs()),
-        run: () => {
-          goThrough(1);
-        },
-      },
-      ...(detail?.view
-        ? [
-            {
-              title: "Mark Seen",
-              note: actionLabel("mark_seen", currentOs()),
-              run: () => void markSeen(detailMarked()),
-            },
-            {
-              title: "Mark Unseen",
-              note: actionLabel("mark_unseen", currentOs()),
-              run: () => void markUnseen(detailMarked()),
-            },
-          ]
-        : []),
       panes.order === "attention"
         ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
         : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
@@ -576,8 +561,6 @@
           ]
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
-      ...railCommands(),
-      ...filesCommands(),
     ];
   }
 
@@ -626,10 +609,8 @@
     focusCursor();
   }
 
-  /** Whether a key went to the list, or to no control at all, while the list shows. */
-  const inList = (target: EventTarget | null) =>
-    !panes.hidden("list") &&
-    (target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null));
+  /** Whether a press `at` went to the list, or to no control at all, while the list shows. */
+  const inList = (at: KeyTarget) => !panes.hidden("list") && at.pane === "list";
 
   /** → unfolds the Issue under the cursor, and ← folds it. ← on a PR in an Issue's tree moves the cursor to
    * the Issue, as in VS Code's trees (#593). A PR outside any Issue has nothing to fold. */
@@ -644,37 +625,33 @@
     }
   }
 
-  /** What a press runs, handed the press. */
-  type Run = (e: KeyboardEvent) => void;
+  /** What an action runs, told whether a held key repeats it: the palette's run never does. */
+  type Run = (held: boolean) => void;
 
-  /** One of the screen's actions: what a press on `target` runs, or undefined where the action can't run.
-   * The keys run what it gives, and the `?` list asks it, so the two can't disagree. */
-  type ScreenAction = (target: EventTarget | null) => Run | undefined;
+  /** One of the screen's actions: what a press `at` runs, or undefined where the action can't run. The keys
+   * and the palette run what it gives, and the `?` list asks it, so none of them can disagree. */
+  type ScreenAction = (at: KeyTarget) => Run | undefined;
 
   /** Switches the tabs of the PR view on show, while one shows. */
   const tabSwitch: ScreenAction = () => {
     const view = detail instanceof PrViewState ? detail : undefined;
     return (
       view &&
-      ((e) => {
-        e.preventDefault();
+      (() => {
         view.switchTab();
       })
     );
   };
 
   /** Runs `step` on the Files tab's diff while it shows. The file view covers the diff, so the diff's keys
-   * wait until Back (#453). The guard or the chord's wait has already stopped the browser for Find in Diff,
-   * All Files or One File at a Time and Unfold Unchanged Files, so the call to `preventDefault` changes
-   * nothing for them. */
+   * wait until Back (#453). */
   const onDiff =
     (step: (files: PrFilesState) => void): ScreenAction =>
     () => {
       const files = shownFiles();
       return (
         files &&
-        ((e) => {
-          e.preventDefault();
+        (() => {
           step(files);
         })
       );
@@ -688,30 +665,30 @@
       const tab = filesTab();
       return (
         tab &&
-        ((e) => {
-          e.preventDefault();
-          if (!e.repeat) void step(tab);
+        ((held) => {
+          if (!held) void step(tab);
         })
       );
     };
 
-  /** Marks the item `Q` and `Shift+Q` act on, if there is one, which `markSeen` and `markUnseen` ask. A held
-   * key would ask the core again and again. */
+  /** Marks the item `Q` and `Shift+Q` act on, while there is one, as `keyMarked` says. It reads the item as
+   * it runs, so a sync that lands while the palette is open marks what the window shows by then. A held key
+   * would ask the core again and again. */
   const marking =
-    (mark: (marked: Marked | undefined, target: EventTarget | null) => Promise<void>): ScreenAction =>
-    (target) =>
-    (e) => {
-      if (!e.repeat) void mark(keyMarked(target), target);
-    };
+    (mark: (marked: Marked | undefined, at: KeyTarget) => Promise<void>): ScreenAction =>
+    (at) =>
+      keyMarked(at) &&
+      ((held) => {
+        if (!held) void mark(keyMarked(at), at);
+      });
 
   /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block
    * sideways. */
   const folding =
     (action: "unfold" | "fold"): ScreenAction =>
-    (target) =>
-      inList(target)
-        ? (e) => {
-            e.preventDefault();
+    (at) =>
+      inList(at)
+        ? () => {
             foldByKey(action);
           }
         : undefined;
@@ -720,8 +697,8 @@
    * `worksInTextBox`. A held key on Ctrl+B or Ctrl+Alt+B would flicker the pane and save the file each
    * time. */
   const SCREEN_ACTIONS: Partial<Record<Action, ScreenAction>> = {
-    toggle_sidebar: () => (e) => {
-      if (!e.repeat) void toggleSidebarByKey();
+    toggle_sidebar: () => (held) => {
+      if (!held) void toggleSidebarByKey();
     },
     open_on_github: () => {
       const current = currentOnGitHub();
@@ -749,16 +726,15 @@
       const view = shownPr();
       return (
         view &&
-        ((e) => {
-          e.preventDefault();
+        (() => {
           searchInRail(view);
         })
       );
     },
-    mark_seen: marking((marked, target) => markSeen(marked, !forDetail(target))),
+    mark_seen: marking((marked, at) => markSeen(marked, !forDetail(at))),
     mark_unseen: marking((marked) => markUnseen(marked)),
-    toggle_issue_list: () => (e) => {
-      if (!e.repeat) void toggleListByKey();
+    toggle_issue_list: () => (held) => {
+      if (!held) void toggleListByKey();
     },
     unfold: folding("unfold"),
     fold: folding("fold"),
@@ -772,32 +748,33 @@
     previous_change: onDiff((files) => files.nextChange(-1)),
     peek_definition: onTab((tab) => tab.peekDefinition()),
     go_to_definition: onTab((tab) => tab.goToDefinition()),
-    go_back: () => (e) => goByKey(e, -1),
-    go_forward: () => (e) => goByKey(e, 1),
+    go_back: () => () => {
+      goThrough(-1);
+    },
+    go_forward: () => () => {
+      goThrough(1);
+    },
+    // It has no key unless `[keys]` gives it one.
+    reset_layout: () => () => void resetLayout(),
   };
 
-  function goByKey(e: KeyboardEvent, steps: -1 | 1) {
-    e.preventDefault();
-    goThrough(steps);
-  }
-
-  /** What `action` runs for a press on `target`, or undefined where it can't run, or isn't the screen's. */
-  function runnable(action: Action, target: EventTarget | null): Run | undefined {
+  /** What `action`'s key runs for a press `at`, or undefined where it can't run, or isn't the screen's. */
+  function runnable(action: Action, at: KeyTarget): Run | undefined {
     const screenAction = SCREEN_ACTIONS[action];
-    if (screenAction === undefined || (isTextBox(target) && !worksInTextBox(action))) return;
-    return screenAction(target);
+    if (screenAction === undefined || (at.textBox && !worksInTextBox(action))) return;
+    return screenAction(at);
   }
 
-  /** Which keys of the screen work for a press on `target`, for the `?` list: the list's while the press
-   * goes to the list, as `inList` says, and the diff's while the Files tab shows. Of the screen's actions,
-   * those that would run; the page decides on its own. */
-  export function keysHere(target: EventTarget | null): ScreenKeys {
+  /** Which keys of the screen work for a press `at`, for the `?` list: the list's while the press goes to
+   * the list, as `inList` says, and the diff's while the Files tab shows. Of the screen's actions, those
+   * that would run; the page decides on its own. */
+  export function keysHere(at: KeyTarget): ScreenKeys {
     const views: View[] = [];
-    if (inList(target)) views.push("issue_list");
+    if (inList(at)) views.push("issue_list");
     if (filesTab()) views.push("diff");
     return {
       views,
-      works: (action) => !(action in SCREEN_ACTIONS) || runnable(action, target) !== undefined,
+      works: (action) => !(action in SCREEN_ACTIONS) || runnable(action, at) !== undefined,
     };
   }
 
@@ -842,18 +819,22 @@
     // A key that types does so in a text box, whatever its action: `[keys]` may give Hide or Show the Sidebar
     // a plain key.
     if (key !== null && keptByTextBox(key, e.target)) return;
+    const at = keyTarget(e.target, paneOf);
     // An action's key comes before the keys below only because none of them can be one: the core refuses a
     // line of `[keys]` that puts an action on Enter, Esc, ↑ or ↓ without Ctrl or Alt. Were it to allow
-    // `go_back = "escape"`, Escape would stop closing the peek, the search and the file view.
-    const run = action && runnable(action, e.target);
+    // `go_back = "escape"`, Escape would stop closing the peek, the search and the file view. A key that runs
+    // an action does nothing else: the bare ← and → that fold the list don't scroll it sideways too, and the
+    // guard or the chord's wait has already stopped the browser for the rest.
+    const run = action && runnable(action, at);
     if (run) {
-      run(e);
-    } else if (isTextBox(e.target)) {
+      e.preventDefault();
+      run(e.repeat);
+    } else if (at.textBox) {
       return;
     } else if (key === "enter" && e.repeat) {
       // Each opening asks GitHub, and a held key isn't more than one.
       e.preventDefault();
-    } else if ((key === "arrowdown" || key === "arrowup") && forDetail(e.target)) {
+    } else if ((key === "arrowdown" || key === "arrowup") && forDetail(at)) {
       e.preventDefault();
       scrollDetail(key === "arrowdown" ? 1 : -1);
     } else if (key === "arrowdown" || key === "arrowup") {

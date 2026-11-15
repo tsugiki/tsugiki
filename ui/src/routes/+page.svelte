@@ -28,14 +28,24 @@
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
   import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
-  import { type Bindings, currentOs, isTextBox, keptByTextBox, keyGuard } from "$lib/ui/keys";
+  import {
+    type Bindings,
+    currentOs,
+    isTextBox,
+    keyGuard,
+    keyTarget,
+    type KeyTarget,
+    typesInTextBox,
+  } from "$lib/ui/keys";
   import { mirrorNote } from "$lib/ui/mirror-note";
   import { headline } from "$lib/ui/workbench-row";
   import MirrorQuestionDialog from "$lib/ui/MirrorQuestionDialog.svelte";
   import Onboarding from "$lib/ui/Onboarding.svelte";
   import { issueIcon, prIcon } from "$lib/ui/octicons";
   import Palette, {
+    type PaletteAction,
     type PaletteCommand,
+    type PaletteName,
     type PaletteWords,
     type QuickOpenRows,
   } from "$lib/ui/Palette.svelte";
@@ -77,6 +87,10 @@
   /** What the palette's text box holds as it opens, while the palette is open: `>` for its commands, or
    * nothing for quick open. */
   let paletteText = $state<string>();
+  /** Where the focus was as the palette last opened: the palette lists the actions that can run there, and
+   * runs them as their keys would (#555). It holds no element, so it stays after the palette closes, and the
+   * palette's rows can read it until they go. */
+  let paletteAt = $state.raw<KeyTarget>(keyTarget(null));
   /** Quick open's search, a new one each time the palette opens on a Repository's screen. */
   let quickOpen = $state<QuickOpenState>();
   let pickerOpen = $state(false);
@@ -116,6 +130,7 @@
     if (dialogOpen) return;
     quickOpen =
       openName === undefined ? undefined : new QuickOpenState(openName, repositoryHome?.changedFiles());
+    paletteAt = keyTargetOf(document.activeElement);
     paletteText = quickOpen === undefined ? "" : text;
   };
   /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
@@ -153,20 +168,25 @@
   const keysActive = $derived(!dialogOpen);
   const os = currentOs();
   const chord = new ChordWait(os);
-  /** One of the page's actions: what its key runs, and `when` it can run at all, if not always, which the
-   * keys and the `?` list both ask. A dialog on top stops most of them too, as each says. */
+  /** One of the page's actions: what it runs for a press `at`, and `when` it can run at all, if not always,
+   * which the keys, the `?` list and the palette ask. A dialog on top stops most of them too, as each says.
+   * `palette` names its row in the command palette, false for none, or else the key table's title does. */
   interface PageAction {
     when?: () => boolean;
-    run: (e: KeyboardEvent) => void;
+    run: (at: KeyTarget) => void;
+    palette?: false | (() => PaletteName);
   }
-  /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549). */
+  /** The actions the page runs, on a key of one press or a chord, as `[keys]` may give either (#549), or from
+   * the palette (#555). */
   const PAGE_ACTIONS = new Map<Action, PageAction>([
+    // The palette's own two keys open the box it is, so it doesn't list them.
     [
       "command_palette",
       {
         run: () => {
           openPalette(">");
         },
+        palette: false,
       },
     ],
     // Quick open searches one Repository, so the Home page has none (#371).
@@ -177,6 +197,7 @@
         run: () => {
           openPalette("");
         },
+        palette: false,
       },
     ],
     ["switch_repository", { when: onRepository, run: openPicker }],
@@ -187,6 +208,20 @@
         run: () => {
           hud.toggle();
         },
+        palette: () => ({
+          title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
+          id: "toggle_hud",
+        }),
+      },
+    ],
+    // The webview opens DevTools on the key itself, which the guard leaves alone (ADR 0013), so this runs
+    // from the palette only. The core says which build it is, so a development UI over a release core lists
+    // nothing that fails.
+    [
+      "open_devtools",
+      {
+        when: () => about.about?.build === "development",
+        run: () => void openDevtools(),
       },
     ],
     [
@@ -202,50 +237,50 @@
     [
       "show_keys",
       {
-        run: (e) => {
-          if (!dialogOpen) keysHere = keysAt(e.target);
+        run: (at) => {
+          if (!dialogOpen) keysHere = keysAt(at);
         },
       },
     ],
   ]);
   /** Whether `action` can run now, as far as the page says: its `when`, if it is the page's and has one. */
   const pageCanRun = (action: Action) => PAGE_ACTIONS.get(action)?.when?.() !== false;
+  /** Where a press on `target` went: the Repository's screen says, and elsewhere no pane has it. */
+  const keyTargetOf = (target: EventTarget | null) => keyTarget(target, repositoryHome?.paneOf);
   const pageBindings: Bindings = Object.fromEntries(
     [...PAGE_ACTIONS].map(([action, { run }]) => [
       action,
       (e: KeyboardEvent) => {
-        if (pageCanRun(action)) run(e);
+        if (pageCanRun(action)) run(keyTargetOf(e.target));
       },
     ]),
   );
   const guard = keyGuard(pageBindings, os);
   const pageActions = [...PAGE_ACTIONS.keys()];
   /**
-   * Which keys work for a press on `target`, for the `?` list, worked out now, as the press would run them.
-   * The screen says which of its actions would run, and the page which of its own. Off a Repository's screen
-   * only the page's own work, and Open DevTools, which the webview opens itself, in a development build
-   * only. A press reaches its action as `chordStartAt` and the guard let it: a chord only where it starts,
-   * and a key of one press only where no chord's wait takes it and no text box keeps it.
+   * Which keys work for a press `at`, for the `?` list, worked out now, as the press would run them. The
+   * screen says which of its actions would run, and the page which of its own. Off a Repository's screen
+   * only the page's own work. A press reaches its action as `chordStartAt` and the guard let it: a chord only
+   * where it starts, and a key of one press only where no chord's wait takes it and no text box keeps it.
    */
-  function keysAt(target: EventTarget | null): KeysHere {
-    const onScreen = repositoryHome?.keysHere(target) ?? {
+  function keysAt(at: KeyTarget): KeysHere {
+    const onScreen = repositoryHome?.keysHere(at) ?? {
       views: [],
-      works: (action: Action) => PAGE_ACTIONS.has(action) || action === "open_devtools",
+      works: (action: Action) => PAGE_ACTIONS.has(action),
     };
-    const development = about.about?.build === "development";
     const reaches = (key: string, action: Action) => {
       if (!isChord(key)) {
-        return !keptByTextBox(key, target) && (!isChordStart(key) || chordStartAt(key, target) === null);
+        const kept = at.textBox && typesInTextBox(key);
+        return !kept && (!isChordStart(key) || chordStartAt(key, at.textBox) === null);
       }
-      const run = chordStartAt(chordFirst(key), target);
+      const run = chordStartAt(chordFirst(key), at.textBox);
       return run === runAll || (run === runPage && PAGE_ACTIONS.has(action));
     };
     const works = (row: Row) =>
       row.key !== null &&
       reaches(row.key, row.action) &&
       onScreen.works(row.action) &&
-      pageCanRun(row.action) &&
-      (development || row.action !== "open_devtools");
+      pageCanRun(row.action);
     return {
       views: onScreen.views,
       actions: new Set(keyTable().flatMap((row) => (works(row) ? [row.action] : []))),
@@ -260,20 +295,20 @@
     else repositoryHome?.runChord(action, e);
   };
   /**
-   * What a chord that `first` starts on a press on `target` runs, or null where none starts. No chord starts
-   * under a dialog or the palette, which keep their keys, nor on a press that types in a text box. A chord
-   * of the page's own works on every screen and in a text box, as a key of one press does. The screen's
-   * chords work where the list's keys do, on a Repository's screen outside a text box, and run what the
-   * screen runs on the action's key.
+   * What a chord that `first` starts runs, on a press in a text box if `textBox` says so, or null where none
+   * starts. No chord starts under a dialog or the palette, which keep their keys, nor on a press that types
+   * in a text box. A chord of the page's own works on every screen and in a text box, as a key of one press
+   * does. The screen's chords work where the list's keys do, on a Repository's screen outside a text box,
+   * and run what the screen runs on the action's key.
    */
-  const chordStartAt = (first: string, target: EventTarget | null): ChordRun | null => {
-    if (!keysActive || keptByTextBox(first, target)) return null;
-    if (onRepository() && !isTextBox(target)) return runAll;
+  const chordStartAt = (first: string, textBox: boolean): ChordRun | null => {
+    if (!keysActive || (textBox && typesInTextBox(first))) return null;
+    if (onRepository() && !textBox) return runAll;
     return startsChordOf(first, pageActions) ? runPage : null;
   };
   /** Reads each key before anything else, so the key that ends a chord's wait goes nowhere else. */
   const readKey = (e: KeyboardEvent) => {
-    if (!chord.read(e, (first) => chordStartAt(first, e.target))) guard(e);
+    if (!chord.read(e, (first) => chordStartAt(first, isTextBox(e.target)))) guard(e);
   };
   const endChord = () => {
     chord.end();
@@ -373,25 +408,28 @@
       pending: !named && files.pending,
     };
   });
-  /** The palette's commands: those the user ran, most recently run first, then the others in this order. */
-  const commands: PaletteCommand[] = $derived(
+  /** The palette's row for `row`'s action, if it is the page's and can run, named as its `palette` says,
+   * which runs what its key runs `at` the focus as the palette opened (#555). */
+  const pageRow = ({ action, title }: Row, at: KeyTarget): PaletteAction | undefined => {
+    const page = PAGE_ACTIONS.get(action);
+    if (page === undefined || page.palette === false || !pageCanRun(action)) return undefined;
+    return {
+      ...(page.palette?.() ?? { title }),
+      action,
+      run: () => {
+        page.run(at);
+      },
+    };
+  };
+  /** The palette's commands for the focus `at`: those the user ran, most recently run first, then the others
+   * in their usual order: each action that can run there, the page's or the screen's, in the key table's
+   * order, then the screen's commands that run no action, then a switch to each other Repository. */
+  const paletteCommands = (at: KeyTarget): PaletteCommand[] =>
     recentCommands.order<PaletteCommand>([
+      ...keyTable().flatMap((row) => pageRow(row, at) ?? repositoryHome?.paletteRow(row, at) ?? []),
       ...(repositoryHome?.paletteCommands() ?? []),
       ...switchRows("Repository: "),
-      { title: "Open Settings", run: openSettings },
-      { title: "Pick a Theme", run: openThemePicker },
-      { title: "Reload Themes", run: reloadThemes },
-      {
-        title: hud.visible ? "Hide performance HUD" : "Show performance HUD",
-        id: "toggle_hud",
-        run: () => {
-          hud.toggle();
-        },
-      },
-      // The core says which build it is, so a development UI over a release core lists nothing that fails.
-      ...(about.about?.build === "development" ? [{ title: "Open DevTools", run: openDevtools }] : []),
-    ]),
-  );
+    ]);
 </script>
 
 <svelte:window onkeydowncapture={readKey} onpointerdowncapture={endChord} onblur={endChord} />
@@ -473,7 +511,7 @@
 {/if}
 {#if paletteText !== undefined}
   <Palette
-    {commands}
+    commands={paletteCommands(paletteAt)}
     text={paletteText}
     find={quickOpen?.find}
     found={foundRows}

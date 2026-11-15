@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import type { Action } from "$lib/state/keymap.svelte";
   import type { PaletteId } from "$lib/state/recent-commands.svelte";
 
   /** A row: one that runs, or one that shows greyed and runs nothing, such as a theme file that can't be
@@ -8,6 +9,9 @@
   /** A row that runs. */
   export type PaletteAction = PaletteRow & { run: () => void; disabled?: false };
 
+  /** What a row is called: its title, and the id the history knows it by, if it has one. */
+  export type PaletteName = Pick<PaletteRow, "title" | "id">;
+
   interface PaletteRow {
     title: string;
     /** What the command palette's history knows the row by where its title changes with what it does.
@@ -16,6 +20,9 @@
     /** What the palette tells the row from the others by, where two rows could share a title, as a file's
      * path in quick open could match an Issue's headline. Without one it goes by its title. */
     key?: string;
+    /** The action of the key table the row runs, whose key in force shows on its right, remaps included
+     * (#555). An action the user left with no key shows none. */
+    action?: Action;
     /** Keeps the row out of the command palette's history, as a switch to a Repository. */
     history?: false;
     /** Marks the row that stands for what is open now, such as the open Repository in the picker. */
@@ -93,6 +100,9 @@
   // `files`, those rows hold the files of the PR on show too (#558).
   import { tick, untrack } from "svelte";
   import { closeOnPress, takeFocus } from "./focus";
+  import { actionLabel, currentOs } from "./keys";
+
+  const os = currentOs();
 
   let {
     commands,
@@ -306,19 +316,24 @@
       placeholder={shownWords.placeholder}
     />
     {#snippet option(command: PaletteCommand, i: number)}
-      <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. -->
+      {@const id = `palette-command-${String(i)}`}
+      {@const key = command.action === undefined ? null : actionLabel(command.action, os)}
+      <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. The key
+           describes the row, and stays out of its name, which is what the user picks. -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <li
-        id={`palette-command-${String(i)}`}
+        {id}
         role="option"
         aria-selected={i === picked}
         aria-current={command.current ? "true" : undefined}
         aria-disabled={command.disabled ? "true" : undefined}
+        aria-describedby={key === null ? undefined : `${id}-key`}
         onclick={() => {
           run(command);
         }}
       >
-        {command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
+        {#if key !== null}<kbd id={`${id}-key`} aria-hidden="true">{key}</kbd
+          >{/if}{command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
           >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
       </li>
     {/snippet}
@@ -435,6 +450,14 @@
 
   .open {
     float: right;
+  }
+
+  /* A row's key, on its right, as VS Code's palette shows it. It comes first in the row, so it floats on the
+     row's first line. */
+  kbd {
+    float: right;
+    margin-left: 16px;
+    color: var(--fg-muted);
   }
 
   p {

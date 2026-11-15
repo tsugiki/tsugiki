@@ -16,6 +16,7 @@
   import type { PeekLayout } from "$lib/state/peek";
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
+  import { RAIL_ORDER, RAIL_TAB_OF, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -395,10 +396,11 @@
    * command wait for it, as the PR view's button does by coming with the tabs. */
   const showsPr = () => detail instanceof PrViewState && Boolean(detail.view);
 
-  /** `Ctrl+K F`: opens the rail beside the tabs of the PR on show, or closes it (#603). The rail hands on the
-   * focus it holds as it goes. */
-  function toggleRail() {
-    if (showsPr()) panes.toggleRail();
+  /** A rail tab's key or palette command, as `Ctrl+K F` is Files': opens the rail beside the tabs of the PR
+   * on show on `tab`, or closes it while it shows `tab` (#603, #727). The rail hands on the focus it holds as
+   * it goes. */
+  function toggleRail(tab: RailTabId) {
+    if (showsPr()) panes.railState.toggle(tab);
   }
 
   /** The Files tab of the PR on show, while it shows its diff. The file view covers the diff, so the diff's
@@ -491,13 +493,13 @@
         : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       ...(showsPr()
-        ? [
-            {
-              title: "View: Files in the Rail",
-              note: actionLabel("toggle_rail_files", currentOs()),
-              run: toggleRail,
+        ? RAIL_ORDER.map((id) => ({
+            title: `View: ${RAIL_TABS[id].name} in the Rail`,
+            note: actionLabel(RAIL_TABS[id].action, currentOs()),
+            run: () => {
+              toggleRail(id);
             },
-          ]
+          }))
         : []),
       ...filesCommands(),
     ];
@@ -626,8 +628,8 @@
       files?.toggleMode();
     } else if (action === "unfold_unchanged") {
       files?.unfoldUnchanged();
-    } else if (action === "toggle_rail_files") {
-      toggleRail();
+    } else if (action !== undefined && RAIL_TAB_OF[action] !== undefined) {
+      toggleRail(RAIL_TAB_OF[action]);
     } else if (action === "mark_seen" || action === "mark_unseen") {
       // A held key would ask the core again and again.
       if (e.repeat) return;

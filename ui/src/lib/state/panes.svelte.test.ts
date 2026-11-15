@@ -66,14 +66,14 @@ it("keeps the rail's width with the panes, and leaves out whether the rail shows
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   await panes.load();
-  const read = [panes.rail, panes.railOpen];
-  panes.railOpen = true;
+  const read = [panes.rail, panes.railState.open];
+  panes.railState.pick("files");
   panes.rail = 400;
 
   await panes.save();
   await panes.reset("rail");
 
-  expect([read, panes.rail, panes.railOpen]).toEqual([[360, false], null, true]);
+  expect([read, panes.rail, panes.railState.open]).toEqual([[360, false], null, true]);
   expect(core.savePaneLayout.mock.calls).toEqual([[{ ...DEFAULTS, rail: 400 }], [DEFAULTS]]);
 });
 
@@ -296,7 +296,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
   core.savePaneLayout.mockResolvedValue({ status: "ok", data: DEFAULTS });
   const panes = new PanesState();
   await panes.load();
-  panes.railOpen = true;
+  panes.railState.pick("files");
 
   await panes.resetLayout();
 
@@ -308,7 +308,7 @@ it("puts the whole layout back to the defaults with one save, forgetting what Ct
     panes.rail,
     panes.hidden("sidebar"),
     panes.hidden("list"),
-    panes.railOpen,
+    panes.railState.open,
   ]).toEqual([null, null, null, null, null, false, false, true]);
   expect(core.savePaneLayout.mock.calls).toEqual([[DEFAULTS]]);
 });

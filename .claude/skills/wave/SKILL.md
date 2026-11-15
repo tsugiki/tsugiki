@@ -70,6 +70,13 @@ Once an agent reports its build, write its build time into the log, and run `/co
 diff over `origin/main` in its worktree. Send the findings to that agent with SendMessage. It fixes each or
 declines it with a reason; judge the reasons, and send back any you don't accept.
 
+Review a build at most twice. The second round reviews only the fix commits, from the commit the first round
+reviewed to the branch's head, before any merge of main, and asks for correctness: a bug a fix brought in,
+or a finding a fix left half done. Name the findings already declined or kept in its prompt, so it doesn't
+raise them again. Run a third round only when a fix added a mechanism of its own, such as a new table,
+channel or type that other code goes through. In wave 4 of 0.3.2 the second rounds found the bugs that
+mattered, both in code a fix had added, and each third round found cleanups and cost 10 to 15 minutes.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time: each runs the
 full vitest and `rust-coverage`, which AGENTS.md leaves to CI outside a wave. In a wave a CI round trip
 costs more, and in 0.3.1 two of three first pushes failed coverage without them.
@@ -93,6 +100,11 @@ run it only while no agent is building.
 Once the user says a PR merged, tell each sibling still open to merge `origin/main` and rerun its tests, as
 [builder.md](builder.md) says. Write into the log which files conflicted, how hard each was, and each break
 the tests found with no conflict.
+
+Once those tests pass, push: CI runs the full gates on the push. Ask for `just preflight` again only when a
+resolution rewrote code, a moderate or hard conflict, where a failed CI round trip costs more than the run.
+In wave 4 of 0.3.2 a second `just preflight` after a conflict only in `keyboard.md` held the last PR back 8
+minutes.
 
 ### 7. Close the wave
 

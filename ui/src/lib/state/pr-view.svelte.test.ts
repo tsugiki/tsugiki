@@ -12,9 +12,13 @@ vi.mock("$lib/data/bindings", () => ({
     cloning: vi.fn(),
     mirrorStates: vi.fn(async () => []),
     mirrorsHeld: vi.fn(async () => false),
+    textSearch: vi.fn(async () => ({ status: "ok", data: { kind: "running", id: 1 } })),
+    textSearchState: vi.fn(async () => ({ state: "no_checkout", id: 1 })),
+    textSearchCancel: vi.fn(async () => null),
   },
   events: {
     changed: { listen: vi.fn(async () => () => {}) },
+    textSearchChanged: { listen: vi.fn(async () => () => {}) },
     readFailed: { listen: vi.fn(async () => () => {}) },
     headsFetched: { listen: vi.fn(async () => () => {}) },
     headsFetchFailed: { listen: vi.fn(async () => () => {}) },
@@ -244,6 +248,17 @@ describe("PrViewState", () => {
     expect(commands.pullRequestFiles).toHaveBeenCalledOnce();
     expect(state.tab).toBe("files");
     expect(opened).toHaveBeenCalledWith("Lib/os.py", 12, { base: "b0", head: "abc" });
+    state.stop();
+  });
+
+  it("asks the Files tab for the diff again when the rail's Search finds no checkout of it", async () => {
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
+    const asked = vi.spyOn(state.files, "ask").mockResolvedValue();
+
+    state.search.follow({ kind: "ready", base: "b0", head: "abc" });
+    state.search.seed("spam");
+
+    await vi.waitFor(() => expect(asked).toHaveBeenCalledOnce());
     state.stop();
   });
 });

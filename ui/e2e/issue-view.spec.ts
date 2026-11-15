@@ -480,11 +480,17 @@ test("a refresh that signs an upload's address afresh leaves the description as 
   await image.evaluate((drawn) => Object.assign(drawn, { drawnBefore: true }));
 
   await changeAnswer(page, "issue", held(screenshot("two")));
+  // Listening from before the refresh, which would ask for the fresh address at once if it loaded it.
+  const refetch = page.waitForRequest(upload("two"), { timeout: 1000 }).then(
+    () => true,
+    () => false,
+  );
   await emitFromCore(page, "changed", { repository: "python/cpython", items: [7] });
 
   await expect(page.getByRole("link", { name: "a screenshot" })).toHaveAttribute("href", upload("two"));
   expect(await image.evaluate((shown) => "drawnBefore" in shown)).toBe(true);
   await expect(page.locator(".rendered details")).toHaveAttribute("open", "");
+  expect(await refetch).toBe(false);
   expect(fetched).toEqual([upload("one")]);
 });
 

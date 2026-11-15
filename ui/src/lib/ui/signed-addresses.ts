@@ -23,42 +23,47 @@ const keepsAddress = (element: Element): boolean => {
   return image instanceof HTMLImageElement && !(image.complete && image.naturalWidth === 0);
 };
 
-/** The elements and text under `root`, in document order. */
-const nodesUnder = (root: Node): Node[] => {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
-  const nodes: Node[] = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  return nodes;
+/** A signed attribute of a drawn element, and the fresh value it takes. */
+type Change = [attribute: Attr, value: string];
+
+/** Adds to `changes` each signed attribute of `element`, drawn, that takes its value in `fresh`, unless
+ * `element` keeps its address. Gives `false` where `element` has lost an attribute `fresh` signs. */
+const signedChanges = (element: Element, fresh: Element, changes: Change[]): boolean => {
+  if (keepsAddress(element)) return true;
+  for (const { name, value } of fresh.attributes) {
+    if (!SIGNATURE.test(value) || element.getAttribute(name) === value) continue;
+    const attribute = element.getAttributeNode(name);
+    if (!attribute) return false;
+    changes.push([attribute, value]);
+  }
+  return true;
+};
+
+/** Lines up the nodes under `drawn` with those under `fresh`, child by child, and adds to `changes` the
+ * signed attributes to give fresh values. Gives `false` where the two differ in shape, a tag or text. */
+const lineUp = (drawn: Node, fresh: Node, changes: Change[]): boolean => {
+  const shown = drawn.childNodes;
+  const wanted = Array.from(fresh.childNodes);
+  return (
+    shown.length === wanted.length &&
+    wanted.every((node, i) => {
+      const target = shown[i] as Node;
+      if (target.nodeName !== node.nodeName) return false;
+      if (!(node instanceof Element)) return target.nodeValue === node.nodeValue;
+      return signedChanges(target as Element, node, changes) && lineUp(target, node, changes);
+    })
+  );
 };
 
 /** Gives the elements under `drawn` the signed addresses of those under `fresh`, the nodes of HTML that
  * differs from what `drawn` drew only in its signatures. A link takes the fresh address, and so does an
  * image that failed. An image that has drawn keeps its address, and goes on showing without loading again,
- * and so does one still loading. Gives `false`, and changes nothing, unless the two hold the same elements
- * and the same text, since a signature in the text, or an element added since, needs drawing afresh. */
+ * and so does one still loading. Gives `false`, and changes nothing, unless the two have the same shape,
+ * tags and text, since a signature in the text, or an element added since, needs drawing afresh. Setting an
+ * attribute's node can't fail, so the changes land all together. */
 export const resign = (drawn: Node, fresh: Node): boolean => {
-  const shown = nodesUnder(drawn);
-  const wanted = nodesUnder(fresh);
-  if (shown.length !== wanted.length) return false;
-  const changes: (() => void)[] = [];
-  for (const [i, node] of wanted.entries()) {
-    const target = shown[i] as Node;
-    if (target.nodeName !== node.nodeName) return false;
-    if (node.nodeType === Node.TEXT_NODE) {
-      if (node.textContent !== target.textContent) return false;
-      continue;
-    }
-    // The walk shows only elements and text.
-    const element = target as Element;
-    if (keepsAddress(element)) continue;
-    for (const { name, value } of (node as Element).attributes) {
-      if (SIGNATURE.test(value) && element.getAttribute(name) !== value) {
-        changes.push(() => {
-          element.setAttribute(name, value);
-        });
-      }
-    }
-  }
-  for (const change of changes) change();
+  const changes: Change[] = [];
+  if (!lineUp(drawn, fresh, changes)) return false;
+  for (const [attribute, value] of changes) attribute.value = value;
   return true;
 };

@@ -171,6 +171,29 @@ it("draws afresh when an element it drew became another", async () => {
   expect(container.querySelector("span")).toBeNull();
 });
 
+it("draws afresh when an element it drew moved, though the nodes keep their order", async () => {
+  const { container, rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  const section = container.querySelector("details") as HTMLDetailsElement;
+  section.after(section.querySelector("picture") as HTMLPictureElement);
+
+  await rerender({ html: screenshot("two") });
+
+  expect(container.querySelector("details picture")).not.toBeNull();
+  expect(screen.getByAltText("variant").getAttribute("src")).toBe(upload("two"));
+});
+
+it("draws afresh when an element it drew lost a signed attribute", async () => {
+  const { rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  const link = screen.getByAltText("upload").closest("a") as HTMLAnchorElement;
+  link.removeAttribute("href");
+
+  await rerender({ html: screenshot("two") });
+
+  const now = screen.getByAltText("upload").closest("a");
+  expect(now).not.toBe(link);
+  expect(now?.getAttribute("href")).toBe(upload("two"));
+});
+
 it("draws afresh when an element came under what it drew", async () => {
   const { container, rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
   const image = screen.getByAltText("upload");

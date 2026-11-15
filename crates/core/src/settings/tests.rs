@@ -553,81 +553,82 @@ fn an_apply_keeps_a_mode_from_before() {
     assert_eq!(after, format!("{before}\n[status_bar]\nvisible = false\n"));
 }
 
-/// The theme picker saves one side's key. A mode from before (#755) of that side gives way to the name
-/// picked, which the picker found in the folder, so the window shows what it would have. A mode of the other
-/// side stays.
+/// The theme picker saves `theme` alone (#756). A mode from before (#755) gives way to the Theme picked,
+/// whichever side it is for.
 #[test]
-fn a_pick_for_a_modes_side_writes_the_name_picked_in_its_place() {
+fn a_pick_writes_the_theme_picked_in_place_of_a_mode() {
     let (folders, _root) = temp_folders("appearance-mode-picked");
     let file = folders.settings_file();
     let mut files = SettingsFiles::load(folders.clone());
 
-    fs::write(&file, "[appearance]\ntheme = \"dark\"\n").unwrap();
+    fs::write(&file, "[appearance]\ntheme = \"light\"\n").unwrap();
     files
-        .save_theme(ThemeKind::Dark, &named("Gruvbox Dark Hard"))
+        .save_theme(&ThemeChoice::Theme(named("Gruvbox Dark Hard")))
         .unwrap();
-    let same_side = fs::read_to_string(&file).unwrap();
-    fs::write(
-        &file,
-        "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n",
-    )
-    .unwrap();
-    files
-        .save_theme(ThemeKind::Dark, &named("Gruvbox Dark Hard"))
-        .unwrap();
-    let other_side = fs::read_to_string(&file).unwrap();
+    let after = fs::read_to_string(&file).unwrap();
 
-    assert_eq!(
-        same_side,
-        "[appearance]\ntheme = \"Gruvbox Dark Hard\"\ndark_theme = \"Gruvbox Dark Hard\"\n"
-    );
-    assert_eq!(
-        other_side,
-        "[appearance]\ntheme = \"light\"\nlight_theme = \"Gruvbox Light Hard\"\n\
-         dark_theme = \"Gruvbox Dark Hard\"\n"
-    );
+    assert_eq!(after, "[appearance]\ntheme = \"Gruvbox Dark Hard\"\n");
 }
 
-/// The theme picker's Enter (#518) changes one key and leaves the user's comments and other keys as they
-/// were.
+/// The theme picker's Enter (#518, #756) changes `theme` and leaves `light_theme`, `dark_theme`, the user's
+/// comments and the other keys as they were. A pick of a dark Theme saves its name whichever side the system
+/// is on, which the core doesn't ask.
 #[test]
-fn a_picked_theme_is_saved_to_its_sides_key_alone() {
+fn a_picked_theme_is_saved_to_theme_alone() {
     let (folders, _root) = temp_folders("appearance-picked");
-    let before = "# Mine\n[releases]\ncheck = true\n\n[appearance]\ntheme = \"Gruvbox Light Hard\" # by day\n";
+    let before = "# Mine\n[releases]\ncheck = true\n\n[appearance]\n\
+                  light_theme = \"Gruvbox Light Hard\" # by day\ndark_theme = \"VS Code Dark Modern\"\n";
     fs::write(folders.settings_file(), before).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
     files
-        .save_theme(ThemeKind::Dark, &named("Gruvbox Dark Hard"))
-        .unwrap();
-    let dark = fs::read_to_string(folders.settings_file()).unwrap();
-    let loaded = files.loaded().settings.appearance.clone();
-    files
-        .save_theme(ThemeKind::Light, &named("Gruvbox Light Hard"))
-        .unwrap();
-    files
-        .save_theme(ThemeKind::Dark, &named("VS Code Dark Modern"))
+        .save_theme(&ThemeChoice::Theme(named("Gruvbox Dark Hard")))
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let loaded = files.loaded().settings.appearance.clone();
 
     assert_eq!(
-        dark,
-        format!("{before}dark_theme = \"Gruvbox Dark Hard\"\n"),
-        "the default `check` stays as the user wrote it"
+        after,
+        format!("{before}theme = \"Gruvbox Dark Hard\"\n"),
+        "the default `check` and `dark_theme` stay as the user wrote them"
     );
     assert_eq!(
         loaded,
         AppearanceSettings {
-            theme: ThemeChoice::Theme(named("Gruvbox Light Hard")),
-            light_theme: named("VS Code Light Modern"),
-            dark_theme: named("Gruvbox Dark Hard"),
+            theme: ThemeChoice::Theme(named("Gruvbox Dark Hard")),
+            light_theme: named("Gruvbox Light Hard"),
+            dark_theme: named("VS Code Dark Modern"),
         }
     );
+}
+
+/// Follow system is `theme`'s default, so its pick takes the key out of the file, unless the user wrote a
+/// comment on it, which keeps it as `"system"`.
+#[test]
+fn a_pick_of_follow_system_saves_theme_as_system() {
+    let (folders, _root) = temp_folders("appearance-picked-system");
+    let file = folders.settings_file();
+    let mut files = SettingsFiles::load(folders.clone());
+
+    let plain = "[appearance]\ntheme = \"Gruvbox Dark Hard\"\ndark_theme = \"Gruvbox Dark Hard\"\n";
+    fs::write(&file, plain).unwrap();
+    files.save_theme(&ThemeChoice::System).unwrap();
+    let without_comment = fs::read_to_string(&file).unwrap();
+    let loaded = files.loaded().settings.appearance.theme.clone();
+    fs::write(
+        &file,
+        "[appearance]\ntheme = \"Gruvbox Dark Hard\" # mine\n",
+    )
+    .unwrap();
+    files.save_theme(&ThemeChoice::System).unwrap();
+    let with_comment = fs::read_to_string(&file).unwrap();
+
     assert_eq!(
-        after,
-        format!("{before}light_theme = \"Gruvbox Light Hard\"\n"),
-        "a default leaves the file"
+        without_comment,
+        "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n"
     );
+    assert_eq!(loaded, ThemeChoice::System);
+    assert_eq!(with_comment, "[appearance]\ntheme = \"system\" # mine\n");
 }
 
 #[test]
@@ -637,7 +638,7 @@ fn a_picked_theme_isnt_saved_over_a_settings_file_that_doesnt_parse() {
     fs::write(folders.settings_file(), before).unwrap();
 
     let refusal = SettingsFiles::load(folders.clone())
-        .save_theme(ThemeKind::Light, &named("Gruvbox Light Hard"));
+        .save_theme(&ThemeChoice::Theme(named("Gruvbox Light Hard")));
     let after = fs::read_to_string(folders.settings_file()).unwrap();
 
     assert!(
@@ -652,16 +653,16 @@ fn the_owner_saves_a_picked_theme_and_answers_with_it() {
     let (folders, _root) = temp_folders("owner-theme");
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
-    let answer = owner.save_theme(ThemeKind::Light, named("Gruvbox Light Hard"));
+    let answer = owner.save_theme(ThemeChoice::Theme(named("Gruvbox Light Hard")));
     let after = fs::read_to_string(folders.settings_file()).unwrap();
 
     let appearance = answer.unwrap().loaded.settings.appearance;
-    assert_eq!(appearance.light_theme, named("Gruvbox Light Hard"));
-    assert_eq!(owner.view().loaded.settings.appearance, appearance);
     assert_eq!(
-        after,
-        "[appearance]\nlight_theme = \"Gruvbox Light Hard\"\n"
+        appearance.theme,
+        ThemeChoice::Theme(named("Gruvbox Light Hard"))
     );
+    assert_eq!(owner.view().loaded.settings.appearance, appearance);
+    assert_eq!(after, "[appearance]\ntheme = \"Gruvbox Light Hard\"\n");
 }
 
 #[test]
@@ -1473,7 +1474,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let resizing = owner.save_panes(WIDE);
     let running = owner.remember_command(CommandId::new("Reset Layout"));
     let opening = owner.open_repository(repository("a/b"));
-    let picking = owner.save_theme(ThemeKind::Dark, named("Gruvbox Dark Hard"));
+    let picking = owner.save_theme(ThemeChoice::System);
     let rereading = owner.reread();
     let applying = owner.apply(SettingsChanges::default());
 

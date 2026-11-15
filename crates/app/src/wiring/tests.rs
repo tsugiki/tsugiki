@@ -472,31 +472,38 @@ fn themes_reads_the_themes_folder_beside_settings_path_on_each_ask() {
 
     let first = wired.ask("themes", json!({})).unwrap();
     std::fs::write(&file, night("#000020")).unwrap();
-    let saved = wired.ask("save_theme", json!({ "kind": "dark", "name": "Night" }));
+    let saved = wired.ask(
+        "save_theme",
+        json!({ "pick": { "kind": "named", "name": "Night" } }),
+    );
     let second = wired.ask("themes", json!({})).unwrap();
     drop(wired.stop());
     let settings = std::fs::read_to_string(dotfiles.join("tsugiki.toml")).unwrap();
 
     assert_eq!(first["dark"]["all"][2]["name"], "Night");
     assert_eq!(first["dark"]["all"][2]["tokens"][0]["value"], "#000010");
-    assert_eq!(first["dark"]["chosen"], "VS Code Dark Modern");
+    assert_eq!(first["theme"], json!({ "kind": "system" }));
     assert_eq!(saved.unwrap(), Value::Null);
     assert_eq!(second["dark"]["all"][2]["tokens"][0]["value"], "#000020");
-    assert_eq!(second["dark"]["chosen"], "Night");
-    assert_eq!(settings, "[appearance]\ndark_theme = \"Night\"\n");
+    assert_eq!(
+        second["theme"],
+        json!({ "kind": "named", "name": "Night", "side": "dark" })
+    );
+    assert_eq!(settings, "[appearance]\ntheme = \"Night\"\n");
 }
 
+/// The picker saves `theme` alone (#756): a Theme's name, which must be a Theme's, or Follow system.
 #[test]
-fn a_theme_the_picker_saves_is_chosen_after_a_restart() {
+fn a_theme_the_picker_saves_is_in_force_after_a_restart() {
     let (folders, _root) = temp_folders("wired-pick-theme");
     let wired = Wired::start(Ok(folders.clone()), no_network());
     let saved = wired.ask(
         "save_theme",
-        json!({ "kind": "dark", "name": "Gruvbox Dark Hard" }),
+        json!({ "pick": { "kind": "named", "name": "Gruvbox Dark Hard" } }),
     );
     let unknown = wired.ask(
         "save_theme",
-        json!({ "kind": "light", "name": "Gruvbox Dark Hard" }),
+        json!({ "pick": { "kind": "named", "name": "Dusk" } }),
     );
     // A page that loads again, as after a crash of the webview, finds the theme picked.
     let reloaded = wired.ask("themes", json!({})).unwrap();
@@ -504,19 +511,22 @@ fn a_theme_the_picker_saves_is_chosen_after_a_restart() {
 
     let restarted = Wired::start(Ok(folders.clone()), no_network());
     let themes = restarted.ask("themes", json!({})).unwrap();
-    drop(restarted.stop());
     let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    let following = restarted.ask("save_theme", json!({ "pick": { "kind": "system" } }));
+    let after = restarted.ask("themes", json!({})).unwrap();
+    drop(restarted.stop());
 
     assert_eq!(saved.unwrap(), Value::Null);
     let unknown = unknown.unwrap_err();
     assert_eq!(unknown["kind"], "not_found");
-    assert_eq!(
-        unknown["message"],
-        r#"No light theme is named "Gruvbox Dark Hard"."#
-    );
-    assert_eq!(reloaded["dark"]["chosen"], "Gruvbox Dark Hard");
-    assert_eq!(themes["dark"]["chosen"], "Gruvbox Dark Hard");
-    assert_eq!(file, "[appearance]\ndark_theme = \"Gruvbox Dark Hard\"\n");
+    assert_eq!(unknown["message"], r#"No theme is named "Dusk"."#);
+    let dark = json!({ "kind": "named", "name": "Gruvbox Dark Hard", "side": "dark" });
+    assert_eq!(reloaded["theme"], dark);
+    assert_eq!(themes["theme"], dark);
+    assert_eq!(themes["dark"]["chosen"], "VS Code Dark Modern");
+    assert_eq!(file, "[appearance]\ntheme = \"Gruvbox Dark Hard\"\n");
+    assert_eq!(following.unwrap(), Value::Null);
+    assert_eq!(after["theme"], json!({ "kind": "system" }));
 }
 
 /// The Settings dialog reads a hand edit as it opens (ADR 0014), and what its Apply keeps lasts through a

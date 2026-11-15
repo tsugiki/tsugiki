@@ -1362,14 +1362,20 @@ describe("the theme picker", () => {
     });
   };
 
-  it("opens on Ctrl+K T on the side in use, previews on the window, and Esc puts the theme back", async () => {
+  it("opens on Ctrl+K T on Follow system, previews on the window, and Esc puts the theme back", async () => {
     await opened();
     await ctrlKT();
 
     expect(themePicker()).toBeTruthy();
-    expect(options()).toEqual(["Dark chosen", "Gruvbox Dark Hard", "Reload themes", "Light themes…"]);
+    expect(options()).toEqual([
+      "Follow system chosen",
+      "Light",
+      "Dark",
+      "Gruvbox Dark Hard",
+      "Reload themes",
+    ]);
     await fireEvent.keyDown(screen.getByRole("combobox", { name: "Theme" }), { key: "ArrowDown" });
-    expect(bg()).toBe("#1d2021");
+    expect(bg()).toBe("#ffffff");
     await fireEvent.keyDown(window, { key: "Escape" });
 
     expect(themePicker()).toBeNull();
@@ -1384,11 +1390,11 @@ describe("the theme picker", () => {
     const box = await screen.findByRole("combobox", { name: "Theme" });
     const reads = core.settings.mock.calls.length;
 
-    await fireEvent.keyDown(box, { key: "ArrowDown" });
+    for (let i = 0; i < 3; i++) await fireEvent.keyDown(box, { key: "ArrowDown" });
     await fireEvent.keyDown(box, { key: "Enter" });
 
     await vi.waitFor(() => {
-      expect(core.saveTheme).toHaveBeenCalledExactlyOnceWith("dark", "Gruvbox Dark Hard");
+      expect(core.saveTheme).toHaveBeenCalledExactlyOnceWith({ kind: "named", name: "Gruvbox Dark Hard" });
     });
     expect(themePicker()).toBeNull();
     expect(bg()).toBe("#1d2021");

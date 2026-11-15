@@ -460,6 +460,34 @@ test("CodSpeed's button shows the variant of the theme's side", async ({ page })
   expect(await refused(page)).toEqual([]);
 });
 
+test("a refresh that signs an upload's address afresh leaves the description as it was", async ({ page }) => {
+  const upload = (signature: string) =>
+    `https://private-user-images.githubusercontent.com/1/2-a1b2.png?jwt=${signature}`;
+  const screenshot = (signature: string) =>
+    `<details><summary>Steps</summary><a href="${upload(signature)}">` +
+    `<img alt="a screenshot" src="${upload(signature)}"></a></details>`;
+  await serveImagesUnderCsp(page);
+  const fetched: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().startsWith("https://private-user-images.")) fetched.push(request.url());
+  });
+  await mockCore(page, answers(screenshot("one")));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  await page.getByText("Steps").click();
+  const image = page.getByAltText("a screenshot");
+  await expect.poll(() => loaded(page, "a screenshot")).toBe(true);
+  await image.evaluate((drawn) => Object.assign(drawn, { drawnBefore: true }));
+
+  await changeAnswer(page, "issue", held(screenshot("two")));
+  await emitFromCore(page, "changed", { repository: "python/cpython", items: [7] });
+
+  await expect(page.getByRole("link", { name: "a screenshot" })).toHaveAttribute("href", upload("two"));
+  expect(await image.evaluate((shown) => "drawnBefore" in shown)).toBe(true);
+  await expect(page.locator(".rendered details")).toHaveAttribute("open", "");
+  expect(fetched).toEqual([upload("one")]);
+});
+
 test("the edges between the panes drag, a double-click resets one, and the list gives way first", async ({
   page,
 }) => {

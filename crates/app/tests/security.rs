@@ -150,9 +150,27 @@ fn is_githubs(source: &str) -> bool {
             .is_some_and(|host| !host.contains(['*', '/']) && githubs(host))
 }
 
+/// The sources of each `img-src` in `csp`, whatever case its name takes.
+fn image_sources(csp: &str) -> Vec<&str> {
+    csp.split(';')
+        .map(str::split_whitespace)
+        .filter_map(|mut words| {
+            let name = words.next()?;
+            name.eq_ignore_ascii_case("img-src").then_some(words)
+        })
+        .flatten()
+        .collect()
+}
+
 #[test]
 fn images_come_only_from_hosts_github_owns() {
-    for source in IMAGE_SOURCES {
+    let config = json("crates/app/tauri.conf.json");
+    let sources = image_sources(config["app"]["security"]["csp"].as_str().unwrap());
+    assert!(
+        sources.contains(&"https://camo.githubusercontent.com"),
+        "{sources:?}"
+    );
+    for source in sources {
         assert!(is_githubs(source), "{source}");
     }
     for stranger in [

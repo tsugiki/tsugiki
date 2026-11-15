@@ -105,14 +105,16 @@ const screenshot = (signature: string, words = "Steps") =>
   `<picture><source media="(prefers-color-scheme: dark)" srcset="${upload(signature)}">` +
   `<img alt="variant" src="${upload(signature)}"></picture></details>`;
 
-/** Says `image` has drawn, as jsdom loads none. */
-const drawn = (image: HTMLElement) => Object.defineProperty(image, "naturalWidth", { value: 20 });
+/** Says `image` has finished loading, `width` pixels wide, or failed with 0. jsdom loads no image, and says
+ * each is still loading. */
+const loaded = (image: HTMLElement, width: number) =>
+  Object.defineProperties(image, { complete: { value: true }, naturalWidth: { value: width } });
 
 it("keeps what it drew when a refresh signs its uploads' addresses afresh", async () => {
   const { rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
   const image = screen.getByAltText("upload");
-  drawn(image);
-  drawn(screen.getByAltText("variant"));
+  loaded(image, 20);
+  loaded(screen.getByAltText("variant"), 20);
   const section = image.closest("details") as HTMLDetailsElement;
   section.open = true;
 
@@ -125,9 +127,11 @@ it("keeps what it drew when a refresh signs its uploads' addresses afresh", asyn
   expect(image.closest("a")?.getAttribute("href")).toBe(upload("two"));
 });
 
-it("gives an image that hasn't drawn its fresh address", async () => {
+it("gives an image that failed its fresh address", async () => {
   const { rerender } = render(RenderedHtml, { html: screenshot("run-out"), onlink: vi.fn() });
   const image = screen.getByAltText("upload");
+  loaded(image, 0);
+  loaded(screen.getByAltText("variant"), 0);
 
   await rerender({ html: screenshot("fresh") });
 
@@ -135,6 +139,49 @@ it("gives an image that hasn't drawn its fresh address", async () => {
   expect(image.getAttribute("src")).toBe(upload("fresh"));
   expect(image.closest("details")?.querySelector("source")?.getAttribute("srcset")).toBe(upload("fresh"));
   expect(screen.getByAltText("variant").getAttribute("src")).toBe(upload("fresh"));
+});
+
+it("lets an image still loading go on with the address it has", async () => {
+  const { rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  const image = screen.getByAltText("upload");
+
+  await rerender({ html: screenshot("two") });
+
+  expect(screen.getByAltText("upload")).toBe(image);
+  expect(image.getAttribute("src")).toBe(upload("one"));
+  expect(image.closest("a")?.getAttribute("href")).toBe(upload("two"));
+});
+
+it("draws afresh HTML whose text changed in an upload's address", async () => {
+  const text = (signature: string) => `<p><code>${upload(signature)}</code></p>`;
+  const { rerender } = render(RenderedHtml, { html: text("one"), onlink: vi.fn() });
+
+  await rerender({ html: text("two") });
+
+  expect(screen.getByText(upload("two")).tagName).toBe("CODE");
+});
+
+it("draws afresh when an element it drew became another", async () => {
+  const { container, rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  screen.getByAltText("upload").replaceWith(document.createElement("span"));
+
+  await rerender({ html: screenshot("two") });
+
+  expect(screen.getByAltText("upload").getAttribute("src")).toBe(upload("two"));
+  expect(container.querySelector("span")).toBeNull();
+});
+
+it("draws afresh when an element came under what it drew", async () => {
+  const { container, rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  const image = screen.getByAltText("upload");
+  loaded(image, 0);
+  image.before(document.createElement("img"));
+
+  await rerender({ html: screenshot("two") });
+
+  expect(screen.getByAltText("upload")).not.toBe(image);
+  expect(screen.getByAltText("upload").getAttribute("src")).toBe(upload("two"));
+  expect(container.querySelectorAll("img")).toHaveLength(2);
 });
 
 it("draws afresh HTML that differs past its signatures", async () => {

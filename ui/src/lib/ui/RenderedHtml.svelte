@@ -14,15 +14,15 @@
    * Shows `html` in `node` without a refresh or a base address, either of which could move the window if
    * GitHub's sanitizer let it through. A template's contents are inert, so parsing them there acts on
    * nothing, and the parsed nodes move into the page as they are: parsing a second time could make markup
-   * this never saw. HTML that differs from what it drew only in its uploads' signatures leaves the nodes on
-   * show, which take the fresh signatures.
+   * this never saw. HTML that differs from what it drew only in the signatures of its uploads' addresses in
+   * attributes leaves the nodes on show, which take the fresh signatures.
    */
   function show(node: HTMLElement) {
     const template = document.createElement("template");
     template.innerHTML = html;
     for (const tag of template.content.querySelectorAll("meta, base")) tag.remove();
-    if (drawn !== undefined && sameButSignatures(drawn, html)) resign(node, template.content);
-    else node.replaceChildren(template.content);
+    const kept = drawn !== undefined && sameButSignatures(drawn, html) && resign(node, template.content);
+    if (!kept) node.replaceChildren(template.content);
     drawn = html;
   }
 

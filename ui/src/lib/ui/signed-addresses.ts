@@ -15,23 +15,50 @@ export const sameButSignatures = (one: string, other: string): boolean => {
   return ones.length === others.length && ones.every((piece, i) => piece === others[i]);
 };
 
-/** Whether `element` is an image that has drawn, or a source of a picture whose image has. */
-const drawnImage = (element: Element): boolean => {
+/** Whether `element` is an image, or a source of a picture whose image, that keeps the address it has: one
+ * still loading, or one that has drawn. Only an image that failed, such as one whose address had run out,
+ * takes a fresh one. */
+const keepsAddress = (element: Element): boolean => {
   const image = element instanceof HTMLSourceElement ? element.parentElement?.querySelector("img") : element;
-  return image instanceof HTMLImageElement && image.naturalWidth > 0;
+  return image instanceof HTMLImageElement && !(image.complete && image.naturalWidth === 0);
+};
+
+/** The elements and text under `root`, in document order. */
+const nodesUnder = (root: Node): Node[] => {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const nodes: Node[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  return nodes;
 };
 
 /** Gives the elements under `drawn` the signed addresses of those under `fresh`, the nodes of HTML that
- * differs from what `drawn` shows only in its signatures. A link takes the fresh address, and so does an
- * image that hasn't drawn, such as one whose address had run out when it loaded. An image that has drawn
- * keeps its address, and goes on showing without loading again. */
-export const resign = (drawn: ParentNode, fresh: ParentNode): void => {
-  const shown = drawn.querySelectorAll("*");
-  fresh.querySelectorAll("*").forEach((element, i) => {
-    const target = shown[i];
-    if (target?.tagName !== element.tagName || drawnImage(target)) return;
-    for (const { name, value } of element.attributes) {
-      if (SIGNATURE.test(value) && target.getAttribute(name) !== value) target.setAttribute(name, value);
+ * differs from what `drawn` drew only in its signatures. A link takes the fresh address, and so does an
+ * image that failed. An image that has drawn keeps its address, and goes on showing without loading again,
+ * and so does one still loading. Gives `false`, and changes nothing, unless the two hold the same elements
+ * and the same text, since a signature in the text, or an element added since, needs drawing afresh. */
+export const resign = (drawn: Node, fresh: Node): boolean => {
+  const shown = nodesUnder(drawn);
+  const wanted = nodesUnder(fresh);
+  if (shown.length !== wanted.length) return false;
+  const changes: (() => void)[] = [];
+  for (const [i, node] of wanted.entries()) {
+    const target = shown[i] as Node;
+    if (target.nodeName !== node.nodeName) return false;
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.textContent !== target.textContent) return false;
+      continue;
     }
-  });
+    // The walk shows only elements and text.
+    const element = target as Element;
+    if (keepsAddress(element)) continue;
+    for (const { name, value } of (node as Element).attributes) {
+      if (SIGNATURE.test(value) && element.getAttribute(name) !== value) {
+        changes.push(() => {
+          element.setAttribute(name, value);
+        });
+      }
+    }
+  }
+  for (const change of changes) change();
+  return true;
 };

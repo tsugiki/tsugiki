@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{fs, io, thread};
 
 /// The author of each commit a test makes, so a commit needs no git config on the machine.
@@ -145,32 +145,57 @@ impl Drop for TempPath {
     )]
     fn drop(&mut self) {
         if std::thread::panicking() {
-            eprintln!("The test left {} for reading.", self.path.display());
+            // The panic said why first: a failed assertion, or a folder that wouldn't go.
+            eprintln!(
+                "The test panicked, so it leaves {} for reading.",
+                self.path.display()
+            );
         } else {
             remove(&self.path);
         }
     }
 }
 
-/// How many times [`remove`] tries, [`TRY_AGAIN`] apart. A process the test killed or asked to stop, such as
-/// a language server, takes a moment to end, and up to 11 seconds when it doesn't agree to stop.
-const TRIES: u32 = 150;
+/// How long [`remove`] waits for a process that holds a file in the folder to end. A language server the
+/// test asked to stop gets 5 seconds to agree and 5 more to exit before the core kills it, 11 seconds in
+/// all (`ENDED_WITHIN` in `tsugiki_core::definitions`), and one the test dropped is killed at once. This
+/// covers both, with time to spare for a slow machine.
+const HELD_FOR: Duration = Duration::from_secs(15);
+/// How long [`remove`] waits between tries.
 const TRY_AGAIN: Duration = Duration::from_millis(100);
+/// The errors Windows gives for a file that a process holds, `ERROR_SHARING_VIOLATION`, or that it deletes
+/// only once the last process lets go of it, `ERROR_ACCESS_DENIED`. Other systems remove a folder whatever
+/// works in it.
+#[cfg(windows)]
+const HELD: [i32; 2] = [32, 5];
+#[cfg(not(windows))]
+const HELD: [i32; 0] = [];
 
 /// Removes the folder or file at `path`, if there is one. On Windows a process that holds a file in it
-/// keeps it there, so this tries again while that process ends, and fails the test if it doesn't.
+/// keeps it there, so this tries again for [`HELD_FOR`] while that process ends. Any other error, or a
+/// folder still held, fails the test.
 fn remove(path: &Path) {
-    let mut removed = Ok(());
-    for tried in 0..TRIES {
-        thread::sleep(TRY_AGAIN * tried.min(1));
-        removed = remove_once(path);
-        if removed.is_ok() {
-            break;
+    let give_up = Instant::now() + HELD_FOR;
+    let mut pause = Duration::ZERO;
+    let (removed, held) = loop {
+        thread::sleep(pause);
+        pause = TRY_AGAIN;
+        let removed = remove_once(path);
+        let code = removed.as_ref().err().and_then(io::Error::raw_os_error);
+        let held = matches!(code, Some(code) if HELD.contains(&code));
+        if !held || Instant::now() >= give_up {
+            break (removed, held);
         }
-    }
+    };
+    let still_held = format!(
+        ", which a process that works in it, such as a git, a language server or an open store, still \
+         held after {} seconds",
+        HELD_FOR.as_secs()
+    );
+    let why = if held { still_held } else { String::new() };
     assert!(
         removed.is_ok(),
-        "can't remove {}: {removed:?}",
+        "can't remove {}{why}: {removed:?}",
         path.display()
     );
 }

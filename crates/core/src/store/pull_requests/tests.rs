@@ -46,13 +46,14 @@ fn at(seconds: i64, facts: PullRequestFacts) -> PullRequestFacts {
     }
 }
 
-/// A store and a reader of the same file.
-fn opened(name: &str) -> (Store, OpenReader, StoreReader, PathBuf, TempPath) {
+/// The folder of a database, and a store and a reader of it. The folder comes first, so a pattern that binds
+/// them all drops it last.
+fn opened(name: &str) -> (TempPath, Store, OpenReader, StoreReader, PathBuf) {
     let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
-    (store, open, reader, path, folder)
+    (folder, store, open, reader, path)
 }
 
 fn numbers(reader: &StoreReader, repository: &RepositoryName) -> Vec<u32> {
@@ -62,7 +63,7 @@ fn numbers(reader: &StoreReader, repository: &RepositoryName) -> Vec<u32> {
 
 #[test]
 fn what_the_writer_saves_the_reader_reads() {
-    let (store, open, reader, _path, _folder) = opened("pr-roundtrip");
+    let (_folder, store, open, reader, _path) = opened("pr-roundtrip");
     store.remember_login(&Login::new("Octocat")).unwrap();
 
     store
@@ -78,7 +79,7 @@ fn what_the_writer_saves_the_reader_reads() {
 
 #[test]
 fn a_pr_with_nothing_optional_reads_back_the_same() {
-    let (store, open, reader, _path, _folder) = opened("pr-sparse");
+    let (_folder, store, open, reader, _path) = opened("pr-sparse");
     let sparse = PullRequestFacts {
         author: None,
         ci: None,
@@ -110,7 +111,7 @@ fn sha(text: &str) -> CommitSha {
 
 #[test]
 fn a_backports_facts_read_back_the_same() {
-    let (store, open, reader, _path, _folder) = opened("pr-backport");
+    let (_folder, store, open, reader, _path) = opened("pr-backport");
     let backport = PullRequestFacts {
         off_default: Some(OffDefault {
             description: "(cherry picked from commit 0123abc)".to_owned(),
@@ -145,7 +146,7 @@ fn a_backports_facts_read_back_the_same() {
 
 #[test]
 fn saving_a_backport_again_replaces_its_commits() {
-    let (store, open, reader, _path, _folder) = opened("pr-backport-again");
+    let (_folder, store, open, reader, _path) = opened("pr-backport-again");
     let first = PullRequestFacts {
         off_default: Some(OffDefault {
             description: String::new(),
@@ -176,7 +177,7 @@ fn saving_a_backport_again_replaces_its_commits() {
 
 #[test]
 fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
-    let (store, open, _reader, _path, _folder) = opened("pr-frozen");
+    let (_folder, store, open, _reader, _path) = opened("pr-frozen");
     let in_state = |number, state| PullRequestFacts {
         state,
         ..facts(number)
@@ -215,7 +216,7 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
 
 #[test]
 fn saving_a_pr_again_replaces_what_was_known() {
-    let (store, open, reader, _path, _folder) = opened("pr-replace");
+    let (_folder, store, open, reader, _path) = opened("pr-replace");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -272,7 +273,7 @@ fn a_pr_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
 
 #[test]
 fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
-    let (store, open, reader, _path, _folder) = opened("pr-order");
+    let (_folder, store, open, reader, _path) = opened("pr-order");
     let merged = PullRequestFacts {
         state: PrState::Merged,
         ..facts(3)
@@ -298,7 +299,7 @@ fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
 
 #[test]
 fn repositories_keep_apart_and_their_names_ignore_case() {
-    let (store, open, reader, _path, _folder) = opened("pr-repositories");
+    let (_folder, store, open, reader, _path) = opened("pr-repositories");
     let peps = RepositoryName::parse("python/peps").unwrap();
     let shouting = RepositoryName::parse("Python/CPython").unwrap();
     store
@@ -317,7 +318,7 @@ fn repositories_keep_apart_and_their_names_ignore_case() {
 
 #[test]
 fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
-    let (store, open, reader, _path, _folder) = opened("pr-requests");
+    let (_folder, store, open, reader, _path) = opened("pr-requests");
     let in_state = |number, state| PullRequestFacts {
         state,
         ..facts(number)
@@ -364,7 +365,7 @@ fn count(store: &Store, query: &'static str) -> u32 {
 
 #[test]
 fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
-    let (store, open, _reader, _path, _folder) = opened("pr-columns");
+    let (_folder, store, open, _reader, _path) = opened("pr-columns");
 
     store
         .save_pull_requests(&cpython(), vec![at(7, facts(1))])
@@ -410,7 +411,7 @@ fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
 
 #[test]
 fn a_row_an_earlier_tsugiki_wrote_reads_back() {
-    let (store, open, reader, _path, _folder) = opened("pr-earlier");
+    let (_folder, store, open, reader, _path) = opened("pr-earlier");
     store
             .call(|connection| {
                 connection.execute_batch(
@@ -444,7 +445,7 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
 
 #[test]
 fn logins_keep_githubs_casing_and_the_database_ignores_case() {
-    let (store, open, reader, _path, _folder) = opened("pr-casing");
+    let (_folder, store, open, reader, _path) = opened("pr-casing");
     store.remember_login(&Login::new("OctoCat")).unwrap();
     let twice = PullRequestFacts {
         review_requests: vec![Login::new("Some-Reviewer"), Login::new("some-reviewer")],
@@ -471,7 +472,7 @@ fn logins_keep_githubs_casing_and_the_database_ignores_case() {
 
 #[test]
 fn a_reader_doesnt_wait_for_a_write_in_progress() {
-    let (store, open, reader, _path, _folder) = opened("pr-no-wait");
+    let (_folder, store, open, reader, _path) = opened("pr-no-wait");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -501,7 +502,7 @@ fn a_reader_doesnt_wait_for_a_write_in_progress() {
 
 #[test]
 fn a_reader_cant_write() {
-    let (store, open, reader, _path, _folder) = opened("pr-read-only");
+    let (_folder, store, open, reader, _path) = opened("pr-read-only");
 
     let written = reader
         .call(|connection| write_last_login(connection, &Login::new("octocat")))
@@ -550,7 +551,7 @@ fn a_reader_with_no_file_to_read_says_so() {
 
 #[test]
 fn closing_both_connections_leaves_only_the_database() {
-    let (store, open, reader, path, _folder) = opened("pr-close");
+    let (_folder, store, open, reader, path) = opened("pr-close");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -570,7 +571,7 @@ fn closing_both_connections_leaves_only_the_database() {
 
 #[test]
 fn a_row_tsugiki_cant_understand_is_a_read_error() {
-    let (store, open, reader, _path, _folder) = opened("pr-bad-row");
+    let (_folder, store, open, reader, _path) = opened("pr-bad-row");
     store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
@@ -588,7 +589,7 @@ fn a_row_tsugiki_cant_understand_is_a_read_error() {
 
 #[test]
 fn a_save_that_fails_says_so_and_keeps_nothing_of_the_batch() {
-    let (store, open, reader, _path, _folder) = opened("pr-bad-save");
+    let (_folder, store, open, reader, _path) = opened("pr-bad-save");
     store
         .call(|connection| {
             connection.execute_batch(

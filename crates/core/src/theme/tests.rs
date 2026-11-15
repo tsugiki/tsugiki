@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::*;
 use crate::testing::TempPath;
 
@@ -50,11 +52,14 @@ fn folder_with(name: &str, files: &[(&str, &str)]) -> TempPath {
     folder
 }
 
-/// The library of a folder holding `files`, and that folder.
-fn library_of(name: &str, files: &[(&str, &str)]) -> (ThemeLibrary, TempPath) {
+/// The library of a folder holding `files`, which it then removes, so a test shows the library keeps what
+/// it needs. Gives where the folder was.
+fn library_of(name: &str, files: &[(&str, &str)]) -> (ThemeLibrary, PathBuf) {
     let folder = folder_with(name, files);
     let library = ThemeLibrary::read(&folder).unwrap();
-    (library, folder)
+    let path = folder.to_path_buf();
+    drop(folder);
+    (library, path)
 }
 
 /// The themes the library sends with the defaults chosen.

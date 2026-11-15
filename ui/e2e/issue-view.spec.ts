@@ -7,7 +7,7 @@ import type {
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
-import { serveUnderTauriCsp } from "./tauri-csp.ts";
+import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
@@ -349,7 +349,7 @@ test("the content security policy stops what a description tries to run or load"
     page,
     answers(
       '<img alt="handler" src="data:," onerror="window.ranFromDescription = true">' +
-        '<img alt="remote" src="https://github.com/favicon.ico">',
+        '<img alt="remote" src="https://example.com/favicon.ico">',
     ),
   );
   const asked: string[] = [];
@@ -369,7 +369,7 @@ test("the content security policy stops what a description tries to run or load"
   expect(asked).toEqual([]);
 });
 
-/** GitHub's image hosts, as its rendered HTML names them (#761). */
+/** GitHub's image proxy, which its rendered HTML sends each third-party image through (#761). */
 const camo = "https://camo.githubusercontent.com";
 const codspeedDark = `${camo}/1790/636f6473706565642d6461726b`;
 const codspeedLight = `${camo}/c88a/636f6473706565642d6c69676874`;
@@ -384,18 +384,13 @@ const codspeedButton =
   'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-light.svg">' +
   "</picture>";
 
-/** Answers each image GitHub's hosts are asked for with a small picture, and keeps each address the content
- * security policy refused, with the directive that refused it, in the page's `refused`. */
-const serveGithubImages = async (page: Page) => {
-  await page.addInitScript(() => {
-    const refused: string[] = [];
-    Object.assign(window, { refused });
-    document.addEventListener("securitypolicyviolation", (e) => {
-      refused.push(`${e.effectiveDirective} ${e.blockedURI}`);
-    });
-  });
+/** Serves the page under Tauri's CSP, keeping what it refuses, and answers each image the policy's hosts
+ * are asked for with a small picture. */
+const serveImagesUnderCsp = async (page: Page) => {
+  await watchCspViolations(page);
+  await serveUnderTauriCsp(page);
   await page.route(
-    /^https:\/\/(camo|user-images|private-user-images)\.githubusercontent\.com\/|^https:\/\/github\.githubassets\.com\//,
+    (address) => imageHosts.includes(address.origin),
     (route) =>
       route.fulfill({
         contentType: "image/svg+xml",
@@ -404,8 +399,9 @@ const serveGithubImages = async (page: Page) => {
   );
 };
 
-/** The addresses the content security policy refused, as `serveGithubImages` keeps them. */
-const refused = (page: Page) => page.evaluate(() => (window as unknown as { refused: string[] }).refused);
+/** The addresses the content security policy refused, each with the directive that refused it. */
+const refused = async (page: Page) =>
+  (await cspViolations(page)).map(({ directive, blocked }) => `${directive} ${blocked}`);
 
 /** Whether the image `alt` names has loaded. */
 const loaded = (page: Page, alt: string) =>
@@ -414,23 +410,30 @@ const loaded = (page: Page, alt: string) =>
 test("a description shows the images GitHub's image hosts serve, and loads no other host's", async ({
   page,
 }) => {
-  await serveUnderTauriCsp(page);
+  const images = {
+    "Dependabot compatibility score": `${camo}/f3d2/6465706`,
+    ":shipit:": "https://github.githubassets.com/images/icons/emoji/shipit.png",
+    "an older upload": "https://user-images.githubusercontent.com/1/2-a1b2.png",
+    "an upload": "https://private-user-images.githubusercontent.com/1/3-c3d4.png?jwt=x",
+    "a workflow's badge": "https://github.com/octo-org/octo-repo/actions/workflows/ci.yml/badge.svg",
+    "a file of a Repository": "https://raw.githubusercontent.com/octo-org/octo-repo/main/docs/screen.png",
+    "a Git LFS file": "https://media.githubusercontent.com/media/octo-org/octo-repo/0a1b/sprite.webp",
+    "an avatar": "https://avatars.githubusercontent.com/u/1?v=4",
+  };
+  await serveImagesUnderCsp(page);
   await mockCore(
     page,
     answers(
-      `<p><img alt="Dependabot compatibility score" src="${camo}/f3d2/6465706" style="max-width: 100%;"></p>` +
-        '<p><img class="emoji" alt=":shipit:" src="https://github.githubassets.com/images/icons/emoji/shipit.png"' +
-        ' height="20" width="20" align="absmiddle"></p>' +
-        '<p><img alt="an older upload" src="https://user-images.githubusercontent.com/1/2-a1b2.png"></p>' +
-        '<p><img alt="an upload" src="https://private-user-images.githubusercontent.com/1/3-c3d4.png?jwt=x"></p>' +
+      Object.entries(images)
+        .map(([alt, address]) => `<p><img alt="${alt}" src="${address}"></p>`)
+        .join("") +
         '<p><img alt="a stranger" src="https://codspeed.io/pr-report/open-in-codspeed-light.svg"></p>',
     ),
   );
-  await serveGithubImages(page);
   await page.goto("/");
 
   await page.getByRole("button", { name: "#7 Issue 7" }).click();
-  for (const alt of ["Dependabot compatibility score", ":shipit:", "an older upload", "an upload"]) {
+  for (const alt of Object.keys(images)) {
     await expect.poll(() => loaded(page, alt), alt).toBe(true);
   }
   await expect
@@ -440,9 +443,8 @@ test("a description shows the images GitHub's image hosts serve, and loads no ot
 });
 
 test("CodSpeed's button shows the variant of the theme's side", async ({ page }) => {
-  await serveUnderTauriCsp(page);
+  await serveImagesUnderCsp(page);
   await mockCore(page, answers(codspeedButton));
-  await serveGithubImages(page);
   // The window turns to the side of the theme in force, and the webview's media query with it.
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");

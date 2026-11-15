@@ -93,3 +93,70 @@ it("shows new HTML in place of the old", async () => {
   expect(screen.getByText("After").tagName).toBe("P");
   expect(screen.queryByText("Before")).toBeNull();
 });
+
+/** An upload's address as GitHub's rendered HTML gives it, with the query it signs afresh on each fetch. */
+const upload = (signature: string) =>
+  `https://private-user-images.githubusercontent.com/1/2-a1b2.png?jwt=${signature}`;
+
+/** A folded section holding an upload, as GitHub renders a screenshot, with its link. */
+const screenshot = (signature: string, words = "Steps") =>
+  `<details><summary>${words}</summary><a href="${upload(signature)}">` +
+  `<img alt="upload" src="${upload(signature)}"></a>` +
+  `<picture><source media="(prefers-color-scheme: dark)" srcset="${upload(signature)}">` +
+  `<img alt="variant" src="${upload(signature)}"></picture></details>`;
+
+/** Says `image` has drawn, as jsdom loads none. */
+const drawn = (image: HTMLElement) => Object.defineProperty(image, "naturalWidth", { value: 20 });
+
+it("keeps what it drew when a refresh signs its uploads' addresses afresh", async () => {
+  const { rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  const image = screen.getByAltText("upload");
+  drawn(image);
+  drawn(screen.getByAltText("variant"));
+  const section = image.closest("details") as HTMLDetailsElement;
+  section.open = true;
+
+  await rerender({ html: screenshot("two") });
+
+  expect(screen.getByAltText("upload")).toBe(image);
+  expect(section.open).toBe(true);
+  expect(image.getAttribute("src")).toBe(upload("one"));
+  expect(section.querySelector("source")?.getAttribute("srcset")).toBe(upload("one"));
+  expect(image.closest("a")?.getAttribute("href")).toBe(upload("two"));
+});
+
+it("gives an image that hasn't drawn its fresh address", async () => {
+  const { rerender } = render(RenderedHtml, { html: screenshot("run-out"), onlink: vi.fn() });
+  const image = screen.getByAltText("upload");
+
+  await rerender({ html: screenshot("fresh") });
+
+  expect(screen.getByAltText("upload")).toBe(image);
+  expect(image.getAttribute("src")).toBe(upload("fresh"));
+  expect(image.closest("details")?.querySelector("source")?.getAttribute("srcset")).toBe(upload("fresh"));
+  expect(screen.getByAltText("variant").getAttribute("src")).toBe(upload("fresh"));
+});
+
+it("draws afresh HTML that differs past its signatures", async () => {
+  const { rerender } = render(RenderedHtml, { html: screenshot("one"), onlink: vi.fn() });
+  const image = screen.getByAltText("upload");
+
+  await rerender({ html: screenshot("two", "Edited steps") });
+
+  expect(screen.getByText("Edited steps").tagName).toBe("SUMMARY");
+  expect(screen.getByAltText("upload")).not.toBe(image);
+});
+
+it("takes a query on another host as a change", async () => {
+  const image = (signature: string) =>
+    `<img alt="badge" src="https://camo.githubusercontent.com/a?jwt=${signature}">`;
+  const { rerender } = render(RenderedHtml, { html: image("one"), onlink: vi.fn() });
+  const before = screen.getByAltText("badge");
+
+  await rerender({ html: image("two") });
+
+  expect(screen.getByAltText("badge")).not.toBe(before);
+  expect(screen.getByAltText("badge").getAttribute("src")).toBe(
+    "https://camo.githubusercontent.com/a?jwt=two",
+  );
+});

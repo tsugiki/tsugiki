@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mockCore, noServers } from "./mock-core.ts";
-import { serveUnderTauriCsp } from "./tauri-csp.ts";
+import { cspViolations, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { appearance } from "./themes.ts";
 
 const settings = {
@@ -19,13 +19,7 @@ const settings = {
 test("the window keeps the status bar at its foot under Tauri's CSP, which the page breaks no rule of", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    const seen: string[] = [];
-    Object.assign(window, { cspViolations: seen });
-    document.addEventListener("securitypolicyviolation", (e) => {
-      seen.push(`${e.violatedDirective} ${e.sourceFile}:${String(e.lineNumber)}`);
-    });
-  });
+  await watchCspViolations(page);
   await serveUnderTauriCsp(page);
   await mockCore(page, { settings, status: { state: "online", login: "octocat" } });
   await page.setViewportSize({ width: 900, height: 600 });
@@ -33,9 +27,7 @@ test("the window keeps the status bar at its foot under Tauri's CSP, which the p
 
   const bar = page.getByRole("status");
   await expect(bar).toHaveText("octocat");
-  expect(await page.evaluate(() => (window as unknown as { cspViolations: string[] }).cspViolations)).toEqual(
-    [],
-  );
+  expect(await cspViolations(page)).toEqual([]);
   const box = await bar.boundingBox();
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBe(600);
 });

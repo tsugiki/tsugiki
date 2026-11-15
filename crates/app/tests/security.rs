@@ -118,61 +118,65 @@ fn webview_keys_has_the_one_unsafe_block_and_no_other_crate_has_any() {
     }
 }
 
-/// The sources the webview may load an image from: its own pages, and the hosts GitHub serves the images of
-/// descriptions and comments from. camo, GitHub's image proxy, fetches each third-party image, so the
-/// image's owner hears only from GitHub. `github.githubassets.com` serves custom emoji, and the other two
-/// serve uploads, the newer ones at an address signed for a few minutes.
-const IMAGE_SOURCES: [&str; 6] = [
+/// The policy's `img-src`: the webview's own pages, and the hosts GitHub serves the images of descriptions
+/// and comments from, so only GitHub hears from the user's machine (#761). camo, GitHub's image proxy,
+/// fetches each third-party image. `github.githubassets.com` serves custom emoji, `user-images` and
+/// `private-user-images` uploads, and the rest the images GitHub's renderer sends no further: a workflow's
+/// badge on `github.com`, a file of a Repository on `raw`, a Git LFS file on `media`, and an avatar.
+const IMAGE_SOURCES: [&str; 10] = [
     "'self'",
     "data:",
     "https://camo.githubusercontent.com",
     "https://github.githubassets.com",
     "https://user-images.githubusercontent.com",
     "https://private-user-images.githubusercontent.com",
+    "https://github.com",
+    "https://raw.githubusercontent.com",
+    "https://media.githubusercontent.com",
+    "https://avatars.githubusercontent.com",
 ];
 
-/// The sources of `csp`'s `img-src` that `IMAGE_SOURCES` doesn't name, such as `https:`, `*` or another host.
-fn other_image_sources(csp: &str) -> Vec<&str> {
-    csp.split(';')
-        .map(str::split_whitespace)
-        .filter_map(|mut words| {
-            let name = words.next()?;
-            name.eq_ignore_ascii_case("img-src").then_some(words)
-        })
-        .flatten()
-        .filter(|source| !IMAGE_SOURCES.contains(source))
-        .collect()
+/// Whether `source`, in `img-src`, names the webview's own pages, an inline image, or one host GitHub owns,
+/// over `https`: not a scheme alone such as `https:`, nor a `*`.
+fn is_githubs(source: &str) -> bool {
+    let githubs = |host: &str| {
+        host == "github.com"
+            || host.ends_with(".githubusercontent.com")
+            || host.ends_with(".githubassets.com")
+    };
+    matches!(source, "'self'" | "data:")
+        || source
+            .strip_prefix("https://")
+            .is_some_and(|host| !host.contains(['*', '/']) && githubs(host))
 }
 
 #[test]
-fn images_come_only_from_githubs_image_hosts() {
-    let config = json("crates/app/tauri.conf.json");
-    let csp = config["app"]["security"]["csp"].as_str().unwrap();
-    assert_eq!(other_image_sources(csp), Vec::<&str>::new());
-
-    let widened = |sources: &str| {
-        format!("default-src 'self'; img-src 'self' data: {sources}; base-uri 'none'")
-    };
+fn images_come_only_from_hosts_github_owns() {
+    for source in IMAGE_SOURCES {
+        assert!(is_githubs(source), "{source}");
+    }
     for stranger in [
         "https:",
         "*",
         "https://*.githubusercontent.com",
         "https://codspeed.io",
-        "https://github.com/user-attachments/",
+        "https://github.com.example.org",
+        "http://github.com",
     ] {
-        assert_eq!(other_image_sources(&widened(stranger)), [stranger]);
+        assert!(!is_githubs(stranger), "{stranger}");
     }
 }
 
 #[test]
 fn the_webview_has_the_strict_csp() {
     let config = json("crates/app/tauri.conf.json");
+    let images = IMAGE_SOURCES.join(" ");
     assert_eq!(
         config["app"]["security"]["csp"],
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data: https://camo.githubusercontent.com https://github.githubassets.com \
-         https://user-images.githubusercontent.com https://private-user-images.githubusercontent.com; \
-         connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'"
+        format!(
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src {images}; \
+             connect-src ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'"
+        )
     );
     // A nonce Tauri put in `style-src` would void its 'unsafe-inline': the browser would refuse the `style`
     // attribute that keeps app.html's wrapper out of the layout, and the window would scroll as one page.

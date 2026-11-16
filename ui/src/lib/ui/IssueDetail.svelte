@@ -92,9 +92,6 @@
     }));
   };
 
-  /** The counts of the row above the tree, for the Issue on show. */
-  const counts = $derived(issue.view ? stateCounts(issue.view) : []);
-
   /** The start of the author line: the Issue's author and how long ago they opened it, with the date and time
    * for the tooltip. A read kept from before Tsugiki asked has neither time, until the next read. */
   const opened = (view: IssueView) => {
@@ -145,6 +142,9 @@
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
     {@const by = opened(view)}
+    <!-- Derived once per view, as `{@const}` is, where a `$derived` would need a branch for no view that the
+         template never reads. -->
+    {@const counts = stateCounts(view)}
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>

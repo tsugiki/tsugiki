@@ -85,7 +85,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 ### Workbench ([workbench.md](devel/workbench.md))
 
-- The **Workbench**, **Filters**, **Pinned issues**, **All issues** and the **Built-in views**, with counts
+- The **Workbench**, the **Inbox**, **Filters**, **Pinned issues** and the **Built-in views**, with counts
   in the Sidebar.
 - **Needs attention**, **Standalone PRs**, **Dependency updates**, and hiding an item with Archive, Mute and
   Mute author.

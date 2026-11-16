@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
@@ -25,6 +26,7 @@ function paletteRow(screen: PaletteScreen, action: Action, target: EventTarget |
 
 const core = vi.hoisted(() => ({
   workbench: vi.fn(),
+  inbox: vi.fn(),
   issue: vi.fn(),
   openIssue: vi.fn(),
   fetchIssue: vi.fn(),
@@ -66,6 +68,7 @@ Object.defineProperty(HTMLElement.prototype, "inert", {
 vi.mock("$lib/data/bindings", () => ({
   commands: {
     workbench: core.workbench,
+    inbox: core.inbox,
     issue: core.issue,
     openIssue: core.openIssue,
     fetchIssue: core.fetchIssue,
@@ -4216,4 +4219,175 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
   const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
 
   expect(icons).toEqual(["Closed as not planned", "Open PR", "Draft PR"]);
+});
+
+/** A page of the Inbox holding `items`, whose next page starts after item `older`, if it names one. */
+const inboxPage = (items: unknown[], older?: number) => ({
+  status: "ok" as const,
+  data: { items, older: older === undefined ? null : { updated_at: "2026-11-04T09:00:00Z", number: older } },
+});
+
+/** Lays the Issue list out, as jsdom doesn't: 500 px of room over `content` px of items. */
+function listRoom(content: number) {
+  const tall = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(content);
+  const room = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  onTestFinished(() => {
+    tall.mockRestore();
+    room.mockRestore();
+  });
+  return tall;
+}
+
+it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order", async () => {
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: {
+      items: [{ ...standalone, attention: null }],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [],
+    },
+  });
+  core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByRole("button", { name: "#5 Alone" });
+  expect(issueList()?.querySelector("ul.lazy")).toBeNull();
+
+  await fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+
+  expect(await screen.findByRole("heading", { name: "Inbox" })).toBeTruthy();
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
+  expect(core.inbox).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "latest" });
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "whole" });
+  expect(screen.getByRole("button", { name: "Inbox" }).getAttribute("aria-current")).toBe("true");
+  expect(screen.queryByRole("button", { name: /⇅$/ })).toBeNull();
+  // The browser draws only the items on screen.
+  expect(issueList()?.querySelector("ul.lazy")).not.toBeNull();
+  await fireEvent.click(screen.getByRole("button", { name: "PRs of #112564" }));
+  expect(screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" })).toBeTruthy();
+});
+
+it("reads the Inbox's next page once the list is scrolled near its end", async () => {
+  listRoom(5000);
+  core.inbox
+    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(inboxPage([{ ...standalone, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+  const pane = issueList() as HTMLElement;
+
+  // Two screens from the end.
+  pane.scrollTop = 3999;
+  await fireEvent.scroll(pane);
+  expect(core.inbox).toHaveBeenCalledOnce();
+
+  pane.scrollTop = 4000;
+  await fireEvent.scroll(pane);
+
+  await screen.findByRole("button", { name: "#5 Alone" });
+  expect(core.inbox).toHaveBeenLastCalledWith("python/cpython", {
+    kind: "older",
+    after: { updated_at: "2026-11-04T09:00:00Z", number: 112564 },
+  });
+  expect(screen.getByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
+});
+
+it("reads the Inbox's pages one after another while they leave the list short of its end", async () => {
+  core.inbox
+    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(inboxPage([{ ...standalone, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+
+  await screen.findByRole("button", { name: "#5 Alone" });
+  expect(core.inbox).toHaveBeenCalledTimes(2);
+});
+
+it("reads no page of the Inbox while the list is hidden, and looks again once it's back", async () => {
+  const tall = listRoom(5000);
+  core.inbox
+    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(inboxPage([{ ...standalone, attention: null }]));
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
+
+  paletteRow(component, "toggle_issue_list")?.run();
+  await vi.waitFor(() => {
+    expect(issueList()).toBeNull();
+  });
+  tall.mockReturnValue(0);
+  await tick();
+  expect(core.inbox).toHaveBeenCalledOnce();
+
+  paletteRow(component, "toggle_issue_list")?.run();
+
+  await screen.findByRole("button", { name: "#5 Alone" });
+  expect(core.inbox).toHaveBeenCalledTimes(2);
+});
+
+it("offers the palette the Inbox, which keeps its own order", async () => {
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  await screen.findByText(/^Nothing here yet/);
+  core.inbox.mockResolvedValue(inboxPage([]));
+  const titles = () => component.paletteCommands().map((command) => command.title);
+  expect(titles()).toContain("Sort by Last Update");
+
+  component
+    .paletteCommands()
+    .find((command) => command.title === "View: Inbox")
+    ?.run();
+
+  expect(await screen.findByRole("heading", { name: "Inbox" })).toBeTruthy();
+  expect(await screen.findByText(/^Nothing open here yet/)).toBeTruthy();
+  expect(titles().filter((title) => title.startsWith("Sort by"))).toEqual([]);
+});
+
+it("asks for the list again when the Repository's Conventions change, and only then", async () => {
+  // Each prop on its own, as the page passes them: `rerender` changes them all at once.
+  const props = new SvelteMap<"name" | "conventions", string>([["name", "python/cpython"]]);
+  render(RepositoryHome, {
+    get name() {
+      return props.get("name") ?? "";
+    },
+    get conventions() {
+      return props.get("conventions") as "cpython" | "github" | undefined;
+    },
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  await screen.findByText(/^Nothing here yet/);
+  const asked = () => core.workbench.mock.calls.map(([repository]: unknown[]) => repository);
+
+  // The first question went with the Conventions the core read, so the settings' arrival says nothing new.
+  props.set("conventions", "cpython");
+  await tick();
+  props.set("conventions", "cpython");
+  await tick();
+  expect(asked()).toEqual(["python/cpython"]);
+
+  props.set("conventions", "github");
+  await vi.waitFor(() => {
+    expect(asked()).toEqual(["python/cpython", "python/cpython"]);
+  });
+
+  // Another Repository asks for its own list once.
+  props.set("name", "python/peps");
+  props.set("conventions", "cpython");
+  await vi.waitFor(() => {
+    expect(asked()).toEqual(["python/cpython", "python/cpython", "python/peps"]);
+  });
+  await tick();
+  expect(asked()).toHaveLength(3);
 });

@@ -16,8 +16,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   newest first, with the PRs that changed in the window, and for a small one its open items from before the
   window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
   loads only the added days; narrowing it deletes nothing.
-- Older items come on demand: opening one fetches it and keeps it, a search in All issues also runs on GitHub,
-  and All issues ends with "Load 30 more days".
+- Older items come on demand: opening one fetches it and keeps it, a search in the **Inbox** also runs on
+  GitHub, and the Inbox ends with "Load 30 more days" once it has listed all the cache holds.
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own
   state ([ADR 0010](../adr/0010-one-sqlite-database-and-per-repository-mirrors.md)). **Export database**
   (Settings › Advanced, and the command palette) writes a consistent copy of it anywhere, such as a synced

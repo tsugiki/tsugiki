@@ -1115,6 +1115,7 @@ describe("every action in the palette", () => {
       ["Show performance HUD", "Ctrl+Shift+H"],
       ["List the View's Keys", "?"],
       ["Sort by Last Update", null],
+      ["View: Inbox", null],
       ["View: Stale Reviews", null],
       ["View: Sidebar as Icons", null],
     ]);
@@ -1162,6 +1163,7 @@ describe("every action in the palette", () => {
       ["Show performance HUD", "Ctrl+Shift+H"],
       ["List the View's Keys", "?"],
       ["Sort by Last Update", null],
+      ["View: Inbox", null],
       ["View: Stale Reviews", null],
       ["View: Sidebar as Icons", null],
     ]);

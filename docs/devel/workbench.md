@@ -27,15 +27,20 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Repository whose settings leave its Filters out: it reads as having both starters, switched off.
 - Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues
   their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
-- **All issues** is an unsaved Filter over the Repository's open Issues and open PRs, newest update first,
-  with a search box that takes GitHub search syntax; Save turns a search into a Filter. Each PR is a row of
-  its own, and every row in every Issue list has an Issue or PR icon coloured by state. Two quick filters,
-  **Issues** and **PRs**, each with its count, show one kind or both (at least one stays on; also in the
-  command palette). From it the user reads, comments on and pins Issues and opens PRs. It shows what changed
-  since the last sync first and loads older items only as the user scrolls or searches.
+- The **Inbox** lists every open item of the Repository the user hasn't triaged: each open Issue with its PRs
+  under it, grouped as on the Workbench, and each Standalone PR on its own, the latest update first. It has
+  no Issues or PRs switch, and no switch of order. Pin, Archive and Mute each take an item out, and so does
+  the item closing, at the next refresh. **Muted authors**' items stay out unless the user turns on "Show
+  muted". It starts with the items updated in the last two days, and scrolling to the end of the list reads
+  the next older batch from the cache. The window draws only the rows on screen, so the Inbox of a cache
+  the size of CPython's scrolls as a small one does. It adds nothing to **Reach**. A search box takes GitHub
+  search syntax, and Save turns a search into a Filter. From it the user reads, comments on and pins Issues
+  and opens PRs. "View: Inbox" in the command palette opens it.
+- Every row in every Issue list has an Issue or PR icon coloured by state.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
   many items its search found, as its view lists them. For the Built-in views, it is how many PRs they hold.
+  The Inbox has no count.
 - **Built-in views**: Stale reviews, New activity, Review requests, Archived (the Archived items, each with
   Unarchive) and Muted (the Muted items with Unmute, then the Muted authors in this Repository and the items
   they hide, with Unmute author).

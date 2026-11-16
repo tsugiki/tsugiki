@@ -56,6 +56,7 @@ it("lists the initials, an icon for each entry with its count and name, then ⚙
   ).toEqual([
     ["Full Sidebar", "python/cpython", "CP"],
     ["Workbench (12)", "Workbench", "12"],
+    ["Inbox", "Inbox", ""],
     ["Review requests (4)", "Review requests", "4"],
     ["Stale reviews", "Stale reviews", ""],
     ["Mine (3)", "Mine", "3"],
@@ -80,7 +81,7 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
   const onsettings = vi.fn();
   render(SidebarIcons, { ...strip, onselect, onfull, onsettings });
 
-  for (const name of ["Workbench (12)", "Review requests (4)", "Stale reviews", "Mine (3)"]) {
+  for (const name of ["Workbench (12)", "Inbox", "Review requests (4)", "Stale reviews", "Mine (3)"]) {
     await fireEvent.click(button(name));
   }
   await fireEvent.click(button("Full Sidebar"));
@@ -88,6 +89,7 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
 
   expect(onselect.mock.calls).toEqual([
     [{ kind: "whole" }],
+    [{ kind: "inbox" }],
     [{ kind: "review_requests" }],
     [{ kind: "stale_reviews" }],
     [{ kind: "filter", query: mine.query }],

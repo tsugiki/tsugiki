@@ -87,7 +87,7 @@ GitHub.
 
 ## 4. Workbench breadth
 
-- All issues, with search on GitHub and Load 30 more days ([ADR
+- The Inbox, with search on GitHub and Load 30 more days ([ADR
   0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
 - **Pinned issues**, **Archive**, **Mute** and Mute author, and all the Built-in views.
 - **Stacked PRs**, **Dependency updates**, **Maintained repositories**, the person Filter.

@@ -47,6 +47,34 @@ describe("SettingsState", () => {
     expect(state.problems).toEqual(["settings.toml, line 3: expected a value"]);
   });
 
+  it("gives each Repository's Conventions, once it has the settings", () => {
+    const state = new SettingsState();
+    expect(state.conventionsOf("python/cpython")).toBeUndefined();
+
+    state.take({
+      settings: {
+        status_bar: { visible: true },
+        releases: { check: true },
+        appearance: {
+          theme: "system",
+          light_theme: "VS Code Light Modern",
+          dark_theme: "VS Code Dark Modern",
+        },
+        diff: { files: "all", peek: "inline" },
+        keys: {},
+        repositories: [
+          { name: "python/cpython", conventions: "cpython", filters: [] },
+          { name: "tsugiki/tsugiki", conventions: "github", filters: [] },
+        ],
+      },
+      language_servers: NO_SERVERS,
+      problems: [],
+    });
+
+    expect(state.conventionsOf("tsugiki/tsugiki")).toBe("github");
+    expect(state.conventionsOf("python/peps")).toBeUndefined();
+  });
+
   it("keeps what it last read when it can't ask again", async () => {
     vi.mocked(commands.settings).mockRejectedValue(new Error("the core has gone"));
     const state = new SettingsState();

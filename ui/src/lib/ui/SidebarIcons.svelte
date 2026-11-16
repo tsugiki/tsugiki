@@ -26,7 +26,7 @@
 </script>
 
 <script lang="ts">
-  import type { FilterLine, WorkbenchView } from "$lib/state/workbench.svelte";
+  import type { FilterLine, SidebarView } from "$lib/state/workbench.svelte";
   import { currentOs, withKey } from "./keys";
   import { currentView } from "./sidebar-view";
 
@@ -51,14 +51,16 @@
     reviewRequests: number;
     staleReviews: number;
     filters: FilterLine[];
-    selected: WorkbenchView;
+    selected: SidebarView;
     /** Brings the full Sidebar back and shows `view`. */
-    onselect: (view: WorkbenchView) => void;
+    onselect: (view: SidebarView) => void;
   } = $props();
 
   /** Line icons on a 16 px grid, which the prototype drew for the strip. */
   const ICONS = {
     workbench: "M2 9h3l1 2h4l1-2h3M2 9l2-6h8l2 6v4H2z",
+    // An open Issue's ring and dot, which the prototype drew for All issues, whose place the Inbox took.
+    inbox: "M2 8a6 6 0 1 0 12 0 6 6 0 1 0-12 0M7.4 8a.6.6 0 1 0 1.2 0 .6.6 0 1 0-1.2 0",
     review_requests: "M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5zM6 8a2 2 0 1 0 4 0 2 2 0 1 0-4 0",
     stale_reviews: "M2 8a6 6 0 1 0 12 0 6 6 0 1 0-12 0M8 4.5V8l2.5 1.5",
     filter: "M2 3h12L9.5 8.5V13l-3 1.5V8.5z",
@@ -69,7 +71,7 @@
      Filter whose last search failed says why there too, as the full Sidebar does under its line, and marks
      its icon with ! in the danger colour in place of the count, which may be short, so neither the tooltip
      nor the label gives the count. -->
-{#snippet entry(icon: string, name: string, entryCount: number, view: WorkbenchView, problem?: string | null)}
+{#snippet entry(icon: string, name: string, entryCount: number, view: SidebarView, problem?: string | null)}
   {@const words = badge(entryCount)}
   {@const counted = words === undefined ? name : `${name} (${String(entryCount)})`}
   <button
@@ -95,6 +97,7 @@
     >{initials(repository)}</button
   >
   {@render entry(ICONS.workbench, "Workbench", count, { kind: "whole" })}
+  {@render entry(ICONS.inbox, "Inbox", 0, { kind: "inbox" })}
   <span class="rule"></span>
   {@render entry(ICONS.review_requests, "Review requests", reviewRequests, { kind: "review_requests" })}
   {@render entry(ICONS.stale_reviews, "Stale reviews", staleReviews, { kind: "stale_reviews" })}

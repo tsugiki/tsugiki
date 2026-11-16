@@ -112,6 +112,7 @@ it("lists the Workbench and each Filter with its count", () => {
     "⚙",
     "«",
     "Workbench 12",
+    "Inbox",
     "Review requests 4",
     "Stale reviews 2",
     "Mine 3",
@@ -224,6 +225,8 @@ it("says which line the user picks", async () => {
   expect(onselect).toHaveBeenLastCalledWith({ kind: "stale_reviews" });
   await fireEvent.click(button("Workbench 12"));
   expect(onselect).toHaveBeenLastCalledWith(whole);
+  await fireEvent.click(button("Inbox"));
+  expect(onselect).toHaveBeenLastCalledWith({ kind: "inbox" });
 });
 
 it("lists two Filters that share a search", () => {

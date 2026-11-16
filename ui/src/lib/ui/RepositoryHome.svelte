@@ -21,6 +21,7 @@
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
   import type { TextSearchState } from "$lib/state/text-search.svelte";
   import { RAIL_ORDER, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
+  import type { Conventions } from "$lib/state/settings.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -30,8 +31,8 @@
     type ListedItem,
     type Seen,
     type Stop,
+    type SidebarView,
     type WorkbenchRow,
-    type WorkbenchView,
   } from "$lib/state/workbench.svelte";
   import { keepOnScreen, scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
@@ -80,10 +81,12 @@
       "Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing for a search it can't read.",
     review_requests: "Nobody has asked you for a review.",
     stale_reviews: "No Review of yours is stale.",
+    inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
   };
 
   let {
     name,
+    conventions,
     onpick,
     onsettings,
     keysActive = true,
@@ -91,6 +94,8 @@
     diffPeek = "inline",
   }: {
     name: string;
+    /** The Repository's Conventions, as the settings the window last took from the core give them. */
+    conventions?: Conventions | undefined;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
     onpick: () => void;
     /** Opens the Settings dialog, from ⚙ atop the Sidebar. */
@@ -150,6 +155,32 @@
   let markProblem = $state<string>();
   let list = $state<HTMLElement>();
   let home = $state<HTMLElement>();
+
+  /** Reads the Inbox's next older page once the list is scrolled to within a screen of its end (#822). */
+  function readOlderNearEnd() {
+    if (workbench.olderToRead && list && list.scrollTop + 2 * list.clientHeight >= list.scrollHeight) {
+      void workbench.readOlder();
+    }
+  }
+  // A page too short to fill the list leaves nothing to scroll, so each new page and the list's return check
+  // again.
+  $effect(() => {
+    void workbench.items;
+    readOlderNearEnd();
+  });
+
+  /** The Workbench state and Conventions the list last asked with. */
+  let askedWith: { opened: WorkbenchState; conventions: Conventions | undefined } | undefined;
+  // A change to the Conventions regroups the PRs with no change to the store, so no `changed` event says so
+  // (ADR 0011): the list asks again, and the Inbox reads its pages again from the first. Conventions that
+  // arrive after the first question asked with the core's own say nothing new.
+  $effect(() => {
+    const last = askedWith;
+    askedWith = { opened: workbench, conventions };
+    if (last?.opened === workbench && last.conventions && last.conventions !== conventions) {
+      void workbench.refresh();
+    }
+  });
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
    * it with `:focus-within` (#602). */
   let windowFocused = $state(document.hasFocus());
@@ -612,10 +643,18 @@
 
   /** The commands this screen adds to the palette that run no action, which follow the actions. */
   export function paletteCommands(): PaletteAction[] {
+    // The Inbox keeps its own order.
+    const sort: PaletteAction[] =
+      workbench.selected.kind === "inbox"
+        ? []
+        : [
+            panes.order === "attention"
+              ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
+              : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
+          ];
     return [
-      panes.order === "attention"
-        ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
-        : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
+      ...sort,
+      { title: "View: Inbox", run: () => showView({ kind: "inbox" }) },
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       // Each shape but the one on show, so a hidden Sidebar offers both.
       ...(panes.hidden("sidebar") || !panes.sidebarIcons
@@ -629,13 +668,13 @@
 
   /** A click on an icon of the strip: shows `view` in the list, as a click on its line in the full Sidebar
    * does, and brings back the full Sidebar at its width, with one save for both. */
-  function showViewInFull(view: WorkbenchView) {
+  function showViewInFull(view: SidebarView) {
     void workbench.select(view);
     void reshapeSidebar(() => panes.showFullSidebarAndList());
   }
 
   /** Shows `view` in the list, as a click on its line in the Sidebar does. */
-  function showView(view: WorkbenchView) {
+  function showView(view: SidebarView) {
     void workbench.select(view);
     void panes.show("list");
   }
@@ -1155,6 +1194,7 @@
       class={["list", { sized: panes.list !== null && detail !== undefined }]}
       data-pane="list"
       bind:this={list}
+      onscroll={readOlderNearEnd}
     >
       <header class="view">
         <h2>{workbench.title}</h2>
@@ -1172,18 +1212,23 @@
             />On the Workbench</label
           >
         {/if}
-        <button
-          class="link order"
-          title="Change the order"
-          onclick={() => void sortBy(panes.order === "attention" ? "last_update" : "attention")}
-          >{ORDERS[panes.order]}</button
-        >
+        <!-- The Inbox keeps its own order, the latest update first. -->
+        {#if workbench.selected.kind !== "inbox"}
+          <button
+            class="link order"
+            title="Change the order"
+            onclick={() => void sortBy(panes.order === "attention" ? "last_update" : "attention")}
+            >{ORDERS[panes.order]}</button
+          >
+        {/if}
       </header>
       {@render problems()}
       {#if workbench.items?.length === 0}
         <p>{EMPTY[workbench.selected.kind]}</p>
       {:else if workbench.items}
-        <ul>
+        <!-- The Inbox can hold every open item the cache does, so the browser draws only its rows on
+             screen. -->
+        <ul class={{ lazy: workbench.shown.kind === "inbox" }}>
           {#each workbench.items as item (item.number)}
             {@render listed(item)}
           {/each}
@@ -1325,6 +1370,13 @@
 
   .item.attention {
     border-left-color: var(--accent);
+  }
+
+  /* An item off the screen isn't laid out or drawn, and holds the room it took when it last was: an item of
+     three lines, until it has been. */
+  .lazy > .item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 68px;
   }
 
   .row {

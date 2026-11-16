@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { FilterLine, WorkbenchView } from "$lib/state/workbench.svelte";
+  import type { FilterLine, SidebarView } from "$lib/state/workbench.svelte";
   import { currentOs, withKey } from "./keys";
   import { currentView } from "./sidebar-view";
 
@@ -27,12 +27,12 @@
     reviewRequests: number;
     staleReviews: number;
     filters: FilterLine[];
-    selected: WorkbenchView;
-    onselect: (view: WorkbenchView) => void;
+    selected: SidebarView;
+    onselect: (view: SidebarView) => void;
   } = $props();
 
   /** The `aria-current` of the line for `view`. */
-  const current = (view: WorkbenchView) => currentView(selected, view);
+  const current = (view: SidebarView) => currentView(selected, view);
 </script>
 
 <nav aria-label="Sidebar">
@@ -50,6 +50,10 @@
   <button aria-current={current({ kind: "whole" })} onclick={() => onselect({ kind: "whole" })}>
     <span>Workbench</span>
     <span>{count}</span>
+  </button>
+  <!-- The Inbox has no count. -->
+  <button aria-current={current({ kind: "inbox" })} onclick={() => onselect({ kind: "inbox" })}>
+    <span>Inbox</span>
   </button>
   <h2 class="small-heading">Built-in views</h2>
   <button

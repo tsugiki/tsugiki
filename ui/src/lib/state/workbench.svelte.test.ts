@@ -3,13 +3,20 @@ import { commands, events, type ListOrder } from "$lib/data/bindings";
 import {
   WorkbenchState,
   type FilterLine,
+  type InboxCursor,
   type ListedItem,
   type Seen,
   type WorkbenchRow,
 } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { workbench: vi.fn(), markSeen: vi.fn(), markUnseen: vi.fn(), putFilterOnWorkbench: vi.fn() },
+  commands: {
+    workbench: vi.fn(),
+    inbox: vi.fn(),
+    markSeen: vi.fn(),
+    markUnseen: vi.fn(),
+    putFilterOnWorkbench: vi.fn(),
+  },
   events: { changed: { listen: vi.fn() } },
 }));
 
@@ -1283,6 +1290,274 @@ describe("WorkbenchState", () => {
     await vi.waitFor(() => {
       expect(calls).toEqual(["before 4,3,2 at 2", "after 2,4,3 at 2"]);
     });
+    state.stop();
+  });
+});
+
+const inbox = { kind: "inbox" } as const;
+
+/** Where item `number`, updated at `hour` o'clock, stands in the Inbox's order. */
+const at = (number: number, hour: number): InboxCursor => ({
+  updated_at: `2026-11-04T${String(hour).padStart(2, "0")}:00:00Z`,
+  number,
+});
+
+/** A page of the Inbox holding items `numbers`, whose next older page starts after `older`. */
+const page = (numbers: number[], older: InboxCursor | null = null) => ({
+  status: "ok" as const,
+  data: { items: numbers.map(item), older },
+});
+
+type Page = ReturnType<typeof page> | typeof refused;
+
+/** Answers the Inbox's first page with `latest`, and each older page by the number of the item it starts
+ * after. */
+const paging = (latest: Page, older: Record<number, Page | Promise<Page>> = {}) => {
+  vi.mocked(commands.inbox).mockImplementation(async (_, asked) =>
+    asked.kind === "latest" ? latest : (older[asked.after.number] ?? refused),
+  );
+};
+
+/** The pages of the Inbox asked for, by the number of the item each starts after, and 0 for the first. */
+const pagesAsked = () =>
+  vi.mocked(commands.inbox).mock.calls.map(([, asked]) => (asked.kind === "latest" ? 0 : asked.after.number));
+
+describe("WorkbenchState's Inbox", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  /** A state that has the Inbox on show. */
+  async function showingInbox() {
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.select(inbox);
+    return state;
+  }
+
+  it("lists the Inbox's first page, with the Sidebar's counts from the Workbench", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+    paging(page([3, 2], at(2, 9)));
+    const state = await showingInbox();
+
+    expect(numbers(state)).toEqual([3, 2]);
+    expect(state.count).toBe(1);
+    expect(state.filters).toEqual([mine]);
+    expect(state.title).toBe("Inbox");
+    expect(state.shown).toEqual(inbox);
+    expect(state.olderToRead).toBe(true);
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", whole);
+    expect(pagesAsked()).toEqual([0]);
+
+    await state.select(whole);
+    expect(numbers(state)).toEqual([9]);
+    expect(state.olderToRead).toBe(false);
+    state.stop();
+  });
+
+  it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging(page([3, 2], at(2, 9)), { 2: page([2, 1]) });
+    const state = await showingInbox();
+
+    await state.readOlder();
+    expect(numbers(state)).toEqual([3, 2, 1]);
+    expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "older", after: at(2, 9) });
+    expect(state.olderToRead).toBe(false);
+
+    await state.readOlder();
+    expect(pagesAsked()).toEqual([0, 2]);
+    state.stop();
+  });
+
+  it("reads nothing older while a view of the Workbench is on show", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    await state.readOlder();
+    expect(commands.inbox).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("reads the next page once, however often the list asks while it reads", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const next = Promise.withResolvers<Page>();
+    paging(page([3], at(3, 9)), { 3: next.promise });
+    const state = await showingInbox();
+
+    const reading = state.readOlder();
+    await state.readOlder();
+    next.resolve(page([2]));
+    await reading;
+    expect(numbers(state)).toEqual([3, 2]);
+    expect(pagesAsked()).toEqual([0, 3]);
+    state.stop();
+  });
+
+  it("reads the pages again from the first after a change, as far down as those on show reached", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging(page([5, 4], at(4, 9)), { 4: page([3, 2], at(2, 7)) });
+    const state = await showingInbox();
+    await state.readOlder();
+    expect(numbers(state)).toEqual([5, 4, 3, 2]);
+    vi.mocked(commands.inbox).mockClear();
+
+    // A sync moved 1 to the top. Item 3 now shares its time with item 2, and comes first by its number.
+    paging(page([1, 5], at(5, 10)), { 5: page([4, 3], at(3, 7)), 3: page([2], at(2, 7)), 2: page([]) });
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([1, 5, 4, 3, 2]);
+    });
+    expect(pagesAsked()).toEqual([0, 5, 3]);
+    expect(state.olderToRead).toBe(true);
+    state.stop();
+  });
+
+  it("reads every page again after a change once those on show reached the end", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging(page([3], at(3, 9)), { 3: page([2]) });
+    const state = await showingInbox();
+    await state.readOlder();
+    vi.mocked(commands.inbox).mockClear();
+
+    paging(page([3], at(3, 9)), { 3: page([2], at(2, 8)), 2: page([1]) });
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([3, 2, 1]);
+    });
+    expect(pagesAsked()).toEqual([0, 3, 2]);
+    expect(state.olderToRead).toBe(false);
+    state.stop();
+  });
+
+  it("reads the pages again from the first on a refresh", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging(page([3]));
+    const state = await showingInbox();
+
+    paging(page([4, 3]));
+    await state.refresh();
+    expect(numbers(state)).toEqual([4, 3]);
+    state.stop();
+  });
+
+  it("stops reading the pages again once a newer question is asked", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging(page([3], at(3, 9)), { 3: page([2]) });
+    const state = await showingInbox();
+    await state.readOlder();
+    vi.mocked(commands.inbox).mockClear();
+
+    const second = Promise.withResolvers<Page>();
+    paging(page([3], at(3, 9)), { 3: second.promise, 2: page([1]) });
+    const rereading = state.refresh();
+    await vi.waitFor(() => {
+      expect(pagesAsked()).toEqual([0, 3]);
+    });
+    vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+    const whole = state.select({ kind: "whole" });
+    second.resolve(page([2], at(2, 8)));
+    await Promise.all([rereading, whole]);
+
+    expect(pagesAsked()).toEqual([0, 3]);
+    expect(numbers(state)).toEqual([9]);
+    state.stop();
+  });
+
+  it("drops an older page read before a change's answer replaced the list", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const next = Promise.withResolvers<Page>();
+    paging(page([3], at(3, 9)), { 3: next.promise });
+    const state = await showingInbox();
+    const reading = state.readOlder();
+
+    paging(page([4, 3], at(3, 9)), { 3: next.promise });
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([4, 3]);
+    });
+    next.resolve(page([2]));
+    await reading;
+
+    expect(numbers(state)).toEqual([4, 3]);
+    expect(state.olderToRead).toBe(true);
+    state.stop();
+  });
+
+  it("drops an older page that lands while a change's answer is on its way", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const next = Promise.withResolvers<Page>();
+    paging(page([3], at(3, 9)), { 3: next.promise });
+    const state = await showingInbox();
+    const reading = state.readOlder();
+
+    const sidebar = Promise.withResolvers<ReturnType<typeof answer>>();
+    vi.mocked(commands.workbench).mockReturnValue(sidebar.promise);
+    paging(page([4, 3], at(3, 9)));
+    send("python/cpython");
+    next.resolve(page([2]));
+    await reading;
+    expect(numbers(state)).toEqual([3]);
+
+    sidebar.resolve(answer());
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([4, 3]);
+    });
+    state.stop();
+  });
+
+  it("drops an older page that lands after the window left the Repository", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    const next = Promise.withResolvers<Page>();
+    paging(page([3], at(3, 9)), { 3: next.promise });
+    const state = await showingInbox();
+    const reading = state.readOlder();
+
+    state.stop();
+    next.resolve(page([2]));
+    await reading;
+    expect(numbers(state)).toEqual([3]);
+  });
+
+  it("says why it couldn't read the Inbox, and keeps the list on show", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(9));
+    paging(refused);
+    const state = await showingInbox();
+
+    expect(state.error).toBe("no database");
+    expect(numbers(state)).toEqual([9]);
+    state.stop();
+  });
+
+  it("says why it couldn't read the next page, and clears that once a page comes", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging(page([3], at(3, 9)), { 3: refused });
+    const state = await showingInbox();
+
+    await state.readOlder();
+    expect(state.error).toBe("no database");
+    expect(numbers(state)).toEqual([3]);
+
+    paging(page([3], at(3, 9)), { 3: page([2]) });
+    await state.readOlder();
+    expect(state.error).toBeUndefined();
+    expect(numbers(state)).toEqual([3, 2]);
     state.stop();
   });
 });

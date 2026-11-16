@@ -1,5 +1,5 @@
-// One Repository's Workbench and its Filters: asked for when the window opens it, when the user selects a
-// line of the Sidebar, and each time the core says its facts changed (ADR 0008).
+// One Repository's Workbench and its Filters, and its Inbox (#822): asked for when the window opens it, when
+// the user selects a line of the Sidebar, and each time the core says its facts changed (ADR 0008).
 import {
   commands,
   events,
@@ -9,6 +9,8 @@ import {
   type CantCheck,
   type CiState,
   type FilterLine_Serialize,
+  type InboxCursor_Serialize,
+  type InboxPage_Deserialize,
   type IssueItem_Serialize,
   type IssueState,
   type ListedItem_Serialize,
@@ -29,6 +31,8 @@ import { hud } from "./hud.svelte";
 export type Attention = Attention_Serialize;
 export type BackportRow = BackportRow_Serialize;
 export type FilterLine = FilterLine_Serialize;
+/** Where an item stands in the Inbox's order, as the core gives it. */
+export type InboxCursor = InboxCursor_Serialize;
 export type IssueItem = IssueItem_Serialize;
 export type ListedItem = ListedItem_Serialize;
 /** An item's part in Mark Seen and Mark Unseen, as the core drew it. */
@@ -47,6 +51,28 @@ export type {
   Why,
   YourReview,
 };
+
+/** A line of the Sidebar whose items the list shows: a view of the Workbench, or the Inbox (#822). */
+export type SidebarView = WorkbenchView | { kind: "inbox" };
+
+/** Whether cursor `a` comes before cursor `b` in the Inbox's order: updated later, or at the same time with
+ * a higher number. */
+const comesBefore = (a: InboxCursor, b: InboxCursor) => {
+  const [at, bt] = [Date.parse(a.updated_at), Date.parse(b.updated_at)];
+  return at > bt || (at === bt && a.number > b.number);
+};
+
+/** `items` with each item of `more` that `items` doesn't list already. Pages read on either side of a change
+ * can both hold an item, and the list keys its items by number. */
+function joined(items: ListedItem[], more: ListedItem[]): ListedItem[] {
+  const listed = new Set(items.map((item) => item.number));
+  return [...items, ...more.filter((item) => !listed.has(item.number))];
+}
+
+/** The Inbox's pages read from the first, as one list, and where the next older page starts, or null once
+ * the cache holds nothing older; or the reason a page couldn't be read. */
+type InboxPages =
+  { status: "ok"; items: ListedItem[]; older: InboxCursor | null } | { status: "error"; error: string };
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };
@@ -70,7 +96,7 @@ const answered = <T>(asking: Promise<T>) =>
 type Line = { stop: Stop; title: string };
 
 /** The key of view `view`, which keeps its own unfolded Issues. */
-const keyOf = (view: WorkbenchView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
+const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
 
 /** The item of `items` whose own line `stop` is, as against a PR or Backport in its tree. Only that line
  * carries the item's attention. */
@@ -114,7 +140,7 @@ export class WorkbenchState {
   reviewRequests = $state(0);
   staleReviews = $state(0);
   filters = $state<FilterLine[]>([]);
-  selected = $state<WorkbenchView>({ kind: "whole" });
+  selected = $state<SidebarView>({ kind: "whole" });
   error = $state<string>();
   /** The reason the last change to a Filter's "On the Workbench" didn't save, if it didn't. */
   switchProblem = $state<string>();
@@ -128,7 +154,14 @@ export class WorkbenchState {
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The view whose items the list shows: `selected` once its answer has arrived. */
-  #shown = $state<WorkbenchView>({ kind: "whole" });
+  #shown = $state<SidebarView>({ kind: "whole" });
+  /** Where the Inbox's next older page starts while the list shows the Inbox, or null once the cache holds
+   * nothing older. Unset while the list shows a view of the Workbench. */
+  #older = $state<InboxCursor | null>();
+  /** Whether the Inbox's next older page is being read. */
+  #readingOlder = false;
+  /** How many answers have replaced the items on show, so a page read before the last of them is dropped. */
+  #drawn = 0;
   /** The list's order as the window holds it now, and the order the items on show were asked in. */
   #order: () => ListOrder;
   #shownOrder: ListOrder | undefined;
@@ -172,9 +205,44 @@ export class WorkbenchState {
     await this.#ask();
   }
 
-  async select(view: WorkbenchView) {
+  async select(view: SidebarView) {
     this.selected = view;
     await this.#ask();
+  }
+
+  /** Asks for the view on show again, as after a change to the Repository's Conventions, which regroups its
+   * PRs with no change to the store (ADR 0011). The Inbox reads its pages again from the first. */
+  async refresh() {
+    await this.#ask();
+  }
+
+  /** The view whose items the list shows: `selected` once its answer has arrived. */
+  get shown(): SidebarView {
+    return this.#shown;
+  }
+
+  /** Whether the list shows the Inbox and the cache holds older items than its pages on show. */
+  get olderToRead(): boolean {
+    return this.#older != null;
+  }
+
+  /** Reads the Inbox's next older page onto the end of the list, unless one is being read. A page read
+   * before an answer replaced the items, as after a change, is dropped: that answer read the pages again. */
+  async readOlder() {
+    const [after, items] = [this.#older, this.items];
+    if (after == null || items === undefined || this.#readingOlder) return;
+    this.#readingOlder = true;
+    const [question, drawn] = [this.#lastQuestion, this.#drawn];
+    const answer = await this.#inboxPage({ kind: "older", after });
+    this.#readingOlder = false;
+    if (question !== this.#lastQuestion || drawn !== this.#drawn || this.#stopped) return;
+    if (answer.status === "ok") {
+      this.items = joined(items, answer.data.items);
+      this.#older = answer.data.older;
+      this.error = undefined;
+    } else {
+      this.error = answer.error.message;
+    }
   }
 
   /** Asks for the view on show again once the list's order has changed. Its lines then moved for the order
@@ -188,6 +256,7 @@ export class WorkbenchState {
   get title(): string {
     const selected = this.selected;
     if (selected.kind === "whole") return "Workbench";
+    if (selected.kind === "inbox") return "Inbox";
     if (selected.kind === "review_requests") return "Review requests";
     if (selected.kind === "stale_reviews") return "Stale reviews";
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
@@ -400,31 +469,74 @@ export class WorkbenchState {
     return this.#allLines().map((line) => line.stop);
   }
 
+  /** Whether question `question` is still the last, for a Repository the window still shows. A newer
+   * question reads newer facts, so an older answer that arrives late is dropped. */
+  #current(question: number) {
+    return question === this.#lastQuestion && !this.#stopped;
+  }
+
+  /** Asks for the view `selected` names. For the Inbox, the Sidebar's counts and Filters still come from the
+   * Workbench, and the list's items from the Inbox's pages, read again from the first as far down as the
+   * pages on show reached. */
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
     const view = this.selected;
     const order = this.#order();
-    const answer = await answered(hud.timed(() => commands.workbench(this.#repository, view)));
-    // A newer question reads newer facts, so this drops an older answer that arrives late. A stopped state
-    // belongs to a Repository the window has left.
-    if (question !== this.#lastQuestion || this.#stopped) return;
-    if (answer.status === "ok") {
-      const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
-      const before = same ? this.items : undefined;
-      const changed = before ? this.#changing() : undefined;
-      this.items = answer.data.items;
-      this.#shown = view;
-      this.#shownOrder = order;
-      this.#placeCursor(answer.data.items, before);
-      changed?.();
-      this.count = answer.data.count;
-      this.reviewRequests = answer.data.review_requests;
-      this.staleReviews = answer.data.stale_reviews;
-      this.filters = answer.data.filters;
-      this.error = undefined;
-    } else {
+    const reach = keyOf(view) === this.#viewKey() ? this.#older : undefined;
+    const workbenchView = view.kind === "inbox" ? ({ kind: "whole" } as const) : view;
+    const [answer, inbox] = await Promise.all([
+      answered(hud.timed(() => commands.workbench(this.#repository, workbenchView))),
+      view.kind === "inbox" ? this.#readInbox(question, reach) : undefined,
+    ]);
+    if (!this.#current(question)) return;
+    if (answer.status === "error") {
       this.error = answer.error.message;
+      return;
+    }
+    if (inbox?.status === "error") {
+      this.error = inbox.error;
+      return;
+    }
+    const items = inbox ? inbox.items : answer.data.items;
+    const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
+    const before = same ? this.items : undefined;
+    const changed = before ? this.#changing() : undefined;
+    this.items = items;
+    this.#drawn += 1;
+    this.#older = inbox?.older;
+    this.#shown = view;
+    this.#shownOrder = order;
+    this.#placeCursor(items, before);
+    changed?.();
+    this.count = answer.data.count;
+    this.reviewRequests = answer.data.review_requests;
+    this.staleReviews = answer.data.stale_reviews;
+    this.filters = answer.data.filters;
+    this.error = undefined;
+  }
+
+  /** Reads page `page` of the Inbox, timed as a view query. */
+  #inboxPage(page: InboxPage_Deserialize) {
+    return answered(hud.timed(() => commands.inbox(this.#repository, page)));
+  }
+
+  /**
+   * Reads the Inbox's pages for question `question`, from the first one down: the first alone while `reach`
+   * is unset, and otherwise each page until one ends where the pages on show ended, at cursor `reach`, or
+   * past it. Null `reach` reads every page the cache holds. Stops early once a newer question is asked.
+   */
+  async #readInbox(question: number, reach: InboxCursor | null | undefined): Promise<InboxPages> {
+    let items: ListedItem[] = [];
+    let page: InboxPage_Deserialize = { kind: "latest" };
+    for (;;) {
+      const answer = await this.#inboxPage(page);
+      if (answer.status === "error") return { status: "error", error: answer.error.message };
+      items = joined(items, answer.data.items);
+      const older: InboxCursor | null = answer.data.older;
+      const further = older !== null && reach !== undefined && (reach === null || comesBefore(older, reach));
+      if (!further || !this.#current(question)) return { status: "ok", items, older };
+      page = { kind: "older", after: older };
     }
   }
 }

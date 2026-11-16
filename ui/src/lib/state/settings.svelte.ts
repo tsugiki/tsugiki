@@ -2,6 +2,7 @@
 // opens, so this asks at start and holds what the dialog hands it (ADR 0014).
 import {
   commands,
+  type Conventions,
   type DiffFiles,
   type DiffPeek,
   type LanguageServerSettings_Serialize,
@@ -14,6 +15,7 @@ import { remapKeys } from "./keymap.svelte";
 export type Settings = Settings_Serialize;
 /** Where each language server is, and the idle time, as `machine.toml` holds them (#683). */
 export type LanguageServerSettings = LanguageServerSettings_Serialize;
+export type { Conventions };
 /** The settings, with what was wrong with the files the core read them from. */
 export type LoadedSettings = LoadedSettings_Serialize;
 
@@ -58,6 +60,12 @@ export class SettingsState {
     remapKeys(settings.keys);
     this.languageServers = language_servers;
     this.problems = problems;
+  }
+
+  /** The Conventions of Repository `name`, while the settings hold it. The Settings dialog doesn't change
+   * them, so they are the files' as the core last read them. */
+  conventionsOf(name: string): Conventions | undefined {
+    return this.settings?.repositories.find((repository) => repository.name === name)?.conventions;
   }
 
   /** Keeps a load from replacing the settings while the Settings dialog previews on them, or lets it

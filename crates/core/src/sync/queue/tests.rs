@@ -1173,7 +1173,7 @@ fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     let ahead = Ahead {
-        left: BTreeSet::from([3, 4]),
+        left: Some(BTreeSet::from([3, 4])),
         tried: BTreeSet::from([2]),
     };
     syncs.queue[0].sync.phase = Phase::ReadingAhead(ahead);
@@ -1182,6 +1182,6 @@ fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it
 
     assert!(matches!(
         &syncs.queue[0].sync.phase,
-        Phase::ReadingAhead(ahead) if ahead.left.is_empty() && ahead.tried == BTreeSet::from([2])
+        Phase::ReadingAhead(ahead) if ahead.left.is_none() && ahead.tried == BTreeSet::from([2])
     ));
 }

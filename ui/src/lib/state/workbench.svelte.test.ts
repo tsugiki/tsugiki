@@ -580,16 +580,57 @@ describe("WorkbenchState", () => {
 
   /** A Workbench whose one Filter is off, and the save of its switch, which the test answers. */
   const switchingOn = async () => {
-    catchListener();
-    const off = { ...answer(1), data: { ...answer(1).data, filters: [{ ...mine, on_workbench: false }] } };
-    vi.mocked(commands.workbench).mockResolvedValue(off);
+    const { send } = catchListener();
+    const off = () => ({
+      ...answer(1),
+      data: { ...answer(1).data, filters: [{ ...mine, on_workbench: false }] },
+    });
+    vi.mocked(commands.workbench).mockResolvedValue(off());
     const state = new WorkbenchState("python/cpython");
     await state.load();
     const save = Promise.withResolvers<{ status: "ok"; data: null } | typeof refused>();
     vi.mocked(commands.putFilterOnWorkbench).mockReturnValueOnce(save.promise);
     const line = () => state.filters[0] as FilterLine;
-    return { state, save, line };
+    return { state, save, line, send, off };
   };
+
+  it("keeps the first save's problem when a later one in the same run saves", async () => {
+    const { state, save } = await switchingOn();
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValue({ status: "ok", data: null });
+
+    const switching = state.putOnWorkbench(mine.query, true);
+    await state.putOnWorkbench("label:bug", true);
+    save.resolve(refused);
+    await switching;
+
+    expect(commands.putFilterOnWorkbench).toHaveBeenCalledTimes(2);
+    expect(state.switchProblem).toBe("no database");
+  });
+
+  it("drops an answer to a question asked before a save landed", async () => {
+    const { state, save, line, send, off } = await switchingOn();
+    // Settles what the answers so far set going. No polling, as a question out past the HUD's budget would
+    // have the HUD record a miss.
+    const settle = () => new Promise((settled) => setTimeout(settled, 0));
+    const stale = Promise.withResolvers<ReturnType<typeof off>>();
+    vi.mocked(commands.workbench).mockReturnValueOnce(stale.promise);
+    send("python/cpython");
+    const other = Promise.withResolvers<{ status: "ok"; data: null }>();
+    vi.mocked(commands.putFilterOnWorkbench).mockReturnValueOnce(other.promise);
+
+    const switching = state.putOnWorkbench(mine.query, true);
+    await state.putOnWorkbench("label:bug", true);
+    save.resolve({ status: "ok", data: null });
+    await settle();
+    expect(commands.putFilterOnWorkbench).toHaveBeenCalledTimes(2);
+    stale.resolve(off());
+    await settle();
+
+    expect(commands.workbench).toHaveBeenCalledTimes(2);
+    expect(state.onWorkbench(line())).toBe(true);
+    other.resolve({ status: "ok", data: null });
+    await switching;
+  });
 
   it("shows a switch as the user set it while it saves, and turns it back if the save fails", async () => {
     const { state, save, line } = await switchingOn();

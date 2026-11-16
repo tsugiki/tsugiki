@@ -411,7 +411,7 @@ fn hand_over_heads(
     let repository = &saved.repository;
     let settings = syncs.settings(repository)?;
     let facts = store.work_facts(repository).ok()?;
-    let _reached = hand_over_wants(fetching, store, settings, &facts);
+    hand_over_wants(fetching, store, settings, &facts);
     let saved_heads = (facts.pull_requests.iter())
         .filter(|pr| saved.items.contains(&pr.number))
         .filter_map(|pr| {
@@ -426,27 +426,25 @@ fn hand_over_heads(
 }
 
 /// Hands the Mirror worker what the rules want of the Repository of `settings`, whose stored facts are
-/// `facts`, as `hand_over_heads` says. Answers with its Reach.
+/// `facts`, as `hand_over_heads` says.
 fn hand_over_wants(
     fetching: &Fetching,
     store: &Store,
     settings: &RepositorySettings,
     facts: &WorkFacts,
-) -> BTreeSet<u32> {
+) {
     let repository = &settings.name;
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
     // that can't keep it says so at the next step that saves.
     let _kept = keep_last_checks(store, repository, facts);
-    let reached = reach(facts, settings);
-    let (heads, patches) = mirror_work(facts, settings, &reached);
+    let (heads, patches) = mirror_work(facts, settings);
     let want = MirrorWant {
         heads,
         reviewed,
         patches,
     };
     fetching.want(repository, want);
-    reached
 }
 
 /// The user saved `settings`, which the syncs read from now on, if the session has opened their Repository
@@ -456,8 +454,9 @@ fn hand_over_wants(
 /// the next refresh reads ahead while the PR is still in Reach. One switched off takes PRs out, and the
 /// Mirror worker stops wanting their heads.
 ///
-/// A store that can't answer leaves the heads to the next step that saves, and the Conversations to the PR
-/// view, which reads one when it opens. Says whether it handed anything over.
+/// A store that can't read the facts leaves the heads to the next step that saves. One that can't keep what
+/// it owes leaves the Conversations to the PR view, which reads one when it opens, and the log says so.
+/// Says whether it handed the Mirror worker anything.
 fn settings_changed(
     fetching: &Fetching,
     store: &Store,
@@ -468,13 +467,20 @@ fn settings_changed(
     let before = syncs.replace_settings(settings)?;
     let facts = store.work_facts(&repository).ok()?;
     let now = syncs.settings(&repository)?;
-    let reached = hand_over_wants(fetching, store, now, &facts);
+    hand_over_wants(fetching, store, now, &facts);
+    let reached = reach(&facts, now);
     let reached_before = reach(&facts, &before);
     let newly = (facts.pull_requests.iter())
         .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
         .map(|pr| (pr.number, pr.head.clone()))
         .collect();
-    store.owe_read_ahead_at(&repository, newly).ok()
+    if let Err(problem) = store.owe_read_ahead_at(&repository, newly) {
+        log::warn!(
+            "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",
+            problem.message
+        );
+    }
+    Some(())
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose

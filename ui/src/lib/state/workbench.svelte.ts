@@ -62,6 +62,10 @@ export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
 const said = (answer: { status: "ok" } | { status: "error"; error: { message: string } }) =>
   answer.status === "error" ? answer.error.message : undefined;
 
+/** The answer `asking` brings, with a command that threw read as one that answered with what it threw. */
+const answered = <T>(asking: Promise<T>) =>
+  asking.catch((e: unknown) => ({ status: "error" as const, error: { message: String(e) } }));
+
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
@@ -273,18 +277,25 @@ export class WorkbenchState {
   /** Puts the Filter that searches `query` on the Workbench, or takes it off (#819). One save goes at a
    * time, as two could land in either order, so a change made while one saves waits for it, and goes with
    * the switch as the user last set it. Once none is left to save, it asks again, as the Sidebar counts
-   * such a Filter another way. Keeps the reason a save failed in `switchProblem` until the next one. */
+   * such a Filter another way. Keeps the reason the first save of such a run failed in `switchProblem`,
+   * until the next run. */
   async putOnWorkbench(query: string, on: boolean) {
     this.#wanted.set(query, on);
     if (this.switching) return;
     this.switching = true;
+    // The first save of the run that fails says why, though a later one saves.
+    let failed: string | undefined;
     for (let next = this.#wanted.entries().next(); !next.done; next = this.#wanted.entries().next()) {
       const [query, on] = next.value;
-      const answer = await commands
-        .putFilterOnWorkbench({ repository: this.#repository, query, on })
-        .catch((e: unknown) => ({ status: "error" as const, error: { message: String(e) } }));
+      const answer = await answered(
+        commands.putFilterOnWorkbench({ repository: this.#repository, query, on }),
+      );
+      // An answer to a question asked before the save landed reads the settings as they were, so this has
+      // `#ask` drop it, and the next question reads them as saved.
+      this.#lastQuestion += 1;
       const problem = said(answer);
-      this.switchProblem = problem;
+      failed ??= problem;
+      this.switchProblem = failed;
       // The settings hold the switch as saved from now on, though the Sidebar's lines say so only once the
       // answer to the next question arrives.
       const saved = problem === undefined && this.filters.find((filter) => filter.query === query);
@@ -394,12 +405,7 @@ export class WorkbenchState {
     const question = this.#lastQuestion;
     const view = this.selected;
     const order = this.#order();
-    const answer = await hud
-      .timed(() => commands.workbench(this.#repository, view))
-      .catch((e: unknown) => ({
-        status: "error" as const,
-        error: { message: String(e) },
-      }));
+    const answer = await answered(hud.timed(() => commands.workbench(this.#repository, view)));
     // A newer question reads newer facts, so this drops an older answer that arrives late. A stopped state
     // belongs to a Repository the window has left.
     if (question !== this.#lastQuestion || this.#stopped) return;

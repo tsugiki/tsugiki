@@ -1196,6 +1196,48 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
 }
 
 #[test]
+fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_owed() {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync(
+        "switched-reading-ahead",
+        vec![quiet, approved(), approved()],
+    );
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    stored_filter(&harness, "b", &[3]);
+    let mut b_off = filtering(&["a", "b"]);
+    b_off.filters[1].on_workbench = OnWorkbench::Off;
+    harness
+        .store
+        .owe_read_ahead_at(&cpython(), vec![(2, None)])
+        .unwrap();
+    let mut syncs = refreshing(b_off);
+    while reviews_held(&harness, 2).is_none() {
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+    }
+
+    // As the session does when the user switches "b" on.
+    drop(syncs.replace_settings(filtering(&["a", "b"])));
+    harness
+        .store
+        .owe_read_ahead_at(&cpython(), vec![(3, None)])
+        .unwrap();
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchPullRequestContent",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 3), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
 fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
     let harness = after_a_sync("switch-owed", vec![quiet, approved()]);

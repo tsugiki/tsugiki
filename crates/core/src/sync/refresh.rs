@@ -479,20 +479,21 @@ pub(super) fn to_read_ahead(
 }
 
 /// Reads the Conversation of the next PR `ahead` has left, with its Reviews and their threads: about a point
-/// each. With none left, it asks the store again under `repository`'s settings as they are now, for what a
-/// Filter switched on owed since, and finishes once that holds nothing new. Trouble with one PR leaves the
-/// rest to read, and the PR view reads that one when it opens. Only trouble that speaks for all of GitHub
-/// stops the refresh.
+/// each, and finishes once none are left. After a change to the settings it first asks the store again,
+/// under `repository`'s settings as they are now, for the PRs it hasn't tried yet. Trouble with one PR leaves
+/// the rest to read, and the PR view reads that one when it opens. Only trouble that speaks for all of
+/// GitHub stops the refresh.
 pub(super) fn read_ahead(
     link: &Link<'_>,
     ahead: &mut Ahead,
     repository: &RepositorySettings,
 ) -> Result<Moved, Error> {
-    if ahead.left.is_empty() {
+    if ahead.left.is_none() {
         let owed = to_read_ahead(link, repository)?;
-        ahead.left = owed.difference(&ahead.tried).copied().collect();
+        ahead.left = Some(owed.difference(&ahead.tried).copied().collect());
     }
-    let Some(number) = ahead.left.first().copied() else {
+    let left = ahead.left.get_or_insert_default();
+    let Some(number) = left.first().copied() else {
         return Ok((Step::Finished, None));
     };
     let step = match link.github.pull_request_content(link.repository, number) {
@@ -513,7 +514,7 @@ pub(super) fn read_ahead(
         }
         Err(problem) => return Err(problem),
     };
-    let _read = ahead.left.remove(&number);
+    let _read = left.remove(&number);
     let _tried = ahead.tried.insert(number);
     Ok((step, None))
 }

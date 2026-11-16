@@ -6,12 +6,11 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{CantCheck, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts};
-use crate::facts::pull_requests::PrHead;
 use crate::facts::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
-use crate::work::{Causes, Why, YourReview, checks_to_keep, mirror_work, reach};
+use crate::work::{Causes, Why, YourReview, checks_to_keep, mirror_work};
 use crate::workbench::testing::{
     BOT, at, backport, bots_backport, cpython, issue, me, outline, own, reviewed_workbench,
     rows_of, someone, stranger, view_of,
@@ -300,13 +299,7 @@ fn of(digit: char, target_branch: &str) -> PatchesOf {
 
 /// The commits the check asks the mirror to read for the user's work in `facts`.
 fn to_read(facts: WorkFacts) -> Vec<PatchesOf> {
-    work_of(&facts).1
-}
-
-/// What the Mirror is asked for of the user's work in `facts`.
-fn work_of(facts: &WorkFacts) -> (Vec<PrHead>, Vec<PatchesOf>) {
-    let reached = reach(facts, &cpython());
-    mirror_work(facts, &cpython(), &reached)
+    mirror_work(&facts, &cpython()).1
 }
 
 #[test]
@@ -460,7 +453,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
         ..facts(pull_requests, reviews)
     };
 
-    let (heads, patches) = work_of(&facts);
+    let (heads, patches) = mirror_work(&facts, &cpython());
 
     let fetched: Vec<u32> = heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [1, 5]);

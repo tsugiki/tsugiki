@@ -89,9 +89,9 @@ enum Phase {
 
 /// The PRs a refresh reads ahead.
 struct Ahead {
-    /// Those still to read. Once none are left, the refresh asks the store again, which a switch of a
-    /// Filter can have owed more since, and a change to the settings empties it to have it ask at once.
-    left: BTreeSet<u32>,
+    /// Those still to read, or None once a change to the settings has the refresh ask the store again: a
+    /// Filter switched on can owe more, and one switched off takes PRs out of Reach.
+    left: Option<BTreeSet<u32>>,
     /// Those this refresh has asked GitHub for, so it asks for each once.
     tried: BTreeSet<u32>,
 }
@@ -318,7 +318,7 @@ impl UserWorkSync {
     /// read: a Filter switched on can owe more, and one switched off takes PRs out of Reach.
     fn reach_changed(&mut self) {
         if let Phase::ReadingAhead(ahead) = &mut self.phase {
-            ahead.left.clear();
+            ahead.left = None;
         }
     }
 
@@ -495,6 +495,7 @@ impl UserWorkSync {
             let left = refresh::to_read_ahead(&link, settings)?;
             if !left.is_empty() {
                 let tried = BTreeSet::new();
+                let left = Some(left);
                 self.phase = Phase::ReadingAhead(Ahead { left, tried });
                 return Ok(Step::Moved);
             }

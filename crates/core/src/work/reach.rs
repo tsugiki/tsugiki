@@ -127,21 +127,20 @@ pub(crate) fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTree
 /// Review, apart from a Bot backport, which shares its Origin PR's review state. A merged or closed PR's
 /// check reads only while its head is among those fetched. It runs once on the final head, and its verdict
 /// freezes with the PR.
-/// `reached` is what `reach` gives of `facts` under `repository`'s settings.
 pub fn mirror_work(
     facts: &WorkFacts,
     repository: &RepositorySettings,
-    reached: &BTreeSet<u32>,
 ) -> (Vec<PrHead>, Vec<PatchesOf>) {
     let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
     let unread = unread_sides(facts, &shared);
-    let heads = reached_heads(facts, reached);
+    let heads = reached_heads(facts, repository);
     let patches = patches_to_read(unread, &heads);
     (heads, patches)
 }
 
-/// The head of each PR of `reached`, in the order of their numbers.
-fn reached_heads(facts: &WorkFacts, reached: &BTreeSet<u32>) -> Vec<PrHead> {
+/// The head of each PR Tsugiki reaches, in the order of their numbers.
+fn reached_heads(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
+    let reached = reach(facts, repository);
     let heads: BTreeMap<u32, PrHead> = (facts.pull_requests.iter())
         .filter(|pr| reached.contains(&pr.number))
         .filter_map(|pr| {

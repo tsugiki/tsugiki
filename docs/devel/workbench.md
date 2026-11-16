@@ -16,8 +16,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   them. The sync still runs its search, so its view lists what it found, its **Matched PRs** first. In an
   Issue view, a PR any Filter found, switched on or off, stays out of the fold.
 - Switching a Filter on puts its items in Reach at once: the Mirror fetches the heads of the PRs it newly
-  reaches, and the next refresh, within 3 minutes, reads ahead the Conversation of each of those PRs that
-  Tsugiki hasn't read at the PR's head, while the PR is still in Reach. Switching one off stops the Mirror
+  reaches, and the Repository's next refresh reads ahead the Conversation of each of those PRs that Tsugiki
+  hasn't read at the PR's head, while the PR is still in Reach. Switching one off stops the Mirror
   wanting the heads of the PRs it alone reached, and the refresh reads none of them ahead.
 - A Filter's view goes by its search, so a Repository holds one Filter for each search: of two with the
   same search, Tsugiki reads the first.

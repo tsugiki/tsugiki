@@ -1151,6 +1151,52 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     assert!(off.iter().all(|line| !line.contains("#8")), "{off:?}");
 }
 
+/// Switches the Bugs Filter on, which finds PR 8, with the store losing call `lost`, if any. Answers with
+/// what the switch said, what the Mirror heard, how many calls the store had, and the reads it owes after.
+fn switch_bugs_on_losing(lost: Option<usize>) -> (Option<()>, Vec<String>, usize, BTreeSet<u32>) {
+    let store = store_remembering("octocat");
+    let stored = vec![stored_pr(8, "some-author", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    let (lossy, calls) = store.failing_at_call(lost);
+    let (mirrors, heard) = HeardRequests::new();
+    let (messages, _incoming) = mpsc::channel();
+    let fetching = Fetching::new(messages, mirrors);
+    let mut syncs = Syncs::default();
+    syncs.add(bugs_switched(OnWorkbench::Off));
+
+    let switched = settings_changed(
+        &fetching,
+        &lossy,
+        &mut syncs,
+        bugs_switched(OnWorkbench::On),
+    );
+
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    (switched, heard.asked(), calls.try_iter().count(), owed)
+}
+
+#[test]
+fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirror_its_heads() {
+    let (_, _, calls, owed) = switch_bugs_on_losing(None);
+    assert_eq!(owed, [8].into());
+
+    let (switched, asked, _, owed) = switch_bugs_on_losing(Some(calls - 1));
+
+    assert_eq!(switched, Some(()));
+    assert!(
+        asked.iter().any(|line| line.contains("#8 at 4567def")),
+        "{asked:?}"
+    );
+    assert_eq!(owed, BTreeSet::new());
+}
+
 #[test]
 fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let (folders, _folder) = temp_folders("switched-session");

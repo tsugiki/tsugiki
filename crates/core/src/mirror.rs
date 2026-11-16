@@ -311,7 +311,7 @@ impl Remotes {
 enum Message {
     /// A clone to make, with the user's answer of where it gets its objects, if they have given one.
     Clone(RepositoryName, Turn, Option<MirrorSource>),
-    /// The heads of the PRs the user's work reaches in a Repository, as the store has them now.
+    /// The heads of the PRs in a Repository's Reach, as the store has them now.
     Heads(RepositoryName, Vec<PrHead>),
     /// The commits the user's Reviews in a Repository covered, as the store has them now.
     Reviewed(RepositoryName, Vec<ReviewedCommit>),
@@ -787,9 +787,9 @@ struct Heads {
     /// An opened PR's head waits, which goes ahead of the other Repositories' heads, even when this
     /// Repository's fetch is under way. The next fetch takes it.
     opened: bool,
-    /// The PRs of the last hand-over: those the user's work reaches. Nothing before the first one.
+    /// The PRs of the last hand-over: those in Reach. Nothing before the first one.
     handed: Option<BTreeSet<u32>>,
-    /// The PRs the user opened since launch, whose refs stay though the user's work doesn't reach them.
+    /// The PRs the user opened since launch, whose refs stay though they're out of Reach.
     viewed: BTreeSet<u32>,
     /// The commits the user's Reviews covered.
     reviews: Reviews,

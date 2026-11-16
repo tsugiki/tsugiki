@@ -134,7 +134,7 @@ pub(super) fn forget_read_ahead_of(
         .map(drop)
 }
 
-/// A finished refresh has read ahead each PR it owed, or found the user's work doesn't reach it.
+/// A finished refresh has read ahead each PR it owed, or found it out of Reach.
 fn forget_read_ahead(connection: &Connection, repository: &RepositoryName) -> rusqlite::Result<()> {
     connection
         .execute(

@@ -1,4 +1,4 @@
-//! Keeping each mirror in shape (#174). The refs of PRs the user's work no longer reaches go, though their
+//! Keeping each mirror in shape (#174). The refs of PRs no longer in Reach go, though their
 //! reviewed refs stay (#382), git's packs get their upkeep on a schedule, and a mirror git says is broken is
 //! cloned again. The worker runs it all itself, with `maintenance.auto=false` in each mirror, and never
 //! `git maintenance start`, which writes to the user's global config and installs a job in the OS.
@@ -243,7 +243,7 @@ impl Worker {
     }
 
     /// Starts the upkeep of the first mirror that is due, if one is. It reads the mirror's PR refs first,
-    /// to delete those of PRs the user's work no longer reaches.
+    /// to delete those of PRs no longer in Reach.
     pub(super) fn start_upkeep(&mut self) {
         let (Some(schedule), Ok(folders)) = (self.remotes.upkeep, &self.folders) else {
             return;
@@ -267,7 +267,7 @@ impl Worker {
     }
 
     /// The PRs whose refs are in `mirror` though the last hand-over didn't reach them and the user hasn't
-    /// opened them since launch. None before the first hand-over, which says what the user's work reaches.
+    /// opened them since launch. None before the first hand-over, which says what's in Reach.
     fn stale_refs(&self, repository: &RepositoryName, mirror: &Path) -> Vec<u32> {
         let known = self
             .heads

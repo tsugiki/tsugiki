@@ -10,12 +10,12 @@ use crate::facts::pull_requests::{LatestReview, PrState, PullRequestFacts, Revie
 use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
-use crate::workbench::attention::Causes;
+use crate::work::{Causes, Why, YourReview, checks_to_keep, mirror_work};
 use crate::workbench::testing::{
     BOT, at, backport, bots_backport, cpython, issue, me, outline, own, reviewed_workbench,
-    someone, stranger,
+    rows_of, someone, stranger, view_of,
 };
-use crate::workbench::{Why, Workbench, WorkbenchItem, WorkbenchView, YourReview};
+use crate::workbench::{Workbench, WorkbenchItem, WorkbenchView};
 
 fn sha(digit: char) -> CommitSha {
     CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
@@ -297,7 +297,7 @@ fn of(digit: char, target_branch: &str) -> PatchesOf {
 
 /// The commits the check asks the mirror to read for the user's work in `facts`.
 fn to_read(facts: WorkFacts) -> Vec<PatchesOf> {
-    Workbench::mirror_work(facts, &cpython()).1
+    mirror_work(&facts, &cpython()).1
 }
 
 #[test]
@@ -395,10 +395,7 @@ fn a_check_keeps_the_commits_it_compared_once_both_sides_are_read() {
     drop(reviews.last_checks.insert(3, last.clone()));
     let pull_requests = vec![reviewed_pr(), kept, pending];
 
-    assert_eq!(
-        Workbench::checks_to_keep(&facts(pull_requests, reviews)),
-        [(1, last)]
-    );
+    assert_eq!(checks_to_keep(&facts(pull_requests, reviews)), [(1, last)]);
 }
 
 #[test]
@@ -454,7 +451,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
         ..facts(pull_requests, reviews)
     };
 
-    let (heads, patches) = Workbench::mirror_work(facts, &cpython());
+    let (heads, patches) = mirror_work(&facts, &cpython());
 
     let fetched: Vec<u32> = heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [1, 5]);
@@ -489,7 +486,7 @@ fn states_of(
 ) -> BTreeMap<u32, YourReview> {
     let workbench = reviewed_workbench(pull_requests, vec![], reviews);
     let listed = workbench.items.iter().chain(&workbench.quiet);
-    let rows = listed.flat_map(|listed| listed.item.rows().into_iter().cloned());
+    let rows = listed.flat_map(|listed| rows_of(&listed.item));
     rows.map(|row| (row.number, row.your_review)).collect()
 }
 
@@ -639,7 +636,7 @@ fn stale_view(
         issues,
         ..facts(pull_requests, reviews)
     };
-    Workbench::from_facts(facts, &cpython(), &WorkbenchView::StaleReviews)
+    view_of(facts, &WorkbenchView::StaleReviews)
 }
 
 /// PR `number` like PR 1, which the user reviewed at commit 1, at `head` and fixing Issue `issue`.
@@ -692,12 +689,11 @@ fn the_stale_reviews_view_lists_the_open_prs_with_a_stale_review_in_their_issues
     let issues = vec![issue(10), issue(20), issue(30)];
 
     let view = stale_view(pull_requests.clone(), issues.clone(), reviews.clone());
-    let whole = Workbench::from_facts(
+    let whole = view_of(
         WorkFacts {
             issues,
             ..facts(pull_requests, reviews)
         },
-        &cpython(),
         &WorkbenchView::Whole,
     );
 

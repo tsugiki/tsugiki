@@ -141,7 +141,7 @@ type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 /// What a sync hands the mirror of a Repository, each time it saves its facts.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MirrorWork {
-    /// The heads of the PRs the user's work reaches, to fetch.
+    /// The heads of the PRs in Reach, to fetch.
     pub heads: Vec<PrHead>,
     /// The commits the user's Reviews covered, to keep.
     pub reviewed: Vec<ReviewedCommit>,

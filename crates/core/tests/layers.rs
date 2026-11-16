@@ -3,6 +3,9 @@
 //! cycle. `ui/eslint/layers.ts` does the same for the UI. Clippy can't see a `crate::` path, so this test
 //! reads the source as text.
 //!
+//! The modules of `FUNCTIONAL_CORE` take facts and return values, so their lines may list no module of
+//! `SHELL`, which opens connections, runs git or sends messages.
+//!
 //! Text is enough while the core keeps its paths plain: no grouped `crate::{...}` import, no `pub use` in
 //! `lib.rs`, and no `super::` path that leaves its top-level module. The test fails on each of those, so none
 //! can hide a dependency. Test code doesn't count: it lives in `tests.rs`, `testing.rs` and `tests/` folders,
@@ -133,7 +136,7 @@ const LAYERS: &[Layer] = &[
     Layer {
         module: "facts",
         uses: &["filters", "login"],
-        why: "Holds the facts the rules judge: what `github` parses, the patch-ids the Mirror worker reads, \
+        why: "Holds the facts `work` judges: what `github` parses, the patch-ids the Mirror worker reads, \
               and the bundles the store fills. They belong to neither the client nor the store, so a module \
               that judges facts needs neither. A bundle names each Filter's results by its query.",
     },
@@ -194,6 +197,22 @@ const LAYERS: &[Layer] = &[
         module: "activity",
         uses: &["conventions", "facts", "links", "login"],
         why: "Works out New activity from the facts the store keeps, and counts a Backport through `links`.",
+    },
+    Layer {
+        module: "work",
+        uses: &[
+            "activity",
+            "conventions",
+            "facts",
+            "filters",
+            "links",
+            "login",
+            "patch_ids",
+            "repository_settings",
+        ],
+        why: "Judges each Issue and PR from its facts: its place on the Workbench, why it Needs attention \
+              through `activity`, and the user's Review through `patch_ids`. It works out Reach through \
+              `links`, and from Reach the Mirror's work. `sync` and `session` act on it without the screens.",
     },
     Layer {
         module: "diff",
@@ -263,7 +282,6 @@ const LAYERS: &[Layer] = &[
     Layer {
         module: "workbench",
         uses: &[
-            "activity",
             "conventions",
             "diff",
             "error",
@@ -274,13 +292,14 @@ const LAYERS: &[Layer] = &[
             "links",
             "login",
             "mirror",
-            "patch_ids",
             "repository",
             "repository_settings",
             "settings",
             "store",
+            "work",
         ],
-        why: "Builds the view models, which show what each module below works out.",
+        why: "Groups what `work` judges into the Workbench's items and builds the view models, which show \
+              what each module below works out.",
     },
     Layer {
         module: "sync",
@@ -297,9 +316,10 @@ const LAYERS: &[Layer] = &[
             "status",
             "store",
             "token",
-            "workbench",
+            "work",
         ],
-        why: "Asks GitHub for facts and saves them, then tells the Workbench and the status what changed.",
+        why: "Asks GitHub for facts and saves them, then tells the Workbench and the status what changed. \
+              `work` says which PRs it reads ahead.",
     },
     Layer {
         module: "session",
@@ -315,9 +335,10 @@ const LAYERS: &[Layer] = &[
             "store",
             "sync",
             "token",
-            "workbench",
+            "work",
         ],
-        why: "Runs the session thread, which owns the store, the syncs and the Workbench.",
+        why: "Runs the session thread, which owns the store and the syncs, and hands the Mirror the heads \
+              and commits `work` picks.",
     },
 ];
 
@@ -330,6 +351,13 @@ struct Cycle {
 
 /// The edges that close a cycle. None do: a new one needs its reason here, and an issue to break it.
 const CYCLES: &[Cycle] = &[];
+
+/// The functional core: these modules take facts and return values.
+const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "work"];
+
+/// The imperative shell, which the functional core may not use: the database, `github`'s client, the
+/// Mirrors, the values threads share, and the threads that sync.
+const SHELL: &[&str] = &["github", "latest", "mirror", "session", "store", "sync"];
 
 /// A file of the core: its path below `crates/core/src` with `/` between folders, and its text.
 struct Source {
@@ -605,6 +633,25 @@ fn sources(root: &Path, dir: &Path) -> Vec<Source> {
     found
 }
 
+/// Each module of `core` whose line in `layers` lets it use a module of `shell`, and each with no line.
+/// Since a module may use only what its line lists, no module of `core` can then use `shell`.
+fn shell_problems(layers: &[Layer], core: &[&str], shell: &[&str]) -> Vec<String> {
+    let mut found = Vec::new();
+    for module in core {
+        let Some(layer) = layers.iter().find(|layer| layer.module == *module) else {
+            found.push(format!(
+                "`{module}` is in the functional core, but has no line in LAYERS"
+            ));
+            continue;
+        };
+        let used = layer.uses.iter().filter(|target| shell.contains(target));
+        found.extend(used.map(|target| {
+            format!("`{module}` may use `{target}`, but the functional core keeps out of the shell")
+        }));
+    }
+    found
+}
+
 fn source(path: &str, text: &str) -> Source {
     Source {
         path: path.to_owned(),
@@ -796,6 +843,28 @@ fn a_line_without_a_reason_is_found() {
         check(&[error], &[], &["error"], &[]),
         ["`error`'s line in LAYERS gives no reason"]
     );
+}
+
+#[test]
+fn a_functional_core_module_that_may_use_the_shell_is_found() {
+    let links = Layer {
+        module: "links",
+        uses: &["error", "store"],
+        why: "Links PRs, and reads them from the store.",
+    };
+    assert_eq!(
+        shell_problems(&[SAMPLE[0], links], &["links", "work"], &["store"]),
+        [
+            "`links` may use `store`, but the functional core keeps out of the shell",
+            "`work` is in the functional core, but has no line in LAYERS",
+        ]
+    );
+}
+
+#[test]
+fn the_functional_core_keeps_out_of_the_shell() {
+    let problems = shell_problems(LAYERS, FUNCTIONAL_CORE, SHELL);
+    assert!(problems.is_empty(), "{problems:#?}");
 }
 
 #[test]

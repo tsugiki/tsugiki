@@ -5,13 +5,12 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
-use super::attention::Causes;
-use super::review_state::SharedReviews;
 use super::{WorkbenchRow, candidates};
 use crate::error::Error;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::repository_settings::RepositorySettings;
 use crate::store::StoreReader;
+use crate::work::{Causes, SharedReviews};
 
 /// A PR as the Detail pane shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

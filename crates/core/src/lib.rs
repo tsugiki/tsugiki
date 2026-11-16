@@ -37,6 +37,7 @@ pub mod theme;
 pub mod token;
 pub mod version;
 pub mod web;
+pub mod work;
 pub mod workbench;
 
 use serde::Serialize;

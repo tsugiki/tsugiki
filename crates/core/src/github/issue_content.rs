@@ -1,6 +1,6 @@
 //! The description and recent comments of one Issue or PR, as GitHub renders them. Only the Issue view and
 //! the PR view's Conversation show them, so Tsugiki asks when one opens and while it's on screen. A refresh
-//! reads ahead only the Conversations of the PRs the user's work reaches (ADR 0015).
+//! reads ahead only the Conversations of the PRs in Reach (ADR 0015).
 
 use serde::de::{DeserializeOwned, Error as _};
 use serde::{Deserialize, Deserializer};

@@ -54,7 +54,7 @@ pub const FETCH_BATCH: usize = 25;
 
 /// The progress of one Repository's sync.
 struct UserWorkSync {
-    /// The Repository's settings as the sync started, which say which PRs the user's work reaches.
+    /// The Repository's settings as the sync started, which say which PRs are in Reach.
     settings: RepositorySettings,
     /// The search of each Filter, each once.
     filters: Vec<FilterQuery>,
@@ -82,7 +82,7 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish reads the Conversations of the changed PRs the user's work reaches,
+    /// A refresh that would finish reads the Conversations of the changed PRs in Reach,
     /// lowest number first (#157).
     ReadingAhead(BTreeSet<u32>),
 }

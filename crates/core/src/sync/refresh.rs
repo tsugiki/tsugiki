@@ -1,7 +1,7 @@
 //! A sync after the first (ADR 0015). It asks what changed since the last one, fetches that, and probes the
 //! user's open PRs for what changes without moving `updatedAt`. It then joins a first sync's later phases, so
 //! each Issue it found changed or newly reached gets its tree read. Before it finishes, it reads the
-//! Conversation of each changed PR the user's work reaches, so the PR view opens on its Reviews (#157).
+//! Conversation of each changed PR in Reach, so the PR view opens on its Reviews (#157).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,7 +23,7 @@ use crate::login::Login;
 use crate::repository::RepositorySize;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
-use crate::workbench::{Workbench, reasons};
+use crate::work::{reach, reasons};
 
 /// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
 /// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
@@ -462,7 +462,7 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// The PRs the user's work reaches among those this refresh found changed, and any a refresh that stopped
+/// The PRs in Reach among those this refresh found changed, and any a refresh that stopped
 /// left unread. Their Conversations are worth reading before the user opens them, and a stranger's PR waits
 /// until then.
 pub(super) fn to_read_ahead(
@@ -473,7 +473,7 @@ pub(super) fn to_read_ahead(
     if changed.is_empty() {
         return Ok(changed);
     }
-    let reached = Workbench::reached(link.store.work_facts(link.repository)?, repository);
+    let reached = reach(&link.store.work_facts(link.repository)?, repository);
     Ok(changed.intersection(&reached).copied().collect())
 }
 

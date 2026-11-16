@@ -10,15 +10,12 @@ mod links;
 pub mod pr_files;
 pub mod pr_view;
 pub mod quick_open;
-mod review_state;
 mod rows;
 
-pub use attention::{Attention, Seen, SeenMark, SeenState, Why};
+pub use attention::{Attention, Seen, SeenState};
 pub use filters::FilterLine;
 pub use issues::IssueItem;
-pub use review_state::YourReview;
-pub(crate) use rows::reasons;
-pub use rows::{WorkReason, WorkbenchRow};
+pub use rows::WorkbenchRow;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,19 +27,17 @@ use time::OffsetDateTime;
 use crate::error::Error;
 use crate::facts::WorkFacts;
 use crate::facts::issues::IssueFacts;
-use crate::facts::patch_ids::{LastCheck, PatchesOf};
-use crate::facts::pull_requests::PrHead;
 use crate::filters::FilterQuery;
 use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
-use attention::Causes;
+use crate::work::{Causes, in_own_right};
+use attention::{attention_of, seen_of};
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
 use links::link;
-use review_state::SharedReviews;
 use rows::row;
 
 /// A Backport's line of the list.
@@ -161,62 +156,6 @@ pub struct Workbench {
 }
 
 impl Workbench {
-    /// What the mirror is to do for the user's work. It fetches the heads of the PRs that work reaches:
-    /// each PR on the whole Workbench, the quiet items' and those in Issues' trees too. A PR stored before
-    /// Tsugiki read heads has none to give. It reads the commits whose per-file patch-ids the Stale review
-    /// check still needs: the reviewed commit and the head of each PR whose head moved on from the user's
-    /// Review, apart from a Bot backport, which shares its Origin PR's review state. A merged or closed PR's
-    /// check reads only while its head is among those fetched. It runs once on the final head, and its
-    /// verdict freezes with the PR.
-    pub fn mirror_work(
-        facts: WorkFacts,
-        repository: &RepositorySettings,
-    ) -> (Vec<PrHead>, Vec<PatchesOf>) {
-        let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
-        let unread = review_state::unread_sides(&facts, &shared);
-        let heads = Self::reached_heads(facts, repository);
-        let patches = review_state::patches_to_read(unread, &heads);
-        (heads, patches)
-    }
-
-    fn reached_heads(facts: WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
-        let mut heads: BTreeMap<u32, PrHead> = facts
-            .pull_requests
-            .iter()
-            .filter_map(|pr| {
-                let head = PrHead {
-                    number: pr.number,
-                    commit: pr.head.clone()?,
-                    target_branch: pr.target_branch.clone(),
-                };
-                Some((pr.number, head))
-            })
-            .collect();
-        Self::reached(facts, repository)
-            .into_iter()
-            .filter_map(|number| heads.remove(&number))
-            .collect()
-    }
-
-    /// The two commits of each PR whose check has both sides read, for the store to keep as its last check,
-    /// those it keeps already left out. Their verdict stands while a newer check waits.
-    pub fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
-        review_state::checks_to_keep(facts)
-    }
-
-    /// The numbers of the Issues and PRs the user's work reaches: each on the whole Workbench, the quiet
-    /// items and those in Issues' trees too.
-    pub(crate) fn reached(facts: WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
-        let whole = Self::from_facts(facts, repository, &WorkbenchView::Whole);
-        whole
-            .items
-            .iter()
-            .chain(&whole.quiet)
-            .flat_map(|listed| listed.item.rows())
-            .map(|row| row.number)
-            .collect()
-    }
-
     /// Reads the view `view` of `repository`'s Workbench, its items in `order`. This waits on the database
     /// and never on a sync (ADR 0018).
     pub fn read(
@@ -246,9 +185,10 @@ impl Workbench {
         repository: &RepositorySettings,
         view: &WorkbenchView,
     ) -> Self {
+        let causes = Causes::of(&facts, repository.conventions);
+        let own_right = in_own_right(&facts, repository, &causes);
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
-        let causes = Causes::of(&facts, repository.conventions);
         let selected = match view {
             WorkbenchView::Whole => None,
             WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
@@ -259,15 +199,10 @@ impl Workbench {
             candidates(facts, repository, selected.unwrap_or(&matched), &causes)
                 .into_iter()
                 .map(|item| ListedItem {
-                    attention: causes.attention_of(&item),
+                    attention: attention_of(&causes, &item),
                     item,
                 })
                 .collect();
-        let on_workbench = |listed: &&ListedItem| {
-            listed.attention.is_some()
-                || any_reason(&listed.item.rows())
-                || listed.item.is_reached_by(&matched)
-        };
         let lines = filters.lines(&listed);
         let count = count_of(listed.iter().filter(|listed| listed.attention.is_some()));
         let review_requests = count_of(
@@ -278,7 +213,8 @@ impl Workbench {
         let stale_reviews = prs_of(&listed, &causes.stale_reviews);
         let shown = listed.iter().filter(|listed| match selected {
             Some(numbers) => listed.item.is_reached_by(numbers),
-            None => on_workbench(listed),
+            // The item is on the Workbench when anything in its tree is, in its own right.
+            None => listed.item.is_reached_by(&own_right),
         });
         let (items, quiet) = sections(shown.cloned().collect());
         Self {
@@ -337,7 +273,10 @@ fn candidates(
         return Vec::new();
     };
     let linked = link(facts.pull_requests, &facts.issues, repository, |pr| {
-        let (seen, review) = (causes.seen_of(vec![pr.number]), causes.review_of(pr.number));
+        let (seen, review) = (
+            seen_of(causes, vec![pr.number]),
+            causes.review_of(pr.number),
+        );
         row(pr, &viewer, review, seen)
     });
     let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
@@ -363,17 +302,13 @@ fn candidates(
             .iter()
             .flat_map(TreeEntry::rows)
             .map(|row| row.number);
-        let seen = causes.seen_of(std::iter::once(issue.number).chain(tree).collect());
+        let seen = seen_of(causes, std::iter::once(issue.number).chain(tree).collect());
         issue_item(issue, entries, repository.conventions, seen)
     }));
     items
 }
 
-fn any_reason(rows: &[&WorkbenchRow]) -> bool {
-    rows.iter().any(|row| !row.reasons.is_empty())
-}
-
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;

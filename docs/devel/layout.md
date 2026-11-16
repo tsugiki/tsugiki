@@ -33,11 +33,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - **By last update**: each item newest first by its last update.
 
     All issues, Archived and Muted keep their own order and show no switch. The items with nothing waiting
-    on the user stay in the one list, with no heading or fold of their own. When the user marks the item
-    under the cursor seen and nothing else there Needs attention, the cursor moves on to the row that came
-    after it, while By attention drops the item below what still waits. A sync that takes the attention off
-    the item under the cursor moves the cursor the same way, and the focus with it if a row of the list had
-    it. Mark Seen on an item with nothing waiting, and any other change, leave the cursor on its item.
+    on the user stay in the one list, with no heading or fold of their own. When the cursor is on an item's
+    own row and the item stops Needing attention, whether the user marked it seen or a sync cleared it, the
+    cursor moves on to the row that came after it, while By attention drops the item below what still
+    waits. After the user's own Mark Seen, an item that leaves the list moves the cursor the same way. A
+    Mark Seen from the list takes the focus to that row, and a sync moves the focus only when a row of the
+    list held it. A cursor on a PR in a tree, Mark Seen on an item with nothing waiting, a change of order or
+    view, and any other change leave the cursor on its row.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
     it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes

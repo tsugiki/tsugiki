@@ -2168,7 +2168,8 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
 });
 
 /** A window on three Standalone PRs that Need attention, #5, #6 and #8, the cursor on #5 and #5 on show.
- * `markedSeen` answers as the core does once it saved Mark Seen on #5, which drops it below the others. */
+ * `markedSeen` answers as the core does once it saved Mark Seen on #5, or once a sync took #5's attention,
+ * which drops it below the others, and says that the change names `items`. */
 const threeAlone = async () => {
   const send = catchChanged();
   const alone = (number: number, title: string) => ({
@@ -2198,9 +2199,9 @@ const threeAlone = async () => {
   });
   const marked = await screen.findByRole("button", { name: "#5 Alone" });
   await fireEvent.click(marked);
-  const markedSeen = () => {
+  const markedSeen = (items = [5]) => {
     core.workbench.mockResolvedValue(answer([next, last, { ...first, attention: null }]));
-    send("python/cpython", [5]);
+    send("python/cpython", items);
   };
   return { component, marked, markedSeen };
 };
@@ -2218,11 +2219,27 @@ it("moves the cursor and the focus to the next row once Q drops the row under th
   expect(landed.getAttribute("aria-current")).toBe("true");
 });
 
+it("moves the focus to the next row after Q on the page, though a sync's answer reads the mark first", async () => {
+  const { markedSeen } = await threeAlone();
+  (document.activeElement as HTMLElement | null)?.blur();
+
+  await press("q");
+  await vi.waitFor(() => {
+    expect(core.markSeen).toHaveBeenCalledOnce();
+  });
+  markedSeen([]);
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(landed);
+  });
+});
+
 it("moves the cursor, and the focus a row held, to the next row when a sync takes the row's attention", async () => {
   const { marked, markedSeen } = await threeAlone();
   marked.focus();
 
-  markedSeen();
+  markedSeen([]);
 
   const landed = await screen.findByRole("button", { name: "#6 Next" });
   await vi.waitFor(() => {
@@ -2237,7 +2254,7 @@ it("moves only the cursor when a sync takes the attention of the row under it wh
   document.body.append(box);
   box.focus();
 
-  markedSeen();
+  markedSeen([]);
 
   const landed = await screen.findByRole("button", { name: "#6 Next" });
   await vi.waitFor(() => {
@@ -2246,6 +2263,21 @@ it("moves only the cursor when a sync takes the attention of the row under it wh
   await tick();
   expect(document.activeElement).toBe(box);
   box.remove();
+});
+
+it("leaves the focus on the list's header when a sync takes the attention of the row under the cursor", async () => {
+  const { markedSeen } = await threeAlone();
+  const order = screen.getByRole("button", { name: /By attention/ });
+  order.focus();
+
+  markedSeen([]);
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+  await tick();
+  expect(document.activeElement).toBe(order);
 });
 
 it("moves only the cursor to the next row once the palette's Mark Seen drops the item on show down the list", async () => {

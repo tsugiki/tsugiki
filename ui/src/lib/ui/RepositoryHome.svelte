@@ -27,6 +27,7 @@
     sameStop,
     WorkbenchState,
     type BackportRow,
+    type Landed,
     type ListedItem,
     type Seen,
     type Stop,
@@ -116,7 +117,7 @@
   });
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
-  const workbench = $derived(new WorkbenchState(name));
+  const workbench = $derived(new WorkbenchState(name, cursorLanded));
   /** The Issues, PRs and file views the Detail pane has shown, which Alt+← and Alt+→ go back and forward
    * through. Each Repository has its own. */
   const visits = $derived.by(() => {
@@ -126,10 +127,6 @@
   $effect(() => {
     // By the time this cleans up, `workbench` is already the next Repository's.
     const opened = workbench;
-    // A row of the list that held the focus hands it to the row the cursor landed on.
-    opened.landedByChange = () => {
-      if (list?.contains(document.activeElement)) focusCursor();
-    };
     void opened.load();
     return () => {
       opened.stop();
@@ -385,14 +382,22 @@
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
   }
 
-  /** Mark Seen on `marked`, as the window drew it. Once the item no longer Needs attention, a cursor on its
-   * row lands on the row that came after it, whether the item moved or kept its place, and takes the focus
-   * there when `focus` says so. */
-  async function markSeen(marked: Marked | undefined, focus = false) {
+  /** Mark Seen on `marked`, as the window drew it, from the list or, as `fromList` says not, from the
+   * Detail pane. Once the item no longer Needs attention, a cursor on its row lands on the row that came
+   * after it, whether the item moved or kept its place, as `cursorLanded` says. */
+  async function markSeen(marked: Marked | undefined, fromList = false) {
     if (!marked) return;
-    markProblem = await workbench.markSeen(marked.seen.mark, marked.stop, () => {
-      if (focus) focusCursor();
-    });
+    markProblem = await workbench.markSeen(marked.seen.mark, marked.stop, fromList);
+  }
+
+  /** Takes the focus to the row the cursor landed on after the line under it lost its attention: after the
+   * user's Mark Seen from the list, or after a sync when a row of the list held the focus. Focus anywhere
+   * else, such as on the list's header, stays put. */
+  function cursorLanded(landed: Landed) {
+    const focused = document.activeElement;
+    const rowHeld =
+      focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
+    if (landed.by === "mark" ? landed.fromList : rowHeld) focusCursor();
   }
 
   async function markUnseen(marked: Marked | undefined) {
@@ -599,7 +604,7 @@
    * once that's saved. */
   async function sortBy(order: ListOrder) {
     await panes.setOrder(order);
-    await workbench.refresh();
+    await workbench.reorder();
   }
 
   /** Names a line for the page, which can list a PR under two Issues. */

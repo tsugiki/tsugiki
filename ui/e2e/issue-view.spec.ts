@@ -7,7 +7,7 @@ import type {
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
-import { serveUnderTauriCsp } from "./tauri-csp.ts";
+import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
@@ -349,7 +349,7 @@ test("the content security policy stops what a description tries to run or load"
     page,
     answers(
       '<img alt="handler" src="data:," onerror="window.ranFromDescription = true">' +
-        '<img alt="remote" src="https://github.com/favicon.ico">',
+        '<img alt="remote" src="https://example.com/favicon.ico">',
     ),
   );
   const asked: string[] = [];
@@ -367,6 +367,131 @@ test("the content security policy stops what a description tries to run or load"
 
   expect(await page.evaluate(() => "ranFromDescription" in window)).toBe(false);
   expect(asked).toEqual([]);
+});
+
+/** GitHub's image proxy, which its rendered HTML sends each third-party image through (#761). */
+const camo = "https://camo.githubusercontent.com";
+const codspeedDark = `${camo}/1790/636f6473706565642d6461726b`;
+const codspeedLight = `${camo}/c88a/636f6473706565642d6c69676874`;
+/** CodSpeed's button as GitHub renders it: a source for each side, each through camo. */
+const codspeedButton =
+  "<picture>" +
+  `<source media="(prefers-color-scheme: dark)" srcset="${codspeedDark}" ` +
+  'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-dark.svg">' +
+  `<source media="(prefers-color-scheme: light)" srcset="${codspeedLight}" ` +
+  'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-light.svg">' +
+  `<img alt="Open in CodSpeed" src="${codspeedLight}" width="169" height="32" ` +
+  'data-canonical-src="https://codspeed.io/pr-report/open-in-codspeed-light.svg">' +
+  "</picture>";
+
+/** Serves the page under Tauri's CSP, keeping what it refuses, and answers each image the policy's hosts
+ * are asked for with a small picture. */
+const serveImagesUnderCsp = async (page: Page) => {
+  await watchCspViolations(page);
+  await serveUnderTauriCsp(page);
+  await page.route(
+    (address) => imageHosts.includes(address.origin),
+    (route) =>
+      route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"></svg>',
+      }),
+  );
+};
+
+/** The addresses the content security policy refused, each with the directive that refused it. */
+const refused = async (page: Page) =>
+  (await cspViolations(page)).map(({ directive, blocked }) => `${directive} ${blocked}`);
+
+/** Whether the image `alt` names has loaded. */
+const loaded = (page: Page, alt: string) =>
+  page.getByAltText(alt).evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0);
+
+test("a description shows the images GitHub's image hosts serve, and loads no other host's", async ({
+  page,
+}) => {
+  const images = {
+    "Dependabot compatibility score": `${camo}/f3d2/6465706`,
+    ":shipit:": "https://github.githubassets.com/images/icons/emoji/shipit.png",
+    "an older upload": "https://user-images.githubusercontent.com/1/2-a1b2.png",
+    "an upload": "https://private-user-images.githubusercontent.com/1/3-c3d4.png?jwt=x",
+    "a workflow's badge": "https://github.com/octo-org/octo-repo/actions/workflows/ci.yml/badge.svg",
+    "a file of a Repository": "https://raw.githubusercontent.com/octo-org/octo-repo/main/docs/screen.png",
+    "a Git LFS file": "https://media.githubusercontent.com/media/octo-org/octo-repo/0a1b/sprite.webp",
+    "an avatar": "https://avatars.githubusercontent.com/u/1?v=4",
+  };
+  await serveImagesUnderCsp(page);
+  await mockCore(
+    page,
+    answers(
+      Object.entries(images)
+        .map(([alt, address]) => `<p><img alt="${alt}" src="${address}"></p>`)
+        .join("") +
+        '<p><img alt="a stranger" src="https://codspeed.io/pr-report/open-in-codspeed-light.svg"></p>',
+    ),
+  );
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  for (const alt of Object.keys(images)) {
+    await expect.poll(() => loaded(page, alt), alt).toBe(true);
+  }
+  await expect
+    .poll(() => refused(page))
+    .toEqual(["img-src https://codspeed.io/pr-report/open-in-codspeed-light.svg"]);
+  expect(await loaded(page, "a stranger")).toBe(false);
+});
+
+test("CodSpeed's button shows the variant of the theme's side", async ({ page }) => {
+  await serveImagesUnderCsp(page);
+  await mockCore(page, answers(codspeedButton));
+  // The window turns to the side of the theme in force, and the webview's media query with it.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const button = page.getByAltText("Open in CodSpeed");
+
+  await expect.poll(() => loaded(page, "Open in CodSpeed")).toBe(true);
+  await expect.poll(() => button.evaluate((image: HTMLImageElement) => image.currentSrc)).toBe(codspeedDark);
+
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(() => button.evaluate((image: HTMLImageElement) => image.currentSrc)).toBe(codspeedLight);
+  await expect.poll(() => loaded(page, "Open in CodSpeed")).toBe(true);
+  expect(await refused(page)).toEqual([]);
+});
+
+test("a refresh that signs an upload's address afresh leaves the description as it was", async ({ page }) => {
+  const upload = (signature: string) =>
+    `https://private-user-images.githubusercontent.com/1/2-a1b2.png?jwt=${signature}`;
+  const screenshot = (signature: string) =>
+    `<details><summary>Steps</summary><a href="${upload(signature)}">` +
+    `<img alt="a screenshot" src="${upload(signature)}"></a></details>`;
+  await serveImagesUnderCsp(page);
+  const fetched: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().startsWith("https://private-user-images.")) fetched.push(request.url());
+  });
+  await mockCore(page, answers(screenshot("one")));
+  await page.goto("/");
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  await page.getByText("Steps").click();
+  const image = page.getByAltText("a screenshot");
+  await expect.poll(() => loaded(page, "a screenshot")).toBe(true);
+  await image.evaluate((drawn) => Object.assign(drawn, { drawnBefore: true }));
+
+  await changeAnswer(page, "issue", held(screenshot("two")));
+  // Listening from before the refresh, which would ask for the fresh address at once if it loaded it.
+  const refetch = page.waitForRequest(upload("two"), { timeout: 1000 }).then(
+    () => true,
+    () => false,
+  );
+  await emitFromCore(page, "changed", { repository: "python/cpython", items: [7] });
+
+  await expect(page.getByRole("link", { name: "a screenshot" })).toHaveAttribute("href", upload("two"));
+  expect(await image.evaluate((shown) => "drawnBefore" in shown)).toBe(true);
+  await expect(page.locator(".rendered details")).toHaveAttribute("open", "");
+  expect(await refetch).toBe(false);
+  expect(fetched).toEqual([upload("one")]);
 });
 
 test("the edges between the panes drag, a double-click resets one, and the list gives way first", async ({

@@ -38,3 +38,38 @@ export const serveUnderTauriCsp = (page: Page) =>
     delete headers["content-length"];
     await route.fulfill({ response, body: served.html, headers });
   });
+
+/** The hosts the policy's `img-src` lets the page load images from, each as `https://host`. */
+export const imageHosts: readonly string[] =
+  policy
+    .split(";")
+    .map((directive) => directive.trim().split(/\s+/))
+    .find(([name]) => name === "img-src")
+    ?.filter((source) => source.startsWith("https://")) ?? [];
+
+/** A refusal of the content security policy: the directive that refused, the address it refused, and the
+ * place in the page's code that asked for it. */
+export interface CspViolation {
+  directive: string;
+  blocked: string;
+  at: string;
+}
+
+/** Keeps each refusal of the content security policy in the page, from its first script on, for
+ * `cspViolations` to read. */
+export const watchCspViolations = (page: Page) =>
+  page.addInitScript(() => {
+    const seen: CspViolation[] = [];
+    Object.assign(window, { cspViolations: seen });
+    document.addEventListener("securitypolicyviolation", (e) => {
+      seen.push({
+        directive: e.effectiveDirective,
+        blocked: e.blockedURI,
+        at: `${e.sourceFile}:${String(e.lineNumber)}`,
+      });
+    });
+  });
+
+/** The refusals `watchCspViolations` kept so far. */
+export const cspViolations = (page: Page) =>
+  page.evaluate(() => (window as unknown as { cspViolations: CspViolation[] }).cspViolations);

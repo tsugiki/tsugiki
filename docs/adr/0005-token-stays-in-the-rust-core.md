@@ -4,8 +4,8 @@ Only the Rust side of Tsugiki holds the token and talks to GitHub. The webview a
 commands and never sees the token, never makes a request to GitHub itself, and has a strict content security
 policy with no remote scripts. The webview shows HTML written by strangers: PR descriptions, comments and
 Issue bodies. GitHub sanitizes it, but if anything slips through, it runs in a page that holds no token and
-can reach no network. Keeping the token there would otherwise rest on every sanitizer and every view being
-right.
+can reach no network but the hosts GitHub serves that HTML's images from. Keeping the token there would
+otherwise rest on every sanitizer and every view being right.
 
 This matters more because the default token (gh's, [ADR 0004](0004-auth-via-gh-cli-token.md)) can push to
 `python/cpython`. A leaked token is a supply-chain risk for CPython, not only a privacy problem.
@@ -31,6 +31,22 @@ This matters more because the default token (gh's, [ADR 0004](0004-auth-via-gh-c
   [README](../../crates/token/README.md)).
 - git never gets the token for a public Repository: the mirror fetches anonymously.
 - Tauri capabilities expose only Tsugiki's own commands to the webview: no shell, file system or HTTP plugins.
+- The webview loads images, and nothing else, from the hosts GitHub serves the images of descriptions and
+  comments from (#761). GitHub's rendered HTML sends each third-party image through camo, its image proxy,
+  so a badge's owner never hears from the user's machine. Only GitHub does, which the core talks to anyway.
+  The hosts are `camo.githubusercontent.com`; `github.githubassets.com` for custom emoji;
+  `user-images.githubusercontent.com` and `private-user-images.githubusercontent.com` for uploaded images;
+  and the GitHub hosts the renderer sends no further: `github.com` for a workflow's badge,
+  `raw.githubusercontent.com` for a file of a Repository, `media.githubusercontent.com` for a Git LFS file
+  and `avatars.githubusercontent.com`. Scripts, frames, fetches, forms and uploaded videos still reach
+  nothing.
+- The rendered HTML gives a newer uploaded image an address on `private-user-images` signed for five
+  minutes, and signed afresh on each fetch. The open Issue or PR is fetched again about once a minute, so
+  its images keep showing, and the view takes the fresh signatures without drawing the HTML again. An Issue
+  or PR fetched more than five minutes before shows a broken image in place of each upload until a fetch
+  brings fresh addresses: offline, until Tsugiki is back online. The upload's own address, under
+  `github.com/user-attachments/`, redirects to an Amazon S3 host without GitHub's cookie, which the policy
+  refuses.
 - The webview can ask the core to open a link in the system browser, since a link in a description has to go
   somewhere. The core treats that link as untrusted and opens only an `http` or `https` address, never a file
   or an installed app's scheme.

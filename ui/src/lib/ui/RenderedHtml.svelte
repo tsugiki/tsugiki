@@ -1,19 +1,30 @@
 <script lang="ts">
   // HTML written by strangers, as GitHub rendered it. The content security policy stops anything in it from
-  // running or loading (ADR 0005), and this keeps it from taking the window away from Tsugiki.
+  // running, and from loading anything but images from GitHub's image hosts (ADR 0005, #761). A `<picture>`
+  // picks its source by `prefers-color-scheme`, which follows the window as it turns to the theme's side.
+  // This keeps the HTML from taking the window away from Tsugiki.
+  import { resign, sameButSignatures } from "./signed-addresses";
+
   let { html, onlink }: { html: string; onlink: (address: string) => void } = $props();
+
+  /** The HTML `show` drew last. */
+  let drawn: string | undefined;
 
   /**
    * Shows `html` in `node` without a refresh or a base address, either of which could move the window if
    * GitHub's sanitizer let it through. A template's contents are inert, so parsing them there acts on
    * nothing, and the parsed nodes move into the page as they are: parsing a second time could make markup
-   * this never saw.
+   * this never saw. HTML that differs from what it drew only in the signatures of its uploads' addresses
+   * leaves the nodes on show, which take the fresh signatures, while those nodes still line up with the
+   * HTML's: a signature in the text, or a node added or moved since, draws the HTML afresh.
    */
   function show(node: HTMLElement) {
     const template = document.createElement("template");
     template.innerHTML = html;
     for (const tag of template.content.querySelectorAll("meta, base")) tag.remove();
-    node.replaceChildren(template.content);
+    const kept = drawn !== undefined && sameButSignatures(drawn, html) && resign(node, template.content);
+    if (!kept) node.replaceChildren(template.content);
+    drawn = html;
   }
 
   /** Follows a link in the system browser. Enter on a link arrives as a click, so keys need nothing more. */

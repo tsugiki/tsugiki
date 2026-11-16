@@ -99,7 +99,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       - A PR's state words are 11.5 px, joined by a muted "·": a Review request in the accent colour at
         weight 600, failed CI in the danger colour and passed CI in green.
       - In a description or comment, code sits on the panel colour, a quote has a muted line on its left,
-        images keep inside the pane and emoji images are as tall as the text.
+        images keep inside the pane and emoji images are as tall as the text. Images show from the hosts
+        GitHub serves them from, and from no other ([ADR 0005](../adr/0005-token-stays-in-the-rust-core.md)):
+        badges and other third-party images through camo, custom emoji, uploaded images and the images of
+        a Repository. An image with a variant for each side, such as CodSpeed's button, shows the one for
+        the side of the theme in force. An uploaded image's address works for five minutes after the fetch
+        that brought it, so an Issue or PR fetched before that, opened offline or before its first refresh,
+        shows a broken image in its place until a fetch brings a fresh address. A refresh that changes only
+        those addresses leaves the text as it is, with its sections open and its selection.
       - The tabs are 12 px, with the open one underlined in the accent colour.
 
     Esc closes what is on top, wherever the focus is: a dialog, the palette or a Peek first, then the wait

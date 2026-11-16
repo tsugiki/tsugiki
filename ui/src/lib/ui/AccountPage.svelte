@@ -53,7 +53,7 @@
 <ul>
   <li>
     Only Tsugiki's core, written in Rust, holds it. The window shows PRs and comments that anyone can write,
-    so it never gets the token and can't reach the network.
+    so it never gets the token, and reaches the network only for the images GitHub serves for them.
   </li>
   <li>It goes only to <code>api.github.com</code>, with Tsugiki's requests to GitHub's API.</li>
   <li>It is never written to the settings files, the database or the log.</li>

@@ -1073,7 +1073,7 @@ describe("Settings › Account", () => {
     );
     expect(said).toEqual([
       "Only Tsugiki's core, written in Rust, holds it. The window shows PRs and comments that anyone can " +
-        "write, so it never gets the token and can't reach the network.",
+        "write, so it never gets the token, and reaches the network only for the images GitHub serves for them.",
       "It goes only to api.github.com, with Tsugiki's requests to GitHub's API.",
       "It is never written to the settings files, the database or the log.",
     ]);

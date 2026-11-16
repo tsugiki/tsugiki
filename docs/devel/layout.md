@@ -178,6 +178,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
     - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the
       text colour. A click anywhere on a row opens it.
+- The window's title names the open Repository, then the build: "python/cpython · Tsugiki 0.3.2 (6143447)",
+  or "Tsugiki 0.3.2 (6143447)" on Onboarding. The Repository comes first, so the taskbar and Alt+Tab still
+  show it when they cut the title short. Until the core says which build it is, the title reads "Tsugiki"
+  after the Repository, and if the core doesn't answer, the status bar says so. Nothing on the screen names
+  the build.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the

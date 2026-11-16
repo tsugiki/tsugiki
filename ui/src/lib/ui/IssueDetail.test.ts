@@ -246,18 +246,22 @@ it("keeps the Stale review of a merged PR, whose check froze with it, with the c
 /** The row above the tree, which counts its PRs by state. */
 const countRow = () => screen.getByRole("list", { name: "PR counts" });
 
-/** Each entry of the row as a screen reader reads it. */
+/** Each entry of the row as a screen reader reads it: without what is hidden from one. */
 const counts = () =>
   within(countRow())
     .getAllByRole("listitem")
-    .map((entry) => entry.textContent);
+    .map((entry) => {
+      const copy = entry.cloneNode(true) as HTMLElement;
+      for (const hidden of copy.querySelectorAll("[aria-hidden='true']")) hidden.remove();
+      return copy.textContent.trim();
+    });
 
 it("counts the PRs of each state in a row between the heading and the tree, Backports included", async () => {
   await shown(view);
 
   const heading = screen.getByRole("heading", { level: 3, name: /^Origin PRs/ });
   expect(heading.textContent).toBe("Origin PRs");
-  expect(counts()).toEqual(["Open, 2", "Draft, 0", "Merged, 3", "Closed, 0", "Bold: Needs attention, 0"]);
+  expect(counts()).toEqual(["Open, 2", "Draft, 0", "Merged, 3", "Closed, 0", "Needs attention, 0"]);
   const tree = screen.getByRole("list", { name: "PRs" });
   expect(heading.compareDocumentPosition(countRow()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(countRow().compareDocumentPosition(tree) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -268,7 +272,7 @@ it("counts each PR under the state its icon shows: an open draft as Draft, a mer
   const closed: TreeEntry = { ...orphan, state: "CLOSED" };
   await shown({ ...view, pull_requests: [draft, closed, { ...orphan, number: 15, is_draft: true }] });
 
-  expect(counts()).toEqual(["Open, 0", "Draft, 1", "Merged, 1", "Closed, 1", "Bold: Needs attention, 0"]);
+  expect(counts()).toEqual(["Open, 0", "Draft, 1", "Merged, 1", "Closed, 1", "Needs attention, 0"]);
 });
 
 it("mutes each count at 0, and keeps it in its place", async () => {
@@ -298,6 +302,14 @@ it("shows each state's icon in the row, hidden from a screen reader, and no lege
   expect(screen.getAllByText("Needs attention", { exact: false })).toHaveLength(1);
 });
 
+it("says on screen what the bold means, but not to a screen reader", async () => {
+  await shown(view);
+
+  const attention = within(countRow()).getAllByRole("listitem").at(-1);
+  expect(attention?.textContent).toBe("Bold: Needs attention, 0");
+  expect(counts().at(-1)).toBe("Needs attention, 0");
+});
+
 it("starts each PR's line with its branch and ends it with its author", async () => {
   await shown({ ...view, pull_requests: [opened, { ...orphan, author: null }] });
 
@@ -319,7 +331,7 @@ it("shows in bold each PR and Backport that Needs attention, and only those", as
   expect(bold("3.13 Open")).toBe(true);
   expect(bold("#10 gh-7: Fix it")).toBe(false);
   expect(bold("3.14 Merged")).toBe(false);
-  expect(counts().at(-1)).toBe("Bold: Needs attention, 2");
+  expect(counts().at(-1)).toBe("Needs attention, 2");
 });
 
 /** The Issue with two Origin PRs that merged with their Backport, three PRs in all, folded away. */
@@ -340,11 +352,11 @@ const withMerged: IssueView = {
 
 it("counts the merged PRs folded away, and gives an Issue with only those its row", async () => {
   await shown(withMerged);
-  expect(counts()).toEqual(["Open, 2", "Draft, 0", "Merged, 6", "Closed, 0", "Bold: Needs attention, 0"]);
+  expect(counts()).toEqual(["Open, 2", "Draft, 0", "Merged, 6", "Closed, 0", "Needs attention, 0"]);
   cleanup();
 
   await shown({ ...withMerged, pull_requests: [] });
-  expect(counts()).toEqual(["Open, 0", "Draft, 0", "Merged, 3", "Closed, 0", "Bold: Needs attention, 0"]);
+  expect(counts()).toEqual(["Open, 0", "Draft, 0", "Merged, 3", "Closed, 0", "Needs attention, 0"]);
 });
 
 it("folds the fully merged PRs into one line that unfolds and folds them again", async () => {

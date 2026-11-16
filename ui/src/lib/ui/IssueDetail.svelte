@@ -81,15 +81,19 @@
   const PAUSE = ", ";
 
   /** How many PRs show each state's icon, of the shown ones and those folded away, Backports included. A
-   * draft counts as Draft, as its icon says, and not as Open. */
+   * draft counts as Draft, as its icon says, and not as Open. `prIcon` hands out one shared icon per state,
+   * so the icons compare as objects. */
   const stateCounts = (view: IssueView) => {
-    const icons = treeRows([...view.pull_requests, ...view.merged]).map((row) => prIcon(row).label);
+    const icons = treeRows([...view.pull_requests, ...view.merged]).map(prIcon);
     return STATES.map(([words, icon]) => ({
       words,
       icon,
-      count: icons.filter((label) => label === icon.label).length,
+      count: icons.filter((shown) => shown === icon).length,
     }));
   };
+
+  /** The counts of the row above the tree, for the Issue on show. */
+  const counts = $derived(issue.view ? stateCounts(issue.view) : []);
 
   /** The start of the author line: the Issue's author and how long ago they opened it, with the date and time
    * for the tooltip. A read kept from before Tsugiki asked has neither time, until the next read. */
@@ -200,15 +204,19 @@
       {#if view.pull_requests.length > 0 || view.merged_count > 0}
         <h3>Origin PRs</h3>
         <!-- Each entry reads its words, then a comma only a screen reader hears, then its count. The words
-             name each icon, so a screen reader skips the icons' own names. -->
-        <ul class="counts" aria-label="PR counts">
-          {#each stateCounts(view) as { words, icon, count } (words)}
+             name each icon, so a screen reader skips the icons' own names, and "Bold", which names how the
+             tree shows a PR. WebKit drops the list role of a list without bullets unless the role is
+             written out. -->
+        <ul class="counts" role="list" aria-label="PR counts">
+          {#each counts as { words, icon, count } (words)}
             <li class={{ none: count === 0 }}>
               <span aria-hidden="true"><StateIcon {icon} /></span><span>{words}</span>{@render counted(count)}
             </li>
           {/each}
           <li class={{ none: view.needs_attention.length === 0 }}>
-            <span><b>Bold</b>: Needs attention</span>{@render counted(view.needs_attention.length)}
+            <span><span aria-hidden="true"><b>Bold</b>:</span> Needs attention</span>{@render counted(
+              view.needs_attention.length,
+            )}
           </li>
         </ul>
         <div class="prs">
@@ -312,9 +320,18 @@
   .counts {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 12px;
+    gap: 4px 6px;
     margin: 0 0 6px;
     font-size: 12px;
+  }
+
+  /* A muted dot between entries. The empty text after the slash keeps it from a screen reader, and a browser
+     that can't read that form shows the dot all the same. */
+  .counts li + li::before {
+    content: "·";
+    content: "·" / "";
+    margin-right: 2px;
+    color: var(--fg-muted);
   }
 
   .counts li {

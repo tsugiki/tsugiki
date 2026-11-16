@@ -160,17 +160,30 @@ test("a row above the tree counts the PRs of each state, and mutes a state at 0"
   await page.getByRole("button", { name: "#7 Issue 7" }).click();
 
   const pane = page.getByRole("region", { name: "Issue view" });
-  const entries = pane.getByRole("list", { name: "PR counts" }).getByRole("listitem");
-  await expect(entries).toHaveText([
-    "Open, 1",
-    "Draft, 1",
-    "Merged, 2",
-    "Closed, 0",
-    "Bold: Needs attention, 1",
-  ]);
+  const countRow = pane.getByRole("list", { name: "PR counts" });
+  const entries = countRow.getByRole("listitem");
+  // WebKit's own accessibility tree drops the role of a list without bullets unless it is written out.
+  // Playwright computes roles by itself, so only the attribute shows it here.
+  await expect(countRow).toHaveAttribute("role", "list");
+  // What a screen reader hears: each entry's word and count, without the icons, the dots or "Bold". The
+  // snapshot puts a space between an entry's parts, as each is an item of its flex box.
+  await expect(countRow).toMatchAriaSnapshot(`
+    - list "PR counts":
+      - listitem: Open , 1
+      - listitem: Draft , 1
+      - listitem: Merged , 2
+      - listitem: Closed , 0
+      - listitem: Needs attention , 1
+  `);
+  await expect(entries.last()).toHaveText("Bold: Needs attention, 1");
   // The comma is for a screen reader alone: on screen the count follows the word after a gap.
   await expect(entries.first().getByText(",", { exact: true })).toHaveCSS("position", "absolute");
   await expect(pane.getByText("Needs attention", { exact: false })).toHaveCount(1);
+  // A dot stands between entries on screen.
+  const before = (entry: Locator) =>
+    entry.evaluate((element) => getComputedStyle(element, "::before").content);
+  expect(await before(entries.first())).toBe("none");
+  expect(await before(entries.nth(1))).toContain("·");
 
   // Light Modern's text, muted text, and green for an open PR. Its muted state colour is its muted text's.
   const [fg, muted, green] = ["rgb(59, 59, 59)", "rgb(118, 118, 118)", "rgb(26, 127, 55)"];

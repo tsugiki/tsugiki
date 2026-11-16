@@ -1090,6 +1090,7 @@ describe("every action in the palette", () => {
       ["List the View's Keys", "?"],
       ["Sort by Last Update", null],
       ["View: Stale Reviews", null],
+      ["View: Sidebar as Icons", null],
     ]);
   });
 
@@ -1136,6 +1137,7 @@ describe("every action in the palette", () => {
       ["List the View's Keys", "?"],
       ["Sort by Last Update", null],
       ["View: Stale Reviews", null],
+      ["View: Sidebar as Icons", null],
     ]);
   });
 

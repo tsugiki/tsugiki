@@ -172,12 +172,15 @@ fn read_page(
             // updated in that second on this page by one comparison and on the next page by another.
             let since = now - LATEST;
             let since = since.replace_nanosecond(0).unwrap_or(since);
-            let latest = walk.step(Updates::Since(since))?.found;
+            let mut latest = walk.step(Updates::Since(since))?.found;
+            // A step places each Issue its trees show under, and one whose own tree didn't move belongs on
+            // an older page, where the walk meets its latest update.
+            latest.retain(|(place, _)| place.updated_at >= since);
             let start = InboxCursor::at(since);
-            let has_older = !walk.below(start, 1)?.is_empty();
-            if latest.is_empty() && has_older {
+            if latest.is_empty() {
                 walk.older(start)?
             } else {
+                let has_older = !walk.below(start, 1)?.is_empty();
                 Chosen {
                     members: latest,
                     older: has_older.then_some(start),
@@ -303,44 +306,55 @@ impl<'s, 't> Walk<'s, 't> {
             .filter(|(_, at)| read(*at))
             .map(|(number, _)| number)
             .collect();
-        self.read_trees(&met)?;
-        let tops: BTreeSet<u32> = met.iter().map(|number| self.top_of(*number)).collect();
-        let mut named: BTreeSet<u32> = (self.links.values())
-            .filter(|links| tops.contains(&self.top_of(links.number)))
-            .flat_map(|links| links.fixes.iter().copied())
-            .collect();
+        let mut trees = self.read_trees(&met)?;
+        // The Issues that the lines of the met PRs show under.
+        let mut named = BTreeSet::new();
+        for top in plant(placed(self.links_of(&trees))) {
+            if top.rows().iter().any(|row| met.contains(&row.number)) {
+                named.extend(top.issues);
+            }
+        }
         let met_issues = issues.into_iter().filter(|issue| read(issue.updated_at));
         let met_issues: Vec<IssuePlace> = met_issues.collect();
         named.extend(met_issues.iter().map(|issue| issue.number));
         self.issues
             .extend(met_issues.into_iter().map(|issue| (issue.number, issue)));
-        let unread = (named.iter())
+        let unread: BTreeSet<u32> = (named.iter())
             .filter(|number| !self.issues.contains_key(number))
             .copied()
             .collect();
-        let read_now = self.snapshot.issue_places_numbered(&unread)?;
-        self.issues
-            .extend(read_now.into_iter().map(|issue| (issue.number, issue)));
+        if !unread.is_empty() {
+            let read_now = self.snapshot.issue_places_numbered(&unread)?;
+            self.issues
+                .extend(read_now.into_iter().map(|issue| (issue.number, issue)));
+        }
         let open: BTreeSet<u32> = (named.into_iter())
             .filter(|number| {
                 let place = self.issues.get(number);
                 place.is_some_and(|issue| issue.state == Some(IssueState::Open))
             })
             .collect();
-        let fixing = self.snapshot.prs_fixing(&open, self.conventions)?;
-        self.read_trees(&fixing)?;
+        if !open.is_empty() {
+            let fixing = self.snapshot.prs_fixing(&open, self.conventions)?;
+            trees.extend(self.read_trees(&fixing)?);
+        }
         Ok(Step {
-            found: self.place(&open, &tops),
+            found: self.place(&open, &met, &trees),
             floor,
         })
     }
 
-    /// Each of the `open` Issues, and each Standalone PR among `tops` with an open PR in its tree, at its
-    /// place. The links read so far hold the whole trees of each.
-    fn place(&self, open: &BTreeSet<u32>, tops: &BTreeSet<u32>) -> Vec<(InboxCursor, Member)> {
+    /// Each of the `open` Issues, and each Standalone PR with an open PR in its tree and one of `met` among
+    /// its lines, at its place. `trees` hold the whole trees of each.
+    fn place(
+        &self,
+        open: &BTreeSet<u32>,
+        met: &BTreeSet<u32>,
+        trees: &BTreeSet<u32>,
+    ) -> Vec<(InboxCursor, Member)> {
         let mut under: BTreeMap<u32, Vec<&PrLinks>> = BTreeMap::new();
         let mut found = Vec::new();
-        for top in plant(placed(self.links.values())) {
+        for top in plant(placed(self.links_of(trees))) {
             for issue in top.issues.intersection(open) {
                 under
                     .entry(*issue)
@@ -349,7 +363,8 @@ impl<'s, 't> Walk<'s, 't> {
             }
             let rows = top.rows();
             let is_open = rows.iter().any(|row| row.state == PrState::Open);
-            if top.issues.is_empty() && tops.contains(&top.number) && is_open {
+            let is_met = rows.iter().any(|row| met.contains(&row.number));
+            if top.issues.is_empty() && is_met && is_open {
                 let updated_at = rows.iter().map(|row| row.updated_at);
                 let place = InboxCursor {
                     updated_at: updated_at.fold(OffsetDateTime::UNIX_EPOCH, Ord::max),
@@ -373,20 +388,29 @@ impl<'s, 't> Walk<'s, 't> {
     }
 
     /// Reads the links of `prs`, of their Origin PRs, and of every PR that names one of either as its
-    /// Origin PR: all that says where each of `prs` sits, and what sits with it.
-    fn read_trees(&mut self, prs: &BTreeSet<u32>) -> Result<(), Error> {
+    /// Origin PR: all that says where each of `prs` sits, and what sits with it. Gives the numbers of all
+    /// those PRs, which `plant` puts on their lines as it would among every PR.
+    fn read_trees(&mut self, prs: &BTreeSet<u32>) -> Result<BTreeSet<u32>, Error> {
+        if prs.is_empty() {
+            return Ok(BTreeSet::new());
+        }
         self.read_links(prs)?;
         let origins: BTreeSet<u32> = (prs.iter())
             .filter_map(|number| self.links.get(number)?.origin)
             .collect();
         self.read_links(&origins)?;
-        let lines: BTreeSet<u32> = prs.union(&origins).copied().collect();
-        let backports = self.snapshot.prs_naming_origins(&lines, self.conventions)?;
-        self.read_links(&backports)
+        let mut trees: BTreeSet<u32> = prs.union(&origins).copied().collect();
+        let backports = self.snapshot.prs_naming_origins(&trees, self.conventions)?;
+        self.read_links(&backports)?;
+        trees.extend(backports);
+        Ok(trees)
     }
 
     fn read_links(&mut self, numbers: &BTreeSet<u32>) -> Result<(), Error> {
         let unasked: BTreeSet<u32> = numbers.difference(&self.asked).copied().collect();
+        if unasked.is_empty() {
+            return Ok(());
+        }
         self.asked.extend(&unasked);
         let read = self.snapshot.pr_links(&unasked, self.conventions)?;
         self.links
@@ -394,13 +418,9 @@ impl<'s, 't> Walk<'s, 't> {
         Ok(())
     }
 
-    /// The PR whose line PR `number` sits on: its Origin PR, if Tsugiki holds one that isn't a Backport too,
-    /// or itself, as `plant` puts it.
-    fn top_of(&self, number: u32) -> u32 {
-        let origin = self.links.get(&number).and_then(|links| links.origin);
-        let is_top =
-            |origin: &u32| (self.links.get(origin)).is_some_and(|links| links.origin.is_none());
-        origin.filter(is_top).unwrap_or(number)
+    /// The links read of each of `numbers` that the store holds.
+    fn links_of<'a>(&'a self, numbers: &'a BTreeSet<u32>) -> impl Iterator<Item = &'a PrLinks> {
+        numbers.iter().filter_map(|number| self.links.get(number))
     }
 
     /// The whole facts of `members` alone, with their activity and their Reviews.

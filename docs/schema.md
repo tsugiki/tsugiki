@@ -73,6 +73,10 @@ erDiagram
         TEXT found_in PK
         INTEGER origin
     }
+    link_rules {
+        INTEGER id PK
+        INTEGER version
+    }
     committers {
         TEXT repository PK, FK
         INTEGER number PK, FK

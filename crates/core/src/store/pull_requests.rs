@@ -472,7 +472,7 @@ fn review_requests(
                              AND asking.state = :open)
          ORDER BY item.number, item.login"
     );
-    values_by_number(connection.prepare(&query)?, &asked, "login")
+    values_by_number(&mut connection.prepare(&query)?, &asked, "login")
 }
 
 /// The `column` of each row of `table` that belongs to a PR `items` takes, by number, each PR's in the
@@ -488,13 +488,13 @@ fn values_of<T: FromSql>(
          ORDER BY item.number, item.{column}"
     );
     let asked = params_of(items, repository);
-    values_by_number(connection.prepare(&query)?, &asked, column)
+    values_by_number(&mut connection.prepare(&query)?, &asked, column)
 }
 
 /// Each item's values in the `value` column of what `statement` answers, by its `number` column. Each
 /// column is found by name once, because a search on every row costs more than reading it.
 pub(super) fn values_by_number<T: FromSql>(
-    mut statement: Statement<'_>,
+    statement: &mut Statement<'_>,
     params: &[(&str, &dyn ToSql)],
     value: &str,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<T>>> {
@@ -548,7 +548,7 @@ fn committers(
          ORDER BY item.number, item.position"
     );
     let asked = params_of(items, repository);
-    values_by_number(connection.prepare(&query)?, &asked, "login")
+    values_by_number(&mut connection.prepare(&query)?, &asked, "login")
 }
 
 /// The position of each of a PR's columns in the answer to `read_all`, found once, as `values_by_number`

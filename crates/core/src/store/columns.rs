@@ -189,17 +189,23 @@ number_column!(CommentId, ReviewId, ThreadCommentId);
 /// its text, and a test pins each text, because existing databases hold them.
 macro_rules! text_column {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        impl ToSql for $name {
-            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-                Ok(ToSqlOutput::from(match self { $(Self::$variant => $text),+ }))
+        text_column!($name { $(($variant) => $text),+ });
+    };
+    // A variant that holds a value names it in parentheses, one spelling for each value it can hold.
+    ($name:ident { $(($($variant:tt)+) => $text:literal),+ $(,)? }) => {
+        impl rusqlite::ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+                Ok(rusqlite::types::ToSqlOutput::from(match self { $(Self::$($variant)+ => $text),+ }))
             }
         }
 
-        impl FromSql for $name {
-            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        impl rusqlite::types::FromSql for $name {
+            fn column_result(
+                value: rusqlite::types::ValueRef<'_>,
+            ) -> rusqlite::types::FromSqlResult<Self> {
                 match value.as_str()? {
-                    $($text => Ok(Self::$variant),)+
-                    other => Err(FromSqlError::Other(
+                    $($text => Ok(Self::$($variant)+),)+
+                    other => Err(rusqlite::types::FromSqlError::Other(
                         format!("{} has no {other}", stringify!($name)).into(),
                     )),
                 }
@@ -208,10 +214,12 @@ macro_rules! text_column {
 
         #[cfg(test)]
         impl $name {
-            const ALL: &[Self] = &[$(Self::$variant),+];
+            const ALL: &[Self] = &[$(Self::$($variant)+),+];
         }
     };
 }
+
+pub(super) use text_column;
 
 text_column!(PrState {
     Open => "OPEN",

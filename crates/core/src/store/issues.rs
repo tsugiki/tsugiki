@@ -259,7 +259,7 @@ fn values_of<T: rusqlite::types::FromSql>(
          ORDER BY number, {column}"
     );
     let asked = items.with(vec![(":repository", repository)]);
-    pull_requests::values_by_number(connection.prepare(&query)?, &asked, column)
+    pull_requests::values_by_number(&mut connection.prepare(&query)?, &asked, column)
 }
 
 /// The state a read of the open Issues binds as `:open`.

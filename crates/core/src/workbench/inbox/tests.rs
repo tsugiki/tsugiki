@@ -215,6 +215,33 @@ fn an_older_page_places_an_issue_by_a_merged_pr_and_a_backport_beneath_another_i
 }
 
 #[test]
+fn a_backport_that_moved_brings_its_own_issue_to_the_first_page_and_leaves_its_origin_s_issue_older()
+ {
+    let world = ViewWorld::new("inbox-backport-moved");
+    // Backport 21 fixes Issue 2 and sits beneath PR 20, which fixes Issue 1. Under Issue 1, PR 20 shows
+    // without it, so nothing under Issue 1 moved.
+    let fixing_two = PullRequestFacts {
+        title: "[3.14] gh-2: Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(1))
+    };
+    world.has(
+        vec![
+            in_state(PrState::Merged, pr_at(20, Some(1), ago(24 * 10))),
+            fixing_two,
+        ],
+        vec![issue_at(1, ago(24 * 10)), issue_at(2, ago(24 * 10))],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 2, vec![20, 21])]);
+    assert_eq!(outline(&older), [("issue", 1, vec![20])]);
+}
+
+#[test]
 fn the_first_page_holds_the_last_two_days_and_the_next_the_older_batch() {
     let world = ViewWorld::new("inbox-pages");
     world.has(

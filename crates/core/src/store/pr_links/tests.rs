@@ -271,10 +271,18 @@ fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
     open_with(&path, before_links).unwrap().close();
     let old = Connection::open(&path).unwrap();
     old.execute_batch(
-        "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch, updated_at)
-             VALUES ('python/cpython', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
+        "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch, updated_at,
+                                    merge_commit)
+             VALUES ('python/cpython', 10, 'gh-5: Fix it', 'MERGED', 0, 'main', 0, 'aaaa1112222');
+         INSERT INTO closing_references (repository, number, issue) VALUES ('python/cpython', 10, 7);
+         INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch, updated_at,
+                                    off_default_description)
+             VALUES ('python/cpython', 11, 'Fix it on 3.13', 'OPEN', 0, '3.13', 0, 'Fixes #6');
+         INSERT INTO cherry_picks (repository, number, sha) VALUES ('python/cpython', 11, 'aaaa111');
          INSERT INTO issues (repository, number, title, updated_at, state)
-             VALUES ('python/cpython', 5, 'It broke', 0, 'OPEN');",
+             VALUES ('python/cpython', 5, 'It broke', 0, 'OPEN'),
+                    ('python/cpython', 6, 'It broke on 3.13', 0, 'OPEN'),
+                    ('python/cpython', 7, 'It broke too', 0, 'OPEN');",
     )
     .unwrap();
     drop(old);
@@ -283,9 +291,118 @@ fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
 
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
-        links(&connection, Conventions::Cpython, &[10]),
-        [(10, vec![5], None)]
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5, 7], None), (11, vec![6], Some(10))]
     );
+}
+
+/// Opens the store at `path` once its links say version `version` of the rules worked them out, with only a
+/// number among them that the rules never gave.
+fn open_with_old_links(path: &std::path::Path, version: u32) {
+    let old = Connection::open(path).unwrap();
+    old.execute_batch(&format!(
+        "DELETE FROM pr_fixes;
+         DELETE FROM pr_origins;
+         INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('python/cpython', 10, 6, 'every');
+         UPDATE link_rules SET version = {version};"
+    ))
+    .unwrap();
+    drop(old);
+    Store::open(path).unwrap().close();
+}
+
+#[test]
+fn a_store_works_its_links_out_again_as_it_opens_after_the_rules_change() {
+    let (path, _folder) = temp_database("links-stale");
+    let store = Store::open(&path).unwrap();
+    let saved = vec![
+        merged_as(10, "gh-5: Fix it", "aaaa1112222"),
+        on_branch(11, "Fix it on 3.13", "", &["aaaa111"]),
+    ];
+    store.save_pull_requests(&cpython(), saved).unwrap();
+    store
+        .save_issues(&cpython(), vec![issue(5), issue(6)])
+        .unwrap();
+    store.close();
+
+    open_with_old_links(&path, RULES_VERSION - 1);
+
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5], None), (11, vec![], Some(10))]
+    );
+}
+
+#[test]
+fn a_store_whose_links_this_version_worked_out_keeps_them_as_it_opens() {
+    let (path, _folder) = temp_database("links-current");
+    let store = Store::open(&path).unwrap();
+    store
+        .save_pull_requests(
+            &cpython(),
+            vec![merged_as(10, "gh-5: Fix it", "aaaa1112222")],
+        )
+        .unwrap();
+    store
+        .save_issues(&cpython(), vec![issue(5), issue(6)])
+        .unwrap();
+    store.close();
+
+    open_with_old_links(&path, RULES_VERSION);
+
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10]),
+        [(10, vec![6], None)]
+    );
+}
+
+/// The text each of `all` leaves in a column, once it has read back as itself.
+fn stored_texts<T: ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialEq>(
+    all: &[T],
+) -> Vec<String> {
+    let connection = Connection::open_in_memory().unwrap();
+    let through = |value: &T| {
+        let (text, read): (String, T) = connection
+            .query_row(
+                "SELECT :value AS value",
+                named_params! { ":value": value },
+                |row| Ok((row.get("value")?, row.get("value")?)),
+            )
+            .unwrap();
+        assert_eq!(&read, value);
+        text
+    };
+    all.iter().map(through).collect()
+}
+
+#[test]
+fn each_link_keeps_the_text_earlier_versions_stored() {
+    assert_eq!(stored_texts(Under::ALL), ["every", "cpython", "github"]);
+    assert_eq!(stored_texts(FoundIn::ALL), ["cpython", "cherry_pick"]);
+}
+
+#[test]
+fn the_tables_refuse_a_spelling_no_link_has() {
+    let mut connection = migrated();
+    save(&mut connection, &[pr(10, "Fix it")]);
+    let refused = |sql: &str| connection.execute(sql, []).is_err();
+    assert!(refused(
+        "INSERT INTO pr_fixes VALUES ('python/cpython', 10, 1, 'cherry_pick')"
+    ));
+    assert!(refused(
+        "INSERT INTO pr_origins VALUES ('python/cpython', 10, 'github', 9)"
+    ));
+    assert!(refused(
+        "INSERT INTO pr_origins VALUES ('python/cpython', 10, 'every', 9)"
+    ));
+}
+
+#[test]
+fn a_title_s_marker_has_a_place_under_each_conventions_with_backports() {
+    let kept = Conventions::ALL.map(|conventions| FoundIn::marker_of(conventions).is_some());
+    assert_eq!(kept, Conventions::ALL.map(Conventions::has_backports));
 }
 
 /// What in SQLite's plan of `sql` reads every row of a Repository's, or of a table, other than the one row

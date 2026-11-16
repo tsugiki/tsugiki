@@ -116,7 +116,10 @@ pub fn fixed_numbers(facts: &PullRequestFacts, repository: &RepositorySettings) 
         .conventions
         .issues_in_title(&facts.title)
         .into_iter()
-        .chain(signals_of_every_convention(facts, &repository.name))
+        .chain(signals_of_every_convention(
+            &LinkSignals::of(facts),
+            &repository.name,
+        ))
         .collect()
 }
 
@@ -125,48 +128,75 @@ pub fn fixed_numbers(facts: &PullRequestFacts, repository: &RepositorySettings) 
 pub fn possible_numbers(facts: &PullRequestFacts, repository: &RepositoryName) -> BTreeSet<u32> {
     Conventions::issues_in_title_under_any(&facts.title)
         .into_iter()
-        .chain(signals_of_every_convention(facts, repository))
+        .chain(signals_of_every_convention(
+            &LinkSignals::of(facts),
+            repository,
+        ))
         .collect()
 }
 
-/// The numbers `facts` names as fixed, each with the Conventions it counts under, or `None` for a number
+/// The version of what `fixed_under_each` and `origins_in_title` give, which the store keeps beside the links
+/// it worked out with them. Raise it with any change to what they give, a new Conventions among them: the
+/// store then works out the links of every PR it holds again as it opens, since a PR that never syncs again
+/// would keep the old ones. A test pins what they give to this number.
+pub const RULES_VERSION: u32 = 1;
+
+/// What the links that the store keeps are worked out from (#833): the title, GitHub's closing references,
+/// and the description of a PR that doesn't target the default branch, where GitHub ignores closing
+/// keywords.
+#[derive(Debug, Clone, Copy)]
+pub struct LinkSignals<'a> {
+    pub title: &'a str,
+    pub closing_issues: &'a [u32],
+    pub off_default_description: Option<&'a str>,
+}
+
+impl<'a> LinkSignals<'a> {
+    pub fn of(facts: &'a PullRequestFacts) -> Self {
+        Self {
+            title: &facts.title,
+            closing_issues: &facts.closing_issues,
+            off_default_description: (facts.off_default.as_ref())
+                .map(|off_default| off_default.description.as_str()),
+        }
+    }
+}
+
+/// The numbers `signals` names as fixed, each with the Conventions it counts under, or `None` for a number
 /// every Conventions counts. The store keeps these, so a change of Conventions picks other rows and rewrites
 /// none (#833). Under `conventions`, the numbers whose `Conventions` is `None` or `conventions` are
 /// `fixed_numbers`.
 pub fn fixed_under_each(
-    facts: &PullRequestFacts,
+    signals: &LinkSignals<'_>,
     repository: &RepositoryName,
 ) -> Vec<(u32, Option<Conventions>)> {
     let in_titles = Conventions::ALL.into_iter().flat_map(|conventions| {
-        let named = conventions.issues_in_title(&facts.title).into_iter();
+        let named = conventions.issues_in_title(signals.title).into_iter();
         named.map(move |number| (number, Some(conventions)))
     });
-    let signals = signals_of_every_convention(facts, repository).into_iter();
+    let every = signals_of_every_convention(signals, repository).into_iter();
     in_titles
-        .chain(signals.map(|number| (number, None)))
+        .chain(every.map(|number| (number, None)))
         .collect()
 }
 
-/// The Origin PR that the title of `facts` names under each Conventions with Backports, if it doesn't
+/// The Origin PR that the title in `signals` names under each Conventions with Backports, if the PR doesn't
 /// target the default branch. The store keeps these beside the cherry-pick lines, which name a commit: under
 /// a Conventions with Backports, the title's marker comes first, as `backport_of` reads them.
-pub fn origins_in_title(facts: &PullRequestFacts) -> Vec<(Conventions, u32)> {
-    let Some(_) = &facts.off_default else {
+pub fn origins_in_title(signals: &LinkSignals<'_>) -> Vec<(Conventions, u32)> {
+    if signals.off_default_description.is_none() {
         return Vec::new();
-    };
+    }
     let with_backports = Conventions::ALL.into_iter().filter(|c| c.has_backports());
-    let named = with_backports.filter_map(|c| Some((c, c.origin_in_title(&facts.title)?)));
+    let named = with_backports.filter_map(|c| Some((c, c.origin_in_title(signals.title)?)));
     named.collect()
 }
 
-fn signals_of_every_convention(facts: &PullRequestFacts, repository: &RepositoryName) -> Vec<u32> {
-    let in_description = facts
-        .off_default
-        .as_ref()
-        .map_or_else(Vec::new, |off_default| {
-            closing_keywords(&off_default.description, repository)
-        });
-    let closing = facts.closing_issues.iter().copied();
+fn signals_of_every_convention(signals: &LinkSignals<'_>, repository: &RepositoryName) -> Vec<u32> {
+    let in_description = (signals.off_default_description).map_or_else(Vec::new, |description| {
+        closing_keywords(description, repository)
+    });
+    let closing = signals.closing_issues.iter().copied();
     closing.chain(in_description).collect()
 }
 

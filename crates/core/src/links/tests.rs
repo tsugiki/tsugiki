@@ -380,6 +380,51 @@ fn a_number_github_cant_take_names_nothing() {
     assert_eq!(in_description("Fixes #99999999999"), [0_u32; 0]);
 }
 
+/// What the rules the store keeps give for PRs that try each of them, one line for each PR.
+fn kept_links() -> String {
+    let repository = cpython().name;
+    let description = "Fixes #4\n`Closes #5` <!-- Fixes #6 -->\n```\nFixes #7\n```\n\
+                       Resolves https://github.com/python/cpython/issues/8\n\
+                       Fixes other/repo#9, see gh-10, closes GH-11";
+    let signals = [
+        ("gh-1: Fix it", &[2_u32][..], None),
+        ("GH-3: Fix it", &[][..], None),
+        ("[3.14] gh-12: Fix it (GH-13)", &[], None),
+        ("[3.14] gh-12: Fix it (GH-13)", &[14], Some(description)),
+        ("Fix it", &[], Some("")),
+        ("[3.13] Fix it (#15)", &[], Some("")),
+    ];
+    let lines = signals.map(|(title, closing_issues, off_default_description)| {
+        let signals = LinkSignals {
+            title,
+            closing_issues,
+            off_default_description,
+        };
+        let fixed = fixed_under_each(&signals, &repository);
+        format!("{fixed:?} {:?}", origins_in_title(&signals))
+    });
+    lines.join("\n")
+}
+
+#[test]
+fn what_the_kept_rules_give_changes_only_with_their_version() {
+    let expected = [
+        "[(1, Some(Cpython)), (2, None)] []",
+        "[(3, Some(Cpython))] []",
+        "[(12, Some(Cpython))] []",
+        "[(12, Some(Cpython)), (14, None), (4, None), (8, None), (11, None)] [(Cpython, 13)]",
+        "[] []",
+        "[] []",
+    ]
+    .join("\n");
+    let expected = expected.as_str();
+    assert_eq!(
+        (RULES_VERSION, kept_links().as_str()),
+        (1, expected),
+        "raise RULES_VERSION with what the rules give, so the store works out every PR's links again"
+    );
+}
+
 #[test]
 fn a_sync_asks_for_what_any_conventions_could_name() {
     let facts = PullRequestFacts {

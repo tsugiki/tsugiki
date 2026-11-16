@@ -926,6 +926,10 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
         .pragma_update(None, "foreign_keys", true)
         .map_err(saying(CANT_OPEN))?;
     migrate::run(&mut connection, path, migrations)?;
+    // Only a file at the newest schema has the tables this version's code reads.
+    if migrate::latest(migrations) == migrate::latest(MIGRATIONS) {
+        pr_links::refill_if_stale(&mut connection).map_err(saying(CANT_UPDATE))?;
+    }
     // A crash, a force-kill or a quit during a slow request skips closing the store, which would leave a new
     // version in the `-wal` file, where `file::check` can't see it. If another connection blocks this, SQLite
     // says so in the row and not as an error: `migrate` still catches the version, and the next start tries

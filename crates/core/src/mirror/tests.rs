@@ -1197,6 +1197,25 @@ fn an_opened_prs_head_whose_fetch_failed_stays_ahead_of_the_heads_wanted() {
 }
 
 #[test]
+fn an_opened_prs_head_that_the_fetch_under_way_brings_needs_no_fetch_of_its_own() {
+    let place = Place::new("opened-brought");
+    let (cpython, hello) = (named("python/cpython"), named("octo-org/hello"));
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(4)]);
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_first(cpython, head(4));
+    wanted.succeed();
+    // A Repository whose heads the worker knows nothing of has nothing awaited.
+    requests.heads_saved(hello, vec![head(5)]);
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(starts.recv().is_err(), "the fetch under way brought head 4");
+}
+
+#[test]
 fn a_saved_head_of_an_awaited_pr_that_the_mirror_fetched_since_launch_needs_no_fetch() {
     let place = Place::new("awaited-fetched");
     let cpython = named("python/cpython");

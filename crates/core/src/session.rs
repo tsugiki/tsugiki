@@ -368,7 +368,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::SyncStep => match syncs.step(&github, store) {
                 Ok(Some(Progress::Changed(change))) => {
                     if !change.items.is_empty() {
-                        hand_over_heads(&refreshes.fetching, store, &syncs, &change);
+                        let _handed = hand_over_heads(&refreshes.fetching, store, &syncs, &change);
                     }
                     board.changed(&change);
                 }
@@ -392,32 +392,38 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
 /// read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
 /// store that can't answer just saved, and the next step that saves says if it is in trouble, and hands the
 /// heads. The heads go though the reviewed commits can't be read, and those wait for a step whose read works.
-fn hand_over_heads(fetching: &Fetching, store: &Store, syncs: &Syncs, saved: &Change) {
+/// Says whether it handed anything over.
+fn hand_over_heads(
+    fetching: &Fetching,
+    store: &Store,
+    syncs: &Syncs,
+    saved: &Change,
+) -> Option<()> {
     let repository = &saved.repository;
-    if let (Some(settings), Ok(facts)) = (syncs.settings(repository), store.work_facts(repository))
-    {
-        let reviewed = store.reviewed_commits(repository).ok();
-        // A head can move to a commit the store has read, which makes no new read to keep a check with. A
-        // store that can't keep it says so at the next step that saves.
-        let _kept = keep_last_checks(store, repository, &facts);
-        let (heads, patches) = mirror_work(&facts, settings);
-        let want = MirrorWant {
-            heads,
-            reviewed,
-            patches,
-        };
-        fetching.want(repository, want);
-        let saved_heads = (facts.pull_requests.iter())
-            .filter(|pr| saved.items.contains(&pr.number))
-            .filter_map(|pr| {
-                Some(PrHead {
-                    number: pr.number,
-                    commit: pr.head.clone()?,
-                    target_branch: pr.target_branch.clone(),
-                })
-            });
-        fetching.heads_saved(repository, saved_heads.collect());
-    }
+    let settings = syncs.settings(repository)?;
+    let facts = store.work_facts(repository).ok()?;
+    let reviewed = store.reviewed_commits(repository).ok();
+    // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
+    // that can't keep it says so at the next step that saves.
+    let _kept = keep_last_checks(store, repository, &facts);
+    let (heads, patches) = mirror_work(&facts, settings);
+    let want = MirrorWant {
+        heads,
+        reviewed,
+        patches,
+    };
+    fetching.want(repository, want);
+    let saved_heads = (facts.pull_requests.iter())
+        .filter(|pr| saved.items.contains(&pr.number))
+        .filter_map(|pr| {
+            Some(PrHead {
+                number: pr.number,
+                commit: pr.head.clone()?,
+                target_branch: pr.target_branch.clone(),
+            })
+        });
+    fetching.heads_saved(repository, saved_heads.collect());
+    Some(())
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose

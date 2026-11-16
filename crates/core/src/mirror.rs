@@ -592,17 +592,15 @@ impl HeardRequests {
     /// heard all it waits for.
     pub(crate) fn asked_through(&self, last: &str, patience: Duration) -> Vec<String> {
         let deadline = Instant::now() + patience;
-        let mut heard = Vec::new();
-        loop {
+        let left = || deadline.saturating_duration_since(Instant::now());
+        let mut heard = self.asked();
+        while !heard.iter().any(|line| line.contains(last))
+            && let Ok(message) = self.messages.recv_timeout(left())
+        {
+            self.unasked.borrow_mut().push(message);
             heard.extend(self.asked());
-            if heard.iter().any(|line| line.contains(last)) {
-                return heard;
-            }
-            match (self.messages).recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                Ok(message) => self.unasked.borrow_mut().push(message),
-                Err(_) => return heard,
-            }
         }
+        heard
     }
 
     /// The moves of Lookup checkouts asked for since the last call.

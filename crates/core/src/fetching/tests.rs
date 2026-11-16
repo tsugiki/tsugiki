@@ -31,11 +31,33 @@ fn opening_a_pr_asks_the_mirror_for_what_its_head_lacks() {
     fetching.pull_request_opened(cpython(), 8, HeadInMirror::Unknown);
     fetching.pull_request_opened(cpython(), 9, HeadInMirror::Missing(head(9)));
 
+    assert_eq!(heard.firsts(), [(cpython(), head(9))]);
     assert_eq!(
         heard.asked(),
         ["python/cpython opened #7", "python/cpython awaits #8"]
     );
-    assert_eq!(heard.firsts(), [(cpython(), head(9))]);
+}
+
+#[test]
+fn the_diff_on_show_moves_the_lookup_checkout_to_its_ends() {
+    let (fetching, _incoming, heard) = handle();
+    let at = LookupAt {
+        base: head(1).commit,
+        head: head(2).commit,
+    };
+
+    fetching.pull_request_opened(cpython(), 2, HeadInMirror::Missing(head(2)));
+    fetching.look_up(cpython(), at.clone());
+
+    assert_eq!(heard.look_ups(), [(cpython(), at)]);
+    assert_eq!(heard.firsts(), [(cpython(), head(2))]);
+}
+
+#[test]
+fn a_mirror_whose_clone_waits_for_nothing_doesnt_ask_where_its_objects_come_from() {
+    let (fetching, _incoming, _heard) = handle();
+
+    assert!(!fetching.mirror_asks(&cpython()));
 }
 
 #[test]

@@ -85,9 +85,9 @@ impl Reviews {
     /// Puts back the commits of a keeping that failed that the rules still want: a hand-over replaces the
     /// last, so one that left it meanwhile goes.
     fn put_back_wanted(&mut self, mut commits: BTreeMap<u32, CommitSha>) {
-        if let Some(handed) = &self.handed {
-            commits.retain(|number, _| handed.contains(number));
-        }
+        let wanted =
+            |number: &u32| (self.handed.as_ref()).is_none_or(|handed| handed.contains(number));
+        commits.retain(|number, _| wanted(number));
         self.put_back(commits);
     }
 }

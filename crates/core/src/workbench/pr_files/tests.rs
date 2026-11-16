@@ -95,7 +95,7 @@ impl World {
 
     /// What a read of PR 7's Files tab finds, while its clone doesn't wait for an answer.
     fn read(&self) -> Option<FilesRead> {
-        PrFiles::read(&self.sources(), &self.repository(), 7, || false).unwrap()
+        PrFiles::read(&self.sources(), &self.repository(), 7, &|| false).unwrap()
     }
 
     fn files(&self) -> Option<PrFiles> {
@@ -139,7 +139,7 @@ fn before_the_user_says_where_its_mirror_gets_its_objects_a_pr_asks() {
     let world = World::new("asking");
     world.has_pr(None, "main");
 
-    let read = PrFiles::read(&world.sources(), &world.repository(), 7, || true).unwrap();
+    let read = PrFiles::read(&world.sources(), &world.repository(), 7, &|| true).unwrap();
 
     assert_eq!(read.map(|read| read.files), Some(PrFiles::Asking));
     world.finish();
@@ -330,7 +330,7 @@ fn a_target_branch_the_mirror_lacks_says_so() {
     world.mirrors(&mirrored);
     world.has_pr(Some(mirrored.head.clone()), "3.14");
 
-    let problem = PrFiles::read(&world.sources(), &world.repository(), 7, || false).unwrap_err();
+    let problem = PrFiles::read(&world.sources(), &world.repository(), 7, &|| false).unwrap_err();
 
     assert_eq!(
         problem.message,

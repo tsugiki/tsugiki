@@ -706,29 +706,28 @@ fn read_pull_request_files(
 ) -> Result<Option<PrFiles>, Error> {
     let name = RepositoryName::parse(repository)?;
     let asks = || work.fetching.mirror_asks(&name);
-    let Some(FilesRead { files, head }) = PrFiles::read(&work.sources()?, &name, number, asks)?
-    else {
-        return Ok(None);
-    };
-    // The user opened the PR: its ref stays, and a head the mirror lacks goes first.
-    if let Some(head) = head {
-        work.fetching
-            .pull_request_opened(name.clone(), number, head);
-    }
-    // The diff on show is the PR on screen: its Lookup checkout moves to the diff's ends, where text search
-    // looks for them, and ty opens its Python files.
-    if let PrFiles::Ready {
-        head, base, files, ..
-    } = &files
-    {
-        let at = LookupAt {
-            base: base.clone(),
-            head: head.clone(),
-        };
-        work.fetching.look_up(name.clone(), at.clone());
-        work.definitions.opened(name, at, files);
-    }
-    Ok(Some(files))
+    let read = PrFiles::read(&work.sources()?, &name, number, &asks)?;
+    Ok(read.map(|FilesRead { files, head }| {
+        // The user opened the PR: its ref stays, and a head the mirror lacks goes first.
+        if let Some(head) = head {
+            work.fetching
+                .pull_request_opened(name.clone(), number, head);
+        }
+        // The diff on show is the PR on screen: its Lookup checkout moves to the diff's ends, where text
+        // search looks for them, and ty opens its Python files.
+        if let PrFiles::Ready {
+            head, base, files, ..
+        } = &files
+        {
+            let at = LookupAt {
+                base: base.clone(),
+                head: head.clone(),
+            };
+            work.fetching.look_up(name.clone(), at.clone());
+            work.definitions.opened(name.clone(), at, files);
+        }
+        files
+    }))
 }
 
 fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<LineInDiff>, Error> {

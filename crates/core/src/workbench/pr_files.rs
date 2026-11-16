@@ -116,7 +116,7 @@ impl PrFiles {
         sources: &DiffSources<'_>,
         repository: &RepositoryName,
         number: u32,
-        asks: impl FnOnce() -> bool,
+        asks: &dyn Fn() -> bool,
     ) -> Result<Option<FilesRead>, Error> {
         let Some((pr, content)) = facts(sources.reader, repository, number)? else {
             return Ok(None);

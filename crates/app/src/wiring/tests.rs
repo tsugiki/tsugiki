@@ -1659,6 +1659,21 @@ fn someone_elses_pr_1(folders: &Folders, commit: &str) {
 }
 
 #[test]
+fn the_files_tab_of_a_pr_whose_mirror_isnt_there_shows_the_clone() {
+    let (folders, _root) = temp_folders("wiring-files-no-mirror");
+    someone_elses_pr_1(&folders, "89abcde89abcde89abcde89abcde89abcde89abc");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let files = wired.ask(
+        "pull_request_files",
+        json!({ "repository": CPYTHON, "number": 1 }),
+    );
+    drop(wired.stop());
+
+    assert_eq!(files.unwrap(), json!({ "state": "cloning" }));
+}
+
+#[test]
 fn opening_a_pr_fetches_its_head_first_and_its_files_tab_then_reads_its_diff_in_chunks() {
     let (folders, root) = temp_folders("wiring-files");
     let remotes = remotes(&root, &[CPYTHON]);

@@ -26,12 +26,13 @@ use tsugiki_core::definitions::{
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::CommitSha;
+use tsugiki_core::fetching::Fetching;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{
-    CloneRefusal, Cloning, LookupAt, MirrorProblem, MirrorRequests, RepositoryMirror, Unfetched,
+    CloneRefusal, Cloning, LookupAt, MirrorProblem, RepositoryMirror, Unfetched,
 };
 use tsugiki_core::mirror_source::{MirrorSource, MirrorSources};
 use tsugiki_core::misses::Miss;
@@ -39,7 +40,6 @@ use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::search::{Query, SearchId, SearchState, TextSearch};
-use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
     CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
 };
@@ -50,7 +50,7 @@ use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::work::SeenMark;
 use tsugiki_core::workbench::issue_view::IssueView;
-use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, LineInDiff, PrFiles};
+use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, FilesRead, LineInDiff, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::quick_open;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
@@ -194,7 +194,7 @@ fn check_named_clone(
     work: &RepositoryWork,
 ) -> Result<Option<CloneRefusal>, Error> {
     let repository = RepositoryName::parse(repository)?;
-    Ok(work.mirrors.check_clone(folder, &repository).err())
+    Ok(work.fetching.check_clone(folder, &repository).err())
 }
 
 /// Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
@@ -207,7 +207,7 @@ fn choose_named_source(
 ) -> Result<(), Error> {
     let repository = RepositoryName::parse(repository)?;
     // The clone goes ahead even if `machine.toml` can't keep the answer. The next launch asks again.
-    work.mirrors
+    work.fetching
         .clone_mirror_next(repository.clone(), Some(source.clone()));
     drop(owner.save_mirror_source(repository, source)?);
     Ok(())
@@ -255,13 +255,13 @@ fn server_log_of(repository: &str, server: ServerName, work: &DiffWork) -> Resul
 #[tauri::command]
 #[specta::specta]
 fn check_mirrors_again(work: State<'_, RepositoryWork>) {
-    work.mirrors.check_again();
+    work.fetching.check_mirrors_again();
 }
 
 /// Refreshes the open Repository now, and returns at once.
 #[tauri::command]
 #[specta::specta]
-fn refresh(requests: State<'_, SessionRequests>) {
+fn refresh(requests: State<'_, Fetching>) {
     requests.refresh();
 }
 
@@ -269,37 +269,28 @@ fn refresh(requests: State<'_, SessionRequests>) {
 /// Last seen stays: only Mark Seen moves it.
 #[tauri::command]
 #[specta::specta]
-fn open_issue(
-    repository: &str,
-    number: u32,
-    requests: State<'_, SessionRequests>,
-) -> Result<(), Error> {
+fn open_issue(repository: &str, number: u32, requests: State<'_, Fetching>) -> Result<(), Error> {
     requests.fetch_issue(RepositoryName::parse(repository)?, number);
     Ok(())
 }
 
-/// Tells the core the user opened PR `number`, which reads its Conversation from GitHub and hands its head to
-/// the mirror if the mirror lacks it. The Files tab reads the diff once it shows. Its Last seen stays.
-fn open_pull_request(
-    repository: &str,
-    number: u32,
-    requests: &SessionRequests,
-    work: &DiffWork,
-) -> Result<(), Error> {
+/// Tells the core the user opened PR `number`, which reads its Conversation from GitHub and asks the mirror
+/// first for its head if the mirror lacks it. The Files tab reads the diff once it shows. Its Last seen
+/// stays.
+fn open_pull_request(repository: &str, number: u32, work: &DiffWork) -> Result<(), Error> {
     let name = RepositoryName::parse(repository)?;
-    requests.fetch_pull_request(name.clone(), number);
-    PrFiles::fetch_missing_head(&work.sources()?, &name, number)
+    work.fetching.fetch_pull_request(name.clone(), number);
+    if let Some(head) = PrFiles::head_in_mirror(&work.sources()?, &name, number)? {
+        work.fetching.pull_request_opened(name, number, head);
+    }
+    Ok(())
 }
 
 /// Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
 /// Returns at once, and the `changed` event follows.
 #[tauri::command]
 #[specta::specta]
-fn mark_seen(
-    repository: &str,
-    mark: SeenMark,
-    requests: State<'_, SessionRequests>,
-) -> Result<(), Error> {
+fn mark_seen(repository: &str, mark: SeenMark, requests: State<'_, Fetching>) -> Result<(), Error> {
     requests.mark_seen(RepositoryName::parse(repository)?, mark);
     Ok(())
 }
@@ -307,11 +298,7 @@ fn mark_seen(
 /// Mark Unseen on item `number`, and returns at once.
 #[tauri::command]
 #[specta::specta]
-fn mark_unseen(
-    repository: &str,
-    number: u32,
-    requests: State<'_, SessionRequests>,
-) -> Result<(), Error> {
+fn mark_unseen(repository: &str, number: u32, requests: State<'_, Fetching>) -> Result<(), Error> {
     requests.mark_unseen(RepositoryName::parse(repository)?, number);
     Ok(())
 }
@@ -322,7 +309,7 @@ fn mark_unseen(
 fn fetch_pull_request(
     repository: &str,
     number: u32,
-    requests: State<'_, SessionRequests>,
+    requests: State<'_, Fetching>,
 ) -> Result<(), Error> {
     requests.fetch_pull_request(RepositoryName::parse(repository)?, number);
     Ok(())
@@ -331,11 +318,7 @@ fn fetch_pull_request(
 /// Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015).
 #[tauri::command]
 #[specta::specta]
-fn fetch_issue(
-    repository: &str,
-    number: u32,
-    requests: State<'_, SessionRequests>,
-) -> Result<(), Error> {
+fn fetch_issue(repository: &str, number: u32, requests: State<'_, Fetching>) -> Result<(), Error> {
     requests.fetch_issue(RepositoryName::parse(repository)?, number);
     Ok(())
 }
@@ -438,7 +421,7 @@ fn record_miss(miss: Miss) -> String {
 fn check_typed_repository(
     input: &str,
     owner: &SettingsOwner,
-    requests: &SessionRequests,
+    requests: &Fetching,
 ) -> Result<NameCheck, Error> {
     owner.check_name(RepositoryName::parse(input)?, &mut |name| {
         requests.check(name)
@@ -447,7 +430,7 @@ fn check_typed_repository(
 
 /// Asks GitHub what the mirror of `repository` takes, with the check Add repository makes. The Files tab asks
 /// for a Repository Tsugiki has.
-fn check_mirror_cost(repository: &str, requests: &SessionRequests) -> Result<MirrorCost, Error> {
+fn check_mirror_cost(repository: &str, requests: &Fetching) -> Result<MirrorCost, Error> {
     Ok(requests.check(RepositoryName::parse(repository)?)?.mirror)
 }
 
@@ -488,10 +471,10 @@ fn open_named_repository(
     Ok(view.home)
 }
 
-/// The threads that work on Repositories: the session's sync queue, and the mirrors' one writer.
+/// The threads that work on Repositories, the session's sync queue and the mirrors' one writer, which the
+/// commands ask through `fetching`.
 struct RepositoryWork {
-    session: SessionRequests,
-    mirrors: MirrorRequests,
+    fetching: Fetching,
 }
 
 impl RepositoryWork {
@@ -517,8 +500,8 @@ impl RepositoryWork {
     /// under way, and doesn't wait on the sync. While neither `source` nor the mirrors hold an answer of
     /// where its objects come from, the clone waits for one.
     fn open(&self, repository: &RepositorySettings, source: Option<MirrorSource>) {
-        self.session.sync(repository.clone());
-        self.mirrors
+        self.fetching.sync(repository.clone());
+        self.fetching
             .clone_mirror_next(repository.name.clone(), source);
     }
 }
@@ -565,14 +548,14 @@ fn find_items(
     quick_open::find(reader, &RepositoryName::parse(repository)?, typed)
 }
 
-/// What the Files tab reads besides the database: where the mirrors are, the diff on show, the mirrors'
-/// worker, which fetches a head a mirror lacks, the highlighter, which parses the files, and the language
-/// servers.
+/// What the Files tab reads besides the database: where the mirrors are, the diff on show, the way to ask
+/// the mirrors' worker for what a read found missing, the highlighter, which parses the files, and the
+/// language servers.
 pub(crate) struct DiffWork {
     pub(crate) folders: Result<Folders, Error>,
     pub(crate) reader: StoreReader,
     pub(crate) diffs: Diffs,
-    pub(crate) mirrors: MirrorRequests,
+    pub(crate) fetching: Fetching,
     pub(crate) highlighter: Highlighter,
     /// The language servers' thread, which the Definition peek asks.
     pub(crate) definitions: Definitions,
@@ -585,7 +568,6 @@ impl DiffWork {
             reader: &self.reader,
             folders,
             diffs: &self.diffs,
-            mirrors: &self.mirrors,
             highlighter: &self.highlighter,
         })
     }
@@ -723,19 +705,30 @@ fn read_pull_request_files(
     work: &DiffWork,
 ) -> Result<Option<PrFiles>, Error> {
     let name = RepositoryName::parse(repository)?;
-    let read = PrFiles::read(&work.sources()?, &name, number)?;
-    // The diff on show is the PR on screen, whose Python files ty opens.
-    if let Some(PrFiles::Ready {
+    let asks = || work.fetching.mirror_asks(&name);
+    let Some(FilesRead { files, head }) = PrFiles::read(&work.sources()?, &name, number, asks)?
+    else {
+        return Ok(None);
+    };
+    // The user opened the PR: its ref stays, and a head the mirror lacks goes first.
+    if let Some(head) = head {
+        work.fetching
+            .pull_request_opened(name.clone(), number, head);
+    }
+    // The diff on show is the PR on screen: its Lookup checkout moves to the diff's ends, where text search
+    // looks for them, and ty opens its Python files.
+    if let PrFiles::Ready {
         head, base, files, ..
-    }) = &read
+    } = &files
     {
         let at = LookupAt {
             base: base.clone(),
             head: head.clone(),
         };
+        work.fetching.look_up(name.clone(), at.clone());
         work.definitions.opened(name, at, files);
     }
-    Ok(read)
+    Ok(Some(files))
 }
 
 fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<LineInDiff>, Error> {

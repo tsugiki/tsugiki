@@ -18,10 +18,9 @@ use crate::facts::CommitSha;
 pub use crate::facts::pull_request_content::CodeRow;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_request_content::Side;
-use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
+use crate::facts::pull_requests::{HeadInMirror, PrState, PullRequestFacts};
 use crate::folders::Folders;
 use crate::highlight::Span;
-use crate::mirror::{LookupAt, MirrorRequests};
 use crate::repository::RepositoryName;
 use crate::store::StoreReader;
 pub use threads::{DiffThread, Placement, ThreadCode};
@@ -92,36 +91,48 @@ pub enum DiffThreads {
 }
 
 /// Where the Files tab reads from: the database, the mirrors, the diff on show and the trees of its files.
-/// It asks the mirrors' worker for a head the mirror lacks.
+/// It asks nothing of anyone: the command asks the Mirror worker for what a read finds missing.
 pub struct DiffSources<'a> {
     pub reader: &'a StoreReader,
     pub folders: &'a Folders,
     pub diffs: &'a Diffs,
-    pub mirrors: &'a MirrorRequests,
     pub highlighter: &'a Highlighter,
+}
+
+/// What a read of the Files tab found: what the tab shows, and what the Mirror holds of the PR's head.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FilesRead {
+    pub files: PrFiles,
+    /// What the Mirror holds of the head the tab wants, or nothing while the Mirror isn't there to look in.
+    pub head: Option<HeadInMirror>,
 }
 
 impl PrFiles {
     /// What PR `number`'s Files tab shows, or nothing if Tsugiki doesn't hold it. A diff that isn't on show
-    /// takes as long as git does, and a PR whose head the mirror lacks goes ahead of the heads waiting for
-    /// a fetch. Until that head comes, the diff at the PR's last head the mirror fetched shows, if any.
+    /// takes as long as git does. While the Mirror lacks the PR's head, the diff at the PR's last head the
+    /// mirror fetched shows, if any. A Repository whose mirror isn't there yet shows its clone, or asks where
+    /// the mirror gets its objects while `asks` says its clone waits for that.
     pub fn read(
         sources: &DiffSources<'_>,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<Option<Self>, Error> {
+        asks: impl FnOnce() -> bool,
+    ) -> Result<Option<FilesRead>, Error> {
         let Some((pr, content)) = facts(sources.reader, repository, number)? else {
             return Ok(None);
         };
         let mirror = sources.folders.mirror(repository);
         if !mirror.exists() {
-            let asks = sources.mirrors.asks(repository);
-            return Ok(Some(if asks { Self::Asking } else { Self::Cloning }));
+            let files = if asks() { Self::Asking } else { Self::Cloning };
+            return Ok(Some(FilesRead { files, head: None }));
         }
-        sources.mirrors.opened(repository.clone(), number);
+        let found = |files, held| FilesRead {
+            files,
+            head: Some(HeadInMirror::of(&pr, |_| held)),
+        };
         // The sync reads a PR's head the next time it reads the PR.
         let Some(head) = pr.head.clone() else {
-            return Ok(Some(Self::Fetching));
+            return Ok(Some(found(Self::Fetching, false)));
         };
         let at = PrAt {
             repository: repository.clone(),
@@ -132,16 +143,18 @@ impl PrFiles {
         let target = Against::Branch(&pr.target_branch, &start);
         // The diff on show is in the mirror, so asking git again would only cost a moment.
         if let Some(open) = sources.diffs.shown(&at, target) {
-            return Ok(Some(Self::show(sources, &open, content.as_ref(), None)));
+            return Ok(Some(found(
+                Self::ready(&open, content.as_ref(), None),
+                true,
+            )));
         }
         match diff::held(&mirror, &pr.target_branch, &head) {
             Held::NoHead => {
-                fetch_first(sources.mirrors, repository, &pr, &head);
                 let older = diff::last_head(&mirror, number).filter(|older| {
                     matches!(diff::held(&mirror, &pr.target_branch, older), Held::Both)
                 });
                 let Some(older) = older else {
-                    return Ok(Some(Self::Fetching));
+                    return Ok(Some(found(Self::Fetching, false)));
                 };
                 let read = || diff::read(&mirror, &pr.target_branch, &start, &older);
                 let at = PrAt {
@@ -149,12 +162,8 @@ impl PrFiles {
                     ..at
                 };
                 let open = sources.diffs.get_or_read(&at, target, read)?;
-                Ok(Some(Self::show(
-                    sources,
-                    &open,
-                    content.as_ref(),
-                    Some(head),
-                )))
+                let files = Self::ready(&open, content.as_ref(), Some(head));
+                Ok(Some(found(files, false)))
             }
             Held::NoTarget => Err(Error::new(
                 ErrorKind::NotFound,
@@ -166,51 +175,31 @@ impl PrFiles {
             Held::Both => {
                 let read = || diff::read(&mirror, &pr.target_branch, &start, &head);
                 let open = sources.diffs.get_or_read(&at, target, read)?;
-                Ok(Some(Self::show(sources, &open, content.as_ref(), None)))
+                Ok(Some(found(
+                    Self::ready(&open, content.as_ref(), None),
+                    true,
+                )))
             }
         }
     }
 
-    /// The diff `open`, ready to show, and the PR's Lookup checkout on its way to the diff's two ends. The
-    /// worker moves nothing when the checkout is there already.
-    fn show(
-        sources: &DiffSources<'_>,
-        open: &OpenDiff,
-        content: Option<&PullRequestContent>,
-        newer: Option<CommitSha>,
-    ) -> Self {
-        let at = LookupAt {
-            base: open.base.clone(),
-            head: open.pr.head.clone(),
-        };
-        sources.mirrors.look_up(open.pr.repository.clone(), at);
-        Self::ready(open, content, newer)
-    }
-
-    /// Hands PR `number`'s head to the mirrors' worker ahead of the heads waiting, if its mirror lacks it,
-    /// as the user has opened the PR. It runs one git, which says whether the mirror holds the head, so a
-    /// PR left on its Conversation costs no diff, and the head is there or on its way once the Files tab
-    /// shows.
-    pub fn fetch_missing_head(
+    /// What PR `number`'s Mirror holds of its head, as the user opens the PR, or nothing if Tsugiki doesn't
+    /// hold the PR or its mirror isn't there. It runs one git, which says whether the mirror holds the head,
+    /// so a PR left on its Conversation costs no diff.
+    pub fn head_in_mirror(
         sources: &DiffSources<'_>,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<HeadInMirror>, Error> {
         let Some((pr, _content)) = facts(sources.reader, repository, number)? else {
-            return Ok(());
+            return Ok(None);
         };
         let mirror = sources.folders.mirror(repository);
         if !mirror.exists() {
-            return Ok(());
+            return Ok(None);
         }
-        sources.mirrors.opened(repository.clone(), number);
-        // The sync reads a PR's head the next time it reads the PR.
-        if let Some(head) = &pr.head
-            && !diff::holds_commit(&mirror, head)
-        {
-            fetch_first(sources.mirrors, repository, &pr, head);
-        }
-        Ok(())
+        let holds = |head: &CommitSha| diff::holds_commit(&mirror, head);
+        Ok(Some(HeadInMirror::of(&pr, holds)))
     }
 
     /// The diff `open`, with the threads of `content`. Their lines count in the head GitHub had when Tsugiki
@@ -370,21 +359,6 @@ fn start(pr: &PullRequestFacts) -> Start {
         }
         (None, _) => Start::TargetBranch,
     }
-}
-
-/// Hands `head`, the head of `pr` its mirror lacks, to the mirrors' worker ahead of the heads waiting.
-fn fetch_first(
-    mirrors: &MirrorRequests,
-    repository: &RepositoryName,
-    pr: &PullRequestFacts,
-    head: &CommitSha,
-) {
-    let head = PrHead {
-        number: pr.number,
-        commit: head.clone(),
-        target_branch: pr.target_branch.clone(),
-    };
-    mirrors.fetch_first(repository.clone(), head);
 }
 
 /// PR `number`'s facts, and its Conversation once Tsugiki has read it, as the database last had them.

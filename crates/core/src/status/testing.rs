@@ -22,17 +22,6 @@ pub(crate) fn failed_reads_board() -> (StatusBoard, Receiver<FailedRead>) {
     (board, seen)
 }
 
-/// A board that passes on the work for the mirrors it is handed, with the Repository it is for.
-pub(crate) fn heads_board() -> (StatusBoard, Receiver<(RepositoryName, MirrorWork)>) {
-    let (passed, seen) = mpsc::channel();
-    let board = StatusBoard::new(Box::new(|_| {})).with_heads(Box::new(
-        move |repository: &RepositoryName, work: MirrorWork| {
-            passed.send((repository.clone(), work)).unwrap();
-        },
-    ));
-    (board, seen)
-}
-
 pub(crate) fn quiet_board() -> StatusBoard {
     StatusBoard::new(Box::new(|_| {}))
 }

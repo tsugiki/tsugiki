@@ -2,22 +2,23 @@
 
 use std::collections::BTreeSet;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
-
-use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
+use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
+use crate::fetching::{Fetched, Fetching, Item, Marked, MirrorWant, SessionMessage};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
+use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
-use crate::repository_settings::{RepositoryCheck, RepositorySettings};
-use crate::status::{Change, FailedRead, LastSync, MirrorWork, ReadFailure, Status, StatusBoard};
+use crate::repository_settings::RepositoryCheck;
+use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
@@ -29,7 +30,6 @@ use crate::work::{SeenMark, checks_to_keep, mirror_work};
 compile_error!("`session::run` catches panics, so Tsugiki can't build with `panic = \"abort\"`");
 
 const STOPPED_CHECKING: &str = "Tsugiki stopped checking GitHub. Restart Tsugiki to check again.";
-const NOT_CONNECTED: &str = "Tsugiki isn't connected to GitHub. The status bar says why.";
 
 /// Shows who was signed in last time, reads gh's token, asks GitHub who it belongs to, and shows the result
 /// on `board`. Returns the client when there is a token, even offline, since GitHub may come back.
@@ -56,153 +56,26 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
 /// (ADR 0017). It shows its own failures on the board.
 #[must_use = "dropping the session stops it"]
 pub struct Session {
-    messages: Sender<Message>,
+    /// The handle the app asks through, which also tells this session to stop.
+    fetching: Fetching,
     finished: Receiver<()>,
     reader: StoreReader,
 }
 
-/// An Issue or a PR of a Repository, in a message to the session's thread.
-#[derive(Debug, PartialEq, Eq)]
-struct Item {
-    repository: RepositoryName,
-    number: u32,
-}
-
-/// What others ask of the session's thread, which alone holds the token and the client.
-enum Message {
-    Stop,
-    Check {
-        name: RepositoryName,
-        reply: Sender<Result<RepositoryCheck, Error>>,
-    },
-    Sync {
-        repository: RepositorySettings,
-    },
-    Refresh,
-    Mark(Marked),
-    Fetch(Fetched),
-    /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
-    Patched(RepositoryName, PatchReads),
-}
-
-/// A mark the user made on an item: seen or unseen.
-#[derive(Debug, PartialEq, Eq)]
-enum Marked {
-    Seen {
-        repository: RepositoryName,
-        mark: SeenMark,
-    },
-    /// The flag starts at `at`.
-    Unseen { item: Item, at: OffsetDateTime },
-}
-
-/// An Issue or a PR on screen, whose conversation the session reads from GitHub.
-#[derive(Debug, PartialEq, Eq)]
-enum Fetched {
-    Issue(Item),
-    PullRequest(Item),
-}
-
-impl Fetched {
-    fn item(&self) -> &Item {
-        let (Self::Issue(item) | Self::PullRequest(item)) = self;
-        item
+/// The news for the window that a read of what `item` says failed, and `why`.
+fn failed(item: &Item, why: ReadFailure) -> FailedRead {
+    FailedRead {
+        repository: item.repository.clone(),
+        number: item.number,
+        why,
     }
 }
 
-impl Item {
-    /// The news for the window that a read of what this item says failed, and `why`.
-    fn failed(&self, why: ReadFailure) -> FailedRead {
-        FailedRead {
-            repository: self.repository.clone(),
-            number: self.number,
-            why,
-        }
-    }
-}
-
-/// Keeps the per-file patch-ids read of commits in a Repository, and the commits that can't be read, as
-/// `SessionRequests::patch_ids_keeper` gives it.
-pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, PatchReads) + Send>;
-
-/// Asks the session about Repositories, from any thread. A check waits for what the session is doing first,
-/// which at the start can be `gh` or a slow request, so don't call it from the thread that draws the window.
-#[derive(Clone)]
-pub struct SessionRequests {
-    messages: Sender<Message>,
-}
-
-impl SessionRequests {
-    /// Asks the session to load the user's work and the Filters of `repository`, and returns at once. A
-    /// session with no token or no database has already shown why on the status bar, so this reports no
-    /// failure.
-    pub fn sync(&self, repository: RepositorySettings) {
-        drop(self.messages.send(Message::Sync { repository }));
-    }
-
-    /// Asks the session to refresh the open Repository now, and returns at once. A sync already under way
-    /// covers this.
-    pub fn refresh(&self) {
-        drop(self.messages.send(Message::Refresh));
-    }
-
-    /// Asks the session to read what an Issue on screen says now, and returns at once. Only Mark Seen moves
-    /// Last seen, so opening the Issue or reading it again leaves it alone.
-    pub fn fetch_issue(&self, repository: RepositoryName, number: u32) {
-        let item = Item { repository, number };
-        drop(self.messages.send(Message::Fetch(Fetched::Issue(item))));
-    }
-
-    /// Asks the session to read a PR's Conversation on screen now, and returns at once. Like `fetch_issue`,
-    /// this leaves Last seen alone.
-    pub fn fetch_pull_request(&self, repository: RepositoryName, number: u32) {
-        let item = Item { repository, number };
-        drop(
-            self.messages
-                .send(Message::Fetch(Fetched::PullRequest(item))),
-        );
-    }
-
-    /// Mark Seen on what `mark` names, as the window drew it, and returns at once. A session that can't ask
-    /// GitHub still records it.
-    pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark) {
-        drop(
-            self.messages
-                .send(Message::Mark(Marked::Seen { repository, mark })),
-        );
-    }
-
-    /// Mark Unseen on item `number`, from now, and returns at once.
-    pub fn mark_unseen(&self, repository: RepositoryName, number: u32) {
-        let item = Item { repository, number };
-        let at = OffsetDateTime::now_utc();
-        drop(
-            self.messages
-                .send(Message::Mark(Marked::Unseen { item, at })),
-        );
-    }
-
-    /// What keeps the per-file patch-ids the Mirror worker read of commits in a Repository, and the commits
-    /// it can't read, for `MirrorRequests::hand_patches_to`. Each call returns at once, and the window then
-    /// hears that the PRs whose reviewed commit or head they are changed. It needs only the database, so a
-    /// session that can't reach GitHub keeps them too.
-    pub fn patch_ids_keeper(self) -> KeepPatchIds {
-        Box::new(move |repository, patches| {
-            let patched = Message::Patched(repository.clone(), patches);
-            drop(self.messages.send(patched));
-        })
-    }
-
-    /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
-    /// error, and has already shown why on the status bar.
-    pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
-        let (reply, answer) = mpsc::channel();
-        self.messages
-            .send(Message::Check { name, reply })
-            .ok()
-            .and_then(|()| answer.recv().ok())
-            .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
-    }
+/// What a session reaches beyond its thread: GitHub with `gh`'s token, and the Mirror worker, which it hands
+/// the rules' wants and which hands it the patch-ids it reads.
+pub struct Connections {
+    pub github: GitHubAccess,
+    pub mirrors: MirrorRequests,
 }
 
 /// How often a session asks GitHub again.
@@ -219,16 +92,23 @@ impl Session {
     pub fn start(
         mut board: StatusBoard,
         folders: Result<Folders, Error>,
-        access: GitHubAccess,
+        connections: Connections,
         intervals: Intervals,
     ) -> Self {
+        let Connections {
+            github: access,
+            mirrors,
+        } = connections;
         let (messages, incoming) = mpsc::channel();
+        let fetching = Fetching::new(messages, mirrors);
+        fetching.hand_patch_ids_to_session();
         let (finishing, finished) = mpsc::channel::<()>();
         let (to_open, reader) = store::reader();
         let database = Database { folders, to_open };
         let refreshes = Refreshes {
             intervals,
             incoming,
+            fetching: fetching.clone(),
         };
         let _ = thread::spawn(move || {
             // `stop` learns the session is over when this goes, however the thread ends.
@@ -236,17 +116,16 @@ impl Session {
             run(&mut board, database, access, &refreshes);
         });
         Self {
-            messages,
+            fetching,
             finished,
             reader,
         }
     }
 
-    /// A way to ask the session about Repositories. While one exists, only `stop` ends the session.
-    pub fn requests(&self) -> SessionRequests {
-        SessionRequests {
-            messages: self.messages.clone(),
-        }
+    /// The way to ask GitHub and the Mirrors for data. Dropping the session stops it, whatever handles are
+    /// left.
+    pub fn fetching(&self) -> Fetching {
+        self.fetching.clone()
     }
 
     /// The read-only connection, which doesn't wait for anything this session is doing (ADR 0018).
@@ -260,11 +139,7 @@ impl Session {
     /// `patience`, and then the process ends in the middle of it. SQLite recovers at the next start, as it
     /// does after a crash.
     pub fn stop(&self, patience: Duration) {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "this fails only if the session has already finished, which is what this asks for"
-        )]
-        let _ = self.messages.send(Message::Stop);
+        self.fetching.stop_session();
         #[expect(
             clippy::let_underscore_must_use,
             reason = "running out of patience is the one failure here, and the doc above says why it is safe"
@@ -273,10 +148,19 @@ impl Session {
     }
 }
 
-/// When to ask GitHub again.
+impl Drop for Session {
+    /// The session's thread holds a handle of its own, so its queue stays open and the thread needs telling.
+    fn drop(&mut self) {
+        self.fetching.stop_session();
+    }
+}
+
+/// When to ask GitHub again, and the queue the session takes its messages from.
 struct Refreshes {
     intervals: Intervals,
-    incoming: Receiver<Message>,
+    incoming: Receiver<SessionMessage>,
+    /// The handle the session hands the rules' wants to the Mirror worker through.
+    fetching: Fetching,
 }
 
 /// When the next of each kind of question is due.
@@ -323,15 +207,17 @@ impl Refreshes {
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
         while let Ok(message) = self.incoming.recv() {
             match message {
-                Message::Stop => return,
-                Message::Mark(marked) => mark(board, store, marked),
-                Message::Patched(repository, patches) => {
+                SessionMessage::Stop => return,
+                SessionMessage::Mark(marked) => mark(board, store, marked),
+                SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
                 }
-                Message::Fetch(fetched) => {
-                    board.failed_read(&fetched.item().failed(ReadFailure::NoToken));
+                SessionMessage::Fetch(fetched) => {
+                    board.failed_read(&failed(fetched.item(), ReadFailure::NoToken));
                 }
-                Message::Check { .. } | Message::Sync { .. } | Message::Refresh => {}
+                SessionMessage::Check { .. }
+                | SessionMessage::Sync { .. }
+                | SessionMessage::Refresh => {}
             }
         }
     }
@@ -348,18 +234,18 @@ impl Refreshes {
                 .incoming
                 .recv_timeout(wake.saturating_duration_since(Instant::now()))
             {
-                Ok(Message::Sync { repository }) => {
+                Ok(SessionMessage::Sync { repository }) => {
                     let opened = repository.name.clone();
                     syncs.add(repository);
                     return Turn::Opened(opened);
                 }
-                Ok(Message::Refresh) => return Turn::RefreshNow,
-                Ok(Message::Mark(marked)) => return Turn::Mark(marked),
-                Ok(Message::Fetch(fetched)) => return Turn::Fetch(fetched),
-                Ok(Message::Patched(repository, patches)) => {
+                Ok(SessionMessage::Refresh) => return Turn::RefreshNow,
+                Ok(SessionMessage::Mark(marked)) => return Turn::Mark(marked),
+                Ok(SessionMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
+                Ok(SessionMessage::Patched(repository, patches)) => {
                     return Turn::Patched(repository, patches);
                 }
-                Ok(Message::Check { name, reply }) => {
+                Ok(SessionMessage::Check { name, reply }) => {
                     let today = github.clock().now().date();
                     #[expect(
                         clippy::let_underscore_must_use,
@@ -371,7 +257,9 @@ impl Refreshes {
                             .map(RepositoryCheck::new),
                     );
                 }
-                Ok(Message::Stop) | Err(RecvTimeoutError::Disconnected) => return Turn::Stop,
+                Ok(SessionMessage::Stop) | Err(RecvTimeoutError::Disconnected) => {
+                    return Turn::Stop;
+                }
                 Err(RecvTimeoutError::Timeout) if Instant::now() >= due.status => {
                     return Turn::Refresh;
                 }
@@ -480,7 +368,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::SyncStep => match syncs.step(&github, store) {
                 Ok(Some(Progress::Changed(change))) => {
                     if !change.items.is_empty() {
-                        hand_over_heads(board, store, &syncs, &change.repository);
+                        hand_over_heads(&refreshes.fetching, store, &syncs, &change);
                     }
                     board.changed(&change);
                 }
@@ -497,31 +385,38 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
     }
 }
 
-/// Hands the mirrors the heads of the PRs in `repository`'s Reach, after a step saved its
-/// facts, the commit each of the user's Reviews there covered, and the commits whose patch-ids the Stale
-/// review check needs and the store lacks. It keeps the last check of each PR whose sides are both read
-/// first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
+/// Hands the Mirror worker what the rules want of the Repository a step just saved facts of: the heads of
+/// the PRs in its Reach, the commit each of the user's Reviews there covered, and the commits whose patch-ids
+/// the Stale review check needs and the store lacks. Then the heads the step saved, so a PR the user opened
+/// before its head was known gets its head first. It keeps the last check of each PR whose sides are both
+/// read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
 /// store that can't answer just saved, and the next step that saves says if it is in trouble, and hands the
 /// heads. The heads go though the reviewed commits can't be read, and those wait for a step whose read works.
-fn hand_over_heads(
-    board: &mut StatusBoard,
-    store: &Store,
-    syncs: &Syncs,
-    repository: &RepositoryName,
-) {
+fn hand_over_heads(fetching: &Fetching, store: &Store, syncs: &Syncs, saved: &Change) {
+    let repository = &saved.repository;
     if let (Some(settings), Ok(facts)) = (syncs.settings(repository), store.work_facts(repository))
     {
-        let reviewed = store.reviewed_commits(repository).unwrap_or_default();
+        let reviewed = store.reviewed_commits(repository).ok();
         // A head can move to a commit the store has read, which makes no new read to keep a check with. A
         // store that can't keep it says so at the next step that saves.
         let _kept = keep_last_checks(store, repository, &facts);
         let (heads, patches) = mirror_work(&facts, settings);
-        let work = MirrorWork {
+        let want = MirrorWant {
             heads,
             reviewed,
             patches,
         };
-        board.reached_heads(repository, work);
+        fetching.want(repository, want);
+        let saved_heads = (facts.pull_requests.iter())
+            .filter(|pr| saved.items.contains(&pr.number))
+            .filter_map(|pr| {
+                Some(PrHead {
+                    number: pr.number,
+                    commit: pr.head.clone()?,
+                    target_branch: pr.target_branch.clone(),
+                })
+            });
+        fetching.heads_saved(repository, saved_heads.collect());
     }
 }
 
@@ -645,7 +540,7 @@ fn fetch_conversation(
     let content = match read {
         Ok(content) => content,
         Err(problem) if problem.kind.speaks_for_all_of_github() => {
-            board.failed_read(&item.failed(ReadFailure::WaitsOnGitHub));
+            board.failed_read(&failed(&item, ReadFailure::WaitsOnGitHub));
             return Err(problem);
         }
         Err(problem) => {
@@ -654,7 +549,7 @@ fn fetch_conversation(
             } else {
                 ReadFailure::Other
             };
-            board.failed_read(&item.failed(why));
+            board.failed_read(&failed(&item, why));
             log::warn!(
                 "Tsugiki couldn't read {noun} #{} in {}: {}",
                 item.number,

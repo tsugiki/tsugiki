@@ -44,6 +44,8 @@ pub(super) struct Reviews {
     kept: BTreeMap<u32, CommitSha>,
     /// The commits GitHub refused to send, read from the file beside the mirror before the first keeping.
     refused: Option<BTreeSet<CommitSha>>,
+    /// The PRs of the last hand-over, whose commits the rules want kept. Nothing before the first one.
+    handed: Option<BTreeSet<u32>>,
 }
 
 impl Reviews {
@@ -79,6 +81,15 @@ impl Reviews {
             let _ = self.waiting.entry(number).or_insert(commit);
         }
     }
+
+    /// Puts back the commits of a keeping that failed that the rules still want: a hand-over replaces the
+    /// last, so one that left it meanwhile goes.
+    fn put_back_wanted(&mut self, mut commits: BTreeMap<u32, CommitSha>) {
+        if let Some(handed) = &self.handed {
+            commits.retain(|number, _| handed.contains(number));
+        }
+        self.put_back(commits);
+    }
 }
 
 /// A git keeping a Repository's reviewed commits.
@@ -104,13 +115,17 @@ enum Step {
 }
 
 impl Worker {
-    /// Keeps each commit of `reviewed` that its ref may not point at yet, for the next keeping.
+    /// Keeps each commit of `reviewed` that its ref may not point at yet, for the next keeping. `reviewed`
+    /// replaces the last hand-over, so a commit that left it waits no more.
     pub(super) fn hand_over_reviewed(
         &mut self,
         repository: &RepositoryName,
         reviewed: Vec<ReviewedCommit>,
     ) {
         self.change_reviews(repository, |reviews| {
+            let handed: BTreeSet<u32> = reviewed.iter().map(|one| one.number).collect();
+            reviews.waiting.retain(|number, _| handed.contains(number));
+            reviews.handed = Some(handed);
             for ReviewedCommit { number, commit } in reviewed {
                 if reviews.kept.get(&number) == Some(&commit) {
                     drop(reviews.waiting.remove(&number));
@@ -337,7 +352,7 @@ impl Worker {
         repository: &RepositoryName,
         commits: BTreeMap<u32, CommitSha>,
     ) {
-        self.change_reviews(repository, |reviews| reviews.put_back(commits));
+        self.change_reviews(repository, |reviews| reviews.put_back_wanted(commits));
     }
 
     /// Notes that GitHub refused to send the commits in `refused`, in the file beside `mirror` too, so they

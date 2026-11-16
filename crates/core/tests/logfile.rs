@@ -9,7 +9,8 @@ use std::time::Duration;
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::github::{GitHub, GitHubAccess, Reply, Request, Transport, Unreachable};
 use tsugiki_core::logfile;
-use tsugiki_core::session::{Intervals, Session};
+use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
+use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
 use tsugiki_core::token::{GhOutput, Token, read_token};
@@ -107,12 +108,21 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     );
 
     // Each problem the status bar shows, including one no earlier line explains.
+    let lost = || Err(Error::new(ErrorKind::Internal, "the folders are lost"));
+    let mirrors = Mirrors::start(
+        lost(),
+        Remotes::under(String::new()),
+        Announce::cloning_only(Box::new(|_| {})),
+    );
     let session = Session::start(
         StatusBoard::new(Box::new(|_| {})),
-        Err(Error::new(ErrorKind::Internal, "the folders are lost")),
-        GitHubAccess {
-            transport: Box::new(Proxy),
-            run_gh: gh_is_missing,
+        lost(),
+        Connections {
+            github: GitHubAccess {
+                transport: Box::new(Proxy),
+                run_gh: gh_is_missing,
+            },
+            mirrors: mirrors.requests(),
         },
         Intervals {
             status: Duration::from_secs(3600),
@@ -120,6 +130,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
         },
     );
     session.stop(Duration::from_secs(10));
+    mirrors.stop(Duration::from_secs(10));
     let file = read_after_flush();
     assert!(file.contains("the folders are lost"), "{file}");
 

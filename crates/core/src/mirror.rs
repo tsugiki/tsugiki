@@ -323,6 +323,10 @@ enum Message {
     First(RepositoryName, PrHead),
     /// A PR the user opened, whose ref stays until the next launch.
     Opened(RepositoryName, u32),
+    /// A PR the user opened before the session knew its head, whose head goes first once it does.
+    Awaited(RepositoryName, u32),
+    /// Heads of a Repository's PRs that a sync step saved.
+    Saved(RepositoryName, Vec<PrHead>),
     /// Where the PR on screen wants a Repository's Lookup checkout.
     LookUp(RepositoryName, LookupAt),
     /// A reader asks where a Repository's Lookup checkout is, once it has stopped moving.
@@ -399,6 +403,8 @@ impl MirrorRequests {
 
     /// Fetches the PR heads in `heads` into `repository`'s mirror, as `refs/tsugiki/pull/N/head`, once
     /// its mirror is there. Heads handed over while a fetch is under way go in the next one, all in one.
+    /// `heads` is the whole set the rules want, so it replaces the last: a head that left it and is still
+    /// waiting isn't fetched, unless the user opened its PR.
     pub fn fetch_heads(&self, repository: RepositoryName, heads: Vec<PrHead>) {
         self.send(Message::Heads(repository, heads));
     }
@@ -425,7 +431,8 @@ impl MirrorRequests {
     }
 
     /// Fetches the head of a PR the user opened, which `repository`'s mirror lacks, ahead of the heads
-    /// waiting. The worker fetches it whatever it noted of it before, so a ref GitHub made late arrives.
+    /// waiting, in a fetch of its own. The worker fetches it whatever it noted of it before, so a ref GitHub
+    /// made late arrives.
     pub fn fetch_first(&self, repository: RepositoryName, head: PrHead) {
         self.send(Message::First(repository, head));
     }
@@ -433,6 +440,18 @@ impl MirrorRequests {
     /// Keeps the ref of a PR the user opened until the next launch, though the user's work may not reach it.
     pub fn opened(&self, repository: RepositoryName, number: u32) {
         self.send(Message::Opened(repository, number));
+    }
+
+    /// Keeps the ref of PR `number`, which the user opened before the session knew its head, as `opened`
+    /// does, and fetches its head as `fetch_first` does once `heads_saved` names it.
+    pub fn await_head(&self, repository: RepositoryName, number: u32) {
+        self.send(Message::Awaited(repository, number));
+    }
+
+    /// Says a sync step saved `heads` of `repository`'s PRs. The head of a PR `await_head` named goes first,
+    /// and the worker passes over the others.
+    pub fn heads_saved(&self, repository: RepositoryName, heads: Vec<PrHead>) {
+        self.send(Message::Saved(repository, heads));
     }
 
     /// Moves `repository`'s **Lookup checkout** to `at`, the PR on screen, in the background. The checkout
@@ -476,12 +495,11 @@ impl MirrorRequests {
     }
 }
 
-/// Requests that reach a test rather than a worker, which hears each head asked for first and each move of
-/// a Lookup checkout, and says which clones wait for an answer.
+/// Requests that reach a test, which hears what each asks, and no worker. No clone waits for an
+/// answer.
 #[cfg(test)]
 pub(crate) struct HeardRequests {
     messages: Receiver<Message>,
-    asked: LatestWriter<Vec<RepositoryName>>,
     /// What the test hasn't asked for yet, of what it heard.
     unasked: std::cell::RefCell<Vec<Message>>,
 }
@@ -490,7 +508,7 @@ pub(crate) struct HeardRequests {
 impl HeardRequests {
     pub(crate) fn new() -> (MirrorRequests, Self) {
         let (messages, heard) = mpsc::channel();
-        let (asked, asking) = latest::channel(Vec::new());
+        let (_asked, asking) = latest::channel(Vec::new());
         let requests = MirrorRequests {
             messages,
             prefixes: Vec::new(),
@@ -498,15 +516,9 @@ impl HeardRequests {
         };
         let heard = Self {
             messages: heard,
-            asked,
             unasked: std::cell::RefCell::default(),
         };
         (requests, heard)
-    }
-
-    /// Has the clones of `repositories` wait for an answer, as the worker would.
-    pub(crate) fn asking(&mut self, repositories: &[RepositoryName]) {
-        self.asked.set(&repositories.to_vec());
     }
 
     /// The heads asked for first since the last call.
@@ -517,6 +529,80 @@ impl HeardRequests {
             };
             Ok((repository, head))
         })
+    }
+
+    /// What was asked since the last call of what the rules want, the heads saved and the PRs opened, each in
+    /// words, in the order asked.
+    pub(crate) fn asked(&self) -> Vec<String> {
+        fn listed(items: impl Iterator<Item = String>) -> String {
+            let items: Vec<String> = items.collect();
+            if items.is_empty() {
+                "none".to_owned()
+            } else {
+                items.join(", ")
+            }
+        }
+        let short = |commit: &CommitSha| commit.as_str().chars().take(7).collect::<String>();
+        let heads = |heads: &[PrHead]| {
+            listed(heads.iter().map(|head| {
+                let PrHead {
+                    number,
+                    commit,
+                    target_branch,
+                } = head;
+                format!("#{number} at {} on {target_branch}", short(commit))
+            }))
+        };
+        self.take(|message| match message {
+            Message::Heads(repository, wanted) => {
+                Ok(format!("{repository} wants heads {}", heads(&wanted)))
+            }
+            Message::Reviewed(repository, reviewed) => {
+                let reviewed = (reviewed.iter())
+                    .map(|one| format!("#{} at {}", one.number, short(&one.commit)));
+                Ok(format!("{repository} wants reviewed {}", listed(reviewed)))
+            }
+            Message::Patches(repository, wanted) => {
+                let wanted = (wanted.iter())
+                    .map(|of| format!("{} on {}", short(&of.commit), of.target_branch));
+                Ok(format!(
+                    "{repository} wants patch-ids of {}",
+                    listed(wanted)
+                ))
+            }
+            Message::Saved(repository, saved) => {
+                Ok(format!("{repository} saved heads {}", heads(&saved)))
+            }
+            Message::Opened(repository, number) => Ok(format!("{repository} opened #{number}")),
+            Message::Awaited(repository, number) => Ok(format!("{repository} awaits #{number}")),
+            other @ (Message::Clone(..)
+            | Message::PatchesTo(_)
+            | Message::First(..)
+            | Message::LookUp(..)
+            | Message::Checkout(..)
+            | Message::Hold(_)
+            | Message::CheckAgain
+            | Message::Progress(_)
+            | Message::Ended { .. }
+            | Message::Stop) => Err(other),
+        })
+    }
+
+    /// What `asked` gives, waiting up to `patience` for a line that holds `last`, after which a test has
+    /// heard all it waits for.
+    pub(crate) fn asked_through(&self, last: &str, patience: Duration) -> Vec<String> {
+        let deadline = Instant::now() + patience;
+        let mut heard = Vec::new();
+        loop {
+            heard.extend(self.asked());
+            if heard.iter().any(|line| line.contains(last)) {
+                return heard;
+            }
+            match (self.messages).recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(message) => self.unasked.borrow_mut().push(message),
+                Err(_) => return heard,
+            }
+        }
     }
 
     /// The moves of Lookup checkouts asked for since the last call.
@@ -769,6 +855,9 @@ const BEHIND_PATIENCE: Duration = Duration::from_secs(10);
 struct Batch {
     heads: BTreeMap<u32, CommitSha>,
     branches: BTreeSet<String>,
+    /// The heads the user asked for, with their Target branches, in a batch of only those. A batch of the
+    /// heads the rules want has none.
+    first: BTreeMap<u32, String>,
 }
 
 /// What the worker knows of one Repository's PR heads.
@@ -784,9 +873,13 @@ struct Heads {
     /// The heads fetched since Tsugiki started, and those GitHub had no ref for at their retry. A head that
     /// moves on is fetched again.
     settled: BTreeMap<u32, CommitSha>,
-    /// An opened PR's head waits, which goes ahead of the other Repositories' heads, even when this
-    /// Repository's fetch is under way. The next fetch takes it.
-    opened: bool,
+    /// The heads of `waiting` the user asked for, each with its Target branch: those of the PRs they opened.
+    /// They go in a fetch of their own, ahead of the heads the rules want and of the other Repositories',
+    /// even when this Repository's fetch is under way.
+    first: BTreeMap<u32, String>,
+    /// The PRs the user opened before the session knew their heads, whose heads go in `first` once a sync
+    /// step saves them.
+    awaited: BTreeSet<u32>,
     /// The PRs of the last hand-over: those in Reach. Nothing before the first one.
     handed: Option<BTreeSet<u32>>,
     /// The PRs the user opened since launch, whose refs stay though they're out of Reach.
@@ -948,17 +1041,11 @@ impl Worker {
             match message {
                 Ok(Message::Clone(repository, turn, source)) => self.wait(repository, turn, source),
                 Ok(Message::Heads(repository, heads)) => {
-                    self.heard_news();
-                    if self.pace == Pace::Stalled {
-                        self.pace = Pace::Going;
-                    }
+                    self.wake();
                     self.hand_over(&repository, heads);
                 }
                 Ok(Message::Reviewed(repository, reviewed)) => {
-                    self.heard_news();
-                    if self.pace == Pace::Stalled {
-                        self.pace = Pace::Going;
-                    }
+                    self.wake();
                     self.hand_over_reviewed(&repository, reviewed);
                 }
                 Ok(Message::Patches(repository, wanted)) => {
@@ -966,13 +1053,17 @@ impl Worker {
                 }
                 Ok(Message::PatchesTo(announce)) => self.patched = Some(announce),
                 Ok(Message::First(repository, head)) => {
-                    self.heard_news();
-                    if self.pace == Pace::Stalled {
-                        self.pace = Pace::Going;
-                    }
+                    self.wake();
                     self.put_first(&repository, head);
                 }
                 Ok(Message::Opened(repository, number)) => self.note_opened(&repository, number),
+                Ok(Message::Awaited(repository, number)) => {
+                    self.note_opened(&repository, number);
+                    self.change_heads(&repository, |known| {
+                        let _ = known.awaited.insert(number);
+                    });
+                }
+                Ok(Message::Saved(repository, heads)) => self.saved(&repository, heads),
                 Ok(Message::LookUp(repository, at)) => self.look_up(&repository, at),
                 Ok(Message::Checkout(repository, reply)) => {
                     self.lookup_checkout(&repository, reply)
@@ -1098,7 +1189,8 @@ impl Worker {
                 branches: BTreeSet::new(),
                 behind: BTreeMap::new(),
                 settled: BTreeMap::new(),
-                opened: false,
+                first: BTreeMap::new(),
+                awaited: BTreeSet::new(),
                 handed: None,
                 viewed: BTreeSet::new(),
                 reviews: Reviews::default(),
@@ -1117,6 +1209,14 @@ impl Worker {
         self.heads.insert(at, known);
     }
 
+    /// Notes news for the git under way, and lets a stalled worker go on: something more to fetch came.
+    fn wake(&mut self) {
+        self.heard_news();
+        if self.pace == Pace::Stalled {
+            self.pace = Pace::Going;
+        }
+    }
+
     fn heard_news(&mut self) {
         match &mut self.job {
             Some(Job::Fetch(fetch)) => fetch.news = true,
@@ -1126,10 +1226,19 @@ impl Worker {
     }
 
     /// Keeps each head of `heads` that the mirror may not have yet, for the next fetch. One that the fetch
-    /// under way asks for too waits, in case that fetch fails.
+    /// under way asks for too waits, in case that fetch fails. `heads` replaces the last hand-over, so a
+    /// head that left it waits no more, unless its PR is one the user opened.
     fn hand_over(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
         let mut known = self.take_heads(repository);
-        known.handed = Some(heads.iter().map(|head| head.number).collect());
+        let handed: BTreeSet<u32> = heads.iter().map(|head| head.number).collect();
+        let viewed = &known.viewed;
+        let kept = |number: &u32| handed.contains(number) || viewed.contains(number);
+        known.waiting.retain(|number, _| kept(number));
+        known.behind.retain(|number, _| kept(number));
+        // Those of `heads` go below. A head the user opened went with its branch in its first fetch, and
+        // `first` holds the branch of one still waiting for that.
+        known.branches.clear();
+        known.handed = Some(handed);
         for PrHead {
             number,
             commit,
@@ -1166,11 +1275,34 @@ impl Worker {
         let mut known = self.take_heads(repository);
         drop(known.behind.remove(&head.number));
         drop(known.settled.remove(&head.number));
+        let _ = known.awaited.remove(&head.number);
         drop(known.waiting.insert(head.number, head.commit));
-        let _ = known.branches.insert(head.target_branch);
+        drop(known.first.insert(head.number, head.target_branch));
         let _ = known.viewed.insert(head.number);
-        known.opened = true;
         self.heads.push_front(known);
+    }
+
+    /// Puts first each head of `heads` whose PR the user opened before the session knew its head, unless
+    /// the mirror fetched that head since launch.
+    fn saved(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
+        let known = (self.heads.iter_mut()).find(|known| known.repository.is_same(repository));
+        let Some(known) = known else {
+            return;
+        };
+        let awaited: Vec<PrHead> = heads
+            .into_iter()
+            .filter(|head| known.awaited.remove(&head.number))
+            .collect();
+        let firsts: Vec<PrHead> = awaited
+            .into_iter()
+            .filter(|head| known.settled.get(&head.number) != Some(&head.commit))
+            .collect();
+        if !firsts.is_empty() {
+            self.wake();
+        }
+        for head in firsts {
+            self.put_first(repository, head);
+        }
     }
 
     /// Starts the next git, unless one is under way. A Lookup checkout's move goes first, as a reader may
@@ -1451,21 +1583,46 @@ impl Worker {
         }
     }
 
-    /// The waiting heads of the first Repository whose mirror is there, with where it is. The heads of one
-    /// whose mirror isn't there wait for its clone.
+    /// The heads the user asked for in the first Repository where some wait, or else the waiting heads of
+    /// the first Repository, of those whose mirror is there, with where it is. The heads of one whose mirror
+    /// isn't there wait for its clone.
     fn next_batch(&mut self) -> Option<(RepositoryName, Batch, PathBuf)> {
         let going = self.pace == Pace::Going;
         let folders = self.folders.as_ref().ok().filter(|_| going)?;
-        let heads = self.heads.iter_mut().find(|heads| {
-            !heads.waiting.is_empty() && folders.mirror(&heads.repository).exists()
-        })?;
-        let mirror = folders.mirror(&heads.repository);
-        heads.opened = false;
+        let ready = |heads: &Heads| folders.mirror(&heads.repository).exists();
+        for heads in (self.heads.iter_mut()).filter(|heads| !heads.first.is_empty() && ready(heads))
+        {
+            // A head the fetch under way brought no longer waits, and needs no fetch of its own.
+            let mut first = mem::take(&mut heads.first);
+            first.retain(|number, _| heads.waiting.contains_key(number));
+            if first.is_empty() {
+                continue;
+            }
+            let batch = Batch {
+                heads: (first.keys())
+                    .filter_map(|number| Some((*number, heads.waiting.remove(number)?)))
+                    .collect(),
+                branches: first.values().cloned().collect(),
+                first,
+            };
+            return Some((
+                heads.repository.clone(),
+                batch,
+                folders.mirror(&heads.repository),
+            ));
+        }
+        let heads =
+            (self.heads.iter_mut()).find(|heads| !heads.waiting.is_empty() && ready(heads))?;
         let batch = Batch {
             heads: mem::take(&mut heads.waiting),
             branches: mem::take(&mut heads.branches),
+            first: BTreeMap::new(),
         };
-        Some((heads.repository.clone(), batch, mirror))
+        Some((
+            heads.repository.clone(),
+            batch,
+            folders.mirror(&heads.repository),
+        ))
     }
 
     /// Fetches each head and branch of `batch` in one go. A glob in each refspec lets a head or a branch
@@ -1507,20 +1664,38 @@ impl Worker {
     }
 
     /// Puts back the heads and branches of a fetch that failed, behind any newer heads handed over
-    /// meanwhile.
+    /// meanwhile. A head the user asked for stays first. One that left the rules' want meanwhile goes, unless
+    /// its PR is one the user opened.
     fn try_again_later(&mut self, repository: &RepositoryName, batch: Batch) {
         let mut known = self.take_heads(repository);
-        for (number, commit) in batch.heads {
-            let _ = known.waiting.entry(number).or_insert(commit);
+        let Batch {
+            heads,
+            branches,
+            first,
+        } = batch;
+        for (number, commit) in heads {
+            let wanted = known
+                .handed
+                .as_ref()
+                .is_none_or(|handed| handed.contains(&number));
+            if wanted || known.viewed.contains(&number) {
+                let _ = known.waiting.entry(number).or_insert(commit);
+            }
         }
-        known.branches.extend(batch.branches);
+        // A first fetch's branches are those of `first`, which goes back below.
+        if first.is_empty() {
+            known.branches.extend(branches);
+        }
+        for (number, branch) in first {
+            let _ = known.first.entry(number).or_insert(branch);
+        }
         self.requeue(known);
     }
 
     /// Puts a Repository's heads back after its fetch: behind the other Repositories', so each takes its
-    /// turn, unless an opened PR's head waits.
+    /// turn, unless a head the user asked for waits.
     fn requeue(&mut self, known: Heads) {
-        if known.opened {
+        if !known.first.is_empty() {
             self.heads.push_front(known);
         } else {
             self.heads.push_back(known);

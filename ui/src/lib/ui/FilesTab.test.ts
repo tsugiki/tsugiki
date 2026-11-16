@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { remapKeys } from "$lib/state/keymap.svelte";
 import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
 import { PanesState } from "$lib/state/panes.svelte";
 import type { PeekLayout } from "$lib/state/peek";
@@ -1263,6 +1264,13 @@ const shownOne = async (answer: PrFiles) => {
 const bar = () => screen.getByRole("navigation", { name: "File on show" });
 const previousFile = () => screen.getByRole<HTMLButtonElement>("button", { name: "Previous file" });
 const nextFile = () => screen.getByRole<HTMLButtonElement>("button", { name: "Next file" });
+/** The segments of the header's switch, All files then One file. */
+const segments = (): [HTMLElement, HTMLElement] => {
+  const group = within(screen.getByRole("group", { name: "Files" }));
+  return [group.getByRole("button", { name: "All files" }), group.getByRole("button", { name: "One file" })];
+};
+/** Each segment's `aria-pressed`, All files then One file. */
+const pressed = () => segments().map((segment) => segment.getAttribute("aria-pressed"));
 
 it("shows one file at a time under a bar that counts the files, and walks them with its arrows", async () => {
   await shownOne(ready(rows.length));
@@ -1274,9 +1282,7 @@ it("shows one file at a time under a bar that counts the files, and walks them w
   expect(lines()).toHaveLength(5);
   expect(previousFile().disabled).toBe(true);
   expect(nextFile().title).toBe("Next file (Alt+PageDown)");
-  expect(screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(pressed()).toEqual(["false", "true"]);
   await fireEvent.click(nextFile());
   await vi.waitFor(() => {
     expect(lines()).toEqual(["▾logo.pngbinary", "Binary files differ", "ast.py+0 −0"]);
@@ -1287,29 +1293,54 @@ it("shows one file at a time under a bar that counts the files, and walks them w
   expect(bar().textContent).toContain("1 of 2");
 });
 
-it("switches between all the files and one at a time from the header, keeping the row at the top", async () => {
+it("switches between all the files and one at a time from the header's switch, keeping the row at the top", async () => {
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
   });
   const diff = screen.getByRole("region", { name: "Diff" });
-  const toggle = screen.getByRole("button", { name: "One file at a time" });
-  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  const [all, one] = segments();
+  expect(pressed()).toEqual(["true", "false"]);
+  // Only the segment that switches names the key that does the same.
+  expect([all.title, one.title]).toEqual(["All files", "One file (Ctrl+K O)"]);
   expect(screen.queryByRole("navigation", { name: "File on show" })).toBeNull();
+  // A click on the segment on show leaves the tab as it is.
+  await fireEvent.click(all);
+  expect([files.mode, pressed()]).toEqual(["all", ["true", "false"]]);
   // Five pixels into row 6, of the second file, which shows at its page's place 1.
   diff.scrollTop = 6 * 20 + 5;
   await fireEvent.scroll(diff);
 
-  await fireEvent.click(toggle);
+  await fireEvent.click(one);
   await vi.waitFor(() => {
     expect(diff.scrollTop).toBe(20 + 5);
   });
+  expect([files.mode, bar().textContent.includes("2 of 2"), pressed()]).toEqual([
+    "one",
+    true,
+    ["false", "true"],
+  ]);
+  expect([all.title, one.title]).toEqual(["All files (Ctrl+K O)", "One file"]);
+  await fireEvent.click(one);
   expect([files.mode, bar().textContent.includes("2 of 2")]).toEqual(["one", true]);
   await fireEvent.scroll(diff);
-  await fireEvent.click(toggle);
+  await fireEvent.click(all);
   await vi.waitFor(() => {
     expect(diff.scrollTop).toBe(6 * 20 + 5);
   });
+  expect(pressed()).toEqual(["true", "false"]);
+});
+
+it("names a remapped key in the tooltip of the segment that switches", async () => {
+  await shown(ready(rows.length));
+  remapKeys({ toggle_files_mode: "ctrl+alt+o" });
+  await tick();
+  const remapped = segments()[1].title;
+  remapKeys({ toggle_files_mode: "" });
+  await tick();
+
+  expect([remapped, segments()[1].title]).toEqual(["One file (Ctrl+Alt+O)", "One file"]);
+  remapKeys({});
 });
 
 it("scrolls to the header of the next file with all the files, and to the very top for the NEWS entries", async () => {
@@ -1642,8 +1673,8 @@ it("opens a file the PR doesn't change read-only at the hit's commit, and Back r
   expect(core.pullRequestRow).not.toHaveBeenCalled();
   expect(screen.queryByRole("group", { name: "Definition peek" })).toBeNull();
   // What the view covers takes no focus and no keys, and leaves the tree a screen reader reads.
-  const toggle = screen.getByRole("button", { name: "One file at a time", hidden: true });
-  expect([diff.closest("[inert]"), toggle.closest("[inert]")]).toEqual([
+  const segment = screen.getByRole("button", { name: "One file", hidden: true });
+  expect([diff.closest("[inert]"), segment.closest("[inert]")]).toEqual([
     expect.any(HTMLElement),
     expect.any(HTMLElement),
   ]);

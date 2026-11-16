@@ -5,13 +5,13 @@
      leaves GitHub's ref somewhere else or finds none, and "Try again" asks the core once more, which hands
      the head to the mirror again (#233, #213). While GitHub can't be reached, the mirror holds back git, and
      the tab says the PR's commits or the mirror's clone come once GitHub answers (#390). Ctrl+F opens a
-     search over the diff's rows (#186). The header's toggle switches between all the files and one at a
-     time, and one at a time a bar says which file shows, "‹ 12 of 48 ›" and its path (#605). Beside the
-     toggle, Go to definition says it searches, or for a moment that it found nothing (#444). A definition in
-     a file the PR doesn't change opens the file view over the tab (#453). A split Definition peek shows
-     below the diff, which stays where it was (#459). -->
+     search over the diff's rows (#186). The header's switch, "All files | One file", fills the mode on show
+     and switches to the other, and one file at a time a bar says which file shows, "‹ 12 of 48 ›" and its
+     path (#605, #775). Beside the switch, Go to definition says it searches, or for a moment that it found
+     nothing (#444). A definition in a file the PR doesn't change opens the file view over the tab (#453). A
+     split Definition peek shows below the diff, which stays where it was (#459). -->
 <script lang="ts">
-  import type { Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
+  import type { FilesMode, Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
   import FileView from "./FileView.svelte";
   import FindBar from "./FindBar.svelte";
@@ -66,6 +66,20 @@
     onclick={() => {
       files.nextFile(by);
     }}>{arrow}</button
+  >
+{/snippet}
+
+<!-- The switch's segment for `mode`. The one on show is filled and a click on it does nothing; the other
+     switches to its mode, and its tooltip names the key that does the same. -->
+{#snippet segment(mode: FilesMode, name: string)}
+  {@const on = files.mode === mode}
+  <button
+    type="button"
+    aria-pressed={on}
+    title={on ? name : withKey(name, "toggle_files_mode", os)}
+    onclick={() => {
+      if (!on) files.toggleMode();
+    }}>{name}</button
   >
 {/snippet}
 
@@ -129,15 +143,9 @@
       {#if files.notice !== undefined}
         <span class="notice" role="status">{files.notice}</span>
       {/if}
-      <button
-        type="button"
-        class="mode"
-        aria-pressed={files.mode === "one"}
-        title={withKey("One file at a time", "toggle_files_mode", os)}
-        onclick={() => {
-          files.toggleMode();
-        }}>One file at a time</button
-      >
+      <div class="switch" role="group" aria-label="Files">
+        {@render segment("all", "All files")}{@render segment("one", "One file")}
+      </div>
     </div>
     {#if files.searching}
       <FindBar {files} />
@@ -167,7 +175,7 @@
     color: var(--fg-muted);
   }
 
-  /* One line over the diff: the bar on the left, the toggle on the right. */
+  /* One line over the diff: the bar on the left, the switch on the right. */
   .header {
     display: flex;
     gap: 8px;
@@ -184,8 +192,7 @@
     min-width: 0;
   }
 
-  .bar button,
-  .mode {
+  .bar button {
     border: 0;
     background: none;
   }
@@ -206,9 +213,41 @@
     white-space: nowrap;
   }
 
-  .mode {
+  /* Two segments in one frame, the mode on show filled. */
+  .switch {
+    display: flex;
+    flex-shrink: 0;
     margin-left: auto;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .switch button {
+    padding: 1px 8px;
+    border: 0;
     color: var(--fg-muted);
+    background: none;
+    white-space: nowrap;
+  }
+
+  .switch button + button {
+    border-left: 1px solid var(--border);
+  }
+
+  .switch button:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .switch [aria-pressed="true"],
+  .switch [aria-pressed="true"]:hover {
+    color: var(--fg);
+    background: var(--selected);
+  }
+
+  .switch button:focus-visible {
+    outline: 1px solid var(--focus-border);
+    outline-offset: -1px;
   }
 
   /* What Go to definition is doing, or that it found nothing. */
@@ -219,9 +258,13 @@
     white-space: nowrap;
   }
 
-  .mode[aria-pressed="true"] {
-    color: var(--fg);
-    font-weight: 600;
+  /* Windows' contrast themes drop the fill, so the segment on show takes the system's highlight. */
+  @media (forced-colors: active) {
+    .switch [aria-pressed="true"] {
+      forced-color-adjust: none;
+      color: HighlightText;
+      background: Highlight;
+    }
   }
 
   /* The diff fills what the tab leaves, and scrolls by itself. */

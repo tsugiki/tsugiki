@@ -160,10 +160,8 @@ fn read_page(
         }
         InboxPage::Older { after } => groups.older(snapshot, after)?,
     };
-    Ok(Some((
-        groups.facts(snapshot, chosen.members)?,
-        chosen.older,
-    )))
+    let facts = groups.facts(snapshot, chosen.members)?;
+    Ok(Some((facts, chosen.older)))
 }
 
 /// An item of the Inbox before its rows are read, with the numbers of the PRs it shows.

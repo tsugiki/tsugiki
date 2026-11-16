@@ -7,6 +7,64 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.2 (2026-11-16)
+
+Each key belongs to a named action, which `[keys]` in `settings.toml` can remap, and Settings › Keyboard,
+`?` and the command palette list the keys. `Ctrl+P` opens quick open, the PR view gains a rail with a
+Search tab, and the theme picker and Settings pick any Theme.
+
+### Added
+
+- To give an action another key, or none, add a line to `[keys]` in `settings.toml`: `archive = "f7"`,
+  `local_mark = ""`. A key is one press or a chord of two, such as `"Ctrl+K M"`, with Ctrl, Alt and Shift
+  in any order and any case, and `Cmd` and `Option` read as Ctrl and Alt. A line Tsugiki can't read, or
+  one that would take a key Tsugiki needs, shows in the status bar with its line, and its action keeps its
+  default key.
+- Settings › Keyboard lists every action with its key and where the key works: Anywhere, Issue list, Diff
+  or Composer. A remapped key carries a "remapped" mark with its default in the tooltip, and an action
+  whose key another line took names the action that has it now. The box above the table filters the rows
+  by title, by name in `[keys]` or by key.
+- `?` lists the keys that work where the focus is, with their remaps.
+- The command palette lists each action that can run where the focus was, with its key on the right of
+  the row. The commands run last come first, newest at the top, and `machine.toml` keeps the last 50.
+- `Ctrl+P` opens quick open, which finds the Repository's Issues and PRs by number (`123`, `#123`,
+  `gh-123`) or by words of the title, and Enter opens the pick. With a PR on show it lists the files the PR
+  changes first, by words of the path, and Enter opens the file in the Files tab. `>` in the box, or
+  `Ctrl+Shift+P`, lists the commands.
+- The PR view has a rail on its right, beside the Conversation and the Files tab. Its Search tab, on
+  `Ctrl+Shift+F`, searches the PR's code at the diff on show, with Match Case (`Alt+C`), Match Whole Word
+  (`Alt+W`) and Use Regular Expression (`Alt+R`). The results come grouped by file, and Enter or a click
+  opens a match in the diff or the file view. A drag of the rail's left edge sets its width, from 200 to
+  640 px, which `machine.toml` keeps. Its Files tab, on `Ctrl+K F`, stays empty until the tree of changed
+  files comes in a later version.
+- `[appearance] theme` names a Theme, or says `"system"`, the default, to follow the system.
+  `light_theme` and `dark_theme` say what following the system shows. A `"light"` or `"dark"` from an
+  older file still works.
+- The theme picker on `Ctrl+K T` lists Follow system, then every light and every dark Theme, and saves the
+  pick as `theme`.
+- Settings › General opens on an Appearance group that picks the Theme, and the Theme of each side. A
+  change shows at once, title bar included, and Cancel puts it back.
+- The Sidebar shrinks to a 48 px strip of icons, from « in its header, View: Sidebar as Icons in the
+  command palette, or a drag of its edge below 120 px. Each Built-in view and Filter keeps its count as a
+  badge, and a click on its icon brings back the full Sidebar on that view. `Ctrl+B` hides the strip and
+  brings it back.
+- Descriptions and comments show their images: screenshots, badges and GitHub's custom emoji. Tsugiki
+  loads them only from GitHub's own hosts, `camo.githubusercontent.com` among them, which fetches each
+  third-party image for GitHub.
+
+### Fixed
+
+- Go to definition in C works from a file the PR doesn't change, such as a header the file view opened.
+  Before, clangd answered "trying to get AST for non-added document".
+- In a CPython checkout whose version ty doesn't know yet, such as 3.16 on main, Go to definition lands in
+  the checkout's `Lib`. Before, ty dropped its settings and the lookup landed in the Python on `PATH`.
+- The file view and the Definition peek draw code at the diff's size, and mark the line they land on in
+  the diff's colour. Before, they drew it at 14 px, against the diff's 12 px.
+- The command palette and the dialogs cover the panes. Before, the history bar and the panes' sticky bars
+  painted over them and could take their clicks.
+- Enter on a Repository in the picker that the Sidebar's button opened leaves the picker closed. Before,
+  the picker opened again over the new Repository.
+
 ## Version 0.3.1 (2026-11-15)
 
 Go to definition and the Definition peek come to the Files tab, for Python, C and Rust, through a language

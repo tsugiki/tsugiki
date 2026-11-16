@@ -317,7 +317,7 @@ fn the_sidebar_counts_a_filter_switched_off_by_the_items_its_search_found() {
 }
 
 #[test]
-fn a_filter_switched_off_puts_no_pr_first_in_the_workbenchs_trees() {
+fn a_filter_switched_off_puts_no_pr_first_in_the_workbench_trees() {
     let facts = WorkFacts {
         activity: ActivityFacts::default(),
         reviews: ReviewFacts::default(),

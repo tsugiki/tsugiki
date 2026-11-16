@@ -76,6 +76,10 @@ In the same way, when a round's findings come from code that guesses which async
 action, ask the builder to remove the guess, not to patch each race: in 0.3.3 each fix to such a guess
 opened a new race.
 
+When a fix adds a queue or scheduler beside one the code already has, ask the builder to fold its work into
+the existing one: in 0.3.3 a second queue of reads drew five of a round's eight findings, and folding it
+into the refresh fixed all five.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
 that drive what it changed, as [builder.md](builder.md) says.
@@ -92,7 +96,8 @@ and reruns only that gate, and you push again. A force push needs the user's say
 The user merges each PR. Stop at the report.
 
 If a PR changes what `just smoke` covers (AGENTS.md names the files), ask the user before running it, and
-run it only while no agent is building.
+run it only while no agent is building. First check that no Tsugiki is running: the single-instance lock
+makes the run's Tsugiki exit at once with code 0, before any check.
 
 ### 6. After each merge
 

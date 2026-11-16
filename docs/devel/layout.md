@@ -43,7 +43,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     where it was. The focus goes with the cursor when, at that moment, a row of the list holds it or nothing
     does, and stays put anywhere else, such as in a text box or on the list's header. A cursor on a PR in a
     tree, Mark Seen on an item with nothing waiting, a change of order or view, and any other change leave
-    the cursor on its row.
+    the cursor on its row, and a row that held the focus keeps it, even off the screen. When that row is the
+    Detail pane's and a change takes it off the screen, as an update does By last update, the list scrolls as
+    little as it takes to bring all of it back, and focus in the Detail pane stays there. Tsugiki scrolls the
+    list on a change for that row alone, and leaves the rest to the browser, also when the user had
+    scrolled the Detail pane's row away.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
     it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes

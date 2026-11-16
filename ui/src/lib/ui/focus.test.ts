@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { focusBesideRail, keepFocusIn } from "./focus";
+import { focusBesideRail, keepFocusIn, keepOnScreen } from "./focus";
 
 /** A dialog in the page, with `inside` as its HTML, that keeps the focus in. */
 function dialogOf(inside: string) {
@@ -57,6 +57,58 @@ describe("keepFocusIn", () => {
     dialog.focus();
     expect(press("Tab")).toBe(false);
     expect(document.activeElement).toBe(dialog);
+  });
+});
+
+describe("keepOnScreen", () => {
+  /** A list whose client box shows 100 px, under a top border `border` px thick and above a 17 px scrollbar,
+   * scrolled 500 px down, with a box 20 px tall drawn `top` px below the list's top. jsdom lays nothing
+   * out, so the box's place is the test's to set. */
+  const listAndBox = (top: number, border: number) => {
+    const list = document.createElement("div");
+    const box = document.createElement("div");
+    list.append(box);
+    const place = { top };
+    list.getBoundingClientRect = () => ({ top: 0, bottom: border + 100 + 17 }) as DOMRect;
+    box.getBoundingClientRect = () => ({ top: place.top, bottom: place.top + 20 }) as DOMRect;
+    Object.defineProperty(list, "scrollTop", { value: 500, writable: true });
+    Object.defineProperty(list, "clientTop", { value: border });
+    Object.defineProperty(list, "clientHeight", { value: 100 });
+    return { list, box, place };
+  };
+
+  /** The `scrollTop` of `list` once a change took its box from `from` px below its top to `to`. */
+  const scrolledFor = (from: number, to: number, border = 0) => {
+    const { list, box, place } = listAndBox(from, border);
+    const drawn = keepOnScreen(box, list);
+    place.top = to;
+    drawn(box);
+    return list.scrollTop;
+  };
+
+  it("scrolls as little as it takes to show all of a box a change took off the screen below", () => {
+    expect([scrolledFor(40, 300), scrolledFor(40, 100)]).toEqual([720, 520]);
+  });
+
+  it("scrolls a box a change took off the screen above to the focus line along the list's top", () => {
+    // The focus line covers the top 2 px, so a box with 1 px below it doesn't show.
+    expect([scrolledFor(40, -300), scrolledFor(40, -17)]).toEqual([198, 481]);
+  });
+
+  it("counts a box as on show while more than a pixel of it shows below the focus line", () => {
+    expect([scrolledFor(-10, 300), scrolledFor(-17, 300), scrolledFor(99.5, 300)]).toEqual([720, 500, 500]);
+  });
+
+  it("leaves the scroll alone while some of the box still shows, however far the change moved it", () => {
+    expect([scrolledFor(40, 0), scrolledFor(70, 90), scrolledFor(40, -10)]).toEqual([500, 500, 500]);
+  });
+
+  it("counts only the list's client box as on show, not its border or the scrollbar along its bottom", () => {
+    expect([scrolledFor(40, 105), scrolledFor(40, -14, 3)]).toEqual([525, 481]);
+  });
+
+  it("leaves the scroll alone for a box the user had scrolled off the screen", () => {
+    expect([scrolledFor(-200, 300), scrolledFor(200, -300)]).toEqual([500, 500]);
   });
 });
 

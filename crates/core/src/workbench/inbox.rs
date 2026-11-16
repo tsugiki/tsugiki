@@ -259,11 +259,8 @@ impl Groups {
     /// before the last of those, and the one past the batch says whether more remain.
     fn older(&self, snapshot: &Snapshot<'_>, after: InboxCursor) -> Result<Chosen, Error> {
         let batch = usize::try_from(OLDER_BATCH).unwrap_or(usize::MAX);
-        let fetched = snapshot.open_issue_places_after(
-            (after.updated_at, after.number),
-            OLDER_BATCH + 1,
-            &self.named,
-        )?;
+        let from = (after.updated_at, after.number);
+        let fetched = snapshot.open_issue_places_after(from, OLDER_BATCH + 1, &self.named)?;
         let floor = (fetched.get(batch)).map(InboxCursor::of_issue);
         let mut members: Vec<(InboxCursor, Member)> = (self.by_place.range(..after).rev())
             .take_while(|(place, _)| floor.is_none_or(|floor| **place >= floor))

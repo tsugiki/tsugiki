@@ -799,13 +799,14 @@ impl StoreReader {
         read: impl FnOnce(&Snapshot<'_>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let repository = repository.clone();
-        self.call(move |connection| {
+        let job = move |connection: &mut Connection| {
             let transaction = connection.transaction().map_err(saying(CANT_READ))?;
             read(&Snapshot {
                 transaction,
                 repository,
             })
-        })?
+        };
+        self.call(job)?
     }
 
     fn call<T: Send + 'static>(

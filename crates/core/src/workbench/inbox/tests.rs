@@ -165,7 +165,8 @@ fn the_first_page_holds_the_last_two_days_and_the_next_the_older_batch() {
 #[test]
 fn an_older_page_holds_a_batch_and_says_where_the_next_starts() {
     let world = ViewWorld::new("inbox-batches");
-    let count = OLDER_BATCH + 10;
+    // Enough Issues that the store's batch of those with no PR fills, and a group can fall past it.
+    let count = OLDER_BATCH * 2 + 10;
     let hours = |number: u32| ago(100 + i64::from(number));
     let issues = (1..=count).map(|number| issue_at(number, hours(number)));
     // Every fifth Issue has a PR, which places the Issue from the groups and not from the store's batch.
@@ -179,6 +180,12 @@ fn an_older_page_holds_a_batch_and_says_where_the_next_starts() {
         &world,
         InboxPage::Older {
             after: first.older.unwrap(),
+        },
+    );
+    let third = read(
+        &world,
+        InboxPage::Older {
+            after: second.older.unwrap(),
         },
     );
     world.finish();
@@ -196,8 +203,9 @@ fn an_older_page_holds_a_batch_and_says_where_the_next_starts() {
         all[..batch],
         "a first page with nothing from the last two days holds the first older batch"
     );
-    assert_eq!(numbers(&second), all[batch..]);
-    assert_eq!(second.older, None);
+    assert_eq!(numbers(&second), all[batch..batch * 2]);
+    assert_eq!(numbers(&third), all[batch * 2..]);
+    assert_eq!(third.older, None);
 }
 
 #[test]

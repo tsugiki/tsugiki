@@ -233,14 +233,12 @@ pub(super) fn read(
         });
     }
     // In login order, which the Issue view's author line shows them in.
-    let mut assignees: BTreeMap<u32, Vec<Login>> = values_of(
-        connection,
-        (repository, items),
-        ("issue_assignees", "login"),
-    )?;
+    let of = (repository, items);
+    let mut assignees: BTreeMap<u32, Vec<Login>> =
+        values_of(connection, of, ("issue_assignees", "login"))?;
     // In name order, ignoring case, as `IssueFacts` holds them.
     let mut labels: BTreeMap<u32, Vec<Label>> =
-        values_of(connection, (repository, items), ("issue_labels", "name"))?;
+        values_of(connection, of, ("issue_labels", "name"))?;
     for issue in &mut found {
         issue.assignees = assignees.remove(&issue.number).unwrap_or_default();
         issue.labels = labels.remove(&issue.number).unwrap_or_default();

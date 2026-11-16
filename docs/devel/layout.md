@@ -82,10 +82,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside the Mark Seen button; an
       Issue with no labels shows none. Each Origin PR's Backports are folded into one line that gives their
-      branches and states. The Origin PRs heading counts the open PRs of all of them, Backports and the
-      folded merged PRs included. Each PR's line starts with its branch and ends with its author, and a PR
-      that Needs attention shows in bold. A legend under the tree names the icons for open, draft, merged and
-      closed, and the bold.
+      branches and states. A row between the "Origin PRs" heading and the tree counts the PRs by state, as
+      `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its word, then
+      its count, muted and without brackets, as on GitHub's tabs. Each count matches its icon, so an open
+      draft counts as Draft and not as Open, and the counts take in the Backports and the folded merged PRs.
+      All four states show on every Issue, so Open sits in the same place; a state at 0 shows in muted colour.
+      The count of PRs that Need attention comes last, after "Bold" in bold. A screen reader reads the row as
+      a list named "PR counts", each entry its word and count, "Open, 1", and skips the icons. Each PR's line
+      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
+      worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):

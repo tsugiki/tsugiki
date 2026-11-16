@@ -108,7 +108,7 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
 
   const pane = page.getByRole("region", { name: "Issue view" });
   await expect(pane.getByRole("heading", { level: 2 })).toHaveText("#7 Issue 7");
-  await expect(pane.getByRole("heading", { name: /Origin PRs/ })).toHaveText("Origin PRs 0 open of 2 PRs");
+  await expect(pane.getByRole("heading", { name: /Origin PRs/ })).toHaveText("Origin PRs");
   await expect(pane.getByRole("button", { name: "#10 gh-7: Fix it" })).toHaveCSS("font-weight", "600");
   await expect(pane).toContainText(
     /issue-author opened this \d+d ago · 1 comment · assigned to some-assignee/,
@@ -122,6 +122,64 @@ test("an Issue opens in the Detail pane and stops looking unread", async ({ page
   await changeAnswer(page, "workbench", listing(false));
   await emitFromCore(page, "changed", { repository: "python/cpython", items: [7] });
   await expect(page.getByRole("button", { name: "#7 Issue 7" }).locator("strong")).toHaveCount(0);
+});
+
+test("a row above the tree counts the PRs of each state, and mutes a state at 0", async ({ page }) => {
+  // An open PR with a draft Backport, and a merged PR with its Backport folded away: no PR is closed.
+  const counted: IssueView = {
+    ...view("<p>It crashes</p>"),
+    pull_requests: [
+      {
+        kind: "pr",
+        number: 10,
+        ...row,
+        state: "OPEN",
+        backports: [
+          { number: 11, ...row, state: "OPEN", is_draft: true, target_branch: "3.14", backport: "manual" },
+        ],
+      },
+    ],
+    merged: [
+      {
+        kind: "pr",
+        number: 20,
+        ...row,
+        backports: [{ number: 21, ...row, target_branch: "3.14", backport: "bot" }],
+      },
+    ],
+    merged_count: 2,
+  };
+  await page.emulateMedia({ colorScheme: "light" });
+  await mockCore(page, {
+    ...answers(""),
+    issue: { status: "ok", data: counted },
+    themes: { status: "ok", data: themes },
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+
+  const pane = page.getByRole("region", { name: "Issue view" });
+  const entries = pane.getByRole("list", { name: "PR counts" }).getByRole("listitem");
+  await expect(entries).toHaveText([
+    "Open, 1",
+    "Draft, 1",
+    "Merged, 2",
+    "Closed, 0",
+    "Bold: Needs attention, 1",
+  ]);
+  // The comma is for a screen reader alone: on screen the count follows the word after a gap.
+  await expect(entries.first().getByText(",", { exact: true })).toHaveCSS("position", "absolute");
+  await expect(pane.getByText("Needs attention", { exact: false })).toHaveCount(1);
+
+  // Light Modern's text, muted text, and green for an open PR. Its muted state colour is its muted text's.
+  const [fg, muted, green] = ["rgb(59, 59, 59)", "rgb(118, 118, 118)", "rgb(26, 127, 55)"];
+  await expect(entries.nth(0).getByText("Open", { exact: true })).toHaveCSS("color", fg);
+  await expect(entries.nth(0).getByText("1", { exact: true })).toHaveCSS("color", muted);
+  await expect(entries.nth(0).getByTitle("Open PR")).toHaveCSS("color", green);
+  // The Closed icon fades from its red, and its word with it.
+  await expect(entries.nth(3).getByText("Closed", { exact: true })).toHaveCSS("color", muted);
+  await expect(entries.nth(3).getByTitle("Closed PR")).toHaveCSS("color", muted);
 });
 
 test("the arrows move through the list and Enter opens the selection", async ({ page }) => {

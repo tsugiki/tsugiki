@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 
 use super::activity::{TimelineWire, pull_request_activity};
 use super::labels::{LabelWire, label_names};
-use super::{BAD_GATEWAY, GitHub, Request, Unreachable, read};
+use super::{BAD_GATEWAY, GitHub, Request, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::CommitSha;
@@ -44,7 +44,7 @@ fn search_query(operation: &str) -> String {
         "query {operation}($query: String!, $first: Int!, $after: String) {{ \
          search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) {{ \
          pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ id }} }} }} \
-         rateLimit {{ remaining resetAt }} }}"
+         rateLimit {{ cost limit used remaining resetAt }} }}"
     )
 }
 
@@ -84,7 +84,7 @@ pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updated
 fn fetch_by_ids_query(operation: PrFetch) -> String {
     format!(
         "query {}($ids: [ID!]!) {{ nodes(ids: $ids) {{ ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} \
-         rateLimit {{ remaining resetAt }} }}",
+         rateLimit {{ cost limit used remaining resetAt }} }}",
         operation.name()
     )
 }
@@ -94,7 +94,7 @@ fn fetch_by_number_query() -> String {
     format!(
         "query {FETCH_ORIGIN}($owner: String!, $name: String!, $number: Int!) {{ \
          repository(owner: $owner, name: $name) {{ pullRequest(number: $number) {{ {PULL_REQUEST_FIELDS} }} }} \
-         rateLimit {{ remaining resetAt }} }}"
+         rateLimit {{ cost limit used remaining resetAt }} }}"
     )
 }
 
@@ -122,10 +122,16 @@ impl PrFetch {
     }
 }
 
-/// GitHub's count of the points left.
+/// GitHub's count of the hour's points, as an answer reports it (ADR 0015).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RateLimit {
+    /// The points this query cost.
+    pub cost: u32,
+    /// The points an hour gives.
+    pub limit: u32,
+    /// The points spent this hour by every tool that uses the token.
+    pub used: u32,
     pub remaining: u32,
     #[serde(with = "time::serde::rfc3339")]
     pub reset_at: OffsetDateTime,
@@ -551,7 +557,7 @@ impl GitHub {
         request: impl Fn(usize) -> Request<'a>,
     ) -> Result<(D, usize), Error> {
         match self.post(&request(size)) {
-            Ok(reply) if reply.status != BAD_GATEWAY => Ok((read(&reply)?, size)),
+            Ok(reply) if reply.status != BAD_GATEWAY => Ok((self.answer(&reply)?, size)),
             Err(cause @ Unreachable::CertificateDates) => Err(cause.into()),
             Ok(_) | Err(Unreachable::Offline) => {
                 let smaller = size.div_ceil(2);

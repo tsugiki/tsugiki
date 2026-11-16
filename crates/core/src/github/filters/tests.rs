@@ -4,7 +4,7 @@ use crate::github::{Reply, Transport, Unreachable};
 use serde_json::Value;
 use time::Month;
 
-const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+const RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()

@@ -16,7 +16,7 @@ fn moment(text: &str) -> OffsetDateTime {
 
 /// A `GitHub` that gives one `issue`, and what it was asked.
 fn answering(issue: &Value) -> (GitHub, Receiver<(String, Value)>) {
-    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+    let rate_limit = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
     let data = json!({ "repository": { "issue": issue }, "rateLimit": rate_limit });
     let body = json!({ "data": data }).to_string();
     let (script, asked) = Scripted::new(vec![reply_ok(&body)]);

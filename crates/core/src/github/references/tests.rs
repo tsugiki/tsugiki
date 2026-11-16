@@ -3,7 +3,7 @@ use crate::error::ErrorKind;
 use crate::github::testing::{Scripted, reply_ok, token};
 use serde_json::{Value, json};
 
-const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+const RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -83,7 +83,7 @@ fn a_source_github_wont_show_costs_only_its_own_event() {
                     "number": 7,
                     "timelineItems": timeline(&[Value::Null, pr_event(3, "python/cpython")], None),
                 } },
-                "rateLimit": { "remaining": 4000, "resetAt": "2026-11-04T23:00:00Z" },
+                "rateLimit": { "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2026-11-04T23:00:00Z" },
             },
             "errors": [{
                 "type": kind,

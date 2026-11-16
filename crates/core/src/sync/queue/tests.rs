@@ -107,12 +107,15 @@ fn a_repository_already_queued_isnt_queued_twice() {
 fn a_sync_pauses_only_below_the_floor() {
     let reset_at = OffsetDateTime::UNIX_EPOCH;
     let at_the_floor = RateLimit {
+        cost: 1,
+        limit: 5000,
+        used: 5000 - RATE_LIMIT_FLOOR,
         remaining: RATE_LIMIT_FLOOR,
         reset_at,
     };
     let below = RateLimit {
         remaining: RATE_LIMIT_FLOOR - 1,
-        reset_at,
+        ..at_the_floor
     };
     assert_eq!(pause_until(at_the_floor), None);
     assert_eq!(pause_until(below), Some(reset_at));

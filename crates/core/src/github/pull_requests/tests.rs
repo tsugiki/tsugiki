@@ -7,7 +7,7 @@ use crate::github::testing::{Scripted, reply_ok, token};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 
-const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+const RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
 const MINE: PrSearch = PrSearch {
     operation: "SearchMine",
@@ -410,7 +410,7 @@ fn a_pr_with_no_checks_and_no_author_says_so() {
 #[test]
 fn a_batch_keeps_the_rest_when_github_no_longer_knows_an_id() {
     // The shape real GitHub sends for an ID it can't resolve.
-    let body = r#"{"data":{"nodes":[null],"rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}},
+    let body = r#"{"data":{"nodes":[null],"rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}},
             "errors":[{"type":"NOT_FOUND","path":["nodes",0],"message":"Could not resolve to a node"}]}"#;
     let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
 
@@ -480,7 +480,7 @@ fn a_null_in_a_search_is_left_out() {
             "pageInfo": { "hasNextPage": false, "endCursor": null },
             "nodes": [null, { "id": "a" }],
         },
-        "rateLimit": { "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" },
+        "rateLimit": { "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" },
     }});
     let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
 

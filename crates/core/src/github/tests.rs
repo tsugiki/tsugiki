@@ -331,3 +331,65 @@ fn a_reply_github_didnt_send_leaves_its_clock() {
 
     assert!(github.clock().now() < ahead - Duration::minutes(4));
 }
+
+/// GitHub's answer that `reviewer` is signed in, which cost `cost` of the `used` points this hour.
+fn viewer_costing(cost: u32, used: u32) -> Result<Reply, Unreachable> {
+    let remaining = 5000 - used;
+    super::testing::reply_ok(&format!(
+        r#"{{"data":{{"viewer":{{"login":"reviewer"}},"rateLimit":{{"cost":{cost},"limit":5000,
+            "used":{used},"remaining":{remaining},"resetAt":"2026-11-17T14:32:00Z"}}}}}}"#
+    ))
+}
+
+#[test]
+fn the_points_of_each_answer_add_up() {
+    let (script, _) = Scripted::new(vec![
+        signed_in_as("reviewer"),
+        viewer_costing(1, 1),
+        viewer_costing(2, 3),
+    ]);
+    let github = client(script);
+
+    drop(github.viewer().unwrap());
+    let before = github.hour_points();
+    drop(github.viewer().unwrap());
+    drop(github.viewer().unwrap());
+
+    assert_eq!(before, None, "an answer that doesn't say counts nothing");
+    let points = github.hour_points().unwrap();
+    assert_eq!(
+        (points.spent, points.used, points.remaining, points.since),
+        (3, 3, 4997, None)
+    );
+}
+
+#[test]
+fn a_first_answer_into_a_spent_hour_says_since_when_tsugiki_counted() {
+    let at = OffsetDateTime::now_utc() - Duration::minutes(3);
+    let (script, _) = Scripted::new(vec![dated(viewer_costing(1, 3350), at)]);
+    let github = client(script);
+
+    drop(github.viewer().unwrap());
+
+    let since = github.hour_points().unwrap().since.unwrap();
+    assert!(at <= since && since < at + Duration::seconds(10), "{since}");
+}
+
+#[test]
+fn a_query_that_failed_still_counts_its_points() {
+    let body = r#"{"data":{"viewer":null,"rateLimit":{"cost":1,"limit":5000,"used":7,"remaining":4993,
+        "resetAt":"2026-11-17T14:32:00Z"}},"errors":[{"message":"Something went wrong"}]}"#;
+    let github = client(answered(200, body));
+
+    assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::QueryRefused);
+    assert_eq!(github.hour_points().unwrap().spent, 1);
+}
+
+#[test]
+fn points_that_dont_parse_make_the_answer_unreadable() {
+    let body = r#"{"data":{"viewer":{"login":"reviewer"},"rateLimit":{"remaining":4993}}}"#;
+    let github = client(answered(200, body));
+
+    assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::Internal);
+    assert_eq!(github.hour_points(), None);
+}

@@ -24,7 +24,7 @@ fn status(context: &str, state: &str) -> Value {
 /// A `GitHub` that gives one `answer`.
 fn answering(data: &Value) -> GitHub {
     let mut data = data.clone();
-    data["rateLimit"] = json!({ "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" });
+    data["rateLimit"] = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" });
     let reply = reply_ok(&json!({ "data": data }).to_string());
     let (script, _asked) = Scripted::new(vec![reply]);
     GitHub::new(Box::new(script), token())

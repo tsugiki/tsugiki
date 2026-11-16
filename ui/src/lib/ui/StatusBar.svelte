@@ -2,6 +2,7 @@
   import { openLink } from "$lib/state/browser";
   import type {
     Cloning,
+    HourPoints,
     LastSync,
     MirrorProblem,
     NewVersion,
@@ -10,6 +11,7 @@
     SyncActivity,
   } from "$lib/state/status.svelte";
   import { currentOs, keyLabel } from "./keys";
+  import { pointsTip, pointsWords } from "./points";
   import {
     cloningWords,
     elsewhereWords,
@@ -31,6 +33,7 @@
     problems = [],
     lastSync = null,
     syncActivity = null,
+    hourPoints = null,
     cloning = null,
     mirrorStates = [],
     mirrorProblem = null,
@@ -47,6 +50,8 @@
     problems?: string[];
     lastSync?: LastSync | null;
     syncActivity?: SyncActivity | null;
+    /** The hour's GitHub points, which the bar shows once GitHub's first answer has said. */
+    hourPoints?: HourPoints | null;
     cloning?: Cloning | null;
     /** The state of each Repository's mirror, which says when a clone waits for the network. */
     mirrorStates?: RepositoryMirror[];
@@ -171,6 +176,10 @@
   {#if lastSync !== null && showStatus}
     <button class:offline onclick={onrefresh}>{syncWords}</button>
   {/if}
+  <!-- Outside the live region too, as it changes with each answer from GitHub. -->
+  {#if hourPoints !== null && visible}
+    <span class="points" class:offline title={pointsTip(hourPoints)}>{pointsWords(hourPoints)}</span>
+  {/if}
   {#if chord !== null && visible}
     <kbd class:offline>{keyLabel(chord, currentOs())}</kbd>
   {/if}
@@ -194,6 +203,7 @@
   }
 
   button,
+  .points,
   kbd {
     flex: none;
     align-self: flex-end;

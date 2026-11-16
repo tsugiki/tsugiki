@@ -324,6 +324,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
         refreshes.wait_for_stop(board, store);
         return;
     };
+    board.hour_points(github.hour_points());
     let mut syncs = Syncs::default();
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
@@ -391,6 +392,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             },
         }
         board.sync_activity(syncs.activity());
+        // Whichever turn asked GitHub, a sync, a read of what's on screen or the status, counts.
+        board.hour_points(github.hour_points());
     }
 }
 

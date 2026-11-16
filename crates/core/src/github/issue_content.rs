@@ -55,7 +55,7 @@ impl Thread {
         format!(
             "query {}($owner: String!, $name: String!, $number: Int!) {{ \
              repository(owner: $owner, name: $name) {{ {}(number: $number) {{ {CONVERSATION_FIELDS}{} }} }} \
-             rateLimit {{ remaining resetAt }} }}",
+             rateLimit {{ cost limit used remaining resetAt }} }}",
             self.operation(),
             self.field(),
             self.more_fields(),

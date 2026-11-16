@@ -3,6 +3,7 @@ import {
   commands,
   events,
   type Cloning,
+  type HourPoints_Serialize as HourPoints,
   type LastSync,
   type MirrorProblem,
   type MirrorState_Serialize as MirrorState,
@@ -14,6 +15,7 @@ import {
 
 export type {
   Cloning,
+  HourPoints,
   LastSync,
   MirrorProblem,
   MirrorState,
@@ -31,6 +33,8 @@ export class StatusState {
   syncActivity = $state<SyncActivity | null>(null);
   /** An event has said, so an answer asked for before it is out of date. */
   #heardActivity = false;
+  /** The hour's GitHub points. Nothing, until GitHub's first answer of the run says. */
+  hourPoints = $state<HourPoints | null>(null);
   /** A mirror's clone under way. Nothing, between clones. */
   cloning = $state<Cloning | null>(null);
   #heardCloning = false;
@@ -61,6 +65,9 @@ export class StatusState {
         this.syncActivity = payload;
         this.#heardActivity = true;
       });
+      await events.hourPointsChanged.listen(({ payload }) => {
+        this.hourPoints = payload;
+      });
       await events.cloningChanged.listen(({ payload }) => {
         this.cloning = payload;
         this.#heardCloning = true;
@@ -83,6 +90,7 @@ export class StatusState {
       const current = await commands.status();
       const lastSync = await commands.lastSync();
       const syncActivity = await commands.syncActivity();
+      const hourPoints = await commands.hourPoints();
       const cloning = await commands.cloning();
       const mirrorProblem = await commands.mirrorProblem();
       const mirrorQuestion = await commands.mirrorQuestion();
@@ -92,6 +100,8 @@ export class StatusState {
       this.status ??= current;
       this.lastSync ??= lastSync;
       if (!this.#heardActivity) this.syncActivity = syncActivity;
+      // Points an event brought while asking are newer, and the core never sends nothing in their place.
+      this.hourPoints ??= hourPoints;
       if (!this.#heardCloning) this.cloning = cloning;
       if (!this.#heardProblem) this.mirrorProblem = mirrorProblem;
       if (!this.#heardQuestion) this.mirrorQuestion = mirrorQuestion;

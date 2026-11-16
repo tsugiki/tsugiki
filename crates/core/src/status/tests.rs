@@ -97,3 +97,44 @@ fn the_status_reaches_the_ui_tagged_by_its_state() {
         assert_eq!(serde_json::to_value(status).unwrap(), expected);
     }
 }
+
+#[test]
+fn the_hour_points_reach_the_ui_from_the_first_answer_and_only_when_they_change() {
+    let (passed, seen) = std::sync::mpsc::channel();
+    let mut board =
+        super::testing::quiet_board().with_hour_points(Box::new(move |points: &HourPoints| {
+            passed.send(*points).unwrap();
+        }));
+    let points = HourPoints {
+        limit: 5000,
+        used: 3760,
+        remaining: 1240,
+        resets_at: OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap(),
+        spent: 3610,
+        since: None,
+    };
+    let later = HourPoints {
+        used: 3761,
+        remaining: 1239,
+        spent: 3611,
+        ..points
+    };
+
+    board.hour_points(None);
+    board.hour_points(Some(points));
+    board.hour_points(Some(points));
+    board.hour_points(Some(later));
+
+    assert_eq!(seen.try_iter().collect::<Vec<_>>(), [points, later]);
+    assert_eq!(
+        serde_json::to_value(points).unwrap(),
+        serde_json::json!({
+            "limit": 5000,
+            "used": 3760,
+            "remaining": 1240,
+            "resets_at": "2027-01-15T08:00:00Z",
+            "spent": 3610,
+            "since": null,
+        })
+    );
+}

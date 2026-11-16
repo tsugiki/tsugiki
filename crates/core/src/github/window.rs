@@ -62,7 +62,7 @@ fn issues_query(span: Span) -> (&'static str, String) {
          $after: String) {{ repository(owner: $owner, name: $name) {{ \
          list: issues(first: $first, after: $after, {list}) {{ totalCount pageInfo {{ hasNextPage endCursor }} \
          nodes {{ {ISSUE_FIELDS} references: timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) \
-         {{ {REFERENCE_FIELDS} }} }} }} }} rateLimit {{ remaining resetAt }} }}"
+         {{ {REFERENCE_FIELDS} }} }} }} }} rateLimit {{ cost limit used remaining resetAt }} }}"
     );
     (operation, query)
 }
@@ -82,12 +82,12 @@ fn after_page(place: &ListPlace, read: usize, kept: usize, page: PageInfo) -> Li
 const WINDOW_PULL_REQUESTS_QUERY: &str = "query WindowPullRequests($owner: String!, $name: String!, $first: \
      Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, \
      after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } \
-     nodes { id number updatedAt } } } rateLimit { remaining resetAt } }";
+     nodes { id number updatedAt } } } rateLimit { cost limit used remaining resetAt } }";
 
 const OLDER_OPEN_PULL_REQUESTS_QUERY: &str = "query OlderOpenPullRequests($owner: String!, $name: String!, \
      $first: Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, \
      after: $after, states: OPEN, orderBy: { field: UPDATED_AT, direction: ASC }) { pageInfo { hasNextPage \
-     endCursor } nodes { id number updatedAt } } } rateLimit { remaining resetAt } }";
+     endCursor } nodes { id number updatedAt } } } rateLimit { cost limit used remaining resetAt } }";
 
 /// One page of one of a first sync's lists.
 #[derive(Debug, Clone, Copy)]

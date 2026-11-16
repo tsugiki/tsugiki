@@ -7,6 +7,7 @@ vi.mock("$lib/data/bindings", () => ({
     status: vi.fn(),
     lastSync: vi.fn(),
     syncActivity: vi.fn(),
+    hourPoints: vi.fn(),
     cloning: vi.fn(),
     mirrorProblem: vi.fn(),
     mirrorQuestion: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("$lib/data/bindings", () => ({
     statusChanged: { listen: vi.fn() },
     lastSyncChanged: { listen: vi.fn() },
     syncActivityChanged: { listen: vi.fn() },
+    hourPointsChanged: { listen: vi.fn() },
     cloningChanged: { listen: vi.fn() },
     mirrorProblemChanged: { listen: vi.fn() },
     mirrorQuestionChanged: { listen: vi.fn() },
@@ -109,6 +111,61 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.syncActivity).toBeNull();
+    });
+  });
+
+  describe("the hour's points", () => {
+    const points = {
+      limit: 5000,
+      used: 3760,
+      remaining: 1240,
+      resets_at: "2026-11-17T14:32:00Z",
+      spent: 3610,
+      since: null,
+    };
+    const catchPoints = () => {
+      const listener = vi.fn<(payload: typeof points) => void>();
+      vi.mocked(events.hourPointsChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "hour-points-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds nothing until GitHub's first answer says", async () => {
+      catchLastSync();
+      catchPoints();
+      vi.mocked(commands.hourPoints).mockResolvedValue(null);
+      const state = new StatusState();
+      await state.load();
+      expect(state.hourPoints).toBeNull();
+    });
+
+    it("holds what the core says when the window loads, then follows each answer", async () => {
+      catchLastSync();
+      const pointsChanged = catchPoints();
+      vi.mocked(commands.hourPoints).mockResolvedValue(points);
+      const state = new StatusState();
+      await state.load();
+      expect(state.hourPoints).toEqual(points);
+      const later = { ...points, used: 3761, remaining: 1239, spent: 3611 };
+      pointsChanged(later);
+      expect(state.hourPoints).toEqual(later);
+    });
+
+    it("lets points that arrive while asking win", async () => {
+      catchLastSync();
+      const pointsChanged = catchPoints();
+      const later = { ...points, spent: 3611 };
+      vi.mocked(commands.hourPoints).mockImplementation(async () => {
+        pointsChanged(later);
+        return points;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.hourPoints).toEqual(later);
     });
   });
 

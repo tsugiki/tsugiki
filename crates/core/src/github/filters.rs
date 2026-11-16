@@ -26,7 +26,7 @@ fn search_filter_query() -> String {
         "query {SEARCH_FILTER}($query: String!, $first: Int!, $after: String) {{ \
          search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) {{ \
          issueCount pageInfo {{ hasNextPage endCursor }} nodes {{ {FOUND_FIELDS} }} }} \
-         rateLimit {{ remaining resetAt }} }}"
+         rateLimit {{ cost limit used remaining resetAt }} }}"
     )
 }
 

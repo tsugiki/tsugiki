@@ -245,7 +245,7 @@ fn failed_checks(number: u32, names: &[&str]) -> Result<Reply, Unreachable> {
             { "commit": { "statusCheckRollup": { "contexts": { "nodes": runs } } } }
         ] },
     });
-    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+    let rate_limit = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
     let data = json!({ "data": {
         "repository": { format!("p{number}"): pull_request },
         "rateLimit": rate_limit,
@@ -1009,7 +1009,7 @@ fn approved() -> Result<Reply, Unreachable> {
         "reviewThreads": { "nodes": [] },
         "headRefOid": "0123abc",
     });
-    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+    let rate_limit = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
     let data = json!({ "repository": { "pullRequest": pull_request }, "rateLimit": rate_limit });
     reply_ok(&json!({ "data": data }).to_string())
 }

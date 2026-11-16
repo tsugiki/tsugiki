@@ -18,9 +18,11 @@ use crate::store::{OpenReader, Store, StoreReader};
 use crate::testing::TempPath;
 use crate::token::Token;
 
-pub(super) const LOTS: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+pub(super) const LOTS: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
+    "resetAt":"2026-11-04T12:00:00Z"}"#;
 
-pub(super) const FEW: &str = r#""rateLimit":{"remaining":10,"resetAt":"2999-01-01T00:00:00Z"}"#;
+pub(super) const FEW: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":4990,"remaining":10,
+    "resetAt":"2999-01-01T00:00:00Z"}"#;
 
 pub(super) fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()

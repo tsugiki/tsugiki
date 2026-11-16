@@ -29,6 +29,7 @@ use tsugiki_core::facts::CommitSha;
 use tsugiki_core::fetching::Fetching;
 use tsugiki_core::filters::{FilterQuery, OnWorkbench};
 use tsugiki_core::folders::Folders;
+use tsugiki_core::github::points::HourPoints;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
@@ -126,6 +127,16 @@ type LatestSyncActivity = LatestReader<Option<SyncActivity>>;
 #[tauri::command]
 #[specta::specta]
 fn sync_activity(latest: State<'_, LatestSyncActivity>) -> Option<SyncActivity> {
+    latest.get()
+}
+
+type LatestHourPoints = LatestReader<Option<HourPoints>>;
+
+/// The hour's GitHub points, for a window that has just loaded. Nothing, until GitHub's first answer of the
+/// run says.
+#[tauri::command]
+#[specta::specta]
+fn hour_points(latest: State<'_, LatestHourPoints>) -> Option<HourPoints> {
     latest.get()
 }
 
@@ -991,6 +1002,10 @@ struct LastSyncChanged(LastSync);
 #[derive(Clone, Serialize, Type, Event)]
 struct SyncActivityChanged(Option<SyncActivity>);
 
+/// Sent when an answer from GitHub changes the hour's points, so the status bar can say.
+#[derive(Clone, Serialize, Type, Event)]
+struct HourPointsChanged(HourPoints);
+
 /// Sent when a mirror's clone moves on, and when it ends, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
 struct CloningChanged(Option<Cloning>);
@@ -1054,6 +1069,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             status,
             last_sync,
             sync_activity,
+            hour_points,
             cloning,
             mirror_problem,
             check_mirrors_again,
@@ -1122,6 +1138,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             ReadFailed,
             LastSyncChanged,
             SyncActivityChanged,
+            HourPointsChanged,
             CloningChanged,
             MirrorProblemChanged,
             MirrorQuestionChanged,

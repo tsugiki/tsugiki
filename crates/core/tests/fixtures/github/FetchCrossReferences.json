@@ -2,8 +2,11 @@
   "body": {
     "data": {
       "rateLimit": {
+        "cost": 1,
+        "limit": 5000,
         "remaining": 4971,
-        "resetAt": "2026-11-08T07:55:34Z"
+        "resetAt": "2026-11-08T07:55:34Z",
+        "used": 29
       },
       "repository": {
         "issue": {
@@ -403,7 +406,7 @@
       }
     }
   },
-  "query": "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { repository(owner: $owner, name: $name) { issue(number: $number) { timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } } } } } rateLimit { remaining resetAt } }",
+  "query": "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, $before: String) { repository(owner: $owner, name: $name) { issue(number: $number) { timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) { pageInfo { hasPreviousPage startCursor } nodes { ... on CrossReferencedEvent { source { __typename ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } } } } } rateLimit { cost limit used remaining resetAt } }",
   "reset": 1794124534,
   "status": 200
 }

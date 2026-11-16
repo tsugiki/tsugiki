@@ -103,7 +103,7 @@ fn read(comments: Value, reviews: (u32, Value), threads: Value) -> PullRequestCo
 
 /// GitHub's count of the points left, with plenty of them.
 fn rate_limit() -> Value {
-    json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" })
+    json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" })
 }
 
 #[test]

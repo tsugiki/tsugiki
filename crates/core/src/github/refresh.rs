@@ -228,7 +228,7 @@ fn poll_query(searches: usize) -> String {
          nodes {{ {ISSUE_FIELDS} }} }} \
          pullRequests(first: $prs, after: $prsAfter, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ \
          pageInfo {{ hasNextPage endCursor }} nodes {{ id number updatedAt }} }} }} \
-         {asked}rateLimit {{ remaining resetAt }} }}"
+         {asked}rateLimit {{ cost limit used remaining resetAt }} }}"
     )
 }
 
@@ -250,7 +250,7 @@ fn probe_query(numbers: &[u32]) -> String {
         .collect();
     format!(
         "query {PROBE_PULL_REQUESTS}($owner: String!, $name: String!) {{ \
-         repository(owner: $owner, name: $name) {{ {} }} rateLimit {{ remaining resetAt }} }}",
+         repository(owner: $owner, name: $name) {{ {} }} rateLimit {{ cost limit used remaining resetAt }} }}",
         fields.join(" ")
     )
 }

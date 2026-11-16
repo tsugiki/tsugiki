@@ -483,3 +483,50 @@ describe("StatusBar's chord", () => {
     expect(screen.queryByText("Ctrl+K")).toBeNull();
   });
 });
+
+describe("StatusBar's points", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const hourPoints = {
+    limit: 5000,
+    used: 3760,
+    remaining: 1240,
+    resets_at: "2026-11-17T14:32:00Z",
+    spent: 3610,
+    since: null,
+  };
+  const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const part = () => screen.getByText(/points left/);
+
+  it("shows nothing before GitHub's first answer says", () => {
+    render(StatusBar, { status: online });
+    expect(screen.queryByText(/points left/)).toBeNull();
+  });
+
+  it("shows the points left and the reset on the right, outside the live region", () => {
+    render(StatusBar, { status: online, hourPoints });
+    expect(part().textContent).toBe(`1,240 points left · resets ${time(hourPoints.resets_at)}`);
+    expect(bar().contains(part())).toBe(false);
+    expect(part().parentElement).toBe(bar().parentElement);
+  });
+
+  it("says in its tooltip what Tsugiki spent and what other tools did", () => {
+    render(StatusBar, { status: online, hourPoints });
+    expect(part().title).toBe(
+      "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using your token spent the rest.",
+    );
+  });
+
+  it("updates with each answer", async () => {
+    const { rerender } = render(StatusBar, { status: online, hourPoints });
+    await rerender({
+      status: online,
+      hourPoints: { ...hourPoints, used: 3770, remaining: 1230, spent: 3620 },
+    });
+    expect(part().textContent).toContain("1,230 points left");
+  });
+
+  it("goes with the bar", () => {
+    render(StatusBar, { status: online, hourPoints, visible: false });
+    expect(screen.queryByText(/points left/)).toBeNull();
+  });
+});

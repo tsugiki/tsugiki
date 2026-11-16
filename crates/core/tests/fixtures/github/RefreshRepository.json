@@ -35,8 +35,11 @@
         }
       },
       "rateLimit": {
+        "cost": 1,
+        "limit": 5000,
         "remaining": 4994,
-        "resetAt": "2026-11-08T07:55:34Z"
+        "resetAt": "2026-11-08T07:55:34Z",
+        "used": 6
       },
       "repository": {
         "issues": {
@@ -1122,7 +1125,7 @@
       }
     }
   },
-  "query": "query RefreshRepository($owner: String!, $name: String!, $since: DateTime!, $issues: Int!, $issuesAfter: String, $prs: Int!, $prsAfter: String, $first: Int!, $filter0: String!, $filter1: String!) { repository(owner: $owner, name: $name) { openIssues: issues(states: OPEN) { totalCount } openPrs: pullRequests(states: OPEN) { totalCount } issues(first: $issues, after: $issuesAfter, filterBy: { since: $since }, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } pullRequests(first: $prs, after: $prsAfter, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { id number updatedAt } } } f0: search(query: $filter0, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } f1: search(query: $filter1, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { remaining resetAt } }",
+  "query": "query RefreshRepository($owner: String!, $name: String!, $since: DateTime!, $issues: Int!, $issuesAfter: String, $prs: Int!, $prsAfter: String, $first: Int!, $filter0: String!, $filter1: String!) { repository(owner: $owner, name: $name) { openIssues: issues(states: OPEN) { totalCount } openPrs: pullRequests(states: OPEN) { totalCount } issues(first: $issues, after: $issuesAfter, filterBy: { since: $since }, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { number title updatedAt state stateReason author { login } assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename ... on IssueComment { createdAt author { __typename login } } ... on MentionedEvent { createdAt actor { __typename login } } } } } } pullRequests(first: $prs, after: $prsAfter, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { id number updatedAt } } } f0: search(query: $filter0, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } f1: search(query: $filter1, type: ISSUE_ADVANCED, first: $first) { issueCount pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number updatedAt repository { nameWithOwner } } ... on PullRequest { id number updatedAt repository { nameWithOwner } } } } rateLimit { cost limit used remaining resetAt } }",
   "reset": 1794124534,
   "status": 200
 }

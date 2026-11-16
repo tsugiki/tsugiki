@@ -116,7 +116,7 @@ pub(super) fn query_by_number(operation: &str, numbers: &[u32], fields: &str) ->
         .collect();
     format!(
         "query {operation}($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) \
-         {{ {} }} rateLimit {{ remaining resetAt }} }}",
+         {{ {} }} rateLimit {{ cost limit used remaining resetAt }} }}",
         asked.join(" ")
     )
 }
@@ -159,7 +159,7 @@ fn fetch_cross_references_query() -> String {
         "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, \
          $before: String) {{ repository(owner: $owner, name: $name) {{ issue(number: $number) {{ \
          timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) {{ \
-         {REFERENCE_FIELDS} }} }} }} rateLimit {{ remaining resetAt }} }}"
+         {REFERENCE_FIELDS} }} }} }} rateLimit {{ cost limit used remaining resetAt }} }}"
     )
 }
 

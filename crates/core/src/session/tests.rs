@@ -9,6 +9,7 @@ use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
 use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
+use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{Reply, Request, Transport, Unreachable};
@@ -328,7 +329,7 @@ fn issue_content_reply() -> Result<Reply, Unreachable> {
     reply_ok(
         r#"{"data":{"repository":{"issue":{"bodyHTML":"<p>It crashes</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]}}},
-            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     )
 }
 
@@ -465,7 +466,7 @@ fn reading_a_pr_on_screen_leaves_last_seen_alone() {
         r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
             "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
-            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), reply]);
 
@@ -536,7 +537,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
 fn an_issue_github_has_lost_troubles_only_the_log() {
     let gone = reply_ok(
         r#"{"data":{"repository":{"issue":null},
-            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), gone]);
 
@@ -653,7 +654,7 @@ fn an_issue_read_without_the_network_waits_on_github() {
 fn an_issue_github_doesnt_have_says_so() {
     let gone = reply_ok(
         r#"{"data":{"repository":{"issue":null},
-            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), gone]);
 
@@ -696,7 +697,7 @@ fn a_pr_read_with_no_token_says_so() {
 fn a_pr_github_doesnt_have_says_so() {
     let gone = reply_ok(
         r#"{"data":{"repository":{"pullRequest":null},
-            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), gone]);
 
@@ -720,7 +721,7 @@ fn a_pr_read_that_lands_fails_nothing() {
         r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
             "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
-            "rateLimit":{"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let access = replying(vec![signed_in(), reply]);
 
@@ -846,7 +847,7 @@ fn checks_dont_put_off_the_next_refresh() {
     assert!(started.elapsed() < PLENTY);
 }
 
-const WORK_RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+const WORK_RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
 fn work_search(ids: &[&str]) -> Result<Reply, Unreachable> {
     let nodes: Vec<serde_json::Value> = ids
@@ -977,6 +978,52 @@ fn a_sync_fills_the_workbench_and_says_so() {
         matches!(&workbench.items[..], [ListedItem { item: WorkbenchItem::StandalonePr(tree), .. }] if tree.row.number == 7),
         "{workbench:?}"
     );
+}
+
+#[test]
+fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
+    // The same hour as `WORK_RATE`, and a cost that tells this read apart from the sync's answers.
+    let pr_read = reply_ok(
+        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
+            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
+            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
+            "rateLimit":{"cost":3,"limit":5000,"used":990,"remaining":4010,"resetAt":"2026-11-04T12:00:00Z"}}}"#,
+    );
+    let (script, _asked) = Scripted::new(vec![
+        signed_in(),
+        pr_read,
+        work_search(&["a"]),
+        work_search(&[]),
+        work_search(&[]),
+        work_search(&[]),
+        work_fetch(),
+    ]);
+    let access = GitHubAccess {
+        transport: Box::new(script),
+        run_gh: signed_in_gh,
+    };
+    let (passed, seen) = mpsc::channel();
+    let board = quiet_board().with_hour_points(Box::new(move |points: &HourPoints| {
+        passed.send(*points).unwrap();
+    }));
+    let (folders, _folder) = temp_folders("hour-points");
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    session.fetching().fetch_pull_request(gcmon(), 7);
+    session.fetching().sync(plain_gcmon());
+    let mut announced = vec![seen.recv_timeout(PLENTY).unwrap()];
+    // Each of the sync's five answers cost a point.
+    while announced.last().unwrap().spent < 8 {
+        announced.push(seen.recv_timeout(PLENTY).unwrap());
+    }
+    session.stop(PLENTY);
+
+    let first = announced[0];
+    assert_eq!(first.spent, 3, "the read of the PR counts first");
+    // GitHub's first answer of the run came after 987 points of the hour were spent.
+    assert!(first.since.is_some());
+    let last = announced.last().unwrap();
+    assert_eq!((last.spent, last.used, last.since), (8, 1000, first.since));
 }
 
 /// A PR of `author` in `gcmon`, stored with its branch at `head`.

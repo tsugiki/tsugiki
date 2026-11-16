@@ -22,8 +22,8 @@ pub struct Replayer {
     dir: PathBuf,
 }
 
-const NO_ISSUES: &str =
-    r#"{"data":{"repository":{},"rateLimit":{"remaining":4000,"resetAt":"2026-11-04T23:00:00Z"}}}"#;
+const NO_ISSUES: &str = r#"{"data":{"repository":{},"rateLimit":{"cost":1,"limit":5000,"used":1000,
+    "remaining":4000,"resetAt":"2026-11-04T23:00:00Z"}}}"#;
 
 impl Replayer {
     pub fn new(dir: PathBuf) -> Self {

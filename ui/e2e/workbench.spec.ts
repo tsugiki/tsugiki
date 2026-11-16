@@ -486,6 +486,35 @@ test("the status bar says when the Repository last synced, and a click asks agai
   await expect(page.getByRole("button", { name: "Synced just now" })).toBeVisible();
 });
 
+test("the status bar shows the hour's points from GitHub's first answer, and each answer after", async ({
+  page,
+}) => {
+  await mockCore(page, {
+    home: cpython,
+    workbench: {
+      status: "ok",
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    },
+    status: { state: "online", login: "octocat" },
+  });
+  await page.goto("/");
+  // The status comes after the page listens for the core's events.
+  await expect(page.getByRole("status")).toContainText("octocat");
+  const points = page.getByText(/points left/);
+  await expect(points).toHaveCount(0);
+
+  const first = { limit: 5000, used: 3760, remaining: 1240, resets_at: "2026-11-17T14:32:00Z", spent: 3610 };
+  await emitFromCore(page, "hour-points-changed", { ...first, since: null });
+  await expect(points).toContainText("1,240 points left · resets");
+  await expect(points).toHaveAttribute(
+    "title",
+    /^This hour: 3,760 of 5,000 points used\. Tsugiki spent 3,610/,
+  );
+
+  await emitFromCore(page, "hour-points-changed", { ...first, used: 3770, remaining: 1230, since: null });
+  await expect(points).toContainText("1,230 points left");
+});
+
 test("the Workbench says why it can't read", async ({ page }) => {
   await mockCore(page, {
     home: cpython,

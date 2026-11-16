@@ -148,7 +148,7 @@ fn failed_checks_query(numbers: &[u32]) -> String {
         .collect();
     format!(
         "query {FETCH_FAILED_CHECKS}($owner: String!, $name: String!) {{ \
-         repository(owner: $owner, name: $name) {{ {} }} rateLimit {{ remaining resetAt }} }}",
+         repository(owner: $owner, name: $name) {{ {} }} rateLimit {{ cost limit used remaining resetAt }} }}",
         fields.join(" ")
     )
 }

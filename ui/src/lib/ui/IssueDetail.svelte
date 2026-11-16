@@ -3,13 +3,13 @@
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
-  import type { TreeEntry } from "$lib/state/workbench.svelte";
+  import { treeRows, type TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
-  import { ago, backportWords, commentCount, headline, openOfAll } from "./workbench-row";
+  import { ago, backportWords, commentCount, headline } from "./workbench-row";
 
   let {
     repository,
@@ -68,13 +68,29 @@
     onopenpr(number);
   };
 
-  /** The legend under the tree: the words for each icon in it. */
-  const LEGEND: [string, Octicon][] = [
+  /** The states the row above the tree counts, in its order, each by the icon its PRs show. */
+  const STATES: [string, Octicon][] = [
     ["Open", prIcon({ state: "OPEN", is_draft: false })],
     ["Draft", prIcon({ state: "OPEN", is_draft: true })],
     ["Merged", prIcon({ state: "MERGED", is_draft: false })],
     ["Closed", prIcon({ state: "CLOSED", is_draft: false })],
   ];
+
+  /** The pause between an entry's word and its count, which only a screen reader hears. Svelte would trim
+   * the space if the markup held it. */
+  const PAUSE = ", ";
+
+  /** How many PRs show each state's icon, of the shown ones and those folded away, Backports included. A
+   * draft counts as Draft, as its icon says, and not as Open. `prIcon` hands out one shared icon per state,
+   * so the icons compare as objects. */
+  const stateCounts = (view: IssueView) => {
+    const icons = treeRows([...view.pull_requests, ...view.merged]).map(prIcon);
+    return STATES.map(([words, icon]) => ({
+      words,
+      icon,
+      count: icons.filter((shown) => shown === icon).length,
+    }));
+  };
 
   /** The start of the author line: the Issue's author and how long ago they opened it, with the date and time
    * for the tooltip. A read kept from before Tsugiki asked has neither time, until the next read. */
@@ -140,7 +156,7 @@
       <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
       <div class="meta">
         {#if view.labels.length > 0}
-          <ul class="labels" aria-label="Labels">
+          <ul class="labels" role="list" aria-label="Labels">
             {#each view.labels as label (label)}
               <li class="chip">{label}</li>
             {/each}
@@ -150,7 +166,7 @@
       </div>
 
       {#snippet tree(entries: TreeEntry[], name: string)}
-        <ul aria-label={name}>
+        <ul role="list" aria-label={name}>
           {#each entries as entry (entry.number)}
             <li>
               <span class="pr">
@@ -183,8 +199,25 @@
         </ul>
       {/snippet}
       {#if view.pull_requests.length > 0 || view.merged_count > 0}
-        <!-- The count takes in the merged PRs folded away too. -->
-        <h3>Origin PRs <small>{openOfAll([...view.pull_requests, ...view.merged])}</small></h3>
+        <!-- Derived once per view, as `{@const}` is, where a `$derived` would need a branch for no view that
+             the template never reads. -->
+        {@const counts = stateCounts(view)}
+        <h3>Origin PRs</h3>
+        <!-- Each entry reads its words, then a comma only a screen reader hears, then its count. The words
+             name each icon, so a screen reader skips the icons' own names, and "Bold", which names how the
+             tree shows a PR. -->
+        <ul class="counts" role="list" aria-label="PR counts">
+          {#each counts as { words, icon, count } (words)}
+            <li class={{ none: count === 0 }}>
+              <span aria-hidden="true"><StateIcon {icon} /></span><span>{words}</span>{@render counted(count)}
+            </li>
+          {/each}
+          <li class={{ none: view.needs_attention.length === 0 }}>
+            <span><span aria-hidden="true"><b>Bold</b>:</span> Needs attention</span>{@render counted(
+              view.needs_attention.length,
+            )}
+          </li>
+        </ul>
         <div class="prs">
           {#if view.pull_requests.length > 0}
             {@render tree(view.pull_requests, "PRs")}
@@ -198,13 +231,6 @@
             {/if}
           {/if}
         </div>
-        <p class="legend">
-          <!-- The words name each icon, so a screen reader skips the icons' own names. -->
-          {#each LEGEND as [words, icon] (words)}
-            <span><span aria-hidden="true"><StateIcon {icon} /></span><small>{words}</small></span>
-          {/each}
-          <small><b>Bold</b>: Needs attention</small>
-        </p>
       {/if}
 
       {#if view.content}
@@ -221,6 +247,10 @@
 {#snippet numbered(row: { number: number; title: string })}<code class="number"
     >{`#${String(row.number)}`}</code
   >{` ${row.title}`}{/snippet}
+
+<!-- A count in the row above the tree, after a comma only a screen reader hears: "Open, 1". -->
+{#snippet counted(count: number)}<span class="unseen">{PAUSE}</span><span class="count">{count}</span
+  >{/snippet}
 
 <style>
   /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
@@ -284,25 +314,50 @@
     font-size: 13px;
   }
 
-  /* The icons in the legend keep the colors of those in the tree, and only its words fade. */
-  h3 small,
-  .legend small {
-    font-size: 11px;
-    font-weight: normal;
+  /* The row above the tree: each state's icon in the colours of the tree's, its word, then its count, muted
+     as on GitHub's tabs. A state no PR is in fades whole, and keeps its place. */
+  .counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 0 0 6px;
+    overflow: hidden;
+    font-size: 12px;
+  }
+
+  /* A muted dot in the gap before each entry, which the empty text after the slash keeps from a screen
+     reader. An entry that starts a line has its dot left of the row, where the row's edge cuts it off. */
+  .counts li::before {
+    content: "·" / "";
+    position: absolute;
+    left: -8px;
     color: var(--fg-muted);
   }
 
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 6px 0 0;
-  }
-
-  .legend span {
+  .counts li {
+    position: relative;
     display: inline-flex;
     gap: 4px;
     align-items: center;
+  }
+
+  .count,
+  .counts .none {
+    color: var(--fg-muted);
+  }
+
+  .counts .none :global(.octicon) {
+    color: var(--state-muted);
+  }
+
+  /* The comma between a word and its count, which only a screen reader reads. */
+  .unseen {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* The tree: a box with a line between its rows. */
@@ -312,6 +367,7 @@
     border-radius: 6px;
   }
 
+  /* WebKit drops the list role of a list without bullets, so each list here writes out `role="list"`. */
   ul {
     list-style: none;
     margin: 0;

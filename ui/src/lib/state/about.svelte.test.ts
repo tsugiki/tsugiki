@@ -32,6 +32,29 @@ describe("AboutState", () => {
     expect(state.error).toBe("Error: no IPC outside Tauri");
   });
 
+  it("names the build in the title once the core answers, and the app alone before", async () => {
+    vi.mocked(commands.about).mockResolvedValue({
+      name: "Tsugiki",
+      version: "0.3.2 (6143447)",
+      build: "release",
+      source_ref: "v0.3.2",
+    });
+    const state = new AboutState();
+    const loading = state.load();
+    expect(state.title).toBe("Tsugiki");
+    await loading;
+    expect(state.title).toBe("Tsugiki 0.3.2 (6143447)");
+    expect(state.problem).toBeUndefined();
+  });
+
+  it("names the app alone in the title, and says why, when the core doesn't answer", async () => {
+    vi.mocked(commands.about).mockRejectedValue(new Error("no IPC"));
+    const state = new AboutState();
+    await state.load();
+    expect(state.title).toBe("Tsugiki");
+    expect(state.problem).toBe("The core didn't answer: Error: no IPC");
+  });
+
   it("forgets an earlier failure when asked again", async () => {
     const state = new AboutState();
     vi.mocked(commands.about).mockRejectedValueOnce(new Error("not yet"));

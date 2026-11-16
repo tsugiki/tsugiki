@@ -31,7 +31,7 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
 
   await expect(picker).toBeHidden();
   await expect(page.getByRole("button", { name: "python/peps", exact: true })).toBeVisible();
-  await expect(page).toHaveTitle("python/peps · Tsugiki");
+  await expect(page).toHaveTitle("python/peps · Tsugiki 1.2.3");
 
   // Back again: the core now lists cpython first among the others.
   await changeAnswer(page, "openRepository", {

@@ -613,7 +613,7 @@ const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout 
       filters: [],
     },
   });
-  const { component } = render(RepositoryHome, {
+  const { component, rerender } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
@@ -624,6 +624,7 @@ const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout 
   await unfoldAll();
   return {
     component,
+    rerender,
     issueRow,
     treeRow: screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" }),
     prRow: screen.getByRole("button", { name: "#5 Alone" }),
@@ -2208,6 +2209,7 @@ const threeAlone = async () => {
 
 it("moves the cursor and the focus to the next row once Q drops the row under the cursor down the list", async () => {
   const { marked, markedSeen } = await threeAlone();
+  marked.focus();
 
   await fireEvent.keyDown(marked, { key: "q" });
   markedSeen();
@@ -2219,7 +2221,7 @@ it("moves the cursor and the focus to the next row once Q drops the row under th
   expect(landed.getAttribute("aria-current")).toBe("true");
 });
 
-it("moves the focus to the next row after Q on the page, though a sync's answer reads the mark first", async () => {
+it("moves the focus to the next row after Q on the page, where nothing held the focus", async () => {
   const { markedSeen } = await threeAlone();
   (document.activeElement as HTMLElement | null)?.blur();
 
@@ -2227,12 +2229,34 @@ it("moves the focus to the next row after Q on the page, though a sync's answer 
   await vi.waitFor(() => {
     expect(core.markSeen).toHaveBeenCalledOnce();
   });
-  markedSeen([]);
+  markedSeen();
 
   const landed = await screen.findByRole("button", { name: "#6 Next" });
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(landed);
   });
+});
+
+it("leaves the focus in a text box clicked between Q on a row and the core's answer", async () => {
+  const { marked, markedSeen } = await threeAlone();
+  marked.focus();
+  const box = document.createElement("input");
+  document.body.append(box);
+
+  await fireEvent.keyDown(marked, { key: "q" });
+  await vi.waitFor(() => {
+    expect(core.markSeen).toHaveBeenCalledOnce();
+  });
+  box.focus();
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+  await tick();
+  expect(document.activeElement).toBe(box);
+  box.remove();
 });
 
 it("moves the cursor, and the focus a row held, to the next row when a sync takes the row's attention", async () => {
@@ -2280,12 +2304,13 @@ it("leaves the focus on the list's header when a sync takes the attention of the
   expect(document.activeElement).toBe(order);
 });
 
-it("moves only the cursor to the next row once the palette's Mark Seen drops the item on show down the list", async () => {
+it("moves only the cursor to the next row once the palette's Mark Seen from the Detail pane drops the item on show down the list", async () => {
   const { component, markedSeen } = await threeAlone();
-  await screen.findByRole("button", { name: "Mark Seen" });
-  const before = document.activeElement;
+  const before = await screen.findByRole("button", { name: "Mark Seen" });
+  before.focus();
 
-  // The palette opened from the Detail pane, so Mark Seen marks the item on show, as Q does there.
+  // The palette opened from the Detail pane, so Mark Seen marks the item on show, as Q does there, and the
+  // focus went back there.
   paletteRow(component, "mark_seen", document.querySelector('[data-pane="detail"]'))?.run();
   await vi.waitFor(() => {
     expect(core.markSeen).toHaveBeenCalledOnce();
@@ -2432,6 +2457,27 @@ it("marks the item on show from its header's button, and says why the core refus
   expect((await screen.findByText(/couldn't mark/)).textContent).toBe(
     "Tsugiki couldn't mark this item: no database",
   );
+});
+
+it("leaves a mark's refusal behind with the Repository it was made in", async () => {
+  let refuse: (value: unknown) => void = () => {};
+  core.markSeen.mockReturnValue(
+    new Promise((resolve) => {
+      refuse = resolve;
+    }),
+  );
+  const { issueRow, rerender } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(await screen.findByRole("button", { name: "Mark Seen" }));
+
+  await rerender({ name: "python/other" });
+  refuse({ status: "error", error: { kind: "internal", message: "no database" } });
+  await vi.waitFor(() => {
+    expect(core.workbench).toHaveBeenLastCalledWith("python/other", { kind: "whole" });
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(screen.queryByText(/couldn't mark/)).toBeNull();
 });
 
 it("offers no command to fold the items with nothing waiting", async () => {

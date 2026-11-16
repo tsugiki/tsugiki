@@ -190,7 +190,7 @@ beforeEach(() => {
   });
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
 });
 
@@ -224,7 +224,6 @@ it("lists a Standalone PR with the time it changed", async () => {
     status: "ok",
     data: {
       items: [{ kind: "standalone_pr", ...row, backports: [] }],
-      quiet: [],
       count: 1,
       review_requests: 0,
       stale_reviews: 0,
@@ -250,7 +249,7 @@ it("moves a time on while the window stays open", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [issue], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items: [issue], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   const { unmount } = render(RepositoryHome, {
     name: "python/cpython",
@@ -272,7 +271,6 @@ it("says an Issue has no PR yet, with no count of none", async () => {
     status: "ok",
     data: {
       items: [{ ...issue, people: [], pull_requests: [] }],
-      quiet: [],
       count: 1,
       review_requests: 0,
       stale_reviews: 0,
@@ -297,7 +295,6 @@ it("lists an Issue folded, and its PRs under it once unfolded", async () => {
     status: "ok",
     data: {
       items: [{ ...issue, attention }],
-      quiet: [],
       count: 1,
       review_requests: 0,
       stale_reviews: 0,
@@ -346,7 +343,6 @@ it("shows a Filter's Issues when the user selects it, with the Sidebar's counts"
     status: "ok",
     data: {
       items: selected.kind === "whole" ? [] : [issue],
-      quiet: [],
       count: 7,
       review_requests: 0,
       stale_reviews: 0,
@@ -371,7 +367,7 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
   const unread = { kind: "standalone_pr", ...row, backports: [], attention };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [unread], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items: [unread], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: () => {} });
 
@@ -385,14 +381,13 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
   ).toBeTruthy();
 });
 
-it("folds the Issues with nothing waiting into a quiet section, and a click unfolds and folds it", async () => {
+it("lists the items with nothing waiting in the one list, in the core's order, with no section to fold", async () => {
   const standalone = { kind: "standalone_pr", ...row, number: 7, backports: [], attention: null };
   const other = { ...issue, number: 8, title: "Another" };
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
-      items: [standalone],
-      quiet: [issue, other],
+      items: [standalone, issue, other],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -401,41 +396,23 @@ it("folds the Issues with nothing waiting into a quiet section, and a click unfo
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: () => {} });
 
-  const line = await screen.findByRole("button", { name: "Show 2 quiet items" });
-  expect(line.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
-  const title = screen.getByRole("button", { name: "#7 gh-112564: Fix UAF for gc debug print" });
+  const title = await screen.findByRole("button", { name: "#7 gh-112564: Fix UAF for gc debug print" });
   expect(title.querySelector("strong")).toBeNull();
   expect(title.closest("li")?.classList.contains("attention")).toBe(false);
-
-  await fireEvent.click(line);
-
-  expect(line.textContent?.trim()).toBe("Hide 2 quiet items");
-  expect(line.getAttribute("aria-expanded")).toBe("true");
-  const quiet = screen.getByRole("list", { name: "Quiet items" });
-  expect(within(quiet).getByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
-
-  await fireEvent.click(line);
-
-  expect(line.textContent?.trim()).toBe("Show 2 quiet items");
-  expect(screen.queryByRole("list", { name: "Quiet items" })).toBeNull();
-});
-
-it("shows only the quiet line when nothing else is listed, and counts one item as one", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], quiet: [issue], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: () => {} });
-
-  expect(await screen.findByRole("button", { name: "Show 1 quiet item" })).toBeTruthy();
+  const rows: (Element | null)[] = [
+    "#7 gh-112564: Fix UAF for gc debug print",
+    "#112564 GIL drop during collection",
+    "#8 Another",
+  ].map((name) => screen.getByRole("button", { name }).closest("li"));
+  expect(screen.getAllByRole("listitem").filter((item) => rows.includes(item))).toEqual(rows);
+  expect(screen.queryByRole("button", { name: /quiet/i })).toBeNull();
   expect(screen.queryByText(/Nothing here yet/)).toBeNull();
 });
 
 it("says when nobody has asked for a review", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: () => {} });
 
@@ -448,7 +425,7 @@ it("says when nobody has asked for a review", async () => {
 it("asks for Stale reviews when the user picks it, and says when no Review of theirs is stale", async () => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 2, filters: [] },
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 2, filters: [] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: () => {} });
 
@@ -463,7 +440,7 @@ it("says how to check a Filter that holds nothing", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: () => {} });
 
@@ -514,7 +491,7 @@ it("stops listening when it goes", async () => {
 const answering = (...items: unknown[]) => {
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items, quiet: [], count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items, count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
   });
 };
 
@@ -621,14 +598,15 @@ it("lists a Backport with no Issue and no Origin PR by itself", async () => {
 
 const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", backports: [] };
 
-/** A window on two items: the Issue, which it unfolds, and, in the quiet section it unfolds too, a
- * Standalone PR. */
+/** A window on two items: the Issue, which it unfolds, and a Standalone PR. */
 const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout } = {}) => {
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
-      items: [{ ...issue, attention: null }],
-      quiet: [{ ...standalone, attention: null }],
+      items: [
+        { ...issue, attention: null },
+        { ...standalone, attention: null },
+      ],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -644,7 +622,6 @@ const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout 
   });
   const issueRow = await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
   await unfoldAll();
-  await fireEvent.click(screen.getByRole("button", { name: "Show 1 quiet item" }));
   return {
     component,
     issueRow,
@@ -739,7 +716,6 @@ it("swaps the Detail pane for the next Issue", async () => {
         { ...issue, attention: null },
         { ...issue, number: 2, title: "Next", attention: null },
       ],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -1192,8 +1168,10 @@ it("opens what quick open found on its line, unfolded, which takes the focus, or
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {
-      items: [{ ...issue, attention: null }],
-      quiet: [{ ...standalone, attention: null }],
+      items: [
+        { ...issue, attention: null },
+        { ...standalone, attention: null },
+      ],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -2101,7 +2079,6 @@ it("leaves the mouse's own buttons to a dialog on top, and still keeps the page 
     status: "ok",
     data: {
       items: [{ ...issue, attention: null }],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -2185,15 +2162,15 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
   expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662);
 });
 
-/** A window on three Standalone PRs, #5, #6 and #8, the cursor on #5 and #5 on show. `markedSeen` answers
- * as the core does once it saved Mark Seen on #5, which sends it to the quiet section. */
+/** A window on three Standalone PRs that Need attention, #5, #6 and #8, the cursor on #5 and #5 on show.
+ * `markedSeen` answers as the core does once it saved Mark Seen on #5, which drops it below the others. */
 const threeAlone = async () => {
   const send = catchChanged();
   const alone = (number: number, title: string) => ({
     ...standalone,
     number,
     title,
-    attention: null,
+    attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "commits", by: "octocat" }] },
     seen: { mark: { numbers: [number], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
   });
   const [first, next, last] = [alone(5, "Alone"), alone(6, "Next"), alone(8, "Last")];
@@ -2203,11 +2180,11 @@ const threeAlone = async () => {
       data: { ...row, ...alone(number, `PR ${String(number)}`), content: null },
     }),
   );
-  const answer = (items: object[], quiet: object[]) => ({
+  const answer = (items: object[]) => ({
     status: "ok",
-    data: { items, quiet, count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items, count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
   });
-  core.workbench.mockResolvedValue(answer([first, next, last], []));
+  core.workbench.mockResolvedValue(answer([first, next, last]));
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -2217,13 +2194,13 @@ const threeAlone = async () => {
   const marked = await screen.findByRole("button", { name: "#5 Alone" });
   await fireEvent.click(marked);
   const markedSeen = () => {
-    core.workbench.mockResolvedValue(answer([next, last], [first]));
+    core.workbench.mockResolvedValue(answer([next, last, { ...first, attention: null }]));
     send("python/cpython", [5]);
   };
   return { component, marked, markedSeen };
 };
 
-it("moves the cursor and the focus to the next row once Q sends the row under the cursor to the quiet section", async () => {
+it("moves the cursor and the focus to the next row once Q drops the row under the cursor down the list", async () => {
   const { marked, markedSeen } = await threeAlone();
 
   await fireEvent.keyDown(marked, { key: "q" });
@@ -2236,7 +2213,7 @@ it("moves the cursor and the focus to the next row once Q sends the row under th
   expect(landed.getAttribute("aria-current")).toBe("true");
 });
 
-it("moves only the cursor to the next row once the palette's Mark Seen sends the item on show to the quiet section", async () => {
+it("moves only the cursor to the next row once the palette's Mark Seen drops the item on show down the list", async () => {
   const { component, markedSeen } = await threeAlone();
   await screen.findByRole("button", { name: "Mark Seen" });
   const before = document.activeElement;
@@ -2390,81 +2367,7 @@ it("marks the item on show from its header's button, and says why the core refus
   );
 });
 
-it("unfolds the quiet section when Alt+← goes back to an item in it, and puts the cursor and focus there", async () => {
-  const { issueRow, prRow } = await listing();
-  await fireEvent.click(prRow);
-  await screen.findByRole("region", { name: "PR view" });
-  await fireEvent.click(issueRow);
-  await screen.findByRole("region", { name: "Issue view" });
-  await fireEvent.click(screen.getByRole("button", { name: "Hide 1 quiet item" }));
-  expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
-
-  await press("ArrowLeft", { altKey: true });
-
-  const back = await screen.findByRole("button", { name: "#5 Alone" });
-  expect(screen.getByRole("button", { name: "Hide 1 quiet item" })).toBeTruthy();
-  expect(back.getAttribute("aria-current")).toBe("true");
-  expect(document.activeElement).toBe(back);
-});
-
-it("folds and unfolds the quiet section from the palette, and folding moves the focus off a quiet row", async () => {
-  const { component, issueRow, treeRow, prRow } = await listing();
-  const command = (title: string) => component.paletteCommands().find((one) => one.title === title);
-  await fireEvent.click(prRow);
-  prRow.focus();
-
-  command("Hide Quiet Items")?.run();
-
-  await vi.waitFor(() => {
-    expect(document.activeElement).toBe(treeRow);
-  });
-  expect(treeRow.getAttribute("aria-current")).toBe("true");
-  expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
-  expect(command("Hide Quiet Items")).toBeUndefined();
-  issueRow.focus();
-  command("Show Quiet Items")?.run();
-  expect(await screen.findByRole("button", { name: "#5 Alone" })).toBeTruthy();
-  command("Hide Quiet Items")?.run();
-  await vi.waitFor(() => {
-    expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
-  });
-  expect(document.activeElement, "the focus wasn't on a row that went").toBe(issueRow);
-});
-
-it("gives the quiet line the focus when folding leaves no line above for the cursor", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [],
-      quiet: [{ ...standalone, attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
-  const { component } = render(RepositoryHome, {
-    name: "python/cpython",
-    onpick: () => {},
-    onsettings: () => {},
-    onadd: vi.fn(),
-  });
-  await fireEvent.click(await screen.findByRole("button", { name: "Show 1 quiet item" }));
-  const prRow = screen.getByRole("button", { name: "#5 Alone" });
-  await fireEvent.click(prRow);
-  prRow.focus();
-
-  component
-    .paletteCommands()
-    .find((one) => one.title === "Hide Quiet Items")
-    ?.run();
-
-  await vi.waitFor(() => {
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Show 1 quiet item" }));
-  });
-});
-
-it("offers no quiet command with nothing quiet", async () => {
+it("offers no command to fold the items with nothing waiting", async () => {
   answering({ ...issue, attention: null });
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
@@ -2474,7 +2377,9 @@ it("offers no quiet command with nothing quiet", async () => {
   });
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
 
-  expect(component.paletteCommands().map((command) => command.title)).not.toContain("Show Quiet Items");
+  expect(component.paletteCommands().map((command) => command.title)).not.toContainEqual(
+    expect.stringMatching(/quiet/i),
+  );
 });
 
 it("shows another Repository as a launch does: its Workbench, an empty Detail pane, the cursor on top", async () => {
@@ -2483,7 +2388,6 @@ it("shows another Repository as a launch does: its Workbench, an empty Detail pa
     status: "ok",
     data: {
       items: [{ ...issue, attention: null }],
-      quiet: [],
       count: 1,
       review_requests: 0,
       stale_reviews: 0,
@@ -2778,7 +2682,6 @@ it("leaves its keys alone while a dialog is on top", async () => {
     status: "ok",
     data: {
       items: [{ ...issue, attention: null }],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -2849,7 +2752,6 @@ it("closes the Detail pane when the Repository changes", async () => {
     status: "ok",
     data: {
       items: [{ ...issue, attention: null }],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -3734,7 +3636,6 @@ it("brings the list back with the focus on the cursor's row when the open item i
     status: "ok",
     data: {
       items: [{ ...issue, pull_requests: [], attention: null }],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -3935,8 +3836,8 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
       items: [
         { ...issue, state: "NOT_PLANNED", attention: null },
         { ...issue, number: 1, state: null, pull_requests: [], attention: null },
+        { ...standalone, is_draft: true, attention: null },
       ],
-      quiet: [{ ...standalone, is_draft: true, attention: null }],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -3945,7 +3846,6 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {}, onadd: vi.fn() });
   await unfoldAll();
-  await fireEvent.click(screen.getByRole("button", { name: "Show 1 quiet item" }));
 
   const icons = screen.getAllByRole("img").map((icon) => icon.getAttribute("title"));
 

@@ -43,7 +43,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - **Mark Unseen** flags the item Marked unseen. It then Needs attention from the moment of the flag, so By
     attention sorts it first, and its preview says "Marked unseen". Flagging a PR brings its Issue back with
     it. Tsugiki keeps the flag per Repository and item.
-- An Issue with nothing that Needs attention moves to a "quiet" section at the bottom, unless it is pinned.
+- An item with nothing that Needs attention, such as a Pinned issue or the user's Review on a PR nobody
+  touched, stays in the one list: By attention sorts it below the items that do, and By last update among
+  them. It has no section or fold of its own, in the Workbench, a Filter or a Built-in view.
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
 - A Pinned issue stays until the user unpins it.
 - Hiding, all kept in Tsugiki only:

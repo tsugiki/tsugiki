@@ -79,7 +79,7 @@ test("the Workbench lists what waits on the user", async ({ page }) => {
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [review, own], quiet: [], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [review, own], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.goto("/");
@@ -106,7 +106,7 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [review, long], quiet: [], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [review, long], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.setViewportSize({ width: 900, height: 600 });
@@ -128,7 +128,7 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
   await expect(title(read)).toHaveCSS("text-overflow", "ellipsis");
 });
 
-test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an item in it", async ({
+test("an item with nothing waiting sits in the one list below what does, and Alt+← goes back to it", async ({
   page,
 }) => {
   const done = { status: "ok", data: null } as const;
@@ -137,7 +137,7 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [review], quiet: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [review, own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     openIssue: done,
     fetchIssue: done,
@@ -159,27 +159,21 @@ test("the quiet section unfolds, folds, and unfolds again for Alt+← back to an
     pullRequest: { status: "ok", data: ownView },
   });
   await page.goto("/");
-  const line = page.getByRole("button", { name: /quiet item/ });
-  const quietRow = page
-    .getByRole("list", { name: "Quiet items" })
+  const ownRow = page
+    .getByRole("list")
     .getByRole("button", { name: "#157178 GH-156425: Clear GC frame on early return" });
-  await expect(line).toHaveText("Show 1 quiet item");
-  await expect(quietRow).toBeHidden();
+  await expect(ownRow).toBeVisible();
+  await expect(page.getByRole("button", { name: /quiet/i })).toHaveCount(0);
 
-  await line.click();
-  await expect(line).toHaveText("Hide 1 quiet item");
-  await quietRow.click();
+  await ownRow.click();
   await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
   await page.getByRole("button", { name: "#112564 GIL drop during collection" }).click();
   await expect(page.getByRole("region", { name: "Issue view" })).toBeVisible();
-  await line.click();
-  await expect(quietRow).toBeHidden();
 
   await page.keyboard.press("Alt+ArrowLeft");
 
   await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
-  await expect(line).toHaveText("Hide 1 quiet item");
-  await expect(quietRow).toBeFocused();
+  await expect(ownRow).toBeFocused();
 });
 
 test("the first sync's rows appear as the core saves them", async ({ page }) => {
@@ -187,7 +181,7 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.goto("/");
@@ -195,7 +189,7 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
 
   await changeAnswer(page, "workbench", {
     status: "ok",
-    data: { items: [own], quiet: [], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   await emitFromCore(page, "changed", { repository: "tsugiki/tsugiki", items: [1] });
   await emitFromCore(page, "changed", { repository: repository.name, items: [1] });
@@ -207,7 +201,6 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
 test("the Sidebar lists the Filters, and selecting one shows its Issues", async ({ page }) => {
   const whole = {
     items: [review, own],
-    quiet: [],
     count: 2,
     review_requests: 0,
     stale_reviews: 0,
@@ -233,7 +226,6 @@ test("a drag past the Sidebar's least width folds it to icons, and a click on on
 }) => {
   const whole = {
     items: [review, own],
-    quiet: [],
     count: 2,
     review_requests: 0,
     stale_reviews: 0,
@@ -269,7 +261,7 @@ test("a drag past the Sidebar's least width folds it to icons, and a click on on
 
 test("a change keeps the selected Filter and the place the user had scrolled to", async ({ page }) => {
   const many = Array.from({ length: 80 }, (_, at) => ({ ...own, number: 1000 + at }));
-  const whole = { items: many, quiet: [], count: 80, review_requests: 0, stale_reviews: 0, filters: [mine] };
+  const whole = { items: many, count: 80, review_requests: 0, stale_reviews: 0, filters: [mine] };
   await page.setViewportSize({ width: 800, height: 400 });
   await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
   await page.goto("/");
@@ -298,7 +290,7 @@ test("the status bar says when the Repository last synced, and a click asks agai
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
     status: { state: "online", login: "octocat" },
     lastSync: { repository: repository.name, at: null },

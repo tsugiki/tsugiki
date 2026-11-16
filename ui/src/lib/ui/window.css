@@ -107,7 +107,7 @@ kbd {
   outline: 1px solid transparent;
 }
 
-/* A section's heading in the Sidebar, and the Issue list's quiet line. */
+/* A section's heading, in the Sidebar or the rail. */
 .small-heading {
   font-size: 11px;
   font-weight: 400;

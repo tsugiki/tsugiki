@@ -149,7 +149,6 @@
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
   let list = $state<HTMLElement>();
-  let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
    * it with `:focus-within` (#602). */
@@ -564,15 +563,6 @@
       panes.order === "attention"
         ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
         : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
-      ...(workbench.quiet.length > 0
-        ? [
-            {
-              title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items",
-              id: "toggle_quiet" as const,
-              run: toggleQuiet,
-            },
-          ]
-        : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       // Each shape but the one on show, so a hidden Sidebar offers both.
       ...(panes.hidden("sidebar") || !panes.sidebarIcons
@@ -606,27 +596,6 @@
     await panes.setOrder(order);
     await workbench.refresh();
   }
-
-  /** Unfolds the quiet section, or folds it. A cursor in it moves to the last line above it, and takes the
-   * focus with it if the focus was on a row that went away. With no line above, the focus goes to the
-   * line that unfolds the section again. */
-  function toggleQuiet() {
-    if (!workbench.quietShown) {
-      workbench.showQuiet();
-      return;
-    }
-    const focused = document.activeElement;
-    workbench.hideQuiet();
-    void tick().then(() => {
-      if (focused?.isConnected !== false) return;
-      if (workbench.cursor) focusCursor();
-      else quietLineButton?.focus();
-    });
-  }
-
-  /** The line that folds the quiet section: what a click on it does, and to how many items. */
-  const quietLine = (shown: boolean, count: number) =>
-    `${shown ? "Hide" : "Show"} ${count === 1 ? "1 quiet item" : `${String(count)} quiet items`}`;
 
   /** Names a line for the page, which can list a PR under two Issues. */
   const lineName = (stop: Stop | undefined) => `${String(stop?.issue ?? "")}#${String(stop?.number)}`;
@@ -1135,7 +1104,7 @@
         >
       </header>
       {@render problems()}
-      {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
+      {#if workbench.items?.length === 0}
         <p>{EMPTY[workbench.selected.kind]}</p>
       {:else if workbench.items}
         <ul>
@@ -1143,23 +1112,6 @@
             {@render listed(item)}
           {/each}
         </ul>
-        {#if workbench.quiet.length > 0}
-          <button
-            class="link quiet small-heading"
-            aria-expanded={workbench.quietShown}
-            onclick={toggleQuiet}
-            bind:this={quietLineButton}
-          >
-            {quietLine(workbench.quietShown, workbench.quiet.length)}
-          </button>
-          {#if workbench.quietShown}
-            <ul aria-label="Quiet items">
-              {#each workbench.quiet as item (item.number)}
-                {@render listed(item)}
-              {/each}
-            </ul>
-          {/if}
-        {/if}
       {/if}
     </section>
     {#if detail}
@@ -1425,11 +1377,6 @@
   .window-focused .list:focus-within .row:has(.title[aria-current]),
   :global(html:not(:has(:focus))) .window-focused .row:has(.title[aria-current]) {
     background: var(--selection-active);
-  }
-
-  .quiet {
-    display: block;
-    padding: 12px 10px 4px;
   }
 
   /* The empty view's words and the problems line up with the header. */

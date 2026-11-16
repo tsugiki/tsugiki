@@ -29,7 +29,7 @@ test("adding the first Repository goes from onboarding to the Repository", async
     addRepository: { status: "ok", data: cpython },
     workbench: {
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.goto("/");
@@ -76,7 +76,7 @@ test("a normal launch opens on the Repository the core names", async ({ page }) 
     home: cpython,
     workbench: {
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.goto("/");
@@ -93,7 +93,7 @@ test("the dialog borrows objects from a clone the user picks", async ({ page }) 
     addRepository: { status: "ok", data: cpython },
     workbench: {
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     },
   });
   await page.goto("/");

@@ -886,7 +886,7 @@ fn work_fetch() -> Result<Reply, Unreachable> {
     reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{WORK_RATE}}}}}"#))
 }
 
-/// The recorded `python/cpython` work as the Workbench lists it: the sections in order, with each item's
+/// The recorded `python/cpython` work as the Workbench lists it: the items in order, with each item's
 /// reasons.
 fn inbox_of(workbench: &Workbench) -> String {
     let line = |listed: &ListedItem| {
@@ -894,14 +894,12 @@ fn inbox_of(workbench: &Workbench) -> String {
         let why = listed.attention.as_ref().map(|attention| &attention.why);
         format!("#{number} {why:?}")
     };
-    let waiting = workbench.items.iter().map(line).collect::<Vec<_>>();
-    let quiet = workbench.quiet.iter().map(line).collect::<Vec<_>>();
+    let items = workbench.items.iter().map(line).collect::<Vec<_>>();
     format!(
-        "count {}, review requests {}\n\n{}\n\nquiet\n{}\n",
+        "count {}, review requests {}\n\n{}\n",
         workbench.count,
         workbench.review_requests,
-        waiting.join("\n"),
-        quiet.join("\n"),
+        items.join("\n"),
     )
 }
 

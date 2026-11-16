@@ -58,10 +58,10 @@ fn the_window_gets_the_kind_of_each_item_and_its_times_as_text() {
     assert_eq!(sent["items"][0]["number"], 3);
     assert_eq!(sent["items"][0]["updated_at"], "1970-01-01T00:00:01Z");
     assert_eq!(sent["items"][0]["attention"], Value::Null);
-    assert_eq!(sent["quiet"][0]["kind"], "issue");
-    assert_eq!(sent["quiet"][0]["updated_at"], "1970-01-01T00:00:01Z");
-    assert_eq!(sent["quiet"][0]["pull_requests"][0]["kind"], "pr");
-    assert_eq!(sent["quiet"][0]["pull_requests"][0]["number"], 4);
+    assert_eq!(sent["items"][1]["kind"], "issue");
+    assert_eq!(sent["items"][1]["updated_at"], "1970-01-01T00:00:01Z");
+    assert_eq!(sent["items"][1]["pull_requests"][0]["kind"], "pr");
+    assert_eq!(sent["items"][1]["pull_requests"][0]["number"], 4);
 }
 
 #[test]

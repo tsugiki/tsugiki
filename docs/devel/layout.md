@@ -32,13 +32,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       then the rest by last update.
     - **By last update**: each item newest first by its last update.
 
-    The quiet section comes last either way. All issues, Archived and Muted keep their own order and show no
-    switch. The quiet section starts folded behind a muted "Show 4 quiet items" line at the end of the list.
-    A click on the line, or "Show Quiet Items" in the command palette, unfolds it, and the line turns to
-    "Hide 4 quiet items" above it. ↑ ↓ skip a folded section. Folding it moves a cursor in it to the last
-    line above, and opening a quiet item another way, as with `Alt+←`, unfolds it. The choice holds for every
-    view while the Repository stays open. An item moves to the quiet section when the user marks it seen
-    and nothing else there Needs attention, and the cursor lands on the row that takes its place.
+    All issues, Archived and Muted keep their own order and show no switch. The items with nothing waiting
+    on the user stay in the one list, with no heading or fold of their own. When the user marks the item
+    under the cursor seen and nothing else there Needs attention, the cursor moves on to the row that came
+    after it, while By attention drops the item below what still waits.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
     it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes
@@ -166,8 +163,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - An item that Needs attention looks like unread mail: a 3 px accent bar on its left edge, the title in
       the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
     - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the
-      text colour. A click anywhere on a row opens it. The quiet section's line uses the small heading
-      style.
+      text colour. A click anywhere on a row opens it.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the

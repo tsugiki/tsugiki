@@ -109,7 +109,8 @@ _Avoid_: Cache, local clone
 **Workbench**:
 The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a
 **Filter** reaches, that is a **Pinned issue**, that has an open PR the user holds a **Review** on, or that
-**Needs attention**. An Issue being closed on GitHub does not remove it.
+**Needs attention**. An Issue being closed on GitHub does not remove it. It is one list, with no section of
+its own for the items that wait on nothing.
 _Avoid_: Dashboard, inbox
 
 **Reach**:

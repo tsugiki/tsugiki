@@ -112,9 +112,8 @@ impl Inbox {
         now: OffsetDateTime,
     ) -> Result<Self, Error> {
         let settings = repository.clone();
-        let read = reader.read_snapshot(&repository.name, move |snapshot| {
-            read_page(snapshot, &settings, page, now)
-        })?;
+        let job = move |snapshot: &Snapshot<'_>| read_page(snapshot, &settings, page, now);
+        let read = reader.read_snapshot(&repository.name, job)?;
         let Some((facts, older)) = read else {
             return Ok(Self {
                 items: Vec::new(),

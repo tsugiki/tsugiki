@@ -8,7 +8,7 @@ import type { Action } from "./keymap.svelte";
 
 /** What the history knows a row by where its title changes with what it does, as Hide Sidebar turns into
  * Show Sidebar: the action it runs, or one of the names here for a row that runs no action. */
-export type PaletteId = Action | "sort_list" | "toggle_quiet";
+export type PaletteId = Action | "sort_list";
 
 /** A palette row as the history knows it: by its `id`, if it has one, or else by its title. */
 export interface Remembered {

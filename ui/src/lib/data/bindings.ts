@@ -1510,7 +1510,7 @@ export type LinkTo =
 /**  A project on the Python Package Index. */
 { site: "pypi"; project: string };
 
-/**  How the Issue list orders its items, apart from its quiet section, which comes last either way (#592). */
+/**  How the Issue list orders its items (#592). */
 export type ListOrder = 
 /**  What Needs attention first, newest first by when it started to, then the rest by last update. */
 "attention" | 
@@ -3368,12 +3368,10 @@ export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQ
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
 	/**
-	 *  The items outside the quiet section, in the list's order: by attention, what Needs attention newest
-	 *  first by when it started to, then the rest by last update; or by last update alone.
+	 *  The items in the list's order: by attention, what Needs attention newest first by when it started
+	 *  to, then the rest by last update; or by last update alone.
 	 */
 	items: ListedItem_Deserialize[],
-	/**  The Issues with nothing that Needs attention, the latest update first. */
-	quiet: ListedItem_Deserialize[],
 	/**  The count of items on the Workbench that Need attention. */
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
@@ -3386,12 +3384,10 @@ export type Workbench_Deserialize = {
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Serialize = {
 	/**
-	 *  The items outside the quiet section, in the list's order: by attention, what Needs attention newest
-	 *  first by when it started to, then the rest by last update; or by last update alone.
+	 *  The items in the list's order: by attention, what Needs attention newest first by when it started
+	 *  to, then the rest by last update; or by last update alone.
 	 */
 	items: ListedItem_Serialize[],
-	/**  The Issues with nothing that Needs attention, the latest update first. */
-	quiet: ListedItem_Serialize[],
 	/**  The count of items on the Workbench that Need attention. */
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */

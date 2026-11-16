@@ -37,7 +37,7 @@ fn the_window_gets_a_backports_kind_beside_its_row() {
         vec![issue(1)],
     );
     let sent = serde_json::to_value(&found).unwrap();
-    let entries = &sent["quiet"][0]["pull_requests"];
+    let entries = &sent["items"][0]["pull_requests"];
     assert_eq!(entries[0]["backports"][0]["number"], 5);
     assert_eq!(entries[0]["backports"][0]["backport"], "manual");
     assert_eq!(entries[1]["kind"], "backport");

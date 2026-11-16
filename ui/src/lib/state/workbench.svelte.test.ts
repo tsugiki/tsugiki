@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { commands, events } from "$lib/data/bindings";
+import { commands, events, type ListOrder } from "$lib/data/bindings";
 import { WorkbenchState, type ListedItem, type Seen, type WorkbenchRow } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -53,7 +53,6 @@ const answer = (...numbers: number[]) => ({
   status: "ok" as const,
   data: {
     items: numbers.map(item),
-    quiet: [],
     count: numbers.length,
     review_requests: 0,
     stale_reviews: 0,
@@ -97,19 +96,9 @@ describe("WorkbenchState", () => {
     vi.resetAllMocks();
   });
 
-  it("moves the cursor through the list and the quiet section, and stops at each end", async () => {
+  it("moves the cursor through the list, and stops at each end", async () => {
     catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3)],
-        quiet: [item(2), item(1)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2, 1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     expect(state.underCursor).toBeUndefined();
@@ -119,9 +108,6 @@ describe("WorkbenchState", () => {
     state.moveCursor(-1);
     expect(state.cursor?.number).toBe(3);
     state.moveCursor(1);
-    expect(state.cursor?.number, "the folded quiet section has no lines to stop on").toBe(3);
-    state.showQuiet();
-    state.moveCursor(1);
     state.moveCursor(1);
     expect(state.underCursor?.number).toBe(1);
     state.moveCursor(1);
@@ -129,173 +115,45 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("starts with the quiet section folded, and folding it moves a cursor in it to the last line above", async () => {
-    catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(4), item(3)],
-        quiet: [item(2)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
-    const state = new WorkbenchState("python/cpython");
-    await state.load();
-    expect(state.quietShown).toBe(false);
-    state.showQuiet();
-    state.moveCursor(1);
-    state.moveCursor(1);
-    state.moveCursor(1);
-    expect(state.cursor?.number).toBe(2);
-
-    state.hideQuiet();
-
-    expect(state.quietShown).toBe(false);
-    expect(state.cursor?.number).toBe(3);
-    state.stop();
-  });
-
-  it("leaves a cursor above the quiet section where it is when the section folds", async () => {
-    catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(4), item(3)],
-        quiet: [item(2)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
-    const state = new WorkbenchState("python/cpython");
-    await state.load();
-    state.hideQuiet();
-    expect(state.cursor).toBeUndefined();
-    state.showQuiet();
-    state.moveCursor(1);
-
-    state.hideQuiet();
-
-    expect(state.cursor?.number).toBe(4);
-    state.stop();
-  });
-
-  it("unfolds the quiet section for a cursor put on a line in it", async () => {
-    catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3)],
-        quiet: [item(2)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
-    const state = new WorkbenchState("python/cpython");
-    await state.load();
-    const pr = (number: number) => ({ number, kind: "pull_request" as const, issue: undefined });
-
-    state.moveTo(pr(3));
-    const aboveIt = state.quietShown;
-    state.moveTo(pr(2));
-
-    expect(aboveIt).toBe(false);
-    expect(state.quietShown).toBe(true);
-    expect(state.underCursor?.number).toBe(2);
-    state.stop();
-  });
-
-  it("leaves a folded quiet section folded when the item under the cursor goes quiet", async () => {
+  it("follows the item under the cursor to its new line when a change moves it down the list", async () => {
     const { send } = catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3), item(2)],
-        quiet: [],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.moveCursor(1);
-    state.moveCursor(1);
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3)],
-        quiet: [item(2)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(answer(2, 3));
 
     send("python/cpython");
     await vi.waitFor(() => {
-      expect(state.quiet).toHaveLength(1);
+      expect(numbers(state)).toEqual([2, 3]);
     });
 
-    expect(state.quietShown).toBe(false);
-    expect(state.cursor?.number, "the cursor moves to the last line above, as folding would").toBe(3);
+    expect(state.underCursor?.number).toBe(3);
     state.stop();
   });
 
-  it("says whether the list or its quiet section has a line", async () => {
+  it("says whether the list has a line", async () => {
     catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3)],
-        quiet: [item(2)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2));
     const state = new WorkbenchState("python/cpython");
     const pr = (number: number, issue?: number) => ({ number, kind: "pull_request" as const, issue });
     const before = state.lists(pr(3));
 
     await state.load();
 
-    const folded = state.lists(pr(2));
-    state.showQuiet();
-
     expect([
       before,
-      folded,
       state.lists(pr(3)),
       state.lists(pr(2)),
       state.lists(pr(3, 1)),
       state.lists(pr(4)),
-    ]).toEqual([false, false, true, true, false, false]);
+    ]).toEqual([false, true, true, false, false]);
     state.stop();
   });
 
   it("knows the title of each line it lists", async () => {
     catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3)],
-        quiet: [item(2)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2));
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
@@ -308,7 +166,7 @@ describe("WorkbenchState", () => {
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
-      data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
+      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -356,7 +214,6 @@ describe("WorkbenchState", () => {
       status: "ok",
       data: {
         items: [tree, standalone, lone],
-        quiet: [],
         count: 3,
         review_requests: 0,
         stale_reviews: 0,
@@ -406,7 +263,6 @@ describe("WorkbenchState", () => {
       status: "ok",
       data: {
         items: [tree(10), tree(20), item(30)],
-        quiet: [],
         count: 3,
         review_requests: 0,
         stale_reviews: 0,
@@ -441,7 +297,6 @@ describe("WorkbenchState", () => {
       status: "ok",
       data: {
         items: [issueWith(10, 11)],
-        quiet: [],
         count: 0,
         review_requests: 0,
         stale_reviews: 0,
@@ -464,39 +319,12 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("unfolds both the quiet section and the Issue to put the cursor on a PR of a quiet Issue", async () => {
-    catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [],
-        quiet: [issueWith(10, 11)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
-    const state = new WorkbenchState("python/cpython");
-    await state.load();
-    const pr = { number: 11, kind: "pull_request" as const, issue: 10 };
-
-    const listedFolded = state.lists(pr);
-    state.moveTo(pr);
-
-    expect(listedFolded, "a folded quiet section hides even a folded Issue's PRs").toBe(false);
-    expect([state.quietShown, state.unfolded(10), state.underCursor]).toEqual([true, true, pr]);
-    expect(state.titleOf(11)).toBeDefined();
-    state.stop();
-  });
-
   it("moves the cursor from a PR to its Issue as the Issue folds, and unfolds it to put the cursor on a PR", async () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
       data: {
         items: [issueWith(10, 11), issueWith(20, 21)],
-        quiet: [],
         count: 0,
         review_requests: 0,
         stale_reviews: 0,
@@ -527,7 +355,6 @@ describe("WorkbenchState", () => {
     const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
     const listed = {
       items: [issueWith(10, 11)],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,
@@ -560,7 +387,6 @@ describe("WorkbenchState", () => {
       status: "ok",
       data: {
         items: [issueWith(10, 11)],
-        quiet: [],
         count: 0,
         review_requests: 0,
         stale_reviews: 0,
@@ -598,7 +424,6 @@ describe("WorkbenchState", () => {
       status: "ok",
       data: {
         items: [tree, item(6)],
-        quiet: [],
         count: 2,
         review_requests: 0,
         stale_reviews: 0,
@@ -669,16 +494,15 @@ describe("WorkbenchState", () => {
     expect(state.error).toBeUndefined();
   });
 
-  it("holds the quiet section and the counts of the Built-in views", async () => {
+  it("holds the counts of the Built-in views", async () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValueOnce({
       status: "ok",
-      data: { items: [], quiet: [item(4)], count: 0, review_requests: 3, stale_reviews: 2, filters: [] },
+      data: { items: [item(4)], count: 0, review_requests: 3, stale_reviews: 2, filters: [] },
     });
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
-    expect(state.quiet.map((listed) => listed.number)).toEqual([4]);
     expect(state.reviewRequests).toBe(3);
     expect(state.staleReviews).toBe(2);
   });
@@ -868,7 +692,6 @@ describe("WorkbenchState", () => {
       status: "ok",
       data: {
         items: [issueWith(1, 2), standalone],
-        quiet: [item(5)],
         count: 0,
         review_requests: 0,
         stale_reviews: 0,
@@ -885,7 +708,6 @@ describe("WorkbenchState", () => {
     expect(numbersOf(2, "pull_request", 1)).toEqual([2]);
     expect(numbersOf(3, "pull_request")).toEqual([3]);
     expect(numbersOf(4, "pull_request")).toEqual([4]);
-    expect(numbersOf(5, "pull_request"), "the folded quiet section's lines too").toEqual([5]);
     expect(numbersOf(9, "issue")).toBeUndefined();
     state.stop();
   });
@@ -896,23 +718,25 @@ describe("WorkbenchState", () => {
     const state = new WorkbenchState("python/cpython");
     const mark = { numbers: [1, 2], up_to: "2026-11-04T10:00:00Z" };
 
-    expect(await state.markSeen(mark, undefined)).toBeUndefined();
+    expect(await state.markSeen(mark)).toBeUndefined();
     expect(await state.markUnseen(7)).toBe("no database");
 
     expect(commands.markSeen).toHaveBeenCalledWith("python/cpython", mark);
     expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7);
   });
 
-  /** Line `number` of the list, a PR by itself. */
-  const lineOf = (number: number) => ({ number, kind: "pull_request" as const, issue: undefined });
+  /** Item `number`, with a Review request waiting on the user. */
+  const waiting = (number: number): ListedItem => ({
+    ...item(number),
+    attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
+  });
 
-  /** The list the core answers: `items` Need attention, and `quiet` don't. */
-  const answering = (items: number[], quiet: number[] = []) => {
+  /** The list the core answers: the items of `waits` Need attention, and those of `rest` below them don't. */
+  const answering = (waits: number[], rest: number[] = []) => {
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
       data: {
-        items: items.map(item),
-        quiet: quiet.map(item),
+        items: [...waits.map(waiting), ...rest.map(item)],
         count: 0,
         review_requests: 0,
         stale_reviews: 0,
@@ -921,23 +745,23 @@ describe("WorkbenchState", () => {
     });
   };
 
-  /** A list of `items` with the cursor on its line `at`, counted from the top. */
+  /** A list of the waiting `items` with the cursor on its line `at`, counted from the top, what it calls
+   * each time the cursor lands, and the order the window holds, which a test may change. */
   const listingWithCursor = async (items: number[], at: number) => {
     const { send } = catchListener();
-    vi.mocked(commands.markSeen).mockResolvedValue({ status: "ok", data: null });
     answering(items);
-    const state = new WorkbenchState("python/cpython");
+    const landed = vi.fn();
+    const order = { now: "attention" as ListOrder };
+    const state = new WorkbenchState("python/cpython", landed, () => order.now);
     await state.load();
     for (let step = 0; step <= at; step++) state.moveCursor(1);
-    return { state, send };
+    return { state, send, landed, order };
   };
 
-  it("lands the cursor on the line that takes the place of the item it marked seen, once the core says so", async () => {
-    const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
-    const landed = vi.fn();
+  it("lands the cursor on the line that takes the place of the item under it once it stops waiting", async () => {
+    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
 
-    await state.markSeen(seen(3).mark, lineOf(3), landed);
-    // A sync's change, which the mark isn't part of yet.
+    // A sync that left the line waiting.
     send("python/cpython");
     await vi.waitFor(() => {
       expect(commands.workbench).toHaveBeenCalledTimes(2);
@@ -953,97 +777,307 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("lands the cursor on the item that came after the one it marked seen, though one above went quiet too", async () => {
+  it("lands the cursor with nobody told when it was made without a callback", async () => {
+    const { send } = catchListener();
+    answering([3, 2]);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+
+    answering([2], [3]);
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(state.cursor?.number).toBe(2);
+    });
+    state.stop();
+  });
+
+  it("lands the cursor on the item that came after the one under it, though one above dropped down too", async () => {
     const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
 
-    await state.markSeen(seen(3, 4).mark, lineOf(3));
     answering([2, 1], [4, 3]);
     send("python/cpython", [3, 4]);
 
     await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([2, 1]);
+      expect(numbers(state)).toEqual([2, 1, 4, 3]);
     });
     expect(state.cursor?.number).toBe(2);
     state.stop();
   });
 
-  it("lands the cursor on the last line when the item it marked seen was the last", async () => {
-    const { state, send } = await listingWithCursor([3, 2], 1);
-
-    await state.markSeen(seen(2).mark, lineOf(2));
-    answering([3], [2]);
-    send("python/cpython", [2]);
-
-    await vi.waitFor(() => {
-      expect(state.cursor?.number).toBe(3);
+  it("lands the cursor on the last line, under an unfolded Issue, when the item under it was the last and left the list", async () => {
+    const { send } = catchListener();
+    const listing = (...items: ListedItem[]) => ({
+      status: "ok" as const,
+      data: { items, count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
     });
-    state.stop();
-  });
-
-  it("lands the cursor on no line when nothing Needs attention after Mark Seen, and the quiet section is folded", async () => {
-    const { state, send } = await listingWithCursor([3], 0);
+    const issue = { ...issueWith(7, 8), attention: waiting(7).attention };
+    vi.mocked(commands.workbench).mockResolvedValue(listing(issue, waiting(3)));
     const landed = vi.fn();
+    const state = new WorkbenchState("python/cpython", landed);
+    await state.load();
+    state.unfold(7);
+    state.moveTo({ number: 3, kind: "pull_request", issue: undefined });
 
-    await state.markSeen(seen(3).mark, lineOf(3), landed);
-    answering([], [3]);
+    vi.mocked(commands.workbench).mockResolvedValue(listing(issue));
     send("python/cpython", [3]);
 
     await vi.waitFor(() => {
       expect(landed).toHaveBeenCalledOnce();
     });
-    expect(state.cursor).toBeUndefined();
+    expect(state.cursor).toEqual({ number: 8, kind: "pull_request", issue: 7 });
     state.stop();
   });
 
-  it("forgets where to land once the item marked seen stays in its place, or the core refuses the mark", async () => {
-    const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
-    const landed = vi.fn();
+  it("lands the cursor on the item that came after the one under it in an order that leaves it in place", async () => {
+    const { state, send, landed } = await listingWithCursor([3, 2, 1], 0);
+
+    vi.mocked(commands.workbench).mockResolvedValue({
+      status: "ok",
+      data: {
+        items: [item(3), waiting(2), waiting(1)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
+    });
+    send("python/cpython", [3]);
+
+    await vi.waitFor(() => {
+      expect(landed).toHaveBeenCalledOnce();
+    });
+    expect(state.cursor?.number, "by last update, the item keeps its line").toBe(2);
+    state.stop();
+  });
+
+  it("lands the cursor on the item after the one under it when the item stops waiting and leaves the list", async () => {
+    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+
+    answering([4, 2, 1]);
+    send("python/cpython", [3]);
+
+    await vi.waitFor(() => {
+      expect(state.cursor?.number).toBe(2);
+    });
+    expect(landed).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("neither lands the cursor nor says so when the item under it leaves the list, and nothing else is on it", async () => {
+    const { state, send, landed } = await listingWithCursor([3], 0);
+
+    answering([]);
+    send("python/cpython", [3]);
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([]);
+    });
+    expect(landed).not.toHaveBeenCalled();
+    expect(state.underCursor).toBeUndefined();
+    state.stop();
+  });
+
+  it("follows the item under the cursor when it still waits after a change", async () => {
+    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
 
     // A Review request still waits on the user, so the item stays, if no longer where it was.
-    await state.markSeen(seen(3).mark, lineOf(3), landed);
     answering([3, 4, 2, 1]);
     send("python/cpython", [3]);
+
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([3, 4, 2, 1]);
     });
-    answering([4, 2, 1], [3]);
-    send("python/cpython");
-    await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([4, 2, 1]);
-    });
-    expect(
-      state.cursor?.number,
-      "an item that went quiet under the cursor leaves it on the last line above",
-    ).toBe(1);
-    expect(landed).not.toHaveBeenCalled();
-
-    state.moveTo(lineOf(4));
-    vi.mocked(commands.markSeen).mockResolvedValue(refused);
-    expect(await state.markSeen(seen(4).mark, lineOf(4), landed)).toBe("no database");
-    answering([2, 1], [4, 3]);
-    send("python/cpython", [4]);
-    await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([2, 1]);
-    });
-    expect(state.cursor?.number).toBe(1);
+    expect(state.cursor?.number).toBe(3);
     expect(landed).not.toHaveBeenCalled();
     state.stop();
   });
 
-  it("leaves the cursor alone when the item marked seen isn't under it, or the user moved it since", async () => {
-    const { state, send } = await listingWithCursor([3, 2, 1], 0);
+  it("leaves the cursor alone when the item that stops waiting isn't under it", async () => {
+    const { state, send, landed } = await listingWithCursor([3, 2, 1], 0);
 
-    await state.markSeen(seen(2).mark, lineOf(2));
-    await state.markSeen(seen(3).mark, lineOf(3));
-    state.moveCursor(1);
-    state.moveCursor(-1);
-    answering([1], [3, 2]);
-    send("python/cpython", [2, 3]);
+    answering([3, 1], [2]);
+    send("python/cpython", [2]);
 
     await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([1]);
+      expect(numbers(state)).toEqual([3, 1, 2]);
     });
-    expect(state.cursor?.number, "folding moves it to the last line above, as before").toBe(1);
+    expect(state.cursor?.number).toBe(3);
+    expect(landed).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("leaves the cursor in place when the item under it, with nothing waiting, changes or leaves the list", async () => {
+    const { send } = catchListener();
+    answering([], [3, 2, 1]);
+    const landed = vi.fn();
+    const state = new WorkbenchState("python/cpython", landed);
+    await state.load();
+    state.moveCursor(1);
+
+    // Mark Seen on #3, and the same sync took #1 off the list, which says the answer has arrived.
+    answering([], [3, 2]);
+    send("python/cpython", [3]);
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([3, 2]);
+    });
+    expect(state.cursor?.number).toBe(3);
+    answering([], [2]);
+    send("python/cpython", [3]);
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([2]);
+    });
+
+    expect(state.cursor?.number, "as before this change, it starts over at the next press").toBe(3);
+    expect(state.underCursor).toBeUndefined();
+    expect(landed).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("lands the cursor on the item after the one under it, and stays there while that one waits", async () => {
+    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+
+    answering([4, 2, 1], [3]);
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([4, 2, 1, 3]);
+    });
+    expect(state.cursor?.number).toBe(2);
+    expect(landed).toHaveBeenCalledOnce();
+
+    // The next sync took #1 off the list, which says its answer has arrived.
+    answering([4, 2], [3]);
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([4, 2, 3]);
+    });
+    expect(state.cursor?.number, "the line still waits, so the cursor stays").toBe(2);
+    expect(landed).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("leaves the cursor on a PR in a tree when the Issue over it stops waiting", async () => {
+    const { send } = catchListener();
+    const pr = (number: number) => ({
+      ...row,
+      kind: "pr" as const,
+      number,
+      seen: seen(number),
+      backports: [],
+    });
+    const issue = (attention: ListedItem["attention"]): ListedItem => ({
+      attention,
+      kind: "issue",
+      number: 5,
+      title: "Issue 5",
+      state: "OPEN",
+      people: [],
+      updated_at: "2026-11-04T10:00:00Z",
+      pull_requests: [pr(10), pr(11)],
+      seen: seen(5, 10, 11),
+    });
+    const listing = (attention: ListedItem["attention"]) => ({
+      status: "ok" as const,
+      data: {
+        items: [issue(attention), waiting(3)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
+    });
+    vi.mocked(commands.workbench).mockResolvedValue(listing(waiting(5).attention));
+    const landed = vi.fn();
+    const state = new WorkbenchState("python/cpython", landed);
+    await state.load();
+    const onTen = { number: 10, kind: "pull_request" as const, issue: 5 };
+    state.moveTo(onTen);
+
+    // A sync cleared #11's failed CI, all that waited in the tree.
+    vi.mocked(commands.workbench).mockResolvedValue(listing(null));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(state.items?.[0]?.attention).toBeNull();
+    });
+
+    expect(state.cursor).toEqual(onTen);
+    expect(landed).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("neither lands nor says so once stopped, for an answer that comes after", async () => {
+    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+    let answer: (value: Awaited<ReturnType<typeof commands.workbench>>) => void = () => {};
+    vi.mocked(commands.workbench).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    send("python/cpython");
+    state.stop();
+    answer({
+      status: "ok",
+      data: {
+        items: [waiting(4), waiting(2), waiting(1), item(3)],
+        count: 0,
+        review_requests: 0,
+        stale_reviews: 0,
+        filters: [],
+      },
+    });
+    await vi.waitFor(() => {
+      expect(commands.workbench).toHaveBeenCalledTimes(2);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(numbers(state)).toEqual([4, 3, 2, 1]);
+    expect(state.cursor?.number).toBe(3);
+    expect(landed).not.toHaveBeenCalled();
+  });
+
+  it("follows the item under the cursor when the list's order changes, whatever its attention", async () => {
+    const { state, landed, order } = await listingWithCursor([4, 3, 2, 1], 1);
+    answering([4, 2, 1], [3]);
+
+    order.now = "last_update";
+    await state.reorder();
+
+    expect(numbers(state)).toEqual([4, 2, 1, 3]);
+    expect(state.cursor?.number).toBe(3);
+    expect(landed).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("compares an answer with the items on show by the order each was asked in, whatever answers fell between", async () => {
+    const { state, send, landed, order } = await listingWithCursor([4, 3, 2, 1], 1);
+
+    // The order changes and changes back, and neither answer shows.
+    vi.mocked(commands.workbench).mockResolvedValue(refused);
+    order.now = "last_update";
+    await state.reorder();
+    order.now = "attention";
+    await state.reorder();
+    answering([4, 2, 1], [3]);
+    send("python/cpython", [3]);
+
+    await vi.waitFor(() => {
+      expect(state.cursor?.number).toBe(2);
+    });
+    expect(landed).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("follows the item under the cursor into a newly selected view, where nothing it showed came before", async () => {
+    const { state } = await listingWithCursor([4, 3, 2, 1], 1);
+    answering([4, 2, 1], [3]);
+
+    await state.select(onlyMine);
+
+    expect(numbers(state)).toEqual([4, 2, 1, 3]);
+    expect(state.cursor?.number).toBe(3);
     state.stop();
   });
 });

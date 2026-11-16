@@ -1025,10 +1025,7 @@ fn opening_an_item_on_github_shows_its_page_and_leaves_last_seen_alone() {
 
 /// Each item the answer lists, in the order the window shows them.
 fn listed(workbench: &Value) -> Vec<&Value> {
-    let items = workbench["items"].as_array().unwrap().iter();
-    items
-        .chain(workbench["quiet"].as_array().unwrap())
-        .collect()
+    workbench["items"].as_array().unwrap().iter().collect()
 }
 
 /// The recordings hold 21 PRs of real CPython work, and 3 of them are the recording user's own. They name

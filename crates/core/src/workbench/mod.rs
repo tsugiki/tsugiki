@@ -142,11 +142,9 @@ pub enum WorkbenchView {
 /// A Repository's Workbench or one of its views, with what the Sidebar shows beside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct Workbench {
-    /// The items outside the quiet section, in the list's order: by attention, what Needs attention newest
-    /// first by when it started to, then the rest by last update; or by last update alone.
+    /// The items in the list's order: by attention, what Needs attention newest first by when it started
+    /// to, then the rest by last update; or by last update alone.
     pub items: Vec<ListedItem>,
-    /// The Issues with nothing that Needs attention, the latest update first.
-    pub quiet: Vec<ListedItem>,
     /// The count of items on the Workbench that Need attention.
     pub count: u32,
     /// The count of items that hold a PR carrying a Review request.
@@ -169,7 +167,7 @@ impl Workbench {
         Ok(Self::from_facts(facts, repository, view).ordered(order))
     }
 
-    /// The Workbench with its items in `order`. Its quiet section keeps its own, the latest update first.
+    /// The Workbench with its items in `order`.
     fn ordered(mut self, order: ListOrder) -> Self {
         match order {
             ListOrder::Attention => {}
@@ -217,10 +215,8 @@ impl Workbench {
             // The item is on the Workbench when anything in its tree is, in its own right.
             None => listed.item.is_reached_by(&own_right),
         });
-        let (items, quiet) = sections(shown.cloned().collect());
         Self {
-            items,
-            quiet,
+            items: by_attention(shown.cloned().collect()),
             count,
             review_requests,
             stale_reviews,
@@ -238,23 +234,19 @@ fn prs_of(listed: &[ListedItem], numbers: &BTreeSet<u32>) -> u32 {
     u32::try_from(held.len()).unwrap_or(u32::MAX)
 }
 
-/// `shown` in the order of a list: what Needs attention, then the rest, and apart from them the quiet
-/// section, which is every Issue with nothing that Needs attention.
-fn sections(shown: Vec<ListedItem>) -> (Vec<ListedItem>, Vec<ListedItem>) {
-    let (mut waiting, others): (Vec<_>, Vec<_>) = shown
+/// `shown` in the list's order by attention: what Needs attention, newest first by when it started to, then
+/// the rest by last update.
+fn by_attention(shown: Vec<ListedItem>) -> Vec<ListedItem> {
+    let (mut waiting, mut rest): (Vec<_>, Vec<_>) = shown
         .into_iter()
         .partition(|listed| listed.attention.is_some());
-    let (mut quiet, mut rest): (Vec<_>, Vec<_>) = others
-        .into_iter()
-        .partition(|listed| matches!(listed.item, WorkbenchItem::Issue(_)));
     waiting.sort_by_key(|listed| {
         let since = listed.attention.as_ref().map(|attention| attention.since);
         Reverse((since, listed.item.updated_at_and_number().1))
     });
     rest.sort_by_key(|listed| Reverse(listed.item.updated_at_and_number()));
-    quiet.sort_by_key(|listed| Reverse(listed.item.updated_at_and_number()));
     waiting.append(&mut rest);
-    (waiting, quiet)
+    waiting
 }
 
 fn count_of<'a>(items: impl Iterator<Item = &'a ListedItem>) -> u32 {

@@ -691,7 +691,7 @@ pub struct PaneLayout {
     pub order: ListOrder,
 }
 
-/// How the Issue list orders its items, apart from its quiet section, which comes last either way (#592).
+/// How the Issue list orders its items (#592).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ListOrder {

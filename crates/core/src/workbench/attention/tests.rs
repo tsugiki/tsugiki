@@ -240,8 +240,10 @@ fn number_of(listed: &ListedItem) -> u32 {
 }
 
 fn listed_at(workbench: &Workbench, number: u32) -> ListedItem {
-    let all = workbench.items.iter().chain(&workbench.quiet);
-    let mut found = all.filter(|listed| number_of(listed) == number);
+    let mut found = workbench
+        .items
+        .iter()
+        .filter(|listed| number_of(listed) == number);
     found.next().unwrap().clone()
 }
 
@@ -652,7 +654,6 @@ fn a_mention_of_someone_else_leaves_an_issue_the_user_only_follows_alone() {
     );
 
     assert_eq!(world.workbench().items, []);
-    assert_eq!(world.workbench().quiet, []);
     world.finish();
 }
 
@@ -706,7 +707,7 @@ fn the_same_reason_on_two_prs_of_a_tree_is_said_once() {
 }
 
 #[test]
-fn what_needs_attention_comes_first_newest_first_then_the_rest_then_the_quiet_section() {
+fn what_needs_attention_comes_first_newest_first_then_the_rest_in_one_list() {
     let world = World::new("order");
     world.has_issues(vec![
         IssueFacts {
@@ -760,10 +761,8 @@ fn what_needs_attention_comes_first_newest_first_then_the_rest_then_the_quiet_se
     )
     .unwrap();
 
-    assert_eq!(numbers(&workbench.items), [2, 1, 3, 4]);
-    assert_eq!(numbers(&workbench.quiet), [10, 11]);
-    assert_eq!(numbers(&by_update.items), [3, 4, 2, 1]);
-    assert_eq!(numbers(&by_update.quiet), [10, 11]);
+    assert_eq!(numbers(&workbench.items), [2, 1, 10, 11, 3, 4]);
+    assert_eq!(numbers(&by_update.items), [10, 11, 3, 4, 2, 1]);
     world.finish();
 }
 
@@ -791,7 +790,6 @@ fn the_sidebar_counts_what_needs_attention_and_review_requests_lists_those_prs()
 
     let requests = world.view(&WorkbenchView::ReviewRequests);
     assert_eq!(numbers(&requests.items), [5, 1]);
-    assert_eq!(requests.quiet, []);
     assert_eq!(requests.count, 3);
     world.finish();
 }
@@ -992,7 +990,7 @@ fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
 
     world.mark_seen(world.seen(5));
     assert_eq!(world.why(5), []);
-    assert_eq!(numbers(&world.workbench().quiet), [5]);
+    assert_eq!(numbers(&world.workbench().items), [5]);
     world.finish();
 }
 

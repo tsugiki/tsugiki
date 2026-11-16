@@ -51,6 +51,7 @@ const DRAFT: Octicon = { label: "Draft PR", tone: "muted", paths: PULL_REQUEST_D
 export const issueIcon = (state: IssueState | null): Octicon | undefined =>
   state === null ? undefined : ISSUES[state];
 
-/** A PR's icon. A draft that merged or closed takes the icon of how it ended, as on GitHub. */
+/** A PR's icon. A draft that merged or closed takes the icon of how it ended, as on GitHub. Each state gets
+ * the same shared object every time: the Issue view counts PRs by comparing their icons as objects. */
 export const prIcon = ({ state, is_draft }: { state: PrState; is_draft: boolean }): Octicon =>
   state === "OPEN" && is_draft ? DRAFT : PULL_REQUESTS[state];

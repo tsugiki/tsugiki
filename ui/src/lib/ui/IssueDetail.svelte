@@ -159,7 +159,7 @@
       <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
       <div class="meta">
         {#if view.labels.length > 0}
-          <ul class="labels" aria-label="Labels">
+          <ul class="labels" role="list" aria-label="Labels">
             {#each view.labels as label (label)}
               <li class="chip">{label}</li>
             {/each}
@@ -169,7 +169,7 @@
       </div>
 
       {#snippet tree(entries: TreeEntry[], name: string)}
-        <ul aria-label={name}>
+        <ul role="list" aria-label={name}>
           {#each entries as entry (entry.number)}
             <li>
               <span class="pr">
@@ -205,8 +205,7 @@
         <h3>Origin PRs</h3>
         <!-- Each entry reads its words, then a comma only a screen reader hears, then its count. The words
              name each icon, so a screen reader skips the icons' own names, and "Bold", which names how the
-             tree shows a PR. WebKit drops the list role of a list without bullets unless the role is
-             written out. -->
+             tree shows a PR. -->
         <ul class="counts" role="list" aria-label="PR counts">
           {#each counts as { words, icon, count } (words)}
             <li class={{ none: count === 0 }}>
@@ -320,17 +319,18 @@
   .counts {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 6px;
+    gap: 4px 12px;
     margin: 0 0 6px;
+    overflow: hidden;
     font-size: 12px;
   }
 
-  /* A muted dot between entries. The empty text after the slash keeps it from a screen reader, and a browser
-     that can't read that form shows the dot all the same. */
-  .counts li + li::before {
-    content: "·";
+  /* A muted dot in the gap before each entry, which the empty text after the slash keeps from a screen
+     reader. An entry that starts a line has its dot left of the row, where the row's edge cuts it off. */
+  .counts li::before {
     content: "·" / "";
-    margin-right: 2px;
+    position: absolute;
+    left: -8px;
     color: var(--fg-muted);
   }
 
@@ -367,6 +367,7 @@
     border-radius: 6px;
   }
 
+  /* WebKit drops the list role of a list without bullets, so each list here writes out `role="list"`. */
   ul {
     list-style: none;
     margin: 0;

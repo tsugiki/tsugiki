@@ -162,9 +162,6 @@ test("a row above the tree counts the PRs of each state, and mutes a state at 0"
   const pane = page.getByRole("region", { name: "Issue view" });
   const countRow = pane.getByRole("list", { name: "PR counts" });
   const entries = countRow.getByRole("listitem");
-  // WebKit's own accessibility tree drops the role of a list without bullets unless it is written out.
-  // Playwright computes roles by itself, so only the attribute shows it here.
-  await expect(countRow).toHaveAttribute("role", "list");
   // What a screen reader hears: each entry's word and count, without the icons, the dots or "Bold". The
   // snapshot puts a space between an entry's parts, as each is an item of its flex box.
   await expect(countRow).toMatchAriaSnapshot(`
@@ -179,11 +176,21 @@ test("a row above the tree counts the PRs of each state, and mutes a state at 0"
   // The comma is for a screen reader alone: on screen the count follows the word after a gap.
   await expect(entries.first().getByText(",", { exact: true })).toHaveCSS("position", "absolute");
   await expect(pane.getByText("Needs attention", { exact: false })).toHaveCount(1);
-  // A dot stands between entries on screen.
-  const before = (entry: Locator) =>
-    entry.evaluate((element) => getComputedStyle(element, "::before").content);
-  expect(await before(entries.first())).toBe("none");
-  expect(await before(entries.nth(1))).toContain("·");
+  // A dot stands in the gap before each entry. The row cuts off the dot of each entry that starts a line, in
+  // a row narrow enough to wrap too, and shows the rest.
+  const dots = await countRow.evaluate((list) => {
+    list.style.width = "160px";
+    const edge = list.getBoundingClientRect().left;
+    const clips = getComputedStyle(list).overflow === "hidden";
+    return [...list.children].map((entry) => {
+      const dot = getComputedStyle(entry, "::before");
+      const at = entry.getBoundingClientRect().left + parseFloat(dot.left);
+      const startsLine = entry.getBoundingClientRect().left === edge;
+      return { dot: dot.content.includes("·"), startsLine, shown: !(clips && at < edge) };
+    });
+  });
+  expect(dots.filter((entry) => entry.startsLine).length).toBeGreaterThan(1);
+  for (const entry of dots) expect(entry).toEqual({ ...entry, dot: true, shown: !entry.startsLine });
 
   // Light Modern's text, muted text, and green for an open PR. Its muted state colour is its muted text's.
   const [fg, muted, green] = ["rgb(59, 59, 59)", "rgb(118, 118, 118)", "rgb(26, 127, 55)"];

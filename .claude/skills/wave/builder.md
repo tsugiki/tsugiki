@@ -17,8 +17,8 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
   language servers some tests start: without them those tests fail, and Cargo stops before the crate's
   integration tests.
 - Put scratch files (probe scripts, copies of data, logs, message drafts) in your worktree's
-  `.temp/scratchpad/`, not the scratchpad folder your system prompt names, where you can't delete them,
-  and delete them before you report.
+  `.temp/scratchpad/`, not the scratchpad folder your system prompt names. Leave them there:
+  `just worktree-remove` deletes them with the worktree, and the permission settings refuse your delete.
 - Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
   changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
   commands and components your branch touches.
@@ -29,7 +29,7 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 - `just ship` takes the PR's title from your branch's first commit and its body from your worktree's
   `.temp/pr-body.md`. Write that commit's message as the PR: a title that says what the ticket delivers,
   and a body that says why and how, with `Closes #<n>.` as its last line. Copy the body into
-  `.temp/pr-body.md`, and keep that file when you delete your scratch files.
+  `.temp/pr-body.md`.
 
 Once the build is done, report what you changed, the files you touched and the tests you ran. The session
 sends you `/code-review` findings. Fix each, or decline it with the reason it doesn't hold.

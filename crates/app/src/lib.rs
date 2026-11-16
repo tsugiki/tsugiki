@@ -48,11 +48,12 @@ use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
+use tsugiki_core::work::SeenMark;
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, LineInDiff, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::quick_open;
-use tsugiki_core::workbench::{SeenMark, Workbench, WorkbenchView};
+use tsugiki_core::workbench::{Workbench, WorkbenchView};
 
 #[tauri::command]
 #[specta::specta]

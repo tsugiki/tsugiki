@@ -9,6 +9,7 @@ use super::{ListedItem, WorkbenchItem, count_of};
 use crate::facts::filters::FilterResults;
 use crate::filters::{Filter, FilterName, FilterQuery};
 use crate::repository_settings::RepositorySettings;
+use crate::work::matched;
 
 /// A Filter's line of the Sidebar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -45,10 +46,7 @@ impl<'a> FilterFacts<'a> {
 
     /// The items any Filter found.
     pub(super) fn matched(&self) -> BTreeSet<u32> {
-        let found = self.results.values();
-        found
-            .flat_map(|results| results.numbers.iter().copied())
-            .collect()
+        matched(self.filters, &self.results)
     }
 
     pub(super) fn numbers_of(&self, query: &FilterQuery) -> &BTreeSet<u32> {

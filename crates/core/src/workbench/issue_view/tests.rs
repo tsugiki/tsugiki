@@ -9,10 +9,11 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery};
+use crate::work::YourReview;
+use crate::workbench::WorkbenchRow;
 use crate::workbench::testing::{
     ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
 };
-use crate::workbench::{WorkbenchRow, YourReview};
 
 fn merged(facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {

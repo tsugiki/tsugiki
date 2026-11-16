@@ -5,7 +5,6 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
-use super::attention::Causes;
 use super::filters::FilterFacts;
 use super::{IssueItem, TreeEntry, WorkbenchItem, candidates};
 use crate::error::Error;
@@ -16,6 +15,7 @@ use crate::facts::pull_requests::PrState;
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::StoreReader;
+use crate::work::Causes;
 
 /// An Issue as the Detail pane shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

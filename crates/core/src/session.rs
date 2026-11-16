@@ -21,7 +21,7 @@ use crate::status::{Change, FailedRead, LastSync, MirrorWork, ReadFailure, Statu
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::workbench::{SeenMark, Workbench};
+use crate::work::{SeenMark, checks_to_keep, mirror_work};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -497,7 +497,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
     }
 }
 
-/// Hands the mirrors the heads of the PRs the user's work reaches in `repository`, after a step saved its
+/// Hands the mirrors the heads of the PRs in `repository`'s Reach, after a step saved its
 /// facts, the commit each of the user's Reviews there covered, and the commits whose patch-ids the Stale
 /// review check needs and the store lacks. It keeps the last check of each PR whose sides are both read
 /// first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
@@ -515,7 +515,7 @@ fn hand_over_heads(
         // A head can move to a commit the store has read, which makes no new read to keep a check with. A
         // store that can't keep it says so at the next step that saves.
         let _kept = keep_last_checks(store, repository, &facts);
-        let (heads, patches) = Workbench::mirror_work(facts, settings);
+        let (heads, patches) = mirror_work(&facts, settings);
         let work = MirrorWork {
             heads,
             reviewed,
@@ -579,7 +579,7 @@ fn keep_last_checks(
     repository: &RepositoryName,
     facts: &WorkFacts,
 ) -> Result<(), Error> {
-    let checks = Workbench::checks_to_keep(facts);
+    let checks = checks_to_keep(facts);
     if checks.is_empty() {
         return Ok(());
     }

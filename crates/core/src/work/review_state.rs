@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use specta::Type;
 
-use super::backports::origins;
+use super::origins;
 use crate::conventions::Conventions;
 use crate::facts::patch_ids::{CantCheck, LastCheck, PatchesOf, ReviewFacts};
 use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
@@ -53,14 +53,14 @@ impl YourReview {
 }
 
 /// The Bot backports that share their Origin PR's review state, each with its Origin PR's number (ADR 0011):
-/// those that sit under their Origin PR in the list (`backports::origins`). A Bot backport whose Origin PR
+/// those that sit under their Origin PR in the list (`work::origins`). A Bot backport whose Origin PR
 /// Tsugiki lacks, or whose Origin PR is a Backport too, sits on its own and keeps a review state of its own.
 /// So does a Manual backport.
 #[derive(Debug)]
-pub(super) struct SharedReviews(BTreeMap<u32, u32>);
+pub(crate) struct SharedReviews(BTreeMap<u32, u32>);
 
 impl SharedReviews {
-    pub(super) fn of(pull_requests: &[PullRequestFacts], conventions: Conventions) -> Self {
+    pub(crate) fn of(pull_requests: &[PullRequestFacts], conventions: Conventions) -> Self {
         let merges = MergeCommits::of(pull_requests);
         let links: Vec<(u32, Option<BackportLink>)> = (pull_requests.iter())
             .map(|pr| (pr.number, backport_of(pr, conventions, &merges)))
@@ -77,7 +77,7 @@ impl SharedReviews {
     }
 
     /// The Origin PR whose review state PR `number` shares, if PR `number` is a Bot backport that does.
-    pub(super) fn origin_of(&self, number: u32) -> Option<u32> {
+    pub(crate) fn origin_of(&self, number: u32) -> Option<u32> {
         self.0.get(&number).copied()
     }
 }
@@ -172,9 +172,10 @@ fn patches_of(pull_request: &PullRequestFacts, commit: &CommitSha) -> PatchesOf 
     }
 }
 
-/// The reviewed commit and the head of each PR whose patch-ids the store holds of both, as its last check,
-/// where the store's last check of it compared others.
-pub(super) fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
+/// The reviewed commit and the head of each PR whose patch-ids the store holds of both, for the store to keep
+/// as its last check, where the store's last check of it compared others. Their verdict stands while a newer
+/// check waits.
+pub fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
     let reviews = &facts.reviews;
     let checked = facts.pull_requests.iter().filter_map(|pr| {
         let (reviewed, head) = compared(pr, reviews)?;
@@ -218,9 +219,9 @@ pub(super) fn unread_sides(facts: &WorkFacts, shared: &SharedReviews) -> Vec<Unr
 }
 
 /// The commits of `unread` to read: each open PR's, and a merged or closed PR's while the mirror fetches
-/// its head for the user's work, in `heads`. Each comes once. A merged or closed PR's head stays put, so
-/// once the store holds both its sides, its verdict is frozen and nothing of it is read again (#385). One
-/// the user's work no longer reaches shows on no screen, and the mirror may lack its final head.
+/// its head as one in Reach, in `heads`. Each comes once. A merged or closed PR's head stays put, so once
+/// the store holds both its sides, its verdict is frozen and nothing of it is read again (#385). One no
+/// longer in Reach shows on no screen, and the mirror may lack its final head.
 pub(super) fn patches_to_read(unread: Vec<Unread>, heads: &[PrHead]) -> Vec<PatchesOf> {
     let fetched: BTreeSet<u32> = heads.iter().map(|head| head.number).collect();
     let wanted = (unread.into_iter()).filter(|side| side.open || fetched.contains(&side.number));

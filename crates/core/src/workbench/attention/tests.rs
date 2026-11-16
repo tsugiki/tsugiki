@@ -4,7 +4,7 @@ use std::fs;
 
 use time::{Duration, OffsetDateTime};
 
-use super::{Attention, Why};
+use super::Attention;
 use crate::facts::CommitSha;
 use crate::facts::activity::{Activity, ActivityKind, ItemActivity};
 use crate::facts::issue_content::IssueContent;
@@ -21,9 +21,9 @@ use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
 use crate::testing::TempPath;
+use crate::work::{SeenMark, Why, YourReview};
 use crate::workbench::{
-    ListedItem, Seen, SeenMark, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
-    YourReview,
+    ListedItem, Seen, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
 };
 
 fn me() -> Login {

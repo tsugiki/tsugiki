@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use time::OffsetDateTime;
 
-use super::{IssueItem, TreeEntry, WorkReason, Workbench, WorkbenchItem, WorkbenchView, reasons};
+use super::{IssueItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView};
 use crate::facts::WorkFacts;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::{IssueFacts, IssueState};
@@ -13,17 +13,18 @@ use crate::facts::pull_requests::{OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::work::{WorkReason, reasons};
 
-pub(super) fn me() -> Login {
+pub(crate) fn me() -> Login {
     Login::new("octocat")
 }
 
-pub(super) fn someone() -> Login {
+pub(crate) fn someone() -> Login {
     Login::new("some-author")
 }
 
 /// A PR that has nothing to do with the viewer.
-pub(super) fn stranger() -> PullRequestFacts {
+pub(crate) fn stranger() -> PullRequestFacts {
     PullRequestFacts {
         number: 1,
         title: "gh-1: Fix it".to_owned(),
@@ -45,19 +46,15 @@ pub(super) fn stranger() -> PullRequestFacts {
     }
 }
 
-pub(super) fn reasons_for(facts: &PullRequestFacts) -> Vec<WorkReason> {
-    reasons(facts, &me())
-}
-
-pub(super) fn at(seconds: i64) -> OffsetDateTime {
+pub(crate) fn at(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(seconds).unwrap()
 }
 
-pub(super) fn cpython() -> RepositorySettings {
+pub(crate) fn cpython() -> RepositorySettings {
     RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap())
 }
 
-pub(super) fn issue(number: u32) -> IssueFacts {
+pub(crate) fn issue(number: u32) -> IssueFacts {
     IssueFacts {
         number,
         title: format!("Issue {number}"),
@@ -70,7 +67,7 @@ pub(super) fn issue(number: u32) -> IssueFacts {
 }
 
 /// The user's PR, whose title names no Issue.
-pub(super) fn mine(number: u32) -> PullRequestFacts {
+pub(crate) fn mine(number: u32) -> PullRequestFacts {
     PullRequestFacts {
         number,
         title: format!("PR {number}"),
@@ -80,22 +77,36 @@ pub(super) fn mine(number: u32) -> PullRequestFacts {
 }
 
 /// The user's PR, whose title names `issue`.
-pub(super) fn fixing(number: u32, issue: u32) -> PullRequestFacts {
+pub(crate) fn fixing(number: u32, issue: u32) -> PullRequestFacts {
     PullRequestFacts {
         title: format!("gh-{issue}: Fix it"),
         ..mine(number)
     }
 }
 
-pub(super) fn workbench(
+pub(crate) fn reasons_for(facts: &PullRequestFacts) -> Vec<WorkReason> {
+    reasons(facts, &me())
+}
+
+pub(crate) fn workbench(
     pull_requests: Vec<PullRequestFacts>,
     issues: Vec<IssueFacts>,
 ) -> Workbench {
     reviewed_workbench(pull_requests, issues, ReviewFacts::default())
 }
 
+/// The view `view` of the Workbench of `facts`.
+pub(crate) fn view_of(facts: WorkFacts, view: &WorkbenchView) -> Workbench {
+    Workbench::from_facts(facts, &cpython(), view)
+}
+
+/// Each PR `item` shows, in the order the list shows them.
+pub(crate) fn rows_of(item: &WorkbenchItem) -> Vec<WorkbenchRow> {
+    item.rows().into_iter().cloned().collect()
+}
+
 /// The Workbench of `pull_requests` and `issues`, with what `reviews` says of the user's Reviews.
-pub(super) fn reviewed_workbench(
+pub(crate) fn reviewed_workbench(
     pull_requests: Vec<PullRequestFacts>,
     issues: Vec<IssueFacts>,
     reviews: ReviewFacts,
@@ -112,7 +123,7 @@ pub(super) fn reviewed_workbench(
 }
 
 /// Each item as its kind and number, with an Issue's PRs after it.
-pub(super) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
+pub(crate) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
     workbench
         .items
         .iter()
@@ -133,7 +144,7 @@ pub(super) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>
         .collect()
 }
 
-pub(super) fn first_issue(workbench: &Workbench) -> &IssueItem {
+pub(crate) fn first_issue(workbench: &Workbench) -> &IssueItem {
     let listed = workbench.items.iter().chain(&workbench.quiet);
     let issues = listed.filter_map(|listed| match &listed.item {
         WorkbenchItem::Issue(issue) => Some(issue),
@@ -143,10 +154,10 @@ pub(super) fn first_issue(workbench: &Workbench) -> &IssueItem {
     issues.next().unwrap()
 }
 
-pub(super) const BOT: &str = "miss-islington";
+pub(crate) const BOT: &str = "miss-islington";
 
 /// A PR on 3.14 by someone else, titled `title` and committed by `committers`.
-pub(super) fn backport(
+pub(crate) fn backport(
     number: u32,
     title: &str,
     committers: Vec<Option<Login>>,
@@ -164,14 +175,14 @@ pub(super) fn backport(
     }
 }
 
-pub(super) fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
+pub(crate) fn bots_backport(number: u32, title: &str) -> PullRequestFacts {
     PullRequestFacts {
         author: Some(Login::new(BOT)),
         ..backport(number, title, vec![Some(Login::new(BOT))])
     }
 }
 
-pub(super) fn own(facts: PullRequestFacts) -> PullRequestFacts {
+pub(crate) fn own(facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {
         author: Some(me()),
         ..facts
@@ -179,16 +190,16 @@ pub(super) fn own(facts: PullRequestFacts) -> PullRequestFacts {
 }
 
 /// A database with the user signed in, and a reader of it, for the Detail pane's views.
-pub(super) struct ViewWorld {
-    pub(super) store: crate::store::Store,
-    pub(super) reader: crate::store::StoreReader,
+pub(crate) struct ViewWorld {
+    pub(crate) store: crate::store::Store,
+    pub(crate) reader: crate::store::StoreReader,
     open: crate::store::OpenReader,
     /// Dropped last, once `finish` has closed the database in it.
     _folder: crate::testing::TempPath,
 }
 
 impl ViewWorld {
-    pub(super) fn new(name: &str) -> Self {
+    pub(crate) fn new(name: &str) -> Self {
         let folder = crate::testing::temp_path(name);
         std::fs::create_dir_all(&folder).unwrap();
         let path = folder.join("tsugiki.db");
@@ -204,17 +215,17 @@ impl ViewWorld {
         }
     }
 
-    pub(super) fn settings(&self) -> RepositorySettings {
+    pub(crate) fn settings(&self) -> RepositorySettings {
         cpython()
     }
 
-    pub(super) fn has(&self, pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) {
+    pub(crate) fn has(&self, pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) {
         let name = cpython().name;
         self.store.save_pull_requests(&name, pull_requests).unwrap();
         self.store.save_issues(&name, issues).unwrap();
     }
 
-    pub(super) fn finish(self) {
+    pub(crate) fn finish(self) {
         self.open.close();
         self.store.close();
     }

@@ -94,8 +94,9 @@ Tauri's managed state.
    `ui/src/lib/data/bindings.ts`.
 2. The command, in `app/src/lib.rs` or `app/src/slow_commands.rs`, parses its arguments and calls a view
    model's `read` in the core with the StoreReader, such as `Workbench::read`.
-3. The view model, in `core/src/workbench/`, reads the stored facts in one transaction and works out what
-   the screen shows: **Needs attention**, Issue trees with their **Backports**, counts.
+3. The view model, in `core/src/workbench/`, reads the stored facts in one transaction, has `work` judge
+   them, and works out what the screen shows: **Needs attention**, Issue trees with their **Backports**,
+   counts.
 4. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again.
@@ -139,11 +140,12 @@ The big ones, in the order data passes through them:
 | Module | What it does |
 |---|---|
 | `github/` | The GitHub client: the GraphQL queries and their answers, parsed into the types of `facts`. It talks through a `Transport`, so tests replay recorded answers. |
-| `facts.rs`, `facts/` | The facts the rules judge: what GitHub says of each Issue and PR, the patch-ids the Mirror worker reads, and `WorkFacts`, the bundle a screen reads from the store. Neither the client nor the store owns them. |
+| `facts.rs`, `facts/` | The facts `work` judges: what GitHub says of each Issue and PR, the patch-ids the Mirror worker reads, and `WorkFacts`, the bundle a screen reads from the store. Neither the client nor the store owns them. |
 | `sync/` | Decides what to ask GitHub for, how much at a time and when to pause: the first sync in tiers, then `refresh`. It saves its place after each step. |
 | `store/` | Saves and reads the facts, a file for each kind: Issues, PRs, activity, Filters, sync state. [schema.md](schema.md) draws its tables. |
 | `links.rs`, `conventions.rs` | Which Issues a PR fixes and which **Origin PR** a Backport comes from, read through the Repository's Conventions ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)). |
-| `workbench/` | The view models: the Issue list, the Issue view, the PR view and its Files tab, and quick open's search (`quick_open.rs`). `attention.rs` holds Needs attention, and `review_state.rs` each PR's review state. |
+| `work.rs`, `work/` | The functional core: it takes `facts` and returns values. By Issue or PR number it judges what's on the **Workbench** in its own right (`reach.rs`), why it **Needs attention** (`causes.rs`) and each PR's review state (`review_state.rs`). By Repository it works out **Reach** from those and the links, and from Reach the heads the Mirror fetches, the commits it reads patch-ids of, and the checks the store keeps. `sync` and `session` use it, never `workbench`. |
+| `workbench/` | Groups what `work` judges into the Workbench's items, Issue trees with their PRs and **Backports**, and sums each item's Needs attention and its part in Mark Seen over its tree (`attention.rs`). Builds the view models: the Issue list, the Issue view, the PR view and its Files tab, and quick open's search (`quick_open.rs`). |
 | `patch_ids.rs` | Per-file patch-ids, and which files changed between the reviewed commit and the head, for the Stale review check. |
 | `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). |
 | `mirror_source.rs` | Where each Repository's mirror gets its objects, which `settings` keeps and `mirror` clones by. |

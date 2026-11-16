@@ -93,6 +93,17 @@ function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[]
   }));
 }
 
+/** The hooks a Workbench calls on the page that shows it, each with a default that does nothing. */
+export type WorkbenchHooks = {
+  /** Runs each time the cursor lands on the line after one that lost its attention. */
+  landed?: () => void;
+  /** The list's order as the window holds it when each question is asked. By attention without it. */
+  order?: () => ListOrder;
+  /** Runs before a change's answer replaces the lines of the view on show, in the same order, while the page
+   * still shows the old ones. What it gives back runs once the cursor is placed on the new ones (#796). */
+  changing?: () => () => void;
+};
+
 export class WorkbenchState {
   items = $state<ListedItem[]>();
   count = $state(0);
@@ -117,15 +128,10 @@ export class WorkbenchState {
   #stopListening: (() => void) | undefined;
   #stopped = false;
 
-  /** The Workbench of `repository`, listed in the order `order` gives when each question is asked. `landed`
-   * runs each time the cursor lands on the line after one that lost its attention. `changing` runs before
-   * a change's answer replaces the lines of the view on show, in the same order, while the page still shows
-   * the old ones, and what it gives back runs once the cursor is placed on the new ones (#796). */
+  /** The Workbench of `repository`, with the hooks the page that shows it gives. */
   constructor(
     repository: string,
-    landed: () => void = () => {},
-    order: () => ListOrder = () => "attention",
-    changing: () => () => void = () => () => {},
+    { landed = () => {}, order = () => "attention", changing = () => () => {} }: WorkbenchHooks = {},
   ) {
     this.#repository = repository;
     this.#landed = landed;
@@ -354,7 +360,7 @@ export class WorkbenchState {
     if (answer.status === "ok") {
       const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
       const before = same ? this.items : undefined;
-      const changed = before && this.#changing();
+      const changed = before ? this.#changing() : undefined;
       this.items = answer.data.items;
       this.#shown = view;
       this.#shownOrder = order;

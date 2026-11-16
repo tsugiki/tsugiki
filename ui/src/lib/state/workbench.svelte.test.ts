@@ -752,7 +752,7 @@ describe("WorkbenchState", () => {
     answering(items);
     const landed = vi.fn();
     const order = { now: "attention" as ListOrder };
-    const state = new WorkbenchState("python/cpython", landed, () => order.now);
+    const state = new WorkbenchState("python/cpython", { landed, order: () => order.now });
     await state.load();
     for (let step = 0; step <= at; step++) state.moveCursor(1);
     return { state, send, landed, order };
@@ -815,7 +815,7 @@ describe("WorkbenchState", () => {
     const issue = { ...issueWith(7, 8), attention: waiting(7).attention };
     vi.mocked(commands.workbench).mockResolvedValue(listing(issue, waiting(3)));
     const landed = vi.fn();
-    const state = new WorkbenchState("python/cpython", landed);
+    const state = new WorkbenchState("python/cpython", { landed });
     await state.load();
     state.unfold(7);
     state.moveTo({ number: 3, kind: "pull_request", issue: undefined });
@@ -912,7 +912,7 @@ describe("WorkbenchState", () => {
     const { send } = catchListener();
     answering([], [3, 2, 1]);
     const landed = vi.fn();
-    const state = new WorkbenchState("python/cpython", landed);
+    const state = new WorkbenchState("python/cpython", { landed });
     await state.load();
     state.moveCursor(1);
 
@@ -990,7 +990,7 @@ describe("WorkbenchState", () => {
     });
     vi.mocked(commands.workbench).mockResolvedValue(listing(waiting(5).attention));
     const landed = vi.fn();
-    const state = new WorkbenchState("python/cpython", landed);
+    const state = new WorkbenchState("python/cpython", { landed });
     await state.load();
     const onTen = { number: 10, kind: "pull_request" as const, issue: 5 };
     state.moveTo(onTen);
@@ -1090,17 +1090,15 @@ describe("WorkbenchState", () => {
     const seen = (state: WorkbenchState, when: string) => {
       calls.push(`${when} ${String(numbers(state))} at ${String(state.cursor?.number)}`);
     };
-    const state: WorkbenchState = new WorkbenchState(
-      "python/cpython",
-      () => {},
-      () => order.now,
-      () => {
+    const state: WorkbenchState = new WorkbenchState("python/cpython", {
+      order: () => order.now,
+      changing: () => {
         seen(state, "before");
         return () => {
           seen(state, "after");
         };
       },
-    );
+    });
     await state.load();
     state.moveTo({ number: 2, kind: "pull_request", issue: undefined });
     // A newly selected view and a new order move the lines for themselves, so neither counts as a change.

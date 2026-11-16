@@ -61,8 +61,8 @@ describe("keepFocusIn", () => {
 });
 
 describe("keepOnScreen", () => {
-  /** A list 100 px tall that shows boxes 20 px tall, with the box drawn `top` px below the list's top, and
-   * a record of the scrolls the box asks for. jsdom lays nothing out, and has no `scrollIntoView`. */
+  /** A list that shows 100 px, scrolled 500 px down, with a box 20 px tall drawn `top` px below the list's
+   * top. jsdom lays nothing out, so the box's place is the test's to set. */
   const listAndBox = (top: number) => {
     const list = document.createElement("div");
     const box = document.createElement("div");
@@ -70,56 +70,38 @@ describe("keepOnScreen", () => {
     const place = { top };
     list.getBoundingClientRect = () => ({ top: 0, bottom: 100 }) as DOMRect;
     box.getBoundingClientRect = () => ({ top: place.top, bottom: place.top + 20 }) as DOMRect;
-    const scrolls: ScrollIntoViewOptions[] = [];
-    box.scrollIntoView = (options) => {
-      scrolls.push(options as ScrollIntoViewOptions);
-    };
-    return { list, box, place, scrolls };
+    Object.defineProperty(list, "scrollTop", { value: 500, writable: true });
+    return { list, box, place };
   };
 
-  it("scrolls as little as it takes to the box a change moved off the screen, from all or part of it on show", () => {
-    for (const from of [40, -10]) {
-      const { list, box, place, scrolls } = listAndBox(from);
-      const drawn = keepOnScreen(box, list);
-      place.top = 300;
-
-      drawn(box);
-
-      expect(scrolls).toEqual([{ block: "nearest" }]);
-    }
-  });
-
-  it("scrolls to the box a change moved part of the way off the screen", () => {
-    const { list, box, place, scrolls } = listAndBox(40);
+  /** The `scrollTop` of `list` once a change took its box from `from` px below its top to `to`. */
+  const scrolledFor = (from: number, to: number) => {
+    const { list, box, place } = listAndBox(from);
     const drawn = keepOnScreen(box, list);
-    place.top = 90;
-
+    place.top = to;
     drawn(box);
+    return list.scrollTop;
+  };
 
-    expect(scrolls).toEqual([{ block: "nearest" }]);
+  it("scrolls as little as it takes to show all of a box a change took off the screen below", () => {
+    expect([scrolledFor(40, 300), scrolledFor(40, 100)]).toEqual([720, 520]);
   });
 
-  it("leaves the scroll alone for a box the user had scrolled off the screen, or one the change left in place", () => {
-    const away = listAndBox(-200);
-    const drawnAway = keepOnScreen(away.box, away.list);
-    away.place.top = 300;
-    const put = listAndBox(90);
-    const drawnPut = keepOnScreen(put.box, put.list);
-
-    drawnAway(away.box);
-    drawnPut(put.box);
-
-    expect([away.scrolls, put.scrolls]).toEqual([[], []]);
+  it("scrolls a box a change took off the screen above to the focus line along the list's top", () => {
+    // The focus line covers the top 2 px, so a box with 1 px below it doesn't show.
+    expect([scrolledFor(40, -300), scrolledFor(40, -17)]).toEqual([198, 481]);
   });
 
-  it("leaves the scroll alone for a box the change moved to another place on the screen", () => {
-    const { list, box, place, scrolls } = listAndBox(40);
-    const drawn = keepOnScreen(box, list);
-    place.top = 0;
+  it("counts a box as on show while more than a pixel of it shows below the focus line", () => {
+    expect([scrolledFor(-10, 300), scrolledFor(-17, 300), scrolledFor(99.5, 300)]).toEqual([720, 500, 500]);
+  });
 
-    drawn(box);
+  it("leaves the scroll alone while some of the box still shows, however far the change moved it", () => {
+    expect([scrolledFor(40, 0), scrolledFor(70, 90), scrolledFor(40, -10)]).toEqual([500, 500, 500]);
+  });
 
-    expect(scrolls).toEqual([]);
+  it("leaves the scroll alone for a box the user had scrolled off the screen", () => {
+    expect([scrolledFor(-200, 300), scrolledFor(200, -300)]).toEqual([500, 500]);
   });
 });
 

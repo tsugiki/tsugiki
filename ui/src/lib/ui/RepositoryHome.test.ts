@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
 import { type Action, keysIn, keyTable, remapKeys } from "$lib/state/keymap.svelte";
@@ -2331,27 +2331,38 @@ it("moves only the cursor to the next row once the palette's Mark Seen from the 
   expect(document.activeElement).toBe(before);
 });
 
-/** Lays the list out as a browser would, which jsdom can't: each item's rows 50 px tall, with `above` px of
- * the list above its top, and 60 px of it on the screen. Gives the names of the rows each scroll brings into
- * view, and what puts back jsdom's lack of `scrollIntoView`. */
-const layOutList = (above: number) => {
-  const scrolledTo: (string | null | undefined)[] = [];
+/** Lays the list out as a browser would, which jsdom can't: a 40 px header, then each item's rows 50 px
+ * tall, under a list scrolled 90 px down that shows 60 px. So the second item's row shows from the list's
+ * top, and the first item's rows are above it. Gives how far the list has scrolled. Puts jsdom's layout
+ * back once the test is done, whether it passed or not. */
+const layOutList = () => {
+  let scrolled = 90;
+  vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
+    return this.matches(".list") ? scrolled : 0;
+  });
+  vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(function (this: Element, to: number) {
+    if (this.matches(".list")) scrolled = to;
+  });
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     const item = this.closest(".item");
     if (item === null) return { top: 0, bottom: 60 } as DOMRect;
-    const top = Array.from(item.parentElement?.children ?? []).indexOf(item) * 50 - above;
+    const top = 40 + Array.from(item.parentElement?.children ?? []).indexOf(item) * 50 - scrolled;
     return { top, bottom: top + 50 } as DOMRect;
   });
-  Object.defineProperty(Element.prototype, "scrollIntoView", {
-    configurable: true,
-    value(this: Element) {
-      scrolledTo.push(this.querySelector("[data-item]")?.textContent);
-    },
+  onTestFinished(() => {
+    vi.restoreAllMocks();
   });
-  const putBack = () => {
-    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
-  };
-  return { scrolledTo, putBack };
+  return () => scrolled;
+};
+
+/** Records each call to `focus` from here to the end of the test. A browser drops the focus of an element
+ * the page moves, and jsdom keeps it, so the calls tell where the page gave it back. */
+const spyOnFocus = () => {
+  const focus = vi.spyOn(HTMLElement.prototype, "focus");
+  onTestFinished(() => {
+    focus.mockRestore();
+  });
+  return focus;
 };
 
 /** The list's two items, `#5 Alone` first once `moved`, as an update to it puts it By last update. */
@@ -2372,27 +2383,27 @@ it("scrolls the list to the Detail pane's row once a change moves the row off th
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
-  // The list shows the PR's row and nothing of the Issue's above it.
-  const { scrolledTo, putBack } = layOutList(50);
+  const scrolled = layOutList();
 
   answerMoved(true);
   send("python/cpython", [5]);
 
+  // The row's top comes to the focus line along the list's top, 2 px down.
   await vi.waitFor(() => {
-    expect(scrolledTo).toEqual(["#5 Alone"]);
+    expect(scrolled()).toBe(38);
   });
   expect(document.activeElement).toBe(document.body);
-  putBack();
 });
 
-it("gives the focus back to the Detail pane's row when a change moves it, with no scroll of its own (#796)", async () => {
+it("gives the focus back to the row under the cursor when a change moves it off the screen, and scrolls nothing with nothing open (#796)", async () => {
   const send = catchChanged();
   const { prRow } = await listing();
-  await fireEvent.click(prRow);
-  await screen.findByRole("region", { name: "PR view" });
-  prRow.focus();
-  // A browser drops the focus of an element the page moves, and jsdom keeps it, so the call tells.
-  const focus = vi.spyOn(HTMLElement.prototype, "focus");
+  for (let step = 0; step < 3; step++) await press("ArrowDown");
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(prRow);
+  });
+  const scrolled = layOutList();
+  const focus = spyOnFocus();
 
   answerMoved(true);
   send("python/cpython", [5]);
@@ -2403,6 +2414,30 @@ it("gives the focus back to the Detail pane's row when a change moves it, with n
   expect(focus.mock.calls).toEqual([[{ preventScroll: true }]]);
   expect(itemOrder()).toEqual(["#5 Alone", "#112564 GIL drop during collection"]);
   expect(document.activeElement).toBe(prRow);
+  expect(scrolled()).toBe(90);
+});
+
+it("follows the Detail pane's PR to its line under an Issue, with the focus and the scroll (#796)", async () => {
+  const send = catchChanged();
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  prRow.focus();
+  const scrolled = layOutList();
+  const focus = spyOnFocus();
+
+  const linked = { ...standalone, kind: "pr", backports: [] };
+  answering({ ...issue, attention: null, pull_requests: [...issue.pull_requests, linked] });
+  send("python/cpython", [5]);
+
+  const under = () => document.querySelector('[data-item="112564#5"]');
+  await vi.waitFor(() => {
+    expect(focus.mock.contexts.map((button) => (button as HTMLElement).dataset["item"])).toEqual([
+      "112564#5",
+    ]);
+  });
+  expect(under()?.getAttribute("aria-current")).toBe("true");
+  expect(scrolled()).toBe(38);
 });
 
 it("leaves the list's scroll alone for a change that moves the Detail pane's item while the list is hidden or the cursor is on another row (#796)", async () => {
@@ -2410,7 +2445,7 @@ it("leaves the list's scroll alone for a change that moves the Detail pane's ite
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
-  const { scrolledTo, putBack } = layOutList(50);
+  const scrolled = layOutList();
   const changes = async (moved: boolean) => {
     const asked = core.workbench.mock.calls.length;
     answerMoved(moved);
@@ -2431,8 +2466,7 @@ it("leaves the list's scroll alone for a change that moves the Detail pane's ite
 
   expect(itemOrder()).toEqual(["#5 Alone", "#112564 GIL drop during collection"]);
   expect(rowNamed("#5 Alone").getAttribute("aria-current")).toBeNull();
-  expect(scrolledTo).toEqual([]);
-  putBack();
+  expect(scrolled()).toBe(90);
 });
 
 it("leaves the list's scroll alone once a change takes the Detail pane's item off the list (#796)", async () => {
@@ -2440,7 +2474,7 @@ it("leaves the list's scroll alone once a change takes the Detail pane's item of
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
-  const { scrolledTo, putBack } = layOutList(50);
+  const scrolled = layOutList();
 
   answering({ ...issue, attention: null });
   send("python/cpython", [5]);
@@ -2449,8 +2483,7 @@ it("leaves the list's scroll alone once a change takes the Detail pane's item of
     expect(itemOrder()).toEqual(["#112564 GIL drop during collection"]);
   });
   await tick();
-  expect(scrolledTo).toEqual([]);
-  putBack();
+  expect(scrolled()).toBe(90);
 });
 
 it("marks nothing on Q and Shift+Q with no line under the cursor, or with the list hidden and nothing open", async () => {

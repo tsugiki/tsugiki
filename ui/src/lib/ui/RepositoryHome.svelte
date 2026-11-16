@@ -114,7 +114,9 @@
   });
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
-  const workbench = $derived(new WorkbenchState(name, cursorLanded, () => panes.order, listChanging));
+  const workbench = $derived(
+    new WorkbenchState(name, { landed: cursorLanded, order: () => panes.order, changing: listChanging }),
+  );
   /** The Issues, PRs and file views the Detail pane has shown, which Alt+← and Alt+→ go back and forward
    * through. Each Repository has its own. */
   const visits = $derived.by(() => {
@@ -403,28 +405,42 @@
     if (onRow || focused === document.body) focusCursor();
   }
 
-  /** Before a change in the view on show: what brings the row of the Detail pane's line back on the screen
-   * once the change is drawn, if the change moved it off, while the cursor is on it (#796). The row gets
-   * back the focus it held, as moving a focused element in the page drops its focus. */
+  /**
+   * Before a change in the view on show: what follows the row under the cursor once the change is drawn
+   * (#796). A row that held the focus gets it back, as moving a focused element in the page drops its
+   * focus. While the cursor is on the Detail pane's item, a change that takes its row off the screen
+   * scrolls the list to bring it back, as `keepOnScreen` says. The layout is read only then.
+   */
   function listChanging(): () => void {
-    const row = detailRow();
+    const row = cursorRow();
     if (!row) return () => {};
-    const keep = keepOnScreen(row.closest(".row") as Element, row.closest(".list") as Element);
-    const focused = document.activeElement === row;
+    const focused = document.activeElement === row.line;
+    const keep = onDetail(row.stop) ? keepOnScreen(row.box, row.scroller) : undefined;
     return () =>
       void tick().then(() => {
-        const moved = detailRow();
+        const moved = cursorRow();
         if (!moved) return;
-        keep(moved.closest(".row") as Element);
-        if (focused) moved.focus({ preventScroll: true });
+        if (keep && onDetail(moved.stop)) keep(moved.box);
+        if (focused) moved.line.focus({ preventScroll: true });
       });
   }
 
-  /** The row under the cursor, while the list shows it and it is the Detail pane's line. */
-  function detailRow(): HTMLElement | null {
-    const line = detailLine();
-    if (!line || !sameStop(workbench.cursor, line) || !list) return null;
-    return list.querySelector<HTMLElement>(`[data-item="${lineName(line)}"]`);
+  /** The row under the cursor, while the list shows it: the button that names its line, the box around
+   * that, and the list that scrolls it. */
+  function cursorRow() {
+    const stop = workbench.cursor;
+    if (!stop || !list) return undefined;
+    const name = lineName(stop);
+    const line = list.querySelector<HTMLElement>(`[data-item="${name}"]`);
+    const box = list.querySelector<HTMLElement>(`[data-row="${name}"]`);
+    return line && box ? { stop, line, box, scroller: list } : undefined;
+  }
+
+  /** Whether line `stop` is the Detail pane's item, on whichever line the list now has it, as a change can
+   * put a PR under an Issue after it opened. */
+  function onDetail(stop: Stop): boolean {
+    const shown = detailLine();
+    return shown?.number === stop.number && shown.kind === stop.kind;
   }
 
   async function markUnseen(marked: Marked | undefined) {
@@ -939,9 +955,10 @@
 
 <!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
-  <div class="row">
+  {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
+  <div class="row" data-row={lineName(stop)}>
     <span class="headline">
-      {@render line({ number: row.number, kind: "pull_request", issue }, row, false, prIcon(row))}
+      {@render line(stop, row, false, prIcon(row))}
     </span>
     <small class="facts">{@render facts(row)}</small>
   </div>
@@ -970,8 +987,13 @@
      attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
   {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
+  {@const stop: Stop = {
+    number: item.number,
+    kind: item.kind === "issue" ? "issue" : "pull_request",
+    issue: undefined,
+  }}
   <li class={["item", { attention: item.attention !== null }]}>
-    <div class="row">
+    <div class="row" data-row={lineName(stop)}>
       <span class="people">{peopleOf(item)}</span>
       <span class="headline">
         {#if item.kind === "issue" && item.pull_requests.length > 0}
@@ -989,7 +1011,7 @@
           <span class="fold"></span>
         {/if}
         {@render line(
-          { number: item.number, kind: item.kind === "issue" ? "issue" : "pull_request", issue: undefined },
+          stop,
           item,
           item.attention !== null,
           item.kind === "issue" ? issueIcon(item.state) : prIcon(item),
@@ -1213,15 +1235,12 @@
     flex: 1;
     min-height: 0;
   }
-  /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. A change that
-     moves an item scrolls the list only to bring back the Detail pane's row (#796): the browser's scroll
-     anchoring would scroll it whenever the rows above the first one on the screen shift. */
+  /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. */
   .list {
     flex: 1;
     min-width: 280px;
     overflow-y: auto;
     overscroll-behavior: contain;
-    overflow-anchor: none;
   }
 
   .list.sized {

@@ -26,8 +26,8 @@ pub use review_state::{YourReview, checks_to_keep};
 
 /// The PRs a Backport can sit under, of those each with its Backport link: the ones that aren't Backports
 /// too, which keeps a tree two levels deep. A Bot backport shares the review state of the one it sits under.
-pub(crate) fn origins<'a>(
-    pull_requests: impl Iterator<Item = (u32, Option<&'a BackportLink>)>,
+pub(crate) fn origins<'a, K: 'a>(
+    pull_requests: impl Iterator<Item = (u32, Option<&'a BackportLink<K>>)>,
 ) -> BTreeSet<u32> {
     let origins = pull_requests.filter(|(_, backport)| backport.is_none());
     origins.map(|(number, _)| number).collect()

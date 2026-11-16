@@ -130,8 +130,9 @@ _Avoid_: Query, section
 
 **Inbox**:
 Every open item of a **Repository** that the user hasn't triaged, as a mail client's inbox holds the mail
-not yet filed: each open **Issue** with its open PRs under it, grouped as on the **Workbench**, and each open
-**Standalone PR** on its own, the latest update first. An item that closes leaves it. It starts with the last
+not yet filed: each open **Issue** with its PRs under it, merged and closed ones too, grouped as on the
+**Workbench**, and each **Standalone PR** with an open PR in its tree on its own, the latest update first. An
+item that closes leaves it. It starts with the last
 two days and reads older items from the cache as the user scrolls. It adds nothing to **Reach**. It is where
 the user finds an Issue to read, comment on or pin, or a PR to open.
 _Avoid_: All issues, Issue browser, backlog

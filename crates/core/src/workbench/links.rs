@@ -1,40 +1,84 @@
-//! The Issues each PR fixes, by the link rules (ADR 0011).
+//! The Issues each PR fixes and the Origin PR each Backport names, by the link rules (ADR 0011), as the
+//! grouping reads them.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::WorkbenchRow;
+use crate::conventions::Conventions;
 use crate::facts::issues::IssueFacts;
-use crate::facts::pull_requests::PullRequestFacts;
+use crate::facts::pull_requests::{PrLinks, PullRequestFacts};
 use crate::links::{BackportLink, MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
 
-/// A PR with what the link rules say about it.
-pub(super) struct Linked {
-    pub(super) row: WorkbenchRow,
-    /// The Issues it fixes. Only a number the sync fetched as an Issue counts, so a PR's number or a typo
-    /// doesn't.
+/// A PR with what the link rules say about it, and its line `row`. `K` is a Backport's kind, which a
+/// grouping that only places PRs leaves as `()`.
+pub(super) struct Linked<R, K> {
+    pub(super) number: u32,
+    pub(super) row: R,
+    /// The Issues it fixes, of those the facts hold.
     pub(super) issues: BTreeSet<u32>,
-    pub(super) backport: Option<BackportLink>,
+    pub(super) backport: Option<BackportLink<K>>,
 }
 
-/// Links each PR, whose line of the list `row` draws.
-pub(super) fn link(
-    pull_requests: Vec<PullRequestFacts>,
+/// The links of each of `pull_requests`, worked out from their facts. Only a number that the sync fetched as
+/// an Issue, one of `issues`, counts as one. The store keeps the same links, for a read that can't hold
+/// every PR (#833).
+pub(super) fn links_of(
+    pull_requests: &[PullRequestFacts],
     issues: &[IssueFacts],
     repository: &RepositorySettings,
-    row: impl Fn(PullRequestFacts) -> WorkbenchRow,
-) -> Vec<Linked> {
-    let merges = MergeCommits::of(&pull_requests);
+) -> BTreeMap<u32, PrLinks> {
+    let merges = MergeCommits::of(pull_requests);
     let known: BTreeSet<u32> = issues.iter().map(|issue| issue.number).collect();
+    let linked = pull_requests.iter().map(|facts| {
+        let fixed = fixed_numbers(facts, repository);
+        let backport = backport_of(facts, repository.conventions, &merges);
+        let links = PrLinks {
+            number: facts.number,
+            state: facts.state,
+            updated_at: facts.updated_at,
+            fixes: fixed.intersection(&known).copied().collect(),
+            origin: backport.map(|link| link.origin),
+        };
+        (facts.number, links)
+    });
+    linked.collect()
+}
+
+/// Links each of `pull_requests` by what `links` says of it, with the kind of each Backport, and draws its
+/// line with `row`. A PR that `links` lacks links nothing.
+pub(super) fn link<R>(
+    pull_requests: Vec<PullRequestFacts>,
+    links: &BTreeMap<u32, PrLinks>,
+    conventions: Conventions,
+    row: impl Fn(PullRequestFacts) -> R,
+) -> Vec<Linked<R, crate::links::BackportKind>> {
     pull_requests
         .into_iter()
         .map(|facts| {
-            let fixed = fixed_numbers(&facts, repository);
+            let found = links.get(&facts.number);
+            let backport = (found.and_then(|links| links.origin)).map(|origin| BackportLink {
+                origin,
+                kind: crate::links::backport_kind(&facts, conventions),
+            });
             Linked {
-                issues: fixed.intersection(&known).copied().collect(),
-                backport: backport_of(&facts, repository.conventions, &merges),
+                number: facts.number,
+                issues: found.map(|links| links.fixes.clone()).unwrap_or_default(),
+                backport,
                 row: row(facts),
             }
+        })
+        .collect()
+}
+
+/// Links each of `links` with no row to draw beyond what places it, as the Inbox does before it reads its
+/// page's rows.
+pub(super) fn placed<'a>(links: impl Iterator<Item = &'a PrLinks>) -> Vec<Linked<&'a PrLinks, ()>> {
+    links
+        .map(|links| Linked {
+            number: links.number,
+            row: links,
+            issues: links.fixes.clone(),
+            backport: links.origin.map(|origin| BackportLink { origin, kind: () }),
         })
         .collect()
 }

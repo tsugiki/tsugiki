@@ -1112,15 +1112,15 @@ export type Inbox = Inbox_Serialize | Inbox_Deserialize;
 
 /**
  *  Where an item stands in the Inbox's order: the latest update first, then the highest number. Issues and
- *  PRs share their numbers in a Repository, so it names one item. An Issue's update is the latest of its
- *  own and its PRs', as on the Workbench.
+ *  PRs share their numbers in a Repository, so it names one item. An item's update is the latest in it: an
+ *  Issue's own or a PR's in its tree, as on the Workbench.
  */
 export type InboxCursor = InboxCursor_Serialize | InboxCursor_Deserialize;
 
 /**
  *  Where an item stands in the Inbox's order: the latest update first, then the highest number. Issues and
- *  PRs share their numbers in a Repository, so it names one item. An Issue's update is the latest of its
- *  own and its PRs', as on the Workbench.
+ *  PRs share their numbers in a Repository, so it names one item. An item's update is the latest in it: an
+ *  Issue's own or a PR's in its tree, as on the Workbench.
  */
 export type InboxCursor_Deserialize = {
 	updated_at: string,
@@ -1129,8 +1129,8 @@ export type InboxCursor_Deserialize = {
 
 /**
  *  Where an item stands in the Inbox's order: the latest update first, then the highest number. Issues and
- *  PRs share their numbers in a Repository, so it names one item. An Issue's update is the latest of its
- *  own and its PRs', as on the Workbench.
+ *  PRs share their numbers in a Repository, so it names one item. An item's update is the latest in it: an
+ *  Issue's own or a PR's in its tree, as on the Workbench.
  */
 export type InboxCursor_Serialize = {
 	updated_at: string,

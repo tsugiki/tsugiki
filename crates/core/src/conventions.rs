@@ -32,7 +32,8 @@ pub enum Conventions {
 }
 
 impl Conventions {
-    const ALL: [Self; 2] = [Self::Cpython, Self::Github];
+    /// Every Conventions Tsugiki knows, for the links the store keeps under each (#833).
+    pub const ALL: [Self; 2] = [Self::Cpython, Self::Github];
 
     /// `python/cpython` starts with CPython's, and every other Repository with GitHub's.
     pub fn for_repository(name: &RepositoryName) -> Self {

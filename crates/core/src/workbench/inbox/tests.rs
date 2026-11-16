@@ -1,9 +1,10 @@
 use time::Duration;
 
 use super::*;
+use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::workbench::TreeEntry;
-use crate::workbench::testing::{ViewWorld, fixing, issue, mine, stranger};
+use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, stranger};
+use crate::workbench::{TreeEntry, WorkbenchItem};
 
 /// A moment well after the epoch, so two days before it is too.
 fn now() -> OffsetDateTime {
@@ -58,18 +59,28 @@ fn read(world: &ViewWorld, page: InboxPage) -> Inbox {
     Inbox::read(&world.reader, &world.settings(), page, now()).unwrap()
 }
 
+fn in_state(state: PrState, facts: PullRequestFacts) -> PullRequestFacts {
+    PullRequestFacts { state, ..facts }
+}
+
+/// A Backport on 3.14 of PR `origin`, which names no Issue of its own.
+fn backport_at(number: u32, origin: u32, updated_at: OffsetDateTime) -> PullRequestFacts {
+    let title = format!("[3.14] Fix it (GH-{origin})");
+    PullRequestFacts {
+        updated_at,
+        ..backport(number, &title, vec![])
+    }
+}
+
 #[test]
-fn open_issues_come_with_their_open_prs_under_them_and_standalone_prs_on_their_own_latest_first() {
+fn open_issues_come_with_all_their_prs_under_them_and_standalone_prs_on_their_own_latest_first() {
     let world = ViewWorld::new("inbox-rows");
-    let merged = PullRequestFacts {
-        state: PrState::Merged,
-        ..pr_at(13, Some(1), ago(1))
-    };
     world.has(
         vec![
             pr_at(10, Some(1), ago(5)),
             pr_at(11, Some(1), ago(3)),
-            merged,
+            in_state(PrState::Merged, pr_at(13, Some(1), ago(1))),
+            in_state(PrState::Closed, pr_at(14, Some(2), ago(7))),
             pr_at(20, None, ago(4)),
             pr_at(21, Some(99), ago(6)),
         ],
@@ -82,34 +93,51 @@ fn open_issues_come_with_their_open_prs_under_them_and_standalone_prs_on_their_o
     assert_eq!(
         outline(&latest),
         [
-            ("issue", 2, vec![]),
-            ("issue", 1, vec![11, 10]),
+            ("issue", 1, vec![13, 11, 10]),
+            ("issue", 2, vec![14]),
             ("standalone", 20, vec![]),
             ("standalone", 21, vec![]),
         ],
-        "an Issue takes the latest update of its tree, and a PR naming an Issue the cache lacks stands alone"
+        "an Issue takes the latest update of its tree, merged PRs and all, and a PR naming an Issue the \
+         cache lacks stands alone"
     );
     assert_eq!(latest.older, None);
 }
 
 #[test]
-fn an_item_that_closed_leaves_the_rows() {
+fn a_closed_issue_leaves_with_its_prs_and_so_does_a_standalone_pr_with_none_open() {
     let world = ViewWorld::new("inbox-closed");
     let closed_issue = IssueFacts {
         state: Some(IssueState::Closed),
         ..issue_at(1, ago(1))
     };
-    let closed_pr = PullRequestFacts {
-        state: PrState::Closed,
-        ..pr_at(30, None, ago(1))
-    };
-    let merged = PullRequestFacts {
-        state: PrState::Merged,
-        ..pr_at(31, Some(2), ago(1))
-    };
     world.has(
-        vec![pr_at(10, Some(1), ago(2)), closed_pr, merged],
+        vec![
+            pr_at(10, Some(1), ago(2)),
+            in_state(PrState::Closed, pr_at(30, None, ago(1))),
+            in_state(PrState::Merged, pr_at(31, None, ago(1))),
+            in_state(PrState::Merged, backport_at(32, 31, ago(1))),
+        ],
         vec![closed_issue, issue_at(2, ago(3))],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 2, vec![])]);
+}
+
+#[test]
+fn a_backport_whose_origin_pr_merged_sits_beneath_it_under_its_issue() {
+    let world = ViewWorld::new("inbox-merged-origin");
+    world.has(
+        vec![
+            in_state(PrState::Merged, pr_at(10, Some(1), ago(24 * 20))),
+            backport_at(11, 10, ago(1)),
+            in_state(PrState::Merged, pr_at(20, None, ago(24 * 20))),
+            backport_at(21, 20, ago(2)),
+        ],
+        vec![issue_at(1, ago(24 * 30))],
     );
 
     let latest = read(&world, InboxPage::Latest);
@@ -117,9 +145,100 @@ fn an_item_that_closed_leaves_the_rows() {
 
     assert_eq!(
         outline(&latest),
-        [("issue", 2, vec![])],
-        "a closed Issue leaves with its open PR, and a merged PR leaves its open Issue"
+        [("issue", 1, vec![10, 11]), ("standalone", 20, vec![21])],
+        "the Backport's update places its tree, and an open Backport keeps a merged Standalone PR listed"
     );
+}
+
+#[test]
+fn a_change_of_conventions_regroups_the_prs_with_no_sync() {
+    let world = ViewWorld::new("inbox-conventions");
+    world.has(
+        vec![pr_at(10, Some(1), ago(1)), backport_at(11, 10, ago(2))],
+        vec![issue_at(1, ago(3))],
+    );
+    let github = RepositorySettings {
+        conventions: Conventions::Github,
+        ..world.settings()
+    };
+
+    let under_cpython = read(&world, InboxPage::Latest);
+    let under_github = Inbox::read(&world.reader, &github, InboxPage::Latest, now()).unwrap();
+    world.finish();
+
+    assert_eq!(outline(&under_cpython), [("issue", 1, vec![10, 11])]);
+    assert_eq!(
+        outline(&under_github),
+        [
+            ("standalone", 10, vec![]),
+            ("standalone", 11, vec![]),
+            ("issue", 1, vec![])
+        ]
+    );
+}
+
+#[test]
+fn an_older_page_places_an_issue_by_a_merged_pr_and_a_backport_beneath_another_issue_s_pr() {
+    let world = ViewWorld::new("inbox-older-trees");
+    // Backport 21 names Issue 2 and sits beneath PR 20, which fixes Issue 1, so PR 20 shows under both.
+    let fixing_two = PullRequestFacts {
+        title: "[3.14] gh-2: Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(24 * 5))
+    };
+    world.has(
+        vec![
+            in_state(PrState::Merged, pr_at(10, Some(3), ago(24 * 4))),
+            pr_at(20, Some(1), ago(24 * 9)),
+            fixing_two,
+        ],
+        vec![
+            issue_at(1, ago(24 * 10)),
+            issue_at(2, ago(24 * 10)),
+            issue_at(3, ago(24 * 10)),
+            issue_at(4, ago(24 * 6)),
+        ],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(
+        outline(&latest),
+        [
+            ("issue", 3, vec![10]),
+            ("issue", 2, vec![20, 21]),
+            ("issue", 4, vec![]),
+            ("issue", 1, vec![20]),
+        ]
+    );
+    assert_eq!(latest.older, None);
+}
+
+#[test]
+fn a_backport_that_moved_brings_its_own_issue_to_the_first_page_and_leaves_its_origin_s_issue_older()
+ {
+    let world = ViewWorld::new("inbox-backport-moved");
+    // Backport 21 fixes Issue 2 and sits beneath PR 20, which fixes Issue 1. Under Issue 1, PR 20 shows
+    // without it, so nothing under Issue 1 moved.
+    let fixing_two = PullRequestFacts {
+        title: "[3.14] gh-2: Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(1))
+    };
+    world.has(
+        vec![
+            in_state(PrState::Merged, pr_at(20, Some(1), ago(24 * 10))),
+            fixing_two,
+        ],
+        vec![issue_at(1, ago(24 * 10)), issue_at(2, ago(24 * 10))],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 2, vec![20, 21])]);
+    assert_eq!(outline(&older), [("issue", 1, vec![20])]);
 }
 
 #[test]
@@ -160,6 +279,61 @@ fn the_first_page_holds_the_last_two_days_and_the_next_the_older_batch() {
         ]
     );
     assert_eq!(older.older, None);
+}
+
+#[test]
+fn a_first_page_with_items_looks_one_step_down_for_an_older_page() {
+    let world = ViewWorld::new("inbox-one-step");
+    // More older Issues than the step that looks for an older page reads, so it reads only some of them.
+    let count = STEP + 10;
+    let older = (1..=count).map(|number| issue_at(number, ago(100 + i64::from(number))));
+    world.has(
+        vec![],
+        std::iter::once(issue_at(100, ago(1)))
+            .chain(older)
+            .collect(),
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 100, vec![])]);
+    let numbers: Vec<u32> = (outline(&older).into_iter())
+        .map(|(_, number, _)| number)
+        .collect();
+    assert_eq!(numbers, (1..=count).collect::<Vec<u32>>());
+    assert_eq!(older.older, None);
+}
+
+#[test]
+fn a_backport_of_a_backport_stands_on_its_own_line() {
+    let world = ViewWorld::new("inbox-backport-of-backport");
+    // Backport 22 names Backport 21 as its Origin PR, and a tree stays two levels, so each heads a line.
+    let backport_of_backport = PullRequestFacts {
+        title: "[3.13] Fix it (GH-21)".to_owned(),
+        ..backport_at(22, 21, ago(1))
+    };
+    let older_backport = PullRequestFacts {
+        title: "[3.14] gh-1: Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(24 * 10))
+    };
+    world.has(
+        vec![
+            in_state(PrState::Merged, older_backport),
+            backport_of_backport,
+        ],
+        vec![issue_at(1, ago(24 * 10))],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone backport", 22, vec![])]);
+    assert_eq!(outline(&older), [("issue", 1, vec![21])]);
 }
 
 #[test]

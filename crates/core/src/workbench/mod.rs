@@ -28,6 +28,7 @@ use time::OffsetDateTime;
 use crate::error::Error;
 use crate::facts::WorkFacts;
 use crate::facts::issues::IssueFacts;
+use crate::facts::pull_requests::PrLinks;
 use crate::filters::FilterQuery;
 use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
@@ -38,7 +39,7 @@ use attention::{attention_of, seen_of};
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
-use links::link;
+use links::{link, links_of};
 use rows::row;
 
 /// A Backport's line of the list.
@@ -195,7 +196,7 @@ impl Workbench {
             WorkbenchView::StaleReviews => Some(&causes.stale_reviews),
         };
         let listed: Vec<ListedItem> =
-            candidates(facts, repository, selected.unwrap_or(&matched), &causes)
+            candidates_of(facts, repository, selected.unwrap_or(&matched), &causes)
                 .into_iter()
                 .map(|item| ListedItem {
                     attention: attention_of(&causes, &item),
@@ -253,11 +254,23 @@ fn count_of<'a>(items: impl Iterator<Item = &'a ListedItem>) -> u32 {
     u32::try_from(items.count()).unwrap_or(u32::MAX)
 }
 
-/// Each item the Repository's facts could show, on the Workbench or not. A PR in `first`, the Matched PRs of
-/// the view on show, comes first in its Issue's tree. `causes` are the facts' own, and give each item and PR
-/// its part in Mark Seen.
-fn candidates(
+/// Each item the Repository's facts could show, on the Workbench or not, linked by the link rules as they
+/// read the facts.
+fn candidates_of(
     facts: WorkFacts,
+    repository: &RepositorySettings,
+    first: &BTreeSet<u32>,
+    causes: &Causes,
+) -> Vec<WorkbenchItem> {
+    let links = links_of(&facts.pull_requests, &facts.issues, repository);
+    candidates((facts, &links), repository, first, causes)
+}
+
+/// Each item the facts could show, on the Workbench or not, with each PR linked as `links` says. A PR in
+/// `first`, the Matched PRs of the view on show, comes first in its Issue's tree. `causes` are the facts'
+/// own, and give each item and PR its part in Mark Seen.
+fn candidates(
+    (facts, links): (WorkFacts, &BTreeMap<u32, PrLinks>),
     repository: &RepositorySettings,
     first: &BTreeSet<u32>,
     causes: &Causes,
@@ -265,7 +278,7 @@ fn candidates(
     let Some(viewer) = facts.viewer else {
         return Vec::new();
     };
-    let linked = link(facts.pull_requests, &facts.issues, repository, |pr| {
+    let linked = link(facts.pull_requests, links, repository.conventions, |pr| {
         let (seen, review) = (
             seen_of(causes, vec![pr.number]),
             causes.review_of(pr.number),

@@ -61,6 +61,22 @@ erDiagram
         INTEGER number PK, FK
         TEXT sha PK
     }
+    pr_fixes {
+        TEXT repository PK, FK
+        INTEGER number PK, FK
+        INTEGER issue PK
+        TEXT under PK
+    }
+    pr_origins {
+        TEXT repository PK, FK
+        INTEGER number PK, FK
+        TEXT found_in PK
+        INTEGER origin
+    }
+    link_rules {
+        INTEGER id PK
+        INTEGER version
+    }
     committers {
         TEXT repository PK, FK
         INTEGER number PK, FK
@@ -149,6 +165,8 @@ erDiagram
     pull_request_labels }o--|| pull_requests : "repository, number"
     closing_references }o--|| pull_requests : "repository, number"
     cherry_picks }o--|| pull_requests : "repository, number"
+    pr_fixes }o--|| pull_requests : "repository, number"
+    pr_origins }o--|| pull_requests : "repository, number"
     committers }o--|| pull_requests : "repository, number"
     pr_reviews }o--|| issue_content : "repository, number"
     review_threads }o--|| pr_reviews : "repository, number, review"

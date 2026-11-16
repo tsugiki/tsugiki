@@ -484,7 +484,7 @@ fn a_reader_doesnt_wait_for_a_write_in_progress() {
             title: "unfinished".to_owned(),
             ..facts(1)
         };
-        super::replace(&transaction, &cpython(), &unfinished).unwrap();
+        super::save_in(&transaction, &cpython(), &[unfinished], &[]).unwrap();
         started.send(()).unwrap();
         released.recv().unwrap();
         transaction.commit().unwrap();

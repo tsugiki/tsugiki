@@ -50,6 +50,38 @@ impl ToSql for Numbers {
     }
 }
 
+/// Which items' rows a read takes: every item's, or those of the items `Numbers` lists.
+#[derive(Clone, Copy)]
+pub(super) enum Items<'a> {
+    All,
+    Numbered(&'a Numbers),
+}
+
+impl<'a> Items<'a> {
+    /// The condition on the number column `column` that keeps these items' rows, which follows the other
+    /// conditions of a `WHERE`. It names `:numbers`, which `with` binds.
+    pub(super) fn condition(self, column: &str) -> String {
+        match self {
+            Self::All => String::new(),
+            Self::Numbered(_) => format!("AND {column} IN (SELECT value FROM json_each(:numbers))"),
+        }
+    }
+
+    /// `asked`, with the parameter `condition` names, if it names one.
+    pub(super) fn with<'p>(
+        self,
+        mut asked: Vec<(&'p str, &'p dyn ToSql)>,
+    ) -> Vec<(&'p str, &'p dyn ToSql)>
+    where
+        'a: 'p,
+    {
+        if let Self::Numbered(numbers) = self {
+            asked.push((":numbers", numbers));
+        }
+        asked
+    }
+}
+
 impl ToSql for RepositoryName {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_string()))

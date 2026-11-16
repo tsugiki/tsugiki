@@ -4,11 +4,11 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{OptionalExtension, Row, ToSql, named_params};
+use rusqlite::{OptionalExtension, Row, named_params};
 use time::OffsetDateTime;
 
 use super::Connection;
-use super::columns::{Numbers, UnixTime};
+use super::columns::{Items, UnixTime};
 use super::failed_checks;
 use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity};
 use crate::login::Login;
@@ -227,39 +227,6 @@ pub(super) fn remember_first_sync(
         .map(drop)
 }
 
-/// Which items a read of activity takes.
-#[derive(Clone, Copy)]
-pub(super) enum Items<'a> {
-    All,
-    /// The items with these numbers alone, as the Inbox reads a page of them.
-    Numbered(&'a Numbers),
-}
-
-impl<'a> Items<'a> {
-    /// The condition that keeps these items' rows, which follows the other conditions of a `WHERE` on a
-    /// table with a `number` column.
-    pub(super) fn condition(self) -> &'static str {
-        match self {
-            Self::All => "",
-            Self::Numbered(_) => "AND number IN (SELECT value FROM json_each(:numbers))",
-        }
-    }
-
-    /// `asked`, with the parameter `condition` names, if it names one.
-    pub(super) fn with<'p>(
-        self,
-        mut asked: Vec<(&'p str, &'p dyn ToSql)>,
-    ) -> Vec<(&'p str, &'p dyn ToSql)>
-    where
-        'a: 'p,
-    {
-        if let Self::Numbered(numbers) = self {
-            asked.push((":numbers", numbers));
-        }
-        asked
-    }
-}
-
 fn moment_in(row: &Row<'_>) -> rusqlite::Result<(u32, OffsetDateTime)> {
     let UnixTime(at) = row.get("at")?;
     Ok((row.get("number")?, at))
@@ -285,7 +252,7 @@ fn listed_events(
     (first_sync, viewer): (Option<OffsetDateTime>, Option<&Login>),
     items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Activity>>> {
-    let condition = items.condition();
+    let condition = items.condition("number");
     let query = format!(
         "SELECT number, kind, target, who, noticed_at AS at FROM activity
          WHERE repository = :repository {condition}
@@ -346,7 +313,7 @@ pub(super) fn read_facts_of(
     items: Items<'_>,
 ) -> rusqlite::Result<ActivityFacts> {
     let first_sync = first_sync(connection, repository)?;
-    let condition = items.condition();
+    let condition = items.condition("number");
     let last_seen =
         format!("SELECT number, at FROM last_seen WHERE repository = :repository {condition}");
     let marked_unseen =

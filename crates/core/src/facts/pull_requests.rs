@@ -101,6 +101,19 @@ pub struct PullRequestFacts {
     pub off_default: Option<OffDefault>,
 }
 
+/// What places an open PR in a list and groups it under its Issues and Origin PR (ADR 0011), and nothing
+/// else, so a read of every open PR stays cheap. It carries none of what Needs attention reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrLinks {
+    pub number: u32,
+    pub title: String,
+    pub author: Option<Login>,
+    pub updated_at: OffsetDateTime,
+    pub closing_issues: Vec<u32>,
+    pub merge_commit: Option<CommitSha>,
+    pub off_default: Option<OffDefault>,
+}
+
 /// The commit a PR's branch is at, which the Repository's mirror fetches, with the branch its diff starts
 /// from.
 #[derive(Debug, Clone, PartialEq, Eq)]

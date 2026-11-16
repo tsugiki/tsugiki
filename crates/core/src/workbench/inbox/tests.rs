@@ -174,13 +174,7 @@ fn an_older_page_holds_a_batch_and_says_where_the_next_starts() {
         .map(|number| pr_at(1000 + number, Some(number), hours(number)));
     world.has(prs.collect(), issues.collect());
 
-    let latest = read(&world, InboxPage::Latest);
-    let first = read(
-        &world,
-        InboxPage::Older {
-            after: latest.older.unwrap(),
-        },
-    );
+    let first = read(&world, InboxPage::Latest);
     let second = read(
         &world,
         InboxPage::Older {
@@ -195,16 +189,85 @@ fn an_older_page_holds_a_batch_and_says_where_the_next_starts() {
             .map(|(_, number, _)| number)
             .collect()
     };
-    assert_eq!(outline(&latest), []);
     let batch = usize::try_from(OLDER_BATCH).unwrap();
     let all: Vec<u32> = (1..=count).collect();
-    assert_eq!(numbers(&first), all[..batch]);
+    assert_eq!(
+        numbers(&first),
+        all[..batch],
+        "a first page with nothing from the last two days holds the first older batch"
+    );
     assert_eq!(numbers(&second), all[batch..]);
     assert_eq!(second.older, None);
 }
 
 #[test]
-fn an_older_page_with_nothing_of_its_own_gives_way_to_the_next() {
+fn a_page_that_takes_the_last_items_says_nothing_is_older() {
+    let world = ViewWorld::new("inbox-exact");
+    let issues = (1..=OLDER_BATCH).map(|number| issue_at(number, ago(100 + i64::from(number))));
+    world.has(vec![], issues.collect());
+
+    let first = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(first.items.len(), usize::try_from(OLDER_BATCH).unwrap());
+    assert_eq!(first.older, None);
+}
+
+#[test]
+fn the_first_page_says_nothing_is_older_when_only_its_issues_are() {
+    let world = ViewWorld::new("inbox-named-older");
+    world.has(
+        vec![pr_at(10, Some(1), ago(1))],
+        vec![issue_at(1, ago(100))],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 1, vec![10])]);
+    assert_eq!(
+        latest.older, None,
+        "Issue 1 is older, but its PR put it on this page"
+    );
+}
+
+#[test]
+fn an_item_updated_in_the_second_the_first_page_starts_is_on_it_alone() {
+    let world = ViewWorld::new("inbox-boundary");
+    world.has(
+        vec![pr_at(20, Some(2), ago(48))],
+        vec![
+            issue_at(1, ago(48)),
+            issue_at(2, ago(50)),
+            issue_at(3, ago(49)),
+        ],
+    );
+    let within_a_second = now() + Duration::milliseconds(500);
+
+    let latest = Inbox::read(
+        &world.reader,
+        &world.settings(),
+        InboxPage::Latest,
+        within_a_second,
+    )
+    .unwrap();
+    let older = read(
+        &world,
+        InboxPage::Older {
+            after: latest.older.unwrap(),
+        },
+    );
+    world.finish();
+
+    assert_eq!(
+        outline(&latest),
+        [("issue", 2, vec![20]), ("issue", 1, vec![])]
+    );
+    assert_eq!(outline(&older), [("issue", 3, vec![])]);
+}
+
+#[test]
+fn issues_their_prs_moved_up_leave_no_gap_in_an_older_page() {
     let world = ViewWorld::new("inbox-skip");
     let count = OLDER_BATCH;
     // The store's batch holds only Issues with a PR newer than the cursor, and an older one lies past it.
@@ -270,6 +333,7 @@ fn nothing_is_listed_before_anyone_signs_in() {
     store.close();
     let read = read.unwrap();
     assert_eq!(outline(&read), []);
+    assert_eq!(read.older, None);
 }
 
 #[test]

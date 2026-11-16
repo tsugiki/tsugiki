@@ -1107,7 +1107,7 @@ export type Home_Serialize =
  */
 others: RepositoryName[] };
 
-/**  A page of the Inbox. */
+/**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
 export type Inbox = Inbox_Serialize | Inbox_Deserialize;
 
 /**
@@ -1142,19 +1142,19 @@ export type InboxPage = InboxPage_Serialize | InboxPage_Deserialize;
 
 /**  The page of the Inbox the window asks for. */
 export type InboxPage_Deserialize = 
-/**  The items updated in the last two days. */
+/**  The items updated in the last two days, or the first older batch when none were. */
 { kind: "latest" } | 
 /**  The next older batch: the items that come after `after` in the Inbox's order. */
 { kind: "older"; after: InboxCursor_Deserialize };
 
 /**  The page of the Inbox the window asks for. */
 export type InboxPage_Serialize = 
-/**  The items updated in the last two days. */
+/**  The items updated in the last two days, or the first older batch when none were. */
 { kind: "latest" } | 
 /**  The next older batch: the items that come after `after` in the Inbox's order. */
 { kind: "older"; after: InboxCursor_Serialize };
 
-/**  A page of the Inbox. */
+/**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
 export type Inbox_Deserialize = {
 	/**  The latest update first. */
 	items: ListedItem_Deserialize[],
@@ -1165,7 +1165,7 @@ export type Inbox_Deserialize = {
 	older?: InboxCursor_Deserialize | null,
 };
 
-/**  A page of the Inbox. */
+/**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
 export type Inbox_Serialize = {
 	/**  The latest update first. */
 	items: ListedItem_Serialize[],

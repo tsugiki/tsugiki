@@ -38,14 +38,14 @@ use crate::facts::WorkFacts;
 use crate::facts::activity::{ActivityFacts, ItemActivity};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
-use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
-use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewedCommit};
+use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;
-use columns::Numbers;
+use columns::{Items, Numbers};
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
@@ -69,16 +69,6 @@ pub(crate) const IN_USE: &str = "Another Tsugiki has this database open, so this
 const STOPPED: &str = "Tsugiki's database stopped working. Restart Tsugiki to open it again.";
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
-
-/// How much of each Issue or PR a read takes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Detail {
-    Whole,
-    /// Only what places the item in a list and groups PRs under their Issues and Origin PRs (ADR 0011): its
-    /// own row, a PR's closing references and a Backport's commits. Its assignees and labels, and a PR's
-    /// Review requests and latest Reviews, stay empty, so no rule that reads them may judge it.
-    Links,
-}
 
 /// The open database.
 pub struct Store {
@@ -670,10 +660,9 @@ impl Snapshot<'_> {
     }
 
     /// The open PRs, the latest update first, with only what places them in a list and groups them under
-    /// their Issues and Origin PRs: their Review requests, latest Reviews, assignees and labels stay empty.
-    pub fn open_pull_request_links(&self) -> Result<Vec<PullRequestFacts>, Error> {
-        let scope = pull_requests::Scope::Open;
-        self.pull_requests(scope, Detail::Links)
+    /// their Issues and Origin PRs.
+    pub fn open_pull_request_links(&self) -> Result<Vec<PrLinks>, Error> {
+        pull_requests::read_links(&self.transaction, &self.repository).map_err(saying(CANT_READ))
     }
 
     /// The PRs with these numbers that the store holds, the latest update first.
@@ -682,58 +671,66 @@ impl Snapshot<'_> {
         numbers: &BTreeSet<u32>,
     ) -> Result<Vec<PullRequestFacts>, Error> {
         let numbers = Numbers::of(numbers.iter().copied());
-        self.pull_requests(pull_requests::Scope::Numbered(&numbers), Detail::Whole)
-    }
-
-    fn pull_requests(
-        &self,
-        scope: pull_requests::Scope<'_>,
-        detail: Detail,
-    ) -> Result<Vec<PullRequestFacts>, Error> {
-        pull_requests::read(&self.transaction, &self.repository, scope, detail)
-            .map_err(saying(CANT_READ))
+        pull_requests::read(
+            &self.transaction,
+            &self.repository,
+            Items::Numbered(&numbers),
+        )
+        .map_err(saying(CANT_READ))
     }
 
     /// The Issues with these numbers that the store holds, whatever their state, in number order.
     pub fn issues_numbered(&self, numbers: &BTreeSet<u32>) -> Result<Vec<IssueFacts>, Error> {
-        self.issues(issues::IssueScope::Numbered(numbers), Detail::Whole)
+        let numbers = Numbers::of(numbers.iter().copied());
+        issues::read(
+            &self.transaction,
+            &self.repository,
+            Items::Numbered(&numbers),
+        )
+        .map_err(saying(CANT_READ))
     }
 
-    /// As `issues_numbered`, with only what places each Issue in a list: its assignees and labels stay
-    /// empty.
-    pub fn issue_links_numbered(&self, numbers: &BTreeSet<u32>) -> Result<Vec<IssueFacts>, Error> {
-        self.issues(issues::IssueScope::Numbered(numbers), Detail::Links)
+    /// Where each Issue with these numbers that the store holds stands, whatever its state, in number order.
+    pub fn issue_places_numbered(&self, numbers: &BTreeSet<u32>) -> Result<Vec<IssuePlace>, Error> {
+        let numbers = Numbers::of(numbers.iter().copied());
+        self.issue_places(issues::PlaceScope::Numbered(&numbers))
     }
 
-    /// The open Issues updated at `since` or later, the latest update first, with only what places each in
-    /// a list: their assignees and labels stay empty.
-    pub fn open_issue_links_since(&self, since: OffsetDateTime) -> Result<Vec<IssueFacts>, Error> {
-        self.issues(issues::IssueScope::OpenSince(since), Detail::Links)
-    }
-
-    /// The `limit` open Issues that come after `updated_at` and `number` with the latest update first, then
-    /// the highest number first, with only what places each in a list: their assignees and labels stay
-    /// empty.
-    pub fn open_issue_links_before(
+    /// Where each open Issue updated at `since` or later stands, other than those of `besides`, the latest
+    /// update first.
+    pub fn open_issue_places_since(
         &self,
-        updated_at: OffsetDateTime,
-        number: u32,
-        limit: u32,
-    ) -> Result<Vec<IssueFacts>, Error> {
-        let scope = issues::IssueScope::OpenBefore {
-            updated_at,
-            number,
-            limit,
+        since: OffsetDateTime,
+        besides: &BTreeSet<u32>,
+    ) -> Result<Vec<IssuePlace>, Error> {
+        let besides = Numbers::of(besides.iter().copied());
+        let scope = issues::PlaceScope::OpenSince {
+            since,
+            besides: &besides,
         };
-        self.issues(scope, Detail::Links)
+        self.issue_places(scope)
     }
 
-    fn issues(
+    /// Where each of the `limit` open Issues that come after `after`, a last update and a number, stands,
+    /// in the order of the latest update first and then the highest number first, other than those of
+    /// `besides`.
+    pub fn open_issue_places_after(
         &self,
-        scope: issues::IssueScope<'_>,
-        detail: Detail,
-    ) -> Result<Vec<IssueFacts>, Error> {
-        issues::read(&self.transaction, &self.repository, scope, detail).map_err(saying(CANT_READ))
+        after: (OffsetDateTime, u32),
+        limit: u32,
+        besides: &BTreeSet<u32>,
+    ) -> Result<Vec<IssuePlace>, Error> {
+        let besides = Numbers::of(besides.iter().copied());
+        let scope = issues::PlaceScope::OpenAfter {
+            after,
+            limit,
+            besides: &besides,
+        };
+        self.issue_places(scope)
+    }
+
+    fn issue_places(&self, scope: issues::PlaceScope<'_>) -> Result<Vec<IssuePlace>, Error> {
+        issues::read_places(&self.transaction, &self.repository, scope).map_err(saying(CANT_READ))
     }
 
     /// The activity of the Issues and PRs `numbers`, as `viewer` reads it.
@@ -743,7 +740,7 @@ impl Snapshot<'_> {
         numbers: &BTreeSet<u32>,
     ) -> Result<ActivityFacts, Error> {
         let numbers = Numbers::of(numbers.iter().copied());
-        let items = activity::Items::Numbered(&numbers);
+        let items = Items::Numbered(&numbers);
         activity::read_facts_of(&self.transaction, &self.repository, viewer, items)
             .map_err(saying(CANT_READ))
     }

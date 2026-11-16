@@ -7,7 +7,7 @@ use rusqlite::named_params;
 use time::OffsetDateTime;
 
 use super::Connection;
-use super::activity::Items;
+use super::columns::Items;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -93,7 +93,7 @@ pub(super) fn read(
     repository: &RepositoryName,
     items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<String>>> {
-    let condition = items.condition();
+    let condition = items.condition("number");
     let query = format!(
         "SELECT number, name FROM failed_checks WHERE repository = :repository {condition}
          ORDER BY number, name"

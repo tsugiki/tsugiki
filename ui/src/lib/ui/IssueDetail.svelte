@@ -142,9 +142,6 @@
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
     {@const by = opened(view)}
-    <!-- Derived once per view, as `{@const}` is, where a `$derived` would need a branch for no view that the
-         template never reads. -->
-    {@const counts = stateCounts(view)}
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
@@ -202,6 +199,9 @@
         </ul>
       {/snippet}
       {#if view.pull_requests.length > 0 || view.merged_count > 0}
+        <!-- Derived once per view, as `{@const}` is, where a `$derived` would need a branch for no view that
+             the template never reads. -->
+        {@const counts = stateCounts(view)}
         <h3>Origin PRs</h3>
         <!-- Each entry reads its words, then a comma only a screen reader hears, then its count. The words
              name each icon, so a screen reader skips the icons' own names, and "Bold", which names how the

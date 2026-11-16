@@ -59,16 +59,22 @@ fn up_to_500_open_is_small_and_loads_those_and_what_closed_lately() {
 }
 
 #[test]
-fn a_repository_the_user_administers_starts_with_the_filters_for_its_maintainers() {
-    let check = RepositoryCheck::new(FoundRepository {
-        name: name("a/b"),
-        counts: FEW,
-        access: RepositoryAccess::Maintained,
-    });
-    assert_eq!(
-        check.repository.filters,
-        Filter::starters(RepositoryAccess::Maintained)
-    );
+fn a_repository_starts_with_mine_on_the_workbench_and_involved_off_it_maintained_or_not() {
+    for access in [RepositoryAccess::Maintained, RepositoryAccess::Other] {
+        let check = RepositoryCheck::new(FoundRepository {
+            name: name("a/b"),
+            counts: FEW,
+            access,
+        });
+        let switches: Vec<(String, bool)> = (check.repository.filters.into_iter())
+            .map(|filter| (filter.name.into(), filter.on_workbench.into()))
+            .collect();
+        assert_eq!(
+            switches,
+            [("Mine".to_owned(), true), ("Involved".to_owned(), false)],
+            "{access:?}"
+        );
+    }
 }
 
 #[test]

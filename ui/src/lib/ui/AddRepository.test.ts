@@ -172,7 +172,6 @@ it("borrows from a clone the user picks, and adds with it", async () => {
   });
   expect(core.addRepository).toHaveBeenCalledWith({
     name: "some-maintainer/gcmon",
-    access: "other",
     source: { kind: "borrow", folder: lender },
   });
 });

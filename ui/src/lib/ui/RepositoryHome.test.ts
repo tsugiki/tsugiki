@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
@@ -33,6 +33,7 @@ const core = vi.hoisted(() => ({
   fetchPullRequest: vi.fn(),
   markSeen: vi.fn(),
   markUnseen: vi.fn(),
+  putFilterOnWorkbench: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
@@ -73,6 +74,7 @@ vi.mock("$lib/data/bindings", () => ({
     fetchPullRequest: core.fetchPullRequest,
     markSeen: core.markSeen,
     markUnseen: core.markUnseen,
+    putFilterOnWorkbench: core.putFilterOnWorkbench,
     openOnGithub: core.openOnGithub,
     pullRequestFiles: core.pullRequestFiles,
     pullRequestFind: core.pullRequestFind,
@@ -350,7 +352,7 @@ it("says so while there is nothing to list", async () => {
 });
 
 it("shows a Filter's Issues when the user selects it, with the Sidebar's counts", async () => {
-  const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+  const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
   core.workbench.mockImplementation(async (_: string, selected: { kind: string }) => ({
     status: "ok",
     data: {
@@ -448,8 +450,72 @@ it("asks for Stale reviews when the user picks it, and says when no Review of th
   expect(await screen.findByText("No Review of yours is stale.")).toBeTruthy();
 });
 
+it("switches a Filter on and off the Workbench from its view, and only there", async () => {
+  const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
+  let saved = true;
+  core.workbench.mockImplementation(async () => ({
+    status: "ok",
+    data: {
+      items: [],
+      count: 0,
+      review_requests: 0,
+      stale_reviews: 0,
+      filters: [{ ...mine, on_workbench: saved }],
+    },
+  }));
+  core.putFilterOnWorkbench.mockImplementation(async ({ on }: { on: boolean }) => {
+    saved = on;
+    return { status: "ok", data: null };
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByRole("button", { name: "Mine 0" });
+  expect(screen.queryByRole("checkbox", { name: "On the Workbench" })).toBeNull();
+
+  await fireEvent.click(screen.getByRole("button", { name: "Mine 0" }));
+  const onWorkbench = await screen.findByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
+  expect(onWorkbench.checked).toBe(true);
+  const asked = core.workbench.mock.calls.length;
+  await fireEvent.click(onWorkbench);
+
+  expect(core.putFilterOnWorkbench).toHaveBeenLastCalledWith({
+    repository: "python/cpython",
+    query: mine.query,
+    on: false,
+  });
+  await waitFor(() => {
+    expect(core.workbench).toHaveBeenCalledTimes(asked + 1);
+  });
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "filter", query: mine.query });
+  expect(onWorkbench.checked).toBe(false);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("turns a Filter's switch back and says why when the core can't save it", async () => {
+  const mine = { name: "Mine", query: "is:open author:@me", on_workbench: false, count: 0, problem: null };
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
+  });
+  core.putFilterOnWorkbench.mockResolvedValue({
+    status: "error",
+    error: { kind: "internal", message: "settings.toml is read-only" },
+  });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
+  const onWorkbench = await screen.findByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
+  await fireEvent.click(onWorkbench);
+
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Tsugiki couldn't save the Filter's switch: settings.toml is read-only",
+  );
+  await waitFor(() => {
+    expect(onWorkbench.checked).toBe(false);
+  });
+});
+
 it("says how to check a Filter that holds nothing", async () => {
-  const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+  const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
   core.workbench.mockResolvedValue({
     status: "ok",
     data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
@@ -2501,7 +2567,7 @@ it("offers no command to fold the items with nothing waiting", async () => {
 });
 
 it("shows another Repository as a launch does: its Workbench, an empty Detail pane, the cursor on top", async () => {
-  const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+  const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
   core.workbench.mockResolvedValue({
     status: "ok",
     data: {

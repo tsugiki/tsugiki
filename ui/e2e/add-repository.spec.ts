@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Filter } from "../src/lib/data/bindings.ts";
+import type { Filter_Serialize as Filter } from "../src/lib/data/bindings.ts";
 import { mockCore } from "./mock-core.ts";
 
 const check = {

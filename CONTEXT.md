@@ -108,9 +108,9 @@ _Avoid_: Cache, local clone
 
 **Workbench**:
 The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a
-**Filter** reaches, that is a **Pinned issue**, that has an open PR the user holds a **Review** on, or that
-**Needs attention**. An Issue being closed on GitHub does not remove it. It is one list, with no section of
-its own for the items that wait on nothing.
+**Filter** switched on the Workbench reaches, that is a **Pinned issue**, that has an open PR the user holds a
+**Review** on, or that **Needs attention**. An Issue being closed on GitHub does not remove it. It is one
+list, with no section of its own for the items that wait on nothing.
 _Avoid_: Dashboard
 
 **Reach**:
@@ -119,13 +119,16 @@ Conversations read ahead. It is worked out from the **Workbench** and the links 
 from the rows the list draws. It holds each Issue and PR on the Workbench in its own right, with the Origin
 PR and the Backports of such a PR, and each Issue one of those fixes; then each PR that fixes a reached
 Issue, through the Repository's **Conventions**, whether open, merged or closed; then each **Backport** whose
-**Origin PR** is reached, and the Origin PR of each reached Backport.
+**Origin PR** is reached, and the Origin PR of each reached Backport. An item that only a **Filter** switched
+off the Workbench finds stays out of it.
 _Avoid_: The PRs the user's work reaches
 
 **Filter**:
 A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match
-Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workbench**. Clicking a person
-opens an unsaved Filter for what they authored, which the user can save or close.
+Issues or PRs. Its "On the Workbench" switch says whether its items go on the **Workbench**, where a
+matching PR pulls its **Issue**, and so into **Reach**. A Filter switched off is a view the user
+browses: its search still runs, and its view lists what it found. Clicking a person opens an unsaved Filter
+for what they authored, which the user can save or close.
 _Avoid_: Query, section
 
 **Inbox**:

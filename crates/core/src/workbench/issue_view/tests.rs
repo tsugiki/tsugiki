@@ -8,7 +8,7 @@ use crate::facts::issue_content::{Comment, CommentId, IssueComment};
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
-use crate::filters::{Filter, FilterQuery};
+use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::work::YourReview;
 use crate::workbench::WorkbenchRow;
 use crate::workbench::testing::{
@@ -65,7 +65,8 @@ fn origin_prs_that_merged_with_each_backport_done_fold_and_the_view_counts_them(
     world.finish();
 }
 
-/// `IssueView::read` hands `fold` the Matched PRs of the user's Filters.
+/// `IssueView::read` hands `fold` the Matched PRs of the user's Filters, those switched off the Workbench
+/// too.
 #[test]
 fn a_merged_backport_a_filter_matched_keeps_its_origin_pr_listed() {
     let world = ViewWorld::new("issue-view-fold-matched");
@@ -82,6 +83,7 @@ fn a_merged_backport_a_filter_matched_keeps_its_origin_pr_listed() {
         filters: vec![Filter {
             name: "Backports".to_owned().try_into().unwrap(),
             query: query.clone(),
+            on_workbench: OnWorkbench::Off,
         }],
         ..world.settings()
     };

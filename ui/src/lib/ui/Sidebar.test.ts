@@ -2,8 +2,14 @@ import { fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import Sidebar from "./Sidebar.svelte";
 
-const mine = { name: "Mine", query: "is:open author:@me", count: 3, problem: null };
-const involved = { name: "Involved", query: "is:open involves:@me", count: 9, problem: null };
+const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 3, problem: null };
+const involved = {
+  name: "Involved",
+  query: "is:open involves:@me",
+  on_workbench: false,
+  count: 9,
+  problem: null,
+};
 
 const whole = { kind: "whole" } as const;
 const button = (name: string) => screen.getByRole("button", { name });

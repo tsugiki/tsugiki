@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {
-  Filter,
+  Filter_Serialize as Filter,
   ListedItem_Serialize as ListedItem,
   PrView_Serialize as PrView,
   WorkbenchRow_Serialize as WorkbenchRow,

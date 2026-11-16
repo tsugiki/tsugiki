@@ -1,8 +1,8 @@
 use super::*;
 use crate::conventions::Conventions;
-use crate::filters::Filter;
+use crate::filters::{Filter, OnWorkbench};
 use crate::mirror_source::MirrorSource;
-use crate::repository::{FoundRepository, RepositoryCounts};
+use crate::repository::{FoundRepository, RepositoryAccess, RepositoryCounts};
 use crate::testing::TempPath;
 use crate::theme::{ThemeChoice, ThemeInForce, ThemeKind, ThemeName, ThemePick};
 use time::format_description::well_known::Rfc3339;
@@ -47,7 +47,7 @@ fn add_all(files: &mut SettingsFiles, names: &[&str], first: OffsetDateTime) {
         drop(
             files
                 .add_repository(
-                    &RepositorySettings::added(repository(name), RepositoryAccess::Other),
+                    &RepositorySettings::new(repository(name)),
                     &MirrorSource::Download,
                     first + time::Duration::hours(hours),
                 )
@@ -72,7 +72,7 @@ fn opened(names: &[&str], conventions: Conventions) -> Home {
         repository: RepositorySettings {
             name: repository(names[0]),
             conventions,
-            filters: Filter::starters(RepositoryAccess::Other),
+            filters: Filter::starters(),
         },
         others: names[1..].iter().map(|name| repository(name)).collect(),
     }
@@ -1001,7 +1001,12 @@ fn filter(name: &str, query: &str) -> Filter {
     Filter {
         name: name.to_owned().try_into().unwrap(),
         query: query.to_owned().try_into().unwrap(),
+        on_workbench: OnWorkbench::Off,
     }
+}
+
+fn query(text: &str) -> FilterQuery {
+    text.to_owned().try_into().unwrap()
 }
 
 #[test]
@@ -1012,7 +1017,7 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
     drop(
         files
             .add_repository(
-                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Maintained),
+                &RepositorySettings::new(repository("a/b")),
                 &MirrorSource::Download,
                 WHENEVER,
             )
@@ -1022,18 +1027,203 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
     let read = files.loaded().settings.repositories[0].clone();
 
     assert!(written.contains("[[repositories.filters]]"), "{written}");
-    assert!(written.contains(r#"name = "Open Issues""#), "{written}");
+    assert!(written.contains(r#"name = "Mine""#), "{written}");
     assert!(
-        written.contains(r#"query = "is:issue is:open""#),
+        written.contains(r#"query = "is:open author:@me""#),
         "{written}"
     );
-    assert_eq!(read.filters, Filter::starters(RepositoryAccess::Maintained));
+    assert!(written.contains("on_workbench = true"), "{written}");
+    assert_eq!(read.filters, Filter::starters());
 }
 
 #[test]
 fn a_repository_with_no_filters_in_the_file_gets_the_starters() {
     let read = the_repository_in("no-filters", "[[repositories]]\nname = \"a/b\"\n");
-    assert_eq!(read.filters, Filter::starters(RepositoryAccess::Other));
+    assert_eq!(read.filters, Filter::starters());
+}
+
+#[test]
+fn a_filter_reads_its_switch_and_one_without_it_is_off_the_workbench() {
+    let read = the_repository_in(
+        "filter-switch",
+        "[[repositories]]\nname = \"a/b\"\n
+[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\non_workbench = true\n
+[[repositories.filters]]\nname = \"Docs\"\nquery = \"label:docs\"\n",
+    );
+    let switches: Vec<(String, bool)> = (read.filters.into_iter())
+        .map(|filter| (filter.name.into(), filter.on_workbench.into()))
+        .collect();
+    assert_eq!(
+        switches,
+        [("Bugs".to_owned(), true), ("Docs".to_owned(), false)]
+    );
+}
+
+/// Files whose `settings.toml` says `text`, and the folders they live in.
+fn settings_saying(name: &str, text: &str) -> (SettingsFiles, Folders, TempPath) {
+    let (folders, root) = temp_folders(name);
+    fs::write(folders.settings_file(), text).unwrap();
+    let files = SettingsFiles::load(folders.clone());
+    assert_eq!(files.loaded().problems, Vec::<String>::new());
+    (files, folders, root)
+}
+
+/// Each Filter of the first Repository the files read, with its switch.
+fn switches(files: &SettingsFiles) -> Vec<(String, bool)> {
+    let filters = files.loaded().settings.repositories[0].filters.iter();
+    (filters.map(|filter| (filter.name.clone().into(), filter.on_workbench.into()))).collect()
+}
+
+#[test]
+fn a_switch_puts_each_filter_with_that_search_on_the_workbench_and_keeps_the_users_words() {
+    let (mut files, folders, _root) = settings_saying(
+        "switch-on",
+        "\
+[[repositories]]
+name = \"a/b\"
+
+# Mine.
+[[repositories.filters]]
+name = \"Bugs\"
+query = \" label:bug \" # The bugs.
+
+[[repositories.filters]]
+name = \"Docs\"
+query = \"label:docs\"
+on_workbench = true
+
+[[repositories.filters]]
+name = \"Bugs again\"
+query = \"label:bug\"
+on_workbench = false # Not yet.
+",
+    );
+
+    files
+        .put_on_workbench(&repository("A/B"), &query("label:bug"), OnWorkbench::On)
+        .unwrap();
+    files
+        .put_on_workbench(&repository("a/b"), &query("label:docs"), OnWorkbench::Off)
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "\
+[[repositories]]
+name = \"a/b\"
+
+# Mine.
+[[repositories.filters]]
+name = \"Bugs\"
+query = \" label:bug \" # The bugs.
+on_workbench = true
+
+[[repositories.filters]]
+name = \"Docs\"
+query = \"label:docs\"
+on_workbench = false
+
+[[repositories.filters]]
+name = \"Bugs again\"
+query = \"label:bug\"
+on_workbench = true # Not yet.
+"
+    );
+    assert_eq!(
+        switches(&files),
+        [
+            ("Bugs".to_owned(), true),
+            ("Docs".to_owned(), false),
+            ("Bugs again".to_owned(), true)
+        ]
+    );
+}
+
+#[test]
+fn a_switch_in_a_list_written_inline_stays_inline() {
+    let (mut files, folders, _root) = settings_saying(
+        "switch-inline",
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
+    );
+
+    files
+        .put_on_workbench(&repository("a/b"), &query("label:bug"), OnWorkbench::On)
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\", on_workbench = true }] }]\n"
+    );
+    assert_eq!(switches(&files), [("Bugs".to_owned(), true)]);
+}
+
+#[test]
+fn a_switch_on_a_repository_without_filters_writes_out_the_starters_it_reads_as() {
+    let (mut files, folders, _root) =
+        settings_saying("switch-starters", "[[repositories]]\nname = \"a/b\"\n");
+
+    files
+        .put_on_workbench(
+            &repository("a/b"),
+            &query("is:open involves:@me -author:@me"),
+            OnWorkbench::On,
+        )
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        after,
+        "[[repositories]]\nname = \"a/b\"\n
+[[repositories.filters]]\nname = \"Mine\"\nquery = \"is:open author:@me\"\non_workbench = true\n
+[[repositories.filters]]\nname = \"Involved\"\nquery = \"is:open involves:@me -author:@me\"\non_workbench = true\n"
+    );
+    assert_eq!(
+        switches(&files),
+        [("Mine".to_owned(), true), ("Involved".to_owned(), true)]
+    );
+}
+
+#[test]
+fn a_switch_refuses_a_repository_or_a_search_the_file_doesnt_hold_and_saves_nothing() {
+    let before = "[[repositories]]\nname = \"a/b\"\nfilters = []\n";
+    let (mut files, folders, _root) = settings_saying("switch-refused", before);
+
+    let no_repository = files
+        .put_on_workbench(&repository("c/d"), &query("label:bug"), OnWorkbench::On)
+        .unwrap_err();
+    let no_search = files
+        .put_on_workbench(&repository("a/b"), &query("label:bug"), OnWorkbench::On)
+        .unwrap_err();
+
+    assert_eq!(no_repository.kind, ErrorKind::NotFound);
+    assert_eq!(no_repository.message, "Tsugiki doesn't have c/d.");
+    assert_eq!(no_search.kind, ErrorKind::NotFound);
+    assert_eq!(
+        no_search.message,
+        "a/b has no Filter that searches label:bug."
+    );
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
+fn the_owner_saves_a_switch_and_answers_with_what_the_files_say() {
+    let (files, _folders, _root) = settings_saying(
+        "owner-switch",
+        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n",
+    );
+    let owner = SettingsOwner::start(Ok(files));
+
+    let saved = owner
+        .put_on_workbench(repository("a/b"), query("label:bug"), OnWorkbench::On)
+        .unwrap();
+
+    assert_eq!(
+        saved.loaded.settings.repositories[0].filters[0].on_workbench,
+        OnWorkbench::On
+    );
+    assert_eq!(owner.view(), saved);
 }
 
 #[test]
@@ -1586,11 +1776,7 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
 
     let saved = owner
-        .add_repository(
-            repository("python/cpython"),
-            RepositoryAccess::Other,
-            MirrorSource::Download,
-        )
+        .add_repository(repository("python/cpython"), MirrorSource::Download)
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
 
@@ -1611,11 +1797,7 @@ fn the_owner_passes_on_why_a_file_refused_an_addition() {
     let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders)));
 
     let refused = owner
-        .add_repository(
-            repository("a/b"),
-            RepositoryAccess::Other,
-            MirrorSource::Download,
-        )
+        .add_repository(repository("a/b"), MirrorSource::Download)
         .unwrap_err();
 
     assert!(
@@ -1630,11 +1812,8 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
     let owner = SettingsOwner::start(Err(lost.clone()));
 
-    let adding = owner.add_repository(
-        repository("a/b"),
-        RepositoryAccess::Other,
-        MirrorSource::Download,
-    );
+    let adding = owner.add_repository(repository("a/b"), MirrorSource::Download);
+    let switching = owner.put_on_workbench(repository("a/b"), query("label:bug"), OnWorkbench::On);
     let answering = owner.save_mirror_source(repository("a/b"), MirrorSource::Download);
     let resizing = owner.save_panes(WIDE);
     let running = owner.remember_command(CommandId::new("Reset Layout"));
@@ -1647,6 +1826,7 @@ fn without_folders_the_owner_says_what_went_wrong_with_them() {
     assert_eq!(rereading.unwrap_err(), lost);
     assert_eq!(applying.unwrap_err(), lost);
     assert_eq!(adding.unwrap_err(), lost);
+    assert_eq!(switching.unwrap_err(), lost);
     assert_eq!(opening.unwrap_err(), lost);
     assert_eq!(answering.unwrap_err(), lost);
     assert_eq!(resizing.unwrap_err(), lost);
@@ -1683,11 +1863,7 @@ fn additions_that_overlap_all_reach_the_view() {
             let owner = owner.clone();
             let _ = scope.spawn(move || {
                 owner
-                    .add_repository(
-                        repository(name),
-                        RepositoryAccess::Other,
-                        MirrorSource::Download,
-                    )
+                    .add_repository(repository(name), MirrorSource::Download)
                     .unwrap()
             });
         }
@@ -1705,11 +1881,7 @@ fn an_owner_whose_thread_has_gone_says_so() {
     };
 
     let refused = owner
-        .add_repository(
-            repository("a/b"),
-            RepositoryAccess::Other,
-            MirrorSource::Download,
-        )
+        .add_repository(repository("a/b"), MirrorSource::Download)
         .unwrap_err();
 
     assert_eq!(refused.message, STOPPED_SAVING);
@@ -2385,7 +2557,7 @@ fn adding_a_repository_saves_it_with_its_conventions() {
 
     let home = files
         .add_repository(
-            &RepositorySettings::added(repository("python/cpython"), RepositoryAccess::Other),
+            &RepositorySettings::new(repository("python/cpython")),
             &MirrorSource::Download,
             WHENEVER,
         )
@@ -2396,8 +2568,8 @@ fn adding_a_repository_saves_it_with_its_conventions() {
     assert_eq!(
         text,
         "[[repositories]]\nname = \"python/cpython\"\nconventions = \"cpython\"\n
-[[repositories.filters]]\nname = \"Mine\"\nquery = \"is:open author:@me\"\n
-[[repositories.filters]]\nname = \"Involved\"\nquery = \"is:open involves:@me -author:@me\"\n"
+[[repositories.filters]]\nname = \"Mine\"\nquery = \"is:open author:@me\"\non_workbench = true\n
+[[repositories.filters]]\nname = \"Involved\"\nquery = \"is:open involves:@me -author:@me\"\non_workbench = false\n"
     );
     assert_eq!(files.loaded().settings.repositories.len(), 1);
 }
@@ -2420,10 +2592,7 @@ visible = false
 
     let home = files
         .add_repository(
-            &RepositorySettings::added(
-                repository("some-maintainer/gcmon"),
-                RepositoryAccess::Other,
-            ),
+            &RepositorySettings::new(repository("some-maintainer/gcmon")),
             &MirrorSource::Download,
             WHENEVER,
         )
@@ -2452,10 +2621,12 @@ conventions = \"github\"
 [[repositories.filters]]
 name = \"Mine\"
 query = \"is:open author:@me\"
+on_workbench = true
 
 [[repositories.filters]]
 name = \"Involved\"
 query = \"is:open involves:@me -author:@me\"
+on_workbench = false
 
 # The bar.
 [status_bar]
@@ -2477,7 +2648,7 @@ fn a_list_written_inline_stays_inline() {
     drop(
         files
             .add_repository(
-                &RepositorySettings::added(repository("c/d"), RepositoryAccess::Maintained),
+                &RepositorySettings::new(repository("c/d")),
                 &MirrorSource::Download,
                 WHENEVER,
             )
@@ -2494,13 +2665,10 @@ fn a_list_written_inline_stays_inline() {
         .collect();
     assert_eq!(loaded.problems, Vec::<String>::new());
     assert_eq!(names, ["a/b", "c/d"]);
-    // Maintained, because a read fills in the Other starters when a Repository has no Filters: with
-    // Other, an inline table that lost its Filters would read back the same.
-    assert_eq!(
-        loaded.settings.repositories[1].filters,
-        Filter::starters(RepositoryAccess::Maintained)
-    );
+    // A read fills in the starters when a Repository has no Filters, so the file has to say them.
+    assert_eq!(loaded.settings.repositories[1].filters, Filter::starters());
     assert!(after.starts_with("repositories = [{"), "{after}");
+    assert!(after.contains("Involved"), "{after}");
 }
 
 #[test]
@@ -2510,7 +2678,7 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
     drop(
         files
             .add_repository(
-                &RepositorySettings::added(repository("python/cpython"), RepositoryAccess::Other),
+                &RepositorySettings::new(repository("python/cpython")),
                 &MirrorSource::Download,
                 WHENEVER,
             )
@@ -2519,7 +2687,7 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
     drop(
         files
             .add_repository(
-                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
+                &RepositorySettings::new(repository("a/b")),
                 &MirrorSource::Download,
                 WHENEVER,
             )
@@ -2529,7 +2697,7 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
 
     let home = files
         .add_repository(
-            &RepositorySettings::added(repository("Python/CPython"), RepositoryAccess::Other),
+            &RepositorySettings::new(repository("Python/CPython")),
             &MirrorSource::Download,
             WHENEVER,
         )
@@ -2862,7 +3030,7 @@ fn adding_follows_settings_path() {
     drop(
         files
             .add_repository(
-                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
+                &RepositorySettings::new(repository("a/b")),
                 &MirrorSource::Download,
                 WHENEVER,
             )
@@ -2894,7 +3062,7 @@ fn adding_refuses_while_either_file_cant_be_used() {
 
         let refused = files
             .add_repository(
-                &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
+                &RepositorySettings::new(repository("a/b")),
                 &MirrorSource::Download,
                 WHENEVER,
             )
@@ -2922,7 +3090,7 @@ fn an_add_that_cant_save_machine_toml_says_so_and_adds_nothing() {
 
     let refused = files
         .add_repository(
-            &RepositorySettings::added(repository("a/b"), RepositoryAccess::Other),
+            &RepositorySettings::new(repository("a/b")),
             &MirrorSource::Download,
             WHENEVER,
         )

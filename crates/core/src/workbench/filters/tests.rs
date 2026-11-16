@@ -11,14 +11,21 @@ fn query(text: &str) -> FilterQuery {
     text.to_owned().try_into().unwrap()
 }
 
-/// A Repository whose Filters are each named after their search.
+/// A Repository whose Filters are each named after their search, each on the Workbench.
 fn with_filters(queries: &[&str]) -> RepositorySettings {
+    let switched: Vec<(&str, bool)> = queries.iter().map(|text| (*text, true)).collect();
+    with_switched(&switched)
+}
+
+/// A Repository whose Filters are each named after their search, each on the Workbench or off it.
+fn with_switched(filters: &[(&str, bool)]) -> RepositorySettings {
     RepositorySettings {
-        filters: queries
+        filters: filters
             .iter()
-            .map(|text| Filter {
+            .map(|(text, on_workbench)| Filter {
                 name: format!("Named {text}").try_into().unwrap(),
                 query: query(text),
+                on_workbench: (*on_workbench).into(),
             })
             .collect(),
         ..cpython()
@@ -262,6 +269,69 @@ fn the_sidebar_lists_the_filters_as_the_settings_do_with_their_problems() {
             ("Named a".to_owned(), "a".to_owned(), None),
         ]
     );
+}
+
+#[test]
+fn a_filter_switched_off_keeps_its_items_off_the_workbench_and_lists_them_in_its_view() {
+    let facts = || nobodys_work(&[("on", found_by(&[2])), ("off", found_by(&[10, 20]))]);
+    let repository = with_switched(&[("on", true), ("off", false)]);
+
+    let whole = Workbench::from_facts(facts(), &repository, &WorkbenchView::Whole);
+    let view = Workbench::from_facts(
+        facts(),
+        &repository,
+        &WorkbenchView::Filter {
+            query: query("off"),
+        },
+    );
+
+    assert_eq!(outline(&whole), [("issue", 2, vec![])]);
+    assert_eq!(
+        outline(&view),
+        [("standalone", 20, vec![]), ("issue", 1, vec![10])]
+    );
+}
+
+#[test]
+fn the_sidebar_counts_a_filter_switched_off_by_the_items_its_search_found() {
+    let asked = PullRequestFacts {
+        review_requests: vec![me()],
+        ..fixing(10, 1)
+    };
+    let facts = WorkFacts {
+        pull_requests: vec![asked, fixing(11, 1), fixing(12, 2)],
+        issues: vec![issue(1), issue(2), issue(3)],
+        ..nobodys_work(&[
+            ("on", found_by(&[1, 2, 3])),
+            ("off", found_by(&[1, 2, 3, 11])),
+        ])
+    };
+    let repository = with_switched(&[("on", true), ("off", false)]);
+    let found = Workbench::from_facts(facts, &repository, &WorkbenchView::Whole);
+
+    // Both found Issues 1, 2 and 3, and only Issue 1 Needs attention. PR 11 adds no item of its own.
+    let lines: Vec<(u32, OnWorkbench)> = (found.filters.iter())
+        .map(|line| (line.count, line.on_workbench))
+        .collect();
+    assert_eq!(lines, [(1, OnWorkbench::On), (3, OnWorkbench::Off)]);
+}
+
+#[test]
+fn a_filter_switched_off_puts_no_pr_first_in_the_workbenchs_trees() {
+    let facts = WorkFacts {
+        activity: ActivityFacts::default(),
+        reviews: ReviewFacts::default(),
+        viewer: Some(me()),
+        pull_requests: vec![fixing(10, 1), fixing(11, 1), fixing(12, 1)],
+        issues: vec![issue(1)],
+        filters: BTreeMap::from([
+            (query("on"), found_by(&[1])),
+            (query("off"), found_by(&[12])),
+        ]),
+    };
+    let repository = with_switched(&[("on", true), ("off", false)]);
+    let found = Workbench::from_facts(facts, &repository, &WorkbenchView::Whole);
+    assert_eq!(outline(&found), [("issue", 1, vec![10, 11, 12])]);
 }
 
 #[test]

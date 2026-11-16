@@ -33,25 +33,20 @@ pub struct RepositorySettings {
 }
 
 impl RepositorySettings {
-    /// The settings adding `name` gives it, for a user with this `access`.
-    pub fn added(name: RepositoryName, access: RepositoryAccess) -> Self {
+    /// The settings adding `name` gives it, Maintained or not. A Repository Tsugiki knows nothing else about
+    /// gets them too.
+    pub fn new(name: RepositoryName) -> Self {
         let conventions = Conventions::for_repository(&name);
         Self {
             name,
             conventions,
-            filters: Filter::starters(access),
+            filters: Filter::starters(),
         }
-    }
-
-    /// A Repository Tsugiki knows nothing else about.
-    pub fn new(name: RepositoryName) -> Self {
-        Self::added(name, RepositoryAccess::Other)
     }
 }
 
 /// A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
-/// would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
-/// means no Filters.
+/// would give it. `filters = []` means no Filters.
 #[derive(Deserialize, Type)]
 struct RepositoryInFile {
     name: RepositoryName,
@@ -64,9 +59,7 @@ impl From<RepositoryInFile> for RepositorySettings {
         let conventions = file
             .conventions
             .unwrap_or_else(|| Conventions::for_repository(&file.name));
-        let filters = file
-            .filters
-            .unwrap_or_else(|| Filter::starters(RepositoryAccess::Other));
+        let filters = file.filters.unwrap_or_else(Filter::starters);
         Self {
             name: file.name,
             conventions,
@@ -126,7 +119,7 @@ impl RepositoryCheck {
             RepositorySize::Large => counts.updated_in_window,
         };
         Self {
-            repository: RepositorySettings::added(name, access),
+            repository: RepositorySettings::new(name),
             access,
             open_issues: counts.open_issues,
             open_prs: counts.open_prs,

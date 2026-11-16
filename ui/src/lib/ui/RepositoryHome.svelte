@@ -379,6 +379,14 @@
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
   }
 
+  /** Puts the Filters that search `query` on the Workbench as the switch `input` now says, or takes them off
+   * it (#819). A change that doesn't save turns the switch back, and the Workbench says why. */
+  async function putOnWorkbench(input: HTMLInputElement, query: string) {
+    const on = input.checked;
+    const problem = await workbench.putOnWorkbench(query, on);
+    if (problem !== undefined) input.checked = !on;
+  }
+
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
    * was made in by the time it's done. */
   async function sayMarkProblem(marking: (opened: WorkbenchState) => Promise<string | undefined>) {
@@ -1009,6 +1017,9 @@
   {#if markProblem}
     <p role="alert">{`Tsugiki couldn't mark this item: ${markProblem}`}</p>
   {/if}
+  {#if workbench.switchProblem}
+    <p role="alert">{`Tsugiki couldn't save the Filter's switch: ${workbench.switchProblem}`}</p>
+  {/if}
   {#if panes.problem}
     <p role="alert">{panes.problem}</p>
   {/if}
@@ -1109,6 +1120,19 @@
     >
       <header class="view">
         <h2>{workbench.title}</h2>
+        {#if workbench.selectedFilter}
+          {@const filter = workbench.selectedFilter}
+          <label
+            class="on-workbench"
+            title="Its items go on the Workbench, and Tsugiki keeps them ready to open"
+          >
+            <input
+              type="checkbox"
+              checked={filter.on_workbench}
+              onchange={(event) => void putOnWorkbench(event.currentTarget, filter.query)}
+            />On the Workbench</label
+          >
+        {/if}
         <button
           class="link order"
           title="Change the order"
@@ -1233,6 +1257,13 @@
     flex: 1;
     margin: 4px 0;
     font-size: 13px;
+  }
+
+  .on-workbench {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
   }
 
   .order {

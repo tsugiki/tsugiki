@@ -12,18 +12,21 @@ use crate::facts::WorkFacts;
 use crate::facts::filters::FilterResults;
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::PrHead;
-use crate::filters::{Filter, FilterQuery};
+use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
 
-/// The Issues and PRs the searches of `filters` found. A search the user has edited away finds nothing.
+/// The Issues and PRs the searches of the `filters` on the Workbench found. A search the user has edited away
+/// finds nothing, and so does one whose Filters are all switched off: their items stay out of Reach (#819).
 pub(crate) fn matched(
     filters: &[Filter],
     results: &BTreeMap<FilterQuery, FilterResults>,
 ) -> BTreeSet<u32> {
-    let current = results
-        .iter()
-        .filter(|(query, _)| filters.iter().any(|filter| filter.query == **query));
+    let on_workbench = |query: &FilterQuery| {
+        (filters.iter())
+            .any(|filter| filter.on_workbench == OnWorkbench::On && filter.query == *query)
+    };
+    let current = results.iter().filter(|(query, _)| on_workbench(query));
     current
         .flat_map(|(_, results)| results.numbers.iter().copied())
         .collect()

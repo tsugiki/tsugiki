@@ -15,9 +15,9 @@ use tsugiki_core::facts::labels::Label;
 use tsugiki_core::facts::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
-use tsugiki_core::filters::Filter;
+use tsugiki_core::filters::{Filter, OnWorkbench};
 use tsugiki_core::login::Login;
-use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
+use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::ListOrder;
 use tsugiki_core::store::{self, OpenReader, Store, StoreReader};
@@ -192,19 +192,26 @@ fn quick_open(bencher: divan::Bencher<'_, '_>, typed: &str) {
     held.close();
 }
 
-/// The settings of `repository`, with the starter Filters of a Repository the user maintains.
+/// The settings of `repository`, with the Filters a maintainer got before #819, everything open, both on
+/// the Workbench: the most a read of it holds.
+#[expect(clippy::expect_used, reason = "these names and searches aren't blank")]
 fn settings(repository: &RepositoryName) -> RepositorySettings {
+    let filter = |name: &str, query: &str| Filter {
+        name: name.to_owned().try_into().expect("a name"),
+        query: query.to_owned().try_into().expect("a search"),
+        on_workbench: OnWorkbench::On,
+    };
     RepositorySettings {
         name: repository.clone(),
         conventions: Conventions::Cpython,
-        filters: Filter::starters(RepositoryAccess::Maintained),
+        filters: vec![
+            filter("Open Issues", "is:issue is:open"),
+            filter("Open PRs", "is:pr is:open"),
+        ],
     }
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "the starter Filters of a maintained Repository include Open PRs"
-)]
+#[expect(clippy::expect_used, reason = "the settings above include Open PRs")]
 fn open_prs(settings: &RepositorySettings) -> &Filter {
     settings
         .filters

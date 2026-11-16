@@ -2,14 +2,21 @@
 
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 
-- The **Workbench** lists every **Issue** that a **Filter** reaches, every **Pinned issue**, and every Issue
-  with an open PR the user holds a **Review** on. An Issue being closed on GitHub does not remove it.
+- The **Workbench** lists each **Issue** that a **Filter** switched on the Workbench reaches, each **Pinned
+  issue**, and each Issue with an open PR the user holds a **Review** on. An Issue being closed on GitHub
+  does not remove it.
 - **Filters** are written in raw GitHub search syntax, with `repo:` of the current Repository added
   implicitly. They run with GitHub's advanced search, which is the only mode that understands `OR` and
   parentheses.
-- Adding a Repository creates starter Filters, ordinary ones the user can edit or delete. A Maintained
-  repository gets "Open Issues" (`is:issue is:open`) and "Open PRs" (`is:pr is:open`); any other gets "Mine"
-  (`is:open author:@me`) and "Involved" (`is:open involves:@me -author:@me`).
+- Each Filter has an "On the Workbench" switch, `on_workbench` in `settings.toml`, off unless the file says
+  so ([#819](https://github.com/tsugiki/tsugiki/issues/819)). The Filter's view has it beside its name, and a
+  change there saves it at once. The items of a Filter switched off stay out of the Workbench and out of
+  **Reach**: Tsugiki fetches no head and reads ahead no Conversation for them. The sync still runs its
+  search, so its view lists what it found, its **Matched PRs** first. In an Issue view, a PR any Filter
+  found, switched on or off, stays out of the fold.
+- Adding a Repository, Maintained or not, creates two starter Filters, ordinary ones the user can edit or
+  delete: "Mine" (`is:open author:@me`), switched on, and "Involved" (`is:open involves:@me -author:@me`),
+  switched off. Repositories added before the switch keep their Filters, switched off.
 - Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues
   their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
 - **All issues** is an unsaved Filter over the Repository's open Issues and open PRs, newest update first,
@@ -18,9 +25,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   **Issues** and **PRs**, each with its count, show one kind or both (at least one stays on; also in the
   command palette). From it the user reads, comments on and pins Issues and opens PRs. It shows what changed
   since the last sync first and loads older items only as the user scrolls or searches.
-- The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters and the
-  Pinned issues, the count is how many Issues Need attention. For the Built-in views, it is how many PRs they
-  hold.
+- The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
+  on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
+  many items its search found, as its view lists them. For the Built-in views, it is how many PRs they hold.
 - **Built-in views**: Stale reviews, New activity, Review requests, Archived (the Archived items, each with
   Unarchive) and Muted (the Muted items with Unmute, then the Muted authors in this Repository and the items
   they hide, with Unmute author).

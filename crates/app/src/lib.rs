@@ -27,6 +27,7 @@ use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, P
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::CommitSha;
 use tsugiki_core::fetching::Fetching;
+use tsugiki_core::filters::{FilterQuery, OnWorkbench};
 use tsugiki_core::folders::Folders;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
@@ -37,7 +38,7 @@ use tsugiki_core::mirror::{
 use tsugiki_core::mirror_source::{MirrorSource, MirrorSources};
 use tsugiki_core::misses::Miss;
 use tsugiki_core::releases::NewVersion;
-use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
+use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::search::{Query, SearchId, SearchState, TextSearch};
 use tsugiki_core::settings::{
@@ -435,13 +436,12 @@ fn check_mirror_cost(repository: &str, requests: &Fetching) -> Result<MirrorCost
     Ok(requests.check(RepositoryName::parse(repository)?)?.mirror)
 }
 
-/// The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,
-/// and where its mirror gets its objects. The name stays text until the core parses it, so a name that isn't
-/// one gets the same refusal as everywhere else.
+/// The user's choice in Add repository: the Repository, by the name GitHub gave it, and where its mirror gets
+/// its objects. The name stays text until the core parses it, so a name that isn't one gets the same refusal
+/// as everywhere else.
 #[derive(Debug, Clone, Deserialize, Type)]
 pub(crate) struct NewRepository {
     name: String,
-    access: RepositoryAccess,
     source: MirrorSource,
 }
 
@@ -451,14 +451,37 @@ fn add_named_repository(
     owner: &SettingsOwner,
     work: &RepositoryWork,
 ) -> Result<Home, Error> {
-    let NewRepository {
-        name,
-        access,
-        source,
-    } = repository;
-    let view = owner.add_repository(RepositoryName::parse(&name)?, access, source)?;
+    let NewRepository { name, source } = repository;
+    let view = owner.add_repository(RepositoryName::parse(&name)?, source)?;
     work.start(&view.home, &view.mirror_sources);
     Ok(view.home)
+}
+
+/// The switch in a Filter's view: the Repository, the Filter's search, and whether its items go on the
+/// Workbench (#819). The name stays text until the core parses it, as in `NewRepository`.
+#[derive(Debug, Clone, Deserialize, Type)]
+pub(crate) struct FilterSwitch {
+    repository: String,
+    query: FilterQuery,
+    on: OnWorkbench,
+}
+
+/// Puts the Filters that `switch` names on the Workbench, or takes them off it, and hands the session the
+/// settings saved, so the next step that saves works out Reach with them.
+fn switch_filter(
+    switch: FilterSwitch,
+    owner: &SettingsOwner,
+    work: &RepositoryWork,
+) -> Result<(), Error> {
+    let FilterSwitch {
+        repository,
+        query,
+        on,
+    } = switch;
+    let name = RepositoryName::parse(&repository)?;
+    let view = owner.put_on_workbench(name.clone(), query, on)?;
+    work.fetching.sync(view.loaded.settings.repository(name));
+    Ok(())
 }
 
 /// Makes the Repository the user picked the open one, and hands it to the session and the mirrors.
@@ -1062,6 +1085,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::check_repository,
             slow_commands::mirror_cost,
             slow_commands::add_repository,
+            slow_commands::put_filter_on_workbench,
             slow_commands::open_repository,
             slow_commands::save_pane_layout,
             slow_commands::remember_command,

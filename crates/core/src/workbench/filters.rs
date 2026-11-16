@@ -7,7 +7,7 @@ use specta::Type;
 
 use super::{ListedItem, WorkbenchItem, count_of};
 use crate::facts::filters::FilterResults;
-use crate::filters::{Filter, FilterName, FilterQuery};
+use crate::filters::{Filter, FilterName, FilterQuery, OnWorkbench};
 use crate::repository_settings::RepositorySettings;
 use crate::work::matched;
 
@@ -16,7 +16,10 @@ use crate::work::matched;
 pub struct FilterLine {
     pub name: FilterName,
     pub query: FilterQuery,
-    /// The count of its items that Need attention.
+    /// Whether its items go on the Workbench (#819).
+    pub on_workbench: OnWorkbench,
+    /// On the Workbench, the count of its items that Need attention. Off it, the count of the items its
+    /// search found, as a view the user browses has nothing of the Workbench's to wait on.
     pub count: u32,
     /// The words for the failure that stopped its last search from being whole.
     pub problem: Option<String>,
@@ -44,9 +47,15 @@ impl<'a> FilterFacts<'a> {
         }
     }
 
-    /// The items any Filter found.
+    /// The items the Filters on the Workbench found.
     pub(super) fn matched(&self) -> BTreeSet<u32> {
         matched(self.filters, &self.results)
+    }
+
+    /// The items any Filter found, on the Workbench or off it.
+    pub(super) fn found(&self) -> BTreeSet<u32> {
+        let numbers = self.results.values().flat_map(|results| &results.numbers);
+        numbers.copied().collect()
     }
 
     pub(super) fn numbers_of(&self, query: &FilterQuery) -> &BTreeSet<u32> {
@@ -59,11 +68,15 @@ impl<'a> FilterFacts<'a> {
             let results = self.results_of(&filter.query);
             let reached = candidates
                 .iter()
-                .filter(|listed| listed.attention.is_some())
+                .filter(|listed| match filter.on_workbench {
+                    OnWorkbench::On => listed.attention.is_some(),
+                    OnWorkbench::Off => true,
+                })
                 .filter(|listed| listed.item.is_reached_by(&results.numbers));
             FilterLine {
                 name: filter.name.clone(),
                 query: filter.query.clone(),
+                on_workbench: filter.on_workbench,
                 count: count_of(reached),
                 problem: results
                     .problem

@@ -1,5 +1,5 @@
 use super::*;
-use crate::filters::Filter;
+use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::reply_ok;
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository_settings::RepositorySettings;
@@ -23,6 +23,7 @@ fn filtering(queries: &[&str]) -> RepositorySettings {
             .map(|text| Filter {
                 name: format!("Named {text}").try_into().unwrap(),
                 query: filter_query(text),
+                on_workbench: OnWorkbench::On,
             })
             .collect(),
         ..RepositorySettings::new(cpython())

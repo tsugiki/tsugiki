@@ -3,7 +3,7 @@ import { commands, events, type ListOrder } from "$lib/data/bindings";
 import { WorkbenchState, type ListedItem, type Seen, type WorkbenchRow } from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
-  commands: { workbench: vi.fn(), markSeen: vi.fn(), markUnseen: vi.fn() },
+  commands: { workbench: vi.fn(), markSeen: vi.fn(), markUnseen: vi.fn(), putFilterOnWorkbench: vi.fn() },
   events: { changed: { listen: vi.fn() } },
 }));
 
@@ -45,7 +45,7 @@ const row: WorkbenchRow = {
   seen: seen(0),
 };
 
-const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 const whole = { kind: "whole" } as const;
 const onlyMine = { kind: "filter", query: mine.query } as const;
 
@@ -163,7 +163,7 @@ describe("WorkbenchState", () => {
 
   it("names the view on show as the Sidebar does, and a Filter it no longer has by its search", async () => {
     catchListener();
-    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
       data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
@@ -292,7 +292,7 @@ describe("WorkbenchState", () => {
 
   it("starts each Issue folded, and keeps what each view unfolds for itself", async () => {
     catchListener();
-    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
       data: {
@@ -352,7 +352,7 @@ describe("WorkbenchState", () => {
 
   it("keeps the folds of the items on show until the newly selected view's answer arrives", async () => {
     catchListener();
-    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
     const listed = {
       items: [issueWith(10, 11)],
       count: 0,
@@ -382,7 +382,7 @@ describe("WorkbenchState", () => {
 
   it("unfolds the Issue over the PR under the cursor in a view that has it folded", async () => {
     catchListener();
-    const mine = { name: "Mine", query: "is:open author:@me", count: 0, problem: null };
+    const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
     vi.mocked(commands.workbench).mockResolvedValue({
       status: "ok",
       data: {
@@ -524,6 +524,46 @@ describe("WorkbenchState", () => {
     await state.select(whole);
     expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", whole);
     expect(numbers(state)).toEqual([2, 1]);
+  });
+
+  it("knows the line of the selected Filter, and of no other view", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    expect(state.selectedFilter).toBeUndefined();
+
+    await state.select(onlyMine);
+    expect(state.selectedFilter).toEqual(mine);
+    await state.select({ kind: "filter", query: "label:gone" });
+    expect(state.selectedFilter).toBeUndefined();
+  });
+
+  it("puts a Filter on the Workbench and asks again, or says why it couldn't", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.select(onlyMine);
+    vi.mocked(commands.workbench).mockClear();
+
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce({ status: "ok", data: null });
+    expect(await state.putOnWorkbench(mine.query, false)).toBeUndefined();
+    expect(commands.putFilterOnWorkbench).toHaveBeenLastCalledWith({
+      repository: "python/cpython",
+      query: mine.query,
+      on: false,
+    });
+    expect(commands.workbench).toHaveBeenCalledTimes(1);
+
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce(refused);
+    expect(await state.putOnWorkbench(mine.query, true)).toBe("no database");
+    expect(state.switchProblem).toBe("no database");
+    expect(commands.workbench).toHaveBeenCalledTimes(2);
+
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce({ status: "ok", data: null });
+    await state.putOnWorkbench(mine.query, true);
+    expect(state.switchProblem).toBeUndefined();
   });
 
   it("keeps a selected Filter when the facts change", async () => {

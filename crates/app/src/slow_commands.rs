@@ -87,6 +87,19 @@ pub(crate) fn add_repository(
     crate::add_named_repository(repository, &owner, &work)
 }
 
+/// Puts the Filters of a Repository that search a query on the Workbench, or takes them off it, in
+/// `settings.toml` (#819), and hands the session the settings, so Reach follows them. The window then asks
+/// for the Workbench again. This waits on a small file and never on GitHub or git.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn put_filter_on_workbench(
+    change: crate::FilterSwitch,
+    owner: State<'_, SettingsOwner>,
+    work: State<'_, crate::RepositoryWork>,
+) -> Result<(), Error> {
+    crate::switch_filter(change, &owner, &work)
+}
+
 /// Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the
 /// window shows now. This waits on a small file and never on GitHub or git.
 #[tauri::command(async)]

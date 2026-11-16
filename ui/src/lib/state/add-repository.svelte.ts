@@ -61,9 +61,7 @@ export class AddRepositoryState {
     const source = this.mirror.source;
     if (source === undefined) return undefined;
     this.step = { step: "adding", check };
-    const answer = await ask(
-      commands.addRepository({ name: check.repository.name, access: check.access, source }),
-    );
+    const answer = await ask(commands.addRepository({ name: check.repository.name, source }));
     if (answer.status === "ok") {
       return answer.data;
     }

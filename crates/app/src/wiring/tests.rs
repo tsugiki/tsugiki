@@ -18,7 +18,7 @@ use tsugiki_core::github::replay::Replayer;
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
 use tsugiki_core::mirror_source::MirrorSource;
-use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
+use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::token::{GhOutput, Token};
@@ -229,7 +229,7 @@ fn hear(app: &App<MockRuntime>, event: &str) -> Receiver<Value> {
 const CPYTHON: &str = "python/cpython";
 
 fn add_cpython() -> Value {
-    json!({ "repository": { "name": CPYTHON, "access": "other", "source": { "kind": "download" } } })
+    json!({ "repository": { "name": CPYTHON, "source": { "kind": "download" } } })
 }
 
 fn the_whole_workbench() -> Value {
@@ -294,8 +294,7 @@ fn the_account_page_hears_the_token_comes_from_gh() {
 #[test]
 fn a_name_that_isnt_one_is_refused_before_the_missing_folders_matter() {
     let wired = Wired::start(Err(no_folders()), no_network());
-    let nonsense =
-        json!({ "name": "nonsense", "access": "other", "source": { "kind": "download" } });
+    let nonsense = json!({ "name": "nonsense", "source": { "kind": "download" } });
 
     let adding = wired.ask("add_repository", json!({ "repository": nonsense }));
     let checking = wired.ask("check_repository", json!({ "input": "nonsense" }));
@@ -729,8 +728,7 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     let (folders, _root) = temp_folders("wired-switch");
     let wired = Wired::start(Ok(folders.clone()), no_network());
     let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let peps =
-        json!({ "name": "python/peps", "access": "other", "source": { "kind": "download" } });
+    let peps = json!({ "name": "python/peps", "source": { "kind": "download" } });
     let _ = wired
         .ask("add_repository", json!({ "repository": peps }))
         .unwrap();
@@ -1223,19 +1221,28 @@ fn a_filter_edited_in_the_file_shows_in_the_sidebar_and_the_workbench_after_a_re
 }
 
 #[test]
-fn a_maintained_repository_starts_with_its_own_filters() {
-    let (folders, _root) = temp_folders("wired-maintained");
+fn a_filter_goes_on_the_workbench_from_its_view_and_the_sidebar_says_so() {
+    const INVOLVED: &str = "is:open involves:@me -author:@me";
+    let (folders, _root) = temp_folders("wired-on-workbench");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let adding = json!({
-        "repository": { "name": CPYTHON, "access": "maintained", "source": { "kind": "download" } },
-    });
+    let added = wired.ask("add_repository", add_cpython()).unwrap();
+    let switch =
+        |query: &str| json!({ "change": { "repository": CPYTHON, "query": query, "on": true } });
 
-    let added = wired.ask("add_repository", adding).unwrap();
+    let switched = wired.ask("put_filter_on_workbench", switch(INVOLVED));
+    let refused = wired
+        .ask("put_filter_on_workbench", switch("label:none"))
+        .unwrap_err();
+    let workbench = wired.ask("workbench", the_whole_workbench()).unwrap();
     drop(wired.stop());
     let settings = std::fs::read_to_string(folders.settings_file()).unwrap();
 
-    assert_eq!(added["repository"]["filters"][0]["name"], "Open Issues");
-    assert!(settings.contains(r#"name = "Open PRs""#), "{settings}");
+    assert_eq!(added["repository"]["filters"][1]["on_workbench"], false);
+    assert_eq!(switched, Ok(Value::Null));
+    assert_eq!(refused["kind"], "not_found");
+    assert_eq!(workbench["filters"][1]["query"], INVOLVED);
+    assert_eq!(workbench["filters"][1]["on_workbench"], true);
+    assert!(!settings.contains("on_workbench = false"), "{settings}");
 }
 
 /// Answers a refresh in which Issue `number` got a new title, and says what it was asked.
@@ -1499,7 +1506,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
     let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
     let _ = files
         .add_repository(
-            &RepositorySettings::added(cpython.clone(), RepositoryAccess::Other),
+            &RepositorySettings::new(cpython.clone()),
             &MirrorSource::Download,
             time::OffsetDateTime::now_utc(),
         )
@@ -1563,7 +1570,7 @@ fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
     let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
     let _ = files
         .add_repository(
-            &RepositorySettings::added(cpython.clone(), RepositoryAccess::Other),
+            &RepositorySettings::new(cpython.clone()),
             &MirrorSource::Download,
             time::OffsetDateTime::now_utc(),
         )
@@ -1613,7 +1620,7 @@ fn added_before_launch(folders: &Folders, names: &[&str]) {
         let name = RepositoryName::parse(name).unwrap();
         let _ = files
             .add_repository(
-                &RepositorySettings::added(name, RepositoryAccess::Other),
+                &RepositorySettings::new(name),
                 &MirrorSource::Download,
                 time::OffsetDateTime::now_utc(),
             )

@@ -107,7 +107,6 @@ it("adds by the name GitHub gave and returns what the window opens on", async ()
   expect(await adding).toEqual(home);
   expect(commands.addRepository).toHaveBeenCalledWith({
     name: "Some-Maintainer/gcmon",
-    access: "maintained",
     source: { kind: "download" },
   });
 });
@@ -132,7 +131,6 @@ it("adds with the clone the user picked, and forgets it when the text changes", 
 
   expect(commands.addRepository).toHaveBeenCalledWith({
     name: "Some-Maintainer/gcmon",
-    access: "maintained",
     source: { kind: "borrow", folder: lender },
   });
   expect(state.mirror.source).toEqual({ kind: "download" });

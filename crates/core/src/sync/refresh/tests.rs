@@ -6,7 +6,7 @@ use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
-use crate::filters::Filter;
+use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
@@ -41,6 +41,7 @@ fn filtering(queries: &[&str]) -> RepositorySettings {
             .map(|text| Filter {
                 name: format!("Named {text}").try_into().unwrap(),
                 query: query(text),
+                on_workbench: OnWorkbench::On,
             })
             .collect(),
         ..RepositorySettings::new(cpython())

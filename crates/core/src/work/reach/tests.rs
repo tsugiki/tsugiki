@@ -191,6 +191,33 @@ fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
 }
 
 #[test]
+fn a_filter_switched_on_reaches_its_find_and_one_switched_off_reaches_nothing() {
+    let repository = cpython();
+    let [on, off] = [&repository.filters[0], &repository.filters[1]];
+    assert_eq!(
+        [on.on_workbench, off.on_workbench],
+        [OnWorkbench::On, OnWorkbench::Off]
+    );
+    let found = |number: u32| FilterResults {
+        numbers: BTreeSet::from([number]),
+        problem: None,
+    };
+    let facts = WorkFacts {
+        filters: BTreeMap::from([(on.query.clone(), found(2)), (off.query.clone(), found(3))]),
+        ..facts(
+            vec![
+                colleagues(11, 2, PrState::Open),
+                colleagues(12, 3, PrState::Open),
+            ],
+            vec![issue(2), issue(3)],
+        )
+    };
+
+    // Issue 3 and its PR 12 stay out: Tsugiki fetches no head and reads ahead no Conversation for them.
+    assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
+}
+
+#[test]
 fn nothing_is_reached_before_anyone_signs_in() {
     let facts = WorkFacts {
         viewer: None,

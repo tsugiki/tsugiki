@@ -101,6 +101,8 @@ export class WorkbenchState {
   filters = $state<FilterLine[]>([]);
   selected = $state<WorkbenchView>({ kind: "whole" });
   error = $state<string>();
+  /** The reason the last change to a Filter's "On the Workbench" didn't save, if it didn't. */
+  switchProblem = $state<string>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
   /** The Issues unfolded in each view, by the view's key. */
@@ -232,6 +234,25 @@ export class WorkbenchState {
   /** Mark Unseen on item `number`. Says what went wrong, if anything did. */
   async markUnseen(number: number) {
     return said(await commands.markUnseen(this.#repository, number));
+  }
+
+  /** The Sidebar's line of the Filter whose view is selected, while the settings hold it. */
+  get selectedFilter(): FilterLine | undefined {
+    const selected = this.selected;
+    return selected.kind === "filter"
+      ? this.filters.find((filter) => filter.query === selected.query)
+      : undefined;
+  }
+
+  /** Puts the Filters that search `query` on the Workbench, or takes them off it (#819), then asks again, as
+   * the Sidebar counts such a Filter another way. Says what went wrong, if anything did, and keeps it in
+   * `switchProblem` until the next change. */
+  async putOnWorkbench(query: string, on: boolean) {
+    const answer = await commands.putFilterOnWorkbench({ repository: this.#repository, query, on });
+    const problem = said(answer);
+    this.switchProblem = problem;
+    await this.#ask();
+    return problem;
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */

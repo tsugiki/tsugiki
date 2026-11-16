@@ -1730,11 +1730,12 @@ fn filters_in_file<'a>(
     name: &RepositoryName,
     written: Option<Item>,
 ) -> Option<&'a mut Item> {
-    let repository = tables_of(repositories).into_iter().find(|table| {
+    let names_it = |table: &&mut dyn TableLike| {
         (table.get(NAME).and_then(Item::as_str))
             .and_then(|text| RepositoryName::parse(text).ok())
             .is_some_and(|text| text.is_same(name))
-    })?;
+    };
+    let repository = tables_of(repositories).into_iter().find(names_it)?;
     if let (false, Some(written)) = (repository.contains_key(FILTERS), written) {
         let blocks = written
             .into_array_of_tables()

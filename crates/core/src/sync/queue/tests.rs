@@ -1169,6 +1169,21 @@ fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_t
 }
 
 #[test]
+fn a_sync_whose_settings_went_missing_says_it_is_tsugikis_mistake_and_asks_github_nothing() {
+    let harness = Harness::new("settings-lost", vec![]);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    syncs.settings.clear();
+
+    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
+
+    assert_eq!(failure.problem.kind, ErrorKind::Internal);
+    assert_eq!(failure.problem.message, NO_SETTINGS);
+    assert_eq!(harness.operations(), Vec::<String>::new());
+    harness.finish();
+}
+
+#[test]
 fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it_tried() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));

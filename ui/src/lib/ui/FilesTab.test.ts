@@ -1301,8 +1301,8 @@ it("switches between all the files and one at a time from the header's switch, k
   const diff = screen.getByRole("region", { name: "Diff" });
   const [all, one] = segments();
   expect(pressed()).toEqual(["true", "false"]);
-  // Only the segment that switches names the key that does the same.
-  expect([all.title, one.title]).toEqual(["All files", "One file (Ctrl+K O)"]);
+  // Only the segment that switches has a tooltip, and it names the key that does the same.
+  expect([all.title, one.title]).toEqual(["", "One file (Ctrl+K O)"]);
   expect(screen.queryByRole("navigation", { name: "File on show" })).toBeNull();
   // A click on the segment on show leaves the tab as it is.
   await fireEvent.click(all);
@@ -1320,7 +1320,7 @@ it("switches between all the files and one at a time from the header's switch, k
     true,
     ["false", "true"],
   ]);
-  expect([all.title, one.title]).toEqual(["All files (Ctrl+K O)", "One file"]);
+  expect([all.title, one.title]).toEqual(["All files (Ctrl+K O)", ""]);
   await fireEvent.click(one);
   expect([files.mode, bar().textContent.includes("2 of 2")]).toEqual(["one", true]);
   await fireEvent.scroll(diff);
@@ -1333,14 +1333,17 @@ it("switches between all the files and one at a time from the header's switch, k
 
 it("names a remapped key in the tooltip of the segment that switches", async () => {
   await shown(ready(rows.length));
-  remapKeys({ toggle_files_mode: "ctrl+alt+o" });
-  await tick();
-  const remapped = segments()[1].title;
-  remapKeys({ toggle_files_mode: "" });
-  await tick();
+  try {
+    remapKeys({ toggle_files_mode: "ctrl+alt+o" });
+    await tick();
+    const remapped = segments()[1].title;
+    remapKeys({ toggle_files_mode: "" });
+    await tick();
 
-  expect([remapped, segments()[1].title]).toEqual(["One file (Ctrl+Alt+O)", "One file"]);
-  remapKeys({});
+    expect([remapped, segments()[1].title]).toEqual(["One file (Ctrl+Alt+O)", "One file"]);
+  } finally {
+    remapKeys({});
+  }
 });
 
 it("scrolls to the header of the next file with all the files, and to the very top for the NEWS entries", async () => {

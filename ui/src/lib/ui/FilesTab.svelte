@@ -76,9 +76,9 @@
   <button
     type="button"
     aria-pressed={on}
-    title={on ? name : withKey(name, "toggle_files_mode", os)}
+    title={on ? undefined : withKey(name, "toggle_files_mode", os)}
     onclick={() => {
-      if (!on) files.toggleMode();
+      files.showMode(mode);
     }}>{name}</button
   >
 {/snippet}
@@ -223,9 +223,11 @@
     border-radius: 4px;
   }
 
+  /* The frame rounds the outer corners, so the segments' own corners stay square. */
   .switch button {
     padding: 1px 8px;
     border: 0;
+    border-radius: 0;
     color: var(--fg-muted);
     background: none;
     white-space: nowrap;
@@ -258,12 +260,18 @@
     white-space: nowrap;
   }
 
-  /* Windows' contrast themes drop the fill, so the segment on show takes the system's highlight. */
+  /* Windows' contrast themes drop the fill, so the segment on show takes the system's highlight, under the
+     pointer too, and the focus ring takes the highlight's text color to show on it. */
   @media (forced-colors: active) {
-    .switch [aria-pressed="true"] {
+    .switch [aria-pressed="true"],
+    .switch [aria-pressed="true"]:hover {
       forced-color-adjust: none;
       color: HighlightText;
       background: Highlight;
+    }
+
+    .switch [aria-pressed="true"]:focus-visible {
+      outline-color: HighlightText;
     }
   }
 

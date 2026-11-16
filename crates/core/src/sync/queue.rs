@@ -92,12 +92,6 @@ struct OpenedTree {
     failures: u8,
 }
 
-/// The read ahead of the PRs a change to a Repository's settings put in Reach, which no change on GitHub
-/// would have the next refresh read.
-struct ReadAhead {
-    sync: UserWorkSync,
-}
-
 /// The fetch of the Issues of a Repository saved before Tsugiki kept states (#231). It runs once a launch,
 /// after the Repository's first sync finishes, in the steps no sync is ready for.
 struct StateFill {
@@ -111,8 +105,6 @@ struct StateFill {
 enum Turn {
     /// The first of the opened Issues' trees.
     Tree,
-    /// The first of the reads ahead.
-    Read,
     /// The first of the fetches of Issues with no state.
     Fill,
     /// The queued sync of this Repository.
@@ -153,9 +145,6 @@ pub struct Syncs {
     /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
     /// `queue` for its few requests, and leaves no trace of a sync behind it.
     trees: VecDeque<OpenedTree>,
-    /// The reads ahead a change to the settings asked for. Each goes after the trees and ahead of `queue`,
-    /// as the user just asked for it.
-    reads: VecDeque<ReadAhead>,
     /// The settings of each Repository opened since launch, as the session last heard them: the one copy
     /// every sync reads them from.
     settings: Vec<RepositorySettings>,
@@ -177,8 +166,7 @@ pub struct Syncs {
 
 impl Syncs {
     /// Opens `repository` and gives its sync the next step, carrying on from where it got if one is already
-    /// queued.
-    /// Its settings replace those the syncs held of it.
+    /// queued. Its settings replace those the syncs held of it.
     pub fn add(&mut self, repository: RepositorySettings) {
         let name = repository.name.clone();
         if !self.is_open(&name) {
@@ -200,25 +188,17 @@ impl Syncs {
     }
 
     /// Takes `repository`'s settings in place of those its syncs read, if it was opened since launch, and
-    /// answers with those. Which Repository is open stays, and nothing new is queued.
+    /// answers with those. Which Repository is open stays, and nothing new is queued. A sync of it that is
+    /// reading ahead works out again which PRs it owes a read, as the new settings can reach others.
     pub fn replace_settings(
         &mut self,
         repository: RepositorySettings,
     ) -> Option<RepositorySettings> {
+        if let Some(queued) = self.queued_mut(&repository.name) {
+            queued.sync.reach_changed();
+        }
         let held = (self.settings.iter_mut()).find(|held| held.name.is_same(&repository.name))?;
         Some(mem::replace(held, repository))
-    }
-
-    /// Reads ahead the Conversations of `repository`'s PRs `numbers`, after the trees and before the syncs,
-    /// if it was opened since launch.
-    pub fn read_ahead(&mut self, repository: &RepositoryName, numbers: BTreeSet<u32>) {
-        if numbers.is_empty() {
-            return;
-        }
-        if let Some(settings) = self.settings(repository) {
-            let sync = UserWorkSync::reading_ahead(settings, numbers);
-            self.reads.push_back(ReadAhead { sync });
-        }
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A
@@ -256,14 +236,11 @@ impl Syncs {
     pub fn activity(&self) -> Option<SyncActivity> {
         let open = match self.trees.front() {
             Some(tree) => Some((&tree.sync, SyncPart::Trees)),
-            None => (self.reads.front())
-                .filter(|read| self.is_open(&read.sync.repository))
-                .map(|read| (&read.sync, SyncPart::Refresh))
-                .or_else(|| {
-                    (self.queue.iter())
-                        .find(|queued| self.is_open(&queued.sync.repository))
-                        .map(|queued| (&queued.sync, queued.sync.part()))
-                }),
+            None => self
+                .queue
+                .iter()
+                .find(|queued| self.is_open(&queued.sync.repository))
+                .map(|queued| (&queued.sync, queued.sync.part())),
         };
         if open.is_none() && self.queue.is_empty() {
             return None;
@@ -373,7 +350,7 @@ impl Syncs {
 
     /// The time the next step can run, if there is one.
     pub fn ready_at(&self) -> Option<Instant> {
-        let free = if self.trees.is_empty() && self.reads.is_empty() && self.fills.is_empty() {
+        let free = if self.trees.is_empty() && self.fills.is_empty() {
             self.queue
                 .iter()
                 .map(|queued| queued.held_until.unwrap_or_else(Instant::now))
@@ -409,9 +386,8 @@ impl Syncs {
                     queued.held_until = Some(hold.until());
                 }
             }
-            // A tree's, a read's or a fill's own trouble ends it in the step, so they fail only for all of
-            // GitHub.
-            Turn::Sync(_) | Turn::Tree | Turn::Read | Turn::Fill => self.not_before = Some(hold),
+            // A tree's or a fill's own trouble ends it in the step, so they fail only for all of GitHub.
+            Turn::Sync(_) | Turn::Tree | Turn::Fill => self.not_before = Some(hold),
         }
     }
 
@@ -430,8 +406,8 @@ impl Syncs {
 
     fn count_failure(&mut self, turn: &Turn, problem: &Error) {
         match turn {
-            // A fill or a read costs a request a try, and waits for the next refresh like the rest.
-            Turn::Fill | Turn::Read => {}
+            // A fill costs a request a try, and waits for the next refresh like the rest.
+            Turn::Fill => {}
             Turn::Tree => {
                 let gave_up = self.trees.front_mut().is_some_and(|tree| {
                     tree.failures += 1;
@@ -477,12 +453,9 @@ impl Syncs {
         github: &GitHub,
         store: &Store,
     ) -> Result<Option<Progress>, StepFailure> {
-        // A tree goes first, then a read ahead, and a fill only when no sync is ready.
+        // A tree goes first, and a fill only when no sync is ready.
         if let Some(tree) = self.trees.pop_front() {
             return self.step_tree(tree, github, store);
-        }
-        if let Some(read) = self.reads.pop_front() {
-            return self.step_read(read, github, store);
         }
         let now = Instant::now();
         if !self.queue.iter().any(|queued| queued.is_ready(now))
@@ -531,41 +504,6 @@ impl Syncs {
             return Ok(None);
         };
         self.trees.push_front(tree);
-        Ok(self.after_step(repository, stepped, github))
-    }
-
-    /// Runs a step of `read`, which goes back to the front of the reads until it finishes.
-    fn step_read(
-        &mut self,
-        mut read: ReadAhead,
-        github: &GitHub,
-        store: &Store,
-    ) -> Result<Option<Progress>, StepFailure> {
-        self.not_before = None;
-        let stepped = (self.settings_for(&read.sync.repository))
-            .and_then(|settings| read.sync.step(github, store, settings));
-        let step = match stepped {
-            Ok(step) => step,
-            // A PR's own trouble leaves the rest to read, so this is the store's, and the PRs left wait for
-            // the PR view to read them.
-            Err(problem) if !problem.kind.speaks_for_all_of_github() => {
-                let (repository, why) = (&read.sync.repository, &problem.message);
-                log::warn!("Tsugiki stopped reading ahead in {repository}: {why}");
-                return Ok(None);
-            }
-            Err(problem) => {
-                self.reads.push_front(read);
-                return Err(StepFailure {
-                    problem,
-                    turn: Turn::Read,
-                });
-            }
-        };
-        let repository = read.sync.repository.clone();
-        let Some(stepped) = unfinished(step) else {
-            return Ok(None);
-        };
-        self.reads.push_front(read);
         Ok(self.after_step(repository, stepped, github))
     }
 

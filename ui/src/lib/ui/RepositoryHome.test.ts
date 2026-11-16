@@ -490,7 +490,7 @@ it("switches a Filter on and off the Workbench from its view, and only there", a
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-it("holds a Filter's switch still while its change saves", async () => {
+it("keeps a Filter's switch in focus while its change saves, and saves the next change after it", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
   core.workbench.mockResolvedValue({
     status: "ok",
@@ -498,20 +498,33 @@ it("holds a Filter's switch still while its change saves", async () => {
   });
   const save = Promise.withResolvers<{ status: "ok"; data: null }>();
   core.putFilterOnWorkbench.mockReturnValueOnce(save.promise);
+  core.putFilterOnWorkbench.mockResolvedValue({ status: "ok", data: null });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
   const onWorkbench = await screen.findByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
+  onWorkbench.focus();
   await fireEvent.click(onWorkbench);
 
   await waitFor(() => {
-    expect(onWorkbench.disabled).toBe(true);
+    expect(onWorkbench.getAttribute("aria-busy")).toBe("true");
   });
-  save.resolve({ status: "ok", data: null });
-  await waitFor(() => {
-    expect(onWorkbench.disabled).toBe(false);
-  });
+  expect(onWorkbench.disabled).toBe(false);
+  expect(document.activeElement).toBe(onWorkbench);
+  await fireEvent.click(onWorkbench);
+  expect(onWorkbench.checked).toBe(true);
   expect(core.putFilterOnWorkbench).toHaveBeenCalledTimes(1);
+  save.resolve({ status: "ok", data: null });
+
+  await waitFor(() => {
+    expect(onWorkbench.getAttribute("aria-busy")).toBe("false");
+  });
+  expect(core.putFilterOnWorkbench).toHaveBeenLastCalledWith({
+    repository: "python/cpython",
+    query: mine.query,
+    on: true,
+  });
+  expect(core.putFilterOnWorkbench).toHaveBeenCalledTimes(2);
 });
 
 it("turns a Filter's switch back and says why when the core can't save it", async () => {

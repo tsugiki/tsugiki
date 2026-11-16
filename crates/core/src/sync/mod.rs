@@ -82,9 +82,18 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish reads the Conversations of the changed PRs in Reach,
-    /// lowest number first (#157).
-    ReadingAhead(BTreeSet<u32>),
+    /// A refresh that would finish reads the Conversations of the PRs in Reach it owes a read, lowest number
+    /// first (#157).
+    ReadingAhead(Ahead),
+}
+
+/// The PRs a refresh reads ahead.
+struct Ahead {
+    /// Those still to read. Once none are left, the refresh asks the store again, which a switch of a
+    /// Filter can have owed more since, and a change to the settings empties it to have it ask at once.
+    left: BTreeSet<u32>,
+    /// Those this refresh has asked GitHub for, so it asks for each once.
+    tried: BTreeSet<u32>,
 }
 
 /// The phases a first sync goes through, and so the ones it can stop in and come back to (ADR 0015). A
@@ -150,8 +159,6 @@ enum Kind {
     First(FirstSync),
     /// The read of the tree of an Issue the user opened, and nothing else.
     Tree,
-    /// The read ahead of the PRs a change to the settings put in Reach, and nothing else.
-    ReadAhead,
 }
 
 /// A first sync's own state, which a refresh doesn't have.
@@ -307,19 +314,19 @@ impl UserWorkSync {
         sync
     }
 
-    /// A read of the Conversations of PRs `numbers`, lowest number first, and nothing else.
-    fn reading_ahead(repository: &RepositorySettings, numbers: BTreeSet<u32>) -> Self {
-        let mut sync = Self::new(repository);
-        sync.phase = Phase::ReadingAhead(numbers);
-        sync.kind = Kind::ReadAhead;
-        sync
+    /// The Repository's settings changed, so a read ahead under way works out again which PRs it owes a
+    /// read: a Filter switched on can owe more, and one switched off takes PRs out of Reach.
+    fn reach_changed(&mut self) {
+        if let Phase::ReadingAhead(ahead) = &mut self.phase {
+            ahead.left.clear();
+        }
     }
 
     /// A first sync's own state, if this is one.
     fn first_sync(&self) -> Option<&FirstSync> {
         match &self.kind {
             Kind::First(first_sync) => Some(first_sync),
-            Kind::Refresh | Kind::Tree | Kind::ReadAhead => None,
+            Kind::Refresh | Kind::Tree => None,
         }
     }
 
@@ -457,7 +464,7 @@ impl UserWorkSync {
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::ReadingAhead(numbers) => refresh::read_ahead(&link, numbers)?,
+            Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
                 cursor,
@@ -485,9 +492,10 @@ impl UserWorkSync {
         let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
         if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
             // The store keeps the PRs until the refresh finishes, so a failure here leaves them to the retry.
-            let numbers = refresh::to_read_ahead(&link, settings)?;
-            if !numbers.is_empty() {
-                self.phase = Phase::ReadingAhead(numbers);
+            let left = refresh::to_read_ahead(&link, settings)?;
+            if !left.is_empty() {
+                let tried = BTreeSet::new();
+                self.phase = Phase::ReadingAhead(Ahead { left, tried });
                 return Ok(Step::Moved);
             }
         }

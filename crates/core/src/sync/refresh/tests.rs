@@ -1196,6 +1196,35 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
 }
 
 #[test]
+fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync("switch-owed", vec![quiet, approved()]);
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    // As a Filter switched on would leave PR 2, and a Filter switched on and then off again PR 3.
+    harness
+        .store
+        .owe_read_ahead_at(&cpython(), vec![(2, None), (3, None)])
+        .unwrap();
+    let mut syncs = refreshing(filtering(&["a"]));
+
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    assert_eq!(reviews_held(&harness, 3), None);
+    assert_eq!(
+        harness.store.read_ahead_owed(&cpython()).unwrap(),
+        BTreeSet::new()
+    );
+    harness.finish();
+}
+
+#[test]
 fn a_backport_a_refresh_brought_gets_its_origin_pr_when_a_tree_lists_it() {
     let backport = pr_node(
         10,

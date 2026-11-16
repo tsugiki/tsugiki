@@ -123,6 +123,40 @@ fn no_conversation() -> PullRequestContent {
 }
 
 #[test]
+fn a_pr_is_owed_a_read_at_its_head_unless_its_conversation_was_read_there() {
+    let (path, _root) = temp_database("owed-at-head");
+    let store = Store::open(&path).unwrap();
+    let head = |text: &str| CommitSha::parse(text);
+    let read_at = |text: &str| PullRequestContent {
+        head: head(text),
+        ..no_conversation()
+    };
+    store
+        .save_pull_request_content(&cpython(), 2, read_at("0123abc"))
+        .unwrap();
+    store
+        .save_pull_request_content(&cpython(), 3, read_at("0123abc"))
+        .unwrap();
+    store
+        .save_pull_request_content(&cpython(), 4, no_conversation())
+        .unwrap();
+
+    let heads = vec![
+        (1, head("4567def")),
+        (2, head("0123abc")),
+        (3, head("89abcde")),
+        (4, head("0123abc")),
+        (5, None),
+    ];
+    store.owe_read_ahead_at(&cpython(), heads.clone()).unwrap();
+    store.owe_read_ahead_at(&cpython(), heads).unwrap();
+    let owed = store.read_ahead_owed(&cpython()).unwrap();
+    store.close();
+
+    assert_eq!(owed, BTreeSet::from([1, 3, 4, 5]));
+}
+
+#[test]
 fn a_stopped_store_says_so() {
     let store = Store::stopped();
 

@@ -10,13 +10,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   parentheses.
 - Each Filter has an "On the Workbench" switch, `on_workbench` in `settings.toml`, off unless the file says
   so ([#819](https://github.com/tsugiki/tsugiki/issues/819)). The Filter's view has it beside its name, and a
-  change there saves it at once. The switch waits while a change saves. The items of a Filter switched off
+  change there saves it at once. A change made while another saves waits for it, then saves the switch as
+  the user last set it, and the switch stays in focus throughout. The items of a Filter switched off
   stay out of the Workbench and out of **Reach**: Tsugiki fetches no head and reads ahead no Conversation for
   them. The sync still runs its search, so its view lists what it found, its **Matched PRs** first. In an
   Issue view, a PR any Filter found, switched on or off, stays out of the fold.
-- Switching a Filter on puts its items in Reach at once, without a refresh: the Mirror fetches the heads of
-  the PRs it newly reaches, and Tsugiki reads their Conversations ahead, after any tree the user opened and
-  before the syncs. Switching one off stops the Mirror wanting the heads of the PRs it alone reached.
+- Switching a Filter on puts its items in Reach at once: the Mirror fetches the heads of the PRs it newly
+  reaches, and the next refresh, within 3 minutes, reads ahead the Conversation of each of those PRs that
+  Tsugiki hasn't read at the PR's head, while the PR is still in Reach. Switching one off stops the Mirror
+  wanting the heads of the PRs it alone reached, and the refresh reads none of them ahead.
 - A Filter's view goes by its search, so a Repository holds one Filter for each search: of two with the
   same search, Tsugiki reads the first.
 - Adding a Repository, Maintained or not, creates two starter Filters, ordinary ones the user can edit or

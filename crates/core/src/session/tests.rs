@@ -3,6 +3,7 @@ use crate::facts::CommitSha;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
@@ -1076,15 +1077,36 @@ fn bugs_query() -> FilterQuery {
 }
 
 #[test]
-fn a_filter_switched_on_hands_the_mirror_its_heads_and_reads_its_prs_ahead_without_a_refresh() {
+fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread_prs() {
     let store = store_remembering("octocat");
+    let issue = IssueFacts {
+        number: 5,
+        title: "A bug".to_owned(),
+        author: None,
+        assignees: vec![],
+        labels: vec![],
+        updated_at: OffsetDateTime::UNIX_EPOCH,
+        state: Some(IssueState::Open),
+    };
+    store.save_issues(&gcmon(), vec![issue]).unwrap();
     let stored = vec![
         stored_pr(8, "some-author", "4567def"),
         stored_pr(9, "some-author", "89abcde"),
+        stored_pr(10, "some-author", "0123abc"),
+        stored_pr(11, "some-author", "7654fed"),
     ];
     store.save_pull_requests(&gcmon(), stored).unwrap();
+    // PR 9's Conversation was read at its head, and PR 10's before its head moved.
+    let read_at = |number: u32, head: &str| {
+        let content = reviewed_by("some-reviewer", &CommitSha::parse(head).unwrap());
+        store
+            .save_pull_request_content(&gcmon(), number, content)
+            .unwrap();
+    };
+    read_at(9, "89abcde");
+    read_at(10, "fedcba9");
     let found = FilterResults {
-        numbers: [8].into(),
+        numbers: [5, 8, 9, 10].into(),
         problem: None,
     };
     store
@@ -1106,9 +1128,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_reads_its_prs_ahead_witho
     );
     let on = heard.asked();
     let held = syncs.settings(&gcmon()).cloned();
-    let (script, asked) = Scripted::new(vec![]);
-    let github = GitHub::new(Box::new(script), crate::github::testing::token());
-    let _offline = syncs.step(&github, &store);
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
     let switched_off = settings_changed(
         &fetching,
         &store,
@@ -1122,12 +1142,12 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_reads_its_prs_ahead_witho
     assert_eq!(switched_off, Some(()));
     assert_eq!(held, Some(bugs_switched(OnWorkbench::On)));
     assert!(
-        on.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
+        on.iter().any(|line| line.contains("#8 at 4567def")),
         "{on:?}"
     );
-    let (operation, variables) = asked.try_recv().unwrap();
-    assert_eq!(operation, "FetchPullRequestContent");
-    assert_eq!(variables["number"], 8, "{variables}");
+    // Issue 5 has no Conversation to read ahead as a PR, PR 9's was read at its head, and nothing reaches
+    // PR 11.
+    assert_eq!(owed, [8, 10].into());
     assert!(off.iter().all(|line| !line.contains("#8")), "{off:?}");
 }
 

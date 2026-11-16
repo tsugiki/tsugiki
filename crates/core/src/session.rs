@@ -411,7 +411,7 @@ fn hand_over_heads(
     let repository = &saved.repository;
     let settings = syncs.settings(repository)?;
     let facts = store.work_facts(repository).ok()?;
-    hand_over_wants(fetching, store, settings, &facts);
+    let _reached = hand_over_wants(fetching, store, settings, &facts);
     let saved_heads = (facts.pull_requests.iter())
         .filter(|pr| saved.items.contains(&pr.number))
         .filter_map(|pr| {
@@ -426,32 +426,38 @@ fn hand_over_heads(
 }
 
 /// Hands the Mirror worker what the rules want of the Repository of `settings`, whose stored facts are
-/// `facts`, as `hand_over_heads` says.
+/// `facts`, as `hand_over_heads` says. Answers with its Reach.
 fn hand_over_wants(
     fetching: &Fetching,
     store: &Store,
     settings: &RepositorySettings,
     facts: &WorkFacts,
-) {
+) -> BTreeSet<u32> {
     let repository = &settings.name;
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
     // that can't keep it says so at the next step that saves.
     let _kept = keep_last_checks(store, repository, facts);
-    let (heads, patches) = mirror_work(facts, settings);
+    let reached = reach(facts, settings);
+    let (heads, patches) = mirror_work(facts, settings, &reached);
     let want = MirrorWant {
         heads,
         reviewed,
         patches,
     };
     fetching.want(repository, want);
+    reached
 }
 
 /// The user saved `settings`, which the syncs read from now on, if the session has opened their Repository
-/// since launch. A Filter switched on puts PRs in Reach that no change on GitHub would have a refresh read
-/// ahead, or the Mirror fetch the head of, so the Mirror worker hears the new Reach and the syncs read those
-/// PRs ahead now (#819). One switched off takes PRs out, and the Mirror worker stops wanting their heads. A
-/// store that can't answer leaves both to the next step that saves. Says whether it handed anything over.
+/// since launch. A Filter switched on puts PRs in Reach that no change on GitHub would have the Mirror fetch
+/// the head of or a refresh read ahead (#819). So the Mirror worker hears the new Reach at once, and the
+/// store owes a read of each PR newly in Reach whose Conversation it doesn't hold at the PR's head, which
+/// the next refresh reads ahead while the PR is still in Reach. One switched off takes PRs out, and the
+/// Mirror worker stops wanting their heads.
+///
+/// A store that can't answer leaves the heads to the next step that saves, and the Conversations to the PR
+/// view, which reads one when it opens. Says whether it handed anything over.
 fn settings_changed(
     fetching: &Fetching,
     store: &Store,
@@ -462,13 +468,13 @@ fn settings_changed(
     let before = syncs.replace_settings(settings)?;
     let facts = store.work_facts(&repository).ok()?;
     let now = syncs.settings(&repository)?;
-    hand_over_wants(fetching, store, now, &facts);
+    let reached = hand_over_wants(fetching, store, now, &facts);
     let reached_before = reach(&facts, &before);
-    let newly = (reach(&facts, now).into_iter())
-        .filter(|number| !reached_before.contains(number))
+    let newly = (facts.pull_requests.iter())
+        .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
+        .map(|pr| (pr.number, pr.head.clone()))
         .collect();
-    syncs.read_ahead(&repository, newly);
-    Some(())
+    store.owe_read_ahead_at(&repository, newly).ok()
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose

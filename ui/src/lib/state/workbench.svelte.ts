@@ -114,9 +114,11 @@ export class WorkbenchState {
   error = $state<string>();
   /** The reason the last change to a Filter's "On the Workbench" didn't save, if it didn't. */
   switchProblem = $state<string>();
-  /** A change to a Filter's "On the Workbench" is saving. Another waits for it, as two saves could land in
-   * either order. */
+  /** A change to a Filter's "On the Workbench" is saving. */
   switching = $state(false);
+  /** The "On the Workbench" switch each Filter's search has, as the user last set it, while that waits to
+   * save. */
+  #wanted = new SvelteMap<string, boolean>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
   /** The Issues unfolded in each view, by the view's key. */
@@ -262,20 +264,35 @@ export class WorkbenchState {
       : undefined;
   }
 
-  /** Puts the Filter that searches `query` on the Workbench, or takes it off (#819), then asks again, as
-   * the Sidebar counts such a Filter another way. Says what went wrong, if anything did, and keeps it in
-   * `switchProblem` until the next change. `switching` holds while it saves. */
+  /** Whether the Filter of line `filter` is on the Workbench, as its switch shows it: as the user last set
+   * the switch while that waits to save, and as the settings hold it otherwise. */
+  onWorkbench(filter: FilterLine): boolean {
+    return this.#wanted.get(filter.query) ?? filter.on_workbench;
+  }
+
+  /** Puts the Filter that searches `query` on the Workbench, or takes it off (#819). One save goes at a
+   * time, as two could land in either order, so a change made while one saves waits for it, and goes with
+   * the switch as the user last set it. Once none is left to save, it asks again, as the Sidebar counts
+   * such a Filter another way. Keeps the reason a save failed in `switchProblem` until the next one. */
   async putOnWorkbench(query: string, on: boolean) {
+    this.#wanted.set(query, on);
+    if (this.switching) return;
     this.switching = true;
-    try {
-      const answer = await commands.putFilterOnWorkbench({ repository: this.#repository, query, on });
+    for (let next = this.#wanted.entries().next(); !next.done; next = this.#wanted.entries().next()) {
+      const [query, on] = next.value;
+      const answer = await commands
+        .putFilterOnWorkbench({ repository: this.#repository, query, on })
+        .catch((e: unknown) => ({ status: "error" as const, error: { message: String(e) } }));
       const problem = said(answer);
       this.switchProblem = problem;
-      await this.#ask();
-      return problem;
-    } finally {
-      this.switching = false;
+      // The settings hold the switch as saved from now on, though the Sidebar's lines say so only once the
+      // answer to the next question arrives.
+      const saved = problem === undefined && this.filters.find((filter) => filter.query === query);
+      if (saved) saved.on_workbench = on;
+      if (this.#wanted.get(query) === on) this.#wanted.delete(query);
     }
+    this.switching = false;
+    await this.#ask();
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */

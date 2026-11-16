@@ -10,7 +10,7 @@ use crate::sync::testing::{
     issue_references_with_more, issues, merged_node, nothing, plain, pr_node, run_to_the_end,
     searches_finding, soon, up_to_the_first_issue,
 };
-use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
+use crate::sync::{Ahead, Phase, RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
 
 fn limited_until(from_now: i64) -> Error {
@@ -1169,102 +1169,19 @@ fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_t
 }
 
 #[test]
-fn a_read_ahead_needs_prs_to_read_and_a_repository_opened_since_launch() {
-    let mut syncs = Syncs::default();
-    syncs.read_ahead(&cpython(), BTreeSet::from([2]));
-    assert!(syncs.reads.is_empty());
-
-    syncs.add(plain(cpython()));
-    syncs.read_ahead(&cpython(), BTreeSet::new());
-    assert!(syncs.reads.is_empty());
-    syncs.read_ahead(&cpython(), BTreeSet::from([2]));
-    assert_eq!(syncs.reads.len(), 1);
-}
-
-/// GitHub's answer for a PR whose query ran out of its 10 seconds, which leaves that PR to the PR view.
-fn timed_out() -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status: 502,
-        reset: None,
-        date: None,
-        body: String::new(),
-    })
-}
-
-#[test]
-fn a_read_ahead_goes_before_the_syncs_and_leaves_no_sync_behind() {
-    let harness = Harness::new("read-ahead-first", vec![timed_out(), timed_out()]);
+fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it_tried() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
-    syncs.read_ahead(&cpython(), BTreeSet::from([5, 2]));
-    let activity = syncs.activity().unwrap().open.unwrap();
+    let ahead = Ahead {
+        left: BTreeSet::from([3, 4]),
+        tried: BTreeSet::from([2]),
+    };
+    syncs.queue[0].sync.phase = Phase::ReadingAhead(ahead);
 
-    for _ in 0..3 {
-        assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
-    }
+    drop(syncs.replace_settings(plain(cpython())));
 
-    assert_eq!(activity.part, SyncPart::Refresh);
-    assert_eq!(
-        harness.operations(),
-        ["FetchPullRequestContent", "FetchPullRequestContent"]
-    );
-    assert!(syncs.reads.is_empty());
-    assert_eq!(syncs.queue.len(), 1, "the sync waits for its turn");
-    assert_eq!(harness.store.sync_state(&cpython()).unwrap(), None);
-    harness.finish();
-}
-
-#[test]
-fn a_read_ahead_that_fails_for_all_of_github_waits_and_tries_again() {
-    let replies = vec![Err(Unreachable::Offline), timed_out()];
-    let harness = Harness::new("read-ahead-offline", replies);
-    let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    syncs.read_ahead(&cpython(), BTreeSet::from([2]));
-
-    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
-    syncs.after_failure(&failure, soon(), GitHubClock::default());
-    let held = syncs.ready_at().unwrap();
-    let retried = syncs.step(&harness.github, &harness.store).unwrap();
-
-    assert_eq!(failure.problem.kind, ErrorKind::Offline);
-    assert!(matches!(failure.turn, Turn::Read), "{:?}", failure.turn);
-    assert!(held > Instant::now(), "{held:?}");
-    assert_eq!(retried, None);
-    assert_eq!(
-        syncs.reads.len(),
-        1,
-        "it has yet to see it has nothing left"
-    );
-    harness.finish();
-}
-
-/// GitHub's answer for a PR's Conversation, with nothing in it.
-fn conversation() -> Result<Reply, Unreachable> {
-    let pull_request = json!({
-        "bodyHTML": "",
-        "createdAt": "2026-11-01T09:00:00Z",
-        "comments": { "totalCount": 0, "nodes": [] },
-        "reviews": { "totalCount": 0, "nodes": [] },
-        "reviewThreads": { "nodes": [] },
-        "headRefOid": "0123abc",
-    });
-    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
-    let data = json!({ "repository": { "pullRequest": pull_request }, "rateLimit": rate_limit });
-    reply_ok(&json!({ "data": data }).to_string())
-}
-
-#[test]
-fn a_read_ahead_the_store_cant_keep_gives_way_to_the_syncs() {
-    let harness = Harness::new("read-ahead-unsaved", vec![conversation()]);
-    let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    syncs.read_ahead(&cpython(), BTreeSet::from([2, 3]));
-
-    let stepped = syncs.step(&harness.github, &Store::stopped()).unwrap();
-
-    assert_eq!(stepped, None);
-    assert!(syncs.reads.is_empty());
-    assert_eq!(harness.operations(), ["FetchPullRequestContent"]);
-    harness.finish();
+    assert!(matches!(
+        &syncs.queue[0].sync.phase,
+        Phase::ReadingAhead(ahead) if ahead.left.is_empty() && ahead.tried == BTreeSet::from([2])
+    ));
 }

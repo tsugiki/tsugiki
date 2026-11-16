@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use time::{Duration, OffsetDateTime};
 
 use super::filters::{FilterWalk, RefreshWalk, blames_the_search, can_narrow};
-use super::{FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
+use super::{Ahead, FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
@@ -462,9 +462,10 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// The PRs in Reach among those this refresh found changed, and any a refresh that stopped
-/// left unread. Their Conversations are worth reading before the user opens them, and a stranger's PR waits
-/// until then.
+/// The PRs in Reach under `repository`'s settings among those the store owes a read: those this refresh found
+/// changed, any a refresh that stopped left unread, and those a Filter switched on put in Reach with no
+/// Conversation read at their head. Their Conversations are worth reading before the user opens them, and
+/// a stranger's PR waits until then.
 pub(super) fn to_read_ahead(
     link: &Link<'_>,
     repository: &RepositorySettings,
@@ -477,11 +478,21 @@ pub(super) fn to_read_ahead(
     Ok(changed.intersection(&reached).copied().collect())
 }
 
-/// Reads the Conversation of the next PR in `numbers`, with its Reviews and their threads: about a point
-/// each. Trouble with one PR leaves the rest to read, and the PR view reads that one when it opens. Only
-/// trouble that speaks for all of GitHub stops the refresh.
-pub(super) fn read_ahead(link: &Link<'_>, numbers: &mut BTreeSet<u32>) -> Result<Moved, Error> {
-    let Some(number) = numbers.first().copied() else {
+/// Reads the Conversation of the next PR `ahead` has left, with its Reviews and their threads: about a point
+/// each. With none left, it asks the store again under `repository`'s settings as they are now, for what a
+/// Filter switched on owed since, and finishes once that holds nothing new. Trouble with one PR leaves the
+/// rest to read, and the PR view reads that one when it opens. Only trouble that speaks for all of GitHub
+/// stops the refresh.
+pub(super) fn read_ahead(
+    link: &Link<'_>,
+    ahead: &mut Ahead,
+    repository: &RepositorySettings,
+) -> Result<Moved, Error> {
+    if ahead.left.is_empty() {
+        let owed = to_read_ahead(link, repository)?;
+        ahead.left = owed.difference(&ahead.tried).copied().collect();
+    }
+    let Some(number) = ahead.left.first().copied() else {
         return Ok((Step::Finished, None));
     };
     let step = match link.github.pull_request_content(link.repository, number) {
@@ -502,7 +513,8 @@ pub(super) fn read_ahead(link: &Link<'_>, numbers: &mut BTreeSet<u32>) -> Result
         }
         Err(problem) => return Err(problem),
     };
-    let _read = numbers.remove(&number);
+    let _read = ahead.left.remove(&number);
+    let _tried = ahead.tried.insert(number);
     Ok((step, None))
 }
 

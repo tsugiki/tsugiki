@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events, type ListOrder } from "$lib/data/bindings";
-import { WorkbenchState, type ListedItem, type Seen, type WorkbenchRow } from "./workbench.svelte";
+import {
+  WorkbenchState,
+  type FilterLine,
+  type ListedItem,
+  type Seen,
+  type WorkbenchRow,
+} from "./workbench.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { workbench: vi.fn(), markSeen: vi.fn(), markUnseen: vi.fn(), putFilterOnWorkbench: vi.fn() },
@@ -548,41 +554,105 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.workbench).mockClear();
 
     vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce({ status: "ok", data: null });
-    expect(await state.putOnWorkbench(mine.query, false)).toBeUndefined();
+    await state.putOnWorkbench(mine.query, false);
     expect(commands.putFilterOnWorkbench).toHaveBeenLastCalledWith({
       repository: "python/cpython",
       query: mine.query,
       on: false,
     });
+    expect(state.switchProblem).toBeUndefined();
     expect(commands.workbench).toHaveBeenCalledTimes(1);
 
     vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce(refused);
-    expect(await state.putOnWorkbench(mine.query, true)).toBe("no database");
+    await state.putOnWorkbench(mine.query, false);
     expect(state.switchProblem).toBe("no database");
     expect(commands.workbench).toHaveBeenCalledTimes(2);
 
+    vi.mocked(commands.putFilterOnWorkbench).mockRejectedValueOnce(new Error("gone"));
+    await state.putOnWorkbench(mine.query, false);
+    expect(state.switchProblem).toBe("Error: gone");
+    expect(state.switching).toBe(false);
+
     vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce({ status: "ok", data: null });
-    await state.putOnWorkbench(mine.query, true);
+    await state.putOnWorkbench(mine.query, false);
     expect(state.switchProblem).toBeUndefined();
   });
 
-  it("says a Filter's switch is saving until the save and the new answer are in", async () => {
+  /** A Workbench whose one Filter is off, and the save of its switch, which the test answers. */
+  const switchingOn = async () => {
     catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const off = { ...answer(1), data: { ...answer(1).data, filters: [{ ...mine, on_workbench: false }] } };
+    vi.mocked(commands.workbench).mockResolvedValue(off);
     const state = new WorkbenchState("python/cpython");
     await state.load();
-    const save = Promise.withResolvers<{ status: "ok"; data: null }>();
+    const save = Promise.withResolvers<{ status: "ok"; data: null } | typeof refused>();
     vi.mocked(commands.putFilterOnWorkbench).mockReturnValueOnce(save.promise);
+    const line = () => state.filters[0] as FilterLine;
+    return { state, save, line };
+  };
 
-    const switching = state.putOnWorkbench(mine.query, false);
+  it("shows a switch as the user set it while it saves, and turns it back if the save fails", async () => {
+    const { state, save, line } = await switchingOn();
+
+    const switching = state.putOnWorkbench(mine.query, true);
     expect(state.switching).toBe(true);
+    expect(state.onWorkbench(line())).toBe(true);
+    save.resolve(refused);
+    await switching;
+
+    expect(state.switching).toBe(false);
+    expect(state.onWorkbench(line())).toBe(false);
+    expect(state.switchProblem).toBe("no database");
+  });
+
+  it("stops saying a switch saves once it has saved, while the new answer is still out", async () => {
+    const { state, save, line } = await switchingOn();
+    const asked = Promise.withResolvers<ReturnType<typeof answer>>();
+    vi.mocked(commands.workbench).mockReturnValueOnce(asked.promise);
+
+    const switching = state.putOnWorkbench(mine.query, true);
+    save.resolve({ status: "ok", data: null });
+    await vi.waitFor(() => {
+      expect(commands.workbench).toHaveBeenCalledTimes(2);
+    });
+
+    expect(state.switching).toBe(false);
+    expect(state.onWorkbench(line())).toBe(true);
+    asked.resolve(answer(1));
+    await switching;
+  });
+
+  it("saves a switch changed while another save is out once that one is in, as last set", async () => {
+    const { state, save } = await switchingOn();
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValue({ status: "ok", data: null });
+
+    const switching = state.putOnWorkbench(mine.query, true);
+    await state.putOnWorkbench(mine.query, false);
+    await state.putOnWorkbench("label:bug", true);
+    await state.putOnWorkbench("label:bug", false);
+    expect(commands.putFilterOnWorkbench).toHaveBeenCalledOnce();
     save.resolve({ status: "ok", data: null });
     await switching;
-    expect(state.switching).toBe(false);
 
-    vi.mocked(commands.putFilterOnWorkbench).mockRejectedValueOnce(new Error("gone"));
-    await expect(state.putOnWorkbench(mine.query, false)).rejects.toThrow("gone");
-    expect(state.switching).toBe(false);
+    const sent = vi.mocked(commands.putFilterOnWorkbench).mock.calls.map(([change]) => change);
+    expect(sent).toEqual([
+      { repository: "python/cpython", query: mine.query, on: true },
+      { repository: "python/cpython", query: mine.query, on: false },
+      { repository: "python/cpython", query: "label:bug", on: false },
+    ]);
+    expect(commands.workbench).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends nothing more for a switch set back while it saved", async () => {
+    const { state, save } = await switchingOn();
+
+    const switching = state.putOnWorkbench(mine.query, true);
+    await state.putOnWorkbench(mine.query, false);
+    await state.putOnWorkbench(mine.query, true);
+    save.resolve({ status: "ok", data: null });
+    await switching;
+
+    expect(commands.putFilterOnWorkbench).toHaveBeenCalledOnce();
   });
 
   it("keeps a selected Filter when the facts change", async () => {

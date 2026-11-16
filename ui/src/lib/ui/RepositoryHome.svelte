@@ -381,15 +381,6 @@
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
   }
 
-  /** Puts the Filter that searches `query` on the Workbench as the switch `input` now says, or takes it off
-   * (#819). The switch waits while the change saves. A change that doesn't save turns the switch back, and
-   * the Workbench says why. */
-  async function putOnWorkbench(input: HTMLInputElement, query: string) {
-    const on = input.checked;
-    const problem = await workbench.putOnWorkbench(query, on);
-    if (problem !== undefined) input.checked = !on;
-  }
-
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
    * was made in by the time it's done. */
   async function sayMarkProblem(marking: (opened: WorkbenchState) => Promise<string | undefined>) {
@@ -1175,9 +1166,9 @@
           >
             <input
               type="checkbox"
-              checked={filter.on_workbench}
-              disabled={workbench.switching}
-              onchange={(event) => void putOnWorkbench(event.currentTarget, filter.query)}
+              checked={workbench.onWorkbench(filter)}
+              aria-busy={workbench.switching}
+              onchange={(event) => void workbench.putOnWorkbench(filter.query, event.currentTarget.checked)}
             />On the Workbench</label
           >
         {/if}

@@ -75,7 +75,7 @@ fn a_kind_from_a_later_version_is_left_alone() {
         .unwrap();
     assert_eq!(inserted, 1);
     let author = Login::new("some-author");
-    let listed = listed_events(&raw, &repository, None, Some(&author)).unwrap();
+    let listed = listed_events(&raw, &repository, (None, Some(&author)), Items::All).unwrap();
     drop(raw);
 
     let read = store.activity(&repository, 1).unwrap();

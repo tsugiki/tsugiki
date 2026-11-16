@@ -24,6 +24,16 @@ pub struct IssueFacts {
     pub state: Option<IssueState>,
 }
 
+/// What places an Issue in a list, and nothing else, so a read of many Issues stays cheap. It carries none
+/// of what Needs attention reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IssuePlace {
+    pub number: u32,
+    pub updated_at: OffsetDateTime,
+    /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
+    pub state: Option<IssueState>,
+}
+
 /// Whether an Issue is open, and how it closed, as GitHub draws it (#188).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

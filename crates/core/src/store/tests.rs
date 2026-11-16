@@ -147,8 +147,9 @@ fn a_panic_on_the_database_thread_comes_back_as_an_error() {
 }
 
 /// Tables that stay a few rows long, so reading all of them is fine. Any other table counts as large,
-/// so a new one is checked until someone says otherwise.
-const SMALL_TABLES: [&str; 1] = ["viewer"];
+/// so a new one is checked until someone says otherwise. `json_each` reads the list of numbers a query was
+/// handed, such as a page of the Inbox, and no table of the store.
+const SMALL_TABLES: [&str; 2] = ["viewer", "json_each"];
 
 /// The tables that `sql` reads end to end, other than `SMALL_TABLES`.
 fn full_scans(connection: &Connection, sql: &str) -> Vec<String> {
@@ -330,6 +331,27 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     let (_, kept) = read_pull_request_facts(connection, &cpython, 1).unwrap();
     assert_eq!(kept, Some(reviewed));
     assert_eq!(read_titled(connection, &cpython).unwrap().len(), 2);
+    let snapshot = Snapshot {
+        transaction: connection.transaction().unwrap(),
+        repository: cpython.clone(),
+    };
+    let linked = snapshot.open_pull_request_links().unwrap();
+    let open = snapshot.pull_requests_numbered(&[1].into()).unwrap();
+    let named = snapshot.issue_places_numbered(&[1].into()).unwrap();
+    let numbered = snapshot.issues_numbered(&[1].into()).unwrap();
+    let besides = Numbers::of([2]);
+    let since = snapshot
+        .open_issue_places_since(saved_at, &besides)
+        .unwrap();
+    let later = saved_at + time::Duration::SECOND;
+    let before = (snapshot.open_issue_places_after((later, 0), 1, &besides)).unwrap();
+    drop(snapshot.activity_of(Some(&viewer), &[1].into()).unwrap());
+    let reviews = snapshot.reviews_of(&open).unwrap();
+    drop(snapshot);
+    let found = [linked.len(), open.len()];
+    let issues_found = [named.len(), numbered.len(), since.len(), before.len()];
+    assert_eq!((found, issues_found), ([1; 2], [1; 4]));
+    assert!(reviews.reviewed.contains_key(&1), "{reviews:?}");
     let no_trace = None::<fn(TraceEvent<'_>)>;
     connection.trace_v2(codes, no_trace).unwrap();
     statements.try_iter().collect()

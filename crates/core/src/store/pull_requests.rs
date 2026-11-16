@@ -11,12 +11,12 @@ use super::{Connection, TitledItem, TitledKind};
 use crate::facts::CommitSha;
 use crate::facts::activity::ItemActivity;
 use crate::facts::labels::Label;
-use crate::facts::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
+use crate::facts::pull_requests::{LatestReview, OffDefault, PrLinks, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
 use super::activity;
-use super::columns::UnixTime;
+use super::columns::{Items, UnixTime};
 
 pub(super) const SCHEMA: &str = "
     CREATE TABLE pull_requests (
@@ -294,18 +294,57 @@ fn save_label(
         .map(drop)
 }
 
-fn labels(
-    connection: &Connection,
-    repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, Vec<Label>>> {
-    // In name order, ignoring case, as `PullRequestFacts` holds them.
-    let query = "SELECT number, name FROM pull_request_labels WHERE repository = :repository
-                 ORDER BY number, name";
-    values_by_number(
-        connection.prepare(query)?,
-        named_params! { ":repository": repository },
-        "name",
-    )
+/// The state a read of the open PRs binds as `:open`.
+const OPEN: PrState = PrState::Open;
+
+/// Which of a Repository's PRs a read takes.
+#[derive(Clone, Copy)]
+pub(super) enum Scope<'a> {
+    /// Every PR, or those with the numbers listed.
+    Items(Items<'a>),
+    /// The open PRs, which each page of the Inbox groups.
+    Open,
+}
+
+impl<'a> Scope<'a> {
+    /// What follows `FROM` to read the rows of `table` that belong to this scope's PRs, as `item`, up to
+    /// the end of a `WHERE`. Each row of an open PR's is found through `pull_requests_by_update`, so the PRs
+    /// that closed cost nothing.
+    fn rows_of(self, table: &str) -> String {
+        match self {
+            Self::Items(items) => {
+                let condition = items.condition("item.number");
+                format!("{table} AS item WHERE item.repository = :repository {condition}")
+            }
+            Self::Open => format!(
+                "pull_requests AS pull_request
+                 CROSS JOIN {table} AS item
+                     ON item.repository = pull_request.repository AND item.number = pull_request.number
+                 WHERE pull_request.repository = :repository AND pull_request.state = :open"
+            ),
+        }
+    }
+
+    /// The condition that keeps this scope's rows of `pull_requests` itself, which follows the other
+    /// conditions of a `WHERE`.
+    fn own_rows(self) -> String {
+        match self {
+            Self::Items(items) => items.condition("number"),
+            Self::Open => "AND state = :open".to_owned(),
+        }
+    }
+
+    /// The parameters `rows_of` and `own_rows` name.
+    fn params<'p>(self, repository: &'p RepositoryName) -> Vec<(&'p str, &'p dyn ToSql)>
+    where
+        'a: 'p,
+    {
+        let asked: Vec<(&str, &dyn ToSql)> = vec![(":repository", repository)];
+        match self {
+            Self::Items(items) => items.with(asked),
+            Self::Open => [asked, vec![(":open", &OPEN)]].concat(),
+        }
+    }
 }
 
 fn forget_closing_references(
@@ -455,29 +494,36 @@ fn save_closing_reference(
 fn review_requests(
     connection: &Connection,
     repository: &RepositoryName,
+    items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
-    let query = "SELECT request.number AS number, request.login AS login
-                 FROM review_requests AS request
-                 JOIN pull_requests AS pull_request
-                     ON pull_request.repository = request.repository
-                     AND pull_request.number = request.number
-                 WHERE request.repository = :repository AND pull_request.state = :open";
-    values_by_number(
-        connection.prepare(query)?,
-        named_params! { ":repository": repository, ":open": PrState::Open },
-        "login",
-    )
+    let scope = Scope::Items(items);
+    let rows = scope.rows_of("review_requests");
+    let mut asked = scope.params(repository);
+    asked.push((":open", &OPEN));
+    let query = format!(
+        "SELECT item.number AS number, item.login AS login FROM {rows}
+             AND EXISTS (SELECT 1 FROM pull_requests AS asking
+                         WHERE asking.repository = item.repository AND asking.number = item.number
+                             AND asking.state = :open)
+         ORDER BY item.number, item.login"
+    );
+    values_by_number(connection.prepare(&query)?, &asked, "login")
 }
 
-fn assignees(
+/// The `column` of each row of `table` that belongs to a PR of `scope`, by number, each PR's in the
+/// column's order.
+fn values_of<T: FromSql>(
     connection: &Connection,
-    repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
-    values_by_number(
-        connection.prepare("SELECT number, login FROM assignees WHERE repository = :repository")?,
-        named_params! { ":repository": repository },
-        "login",
-    )
+    (repository, scope): (&RepositoryName, Scope<'_>),
+    (table, column): (&str, &str),
+) -> rusqlite::Result<BTreeMap<u32, Vec<T>>> {
+    let rows = scope.rows_of(table);
+    let query = format!(
+        "SELECT item.number AS number, item.{column} AS {column} FROM {rows}
+         ORDER BY item.number, item.{column}"
+    );
+    let asked = scope.params(repository);
+    values_by_number(connection.prepare(&query)?, &asked, column)
 }
 
 /// Each item's values in the `value` column of what `statement` answers, by its `number` column. Each
@@ -501,14 +547,20 @@ pub(super) fn values_by_number<T: FromSql>(
 fn latest_reviews(
     connection: &Connection,
     repository: &RepositoryName,
+    scope: Scope<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<LatestReview>>> {
     let mut found: BTreeMap<u32, Vec<LatestReview>> = BTreeMap::new();
-    let query = "SELECT number, login, state FROM latest_reviews WHERE repository = :repository";
-    let mut statement = connection.prepare(query)?;
+    let rows = scope.rows_of("latest_reviews");
+    let query = format!(
+        "SELECT item.number AS number, item.login AS login, item.state AS state FROM {rows}
+         ORDER BY item.number, item.login"
+    );
+    let mut statement = connection.prepare(&query)?;
     let number = statement.column_index("number")?;
     let login = statement.column_index("login")?;
     let state = statement.column_index("state")?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    let asked = scope.params(repository);
+    let mut rows = statement.query(asked.as_slice())?;
     while let Some(row) = rows.next()? {
         let review = LatestReview {
             author: row.get(login)?,
@@ -519,47 +571,19 @@ fn latest_reviews(
     Ok(found)
 }
 
-/// Each PR's closing references, in number order.
-fn closing_references(
-    connection: &Connection,
-    repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, Vec<u32>>> {
-    let query = "SELECT number, issue FROM closing_references
-                 WHERE repository = :repository
-                 ORDER BY number, issue";
-    values_by_number(
-        connection.prepare(query)?,
-        named_params! { ":repository": repository },
-        "issue",
-    )
-}
-
-/// Each PR's cherry-picked commits.
-fn cherry_picks(
-    connection: &Connection,
-    repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, Vec<CommitSha>>> {
-    values_by_number(
-        connection
-            .prepare("SELECT number, sha FROM cherry_picks WHERE repository = :repository")?,
-        named_params! { ":repository": repository },
-        "sha",
-    )
-}
-
 /// Each PR's committers, in the order of its commits.
 fn committers(
     connection: &Connection,
     repository: &RepositoryName,
+    scope: Scope<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Option<Login>>>> {
-    let query = "SELECT number, login FROM committers
-                 WHERE repository = :repository
-                 ORDER BY number, position";
-    values_by_number(
-        connection.prepare(query)?,
-        named_params! { ":repository": repository },
-        "login",
-    )
+    let rows = scope.rows_of("committers");
+    let query = format!(
+        "SELECT item.number AS number, item.login AS login FROM {rows}
+         ORDER BY item.number, item.position"
+    );
+    let asked = scope.params(repository);
+    values_by_number(connection.prepare(&query)?, &asked, "login")
 }
 
 /// The position of each of a PR's columns in the answer to `read_all`, found once, as `values_by_number`
@@ -626,21 +650,85 @@ pub(super) fn read_all(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<Vec<PullRequestFacts>> {
-    let mut requests = review_requests(connection, repository)?;
-    let mut reviews = latest_reviews(connection, repository)?;
-    let mut assigned = assignees(connection, repository)?;
-    let mut labelled = labels(connection, repository)?;
-    let mut closing = closing_references(connection, repository)?;
-    let mut picks = cherry_picks(connection, repository)?;
-    let mut committed = committers(connection, repository)?;
-    let query = "SELECT number, title, state, is_draft, author, target_branch, ci, updated_at,
-                        off_default_description, merge_commit, base, head
-                 FROM pull_requests
-                 WHERE repository = :repository
-                 ORDER BY updated_at DESC, number DESC";
-    let mut statement = connection.prepare(query)?;
+    read(connection, repository, Items::All)
+}
+
+/// The open PRs of `repository`, the latest update first, with only what places them in a list and groups
+/// them. It reads their own rows, closing references and a Backport's commits, and none of the rest.
+pub(super) fn read_links(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<Vec<PrLinks>> {
+    let of = (repository, Scope::Open);
+    let mut closing: BTreeMap<u32, Vec<u32>> =
+        values_of(connection, of, ("closing_references", "issue"))?;
+    let mut picks: BTreeMap<u32, Vec<CommitSha>> =
+        values_of(connection, of, ("cherry_picks", "sha"))?;
+    let mut committed = committers(connection, repository, Scope::Open)?;
+    let condition = Scope::Open.own_rows();
+    let query = format!(
+        "SELECT number, title, author, updated_at, off_default_description, merge_commit
+         FROM pull_requests
+         WHERE repository = :repository {condition}
+         ORDER BY updated_at DESC, number DESC"
+    );
+    let mut statement = connection.prepare(&query)?;
+    let asked = Scope::Open.params(repository);
+    let mut rows = statement.query(asked.as_slice())?;
+    let mut found = Vec::new();
+    while let Some(row) = rows.next()? {
+        let number: u32 = row.get("number")?;
+        let UnixTime(updated_at) = row.get("updated_at")?;
+        let description: Option<String> = row.get("off_default_description")?;
+        found.push(PrLinks {
+            number,
+            title: row.get("title")?,
+            author: row.get("author")?,
+            updated_at,
+            closing_issues: closing.remove(&number).unwrap_or_default(),
+            merge_commit: row.get("merge_commit")?,
+            off_default: description.map(|description| OffDefault {
+                description,
+                cherry_picked_from: picks.remove(&number).unwrap_or_default(),
+                committers: committed.remove(&number).unwrap_or_default(),
+            }),
+        });
+    }
+    Ok(found)
+}
+
+/// The PRs of `repository` that `items` names, the latest update first.
+pub(super) fn read(
+    connection: &Connection,
+    repository: &RepositoryName,
+    items: Items<'_>,
+) -> rusqlite::Result<Vec<PullRequestFacts>> {
+    let scope = Scope::Items(items);
+    let of = (repository, scope);
+    let mut requests = review_requests(connection, repository, items)?;
+    let mut reviews = latest_reviews(connection, repository, scope)?;
+    let mut assigned: BTreeMap<u32, Vec<Login>> =
+        values_of(connection, of, ("assignees", "login"))?;
+    // In name order, ignoring case, as `PullRequestFacts` holds them.
+    let mut labelled: BTreeMap<u32, Vec<Label>> =
+        values_of(connection, of, ("pull_request_labels", "name"))?;
+    let mut closing: BTreeMap<u32, Vec<u32>> =
+        values_of(connection, of, ("closing_references", "issue"))?;
+    let mut picks: BTreeMap<u32, Vec<CommitSha>> =
+        values_of(connection, of, ("cherry_picks", "sha"))?;
+    let mut committed = committers(connection, repository, scope)?;
+    let condition = scope.own_rows();
+    let query = format!(
+        "SELECT number, title, state, is_draft, author, target_branch, ci, updated_at,
+                off_default_description, merge_commit, base, head
+         FROM pull_requests
+         WHERE repository = :repository {condition}
+         ORDER BY updated_at DESC, number DESC"
+    );
+    let mut statement = connection.prepare(&query)?;
     let column = PullRequestColumns::of(&statement)?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    let asked = scope.params(repository);
+    let mut rows = statement.query(asked.as_slice())?;
     let mut found = Vec::new();
     while let Some(row) = rows.next()? {
         let number: u32 = row.get(column.number)?;

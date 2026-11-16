@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, Row, named_params};
 use time::OffsetDateTime;
 
 use super::Connection;
-use super::columns::UnixTime;
+use super::columns::{Items, UnixTime};
 use super::failed_checks;
 use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity};
 use crate::login::Login;
@@ -227,23 +227,6 @@ pub(super) fn remember_first_sync(
         .map(drop)
 }
 
-const SELECT_LAST_SEEN: &str = "SELECT number, at FROM last_seen WHERE repository = :repository";
-const SELECT_MARKED_UNSEEN: &str =
-    "SELECT number, at FROM marked_unseen WHERE repository = :repository";
-const SELECT_CI_FINISHED: &str = "SELECT number, ci_finished_at AS at FROM pull_requests
-     WHERE repository = :repository AND ci_finished_at IS NOT NULL";
-const SELECT_LISTED_EVENTS: &str =
-    "SELECT number, kind, target, who, noticed_at AS at FROM activity
-     WHERE repository = :repository AND (who = :viewer OR (noticed_at > :first_sync AND number IN (
-         SELECT number FROM pull_requests WHERE repository = :repository AND author = :viewer
-         UNION SELECT number FROM issues WHERE repository = :repository AND author = :viewer
-         UNION SELECT number FROM latest_reviews WHERE repository = :repository AND login = :viewer
-         UNION SELECT number FROM assignees WHERE repository = :repository AND login = :viewer
-         UNION SELECT number FROM issue_assignees WHERE repository = :repository AND login = :viewer
-         UNION SELECT number FROM activity WHERE repository = :repository AND who = :viewer
-     )))
-     ORDER BY noticed_at, kind, target, who";
-
 fn moment_in(row: &Row<'_>) -> rusqlite::Result<(u32, OffsetDateTime)> {
     let UnixTime(at) = row.get("at")?;
     Ok((row.get("number")?, at))
@@ -254,26 +237,43 @@ fn moments(
     connection: &Connection,
     query: &str,
     repository: &RepositoryName,
+    items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, OffsetDateTime>> {
     let mut statement = connection.prepare(query)?;
-    let asked = named_params! { ":repository": repository };
-    let rows = statement.query_map(asked, moment_in)?;
+    let asked = items.with(vec![(":repository", repository)]);
+    let rows = statement.query_map(asked.as_slice(), moment_in)?;
     rows.collect()
 }
 
+/// The events of `items` that `viewer` reads, given when the first sync began.
 fn listed_events(
     connection: &Connection,
     repository: &RepositoryName,
-    first_sync: Option<OffsetDateTime>,
-    viewer: Option<&Login>,
+    (first_sync, viewer): (Option<OffsetDateTime>, Option<&Login>),
+    items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Activity>>> {
-    let mut statement = connection.prepare(SELECT_LISTED_EVENTS)?;
-    let asked = named_params! {
-        ":repository": repository,
-        ":first_sync": first_sync.map(OffsetDateTime::unix_timestamp),
-        ":viewer": viewer,
-    };
-    let mut rows = statement.query(asked)?;
+    let condition = items.condition("number");
+    let query = format!(
+        "SELECT number, kind, target, who, noticed_at AS at FROM activity
+         WHERE repository = :repository {condition}
+             AND (who = :viewer OR (noticed_at > :first_sync AND number IN (
+                 SELECT number FROM pull_requests WHERE repository = :repository AND author = :viewer
+                 UNION SELECT number FROM issues WHERE repository = :repository AND author = :viewer
+                 UNION SELECT number FROM latest_reviews WHERE repository = :repository AND login = :viewer
+                 UNION SELECT number FROM assignees WHERE repository = :repository AND login = :viewer
+                 UNION SELECT number FROM issue_assignees WHERE repository = :repository AND login = :viewer
+                 UNION SELECT number FROM activity WHERE repository = :repository AND who = :viewer
+             )))
+         ORDER BY noticed_at, kind, target, who"
+    );
+    let mut statement = connection.prepare(&query)?;
+    let first_sync = first_sync.map(OffsetDateTime::unix_timestamp);
+    let asked = items.with(vec![
+        (":repository", repository),
+        (":first_sync", &first_sync),
+        (":viewer", &viewer),
+    ]);
+    let mut rows = statement.query(asked.as_slice())?;
     let mut found: BTreeMap<u32, Vec<Activity>> = BTreeMap::new();
     while let Some(row) = rows.next()? {
         if let Some(event) = event_in(row)? {
@@ -302,14 +302,33 @@ pub(super) fn read_facts(
     repository: &RepositoryName,
     viewer: Option<&Login>,
 ) -> rusqlite::Result<ActivityFacts> {
+    read_facts_of(connection, repository, viewer, Items::All)
+}
+
+/// The activity of `items` of `repository`, as `viewer` reads it.
+pub(super) fn read_facts_of(
+    connection: &Connection,
+    repository: &RepositoryName,
+    viewer: Option<&Login>,
+    items: Items<'_>,
+) -> rusqlite::Result<ActivityFacts> {
     let first_sync = first_sync(connection, repository)?;
+    let condition = items.condition("number");
+    let last_seen =
+        format!("SELECT number, at FROM last_seen WHERE repository = :repository {condition}");
+    let marked_unseen =
+        format!("SELECT number, at FROM marked_unseen WHERE repository = :repository {condition}");
+    let ci_finished = format!(
+        "SELECT number, ci_finished_at AS at FROM pull_requests
+         WHERE repository = :repository AND ci_finished_at IS NOT NULL {condition}"
+    );
     Ok(ActivityFacts {
         first_sync,
-        last_seen: moments(connection, SELECT_LAST_SEEN, repository)?,
-        marked_unseen: moments(connection, SELECT_MARKED_UNSEEN, repository)?,
-        events: listed_events(connection, repository, first_sync, viewer)?,
-        ci_finished: moments(connection, SELECT_CI_FINISHED, repository)?,
-        failed_checks: failed_checks::read_all(connection, repository)?,
+        last_seen: moments(connection, &last_seen, repository, items)?,
+        marked_unseen: moments(connection, &marked_unseen, repository, items)?,
+        events: listed_events(connection, repository, (first_sync, viewer), items)?,
+        ci_finished: moments(connection, &ci_finished, repository, items)?,
+        failed_checks: failed_checks::read(connection, repository, items)?,
     })
 }
 

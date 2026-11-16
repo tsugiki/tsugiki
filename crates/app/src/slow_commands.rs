@@ -29,6 +29,7 @@ use tsugiki_core::settings::{
 use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{ThemeLibrary, ThemePick, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
+use tsugiki_core::workbench::inbox::{Inbox, InboxPage};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::PrFiles;
 use tsugiki_core::workbench::pr_view::PrView;
@@ -247,6 +248,20 @@ pub(crate) fn workbench(
     reader: State<'_, StoreReader>,
 ) -> Result<Workbench, Error> {
     crate::read_workbench(repository, &view, &owner, &reader)
+}
+
+/// Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
+/// PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and asks
+/// nothing of `fetching`, so the Inbox adds nothing to Reach.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn inbox(
+    repository: &str,
+    page: InboxPage,
+    owner: State<'_, SettingsOwner>,
+    reader: State<'_, StoreReader>,
+) -> Result<Inbox, Error> {
+    crate::read_inbox(repository, page, &owner, &reader)
 }
 
 /// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and

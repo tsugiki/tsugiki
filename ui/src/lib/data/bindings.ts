@@ -180,6 +180,12 @@ export const commands = {
 	 */
 	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
 	/**
+	 *  Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
+	 *  PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and asks
+	 *  nothing of `fetching`, so the Inbox adds nothing to Reach.
+	 */
+	inbox: (repository: string, page: InboxPage_Deserialize) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page })),
+	/**
 	 *  The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
 	 *  never on GitHub (ADR 0018).
 	 */
@@ -1100,6 +1106,75 @@ export type Home_Serialize =
  *  the rest in the settings' order.
  */
 others: RepositoryName[] };
+
+/**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
+export type Inbox = Inbox_Serialize | Inbox_Deserialize;
+
+/**
+ *  Where an item stands in the Inbox's order: the latest update first, then the highest number. Issues and
+ *  PRs share their numbers in a Repository, so it names one item. An Issue's update is the latest of its
+ *  own and its PRs', as on the Workbench.
+ */
+export type InboxCursor = InboxCursor_Serialize | InboxCursor_Deserialize;
+
+/**
+ *  Where an item stands in the Inbox's order: the latest update first, then the highest number. Issues and
+ *  PRs share their numbers in a Repository, so it names one item. An Issue's update is the latest of its
+ *  own and its PRs', as on the Workbench.
+ */
+export type InboxCursor_Deserialize = {
+	updated_at: string,
+	number: number,
+};
+
+/**
+ *  Where an item stands in the Inbox's order: the latest update first, then the highest number. Issues and
+ *  PRs share their numbers in a Repository, so it names one item. An Issue's update is the latest of its
+ *  own and its PRs', as on the Workbench.
+ */
+export type InboxCursor_Serialize = {
+	updated_at: string,
+	number: number,
+};
+
+/**  The page of the Inbox the window asks for. */
+export type InboxPage = InboxPage_Serialize | InboxPage_Deserialize;
+
+/**  The page of the Inbox the window asks for. */
+export type InboxPage_Deserialize = 
+/**  The items updated in the last two days, or the first older batch when none were. */
+{ kind: "latest" } | 
+/**  The next older batch: the items that come after `after` in the Inbox's order. */
+{ kind: "older"; after: InboxCursor_Deserialize };
+
+/**  The page of the Inbox the window asks for. */
+export type InboxPage_Serialize = 
+/**  The items updated in the last two days, or the first older batch when none were. */
+{ kind: "latest" } | 
+/**  The next older batch: the items that come after `after` in the Inbox's order. */
+{ kind: "older"; after: InboxCursor_Serialize };
+
+/**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
+export type Inbox_Deserialize = {
+	/**  The latest update first. */
+	items: ListedItem_Deserialize[],
+	/**
+	 *  Where the next older page starts, or nothing once the cache holds nothing older. Past that, Load 30
+	 *  more days reads from GitHub (#469).
+	 */
+	older?: InboxCursor_Deserialize | null,
+};
+
+/**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
+export type Inbox_Serialize = {
+	/**  The latest update first. */
+	items: ListedItem_Serialize[],
+	/**
+	 *  Where the next older page starts, or nothing once the cache holds nothing older. Past that, Load 30
+	 *  more days reads from GitHub (#469).
+	 */
+	older: InboxCursor_Serialize | null,
+};
 
 /**
  *  The news of the index of the server that answered a lookup, which the Definition peek says under that

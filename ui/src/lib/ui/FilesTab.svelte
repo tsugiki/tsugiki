@@ -261,8 +261,18 @@
   }
 
   /* Windows' contrast themes drop the fill, so the segment on show takes the system's highlight, under the
-     pointer too, and the focus ring takes the highlight's text color to show on it. */
+     pointer too, and the focus ring takes the highlight's text color to show on it. The other segment shows
+     the pointer with a highlight ring, and the divider takes the system's text color beside the fill. */
   @media (forced-colors: active) {
+    .switch button + button {
+      border-left-color: CanvasText;
+    }
+
+    .switch [aria-pressed="false"]:hover {
+      outline: 1px solid Highlight;
+      outline-offset: -1px;
+    }
+
     .switch [aria-pressed="true"],
     .switch [aria-pressed="true"]:hover {
       forced-color-adjust: none;

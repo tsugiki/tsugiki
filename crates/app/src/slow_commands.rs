@@ -18,11 +18,11 @@ use tauri::ipc::Channel;
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
+use tsugiki_core::fetching::Fetching;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
-use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
@@ -41,7 +41,7 @@ use tsugiki_core::workbench::{Workbench, WorkbenchView};
 pub(crate) async fn check_repository(
     input: String,
     owner: State<'_, SettingsOwner>,
-    requests: State<'_, SessionRequests>,
+    requests: State<'_, Fetching>,
 ) -> Result<NameCheck, Error> {
     let owner = owner.inner().clone();
     let requests = requests.inner().clone();
@@ -54,7 +54,7 @@ pub(crate) async fn check_repository(
 #[specta::specta]
 pub(crate) async fn mirror_cost(
     repository: String,
-    requests: State<'_, SessionRequests>,
+    requests: State<'_, Fetching>,
 ) -> Result<MirrorCost, Error> {
     let requests = requests.inner().clone();
     check_aside(move || crate::check_mirror_cost(&repository, &requests)).await
@@ -269,10 +269,9 @@ pub(crate) fn issue(
 pub(crate) fn open_pull_request(
     repository: &str,
     number: u32,
-    requests: State<'_, SessionRequests>,
     work: State<'_, crate::DiffWork>,
 ) -> Result<(), Error> {
-    crate::open_pull_request(repository, number, &requests, &work)
+    crate::open_pull_request(repository, number, &work)
 }
 
 /// The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never

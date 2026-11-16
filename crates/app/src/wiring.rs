@@ -14,7 +14,7 @@ use tsugiki_core::latest;
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::releases::{AskPublic, ReleaseCheck};
 use tsugiki_core::search::TextSearch;
-use tsugiki_core::session::{Intervals, Session};
+use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::{SettingsFiles, SettingsOwner};
 use tsugiki_core::status::{Change, Status, StatusBoard};
 
@@ -109,7 +109,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let activity_handle = app.clone();
     let announce = mirror_announcements(app);
     let mirrors = Mirrors::start(folders.clone(), outside.remotes, announce);
-    let (following, fetching) = (mirrors.requests(), mirrors.requests());
+    let following = mirrors.requests();
     let board = StatusBoard::new(Box::new(move |status| {
         following.follow(status);
         // Before the event: a window that starts listening too late for it then asks `status()`, and has to
@@ -135,18 +135,19 @@ pub(crate) fn connect_core<R: Runtime>(
         let activity = activity.cloned();
         latest_activity.set(&activity);
         log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
-    }))
-    .with_heads(Box::new(move |repository, work| {
-        fetching.fetch_heads(repository.clone(), work.heads);
-        fetching.keep_reviewed(repository.clone(), work.reviewed);
-        fetching.read_patch_ids(repository.clone(), work.patches);
     }));
     let intervals = Intervals {
         status: refresh,
         repository: REPOSITORY_REFRESH,
     };
     let diff_folders = folders.clone();
-    let session = Session::start(board, folders, outside.github, intervals);
+    // The session hands the mirrors the rules' wants, and takes the patch-ids they read.
+    let connections = Connections {
+        github: outside.github,
+        mirrors: mirrors.requests(),
+    };
+    let session = Session::start(board, folders, connections, intervals);
+    let fetching = session.fetching();
     let (checkouts, view, idle_view) = (mirrors.requests(), settings.reader(), settings.reader());
     let rows_handle = app.clone();
     let definitions = Definitions::start(definitions::Sources {
@@ -170,7 +171,7 @@ pub(crate) fn connect_core<R: Runtime>(
         folders: diff_folders,
         reader: session.reader(),
         diffs: Diffs::default(),
-        mirrors: mirrors.requests(),
+        fetching: fetching.clone(),
         highlighter: Highlighter::start(),
         definitions: definitions.clone(),
     };
@@ -183,15 +184,8 @@ pub(crate) fn connect_core<R: Runtime>(
         Box::new(move || log_if_unsent(TextSearchChanged.emit(&search_handle))),
     );
     assert!(app.manage(search), "only this manages the text search");
-    let requests = session.requests();
-    // The mirrors start first, as the session's board hands them heads, so they learn here where the
-    // patch-ids they read go.
-    mirrors
-        .requests()
-        .hand_patches_to(requests.clone().patch_ids_keeper());
     let work = RepositoryWork {
-        session: requests.clone(),
-        mirrors: mirrors.requests(),
+        fetching: fetching.clone(),
     };
     let view = settings.view();
     work.start(&view.home, &view.mirror_sources);
@@ -199,10 +193,10 @@ pub(crate) fn connect_core<R: Runtime>(
     // hasn't said where its objects come from asks when its turn comes.
     for repository in &view.loaded.settings.repositories {
         let source = view.mirror_sources.get(&repository.name).cloned();
-        work.mirrors.clone_mirror(repository.name.clone(), source);
+        fetching.clone_mirror(repository.name.clone(), source);
     }
     assert!(app.manage(settings), "only this manages the settings");
-    assert!(app.manage(requests), "only this manages the requests");
+    assert!(app.manage(fetching), "only this manages the requests");
     assert!(
         app.manage(work),
         "only this manages the work on Repositories"

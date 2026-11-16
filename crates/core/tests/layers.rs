@@ -172,8 +172,8 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "status",
-        uses: &["error", "facts", "login", "repository"],
-        why: "Announces app-wide status, which names the signed-in `Login` and the PR heads that wait.",
+        uses: &["error", "login", "repository"],
+        why: "Announces app-wide status, which names the signed-in `Login` and the Repositories it is about.",
     },
     Layer {
         module: "store",
@@ -291,7 +291,6 @@ const LAYERS: &[Layer] = &[
             "highlight",
             "links",
             "login",
-            "mirror",
             "repository",
             "repository_settings",
             "settings",
@@ -299,7 +298,24 @@ const LAYERS: &[Layer] = &[
             "work",
         ],
         why: "Groups what `work` judges into the Workbench's items and builds the view models, which show \
-              what each module below works out.",
+              what each module below works out. A read sends nothing: the command asks `fetching` for what \
+              it found missing.",
+    },
+    Layer {
+        module: "fetching",
+        uses: &[
+            "error",
+            "facts",
+            "mirror",
+            "mirror_source",
+            "patch_ids",
+            "repository",
+            "repository_settings",
+            "work",
+        ],
+        why: "Takes the user's demands and the rules' wants, and hands each to the queue that owns it: the \
+              Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
+              above can take them. A Mark Seen names what `work` marks.",
     },
     Layer {
         module: "sync",
@@ -326,8 +342,10 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "error",
             "facts",
+            "fetching",
             "folders",
             "github",
+            "mirror",
             "patch_ids",
             "repository",
             "repository_settings",
@@ -337,8 +355,9 @@ const LAYERS: &[Layer] = &[
             "token",
             "work",
         ],
-        why: "Runs the session thread, which owns the store and the syncs, and hands the Mirror the heads \
-              and commits `work` picks.",
+        why: "Runs the session thread, which owns the store and the syncs and takes the messages `fetching` \
+              sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
+              which it builds on the requests `mirror` gives.",
     },
 ];
 
@@ -356,8 +375,37 @@ const CYCLES: &[Cycle] = &[];
 const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "work"];
 
 /// The imperative shell, which the functional core may not use: the database, `github`'s client, the
-/// Mirrors, the values threads share, and the threads that sync.
-const SHELL: &[&str] = &["github", "latest", "mirror", "session", "store", "sync"];
+/// Mirrors, the values threads share, the requests for data, and the threads that sync.
+const SHELL: &[&str] = &[
+    "fetching", "github", "latest", "mirror", "session", "store", "sync",
+];
+
+/// What a group of modules keeps out of, and the words a broken rule says.
+struct KeptOut {
+    /// The group, as a broken rule names it.
+    group: &'static str,
+    modules: &'static [&'static str],
+    /// The modules the group may not use.
+    of: &'static [&'static str],
+    /// Why, after "but".
+    why: &'static str,
+}
+
+/// The functional core keeps out of the shell.
+const CORE: KeptOut = KeptOut {
+    group: "the functional core",
+    modules: FUNCTIONAL_CORE,
+    of: SHELL,
+    why: "the functional core keeps out of the shell",
+};
+
+/// A view model's `read` sends nothing (ADR 0022): the command asks for what the read found missing.
+const VIEW_MODELS: KeptOut = KeptOut {
+    group: "the view models",
+    modules: &["workbench"],
+    of: &["fetching", "mirror", "session", "sync"],
+    why: "a view model's read sends nothing",
+};
 
 /// A file of the core: its path below `crates/core/src` with `/` between folders, and its text.
 struct Source {
@@ -633,21 +681,20 @@ fn sources(root: &Path, dir: &Path) -> Vec<Source> {
     found
 }
 
-/// Each module of `core` whose line in `layers` lets it use a module of `shell`, and each with no line.
-/// Since a module may use only what its line lists, no module of `core` can then use `shell`.
-fn shell_problems(layers: &[Layer], core: &[&str], shell: &[&str]) -> Vec<String> {
+/// Each module of `rule`'s group whose line in `layers` lets it use a module it keeps out of, and each with
+/// no line. Since a module may use only what its line lists, none of the group can then use them.
+fn kept_out_problems(layers: &[Layer], rule: &KeptOut) -> Vec<String> {
     let mut found = Vec::new();
-    for module in core {
+    for module in rule.modules {
         let Some(layer) = layers.iter().find(|layer| layer.module == *module) else {
             found.push(format!(
-                "`{module}` is in the functional core, but has no line in LAYERS"
+                "`{module}` is in {}, but has no line in LAYERS",
+                rule.group
             ));
             continue;
         };
-        let used = layer.uses.iter().filter(|target| shell.contains(target));
-        found.extend(used.map(|target| {
-            format!("`{module}` may use `{target}`, but the functional core keeps out of the shell")
-        }));
+        let used = layer.uses.iter().filter(|target| rule.of.contains(target));
+        found.extend(used.map(|target| format!("`{module}` may use `{target}`, but {}", rule.why)));
     }
     found
 }
@@ -852,8 +899,13 @@ fn a_functional_core_module_that_may_use_the_shell_is_found() {
         uses: &["error", "store"],
         why: "Links PRs, and reads them from the store.",
     };
+    let rule = KeptOut {
+        modules: &["links", "work"],
+        of: &["store"],
+        ..CORE
+    };
     assert_eq!(
-        shell_problems(&[SAMPLE[0], links], &["links", "work"], &["store"]),
+        kept_out_problems(&[SAMPLE[0], links], &rule),
         [
             "`links` may use `store`, but the functional core keeps out of the shell",
             "`work` is in the functional core, but has no line in LAYERS",
@@ -863,7 +915,26 @@ fn a_functional_core_module_that_may_use_the_shell_is_found() {
 
 #[test]
 fn the_functional_core_keeps_out_of_the_shell() {
-    let problems = shell_problems(LAYERS, FUNCTIONAL_CORE, SHELL);
+    let problems = kept_out_problems(LAYERS, &CORE);
+    assert!(problems.is_empty(), "{problems:#?}");
+}
+
+#[test]
+fn a_view_model_that_may_send_requests_is_found() {
+    let workbench = Layer {
+        module: "workbench",
+        uses: &["error", "mirror"],
+        why: "Builds the Files tab, and moves the Lookup checkout.",
+    };
+    assert_eq!(
+        kept_out_problems(&[SAMPLE[0], workbench], &VIEW_MODELS),
+        ["`workbench` may use `mirror`, but a view model's read sends nothing"]
+    );
+}
+
+#[test]
+fn the_view_models_send_nothing() {
+    let problems = kept_out_problems(LAYERS, &VIEW_MODELS);
     assert!(problems.is_empty(), "{problems:#?}");
 }
 

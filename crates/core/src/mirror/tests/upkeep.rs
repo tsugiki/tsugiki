@@ -687,23 +687,22 @@ fn a_head_due_another_fetch_waits_for_the_new_clone_too() {
         .recv_timeout(PLENTY)
         .unwrap()
         .succeed_with(vec![older(1)]);
-    // A hand-over without PR 1 leaves it due another fetch.
-    requests.fetch_heads(cpython.clone(), vec![head(2)]);
+    // A head the user asks for goes in a fetch of its own, which leaves PR 1 due another fetch.
+    requests.fetch_first(cpython.clone(), head(2));
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(fetch, "fatal: bad object HEAD\n");
     let clone = starts.recv_timeout(PLENTY).unwrap();
     fs::create_dir_all(clone.args.last().unwrap()).unwrap();
     clone.succeed();
-    let fetch = starts.recv_timeout(PLENTY).unwrap();
-    let refspecs: Vec<String> = fetch
-        .refspecs()
-        .iter()
-        .map(|line| (*line).to_owned())
-        .collect();
-    fetch.succeed();
+    let mut refspecs = Vec::new();
+    for _ in 0..2 {
+        let fetch = starts.recv_timeout(PLENTY).unwrap();
+        refspecs.push(fetch.refspecs().join(" "));
+        fetch.succeed();
+    }
     mirrors.stop_cleanly(PLENTY);
 
-    assert_eq!(refspecs, [refspec(1), refspec(2)]);
+    assert_eq!(refspecs, [refspec(2), refspec(1)]);
 }
 
 #[test]

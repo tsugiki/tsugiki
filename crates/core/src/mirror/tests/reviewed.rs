@@ -272,6 +272,31 @@ fn a_hand_over_during_a_failed_fetch_tries_again_at_once_and_one_during_a_fetch_
 }
 
 #[test]
+fn a_reviewed_commit_that_leaves_the_want_during_its_failed_fetch_isnt_tried_again() {
+    let place = Place::new("reviewed-left");
+    let cpython = named("python/cpython");
+    place.bare_mirror(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &head(1).commit)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    // The Review was dismissed meanwhile.
+    requests.keep_reviewed(cpython.clone(), vec![]);
+    fail_saying(
+        first,
+        "fatal: unable to access 'https://github.com/': Could not resolve host\n",
+    );
+    let again = starts.recv_timeout(A_MOMENT);
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(
+        again.is_err(),
+        "a commit the rules no longer want isn't kept"
+    );
+}
+
+#[test]
 fn a_refusal_that_cant_be_noted_on_disk_still_isnt_asked_for_again() {
     let place = Place::new("reviewed-refused-unnoted");
     let cpython = named("python/cpython");

@@ -5,8 +5,6 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
-use crate::facts::patch_ids::PatchesOf;
-use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -138,19 +136,6 @@ pub struct OpenSync {
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
-/// What a sync hands the mirror of a Repository, each time it saves its facts.
-#[derive(Debug, PartialEq, Eq)]
-pub struct MirrorWork {
-    /// The heads of the PRs in Reach, to fetch.
-    pub heads: Vec<PrHead>,
-    /// The commits the user's Reviews covered, to keep.
-    pub reviewed: Vec<ReviewedCommit>,
-    /// The commits whose patch-ids the Stale review check needs and the store lacks, to read.
-    pub patches: Vec<PatchesOf>,
-}
-
-type AnnounceHeads = Box<dyn FnMut(&RepositoryName, MirrorWork) + Send>;
-
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
 /// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
@@ -162,7 +147,6 @@ pub struct StatusBoard {
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
     sync_activity: Option<SyncActivity>,
     announce_sync_activity: AnnounceActivity,
-    announce_heads: AnnounceHeads,
 }
 
 impl StatusBoard {
@@ -175,7 +159,6 @@ impl StatusBoard {
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
-            announce_heads: Box::new(|_, _| {}),
         }
     }
 
@@ -205,17 +188,6 @@ impl StatusBoard {
     pub fn with_sync_activity(mut self, announce: AnnounceActivity) -> Self {
         self.announce_sync_activity = announce;
         self
-    }
-
-    /// Also hands `announce` the work for a Repository's mirror each time a sync saves its facts.
-    #[must_use]
-    pub fn with_heads(mut self, announce: AnnounceHeads) -> Self {
-        self.announce_heads = announce;
-        self
-    }
-
-    pub(crate) fn reached_heads(&mut self, repository: &RepositoryName, work: MirrorWork) {
-        (self.announce_heads)(repository, work);
     }
 
     pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {

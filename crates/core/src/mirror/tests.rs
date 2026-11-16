@@ -810,12 +810,55 @@ fn heads_handed_over_during_a_fetch_go_in_the_next() {
 
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     let first = starts.recv_timeout(PLENTY).unwrap();
-    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
-    requests.fetch_heads(cpython.clone(), vec![head(3)]);
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2), head(3)]);
     first.succeed();
     let next = starts.recv_timeout(PLENTY).unwrap();
 
     assert_eq!(next.refspecs(), [refspec(2), refspec(3)]);
+    next.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_want_replaces_the_last_so_a_head_that_leaves_it_before_its_turn_isnt_fetched() {
+    let place = Place::new("want-replaces");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+    let backport = PrHead {
+        target_branch: "3.14".to_owned(),
+        ..head(2)
+    };
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython.clone(), vec![head(1), backport]);
+    requests.fetch_heads(cpython, vec![head(1), head(3)]);
+    first.succeed();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(next.refspecs(), [refspec(3)]);
+    assert_eq!(next.branches(), ["+refs/heads/main*:refs/heads/main*"]);
+    next.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_failed_fetch_puts_back_only_the_heads_still_wanted() {
+    let place = Place::new("failed-want");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython, vec![head(2)]);
+    first.fail();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(next.refspecs(), [refspec(2)]);
     next.succeed();
     mirrors.stop_cleanly(PLENTY);
 }
@@ -1093,9 +1136,169 @@ fn an_opened_pr_wakes_a_stalled_worker() {
     requests.fetch_first(cpython, head(2));
     let opened = starts.recv_timeout(PLENTY).unwrap();
 
-    assert_eq!(opened.refspecs(), [refspec(1), refspec(2)]);
+    assert_eq!(opened.refspecs(), [refspec(2)]);
     opened.succeed();
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(1)]);
+    wanted.succeed();
     mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn an_opened_prs_head_goes_in_a_fetch_of_its_own_ahead_of_the_heads_wanted() {
+    let place = Place::new("opened-alone");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+    let backport = PrHead {
+        target_branch: "3.14".to_owned(),
+        ..head(4)
+    };
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2), head(3)]);
+    requests.fetch_first(cpython.clone(), backport);
+    // The rules no longer want it, but the user still does.
+    requests.fetch_heads(cpython, vec![head(1), head(2), head(3)]);
+    first.succeed();
+    let opened = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(opened.refspecs(), [refspec(4)]);
+    assert_eq!(opened.branches(), ["+refs/heads/3.14*:refs/heads/3.14*"]);
+    opened.succeed();
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(2), refspec(3)]);
+    wanted.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn an_opened_prs_head_whose_fetch_failed_stays_ahead_of_the_heads_wanted() {
+    let place = Place::new("opened-failed");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_first(cpython.clone(), head(4));
+    let opened = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_heads(cpython, vec![head(2)]);
+    opened.fail();
+    let again = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(again.refspecs(), [refspec(4)]);
+    again.succeed();
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(2)]);
+    wanted.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn an_opened_prs_head_that_the_fetch_under_way_brings_needs_no_fetch_of_its_own() {
+    let place = Place::new("opened-brought");
+    let (cpython, hello) = (named("python/cpython"), named("octo-org/hello"));
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(4)]);
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_first(cpython, head(4));
+    wanted.succeed();
+    // A Repository whose heads the worker knows nothing of has nothing awaited.
+    requests.heads_saved(hello, vec![head(5)]);
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(starts.recv().is_err(), "the fetch under way brought head 4");
+}
+
+#[test]
+fn a_saved_head_of_an_awaited_pr_that_the_mirror_fetched_since_launch_needs_no_fetch() {
+    let place = Place::new("awaited-fetched");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(7)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed();
+    requests.await_head(cpython.clone(), 7);
+    requests.heads_saved(cpython, vec![head(7)]);
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(starts.recv().is_err(), "the mirror holds head 7");
+}
+
+#[test]
+fn an_opened_pr_out_of_reach_whose_head_came_back_behind_is_fetched_once_more_after_a_want() {
+    let place = Place::new("opened-behind");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(200));
+    let requests = mirrors.requests();
+
+    requests.fetch_first(cpython.clone(), head(4));
+    starts
+        .recv_timeout(PLENTY)
+        .unwrap()
+        .succeed_with(vec![older(4)]);
+    // The rules' want doesn't hold PR 4, which is out of Reach.
+    requests.fetch_heads(cpython, vec![head(2)]);
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(2)]);
+    wanted.succeed();
+    let again = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(again.refspecs(), [refspec(4)]);
+    again.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_pr_opened_before_its_head_is_known_gets_its_head_ahead_of_the_want_once_it_is_saved() {
+    let place = Place::new("awaited-head");
+    let (cpython, hello) = (named("python/cpython"), named("octo-org/hello"));
+    place.mirrored(&cpython);
+    place.mirrored(&hello);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.await_head(cpython.clone(), 7);
+    requests.fetch_heads(hello, vec![head(5)]);
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(2), head(7)]);
+    requests.heads_saved(cpython, vec![head(2), head(7)]);
+    first.succeed();
+    let opened = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(opened.refspecs(), [refspec(7)]);
+    opened.succeed();
+    let hellos = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(hellos.refspecs(), [refspec(5)]);
+    hellos.succeed();
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(2)]);
+    wanted.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_saved_head_of_a_pr_nobody_awaits_waits_for_the_want() {
+    let place = Place::new("saved-unawaited");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.opened(cpython.clone(), 7);
+    requests.heads_saved(cpython, vec![head(7)]);
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(starts.recv().is_err(), "no fetch");
 }
 
 #[test]

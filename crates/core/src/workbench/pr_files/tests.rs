@@ -6,7 +6,7 @@ use super::*;
 use crate::diff::MirrorDiff;
 use crate::diff::tests::Mirrored;
 use crate::facts::pull_request_content::{Side, Subject, ThreadCommentId};
-use crate::mirror::HeardRequests;
+use crate::facts::pull_requests::PrHead;
 use crate::workbench::testing::{ViewWorld, mine};
 
 /// A database and a mirror, where the PR's head and Target branch are those of `mirrored`.
@@ -14,8 +14,6 @@ struct World {
     view: ViewWorld,
     folders: Folders,
     diffs: Diffs,
-    mirrors: MirrorRequests,
-    heard: HeardRequests,
     highlighter: Highlighter,
     /// The data folder, dropped last.
     _data: crate::testing::TempPath,
@@ -26,7 +24,6 @@ impl World {
         let view = ViewWorld::new(&format!("pr-files-{name}"));
         let data = crate::testing::temp_path(&format!("pr-files-{name}-data"));
         std::fs::create_dir_all(&data).unwrap();
-        let (mirrors, heard) = HeardRequests::new();
         Self {
             view,
             folders: Folders {
@@ -35,8 +32,6 @@ impl World {
                 logs: data.to_path_buf(),
             },
             diffs: Diffs::default(),
-            mirrors,
-            heard,
             highlighter: Highlighter::start(),
             _data: data,
         }
@@ -47,7 +42,6 @@ impl World {
             reader: &self.view.reader,
             folders: &self.folders,
             diffs: &self.diffs,
-            mirrors: &self.mirrors,
             highlighter: &self.highlighter,
         }
     }
@@ -99,8 +93,22 @@ impl World {
         }
     }
 
+    /// What a read of PR 7's Files tab finds, while its clone doesn't wait for an answer.
+    fn read(&self) -> Option<FilesRead> {
+        PrFiles::read(&self.sources(), &self.repository(), 7, &|| false).unwrap()
+    }
+
     fn files(&self) -> Option<PrFiles> {
-        PrFiles::read(&self.sources(), &self.repository(), 7).unwrap()
+        self.read().map(|read| read.files)
+    }
+
+    /// What the mirror holds of PR 7's head, as a read of its Files tab finds.
+    fn head(&self) -> Option<HeadInMirror> {
+        self.read().and_then(|read| read.head)
+    }
+
+    fn head_in_mirror(&self) -> Option<HeadInMirror> {
+        PrFiles::head_in_mirror(&self.sources(), &self.repository(), 7).unwrap()
     }
 
     fn finish(self) {
@@ -122,17 +130,18 @@ fn before_its_mirror_is_cloned_a_pr_shows_the_clone() {
     world.has_pr(None, "main");
 
     assert_eq!(world.files(), Some(PrFiles::Cloning));
+    assert_eq!(world.head(), None, "no mirror to look in");
     world.finish();
 }
 
 #[test]
 fn before_the_user_says_where_its_mirror_gets_its_objects_a_pr_asks() {
-    let mut world = World::new("asking");
+    let world = World::new("asking");
     world.has_pr(None, "main");
 
-    world.heard.asking(&[world.repository()]);
+    let read = PrFiles::read(&world.sources(), &world.repository(), 7, &|| true).unwrap();
 
-    assert_eq!(world.files(), Some(PrFiles::Asking));
+    assert_eq!(read.map(|read| read.files), Some(PrFiles::Asking));
     world.finish();
 }
 
@@ -144,57 +153,53 @@ fn a_pr_whose_head_tsugiki_hasnt_read_waits_for_the_sync() {
     world.has_pr(None, "main");
 
     assert_eq!(world.files(), Some(PrFiles::Fetching));
-    assert_eq!(world.heard.firsts(), []);
+    assert_eq!(world.head(), Some(HeadInMirror::Unknown));
     world.finish();
 }
 
+/// PR 7's head at a commit no mirror holds.
+fn elsewhere() -> PrHead {
+    PrHead {
+        number: 7,
+        commit: CommitSha::parse(&"3".repeat(40)).unwrap(),
+        target_branch: "main".to_owned(),
+    }
+}
+
 #[test]
-fn a_head_the_mirror_lacks_is_fetched_first() {
+fn a_head_the_mirror_lacks_is_missing() {
     let world = World::new("fetching");
     let mirrored = Mirrored::new("pr-files-fetching");
     world.mirrors(&mirrored);
-    let elsewhere = CommitSha::parse(&"3".repeat(40)).unwrap();
-    world.has_pr(Some(elsewhere.clone()), "main");
+    world.has_pr(Some(elsewhere().commit), "main");
 
     assert_eq!(world.files(), Some(PrFiles::Fetching));
-    let head = PrHead {
-        number: 7,
-        commit: elsewhere,
-        target_branch: "main".to_owned(),
-    };
-    assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
+    assert_eq!(world.head(), Some(HeadInMirror::Missing(elsewhere())));
     world.finish();
 }
 
 #[test]
-fn opening_a_pr_fetches_a_head_the_mirror_lacks_without_reading_a_diff() {
+fn opening_a_pr_finds_a_head_the_mirror_lacks_without_reading_a_diff() {
     let world = World::new("open-fetching");
     let mirrored = Mirrored::new("pr-files-open-fetching");
     world.mirrors(&mirrored);
-    let elsewhere = CommitSha::parse(&"3".repeat(40)).unwrap();
-    world.has_pr(Some(elsewhere.clone()), "main");
+    world.has_pr(Some(elsewhere().commit), "main");
 
-    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
-
-    let head = PrHead {
-        number: 7,
-        commit: elsewhere,
-        target_branch: "main".to_owned(),
-    };
-    assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
+    assert_eq!(
+        world.head_in_mirror(),
+        Some(HeadInMirror::Missing(elsewhere()))
+    );
     world.finish();
 }
 
 #[test]
-fn opening_a_pr_whose_head_the_mirror_holds_asks_for_nothing_and_reads_no_diff() {
+fn opening_a_pr_finds_the_head_the_mirror_holds_and_reads_no_diff() {
     let world = World::new("open-held");
     let mirrored = Mirrored::new("pr-files-open-held");
     world.mirrors(&mirrored);
     world.has_pr(Some(mirrored.head.clone()), "main");
 
-    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
-
-    assert_eq!(world.heard.firsts(), []);
+    assert_eq!(world.head_in_mirror(), Some(HeadInMirror::Held));
     let at = PrAt {
         repository: world.repository(),
         number: 7,
@@ -206,23 +211,30 @@ fn opening_a_pr_whose_head_the_mirror_holds_asks_for_nothing_and_reads_no_diff()
 }
 
 #[test]
-fn opening_a_pr_tsugiki_doesnt_hold_asks_for_nothing() {
-    let world = World::new("open-none");
+fn opening_a_pr_whose_head_tsugiki_hasnt_read_finds_it_unknown() {
+    let world = World::new("open-no-head");
+    let mirrored = Mirrored::new("pr-files-open-no-head");
+    world.mirrors(&mirrored);
+    world.has_pr(None, "main");
 
-    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
-
-    assert_eq!(world.heard.firsts(), []);
+    assert_eq!(world.head_in_mirror(), Some(HeadInMirror::Unknown));
     world.finish();
 }
 
 #[test]
-fn opening_a_pr_before_its_mirror_is_cloned_asks_for_nothing() {
+fn opening_a_pr_tsugiki_doesnt_hold_finds_nothing() {
+    let world = World::new("open-none");
+
+    assert_eq!(world.head_in_mirror(), None);
+    world.finish();
+}
+
+#[test]
+fn opening_a_pr_before_its_mirror_is_cloned_finds_nothing() {
     let world = World::new("open-cloning");
-    world.has_pr(Some(CommitSha::parse(&"3".repeat(40)).unwrap()), "main");
+    world.has_pr(Some(elsewhere().commit), "main");
 
-    PrFiles::fetch_missing_head(&world.sources(), &world.repository(), 7).unwrap();
-
-    assert_eq!(world.heard.firsts(), []);
+    assert_eq!(world.head_in_mirror(), None);
     world.finish();
 }
 
@@ -259,33 +271,36 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
             count: 2,
         },
     };
-    assert_eq!(world.files(), Some(expected));
     let head = PrHead {
         number: 7,
         commit: newer,
         target_branch: "main".to_owned(),
     };
-    assert_eq!(world.heard.firsts(), [(world.repository(), head)]);
+    let found = FilesRead {
+        files: expected,
+        head: Some(HeadInMirror::Missing(head)),
+    };
+    assert_eq!(world.read(), Some(found));
     world.finish();
 }
 
 #[test]
-fn the_files_tab_moves_the_lookup_checkout_to_the_diffs_merge_base_and_head() {
+fn the_files_tab_gives_the_diffs_merge_base_and_head_read_and_on_show_with_the_head_held() {
     let world = World::new("look-up");
     let mirrored = Mirrored::new("pr-files-look-up");
-    let read = mirrored.read();
+    let whole = mirrored.read();
     world.mirrors(&mirrored);
     world.has_pr(Some(mirrored.head.clone()), "main");
 
-    let _read = world.files();
-    let _shown = world.files();
+    let read = world.read().unwrap();
+    let shown = world.read().unwrap();
 
-    let at = LookupAt {
-        base: read.base,
-        head: mirrored.head.clone(),
+    assert_eq!(read, shown);
+    assert_eq!(read.head, Some(HeadInMirror::Held));
+    let PrFiles::Ready { head, base, .. } = read.files else {
+        panic!("no diff in {read:?}");
     };
-    let asked = (world.repository(), at);
-    assert_eq!(world.heard.look_ups(), [asked.clone(), asked]);
+    assert_eq!((head, base), (mirrored.head.clone(), whole.base));
     world.finish();
 }
 
@@ -315,7 +330,7 @@ fn a_target_branch_the_mirror_lacks_says_so() {
     world.mirrors(&mirrored);
     world.has_pr(Some(mirrored.head.clone()), "3.14");
 
-    let problem = PrFiles::read(&world.sources(), &world.repository(), 7).unwrap_err();
+    let problem = PrFiles::read(&world.sources(), &world.repository(), 7, &|| false).unwrap_err();
 
     assert_eq!(
         problem.message,

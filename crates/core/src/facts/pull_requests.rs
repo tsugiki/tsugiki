@@ -8,6 +8,9 @@ use crate::facts::CommitSha;
 use crate::facts::labels::Label;
 use crate::login::Login;
 
+#[cfg(test)]
+mod tests;
+
 /// GitHub's ID for an item, which a fetch asks for it by.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -105,6 +108,35 @@ pub struct PrHead {
     pub number: u32,
     pub commit: CommitSha,
     pub target_branch: String,
+}
+
+/// What a Repository's Mirror holds of a PR's head, as a look in the Mirror found it. Opening the PR asks the
+/// Mirror worker for what this says is missing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeadInMirror {
+    /// Tsugiki doesn't know the PR's head yet: the sync reads it the next time it reads the PR.
+    Unknown,
+    /// The Mirror lacks the head.
+    Missing(PrHead),
+    /// The Mirror holds the head.
+    Held,
+}
+
+impl HeadInMirror {
+    /// What the Mirror holds of `pr`'s head, where `holds` says whether the Mirror holds a commit, as a look
+    /// in it found. It asks only of a head Tsugiki knows.
+    #[must_use]
+    pub fn of(pr: &PullRequestFacts, holds: impl FnOnce(&CommitSha) -> bool) -> Self {
+        match &pr.head {
+            None => Self::Unknown,
+            Some(commit) if holds(commit) => Self::Held,
+            Some(commit) => Self::Missing(PrHead {
+                number: pr.number,
+                commit: commit.clone(),
+                target_branch: pr.target_branch.clone(),
+            }),
+        }
+    }
 }
 
 /// The commit the user's Review of a PR covered, which the Repository's mirror keeps under a ref of its own

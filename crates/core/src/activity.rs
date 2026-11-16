@@ -4,11 +4,10 @@
 use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
-use crate::github::activity::{Activity, ActivityKind};
-use crate::github::pull_requests::{CiState, PrState, PullRequestFacts};
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind};
+use crate::facts::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
-use crate::store::ActivityFacts;
 
 /// One thing that makes an item show New activity.
 #[derive(Debug, Clone, PartialEq, Eq)]

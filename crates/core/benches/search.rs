@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tsugiki_core::github::CommitSha;
+use tsugiki_core::facts::CommitSha;
 use tsugiki_core::mirror::{LookupAt, LookupCheckout};
 use tsugiki_core::search::{Case, End, Query, Syntax, Words, search_checkout};
 use tsugiki_test_git::git;

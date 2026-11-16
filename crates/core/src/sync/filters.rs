@@ -9,11 +9,13 @@ use time::{Date, OffsetDateTime};
 
 use super::{Batches, Leads, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::error::{Error, ErrorKind};
+use crate::facts::filters::{FilterProblem, FilterResults};
+use crate::facts::pull_requests::{NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
 use crate::github::filters::{CreatedRange, FilterHit, FilterHitKind, FilterSearch};
-use crate::github::pull_requests::{NodeId, PageRequest, PrFetch, PullRequestFacts};
+use crate::github::pull_requests::{PageRequest, PrFetch};
 use crate::repository::RepositoryName;
-use crate::store::{FilterProblem, FilterResults, NarrowedResults};
+use crate::store::NarrowedResults;
 
 /// The most results GitHub lists for one search (ADR 0015).
 const SEARCH_CAP: u32 = 1000;

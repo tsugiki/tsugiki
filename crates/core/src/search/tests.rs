@@ -26,7 +26,7 @@ fn search_in(search: &TextSearch, fixture: &Fixture, text: &str) -> SearchId {
 /// The ends of a diff no fixture holds, each commit a run of `digit`.
 fn ends(digit: u8) -> LookupAt {
     let commit = |digit: u8| {
-        crate::github::CommitSha::parse(&char::from(b'0' + digit).to_string().repeat(40)).unwrap()
+        crate::facts::CommitSha::parse(&char::from(b'0' + digit).to_string().repeat(40)).unwrap()
     };
     LookupAt {
         base: commit(digit),
@@ -238,7 +238,7 @@ fn a_cancel_of_an_older_query_leaves_the_newer_one_running() {
 #[test]
 fn a_query_whose_files_git_cannot_list_fails() {
     let mut fixture = pr("search-owner-fails");
-    fixture.checkout.at.head = crate::github::CommitSha::parse(&"0".repeat(40)).unwrap();
+    fixture.checkout.at.head = crate::facts::CommitSha::parse(&"0".repeat(40)).unwrap();
     let (search, heard, _) = started();
     let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
@@ -323,7 +323,7 @@ fn a_search_at_once_refuses_a_bad_query_and_a_commit_git_lacks() {
     let mut fixture = pr("search-once-refused");
     let refused = search_checkout(&fixture.checkout, &query("")).unwrap_err();
     assert_eq!(refused.message, "There's nothing to search for.");
-    fixture.checkout.at.base = crate::github::CommitSha::parse(&"0".repeat(40)).unwrap();
+    fixture.checkout.at.base = crate::facts::CommitSha::parse(&"0".repeat(40)).unwrap();
     let failed = search_checkout(&fixture.checkout, &query("spam")).unwrap_err();
     assert_eq!(failed.message, "Tsugiki couldn't read the PR's files.");
 }

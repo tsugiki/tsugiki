@@ -16,11 +16,14 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::error::Error;
+use crate::facts::CommitSha;
+use crate::facts::patch_ids::PatchesOf;
+use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::folders::Folders;
-use crate::github::pull_requests::{PrHead, ReviewedCommit};
-use crate::github::{CommitSha, GitHub, Transport, live};
+use crate::github::{GitHub, Transport, live};
 use crate::latest::{self, LatestReader, LatestWriter};
-use crate::patch_ids::{PatchReads, PatchesOf};
+use crate::mirror_source::{MirrorSource, MirrorSources};
+use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, read_token};
@@ -34,7 +37,7 @@ use lookup::{Lookup, Move};
 pub use lookup::{LookupAt, LookupCheckout};
 use patches::Patches;
 use reviewed::{KeepReviewed, Reviews};
-pub use source::{CloneRefusal, MirrorSource, MirrorSources};
+pub use source::CloneRefusal;
 use source::{GITHUB_PREFIXES, lender};
 use upkeep::{Schedule, Upkeep, Upkept, delete_broken, says_broken};
 

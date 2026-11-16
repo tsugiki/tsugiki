@@ -26,7 +26,7 @@ use crate::error::{Error, ErrorKind};
 use crate::folders::Folders;
 use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
-use crate::mirror::{MirrorSource, MirrorSources};
+use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::repository::{RepositoryAccess, RepositoryName};
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
 use crate::theme::{

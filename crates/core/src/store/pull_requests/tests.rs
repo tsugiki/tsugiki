@@ -1,9 +1,9 @@
 use super::super::testing::temp_database;
 use super::super::*;
 use crate::error::ErrorKind;
-use crate::github::CommitSha;
-use crate::github::labels::Label;
-use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
+use crate::facts::CommitSha;
+use crate::facts::labels::Label;
+use crate::facts::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
 use crate::repository::RepositoryName;
 use crate::testing::TempPath;
 use std::fs;

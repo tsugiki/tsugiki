@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::error::{Error, ErrorKind};
-use crate::github::{CommitSha, live};
+use crate::facts::CommitSha;
+use crate::github::live;
 use crate::repository::RepositoryName;
 
 pub use highlighter::{Chunk, FileLines, HeadLine, Highlighter, HitFile, HitLines};

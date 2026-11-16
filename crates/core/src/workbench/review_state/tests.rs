@@ -2,12 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use crate::github::CommitSha;
-use crate::github::issues::IssueFacts;
-use crate::github::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::facts::activity::ActivityFacts;
+use crate::facts::issues::IssueFacts;
+use crate::facts::patch_ids::{CantCheck, FilePatch, PatchId, PatchesOf};
+use crate::facts::patch_ids::{LastCheck, ReviewFacts};
+use crate::facts::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
-use crate::patch_ids::{CantCheck, ChangedFile, FilePatch, PatchId, PatchesOf};
-use crate::store::{ActivityFacts, LastCheck, ReviewFacts, WorkFacts};
+use crate::patch_ids::ChangedFile;
 use crate::workbench::attention::Causes;
 use crate::workbench::testing::{
     BOT, at, backport, bots_backport, cpython, issue, me, outline, own, reviewed_workbench,

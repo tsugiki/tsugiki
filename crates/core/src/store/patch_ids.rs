@@ -8,9 +8,11 @@ use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 
 use super::Connection;
 use super::pull_request_content::reviewed_commits;
-use crate::github::CommitSha;
-use crate::github::pull_requests::PullRequestFacts;
-use crate::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchesOf, UncheckedCommit};
+use crate::facts::CommitSha;
+use crate::facts::patch_ids::{
+    CantCheck, CommitPatches, FilePatch, LastCheck, PatchesOf, ReviewFacts, UncheckedCommit,
+};
+use crate::facts::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
 
 /// A row for each commit whose patch-ids were read, which says so even of a commit with no files to diff,
@@ -58,28 +60,6 @@ pub(super) const CHECKS: &str = "
         PRIMARY KEY (repository, number)
     ) WITHOUT ROWID;
 ";
-
-/// What the review state of each PR is worked out from: the commit the user's Review covered, and the
-/// patch-ids the store holds of that commit and of the head.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct ReviewFacts {
-    /// The commit of the user's Review of each PR whose Conversation Tsugiki has read.
-    pub reviewed: BTreeMap<u32, CommitSha>,
-    /// The per-file patch-ids of each reviewed commit and head a check compares, once they have been read,
-    /// and of the head each PR's last check compared.
-    pub patches: BTreeMap<PatchesOf, Vec<FilePatch>>,
-    /// Why the Mirror worker can't read the patch-ids of the commits a check compares, for those it can't.
-    pub unchecked: BTreeMap<PatchesOf, CantCheck>,
-    /// The commits each PR's last finished check compared, whose verdict stands while a newer check waits.
-    pub last_checks: BTreeMap<u32, LastCheck>,
-}
-
-/// The two commits a PR's check compared once the patch-ids of both were read.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LastCheck {
-    pub reviewed: CommitSha,
-    pub head: CommitSha,
-}
 
 /// Keeps each of `patches`, in place of what was kept of the same commit before.
 pub(super) fn save(

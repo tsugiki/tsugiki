@@ -9,7 +9,7 @@ use super::attention::Causes;
 use super::review_state::SharedReviews;
 use super::{WorkbenchRow, candidates};
 use crate::error::Error;
-use crate::github::pull_request_content::PullRequestContent;
+use crate::facts::pull_request_content::PullRequestContent;
 use crate::repository_settings::RepositorySettings;
 use crate::store::StoreReader;
 

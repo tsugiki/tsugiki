@@ -88,7 +88,7 @@ fn a_patch_id_column_refuses_text_that_isnt_one() {
         Connection::open_in_memory()
             .unwrap()
             .query_row("SELECT 'abc1234' AS value", [], |row| {
-                row.get::<_, crate::patch_ids::PatchId>("value")
+                row.get::<_, crate::facts::patch_ids::PatchId>("value")
             });
     assert!(refused.is_err());
 }

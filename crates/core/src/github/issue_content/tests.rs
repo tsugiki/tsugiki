@@ -4,6 +4,7 @@ use time::format_description::well_known::Rfc3339;
 
 use super::*;
 use crate::github::testing::{Scripted, reply_ok, token};
+use crate::login::Login;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()

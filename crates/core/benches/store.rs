@@ -6,20 +6,21 @@ use std::path::{Path, PathBuf};
 
 use time::{Duration, OffsetDateTime};
 use tsugiki_core::conventions::Conventions;
-use tsugiki_core::filters::Filter;
-use tsugiki_core::github::CommitSha;
-use tsugiki_core::github::activity::{Activity, ActivityKind, ItemActivity};
-use tsugiki_core::github::issue_content::{Comment, CommentId, IssueComment, IssueContent};
-use tsugiki_core::github::issues::{IssueFacts, IssueState};
-use tsugiki_core::github::labels::Label;
-use tsugiki_core::github::pull_requests::{
+use tsugiki_core::facts::CommitSha;
+use tsugiki_core::facts::activity::{Activity, ActivityKind, ItemActivity};
+use tsugiki_core::facts::filters::FilterResults;
+use tsugiki_core::facts::issue_content::{Comment, CommentId, IssueComment, IssueContent};
+use tsugiki_core::facts::issues::{IssueFacts, IssueState};
+use tsugiki_core::facts::labels::Label;
+use tsugiki_core::facts::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
+use tsugiki_core::filters::Filter;
 use tsugiki_core::login::Login;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::ListOrder;
-use tsugiki_core::store::{self, FilterResults, OpenReader, Store, StoreReader};
+use tsugiki_core::store::{self, OpenReader, Store, StoreReader};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::quick_open;

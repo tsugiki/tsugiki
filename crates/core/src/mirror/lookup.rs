@@ -13,7 +13,7 @@ use std::sync::mpsc::Sender;
 
 use super::upkeep::remove_if_there;
 use super::{Job, MirrorProblem, Run, Worker};
-use crate::github::CommitSha;
+use crate::facts::CommitSha;
 use crate::repository::RepositoryName;
 
 /// The two ends of the PR on screen, as its diff has them.

@@ -14,9 +14,11 @@ use serde_json::{Value, json};
 
 use super::testing::Harness;
 use super::{Progress, Syncs};
+use crate::facts::WorkFacts;
+use crate::facts::activity::ActivityFacts;
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ActivityFacts, ChangeCheck, Store, WorkFacts};
+use crate::store::{ChangeCheck, Store};
 use crate::token::Token;
 
 /// A request, by what would change its answer.

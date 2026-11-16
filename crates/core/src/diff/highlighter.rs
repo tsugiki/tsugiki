@@ -30,7 +30,8 @@ use specta::Type;
 
 use super::{DiffRow, NewsEntry, OpenDiff, count};
 use crate::error::Error;
-use crate::github::{CommitSha, live};
+use crate::facts::CommitSha;
+use crate::github::live;
 use crate::highlight::{Language, Parsed, Span};
 
 /// Which version of a file a line is in.

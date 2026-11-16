@@ -4,7 +4,7 @@ use std::thread;
 
 use super::*;
 use crate::definitions::testing::Fixture;
-use crate::github::CommitSha;
+use crate::facts::CommitSha;
 use crate::highlight::Highlight;
 use crate::testing::temp_path;
 

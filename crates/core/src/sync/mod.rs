@@ -24,10 +24,11 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
+use crate::facts::issues::ListedPr;
+use crate::facts::pull_requests::{NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
 use crate::github::GitHub;
-use crate::github::issues::ListedPr;
-use crate::github::pull_requests::{NodeId, PrFetch, PullRequestFacts, RateLimit};
+use crate::github::pull_requests::{PrFetch, RateLimit};
 use crate::links::{possible_numbers, possible_origin};
 use crate::login::Login;
 use crate::repository::{RepositoryName, WINDOW_DAYS};

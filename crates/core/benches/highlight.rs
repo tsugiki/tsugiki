@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use tsugiki_core::diff::{Highlighter, HitFile, HitLines};
-use tsugiki_core::github::CommitSha;
+use tsugiki_core::facts::CommitSha;
 use tsugiki_core::highlight::{Language, Parsed};
 
 /// C, as Tsugiki highlights a `.c` file.

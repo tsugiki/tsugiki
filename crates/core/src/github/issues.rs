@@ -4,48 +4,20 @@
 
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::json;
-use specta::Type;
 use time::OffsetDateTime;
 
-use super::activity::{IssueTimelineWire, ItemActivity, issue_activity};
-use super::labels::{Label, LabelWire, label_names};
-use super::pull_requests::{NodeId, Nodes, PageRequest, Person, RateLimit};
+use super::activity::{IssueTimelineWire, issue_activity};
+use super::labels::{LabelWire, label_names};
+use super::pull_requests::{Nodes, PageRequest, Person, RateLimit};
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
 use super::{GitHub, Request};
 use crate::error::Error;
-use crate::login::Login;
+use crate::facts::activity::ItemActivity;
+use crate::facts::issues::{IssueFacts, IssueState, ListedPr};
 use crate::repository::RepositoryName;
-
-/// An Issue a PR names, as Tsugiki keeps it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueFacts {
-    pub number: u32,
-    pub title: String,
-    /// Nothing, for an Issue whose author's account has gone.
-    pub author: Option<Login>,
-    pub assignees: Vec<Login>,
-    /// In name order, ignoring case. Empty for an Issue stored before Tsugiki kept labels, until GitHub
-    /// sends it again.
-    pub labels: Vec<Label>,
-    pub updated_at: OffsetDateTime,
-    /// Nothing for an Issue stored before Tsugiki kept states, until GitHub sends it again.
-    pub state: Option<IssueState>,
-}
-
-/// Whether an Issue is open, and how it closed, as GitHub draws it (#188).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum IssueState {
-    Open,
-    /// Closed as completed, or closed before GitHub said why.
-    Closed,
-    NotPlanned,
-    /// Closed as a duplicate, which GitHub draws as it draws not planned.
-    Duplicate,
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -169,15 +141,6 @@ pub(super) struct ReadByNumber<T> {
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
-}
-
-/// A PR that mentions an Issue. Only the link rules can say whether it belongs in the Issue's tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ListedPr {
-    pub id: NodeId,
-    pub number: u32,
-    #[serde(rename = "updatedAt", with = "time::serde::rfc3339")]
-    pub updated_at: OffsetDateTime,
 }
 
 /// One page of an Issue's cross-references, the newest PR first.

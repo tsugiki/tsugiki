@@ -1,16 +1,18 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::facts::WorkFacts;
+use crate::facts::activity::{Activity, ActivityKind};
+use crate::facts::filters::FilterProblem;
+use crate::facts::issues::IssueState;
+use crate::facts::labels::Label;
+use crate::facts::pull_requests::{CiState, ReviewState};
 use crate::filters::Filter;
-use crate::github::activity::{Activity, ActivityKind};
-use crate::github::issues::IssueState;
-use crate::github::labels::Label;
-use crate::github::pull_requests::{CiState, ReviewState};
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::status::Change;
-use crate::store::{FilterProblem, Store, WorkFacts};
+use crate::store::Store;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, no_cross_references,
@@ -1124,7 +1126,7 @@ fn with_nobody_signed_in_nothing_counts_as_the_users() {
 }
 
 fn stored_filter(harness: &Harness, text: &str, numbers: &[u32]) {
-    let results = crate::store::FilterResults {
+    let results = crate::facts::filters::FilterResults {
         numbers: numbers.iter().copied().collect(),
         problem: None,
     };

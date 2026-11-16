@@ -1,8 +1,8 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::github::issue_content::{Comment, HiddenReason};
-use crate::github::pull_request_content::{Opening, Submission};
+use crate::facts::issue_content::{Comment, HiddenReason};
+use crate::facts::pull_request_content::{Opening, Submission};
 use crate::highlight::Highlight;
 
 /// `Lib/ast.py` with one line changed, and `Lib/old.py` renamed to `Lib/new.py` with a line added.

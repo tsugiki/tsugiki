@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::facts::labels::Label;
 use crate::github::Reply;
 use crate::github::Unreachable;
 use crate::github::testing::{Scripted, reply_ok, token};
@@ -37,12 +38,12 @@ fn search_body(ids: &[&str], next: Option<&str>) -> String {
 fn ids(names: &[&str]) -> Vec<NodeId> {
     names
         .iter()
-        .map(|name| NodeId((*name).to_owned()))
+        .map(|name| NodeId::new((*name).to_owned()))
         .collect()
 }
 
 fn thirty_ids() -> Vec<NodeId> {
-    (0..30).map(|n| NodeId(format!("id{n}"))).collect()
+    (0..30).map(|n| NodeId::new(format!("id{n}"))).collect()
 }
 
 fn pr_json() -> serde_json::Value {

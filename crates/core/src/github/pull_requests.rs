@@ -5,14 +5,18 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use specta::Type;
 use time::OffsetDateTime;
 
-use super::activity::{ItemActivity, TimelineWire, pull_request_activity};
-use super::labels::{Label, LabelWire, label_names};
-use super::{BAD_GATEWAY, CommitSha, GitHub, Request, Unreachable, read};
+use super::activity::{TimelineWire, pull_request_activity};
+use super::labels::{LabelWire, label_names};
+use super::{BAD_GATEWAY, GitHub, Request, Unreachable, read};
 use crate::conventions::Conventions;
 use crate::error::Error;
+use crate::facts::CommitSha;
+use crate::facts::activity::ItemActivity;
+use crate::facts::pull_requests::{
+    CiState, LatestReview, NodeId, OffDefault, PrState, PullRequestFacts, ReviewState,
+};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -118,11 +122,6 @@ impl PrFetch {
     }
 }
 
-/// GitHub's ID for an item, which a fetch asks for it by.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct NodeId(String);
-
 /// GitHub's count of the points left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -157,148 +156,6 @@ pub struct FetchedOrigin {
     /// Nothing, when that number names an Issue or nothing.
     pub pull_request: Option<(PullRequestFacts, ItemActivity)>,
     pub rate_limit: RateLimit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum PrState {
-    Open,
-    Closed,
-    Merged,
-}
-
-/// A commit's CI, as GitHub rolls its checks up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CiState {
-    Expected,
-    Error,
-    Failure,
-    Pending,
-    Success,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum ReviewState {
-    Pending,
-    Commented,
-    Approved,
-    ChangesRequested,
-    Dismissed,
-}
-
-/// Someone's latest Review of a PR.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LatestReview {
-    pub author: Login,
-    pub state: ReviewState,
-}
-
-/// The facts Tsugiki keeps about a PR, as GitHub reports them (ADR 0010).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PullRequestFacts {
-    pub number: u32,
-    pub title: String,
-    pub state: PrState,
-    pub is_draft: bool,
-    /// Nobody, when the account no longer exists.
-    pub author: Option<Login>,
-    pub target_branch: String,
-    /// Nothing, when the last commit has no checks.
-    pub ci: Option<CiState>,
-    pub updated_at: OffsetDateTime,
-    /// Empty when the store reads back a merged or closed PR: those requests ask nothing of anyone.
-    pub review_requests: Vec<Login>,
-    pub latest_reviews: Vec<LatestReview>,
-    pub assignees: Vec<Login>,
-    /// In name order, ignoring case. Empty for a PR stored before Tsugiki kept labels, until GitHub sends
-    /// it again.
-    pub labels: Vec<Label>,
-    /// The Issues in this Repository that GitHub says this PR closes.
-    pub closing_issues: Vec<u32>,
-    /// The commit a merged PR became. GitHub gives one only for a merged PR.
-    pub merge_commit: Option<CommitSha>,
-    /// The commit of the Target branch GitHub compares the PR with, which stays put once the PR merges.
-    /// Nothing for a PR stored before Tsugiki read it.
-    pub base: Option<CommitSha>,
-    /// The commit the PR's branch is at, which the Repository's mirror fetches. Nothing for a PR stored
-    /// before Tsugiki read heads.
-    pub head: Option<CommitSha>,
-    /// The facts the link rules read on a PR that doesn't target the default branch (ADR 0011).
-    pub off_default: Option<OffDefault>,
-}
-
-/// The commit a PR's branch is at, which the Repository's mirror fetches, with the branch its diff starts
-/// from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PrHead {
-    pub number: u32,
-    pub commit: CommitSha,
-    pub target_branch: String,
-}
-
-/// The commit the user's Review of a PR covered, which the Repository's mirror keeps under a ref of its own
-/// (#382), so a Stale review check finds it there.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ReviewedCommit {
-    pub number: u32,
-    pub commit: CommitSha,
-}
-
-/// The facts only a PR off the default branch needs, for the link rules (ADR 0011).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OffDefault {
-    /// GitHub ignores closing keywords here, so Tsugiki reads them itself.
-    pub description: String,
-    /// The commits its description or its commits name in a `(cherry picked from commit <sha>)` line.
-    pub cherry_picked_from: Vec<CommitSha>,
-    /// The committer of each commit that isn't a merge. `None` for one with no GitHub account or a
-    /// commit past the ones Tsugiki reads.
-    pub committers: Vec<Option<Login>>,
-}
-
-impl PullRequestFacts {
-    /// True when a sync needn't fetch this PR again, because it has merged or closed (ADR 0011). A merged PR
-    /// with no merge commit came from a Tsugiki that kept none, so a fetch still has facts to bring.
-    pub fn is_frozen(&self) -> bool {
-        match self.state {
-            PrState::Open => false,
-            PrState::Closed => true,
-            PrState::Merged => self.merge_commit.is_some(),
-        }
-    }
-
-    /// True when `login` wrote this PR or has a Review on it. A review they haven't submitted isn't one yet.
-    pub fn is_written_or_reviewed_by(&self, login: &Login) -> bool {
-        self.author.as_ref() == Some(login) || self.is_reviewed_by(login)
-    }
-
-    /// True when `login` has a Review on this PR, as GitHub lists the latest of each. A review they haven't
-    /// submitted isn't one yet.
-    pub fn is_reviewed_by(&self, login: &Login) -> bool {
-        self.latest_reviews
-            .iter()
-            .any(|review| review.author == *login && review.state != ReviewState::Pending)
-    }
-
-    /// True when a newer `updatedAt` says nothing a Filter or a tree reads has changed, as a merged PR stays
-    /// merged. A closed PR can reopen.
-    pub fn stays_as_it_is(&self) -> bool {
-        self.state == PrState::Merged && self.is_frozen()
-    }
-}
-
-#[cfg(test)]
-impl OffDefault {
-    /// Facts off the default branch with `description` and nothing else.
-    pub(crate) fn described(description: &str) -> Self {
-        Self {
-            description: description.to_owned(),
-            cherry_picked_from: vec![],
-            committers: vec![],
-        }
-    }
 }
 
 /// The SHAs named in each `(cherry picked from commit <sha>)` line of `text`.
@@ -637,7 +494,7 @@ impl GitHub {
         }
         let query = fetch_by_ids_query(why);
         let (data, asked_for): (Data, usize) = self.query_at_size(size.min(ids.len()), |size| {
-            let asked: Vec<&str> = ids.iter().take(size).map(|id| id.0.as_str()).collect();
+            let asked: Vec<&str> = ids.iter().take(size).map(NodeId::as_str).collect();
             Request {
                 operation: why.name(),
                 query: query.as_str().into(),

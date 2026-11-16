@@ -1,7 +1,9 @@
 use crate::conventions::Conventions;
-use crate::github::pull_requests::PullRequestFacts;
+use crate::facts::WorkFacts;
+use crate::facts::activity::ActivityFacts;
+use crate::facts::patch_ids::ReviewFacts;
+use crate::facts::pull_requests::PullRequestFacts;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ActivityFacts, ReviewFacts, WorkFacts};
 use crate::workbench::testing::{
     backport, cpython, fixing, issue, me, mine, outline, own, stranger, workbench,
 };

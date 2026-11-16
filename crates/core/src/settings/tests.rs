@@ -1,7 +1,7 @@
 use super::*;
 use crate::conventions::Conventions;
 use crate::filters::Filter;
-use crate::mirror::MirrorSource;
+use crate::mirror_source::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
 use crate::testing::TempPath;
 use crate::theme::{ThemeChoice, ThemeInForce, ThemeKind, ThemeName, ThemePick};

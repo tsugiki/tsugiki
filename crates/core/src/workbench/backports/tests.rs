@@ -1,6 +1,6 @@
-use crate::github::CommitSha;
-use crate::github::pull_requests::OffDefault;
-use crate::github::pull_requests::{PrState, PullRequestFacts};
+use crate::facts::CommitSha;
+use crate::facts::pull_requests::OffDefault;
+use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::links::BackportKind;
 use crate::workbench::testing::{
     at, backport, bots_backport, first_issue, fixing, issue, me, mine, outline, own, stranger,

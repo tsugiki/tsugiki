@@ -5,9 +5,9 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
-use crate::github::pull_requests::{PrHead, ReviewedCommit};
+use crate::facts::patch_ids::PatchesOf;
+use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
-use crate::patch_ids::PatchesOf;
 use crate::repository::RepositoryName;
 
 /// The app's state, shown in the status bar.

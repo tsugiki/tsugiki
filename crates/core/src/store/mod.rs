@@ -34,19 +34,19 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
+use crate::facts::WorkFacts;
+use crate::facts::activity::ItemActivity;
+use crate::facts::filters::FilterResults;
+use crate::facts::issue_content::IssueContent;
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::patch_ids::{CommitPatches, LastCheck, UncheckedCommit};
+use crate::facts::pull_request_content::PullRequestContent;
+use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewedCommit};
 use crate::filters::FilterQuery;
-use crate::github::activity::ItemActivity;
-use crate::github::issue_content::IssueContent;
-use crate::github::issues::{IssueFacts, IssueState};
-use crate::github::pull_request_content::PullRequestContent;
-use crate::github::pull_requests::{PrState, PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
-use crate::patch_ids::{CommitPatches, UncheckedCommit};
 use crate::repository::RepositoryName;
-pub use activity::ActivityFacts;
-pub use filters::{FilterProblem, FilterResults, NarrowedResults};
+pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
-pub use patch_ids::{LastCheck, ReviewFacts};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -480,7 +480,7 @@ impl Store {
         &self,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<Vec<crate::github::activity::Activity>, Error> {
+    ) -> Result<Vec<crate::facts::activity::Activity>, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| activity::read(connection, &repository, number))?;
         read.map_err(saying(CANT_READ))
@@ -535,19 +535,6 @@ impl Store {
             thread: std::thread::spawn(|| {}),
         }
     }
-}
-
-/// The facts a screen needs to work out the Workbench, read at one moment.
-#[derive(Debug, PartialEq, Eq)]
-pub struct WorkFacts {
-    /// The user signed in when Tsugiki last reached GitHub, if it ever has.
-    pub viewer: Option<Login>,
-    pub pull_requests: Vec<PullRequestFacts>,
-    pub issues: Vec<IssueFacts>,
-    /// Each search of this Repository, with its last results.
-    pub filters: BTreeMap<FilterQuery, FilterResults>,
-    pub activity: ActivityFacts,
-    pub reviews: ReviewFacts,
 }
 
 /// An Issue or a PR as quick open reads it and lists it. Quick open hands it to the window as it is, so a

@@ -1,7 +1,7 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::github::issue_content::CommentId;
+use crate::facts::issue_content::CommentId;
 use crate::login::Login;
 use crate::store::Store;
 use crate::store::reader;

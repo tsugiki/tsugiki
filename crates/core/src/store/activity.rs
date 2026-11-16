@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use super::Connection;
 use super::columns::UnixTime;
 use super::failed_checks;
-use crate::github::activity::{Activity, ActivityKind, ItemActivity};
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -225,25 +225,6 @@ pub(super) fn remember_first_sync(
             named_params! { ":repository": repository, ":started_at": started_at.unix_timestamp() },
         )
         .map(drop)
-}
-
-/// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
-/// list costs no query for each item.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ActivityFacts {
-    /// The moment the Repository's first sync began, once a first sync has finished.
-    pub first_sync: Option<OffsetDateTime>,
-    pub last_seen: BTreeMap<u32, OffsetDateTime>,
-    /// The moment the user marked each item unseen, for the items still flagged.
-    pub marked_unseen: BTreeMap<u32, OffsetDateTime>,
-    /// Each event that names the user, and what happened after the first sync began on the items they wrote,
-    /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
-    /// those can make an item Need attention, and a Repository holds too many others to read with each list.
-    pub events: BTreeMap<u32, Vec<Activity>>,
-    /// The moment Tsugiki saw each PR's CI reach a result.
-    pub ci_finished: BTreeMap<u32, OffsetDateTime>,
-    /// The names of the failed checks of each PR Tsugiki has asked about.
-    pub failed_checks: BTreeMap<u32, Vec<String>>,
 }
 
 const SELECT_LAST_SEEN: &str = "SELECT number, at FROM last_seen WHERE repository = :repository";

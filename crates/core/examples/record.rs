@@ -14,11 +14,12 @@ use std::path::Path;
 
 use time::{Duration, OffsetDateTime};
 use tsugiki_core::error::Error;
+use tsugiki_core::facts::issues::ListedPr;
+use tsugiki_core::facts::pull_requests::NodeId;
 use tsugiki_core::filters::Filter;
 use tsugiki_core::github::GitHub;
 use tsugiki_core::github::filters::{FilterHitKind, FilterSearch};
-use tsugiki_core::github::issues::ListedPr;
-use tsugiki_core::github::pull_requests::{NodeId, PageRequest, PrFetch};
+use tsugiki_core::github::pull_requests::{PageRequest, PrFetch};
 use tsugiki_core::github::record::Recorder;
 use tsugiki_core::github::refresh::{ListCheck, ListPlace, PollRequest};
 use tsugiki_core::links::{possible_numbers, possible_origin};

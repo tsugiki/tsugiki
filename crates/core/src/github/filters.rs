@@ -6,10 +6,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::{Date, Duration, OffsetDateTime};
 
-use super::pull_requests::{NodeId, PageRequest, RateLimit};
+use super::pull_requests::{PageRequest, RateLimit};
 use super::refresh::github_time;
 use super::{GitHub, Request};
 use crate::error::Error;
+use crate::facts::pull_requests::NodeId;
 use crate::filters::FilterQuery;
 use crate::repository::RepositoryName;
 

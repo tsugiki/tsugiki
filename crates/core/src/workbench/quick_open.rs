@@ -11,8 +11,8 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
-use crate::github::issues::IssueState;
-use crate::github::pull_requests::PrState;
+use crate::facts::issues::IssueState;
+use crate::facts::pull_requests::PrState;
 use crate::repository::RepositoryName;
 use crate::store::{StoreReader, TitledItem, TitledKind};
 

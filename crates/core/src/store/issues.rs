@@ -8,9 +8,9 @@ use rusqlite::named_params;
 use super::columns::UnixTime;
 use super::{Connection, TitledItem, TitledKind};
 use super::{activity, pull_requests};
-use crate::github::activity::ItemActivity;
-use crate::github::issues::IssueFacts;
-use crate::github::labels::Label;
+use crate::facts::activity::ItemActivity;
+use crate::facts::issues::IssueFacts;
+use crate::facts::labels::Label;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 

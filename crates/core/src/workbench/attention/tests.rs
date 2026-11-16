@@ -5,16 +5,17 @@ use std::fs;
 use time::{Duration, OffsetDateTime};
 
 use super::{Attention, Why};
-use crate::github::CommitSha;
-use crate::github::activity::{Activity, ActivityKind, ItemActivity};
-use crate::github::issue_content::IssueContent;
-use crate::github::issues::{IssueFacts, IssueState};
-use crate::github::pull_request_content::{PullRequestContent, Review};
-use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
-use crate::login::Login;
-use crate::patch_ids::{
-    CantCheck, ChangedFile, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit,
+use crate::facts::CommitSha;
+use crate::facts::activity::{Activity, ActivityKind, ItemActivity};
+use crate::facts::issue_content::IssueContent;
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::patch_ids::{
+    CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit,
 };
+use crate::facts::pull_request_content::{PullRequestContent, Review};
+use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::login::Login;
+use crate::patch_ids::ChangedFile;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;

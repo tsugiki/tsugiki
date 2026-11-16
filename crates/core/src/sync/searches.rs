@@ -3,7 +3,8 @@
 use super::filters::FilterWalk;
 use super::{Link, Moved, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
-use crate::github::pull_requests::{NodeId, PageRequest, PrSearch};
+use crate::facts::pull_requests::NodeId;
+use crate::github::pull_requests::{PageRequest, PrSearch};
 
 /// The user's own items in the order a first sync loads them (ADR 0015). Assigned Issues come with Issues
 /// themselves, so these all find PRs. A team's Review request doesn't name the user, so it doesn't count.

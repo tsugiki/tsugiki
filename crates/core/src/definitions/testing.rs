@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tsugiki_lsp::{Event, Process, Server, Starting, Streams, Uri};
 use tsugiki_test_git::git;
 
-use crate::github::CommitSha;
+use crate::facts::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::testing::{TempPath, temp_path};
 

@@ -5,7 +5,7 @@ use tsugiki_test_git::git;
 
 use super::*;
 use crate::diff::{Diff, PrAt, Start, read};
-use crate::github::CommitSha;
+use crate::facts::CommitSha;
 use crate::repository::RepositoryName;
 use crate::testing::TempPath;
 

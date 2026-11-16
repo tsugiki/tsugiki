@@ -21,8 +21,9 @@ use tsugiki_lsp::{Diagnostics, Language, Progress, ProgressToken, Uri, WorkDone}
 use super::server::{Indexing, Ready, Setup, Unopened};
 use super::{CPYTHON_MARK, IndexedFiles, ServerProblem, failed};
 use crate::error::Error;
+use crate::facts::CommitSha;
 use crate::folders::servers_beside;
-use crate::github::{CommitSha, live};
+use crate::github::live;
 
 #[cfg(test)]
 mod tests;

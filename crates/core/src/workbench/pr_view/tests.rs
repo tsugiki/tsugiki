@@ -1,13 +1,13 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::github::CommitSha;
-use crate::github::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
-use crate::github::pull_request_content::{
+use crate::facts::CommitSha;
+use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
+use crate::facts::pull_request_content::{
     Anchor, DiffHunk, Opening, Resolution, Review, ReviewId, Side, Subject, Submission,
     ThreadComment, ThreadCommentId, ThreadId, ThreadLine,
 };
-use crate::github::pull_requests::{PullRequestFacts, ReviewState};
+use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
 use crate::login::Login;
 use crate::workbench::testing::{
     ViewWorld, backport, bots_backport, fixing, issue, someone, stranger,

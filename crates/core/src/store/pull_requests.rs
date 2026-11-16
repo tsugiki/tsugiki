@@ -8,10 +8,10 @@ use rusqlite::{Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
 use super::{Connection, TitledItem, TitledKind};
-use crate::github::CommitSha;
-use crate::github::activity::ItemActivity;
-use crate::github::labels::Label;
-use crate::github::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
+use crate::facts::CommitSha;
+use crate::facts::activity::ItemActivity;
+use crate::facts::labels::Label;
+use crate::facts::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 

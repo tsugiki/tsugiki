@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::facts::pull_requests::{PrState, ReviewState};
 use crate::github::Unreachable;
-use crate::github::pull_requests::{PrState, ReviewState};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Scripted, reply_ok, token};
 use crate::github::{ConditionalReply, Reply, Transport};

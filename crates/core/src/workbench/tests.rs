@@ -1,8 +1,9 @@
 use serde_json::Value;
 
 use super::*;
-use crate::github::pull_requests::{PrState, PullRequestFacts};
-use crate::store::{ActivityFacts, ReviewFacts};
+use crate::facts::activity::ActivityFacts;
+use crate::facts::patch_ids::ReviewFacts;
+use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::workbench::testing::{
     at, cpython, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
 };

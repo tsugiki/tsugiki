@@ -1,5 +1,5 @@
-use crate::github::issues::{IssueFacts, IssueState};
-use crate::github::pull_requests::PullRequestFacts;
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::pull_requests::PullRequestFacts;
 use crate::login::Login;
 use crate::workbench::testing::{
     at, backport, bots_backport, first_issue, fixing, issue, me, stranger, workbench,

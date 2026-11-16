@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
-use crate::github::issue_content::IssueContent;
-use crate::github::pull_request_content::PullRequestContent;
+use crate::facts::issue_content::IssueContent;
+use crate::facts::pull_request_content::PullRequestContent;
 use crate::store::Store;
 use crate::store::testing::temp_database;
 

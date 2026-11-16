@@ -105,6 +105,12 @@ const LAYERS: &[Layer] = &[
               may do in it.",
     },
     Layer {
+        module: "mirror_source",
+        uses: &["repository"],
+        why: "Names where each Repository's mirror gets its objects, which `settings` keeps and `mirror` \
+              clones by, so `settings` needn't use `mirror`.",
+    },
+    Layer {
         module: "web",
         uses: &["error", "repository"],
         why: "Checks an address before the browser opens it, and builds a Repository's addresses.",
@@ -125,6 +131,13 @@ const LAYERS: &[Layer] = &[
         why: "Starts a Repository with the Filters its access suits.",
     },
     Layer {
+        module: "facts",
+        uses: &["filters", "login"],
+        why: "Holds the facts the rules judge: what `github` parses, the patch-ids the Mirror worker reads, \
+              and the bundles the store fills. They belong to neither the client nor the store, so a module \
+              that judges facts needs neither. A bundle names each Filter's results by its query.",
+    },
+    Layer {
         module: "conventions",
         uses: &["login", "repository"],
         why: "Picks a Repository's Conventions by its name. They name bot accounts by `Login`.",
@@ -139,65 +152,52 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "conventions",
             "error",
+            "facts",
             "filters",
             "login",
             "repository",
             "token",
         ],
-        why: "Sends the token with each request, runs a Filter's search, and reads what GitHub answers \
-              through the Repository's Conventions.",
+        why: "Sends the token with each request, runs a Filter's search, and parses what GitHub answers into \
+              `facts` through the Repository's Conventions.",
     },
     Layer {
         module: "patch_ids",
-        uses: &["github"],
+        uses: &["facts"],
         why: "Compares the per-file patch-ids of two commits for the Stale review check, which the store \
               keeps by commit and the Mirror worker reads.",
     },
     Layer {
         module: "status",
-        uses: &["error", "github", "login", "patch_ids", "repository"],
+        uses: &["error", "facts", "login", "repository"],
         why: "Announces app-wide status, which names the signed-in `Login` and the PR heads that wait.",
     },
     Layer {
         module: "store",
-        uses: &[
-            "error",
-            "filters",
-            "github",
-            "login",
-            "patch_ids",
-            "repository",
-        ],
-        why: "Saves the facts `github` parses in `github`'s own types, so no second copy of each type drifts \
-              from the first.",
+        uses: &["error", "facts", "filters", "github", "login", "repository"],
+        why: "Saves the facts `github` parses and the Mirror worker reads, in the types of `facts`, so no \
+              second copy of each type drifts from the first. A refresh's ETags come from `github`.",
     },
     Layer {
         module: "links",
         uses: &[
             "conventions",
-            "github",
+            "facts",
             "login",
             "repository",
             "repository_settings",
         ],
-        why: "Works out the Issues a PR names and a Backport's Origin PR from `github`'s facts, through the \
+        why: "Works out the Issues a PR names and a Backport's Origin PR from its facts, through the \
               Repository's Conventions.",
     },
     Layer {
         module: "activity",
-        uses: &["conventions", "github", "links", "login", "store"],
+        uses: &["conventions", "facts", "links", "login"],
         why: "Works out New activity from the facts the store keeps, and counts a Backport through `links`.",
     },
     Layer {
         module: "diff",
-        uses: &[
-            "error",
-            "github",
-            "highlight",
-            "patch_ids",
-            "repository",
-            "web",
-        ],
+        uses: &["error", "facts", "github", "highlight", "repository", "web"],
         why: "Reads a PR's diff and each file's patch-id from its mirror, highlights the diff, and links its \
               files to GitHub.",
     },
@@ -206,9 +206,11 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "diff",
             "error",
+            "facts",
             "folders",
             "github",
             "latest",
+            "mirror_source",
             "patch_ids",
             "repository",
             "status",
@@ -223,6 +225,7 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "diff",
             "error",
+            "facts",
             "folders",
             "github",
             "highlight",
@@ -249,7 +252,7 @@ const LAYERS: &[Layer] = &[
             "folders",
             "keys",
             "latest",
-            "mirror",
+            "mirror_source",
             "repository",
             "repository_settings",
             "theme",
@@ -264,9 +267,9 @@ const LAYERS: &[Layer] = &[
             "conventions",
             "diff",
             "error",
+            "facts",
             "filters",
             "folders",
-            "github",
             "highlight",
             "links",
             "login",
@@ -284,6 +287,7 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "conventions",
             "error",
+            "facts",
             "filters",
             "github",
             "links",
@@ -301,6 +305,7 @@ const LAYERS: &[Layer] = &[
         module: "session",
         uses: &[
             "error",
+            "facts",
             "folders",
             "github",
             "patch_ids",

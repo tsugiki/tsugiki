@@ -14,12 +14,12 @@ use crate::diff::{
     Held, Highlighter, NewsEntry, OpenDiff, PrAt, Start,
 };
 use crate::error::{Error, ErrorKind};
+use crate::facts::CommitSha;
+pub use crate::facts::pull_request_content::CodeRow;
+use crate::facts::pull_request_content::PullRequestContent;
+use crate::facts::pull_request_content::Side;
+use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::folders::Folders;
-use crate::github::CommitSha;
-pub use crate::github::pull_request_content::CodeRow;
-use crate::github::pull_request_content::PullRequestContent;
-use crate::github::pull_request_content::Side;
-use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::highlight::Span;
 use crate::mirror::{LookupAt, MirrorRequests};
 use crate::repository::RepositoryName;

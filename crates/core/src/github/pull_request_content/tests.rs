@@ -6,8 +6,11 @@ use time::format_description::well_known::Rfc3339;
 
 use super::*;
 use crate::error::ErrorKind;
+use crate::facts::issue_content::HiddenReason;
+use crate::facts::pull_request_content::CodeRow;
 use crate::github::replay::Replayer;
 use crate::github::testing::{Scripted, reply_ok, token};
+use crate::login::Login;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()

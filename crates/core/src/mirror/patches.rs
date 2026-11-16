@@ -10,7 +10,8 @@ use std::mem;
 
 use super::{CHECK_GIT, MirrorProblem, Worker};
 use crate::diff::read_patch_ids;
-use crate::patch_ids::{CantCheck, CommitPatches, PatchReads, PatchesOf, UncheckedCommit};
+use crate::facts::patch_ids::{CantCheck, CommitPatches, PatchesOf, UncheckedCommit};
+use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 
 /// What the worker knows of one Repository's commits whose patch-ids the check needs.

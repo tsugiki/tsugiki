@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use super::{Batches, Leads, Link, Moved, Reading, Resumable, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
-use crate::github::issues::ListedPr;
-use crate::github::pull_requests::{NodeId, PageRequest, PrFetch};
+use crate::facts::issues::ListedPr;
+use crate::facts::pull_requests::NodeId;
+use crate::github::pull_requests::{PageRequest, PrFetch};
 
 pub(super) fn read_cross_references(
     link: &Link<'_>,

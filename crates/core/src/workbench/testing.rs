@@ -5,12 +5,14 @@ use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
 use super::{IssueItem, TreeEntry, WorkReason, Workbench, WorkbenchItem, WorkbenchView, reasons};
-use crate::github::issues::{IssueFacts, IssueState};
-use crate::github::pull_requests::{OffDefault, PrState, PullRequestFacts};
+use crate::facts::WorkFacts;
+use crate::facts::activity::ActivityFacts;
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::patch_ids::ReviewFacts;
+use crate::facts::pull_requests::{OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ActivityFacts, ReviewFacts, WorkFacts};
 
 pub(super) fn me() -> Login {
     Login::new("octocat")

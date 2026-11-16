@@ -50,15 +50,20 @@ test("a press outside the command palette gives the focus back to the row", asyn
   await expect(row).toBeFocused();
 });
 
-test("a press outside Add repository gives the focus back to its button", async ({ page }) => {
+test("a press outside Add repository gives the focus back to what had it before the picker", async ({
+  page,
+}) => {
   await openApp(page);
-  const add = page.getByRole("button", { name: "Add repository" });
-  // WebKit doesn't focus a button it clicks, as Safari doesn't.
-  await add.focus();
+  const row = page.getByRole("button", { name: /#157178/ });
+  await page.keyboard.press("ArrowDown");
+  await expect(row).toBeFocused();
+
+  await page.keyboard.press("ControlOrMeta+R");
+  await page.getByRole("combobox", { name: "Repository" }).fill("add");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("textbox", { name: "Repository" })).toBeFocused();
 
   await page.getByTestId("add-repository-scrim").click({ position: { x: 5, y: 5 } });
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(add).toBeFocused();
+  await expect(row).toBeFocused();
 });

@@ -447,7 +447,6 @@
     <RepositoryHome
       bind:this={repositoryHome}
       name={home.current.repository.name}
-      onadd={openAdd}
       onpick={openPicker}
       onsettings={openSettings}
       {keysActive}

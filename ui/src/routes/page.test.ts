@@ -300,7 +300,7 @@ it("opens on onboarding with no Repositories", async () => {
 it("reopens the Repository the core names, and the window title names it", async () => {
   core.home.mockResolvedValue(gcmonHome);
   render(Page);
-  expect(await screen.findByRole("heading", { name: gcmon.name })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: gcmon.name })).toBeTruthy();
   expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
 });
 
@@ -339,7 +339,7 @@ it("adds a Repository from onboarding and then shows it", async () => {
 
   await screen.findByText(/Nothing here yet/);
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+  expect(screen.getByRole("button", { name: gcmon.name })).toBeTruthy();
   expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
   expect(core.settings).toHaveBeenCalledTimes(2);
 });
@@ -596,6 +596,12 @@ const pepsHome = { screen: "repository", repository: peps, others: [gcmon.name] 
 /** Each option's text, with the space before a row's "open" mark as a plain one. */
 const spaced = (option: HTMLElement) => option.textContent.replace(/\s/g, " ");
 const options = () => screen.getAllByRole("option").map(spaced);
+/** Opens Add repository from gcmon's window: the Repository's name atop the Sidebar opens the picker, whose
+ * last row is Add repository…. */
+const openAddFromPicker = async () => {
+  await fireEvent.click(await screen.findByRole("button", { name: gcmon.name }));
+  await fireEvent.click(screen.getByRole("option", { name: "Add repository…" }));
+};
 
 /** A Standalone PR, #70. */
 const pr = {
@@ -891,7 +897,7 @@ describe("a switch from the palette", () => {
 
   it("offers each Repository but the open one", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await palette();
     expect(options()).toContain("Repository: python/peps");
     expect(options()).not.toContain("Repository: some-maintainer/gcmon");
@@ -904,7 +910,7 @@ describe("a switch from the palette", () => {
     await palette();
     await fireEvent.click(screen.getByRole("option", { name: "Repository: python/peps" }));
 
-    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
     expect(core.openRepository).toHaveBeenCalledWith("python/peps");
     expect(core.workbench).toHaveBeenLastCalledWith("python/peps", { kind: "whole" });
     expect(document.title).toBe("python/peps · Tsugiki");
@@ -927,7 +933,7 @@ describe("a switch from the palette", () => {
       error: { kind: "internal", message: "machine.toml, line 1: expected a value" },
     });
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await palette();
     await fireEvent.click(screen.getByRole("option", { name: "Repository: python/peps" }));
 
@@ -936,7 +942,7 @@ describe("a switch from the palette", () => {
         "Tsugiki couldn't switch to python/peps: machine.toml, line 1: expected a value",
       ),
     ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+    expect(screen.getByRole("button", { name: gcmon.name })).toBeTruthy();
     expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
   });
 });
@@ -954,7 +960,7 @@ describe("the palette's order", () => {
 
   it("puts the command run last at the top, and typing keeps the matches in that order", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await palette();
     const before = titles();
     await fireEvent.click(screen.getByRole("option", { name: "Reload Themes" }));
@@ -980,7 +986,7 @@ describe("the palette's order", () => {
   it("opens with the commands the core kept first, as after a restart, each known by its id", async () => {
     core.recentCommands.mockResolvedValue(["Open Settings", "toggle_hud"]);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
 
     await palette();
 
@@ -993,7 +999,7 @@ describe("the palette's order", () => {
       error: { kind: "internal", message: "machine.toml:1: expected `]`" },
     });
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await palette();
 
     await fireEvent.click(screen.getByRole("option", { name: "Reset Layout" }));
@@ -1009,7 +1015,7 @@ describe("the palette's order", () => {
   it("takes a hand edit to the list once the Settings dialog has read the files again", async () => {
     core.recentCommands.mockResolvedValueOnce([]).mockResolvedValueOnce(["Open Settings"]);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
 
     await fireEvent.keyDown(document.body, { key: ",", code: "Comma", ctrlKey: true });
     await vi.waitFor(() => {
@@ -1025,14 +1031,14 @@ describe("the palette's order", () => {
     core.recentCommands.mockResolvedValue(["Add repository…", "python/peps"]);
     core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
 
     await fireEvent.keyDown(window, { key: "r", code: "KeyR", ctrlKey: true });
     const listed = options();
     await fireEvent.click(screen.getByRole("option", { name: "python/peps" }));
 
     expect(listed).toEqual(["some-maintainer/gcmon open", "python/peps", "Add repository…"]);
-    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
     expect(core.rememberCommand).not.toHaveBeenCalled();
   });
 });
@@ -1228,7 +1234,7 @@ describe("Add repository on a Repository Tsugiki has", () => {
   /** Opens Add repository, and checks a name the core says Tsugiki has as `name`. */
   const checkHeld = async (name: string) => {
     core.checkRepository.mockResolvedValue({ status: "ok", data: { kind: "held", name } });
-    await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+    await openAddFromPicker();
     await fireEvent.click(screen.getByRole("button", { name: "Check" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Switch to it" }));
   };
@@ -1243,7 +1249,7 @@ describe("Add repository on a Repository Tsugiki has", () => {
     await checkHeld(peps.name);
 
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
     expect(core.openRepository).toHaveBeenCalledWith("python/peps");
     expect(core.addRepository).not.toHaveBeenCalled();
     await vi.waitFor(() => {
@@ -1257,7 +1263,7 @@ describe("Add repository on a Repository Tsugiki has", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(core.openRepository).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+    expect(screen.getByRole("button", { name: gcmon.name })).toBeTruthy();
   });
 });
 
@@ -1276,7 +1282,7 @@ describe("the Repository picker", () => {
 
   it("opens on Ctrl+R: the Repositories most recently opened first, the open one marked, the previous picked", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
 
     expect(picker()).toBeTruthy();
@@ -1293,7 +1299,7 @@ describe("the Repository picker", () => {
       { repository: "a/third", state: { state: "waiting", behind: peps.name } },
     ]);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     // The page asks for the states as it loads, after a few other answers.
     await vi.waitFor(() => {
@@ -1326,7 +1332,7 @@ describe("the Repository picker", () => {
   it("notes the open Repository's mirror too", async () => {
     core.mirrorStates.mockResolvedValue([{ repository: gcmon.name, state: { state: "asking" } }]);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     await vi.waitFor(() => {
       expect(options()[0]).toBe("some-maintainer/gcmon · the mirror waits for your answer open");
@@ -1336,7 +1342,7 @@ describe("the Repository picker", () => {
   it("picks the open Repository when it is the only one", async () => {
     core.home.mockResolvedValue(gcmonHome);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     expect(spaced(screen.getByRole("option", { selected: true }))).toBe("some-maintainer/gcmon open");
   });
@@ -1344,12 +1350,12 @@ describe("the Repository picker", () => {
   it("switches back to the previous Repository on Ctrl+R and Enter", async () => {
     core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     await fireEvent.keyDown(filter(), { key: "Enter" });
 
     expect(picker()).toBeNull();
-    expect(await screen.findByRole("heading", { name: peps.name })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
     expect(core.openRepository).toHaveBeenCalledWith("python/peps");
     // The core read the files again to switch, so a problem the user has since fixed can go.
     await vi.waitFor(() => {
@@ -1359,7 +1365,7 @@ describe("the Repository picker", () => {
 
   it("filters the rows as the user types", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     await fireEvent.input(filter(), { target: { value: "PEP" } });
     expect(options()).toEqual(["python/peps"]);
@@ -1367,9 +1373,9 @@ describe("the Repository picker", () => {
 
   it("opens Add repository from its row, which gives the focus back to what had it before the picker", async () => {
     render(Page);
-    const add = await screen.findByRole("button", { name: "Add repository" });
-    add.focus();
-    await ctrlR(add);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    gear.focus();
+    await ctrlR(gear);
     await fireEvent.input(filter(), { target: { value: "add" } });
     await fireEvent.keyDown(filter(), { key: "Enter" });
 
@@ -1380,31 +1386,31 @@ describe("the Repository picker", () => {
 
     await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(add);
+    expect(document.activeElement).toBe(gear);
   });
 
   it("closes without a switch on Enter on the open Repository", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     await fireEvent.keyDown(filter(), { key: "ArrowUp" });
     await fireEvent.keyDown(filter(), { key: "Enter" });
 
     expect(picker()).toBeNull();
     expect(core.openRepository).not.toHaveBeenCalled();
-    expect(screen.getByRole("heading", { name: gcmon.name })).toBeTruthy();
+    expect(screen.getByRole("button", { name: gcmon.name })).toBeTruthy();
   });
 
   it("closes on Esc and gives the focus back to what had it", async () => {
     render(Page);
-    const add = await screen.findByRole("button", { name: "Add repository" });
-    add.focus();
-    await ctrlR(add);
+    const gear = await screen.findByRole("button", { name: "Settings" });
+    gear.focus();
+    await ctrlR(gear);
     expect(document.activeElement).toBe(filter());
 
     await fireEvent.keyDown(filter(), { key: "Escape" });
     expect(picker()).toBeNull();
-    expect(document.activeElement).toBe(add);
+    expect(document.activeElement).toBe(gear);
   });
 
   it("opens from the Repository's name atop the Sidebar", async () => {
@@ -1434,14 +1440,14 @@ describe("the Repository picker", () => {
 
   it("doesn't open over the add dialog", async () => {
     render(Page);
-    await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+    await openAddFromPicker();
     await ctrlR();
     expect(picker()).toBeNull();
   });
 
   it("and the command palette don't open over each other", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
@@ -1480,18 +1486,19 @@ describe("a chord", () => {
   it("hands Ctrl+K Z to the Repository's screen, which shows only the Detail pane", async () => {
     render(Page);
     await screen.findByRole("navigation", { name: "Sidebar" });
+    expect(document.querySelector('[data-pane="list"]')).not.toBeNull();
 
     await ctrlK();
     await fireEvent.keyDown(document.body, { key: "z", code: "KeyZ" });
 
     expect(chord()).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: gcmon.name })).toBeNull();
+    expect(document.querySelector('[data-pane="list"]')).toBeNull();
   });
 
   it("ends at a click", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlK();
     expect(chord()).toBeTruthy();
     await fireEvent.pointerDown(document.body);
@@ -1500,7 +1507,7 @@ describe("a chord", () => {
 
   it("ends when the window loses the focus", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await ctrlK();
     expect(chord()).toBeTruthy();
     await fireEvent.blur(window);
@@ -1509,14 +1516,14 @@ describe("a chord", () => {
 
   it("doesn't start under the add dialog, even outside its text box", async () => {
     render(Page);
-    await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
+    await openAddFromPicker();
     await ctrlK();
     expect(chord()).toBeNull();
   });
 
   it("doesn't start under the palette", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
     await ctrlK();
     expect(chord()).toBeNull();
@@ -1524,7 +1531,7 @@ describe("a chord", () => {
 
   it("doesn't start under the Repository picker", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await fireEvent.keyDown(window, { key: "r", code: "KeyR", ctrlKey: true });
     await ctrlK();
     expect(chord()).toBeNull();
@@ -1557,7 +1564,7 @@ describe("the theme picker", () => {
   /** The page on gcmon, with the theme in force on the window. */
   const opened = async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await vi.waitFor(() => {
       expect(bg()).toBe("#1f1f1f");
     });
@@ -1922,7 +1929,7 @@ describe("the key list", () => {
     remapped.settings.keys = { archive: "a" };
     core.settings.mockResolvedValue(remapped);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await vi.waitFor(() => {
       expect(actionOn("a")).toBe("archive");
     });
@@ -1964,7 +1971,7 @@ describe("the key list", () => {
     };
     core.settings.mockResolvedValue(remapped);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await vi.waitFor(() => {
       expect(actionOn("ctrl+k")).toBe("open_settings");
     });
@@ -1987,7 +1994,7 @@ describe("the key list", () => {
     remapped.settings.keys = { show_keys: "ctrl+/", toggle_hud: "h", reload_themes: "k r" };
     core.settings.mockResolvedValue(remapped);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await vi.waitFor(() => {
       expect(actionOn("ctrl+/")).toBe("show_keys");
     });
@@ -2026,7 +2033,7 @@ describe("the key list", () => {
   it("leaves Open DevTools out of a release", async () => {
     core.home.mockResolvedValue(gcmonHome);
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await question();
     expect(titles()).not.toContain("Open DevTools");
   });
@@ -2077,7 +2084,7 @@ describe("keys remapped in [keys]", () => {
 
   it("runs a chord's action on a key of one press, and a key of one press's action on a chord", async () => {
     render(Page);
-    await screen.findByRole("heading", { name: gcmon.name });
+    await screen.findByRole("button", { name: gcmon.name });
     await vi.waitFor(() => {
       expect(actionOn("ctrl+t")).toBe("pick_theme");
     });

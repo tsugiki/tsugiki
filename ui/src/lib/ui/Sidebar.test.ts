@@ -8,7 +8,7 @@ const involved = { name: "Involved", query: "is:open involves:@me", count: 9, pr
 const whole = { kind: "whole" } as const;
 const button = (name: string) => screen.getByRole("button", { name });
 /** The open Repository, for the tests that don't look at it. */
-const cpython = { repository: "python/cpython", onpick: () => {}, onsettings: () => {} };
+const cpython = { repository: "python/cpython", onpick: () => {}, onsettings: () => {}, onicons: () => {} };
 
 it("starts with the open Repository's name, and a click on it asks for the Repository picker", async () => {
   const onpick = vi.fn();
@@ -49,6 +49,28 @@ it("has ⚙ beside the Repository's name, and a click on it asks for the Setting
   expect(onsettings).toHaveBeenCalledOnce();
 });
 
+it("has « after ⚙, and a click on it asks for the Sidebar as icons", async () => {
+  const onicons = vi.fn();
+  render(Sidebar, {
+    count: 12,
+    reviewRequests: 4,
+    staleReviews: 2,
+    filters: [],
+    selected: whole,
+    onselect: () => {},
+    ...cpython,
+    onicons,
+  });
+  const fold = button("Sidebar as Icons");
+  expect([screen.getAllByRole("button")[2], fold.textContent, fold.title]).toEqual([
+    fold,
+    "«",
+    "Sidebar as Icons",
+  ]);
+  await fireEvent.click(fold);
+  expect(onicons).toHaveBeenCalledOnce();
+});
+
 it("names ⚙'s key in its tooltip as the OS calls it", () => {
   const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
   const props = {
@@ -82,6 +104,7 @@ it("lists the Workbench and each Filter with its count", () => {
   expect(screen.getAllByRole("button").map((line) => line.textContent.replace(/\s+/g, " ").trim())).toEqual([
     "python/cpython",
     "⚙",
+    "«",
     "Workbench 12",
     "Review requests 4",
     "Stale reviews 2",

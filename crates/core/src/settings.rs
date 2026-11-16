@@ -631,15 +631,17 @@ impl Default for Home {
 }
 
 /// How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
-/// (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
-/// bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
-/// (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
-/// rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
-/// default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
-/// is too small a thing to lose the rest of `machine.toml` over.
+/// (#187), whether the Sidebar (#234) and the list (#242) show, whether the Sidebar shows as icons (#587),
+/// which of them `Ctrl+K Z` hid (#246), to bring back on the next press, the list's order (#592), how many
+/// rows tall they dragged the Definition peek (#458), how many pixels tall they dragged the split one
+/// (#459), and how wide they dragged the PR view's rail (#603). All of it stays on this machine, like the
+/// window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+/// width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of
+/// `machine.toml` over.
 #[expect(
     clippy::struct_excessive_bools,
-    reason = "Each pane hides by itself, so all four states are valid: both hidden leaves the Detail pane"
+    reason = "Each pane hides by itself, and a hidden Sidebar keeps whether it comes back as icons, so \
+              every mix is valid: both hidden leaves the Detail pane"
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
@@ -668,6 +670,11 @@ pub struct PaneLayout {
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
     pub sidebar_hidden: bool,
+    /// The Sidebar shows as a strip of icons, or will once `Ctrl+B` brings it back (#587). It keeps its width
+    /// for when it shows in full again.
+    #[serde(deserialize_with = "or_default")]
+    #[specta(type = bool)]
+    pub sidebar_icons: bool,
     /// `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again.
     #[serde(deserialize_with = "or_default")]
     #[specta(type = bool)]
@@ -1180,14 +1187,15 @@ impl SettingsFiles {
                     None => drop(section.remove(key)),
                 }
             }
-            for (key, hidden) in [
+            for (key, set) in [
                 ("sidebar_hidden", panes.sidebar_hidden),
+                ("sidebar_icons", panes.sidebar_icons),
                 ("list_hidden", panes.list_hidden),
             ] {
                 merge_value(
                     section,
                     key,
-                    &toml_edit::value(hidden),
+                    &toml_edit::value(set),
                     Some(&toml_edit::value(false)),
                 );
             }

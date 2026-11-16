@@ -1722,6 +1722,7 @@ const WIDE: PaneLayout = PaneLayout {
     split_peek: None,
     rail: None,
     sidebar_hidden: false,
+    sidebar_icons: false,
     list_hidden: false,
     detail_only_hid: None,
     order: ListOrder::Attention,
@@ -1875,6 +1876,42 @@ fn a_hidden_list_stays_hidden_on_this_machine_beside_the_sidebar() {
 }
 
 #[test]
+fn a_sidebar_of_icons_stays_so_on_this_machine_while_hidden_and_until_it_shows_in_full() {
+    let (folders, _root) = temp_folders("panes-sidebar-icons");
+    let mut files = SettingsFiles::load(folders.clone());
+    let icons = PaneLayout {
+        sidebar_icons: true,
+        ..WIDE
+    };
+    let hidden = PaneLayout {
+        sidebar_hidden: true,
+        ..icons
+    };
+
+    let mut saved = Vec::new();
+    let mut read_again = Vec::new();
+    for layout in [icons, hidden] {
+        files.save_panes(layout).unwrap();
+        saved.push(fs::read_to_string(folders.machine_file()).unwrap());
+        read_again.push(SettingsFiles::load(folders.clone()).view().panes);
+    }
+    files.save_panes(WIDE).unwrap();
+    let full = fs::read_to_string(folders.machine_file()).unwrap();
+
+    let widths = "[panes]\nsidebar = 240\nlist = 500\n";
+    assert_eq!(
+        saved,
+        [
+            format!("{widths}sidebar_icons = true\n"),
+            // A key the file holds stays where it is, and a new one goes at the end.
+            format!("{widths}sidebar_icons = true\nsidebar_hidden = true\n"),
+        ]
+    );
+    assert_eq!(read_again, [icons, hidden]);
+    assert_eq!(full, widths);
+}
+
+#[test]
 fn what_ctrl_k_z_hid_stays_on_this_machine_until_it_forgets() {
     let (folders, _root) = temp_folders("panes-detail-only");
     let mut files = SettingsFiles::load(folders.clone());
@@ -1975,6 +2012,7 @@ sidebar = -1
 list = 500
 peek = 2.5
 sidebar_hidden = \"yes\"
+sidebar_icons = \"no\"
 list_hidden = 1
 detail_only_hid = \"everything\"
 order = \"by_mood\"
@@ -1990,6 +2028,7 @@ order = \"by_mood\"
         split_peek: None,
         rail: None,
         sidebar_hidden: false,
+        sidebar_icons: false,
         list_hidden: false,
         detail_only_hid: None,
         order: ListOrder::Attention,

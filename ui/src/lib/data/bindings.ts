@@ -1884,23 +1884,25 @@ export type Pair = {
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
- *  bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
- *  (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
- *  rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
- *  default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
- *  is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, whether the Sidebar shows as icons (#587),
+ *  which of them `Ctrl+K Z` hid (#246), to bring back on the next press, the list's order (#592), how many
+ *  rows tall they dragged the Definition peek (#458), how many pixels tall they dragged the split one
+ *  (#459), and how wide they dragged the PR view's rail (#603). All of it stays on this machine, like the
+ *  window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of
+ *  `machine.toml` over.
  */
 export type PaneLayout = PaneLayout_Serialize | PaneLayout_Deserialize;
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
- *  bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
- *  (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
- *  rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
- *  default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
- *  is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, whether the Sidebar shows as icons (#587),
+ *  which of them `Ctrl+K Z` hid (#246), to bring back on the next press, the list's order (#592), how many
+ *  rows tall they dragged the Definition peek (#458), how many pixels tall they dragged the split one
+ *  (#459), and how wide they dragged the PR view's rail (#603). All of it stays on this machine, like the
+ *  window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of
+ *  `machine.toml` over.
  */
 export type PaneLayout_Deserialize = {
 	sidebar?: number | null,
@@ -1919,6 +1921,11 @@ export type PaneLayout_Deserialize = {
 	rail?: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden?: boolean,
+	/**
+	 *  The Sidebar shows as a strip of icons, or will once `Ctrl+B` brings it back (#587). It keeps its width
+	 *  for when it shows in full again.
+	 */
+	sidebar_icons?: boolean,
 	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
 	list_hidden?: boolean,
 	/**
@@ -1933,12 +1940,13 @@ export type PaneLayout_Deserialize = {
 
 /**
  *  How the user laid out the panes: how wide they dragged the Sidebar and the Workbench list, in CSS pixels
- *  (#187), whether the Sidebar (#234) and the list (#242) show, which of them `Ctrl+K Z` hid (#246), to
- *  bring back on the next press, the list's order (#592), how many rows tall they dragged the Definition peek
- *  (#458), how many pixels tall they dragged the split one (#459), and how wide they dragged the PR view's
- *  rail (#603). All of it stays on this machine, like the window's place, and a value left out takes its
- *  default. So does a value Tsugiki can't read, such as a width that isn't a whole number of pixels: a pane
- *  is too small a thing to lose the rest of `machine.toml` over.
+ *  (#187), whether the Sidebar (#234) and the list (#242) show, whether the Sidebar shows as icons (#587),
+ *  which of them `Ctrl+K Z` hid (#246), to bring back on the next press, the list's order (#592), how many
+ *  rows tall they dragged the Definition peek (#458), how many pixels tall they dragged the split one
+ *  (#459), and how wide they dragged the PR view's rail (#603). All of it stays on this machine, like the
+ *  window's place, and a value left out takes its default. So does a value Tsugiki can't read, such as a
+ *  width that isn't a whole number of pixels: a pane is too small a thing to lose the rest of
+ *  `machine.toml` over.
  */
 export type PaneLayout_Serialize = {
 	sidebar: number | null,
@@ -1957,6 +1965,11 @@ export type PaneLayout_Serialize = {
 	rail: number | null,
 	/**  `Ctrl+B` hid the Sidebar. It keeps its width for when it shows again. */
 	sidebar_hidden: boolean,
+	/**
+	 *  The Sidebar shows as a strip of icons, or will once `Ctrl+B` brings it back (#587). It keeps its width
+	 *  for when it shows in full again.
+	 */
+	sidebar_icons: boolean,
 	/**  `Ctrl+Alt+B` hid the Workbench list. It keeps its width for when it shows again. */
 	list_hidden: boolean,
 	/**

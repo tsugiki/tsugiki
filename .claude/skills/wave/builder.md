@@ -21,7 +21,10 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
   `just worktree-remove` deletes them with the worktree, and the permission settings refuse your delete.
 - Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
   changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
-  commands and components your branch touches.
+  commands and components your branch touches. If the page calls a command it didn't call before, run every
+  spec: `ui/e2e/mock-core.ts` rejects a command a test doesn't answer.
+- Allow 0.5px when you compare where an element sits on the screen: macOS's WebKit puts it a fraction of a
+  pixel off.
 - To show that a test catches the bug, make it fail by taking out the fix itself, then put the fix back.
   Don't break the setup around the fix, such as a settings key the code reads: the test then fails for
   that reason alone.

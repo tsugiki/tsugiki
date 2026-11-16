@@ -726,6 +726,11 @@ export class PrFilesState {
     this.mode = "one";
   }
 
+  /** Switches to `mode` as `toggleMode` does, keeping the place, or does nothing while it is on show. */
+  showMode(mode: FilesMode) {
+    if (mode !== this.mode) this.toggleMode();
+  }
+
   /** Goes to the next file, or by `step` -1 to the one before, from the page on show or at the top: one
    * file at a time it shows that file, and with all the files it scrolls to its header. The NEWS entries
    * come first and the threads on files no longer in the diff last, and it stops at either end. */

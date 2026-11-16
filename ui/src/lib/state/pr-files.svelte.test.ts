@@ -1894,6 +1894,20 @@ it("switches to one file at a time on the file at the top, and back, for as long
   expect([files.mode, files.shown, files.layout.count]).toEqual(["all", undefined, 21]);
 });
 
+it("shows the mode it is asked for, keeping the place, and leaves the mode on show as it is", async () => {
+  const files = await loaded(changed());
+  files.scrolled(files.layout.placeOfRow(20) ?? -1);
+
+  files.showMode("all");
+  expect([files.mode, files.shown]).toEqual(["all", undefined]);
+  files.showMode("one");
+  expect([files.mode, files.shown, placesOf(files)]).toEqual(["one", { kind: "file", file: 1 }, [20]]);
+  files.showMode("one");
+  expect([files.mode, files.shown]).toEqual(["one", { kind: "file", file: 1 }]);
+  files.showMode("all");
+  expect([files.mode, files.shown, files.layout.count]).toEqual(["all", undefined, 21]);
+});
+
 it("carries F7 on into the next file, showing it, and goes on from a file a move shows", async () => {
   const files = await oneAtATime(changed());
 

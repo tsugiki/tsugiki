@@ -135,10 +135,12 @@ pub fn possible_numbers(facts: &PullRequestFacts, repository: &RepositoryName) -
         .collect()
 }
 
-/// The version of what `fixed_under_each` and `origins_in_title` give, which the store keeps beside the links
-/// it worked out with them. Raise it with any change to what they give, a new Conventions among them: the
-/// store then works out the links of every PR it holds again as it opens, since a PR that never syncs again
-/// would keep the old ones. A test pins what they give to this number.
+/// The version of the rules behind the links the store keeps, which it keeps beside them. Raise it with any
+/// change to the rows those rules leave: to what `fixed_under_each` and `origins_in_title` give, a new
+/// Conventions among them, to how the store's `Keeper` matches a cherry-pick line to a merge commit, or to
+/// how it spells the Conventions a row counts under. The store then works out the links of every PR it holds
+/// again as it opens, since a PR that never syncs again would keep the old ones. A store test pins the rows
+/// to this number.
 pub const RULES_VERSION: u32 = 1;
 
 /// What the links that the store keeps are worked out from (#833): the title, GitHub's closing references,

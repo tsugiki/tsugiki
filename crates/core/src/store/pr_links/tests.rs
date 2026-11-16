@@ -377,6 +377,98 @@ fn stored_texts<T: ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialE
     all.iter().map(through).collect()
 }
 
+/// The rows the store keeps for PRs that try each of the rules behind them, one line for each row.
+fn kept_rows() -> Vec<String> {
+    let description = "Fixes #4\n`Closes #5` <!-- Fixes #6 -->\n```\nFixes #7\n```\n\
+                       Resolves https://github.com/python/cpython/issues/8\n\
+                       Fixes other/repo#9, see gh-10, closes GH-11";
+    let mut connection = migrated();
+    save(
+        &mut connection,
+        &[
+            PullRequestFacts {
+                closing_issues: vec![2],
+                ..pr(1, "gh-1: Fix it")
+            },
+            pr(2, "GH-3: Fix it"),
+            pr(3, "[3.14] gh-12: Fix it (GH-13)"),
+            PullRequestFacts {
+                closing_issues: vec![14],
+                ..on_branch(4, "[3.14] gh-12: Fix it (GH-13)", description, &[])
+            },
+            on_branch(5, "[3.13] Fix it (#15)", "", &[]),
+            // Saved before the PR its line names.
+            on_branch(6, "Fix it on 3.13", "", &["bbbb222"]),
+            // The first of its commits, in the order of their SHAs, that a PR became.
+            on_branch(7, "Fix it on 3.12", "", &["aaaa111", "cccc333"]),
+            // A merge commit that sorts after the line's commit without starting with it.
+            on_branch(8, "Fix it on 3.11", "", &["dddd444"]),
+            on_branch(9, "[3.14] Fix it (GH-30)", "", &["bbbb222"]),
+        ],
+    );
+    save(
+        &mut connection,
+        &[
+            merged_as(20, "Fix it", "bbbb2223333"),
+            merged_as(21, "Fix it", "cccc3334444"),
+            merged_as(22, "Fix it", "dddd5555"),
+        ],
+    );
+    let mut rows = Vec::new();
+    let fixes = "SELECT number, issue, under FROM pr_fixes ORDER BY number, issue, under";
+    let mut statement = connection.prepare(fixes).unwrap();
+    let mut found = statement.raw_query();
+    while let Some(row) = found.next().unwrap() {
+        let (number, issue, under): (u32, u32, String) = (
+            row.get(0).unwrap(),
+            row.get(1).unwrap(),
+            row.get(2).unwrap(),
+        );
+        rows.push(format!("PR {number} fixes {issue} under {under}"));
+    }
+    let origins = "SELECT number, found_in, origin FROM pr_origins ORDER BY number, found_in";
+    let mut statement = connection.prepare(origins).unwrap();
+    let mut found = statement.raw_query();
+    while let Some(row) = found.next().unwrap() {
+        let (number, found_in, origin): (u32, String, u32) = (
+            row.get(0).unwrap(),
+            row.get(1).unwrap(),
+            row.get(2).unwrap(),
+        );
+        rows.push(format!("PR {number} comes from {origin} by {found_in}"));
+    }
+    rows
+}
+
+#[test]
+fn the_kept_rows_change_only_with_the_version_of_their_rules() {
+    assert_eq!(
+        (RULES_VERSION, kept_rows()),
+        (
+            1,
+            [
+                "PR 1 fixes 1 under cpython",
+                "PR 1 fixes 2 under every",
+                "PR 2 fixes 3 under cpython",
+                "PR 3 fixes 12 under cpython",
+                "PR 4 fixes 4 under every",
+                "PR 4 fixes 8 under every",
+                "PR 4 fixes 11 under every",
+                "PR 4 fixes 12 under cpython",
+                "PR 4 fixes 14 under every",
+                "PR 4 comes from 13 by cpython",
+                "PR 6 comes from 20 by cherry_pick",
+                "PR 7 comes from 21 by cherry_pick",
+                "PR 9 comes from 20 by cherry_pick",
+                "PR 9 comes from 30 by cpython",
+            ]
+            .map(str::to_owned)
+            .to_vec()
+        ),
+        "raise RULES_VERSION with the rows its rules leave, so the store works out every PR's links again"
+    );
+}
+
 #[test]
 fn each_link_keeps_the_text_earlier_versions_stored() {
     assert_eq!(stored_texts(Under::ALL), ["every", "cpython", "github"]);

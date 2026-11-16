@@ -132,15 +132,17 @@ pub(super) fn save_in(
 ) -> rusqlite::Result<()> {
     // Before the PRs, because a commit counts differently on a PR the store holds.
     activity::save(transaction, repository, events)?;
+    let mut keeper = pr_links::Keeper::new(transaction, repository)?;
     for pull_request in pull_requests {
-        replace(transaction, repository, pull_request)?;
+        replace(transaction, (repository, &mut keeper), pull_request)?;
     }
     Ok(())
 }
 
+/// Replaces what the store knew about the PR of `facts`, and the links `keeper` keeps for it.
 fn replace(
     connection: &Connection,
-    repository: &RepositoryName,
+    (repository, keeper): (&RepositoryName, &mut pr_links::Keeper<'_>),
     facts: &PullRequestFacts,
 ) -> rusqlite::Result<()> {
     let number = facts.number;
@@ -171,7 +173,7 @@ fn replace(
         save_closing_reference(connection, repository, number, *issue)?;
     }
     // After the cherry-picks, which it reads.
-    pr_links::rewrite(connection, repository, facts)
+    keeper.rewrite(facts)
 }
 
 fn save_pull_request(

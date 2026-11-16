@@ -89,47 +89,32 @@ impl FoundIn {
     }
 }
 
-/// Keeps the links of `facts` in place of those kept before. The Origin PR of a Backport whose cherry-pick
-/// line names a commit this PR became, or whose line named this PR before, is found again too, since the
-/// store may have saved the Backport before the PR it came from.
-pub(super) fn rewrite(
-    connection: &Connection,
-    repository: &RepositoryName,
-    facts: &PullRequestFacts,
-) -> rusqlite::Result<()> {
-    let number = facts.number;
-    let this = named_params! { ":repository": repository, ":number": number };
-    let forget_fixes = "DELETE FROM pr_fixes WHERE repository = :repository AND number = :number";
-    connection.execute(forget_fixes, this).map(drop)?;
-    let forget_origins =
-        "DELETE FROM pr_origins WHERE repository = :repository AND number = :number";
-    connection.execute(forget_origins, this).map(drop)?;
-    let mut keeper = Keeper::new(connection, repository)?;
-    keeper.keep(number, &LinkSignals::of(facts))?;
-    keeper.keep_picked_origin(number)?;
-    for picker in pickers_of(connection, repository, number, facts.merge_commit.as_ref())? {
-        let forget = "DELETE FROM pr_origins
-                      WHERE repository = :repository AND number = :number AND found_in = :found_in";
-        let values = named_params! {
-            ":repository": repository, ":number": picker, ":found_in": FoundIn::CherryPick,
-        };
-        connection.execute(forget, values).map(drop)?;
-        keeper.keep_picked_origin(picker)?;
-    }
-    Ok(())
-}
-
-/// What keeps the links of a Repository's PRs, with its statements prepared once for all the PRs it keeps.
-struct Keeper<'c> {
+/// What keeps the links of a Repository's PRs, with its statements prepared once for all the PRs it keeps:
+/// those of a save, or every PR the store holds.
+pub(super) struct Keeper<'c> {
     repository: &'c RepositoryName,
+    forget_fixes: Statement<'c>,
+    forget_origins: Statement<'c>,
+    forget_picked: Statement<'c>,
     insert_fix: Statement<'c>,
     insert_origin: Statement<'c>,
     picks: Statement<'c>,
     merged: Statement<'c>,
+    pickers: Statement<'c>,
 }
 
 impl<'c> Keeper<'c> {
-    fn new(connection: &'c Connection, repository: &'c RepositoryName) -> rusqlite::Result<Self> {
+    pub(super) fn new(
+        connection: &'c Connection,
+        repository: &'c RepositoryName,
+    ) -> rusqlite::Result<Self> {
+        let forget_fixes =
+            "DELETE FROM pr_fixes WHERE repository = :repository AND number = :number";
+        let forget_origins =
+            "DELETE FROM pr_origins WHERE repository = :repository AND number = :number";
+        let forget_picked = "DELETE FROM pr_origins
+                             WHERE repository = :repository AND number = :number
+                                 AND found_in = :found_in";
         let insert_fix = "INSERT OR IGNORE INTO pr_fixes (repository, number, issue, under)
                           VALUES (:repository, :number, :issue, :under)";
         let insert_origin = "INSERT INTO pr_origins (repository, number, found_in, origin)
@@ -140,13 +125,70 @@ impl<'c> Keeper<'c> {
         let merged = "SELECT number, merge_commit FROM pull_requests
                       WHERE repository = :repository AND merge_commit >= :sha
                       ORDER BY merge_commit LIMIT 1";
+        let pickers = "SELECT number FROM pr_origins
+                       WHERE repository = :repository AND origin = :number AND found_in = :cherry_pick
+                       UNION
+                       SELECT pick.number AS number FROM json_each(:starts) AS start
+                       CROSS JOIN cherry_picks AS pick
+                           ON pick.repository = :repository AND pick.sha = start.value";
         Ok(Self {
             repository,
+            forget_fixes: connection.prepare(forget_fixes)?,
+            forget_origins: connection.prepare(forget_origins)?,
+            forget_picked: connection.prepare(forget_picked)?,
             insert_fix: connection.prepare(insert_fix)?,
             insert_origin: connection.prepare(insert_origin)?,
             picks: connection.prepare(picks)?,
             merged: connection.prepare(merged)?,
+            pickers: connection.prepare(pickers)?,
         })
+    }
+
+    /// Keeps the links of `facts` in place of those kept before. The Origin PR of a Backport whose
+    /// cherry-pick line names a commit this PR became, or whose line named this PR before, is found again
+    /// too, since the store may have saved the Backport before the PR it came from.
+    pub(super) fn rewrite(&mut self, facts: &PullRequestFacts) -> rusqlite::Result<()> {
+        let number = facts.number;
+        let this = named_params! { ":repository": self.repository, ":number": number };
+        self.forget_fixes.execute(this).map(drop)?;
+        self.forget_origins.execute(this).map(drop)?;
+        self.keep(number, &LinkSignals::of(facts))?;
+        self.keep_picked_origin(number)?;
+        for picker in self.pickers_of(number, facts.merge_commit.as_ref())? {
+            let values = named_params! {
+                ":repository": self.repository,
+                ":number": picker,
+                ":found_in": FoundIn::CherryPick,
+            };
+            self.forget_picked.execute(values).map(drop)?;
+            self.keep_picked_origin(picker)?;
+        }
+        Ok(())
+    }
+
+    /// The PRs whose cherry-pick lines name `merge_commit`, which PR `number` became, whole or cut short,
+    /// and those whose lines named PR `number` before.
+    fn pickers_of(
+        &mut self,
+        number: u32,
+        merge_commit: Option<&CommitSha>,
+    ) -> rusqlite::Result<BTreeSet<u32>> {
+        // Each start of the merge commit that a cherry-pick line could name, as a JSON array.
+        let starts = merge_commit.map_or_else(Vec::new, |sha| {
+            let whole = sha.as_str();
+            let lengths = CommitSha::SHORTEST..=whole.len();
+            let starts = lengths.filter_map(|length| whole.get(..length));
+            starts.map(|start| format!("\"{start}\"")).collect()
+        });
+        let starts = format!("[{}]", starts.join(","));
+        let values = named_params! {
+            ":repository": self.repository,
+            ":number": number,
+            ":cherry_pick": FoundIn::CherryPick,
+            ":starts": starts,
+        };
+        let pickers = self.pickers.query_map(values, |row| row.get("number"))?;
+        pickers.collect()
     }
 
     /// Keeps the numbers `signals` names as fixed and the Origin PRs its title names, for PR `number`,
@@ -204,39 +246,6 @@ impl<'c> Keeper<'c> {
         }
         Ok(())
     }
-}
-
-/// The PRs whose cherry-pick lines name `merge_commit`, which PR `number` became, whole or cut short, and
-/// those whose lines named PR `number` before.
-fn pickers_of(
-    connection: &Connection,
-    repository: &RepositoryName,
-    number: u32,
-    merge_commit: Option<&CommitSha>,
-) -> rusqlite::Result<BTreeSet<u32>> {
-    // Each start of the merge commit that a cherry-pick line could name, as a JSON array.
-    let starts = merge_commit.map_or_else(Vec::new, |sha| {
-        let whole = sha.as_str();
-        let lengths = CommitSha::SHORTEST..=whole.len();
-        let starts = lengths.filter_map(|length| whole.get(..length));
-        starts.map(|start| format!("\"{start}\"")).collect()
-    });
-    let starts = format!("[{}]", starts.join(","));
-    let query = "SELECT number FROM pr_origins
-                 WHERE repository = :repository AND origin = :number AND found_in = :cherry_pick
-                 UNION
-                 SELECT pick.number AS number FROM json_each(:starts) AS start
-                 CROSS JOIN cherry_picks AS pick
-                     ON pick.repository = :repository AND pick.sha = start.value";
-    let mut statement = connection.prepare(query)?;
-    let values = named_params! {
-        ":repository": repository,
-        ":number": number,
-        ":cherry_pick": FoundIn::CherryPick,
-        ":starts": starts,
-    };
-    let pickers = statement.query_map(values, |row| row.get("number"))?;
-    pickers.collect()
 }
 
 /// Works out the links of every PR the store holds again, unless the rules that worked out the kept ones are

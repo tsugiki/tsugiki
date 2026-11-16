@@ -7,6 +7,7 @@ use rusqlite::named_params;
 use time::OffsetDateTime;
 
 use super::Connection;
+use super::activity::Items;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -26,9 +27,6 @@ const SELECT_UNREAD: &str = "SELECT number FROM pull_requests
          AND ci IN ('FAILURE', 'ERROR')
          AND (checks_read_at IS NULL OR ci_finished_at >= checks_read_at)
      ORDER BY number";
-
-const SELECT_ALL: &str =
-    "SELECT number, name FROM failed_checks WHERE repository = :repository ORDER BY number, name";
 
 /// The numbers of `viewer`'s open PRs whose CI failed after Tsugiki last asked which checks failed. A failure
 /// in the second Tsugiki asked counts, since asking twice costs little and a stale name misleads. Saving a PR
@@ -89,13 +87,20 @@ pub(super) fn save(
     transaction.commit()
 }
 
-/// Each PR's failed checks, by name.
-pub(super) fn read_all(
+/// The failed checks of each PR of `items`, by name.
+pub(super) fn read(
     connection: &Connection,
     repository: &RepositoryName,
+    items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<String>>> {
-    let mut statement = connection.prepare(SELECT_ALL)?;
-    let mut rows = statement.query(named_params! { ":repository": repository })?;
+    let condition = items.condition();
+    let query = format!(
+        "SELECT number, name FROM failed_checks WHERE repository = :repository {condition}
+         ORDER BY number, name"
+    );
+    let mut statement = connection.prepare(&query)?;
+    let asked = items.with(vec![(":repository", repository)]);
+    let mut rows = statement.query(asked.as_slice())?;
     let mut found: BTreeMap<u32, Vec<String>> = BTreeMap::new();
     while let Some(row) = rows.next()? {
         let name = row.get("name")?;

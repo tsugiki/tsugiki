@@ -1092,6 +1092,77 @@ fn workbench_after_sync(wired: &Wired) -> Value {
     wired.ask("workbench", the_whole_workbench()).unwrap()
 }
 
+/// Every page of the Inbox, from the last two days to the oldest the cache holds, each as the window gets it.
+fn inbox_pages(wired: &Wired) -> Vec<Value> {
+    let mut page = json!({ "kind": "latest" });
+    let mut pages = Vec::new();
+    loop {
+        let read = wired
+            .ask("inbox", json!({ "repository": CPYTHON, "page": page }))
+            .unwrap();
+        let older = read["older"].clone();
+        pages.push(read);
+        if older.is_null() {
+            return pages;
+        }
+        page = json!({ "kind": "older", "after": older });
+    }
+}
+
+#[test]
+fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
+    let (folders, _root) = temp_folders("wired-inbox");
+    let wired = Wired::start(Ok(folders), recordings());
+    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    let workbench = workbench_after_sync(&wired);
+    let pages = inbox_pages(&wired);
+    let bad = json!({ "repository": "not a name", "page": { "kind": "latest" } });
+    let refused = wired.ask("inbox", bad).unwrap_err();
+    drop(wired.stop());
+
+    let items: Vec<&Value> = (pages.iter())
+        .flat_map(|page| page["items"].as_array().unwrap())
+        .collect();
+    let places: Vec<(&str, u64)> = (items.iter())
+        .map(|item| {
+            (
+                item["updated_at"].as_str().unwrap(),
+                item["number"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    let mut ordered = places.clone();
+    ordered.sort_by(|one, other| other.cmp(one));
+    assert_eq!(places, ordered, "the latest update first, across the pages");
+    let issues = items.iter().filter(|item| item["kind"] == "issue");
+    assert!(
+        issues.clone().all(|issue| issue["state"] == "OPEN"),
+        "{items:?}"
+    );
+    let rows: Vec<&Value> = (items.iter())
+        .flat_map(|item| match item["pull_requests"].as_array() {
+            Some(entries) => entries.iter().collect(),
+            None => vec![*item],
+        })
+        .collect();
+    assert!(rows.iter().all(|row| row["state"] == "OPEN"), "{rows:?}");
+    let open_under_open_issues: Vec<&Value> = (listed(&workbench).into_iter())
+        .filter(|item| item["state"] == "OPEN")
+        .flat_map(|item| item["pull_requests"].as_array().unwrap())
+        .filter(|entry| entry["state"] == "OPEN")
+        .collect();
+    assert!(!open_under_open_issues.is_empty());
+    for entry in open_under_open_issues {
+        let held = rows.iter().any(|row| row["number"] == entry["number"]);
+        assert!(
+            held,
+            "the Inbox holds open PR {} of an open Issue",
+            entry["number"]
+        );
+    }
+    assert_eq!(refused["kind"], "not_found");
+}
+
 #[test]
 fn the_app_syncs_the_repository_it_reopens() {
     let (folders, _root) = temp_folders("wired-reopen");

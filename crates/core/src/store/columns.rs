@@ -30,6 +30,26 @@ impl FromSql for UnixTime {
     }
 }
 
+/// Some Issue and PR numbers as one parameter: a JSON array, which a query reads with `json_each`, so one
+/// statement asks for all of them.
+pub(super) struct Numbers(String);
+
+impl Numbers {
+    pub(super) fn of(numbers: impl IntoIterator<Item = u32>) -> Self {
+        let listed: Vec<String> = numbers
+            .into_iter()
+            .map(|number| number.to_string())
+            .collect();
+        Self(format!("[{}]", listed.join(",")))
+    }
+}
+
+impl ToSql for Numbers {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.0.to_sql()
+    }
+}
+
 impl ToSql for RepositoryName {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.to_string()))

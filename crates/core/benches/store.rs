@@ -21,6 +21,7 @@ use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::ListOrder;
 use tsugiki_core::store::{self, OpenReader, Store, StoreReader};
+use tsugiki_core::workbench::inbox::{Inbox, InboxCursor, InboxPage};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::quick_open;
@@ -91,6 +92,46 @@ fn read_workbench(
         "the view lists items"
     );
     bencher.bench(|| Workbench::read(&held.reader, &held.settings, &view, order));
+    held.close();
+}
+
+/// The Inbox's first page, the last two days, as the Sidebar opens it (#827).
+#[divan::bench(args = PRS)]
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark that timed an empty page would measure nothing CPython's user waits for"
+)]
+fn inbox_latest(bencher: divan::Bencher<'_, '_>, prs: u32) {
+    let held = Held::new("inbox-latest", prs);
+    let (now, page) = (updated(0), InboxPage::Latest);
+    let shown = Inbox::read(&held.reader, &held.settings, page, now).expect("the page");
+    assert!(
+        !shown.items.is_empty() && shown.older.is_some(),
+        "the page lists items and has older ones after it"
+    );
+    bencher.bench(|| Inbox::read(&held.reader, &held.settings, page, now));
+    held.close();
+}
+
+/// An older page of the Inbox from halfway down the cache, as scrolling asks for it (#827).
+#[divan::bench(args = PRS)]
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark that timed an empty page would measure nothing CPython's user waits for"
+)]
+fn inbox_older(bencher: divan::Bencher<'_, '_>, prs: u32) {
+    let held = Held::new("inbox-older", prs);
+    let after = InboxCursor {
+        updated_at: updated(ISSUES / 2),
+        number: 0,
+    };
+    let (now, page) = (updated(0), InboxPage::Older { after });
+    let shown = Inbox::read(&held.reader, &held.settings, page, now).expect("the page");
+    assert!(
+        !shown.items.is_empty() && shown.older.is_some(),
+        "the page lists items and has older ones after it"
+    );
+    bencher.bench(|| Inbox::read(&held.reader, &held.settings, page, now));
     held.close();
 }
 
@@ -271,8 +312,10 @@ fn someone(role: &str, number: u32, count: u32) -> Login {
     Login::new(&format!("{role}-{}", number % count))
 }
 
+/// When item `number` was last updated: the lowest number latest, and a quarter of an hour apart, so the
+/// Inbox's last two days hold about 200 PRs and as many Issues, a busy two days of CPython's.
 fn updated(number: u32) -> OffsetDateTime {
-    OffsetDateTime::UNIX_EPOCH + Duration::days(20_000) - Duration::minutes(i64::from(number))
+    OffsetDateTime::UNIX_EPOCH + Duration::days(20_000) - Duration::minutes(15 * i64::from(number))
 }
 
 /// A commit's SHA, made from `seed`.

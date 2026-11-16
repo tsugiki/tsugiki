@@ -49,6 +49,7 @@ use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::work::SeenMark;
+use tsugiki_core::workbench::inbox::{Inbox, InboxPage};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, FilesRead, LineInDiff, PrFiles};
 use tsugiki_core::workbench::pr_view::PrView;
@@ -516,6 +517,17 @@ fn read_workbench(
     let settings = owner.view();
     let repository = settings.loaded.settings.repository(name);
     Workbench::read(reader, &repository, view, settings.panes.order)
+}
+
+fn read_inbox(
+    repository: &str,
+    page: InboxPage,
+    owner: &SettingsOwner,
+    reader: &StoreReader,
+) -> Result<Inbox, Error> {
+    let name = RepositoryName::parse(repository)?;
+    let repository = owner.view().loaded.settings.repository(name);
+    Inbox::read_now(reader, &repository, page)
 }
 
 fn read_issue(
@@ -1057,6 +1069,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::reread_settings,
             slow_commands::apply_settings,
             slow_commands::workbench,
+            slow_commands::inbox,
             slow_commands::issue,
             slow_commands::pull_request,
             slow_commands::pull_request_files,

@@ -4,6 +4,7 @@
 mod attention;
 mod backports;
 mod filters;
+pub mod inbox;
 pub mod issue_view;
 mod issues;
 mod links;

@@ -110,7 +110,7 @@ _Avoid_: Cache, local clone
 The home list of **Issues** the user is currently following in the current **Repository**: every Issue that a
 **Filter** reaches, that is a **Pinned issue**, that has an open PR the user holds a **Review** on, or that
 **Needs attention**. An Issue being closed on GitHub does not remove it.
-_Avoid_: Dashboard, inbox
+_Avoid_: Dashboard
 
 **Reach**:
 The Issues and PRs Tsugiki keeps ready to open in a **Repository**: their heads in the **Mirror** and their
@@ -127,12 +127,13 @@ Issues directly or match PRs; a matching PR pulls its **Issue** onto the **Workb
 opens an unsaved Filter for what they authored, which the user can save or close.
 _Avoid_: Query, section
 
-**All issues**:
-An unsaved **Filter** every **Repository** has, over all its open Issues and open PRs, most recently updated
-first. Each PR is its own row there, whether or not it fixes an Issue. The user can show only Issues or only
-PRs, narrow it by typing a GitHub search, and save the result as a Filter. It is where the user finds an Issue
-to read, comment on or pin, or a PR to open.
-_Avoid_: Issue browser, backlog
+**Inbox**:
+Every open item of a **Repository** that the user hasn't triaged, as a mail client's inbox holds the mail
+not yet filed: each open **Issue** with its open PRs under it, grouped as on the **Workbench**, and each open
+**Standalone PR** on its own, the latest update first. An item that closes leaves it. It starts with the last
+two days and reads older items from the cache as the user scrolls. It adds nothing to **Reach**. It is where
+the user finds an Issue to read, comment on or pin, or a PR to open.
+_Avoid_: All issues, Issue browser, backlog
 
 **Peek**:
 A popup that shows an Issue or PR from outside the current **Repository**, rendered from the API, with a way

@@ -35,16 +35,17 @@ use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 use crate::facts::WorkFacts;
-use crate::facts::activity::ItemActivity;
+use crate::facts::activity::{ActivityFacts, ItemActivity};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssueState};
-use crate::facts::patch_ids::{CommitPatches, LastCheck, UncheckedCommit};
+use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewedCommit};
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;
+use columns::Numbers;
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
@@ -68,6 +69,16 @@ pub(crate) const IN_USE: &str = "Another Tsugiki has this database open, so this
 const STOPPED: &str = "Tsugiki's database stopped working. Restart Tsugiki to open it again.";
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
+
+/// How much of each Issue or PR a read takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Detail {
+    Whole,
+    /// Only what places the item in a list and groups PRs under their Issues and Origin PRs (ADR 0011): its
+    /// own row, a PR's closing references and a Backport's commits. Its assignees and labels, and a PR's
+    /// Review requests and latest Reviews, stay empty, so no rule that reads them may judge it.
+    Links,
+}
 
 /// The open database.
 pub struct Store {
@@ -644,6 +655,106 @@ fn read_titled(
     Ok(titled)
 }
 
+/// One Repository's facts as one read transaction sees them, for a view that works out what to read next
+/// from what it has read, as the Inbox does (ADR 0018). Each read takes only the rows it names, so its cost
+/// follows what it asks for and not what the store holds. `StoreReader::read_snapshot` hands one out.
+pub struct Snapshot<'a> {
+    transaction: Transaction<'a>,
+    repository: RepositoryName,
+}
+
+impl Snapshot<'_> {
+    /// The user signed in when Tsugiki last reached GitHub, if it ever has.
+    pub fn viewer(&self) -> Result<Option<Login>, Error> {
+        read_last_login(&self.transaction).map_err(saying(CANT_READ))
+    }
+
+    /// The open PRs, the latest update first, with only what places them in a list and groups them under
+    /// their Issues and Origin PRs: their Review requests, latest Reviews, assignees and labels stay empty.
+    pub fn open_pull_request_links(&self) -> Result<Vec<PullRequestFacts>, Error> {
+        let scope = pull_requests::Scope::Open;
+        self.pull_requests(scope, Detail::Links)
+    }
+
+    /// The PRs with these numbers that the store holds, the latest update first.
+    pub fn pull_requests_numbered(
+        &self,
+        numbers: &BTreeSet<u32>,
+    ) -> Result<Vec<PullRequestFacts>, Error> {
+        let numbers = Numbers::of(numbers.iter().copied());
+        self.pull_requests(pull_requests::Scope::Numbered(&numbers), Detail::Whole)
+    }
+
+    fn pull_requests(
+        &self,
+        scope: pull_requests::Scope<'_>,
+        detail: Detail,
+    ) -> Result<Vec<PullRequestFacts>, Error> {
+        pull_requests::read(&self.transaction, &self.repository, scope, detail)
+            .map_err(saying(CANT_READ))
+    }
+
+    /// The Issues with these numbers that the store holds, whatever their state, in number order.
+    pub fn issues_numbered(&self, numbers: &BTreeSet<u32>) -> Result<Vec<IssueFacts>, Error> {
+        self.issues(issues::IssueScope::Numbered(numbers), Detail::Whole)
+    }
+
+    /// As `issues_numbered`, with only what places each Issue in a list: its assignees and labels stay
+    /// empty.
+    pub fn issue_links_numbered(&self, numbers: &BTreeSet<u32>) -> Result<Vec<IssueFacts>, Error> {
+        self.issues(issues::IssueScope::Numbered(numbers), Detail::Links)
+    }
+
+    /// The open Issues updated at `since` or later, the latest update first, with only what places each in
+    /// a list: their assignees and labels stay empty.
+    pub fn open_issue_links_since(&self, since: OffsetDateTime) -> Result<Vec<IssueFacts>, Error> {
+        self.issues(issues::IssueScope::OpenSince(since), Detail::Links)
+    }
+
+    /// The `limit` open Issues that come after `updated_at` and `number` with the latest update first, then
+    /// the highest number first, with only what places each in a list: their assignees and labels stay
+    /// empty.
+    pub fn open_issue_links_before(
+        &self,
+        updated_at: OffsetDateTime,
+        number: u32,
+        limit: u32,
+    ) -> Result<Vec<IssueFacts>, Error> {
+        let scope = issues::IssueScope::OpenBefore {
+            updated_at,
+            number,
+            limit,
+        };
+        self.issues(scope, Detail::Links)
+    }
+
+    fn issues(
+        &self,
+        scope: issues::IssueScope<'_>,
+        detail: Detail,
+    ) -> Result<Vec<IssueFacts>, Error> {
+        issues::read(&self.transaction, &self.repository, scope, detail).map_err(saying(CANT_READ))
+    }
+
+    /// The activity of the Issues and PRs `numbers`, as `viewer` reads it.
+    pub fn activity_of(
+        &self,
+        viewer: Option<&Login>,
+        numbers: &BTreeSet<u32>,
+    ) -> Result<ActivityFacts, Error> {
+        let numbers = Numbers::of(numbers.iter().copied());
+        let items = activity::Items::Numbered(&numbers);
+        activity::read_facts_of(&self.transaction, &self.repository, viewer, items)
+            .map_err(saying(CANT_READ))
+    }
+
+    /// What the Stale review check of `pull_requests` reads.
+    pub fn reviews_of(&self, pull_requests: &[PullRequestFacts]) -> Result<ReviewFacts, Error> {
+        patch_ids::read_facts(&self.transaction, &self.repository, pull_requests)
+            .map_err(saying(CANT_READ))
+    }
+}
+
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
 #[derive(Clone)]
 pub struct StoreReader {
@@ -687,6 +798,22 @@ impl StoreReader {
         let repository = repository.clone();
         let read = self.call(move |connection| read_titled(connection, &repository))?;
         read.map_err(saying(CANT_READ))
+    }
+
+    /// What `read` answers from a snapshot of `repository`, which it reads in one transaction.
+    pub fn read_snapshot<T: Send + 'static>(
+        &self,
+        repository: &RepositoryName,
+        read: impl FnOnce(&Snapshot<'_>) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        let repository = repository.clone();
+        self.call(move |connection| {
+            let transaction = connection.transaction().map_err(saying(CANT_READ))?;
+            read(&Snapshot {
+                transaction,
+                repository,
+            })
+        })?
     }
 
     fn call<T: Send + 'static>(

@@ -84,7 +84,6 @@
 
   let {
     name,
-    onadd,
     onpick,
     onsettings,
     keysActive = true,
@@ -92,7 +91,6 @@
     diffPeek = "inline",
   }: {
     name: string;
-    onadd: () => void;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
     onpick: () => void;
     /** Opens the Settings dialog, from ⚙ atop the Sidebar. */
@@ -1034,6 +1032,8 @@
   />
 {/snippet}
 
+<!-- The Sidebar shows the name. This heading names the Repository to a screen reader whatever panes show. -->
+<h1 class="hidden-name">{name}</h1>
 <!-- The list says what went wrong, and while it's hidden a row above the panes does. -->
 {#if panes.hidden("list")}
   {@render problems()}
@@ -1107,8 +1107,6 @@
       data-pane="list"
       bind:this={list}
     >
-      <h1>{name}</h1>
-      <button onclick={onadd}>Add repository</button>
       <header class="view">
         <h2>{workbench.title}</h2>
         <button
@@ -1211,13 +1209,15 @@
     overscroll-behavior: contain;
   }
 
-  h1 {
-    margin: 8px 10px;
-    font-size: 16px;
-  }
-
-  h1 + button {
-    margin: 0 10px 8px;
+  /* Out of sight and out of the layout, but still in the accessibility tree, as `display: none` isn't. */
+  .hidden-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* The view's name, with the list's order at the far end, as the prototype has it. */

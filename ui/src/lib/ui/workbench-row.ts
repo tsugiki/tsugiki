@@ -117,8 +117,8 @@ export function summary(item: ListedItem): string {
   return item.pull_requests.length > 0 ? openOfAll(item.pull_requests) : "No PR yet";
 }
 
-/** The count beside an Issue's Origin PRs: its open PRs of all of them, Backports included. */
-export function openOfAll(entries: TreeEntry[]): string {
+/** How many of an Issue's PRs are open, of all of them, Backports included. */
+function openOfAll(entries: TreeEntry[]): string {
   const rows = treeRows(entries);
   const open = rows.filter((row) => row.state === "OPEN").length;
   return `${String(open)} open of ${prCount(rows.length)}`;

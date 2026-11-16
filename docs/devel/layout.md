@@ -6,12 +6,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   were prototyped on branch `prototype/app-shell`. The panes fill the window above the status bar, and each
   scrolls by itself with a scrollbar at its own right edge. The wheel scrolls the pane under the pointer and
   stops at that pane's end; the window itself doesn't scroll.
-  - **Sidebar** (left): the Repository switcher on top (also `Ctrl+R`, and "Repository: …" in the command
-    palette), then the Workbench, the Built-in views, All issues, the Filters and the Pinned issues. It can be
-    full, icons only, or hidden. « in its header, a drag of its edge below 120 px, or "View: Sidebar as
-    Icons" in the command palette shrinks it to a 48 px strip of icons; between 120 px and its least width,
-    140 px, the drag holds it at 140 px. The strip has the Repository's initials on top, then an icon for each
-    entry the full Sidebar lists, with its count as a badge and its name in the tooltip, and ⚙ at the bottom.
+  - **Sidebar** (left): the Repository switcher on top, whose picker (also `Ctrl+R`, and "Repository: …" in
+    the command palette) ends with Add repository, then the Workbench, the Built-in views, All issues, the
+    Filters and the Pinned issues. It can be full, icons only, or hidden. « in its header, a drag of its
+    edge below 120 px, or "View: Sidebar as Icons" in the command palette shrinks it to a 48 px strip of
+    icons; between 120 px and its least width, 140 px, the drag holds it at 140 px. The strip has the
+    Repository's initials on top, then an icon for each entry the full Sidebar lists, with its count as a
+    badge and its name in the tooltip, and ⚙ at the bottom.
     A Filter whose last search failed says why in its tooltip, and its icon shows a red ! for its count. A
     click on an icon brings the full Sidebar back and opens that view, and a click on the initials or "View:
     Full Sidebar" brings it back on the view on show. Either way it comes back at the last width Tsugiki
@@ -82,10 +83,16 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside the Mark Seen button; an
       Issue with no labels shows none. Each Origin PR's Backports are folded into one line that gives their
-      branches and states. The Origin PRs heading counts the open PRs of all of them, Backports and the
-      folded merged PRs included. Each PR's line starts with its branch and ends with its author, and a PR
-      that Needs attention shows in bold. A legend under the tree names the icons for open, draft, merged and
-      closed, and the bold.
+      branches and states. A row between the "Origin PRs" heading and the tree counts the PRs by state, as
+      `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its word, then
+      its count, muted and without brackets, as on GitHub's tabs, with a muted dot between entries. Each
+      count matches its icon, so an open draft counts as Draft and not as Open, and the counts take in the
+      Backports and the folded merged PRs. All four states show on every Issue, so Open sits in the same
+      place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last, after
+      "Bold" in bold. A screen reader reads the row as a list named "PR counts", each entry its word and
+      count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
+      starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
+      worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and
       `Ctrl+PageUp` switch tabs, and so does `Enter` on the PR's row once the PR is open.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):

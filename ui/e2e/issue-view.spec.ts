@@ -44,7 +44,6 @@ const listing = (waiting: boolean) => ({
   status: "ok" as const,
   data: {
     items: [issue(7, waiting), issue(8, false)],
-    quiet: [],
     count: waiting ? 1 : 0,
     review_requests: 0,
     stale_reviews: 0,
@@ -174,7 +173,6 @@ test("an Issue opened far down a long list shows beside it", async ({ page }) =>
       status: "ok",
       data: {
         items: numbers.map((number) => issue(number, false)),
-        quiet: [],
         count: 0,
         review_requests: 0,
         stale_reviews: 0,

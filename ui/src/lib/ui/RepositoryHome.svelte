@@ -116,7 +116,7 @@
   });
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
-  const workbench = $derived(new WorkbenchState(name));
+  const workbench = $derived(new WorkbenchState(name, cursorLanded, () => panes.order));
   /** The Issues, PRs and file views the Detail pane has shown, which Alt+← and Alt+→ go back and forward
    * through. Each Repository has its own. */
   const visits = $derived.by(() => {
@@ -149,7 +149,6 @@
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
   let list = $state<HTMLElement>();
-  let quietLineButton = $state<HTMLButtonElement>();
   let home = $state<HTMLElement>();
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
    * it with `:focus-within` (#602). */
@@ -382,17 +381,32 @@
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
   }
 
-  /** Mark Seen on `marked`, as the window drew it. A cursor on its row lands on the row that takes its place
-   * once it moves, and takes the focus there when `focus` says so. */
-  async function markSeen(marked: Marked | undefined, focus = false) {
-    if (!marked) return;
-    markProblem = await workbench.markSeen(marked.seen.mark, marked.stop, () => {
-      if (focus) focusCursor();
-    });
+  /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
+   * was made in by the time it's done. */
+  async function sayMarkProblem(marking: (opened: WorkbenchState) => Promise<string | undefined>) {
+    const opened = workbench;
+    const problem = await marking(opened);
+    if (workbench === opened) markProblem = problem;
+  }
+
+  /** Mark Seen on `marked`, as the window drew it. Once the item no longer Needs attention, a cursor on its
+   * row lands on the row that came after it, whether the item moved or kept its place, and `cursorLanded`
+   * runs. */
+  async function markSeen(marked: Marked | undefined) {
+    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark));
+  }
+
+  /** Takes the focus to the row the cursor landed on when a row of the list holds the focus, or the page
+   * does, as it does once nothing else holds it. Focus anywhere else, such as in a text box or on the list's
+   * header, stays put. */
+  function cursorLanded() {
+    const focused = document.activeElement;
+    const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
+    if (onRow || focused === document.body) focusCursor();
   }
 
   async function markUnseen(marked: Marked | undefined) {
-    if (marked) markProblem = await workbench.markUnseen(marked.number);
+    if (marked) await sayMarkProblem((opened) => opened.markUnseen(marked.number));
   }
 
   /** Mark Seen or Mark Unseen on the item on show, whichever its header's button offers. */
@@ -564,15 +578,6 @@
       panes.order === "attention"
         ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
         : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
-      ...(workbench.quiet.length > 0
-        ? [
-            {
-              title: workbench.quietShown ? "Hide Quiet Items" : "Show Quiet Items",
-              id: "toggle_quiet" as const,
-              run: toggleQuiet,
-            },
-          ]
-        : []),
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       // Each shape but the one on show, so a hidden Sidebar offers both.
       ...(panes.hidden("sidebar") || !panes.sidebarIcons
@@ -604,29 +609,8 @@
    * once that's saved. */
   async function sortBy(order: ListOrder) {
     await panes.setOrder(order);
-    await workbench.refresh();
+    await workbench.reorder();
   }
-
-  /** Unfolds the quiet section, or folds it. A cursor in it moves to the last line above it, and takes the
-   * focus with it if the focus was on a row that went away. With no line above, the focus goes to the
-   * line that unfolds the section again. */
-  function toggleQuiet() {
-    if (!workbench.quietShown) {
-      workbench.showQuiet();
-      return;
-    }
-    const focused = document.activeElement;
-    workbench.hideQuiet();
-    void tick().then(() => {
-      if (focused?.isConnected !== false) return;
-      if (workbench.cursor) focusCursor();
-      else quietLineButton?.focus();
-    });
-  }
-
-  /** The line that folds the quiet section: what a click on it does, and to how many items. */
-  const quietLine = (shown: boolean, count: number) =>
-    `${shown ? "Hide" : "Show"} ${count === 1 ? "1 quiet item" : `${String(count)} quiet items`}`;
 
   /** Names a line for the page, which can list a PR under two Issues. */
   const lineName = (stop: Stop | undefined) => `${String(stop?.issue ?? "")}#${String(stop?.number)}`;
@@ -702,11 +686,11 @@
    * it runs, so a sync that lands while the palette is open marks what the window shows by then. A held key
    * would ask the core again and again. */
   const marking =
-    (mark: (marked: Marked | undefined, at: KeyTarget) => Promise<void>): ScreenAction =>
+    (mark: (marked: Marked | undefined) => Promise<void>): ScreenAction =>
     (at) =>
       keyMarked(at) &&
       ((held) => {
-        if (!held) void mark(keyMarked(at), at);
+        if (!held) void mark(keyMarked(at));
       });
 
   /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block
@@ -758,8 +742,8 @@
         })
       );
     },
-    mark_seen: marking((marked, at) => markSeen(marked, !forDetail(at))),
-    mark_unseen: marking((marked) => markUnseen(marked)),
+    mark_seen: marking(markSeen),
+    mark_unseen: marking(markUnseen),
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
@@ -1135,7 +1119,7 @@
         >
       </header>
       {@render problems()}
-      {#if workbench.items?.length === 0 && workbench.quiet.length === 0}
+      {#if workbench.items?.length === 0}
         <p>{EMPTY[workbench.selected.kind]}</p>
       {:else if workbench.items}
         <ul>
@@ -1143,23 +1127,6 @@
             {@render listed(item)}
           {/each}
         </ul>
-        {#if workbench.quiet.length > 0}
-          <button
-            class="link quiet small-heading"
-            aria-expanded={workbench.quietShown}
-            onclick={toggleQuiet}
-            bind:this={quietLineButton}
-          >
-            {quietLine(workbench.quietShown, workbench.quiet.length)}
-          </button>
-          {#if workbench.quietShown}
-            <ul aria-label="Quiet items">
-              {#each workbench.quiet as item (item.number)}
-                {@render listed(item)}
-              {/each}
-            </ul>
-          {/if}
-        {/if}
       {/if}
     </section>
     {#if detail}
@@ -1425,11 +1392,6 @@
   .window-focused .list:focus-within .row:has(.title[aria-current]),
   :global(html:not(:has(:focus))) .window-focused .row:has(.title[aria-current]) {
     background: var(--selection-active);
-  }
-
-  .quiet {
-    display: block;
-    padding: 12px 10px 4px;
   }
 
   /* The empty view's words and the problems line up with the header. */

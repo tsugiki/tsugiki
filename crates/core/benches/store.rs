@@ -86,10 +86,7 @@ fn read_workbench(
     let view = view_of(&held.settings);
     let order = ListOrder::Attention;
     let shown = Workbench::read(&held.reader, &held.settings, &view, order).expect("the view");
-    assert!(
-        !shown.items.is_empty() || !shown.quiet.is_empty(),
-        "the view lists items"
-    );
+    assert!(!shown.items.is_empty(), "the view lists items");
     bencher.bench(|| Workbench::read(&held.reader, &held.settings, &view, order));
     held.close();
 }

@@ -68,11 +68,13 @@ fn state_of(pull_request: PullRequestFacts, reviews: ReviewFacts) -> YourReview 
         ..pull_request
     };
     let workbench = reviewed_workbench(vec![asked], vec![], reviews);
-    let listed = workbench.items.iter().chain(&workbench.quiet);
-    let rows = listed.flat_map(|listed| match &listed.item {
-        WorkbenchItem::StandalonePr(tree) => Some(tree.row.clone()),
-        WorkbenchItem::Issue(_) | WorkbenchItem::StandaloneBackport(_) => None,
-    });
+    let rows = workbench
+        .items
+        .iter()
+        .flat_map(|listed| match &listed.item {
+            WorkbenchItem::StandalonePr(tree) => Some(tree.row.clone()),
+            WorkbenchItem::Issue(_) | WorkbenchItem::StandaloneBackport(_) => None,
+        });
     rows.into_iter().next().unwrap().your_review
 }
 
@@ -485,8 +487,10 @@ fn states_of(
     reviews: ReviewFacts,
 ) -> BTreeMap<u32, YourReview> {
     let workbench = reviewed_workbench(pull_requests, vec![], reviews);
-    let listed = workbench.items.iter().chain(&workbench.quiet);
-    let rows = listed.flat_map(|listed| rows_of(&listed.item));
+    let rows = workbench
+        .items
+        .iter()
+        .flat_map(|listed| rows_of(&listed.item));
     rows.map(|row| (row.number, row.your_review)).collect()
 }
 

@@ -127,7 +127,6 @@ pub(crate) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>
     workbench
         .items
         .iter()
-        .chain(&workbench.quiet)
         .map(|listed| match &listed.item {
             WorkbenchItem::Issue(issue) => {
                 let rows = issue.pull_requests.iter().flat_map(TreeEntry::rows);
@@ -145,12 +144,13 @@ pub(crate) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>
 }
 
 pub(crate) fn first_issue(workbench: &Workbench) -> &IssueItem {
-    let listed = workbench.items.iter().chain(&workbench.quiet);
-    let issues = listed.filter_map(|listed| match &listed.item {
-        WorkbenchItem::Issue(issue) => Some(issue),
-        WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
-    });
-    let mut issues = issues;
+    let mut issues = workbench
+        .items
+        .iter()
+        .filter_map(|listed| match &listed.item {
+            WorkbenchItem::Issue(issue) => Some(issue),
+            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+        });
     issues.next().unwrap()
 }
 

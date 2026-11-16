@@ -90,7 +90,7 @@ fn linked(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<Linked> {
 /// 2. each PR that fixes a reached Issue, open, merged or closed,
 /// 3. each Backport whose Origin PR is reached, and the Origin PR of each reached Backport.
 ///
-/// That holds every PR the whole Workbench shows, the quiet items' and those in Issues' trees too.
+/// That holds every PR the whole Workbench shows, those in Issues' trees too.
 pub(crate) fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let causes = Causes::of(facts, repository.conventions);
     let own = in_own_right(facts, repository, &causes);

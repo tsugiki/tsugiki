@@ -147,7 +147,6 @@ const oneIssue = {
         attention: null,
       },
     ],
-    quiet: [],
     count: 0,
     review_requests: 0,
     stale_reviews: 0,
@@ -180,7 +179,7 @@ beforeEach(() => {
   core.tokenSource.mockResolvedValue("gh");
   core.workbench.mockResolvedValue({
     status: "ok",
-    data: { items: [], quiet: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
   });
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.recentCommands.mockResolvedValue([]);
@@ -643,7 +642,6 @@ function listOnePr() {
     status: "ok",
     data: {
       items: [{ kind: "standalone_pr", ...pr, backports: [], attention: null }],
-      quiet: [],
       count: 0,
       review_requests: 0,
       stale_reviews: 0,

@@ -1492,7 +1492,7 @@ describe("a chord", () => {
 
     expect(chord()).toBeNull();
     expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
-    expect(screen.queryByRole("button", { name: gcmon.name })).toBeNull();
+    expect(document.querySelector('[data-pane="list"]')).toBeNull();
   });
 
   it("ends at a click", async () => {

@@ -199,10 +199,17 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("starts the list with the view's name, and leaves the Repository's name and Add repository to the Sidebar", () => {
-  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
-  const list = within(issueList() as HTMLElement);
+/** The Issue list's pane, or null while it's hidden. */
+const issueList = () => document.querySelector('[data-pane="list"]');
 
+it("names the Repository in its hidden heading and atop the Sidebar, and starts the list with the view", async () => {
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByText(/^Nothing here yet/);
+  const list = within(issueList() as HTMLElement);
+  const sidebar = within(screen.getByRole("navigation", { name: "Sidebar" }));
+
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("python/cpython");
+  expect(sidebar.getByRole("button", { name: "python/cpython" })).toBeTruthy();
   expect(list.getAllByRole("heading").map((heading) => heading.textContent)).toEqual(["Workbench"]);
   expect(list.queryByRole("button", { name: "Add repository" })).toBeNull();
 });
@@ -3381,9 +3388,6 @@ const chordEnd = () => new KeyboardEvent("keydown", { key: "z", code: "KeyZ" });
 
 const toggleList = (target: Element = document.body, init: KeyboardEventInit = {}) =>
   fireEvent.keyDown(target, { key: "b", code: "KeyB", ctrlKey: true, altKey: true, ...init });
-
-/** The Issue list's pane, or null while it's hidden. */
-const issueList = () => document.querySelector('[data-pane="list"]');
 
 /** The list's row named `name`, which the Detail pane may name too. */
 const rowNamed = (name: string) =>

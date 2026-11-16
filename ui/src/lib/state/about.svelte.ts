@@ -14,7 +14,7 @@ export class AboutState {
 
   /** Tsugiki's name in the window's title, with the build's version once the core answers. */
   get title(): string {
-    return this.about === undefined ? "Tsugiki" : `${this.about.name} ${this.about.version}`;
+    return this.about === undefined ? "Tsugiki" : `Tsugiki ${this.about.version}`;
   }
 
   /** The status bar's words when the core gave no answer, with the reason. */

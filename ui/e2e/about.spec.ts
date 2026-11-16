@@ -33,7 +33,7 @@ test("the window's title names the open Repository before the build", async ({ p
 });
 
 test("the status bar says when the core doesn't answer", async ({ page }) => {
-  await mockCore(page, {});
+  await mockCore(page, {}, ["about"]);
   await page.goto("/");
   await expect(page.getByRole("status")).toContainText("The core didn't answer");
   await expect(page).toHaveTitle("Tsugiki");

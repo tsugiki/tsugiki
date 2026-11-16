@@ -8,7 +8,6 @@ const workbench = { items: [], count: 0, review_requests: 0, stale_reviews: 0, f
 
 test("Ctrl+R and Enter switch back to the Repository opened before", async ({ page }) => {
   await mockCore(page, {
-    about: { name: "Tsugiki", version: "1.2.3", build: "release", source_ref: "v1.2.3" },
     home: { screen: "repository", repository: cpython, others: [peps.name, "python/devguide"] },
     openRepository: {
       status: "ok",

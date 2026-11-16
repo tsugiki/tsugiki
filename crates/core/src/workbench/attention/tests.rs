@@ -240,7 +240,10 @@ fn number_of(listed: &ListedItem) -> u32 {
 }
 
 fn listed_at(workbench: &Workbench, number: u32) -> ListedItem {
-    let mut found = (workbench.items.iter()).filter(|listed| number_of(listed) == number);
+    let mut found = workbench
+        .items
+        .iter()
+        .filter(|listed| number_of(listed) == number);
     found.next().unwrap().clone()
 }
 

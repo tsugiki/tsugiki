@@ -487,7 +487,10 @@ fn states_of(
     reviews: ReviewFacts,
 ) -> BTreeMap<u32, YourReview> {
     let workbench = reviewed_workbench(pull_requests, vec![], reviews);
-    let rows = (workbench.items.iter()).flat_map(|listed| rows_of(&listed.item));
+    let rows = workbench
+        .items
+        .iter()
+        .flat_map(|listed| rows_of(&listed.item));
     rows.map(|row| (row.number, row.your_review)).collect()
 }
 

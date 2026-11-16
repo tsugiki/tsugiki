@@ -857,23 +857,17 @@ describe("WorkbenchState", () => {
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([3, 4, 2, 1]);
     });
-    answering([4, 2, 1], [3]);
-    send("python/cpython");
-    await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([4, 2, 1, 3]);
-    });
-    expect(state.cursor?.number, "an item that drops down under the cursor takes the cursor with it").toBe(3);
-    expect(landed).not.toHaveBeenCalled();
+    expect(state.cursor?.number, "the cursor follows an item that still waits").toBe(3);
 
     state.moveTo(lineOf(4));
     vi.mocked(commands.markSeen).mockResolvedValue(refused);
     expect(await state.markSeen(seen(4).mark, lineOf(4), landed)).toBe("no database");
-    answering([2, 1], [4, 3]);
+    answering([3, 2, 1], [4]);
     send("python/cpython", [4]);
     await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([2, 1, 4, 3]);
+      expect(numbers(state)).toEqual([3, 2, 1, 4]);
     });
-    expect(state.cursor?.number).toBe(4);
+    expect(state.cursor?.number, "it lands as for any change from outside").toBe(2);
     expect(landed).not.toHaveBeenCalled();
     state.stop();
   });
@@ -885,13 +879,71 @@ describe("WorkbenchState", () => {
     await state.markSeen(seen(3).mark, lineOf(3));
     state.moveCursor(1);
     state.moveCursor(-1);
-    answering([1], [3, 2]);
+    // A Review request still waits on #3, under the cursor.
+    answering([3, 1], [2]);
     send("python/cpython", [2, 3]);
 
     await vi.waitFor(() => {
-      expect(numbers(state)).toEqual([1, 3, 2]);
+      expect(numbers(state)).toEqual([3, 1, 2]);
     });
-    expect(state.cursor?.number, "it follows its item, as it would without the mark").toBe(3);
+    expect(state.cursor?.number).toBe(3);
+    state.stop();
+  });
+
+  it("leaves the cursor in place after Mark Seen on a row with nothing waiting", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.markSeen).mockResolvedValue({ status: "ok", data: null });
+    answering([], [3, 2, 1]);
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    const landed = vi.fn();
+
+    await state.markSeen(seen(3).mark, lineOf(3), landed);
+    // The same sync took #1 off the list, which says the answer has arrived.
+    answering([], [3, 2]);
+    send("python/cpython", [3]);
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([3, 2]);
+    });
+
+    expect(state.cursor?.number).toBe(3);
+    expect(landed).not.toHaveBeenCalled();
+    state.stop();
+  });
+
+  it("lands the cursor on the item after the one under it when a change from outside takes its attention", async () => {
+    const { state, send } = await listingWithCursor([4, 3, 2, 1], 1);
+    const landedByChange = vi.fn();
+    state.landedByChange = landedByChange;
+
+    answering([4, 2, 1], [3]);
+    send("python/cpython");
+
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([4, 2, 1, 3]);
+    });
+    expect(state.cursor?.number).toBe(2);
+    expect(landedByChange).toHaveBeenCalledOnce();
+
+    answering([4, 2, 1], [3]);
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(commands.workbench).toHaveBeenCalledTimes(3);
+    });
+    expect(state.cursor?.number, "the same answer again leaves it there").toBe(2);
+    expect(landedByChange).toHaveBeenCalledOnce();
+    state.stop();
+  });
+
+  it("follows the item under the cursor into a newly selected view, where nothing it showed came before", async () => {
+    const { state } = await listingWithCursor([4, 3, 2, 1], 1);
+    answering([4, 2, 1], [3]);
+
+    await state.select(onlyMine);
+
+    expect(numbers(state)).toEqual([4, 2, 1, 3]);
+    expect(state.cursor?.number).toBe(3);
     state.stop();
   });
 });

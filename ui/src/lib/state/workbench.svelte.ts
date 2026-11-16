@@ -64,6 +64,9 @@ const said = (answer: { status: "ok" } | { status: "error"; error: { message: st
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
+/** The key of view `view`, which keeps its own unfolded Issues. */
+const keyOf = (view: WorkbenchView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
+
 /** The facts that place the cursor after Mark Seen on the item under it. */
 type Landing = {
   /** The item under the cursor. */
@@ -107,6 +110,9 @@ export class WorkbenchState {
   error = $state<string>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
+  /** Runs when a change from outside took the attention off the item under the cursor, and the cursor
+   * landed on the item after it. */
+  landedByChange: () => void = () => {};
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The view whose items the list shows: `selected` once its answer has arrived. */
@@ -176,7 +182,7 @@ export class WorkbenchState {
 
   /** Whether the list has the line `stop`, under a folded Issue or not. */
   lists(stop: Stop): boolean {
-    return this.#lines(() => true).some((line) => sameStop(line.stop, stop));
+    return this.#allStops().some((line) => sameStop(line, stop));
   }
 
   /** The first line the list has for the Issue or PR `number`, under a folded Issue too, or else a line of
@@ -233,13 +239,14 @@ export class WorkbenchState {
 
   /**
    * Mark Seen with `mark`, as the window drew it, on line `stop`'s item. When that item is under the cursor
-   * and no longer Needs attention once the core saved the mark, the cursor lands on the item that came after
-   * it, and `landed` runs. Says what went wrong, if anything did.
+   * and Needs attention, and no longer does once the core saved the mark, the cursor lands on the item that
+   * came after it, and `landed` runs. Says what went wrong, if anything did.
    */
   async markSeen(mark: SeenMark, stop: Stop | undefined, landed: () => void = () => {}) {
     const items = this.items ?? [];
     const marked = stop && this.#itemOf(stop, items);
-    const landing = marked &&
+    // An item that waits on nothing keeps the cursor, as Mark Seen can't take attention it doesn't have.
+    const landing = marked?.attention &&
       this.cursor &&
       this.#itemOf(this.cursor, items) === marked && {
         item: marked.number,
@@ -274,11 +281,14 @@ export class WorkbenchState {
   }
 
   /** Moves the cursor after a PR that a change put under an Issue, or took out from under one, and unfolds
-   * the Issue over a PR under the cursor, as another view may have it folded. */
-  #followCursor(question: number, items: ListedItem[]) {
+   * the Issue over a PR under the cursor, as another view may have it folded. An item under the cursor that
+   * no longer Needs attention, after a Mark Seen or a change from outside, lands it on the item that came
+   * after it in `before`, the list the same view showed until this answer. */
+  #followCursor(question: number, items: ListedItem[], before: ListedItem[] | undefined) {
     const cursor = this.cursor;
     if (cursor === undefined) return;
     if (this.#land(question, items)) return;
+    if (before && this.#landOnLoss(cursor, before, items)) return;
     const stops = this.#allStops();
     const line =
       stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
@@ -294,13 +304,34 @@ export class WorkbenchState {
     this.#landing = undefined;
     const marked = items.find((item) => item.number === landing.item);
     if (marked?.attention) return false;
-    const listed = items.map((item) => item.number);
-    const target = landing.after.find((number) => listed.includes(number)) ?? listed.at(-1);
-    // An item's own line is the one with no Issue above it.
-    const stops = this.#stops();
-    this.cursor = stops.find((stop) => stop.number === target && stop.issue === undefined) ?? stops.at(-1);
+    this.#landAfter(landing.after, items);
     landing.landed();
     return true;
+  }
+
+  /** Lands the cursor when a change from outside, such as a sync, took the attention off the item under it,
+   * which stays listed: on the first item that came after it in `before` and is still listed, or else on
+   * the last line, as a Mark Seen would. `landedByChange` runs then. Says whether the cursor landed. */
+  #landOnLoss(cursor: Stop, before: ListedItem[], items: ListedItem[]): boolean {
+    const was = this.#itemOf(cursor, before);
+    const now = was && items.find((item) => item.number === was.number);
+    if (!was?.attention || !now || now.attention) return false;
+    this.#landing = undefined;
+    this.#landAfter(
+      before.slice(before.indexOf(was) + 1).map((item) => item.number),
+      items,
+    );
+    this.landedByChange();
+    return true;
+  }
+
+  /** Puts the cursor on the line of the first item of `after` that `items` lists, or else on the last line.
+   * An item's own line is the one with no Issue above it. */
+  #landAfter(after: number[], items: ListedItem[]) {
+    const listed = items.map((item) => item.number);
+    const target = after.find((number) => listed.includes(number)) ?? listed.at(-1);
+    const stops = this.#stops();
+    this.cursor = stops.find((stop) => stop.number === target && stop.issue === undefined) ?? stops.at(-1);
   }
 
   /** The item of `items` that holds line `stop`, under a folded Issue or not. */
@@ -311,8 +342,7 @@ export class WorkbenchState {
   /** The key of the view whose items the list shows, which keeps its own unfolded Issues. Until the answer
    * for a newly selected view arrives, the list still shows the last one's items, folded as it had them. */
   #viewKey() {
-    const shown = this.#shown;
-    return shown.kind === "filter" ? `filter ${shown.query}` : shown.kind;
+    return keyOf(this.#shown);
   }
 
   /** The Issues unfolded in the view on show, if it has unfolded any yet. */
@@ -324,7 +354,7 @@ export class WorkbenchState {
    * anew whenever the list changes, so it needn't be reactive itself. It names the PRs of folded Issues
    * too. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  #titles = $derived(new Map(this.#lines(() => true).map((line) => [line.stop.number, line.title])));
+  #titles = $derived(new Map(this.#allLines().map((line) => [line.stop.number, line.title])));
 
   /** The title of line `number`, if the list has it. */
   titleOf(number: number): string | undefined {
@@ -336,6 +366,11 @@ export class WorkbenchState {
     return (this.items ?? []).flatMap((item) => linesOf(item, unfolded));
   }
 
+  /** Each line the list has, in its order, the PRs of folded Issues too. */
+  #allLines() {
+    return this.#lines(() => true);
+  }
+
   /** The lines the list shows, in its order. */
   #stops() {
     const open = this.#open();
@@ -344,7 +379,7 @@ export class WorkbenchState {
 
   /** Each line the list has, the PRs of folded Issues too. */
   #allStops() {
-    return this.#lines(() => true).map((line) => line.stop);
+    return this.#allLines().map((line) => line.stop);
   }
 
   async #ask() {
@@ -360,9 +395,10 @@ export class WorkbenchState {
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {
+      const before = keyOf(view) === this.#viewKey() ? this.items : undefined;
       this.items = answer.data.items;
       this.#shown = view;
-      this.#followCursor(question, answer.data.items);
+      this.#followCursor(question, answer.data.items, before);
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.staleReviews = answer.data.stale_reviews;

@@ -2213,6 +2213,36 @@ it("moves the cursor and the focus to the next row once Q drops the row under th
   expect(landed.getAttribute("aria-current")).toBe("true");
 });
 
+it("moves the cursor, and the focus a row held, to the next row when a sync takes the row's attention", async () => {
+  const { marked, markedSeen } = await threeAlone();
+  marked.focus();
+
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(landed);
+  });
+  expect(landed.getAttribute("aria-current")).toBe("true");
+});
+
+it("moves only the cursor when a sync takes the attention of the row under it while the focus is elsewhere", async () => {
+  const { markedSeen } = await threeAlone();
+  const box = document.createElement("input");
+  document.body.append(box);
+  box.focus();
+
+  markedSeen();
+
+  const landed = await screen.findByRole("button", { name: "#6 Next" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+  await tick();
+  expect(document.activeElement).toBe(box);
+  box.remove();
+});
+
 it("moves only the cursor to the next row once the palette's Mark Seen drops the item on show down the list", async () => {
   const { component, markedSeen } = await threeAlone();
   await screen.findByRole("button", { name: "Mark Seen" });

@@ -151,7 +151,9 @@ fn reach_holds_every_pr_the_whole_workbench_shows() {
         facts(pull_requests.clone(), issues.clone()),
         &WorkbenchView::Whole,
     );
-    let rows: BTreeSet<u32> = (shown.items.iter())
+    let rows: BTreeSet<u32> = shown
+        .items
+        .iter()
         .flat_map(|listed| rows_of(&listed.item))
         .map(|row| row.number)
         .collect();

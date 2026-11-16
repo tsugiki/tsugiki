@@ -126,6 +126,10 @@
   $effect(() => {
     // By the time this cleans up, `workbench` is already the next Repository's.
     const opened = workbench;
+    // A row of the list that held the focus hands it to the row the cursor landed on.
+    opened.landedByChange = () => {
+      if (list?.contains(document.activeElement)) focusCursor();
+    };
     void opened.load();
     return () => {
       opened.stop();
@@ -381,8 +385,9 @@
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
   }
 
-  /** Mark Seen on `marked`, as the window drew it. A cursor on its row lands on the row that takes its place
-   * once it moves, and takes the focus there when `focus` says so. */
+  /** Mark Seen on `marked`, as the window drew it. Once the item no longer Needs attention, a cursor on its
+   * row lands on the row that came after it, whether the item moved or kept its place, and takes the focus
+   * there when `focus` says so. */
   async function markSeen(marked: Marked | undefined, focus = false) {
     if (!marked) return;
     markProblem = await workbench.markSeen(marked.seen.mark, marked.stop, () => {

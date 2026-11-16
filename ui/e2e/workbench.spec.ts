@@ -415,6 +415,7 @@ test("a change that moves the focused row under the cursor gives it back the foc
   const cursor = page.getByRole("button", { name: "#1021 Item 1021" });
   await expect(cursor).toBeFocused();
   const above = await topOf("#1020");
+  expect(above).toBeDefined();
 
   await moveToTop(1021);
 

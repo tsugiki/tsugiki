@@ -40,9 +40,11 @@ const FOCUS_LINE = 2;
 const SHOWS = 1;
 
 /** The place of `box` in `scroller`, which scrolls it, below the focus line: whether more than `SHOWS` of
- * it shows, and how far its top lies above the part on show and its bottom below it. */
+ * it shows, and how far its top lies above the part on show and its bottom below it. The part on show is
+ * the scroller's client box, so its border and a scrollbar along its bottom don't count. */
 function placeIn(box: Element, scroller: Element) {
-  const { top: shownTop, bottom: shownBottom } = scroller.getBoundingClientRect();
+  const shownTop = scroller.getBoundingClientRect().top + scroller.clientTop;
+  const shownBottom = shownTop + scroller.clientHeight;
   const { top, bottom } = box.getBoundingClientRect();
   const from = shownTop + FOCUS_LINE;
   return {

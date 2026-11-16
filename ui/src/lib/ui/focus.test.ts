@@ -61,22 +61,25 @@ describe("keepFocusIn", () => {
 });
 
 describe("keepOnScreen", () => {
-  /** A list that shows 100 px, scrolled 500 px down, with a box 20 px tall drawn `top` px below the list's
-   * top. jsdom lays nothing out, so the box's place is the test's to set. */
-  const listAndBox = (top: number) => {
+  /** A list whose client box shows 100 px, under a top border `border` px thick and above a 17 px scrollbar,
+   * scrolled 500 px down, with a box 20 px tall drawn `top` px below the list's top. jsdom lays nothing
+   * out, so the box's place is the test's to set. */
+  const listAndBox = (top: number, border: number) => {
     const list = document.createElement("div");
     const box = document.createElement("div");
     list.append(box);
     const place = { top };
-    list.getBoundingClientRect = () => ({ top: 0, bottom: 100 }) as DOMRect;
+    list.getBoundingClientRect = () => ({ top: 0, bottom: border + 100 + 17 }) as DOMRect;
     box.getBoundingClientRect = () => ({ top: place.top, bottom: place.top + 20 }) as DOMRect;
     Object.defineProperty(list, "scrollTop", { value: 500, writable: true });
+    Object.defineProperty(list, "clientTop", { value: border });
+    Object.defineProperty(list, "clientHeight", { value: 100 });
     return { list, box, place };
   };
 
   /** The `scrollTop` of `list` once a change took its box from `from` px below its top to `to`. */
-  const scrolledFor = (from: number, to: number) => {
-    const { list, box, place } = listAndBox(from);
+  const scrolledFor = (from: number, to: number, border = 0) => {
+    const { list, box, place } = listAndBox(from, border);
     const drawn = keepOnScreen(box, list);
     place.top = to;
     drawn(box);
@@ -98,6 +101,10 @@ describe("keepOnScreen", () => {
 
   it("leaves the scroll alone while some of the box still shows, however far the change moved it", () => {
     expect([scrolledFor(40, 0), scrolledFor(70, 90), scrolledFor(40, -10)]).toEqual([500, 500, 500]);
+  });
+
+  it("counts only the list's client box as on show, not its border or the scrollbar along its bottom", () => {
+    expect([scrolledFor(40, 105), scrolledFor(40, -14, 3)]).toEqual([525, 481]);
   });
 
   it("leaves the scroll alone for a box the user had scrolled off the screen", () => {

@@ -2337,20 +2337,25 @@ it("moves only the cursor to the next row once the palette's Mark Seen from the 
  * back once the test is done, whether it passed or not. */
 const layOutList = () => {
   let scrolled = 90;
-  vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
-    return this.matches(".list") ? scrolled : 0;
-  });
-  vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(function (this: Element, to: number) {
-    if (this.matches(".list")) scrolled = to;
-  });
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
-    const item = this.closest(".item");
-    if (item === null) return { top: 0, bottom: 60 } as DOMRect;
-    const top = 40 + Array.from(item.parentElement?.children ?? []).indexOf(item) * 50 - scrolled;
-    return { top, bottom: top + 50 } as DOMRect;
-  });
+  const spies = [
+    vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
+      return this.matches(".list") ? scrolled : 0;
+    }),
+    vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(function (this: Element, to: number) {
+      if (this.matches(".list")) scrolled = to;
+    }),
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(function (this: Element) {
+      return this.matches(".list") ? 60 : 0;
+    }),
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const item = this.closest(".item");
+      if (item === null) return { top: 0, bottom: 60 } as DOMRect;
+      const top = 40 + Array.from(item.parentElement?.children ?? []).indexOf(item) * 50 - scrolled;
+      return { top, bottom: top + 50 } as DOMRect;
+    }),
+  ];
   onTestFinished(() => {
-    vi.restoreAllMocks();
+    for (const spy of spies) spy.mockRestore();
   });
   return () => scrolled;
 };

@@ -14,39 +14,33 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 - Run every command inside your worktree, with `CARGO_TARGET_DIR` unset, so Cargo builds into the
   worktree's own `target/`.
 - Put scratch files (probe scripts, copies of data, logs, message drafts) in your worktree's
-  `.temp/scratchpad/`, not the scratchpad folder your system prompt names, and delete them before you
-  report. In wave 6 of 0.3.2 a builder left 60 MB of probes in the session's temp folder, where it couldn't
-  delete them.
+  `.temp/scratchpad/`, not the scratchpad folder your system prompt names, where you can't delete them,
+  and delete them before you report.
 - Skip `just smoke` and the full Playwright suite. Run the spec files in `ui/e2e/` that drive what you
   changed, in both projects: `npx playwright test e2e/<file>.spec.ts` in `ui`. Grep them for the keys,
   commands and components your branch touches.
 - To show that a test catches the bug, make it fail by taking out the fix itself, then put the fix back.
-  Don't break the setup around the fix: in wave 6 of 0.3.2 a builder renamed a settings key to stand for
-  the setting being left out, ty then dropped all its settings, and the test failed for that reason alone.
+  Don't break the setup around the fix, such as a settings key the code reads: the test then fails for
+  that reason alone.
 - Commit to your branch. The session that started you runs the review and ships the PR, so don't push.
-- `just ship` takes the PR's title and body from your branch's first commit. Write that commit's message as
-  the PR: a title that says what the ticket delivers, and a body that says why and how, with
-  `Closes #<n>.` as its last line.
+- `just ship` takes the PR's title from your branch's first commit and its body from your worktree's
+  `.temp/pr-body.md`. Write that commit's message as the PR: a title that says what the ticket delivers,
+  and a body that says why and how, with `Closes #<n>.` as its last line. Copy the body into
+  `.temp/pr-body.md`, and keep that file when you delete your scratch files.
 
 Once the build is done, report what you changed, the files you touched and the tests you ran. The session
 sends you `/code-review` findings. Fix each, or decline it with the reason it doesn't hold.
 
 Put each round of fixes in a new commit, and leave the first one alone, so the session can review a round's
-fixes on their own. `just ship` takes the PR's body from the first commit, so reread its message after each
-round. When a fix makes it wrong, reword only the message, before the first push. `--fixup=reword` refuses
-`-m` and `-F`, so write the message to a file with `amend! <title>` as its first line, then run
-`GIT_EDITOR="cp <file>" git commit --fixup=reword:<first>` and `GIT_SEQUENCE_EDITOR=: git rebase -i
---autosquash <base>`. Check that the tree hasn't changed and that the message lost no line: git drops each
-line that begins with `#` as a comment, so wrap the text so that no line starts with a ticket number.
+fixes on their own. Reread `.temp/pr-body.md` after each round, and update it where a fix made it wrong.
 
 CodeQL runs on CI and no local gate runs it, so don't strip tags or other markup with `replace`, even in a
 test that reads our own sources: CodeQL fails it as `js/incomplete-multi-character-sanitization`.
 
 ### The pre-push gates
 
-Run `just preflight` once the session says to; it lets one agent run it at a time. It runs the full Vitest
-and Rust suites, since CI's coverage gates want 100% across the whole of each, and stops at the first gate
-that fails. Fix it and rerun `just preflight` until it passes.
+Run `just preflight` once the session says to; it lets one agent run it at a time. Fix the gate that fails
+and rerun `just preflight` until it passes.
 
 Then read your diff for what only macOS's CI catches, as `AGENTS.md` says.
 

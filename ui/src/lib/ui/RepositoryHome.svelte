@@ -1032,9 +1032,9 @@
   />
 {/snippet}
 
-<!-- The list says what went wrong, and while it's hidden a row above the panes does. -->
 <!-- The Sidebar shows the name. This heading names the Repository to a screen reader whatever panes show. -->
 <h1 class="hidden-name">{name}</h1>
+<!-- The list says what went wrong, and while it's hidden a row above the panes does. -->
 {#if panes.hidden("list")}
   {@render problems()}
 {/if}

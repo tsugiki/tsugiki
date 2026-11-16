@@ -1486,6 +1486,7 @@ describe("a chord", () => {
   it("hands Ctrl+K Z to the Repository's screen, which shows only the Detail pane", async () => {
     render(Page);
     await screen.findByRole("navigation", { name: "Sidebar" });
+    expect(document.querySelector('[data-pane="list"]')).not.toBeNull();
 
     await ctrlK();
     await fireEvent.keyDown(document.body, { key: "z", code: "KeyZ" });

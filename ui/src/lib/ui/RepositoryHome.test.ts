@@ -214,6 +214,16 @@ it("names the Repository in its hidden heading and atop the Sidebar, and starts 
   expect(list.queryByRole("button", { name: "Add repository" })).toBeNull();
 });
 
+it("names the Repository in its hidden heading with the Sidebar hidden", async () => {
+  core.paneLayout.mockResolvedValue({ ...DEFAULT_LAYOUT, sidebar_hidden: true });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await vi.waitFor(() => {
+    expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
+  });
+
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("python/cpython");
+});
+
 it("opens the Repository picker from the name atop the Sidebar", async () => {
   const onpick = vi.fn();
   render(RepositoryHome, { name: "python/cpython", onpick, onsettings: () => {} });

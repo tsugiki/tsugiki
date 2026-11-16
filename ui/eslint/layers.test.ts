@@ -165,14 +165,14 @@ tester.run("layers/imports", layers.rules.imports, {
 svelteTester.run("layers/imports in components", layers.rules.imports, {
   valid: [
     {
-      filename: at("lib/ui/AboutLine.svelte"),
+      filename: at("lib/ui/AccountPage.svelte"),
       options,
       code: `<script lang="ts">import type { About } from "$lib/state/about.svelte"; let { about }: { about: About } = $props();</script><p>{about.name}</p>`,
     },
   ],
   invalid: [
     {
-      filename: at("lib/ui/AboutLine.svelte"),
+      filename: at("lib/ui/AccountPage.svelte"),
       options,
       code: `<script lang="ts">import { commands } from "$lib/data/bindings";</script>`,
       errors: [{ message: "ui must not import data ($lib/data/bindings)" }],

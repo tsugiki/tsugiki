@@ -350,10 +350,17 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
   },
 
   // `startup.rs` copies the page's title to the window, which no other test can see. The run stays on
-  // Onboarding, whose title is the window's own, so the check sets one as an open Repository would.
+  // Onboarding, whose title names the build once the core says which it is: "Tsugiki 0.3.2 (6143447)". The
+  // window opens titled "Tsugiki" from the Tauri config, so only the copy gives it the build.
   "a change to the page's title reaches the window's title": async ({ run, windowTitleAfter }) => {
-    const title = `smoke-test/title-${String(Date.now())} · Tsugiki`;
-    await run(`document.title = ${JSON.stringify(title)};`);
+    let title = "";
+    const named = await until(async () => {
+      title = await run<string>("document.title");
+      return title.startsWith("Tsugiki ");
+    });
+    if (!named) {
+      return `the page's title is "${title}", and should name the build`;
+    }
     const shown = windowTitleAfter(title);
     return shown === title ? undefined : `the window's title is "${shown}", and should be "${title}"`;
   },

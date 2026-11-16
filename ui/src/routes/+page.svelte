@@ -24,7 +24,6 @@
   import { SettingsState } from "$lib/state/settings.svelte";
   import { StatusState } from "$lib/state/status.svelte";
   import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
-  import AboutLine from "$lib/ui/AboutLine.svelte";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
   import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
@@ -353,9 +352,10 @@
     openName === undefined || status.lastSync?.repository === openName ? status.lastSync : null,
   );
   /** Names the open Repository, so the user can tell which one this is with the Sidebar hidden, in the
-   * taskbar and in Alt+Tab. `startup.rs` copies it to the window. */
+   * taskbar and in Alt+Tab, and then the build. The Repository comes first, as they cut a long title short.
+   * `startup.rs` copies it to the window. */
   const title = $derived(
-    home.current?.screen === "repository" ? `${home.current.repository.name} · Tsugiki` : "Tsugiki",
+    home.current?.screen === "repository" ? `${home.current.repository.name} · ${about.title}` : about.title,
   );
   // A run that opens on Onboarding has no Workbench to time until the user adds a Repository.
   $effect(() => {
@@ -437,7 +437,6 @@
 <svelte:head><title>{`${title}`}</title></svelte:head>
 
 <main>
-  <AboutLine about={about.about} error={about.error} />
   {#if home.current?.screen === "onboarding"}
     <Onboarding token={home.current.token} onadd={openAdd} onsettings={openSettings} />
   {:else if home.current?.screen === "repository"}
@@ -463,6 +462,7 @@
   error={status.error}
   visible={settings.statusBarVisible}
   problems={[
+    ...(about.problem === undefined ? [] : [about.problem]),
     ...settings.problems,
     ...theme.problems,
     ...(theme.problem === undefined ? [] : [theme.problem]),

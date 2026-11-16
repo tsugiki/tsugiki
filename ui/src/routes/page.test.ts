@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { About } from "$lib/state/about.svelte";
 import { actionOn, remapKeys } from "$lib/state/keymap.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import Page from "./+page.svelte";
@@ -294,21 +295,21 @@ describe("the dialog the status bar's question opens", () => {
 it("opens on onboarding with no Repositories", async () => {
   render(Page);
   expect(await screen.findByText(/Your token comes from/)).toBeTruthy();
-  expect(document.title).toBe("Tsugiki");
+  expect(document.title).toBe("Tsugiki 1.2.3");
 });
 
 it("reopens the Repository the core names, and the window title names it", async () => {
   core.home.mockResolvedValue(gcmonHome);
   render(Page);
   expect(await screen.findByRole("button", { name: gcmon.name })).toBeTruthy();
-  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
+  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
 });
 
 it("says so when the core can't say what to open", async () => {
   core.home.mockRejectedValue(new Error("the core has gone"));
   render(Page);
   expect(await screen.findByText(/can't say what to open: Error: the core has gone/)).toBeTruthy();
-  expect(document.title).toBe("Tsugiki");
+  expect(document.title).toBe("Tsugiki 1.2.3");
 });
 
 it("adds a Repository from onboarding and then shows it", async () => {
@@ -333,14 +334,14 @@ it("adds a Repository from onboarding and then shows it", async () => {
   });
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
-  expect(document.title).toBe("Tsugiki");
+  expect(document.title).toBe("Tsugiki 1.2.3");
   await fireEvent.click(screen.getByRole("button", { name: "Check" }));
   await fireEvent.click(await screen.findByRole("button", { name: "Add" }));
 
   await screen.findByText(/Nothing here yet/);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("button", { name: gcmon.name })).toBeTruthy();
-  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
+  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
   expect(core.settings).toHaveBeenCalledTimes(2);
 });
 
@@ -388,10 +389,28 @@ it("gives the focus back from the add dialog on Esc, on Cancel and on a press ou
   expect(document.activeElement).toBe(add);
 });
 
-it("asks the core when it opens and shows the answer", async () => {
+it("names the build in the window's title once the core answers, and nowhere on the screen", async () => {
+  let answer: (about: About) => void = () => {};
+  core.about.mockReturnValue(new Promise<About>((resolve) => (answer = resolve)));
+  core.home.mockResolvedValue(gcmonHome);
   render(Page);
-  expect(screen.getByText("Asking the core…")).toBeTruthy();
-  expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+  await screen.findByRole("button", { name: gcmon.name });
+  expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
+
+  answer({ name: "Tsugiki", version: "0.3.2 (6143447)", build: "release", source_ref: "v0.3.2" });
+  await vi.waitFor(() => {
+    expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 0.3.2 (6143447)");
+  });
+  expect(screen.queryByText(/0\.3\.2/)).toBeNull();
+});
+
+it("says in the status bar when the core doesn't answer, and names the app alone in the title", async () => {
+  core.about.mockRejectedValue(new Error("no IPC"));
+  render(Page);
+  await vi.waitFor(() => {
+    expect(screen.getByRole("status").textContent).toContain("The core didn't answer: Error: no IPC");
+  });
+  expect(document.title).toBe("Tsugiki");
 });
 
 it("shows who is signed in", async () => {
@@ -574,7 +593,9 @@ describe("Open DevTools", () => {
       source_ref: "main",
     });
     render(Page);
-    expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+    await vi.waitFor(() => {
+      expect(document.title).toBe("Tsugiki 1.2.3");
+    });
     expect(await paletteTitles()).toContain("Open DevTools");
     await fireEvent.click(screen.getByRole("option", { name: "Open DevTools" }));
     expect(core.openDevtools).toHaveBeenCalledOnce();
@@ -583,7 +604,9 @@ describe("Open DevTools", () => {
   it("isn't in a release's palette", async () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     render(Page);
-    expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+    await vi.waitFor(() => {
+      expect(document.title).toBe("Tsugiki 1.2.3");
+    });
     expect(await paletteTitles()).not.toContain("Open DevTools");
   });
 });
@@ -913,7 +936,7 @@ describe("a switch from the palette", () => {
     expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
     expect(core.openRepository).toHaveBeenCalledWith("python/peps");
     expect(core.workbench).toHaveBeenLastCalledWith("python/peps", { kind: "whole" });
-    expect(document.title).toBe("python/peps · Tsugiki");
+    expect(document.title).toBe("python/peps · Tsugiki 1.2.3");
     // A switch keeps out of the palette's history: these rows come most recently opened first.
     expect(core.rememberCommand).not.toHaveBeenCalled();
     // The core read the files again to switch, so a problem the user has since fixed can go.
@@ -943,7 +966,7 @@ describe("a switch from the palette", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: gcmon.name })).toBeTruthy();
-    expect(document.title).toBe("some-maintainer/gcmon · Tsugiki");
+    expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
   });
 });
 
@@ -2025,7 +2048,9 @@ describe("the key list", () => {
       source_ref: "main",
     });
     render(Page);
-    expect(await screen.findByText("Tsugiki 1.2.3")).toBeTruthy();
+    await vi.waitFor(() => {
+      expect(document.title).toBe("Tsugiki 1.2.3");
+    });
     await question();
     expect(titles()).toContain("Open DevTools");
   });

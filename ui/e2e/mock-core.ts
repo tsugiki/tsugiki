@@ -2,11 +2,11 @@ import type { Page } from "@playwright/test";
 import type { commands } from "../src/lib/data/bindings.ts";
 
 /** What each command answers. A command left out rejects, as it would if the core failed, except for those
- * every page asks: a Repository isn't open yet, a refresh has nothing to say, a mirror can be made, asking to
- * check again has nothing to say, no mirror waits for an answer or has a state, no newer version is out, the
- * panes take their default layout, the palette has no recent commands and puts each run first, the themes
- * set no token, so the system's colours stand in, and the window turns without saying a side, so the page
- * goes on with its media query. */
+ * every page asks: the build is release 1.2.3, a Repository isn't open yet, a refresh has nothing to say, a
+ * mirror can be made, asking to check again has nothing to say, no mirror waits for an answer or has a state,
+ * no newer version is out, the panes take their default layout, the palette has no recent commands and puts
+ * each run first, the themes set no token, so the system's colours stand in, and the window turns without
+ * saying a side, so the page goes on with its media query. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 /** What `machine.toml` says of the language servers when it says nothing: none set up, and the idle time's
@@ -16,9 +16,14 @@ export const noServers = { ty: null, "rust-analyzer": null, clangd: null, idle_m
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
 type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers: Record<string, unknown> };
 
-/** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. */
-export const mockCore = (page: Page, answers: CoreAnswers) =>
-  page.addInitScript((given: Record<string, unknown>) => {
+/** The answers a test gives, and the commands it has reject. */
+type Given = { given: Record<string, unknown>; refused: string[] };
+
+/** Stands in for Tauri's IPC: the page's generated bindings get these answers instead of the core's. The
+ * commands in `unanswered` reject, even one this mock answers when a test doesn't. */
+export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof CoreAnswers)[] = []) => {
+  const test: Given = { given: answers, refused: unanswered };
+  return page.addInitScript(({ given, refused }: Given) => {
     const panes = {
       sidebar: null,
       list: null,
@@ -31,7 +36,8 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
       detail_only_hid: null,
       order: "attention",
     };
-    const answers = {
+    const answers: Record<string, unknown> = {
+      about: { name: "Tsugiki", version: "1.2.3", build: "release", source_ref: "v1.2.3" },
       lastSync: null,
       syncActivity: null,
       cloning: null,
@@ -74,6 +80,9 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
             (listeners[args.event] ??= []).push(callbacks.get(args.handler) as Listener);
             return callbacks.size;
           }
+          // The bindings name commands in camelCase, and the core in snake_case.
+          const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
+          if (refused.includes(name)) throw new Error(`the core has no answer for ${command}`);
           // Unless the test answers it, a run comes first in the list `recentCommands` answers with, and the
           // run answers with that list too.
           if (command === "remember_command" && !Object.hasOwn(answers, "rememberCommand")) {
@@ -81,11 +90,9 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
             answers.recentCommands = [args.command, ...recent.filter((id) => id !== args.command)];
             return answers.recentCommands;
           }
-          // The bindings name commands in camelCase, and the core in snake_case.
-          const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
           if (!Object.hasOwn(answers, name)) throw new Error(`the core has no answer for ${command}`);
           // A command that can fail answers as its binding does, and the binding expects the core's own form.
-          const answer = (answers as Record<string, unknown>)[name] as {
+          const answer = answers[name] as {
             status?: string;
             data?: unknown;
             error?: unknown;
@@ -95,7 +102,8 @@ export const mockCore = (page: Page, answers: CoreAnswers) =>
         },
       },
     });
-  }, answers);
+  }, test);
+};
 
 /** Changes what a command answers from now on, as the core's facts would. */
 export const changeAnswer = <C extends keyof CoreAnswers>(page: Page, command: C, answer: CoreAnswers[C]) =>

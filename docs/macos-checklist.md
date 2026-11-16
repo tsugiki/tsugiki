@@ -29,7 +29,8 @@ with it.
 
 On macOS, `Cmd` replaces `Ctrl` in Tsugiki's keys.
 
-5. The window shows Onboarding. The status bar says `Connecting…`, then your login.
+5. The window shows Onboarding, and its title reads `Tsugiki` and the release's version, such as
+   `Tsugiki 0.3.2 (6143447)`. The status bar says `Connecting…`, then your login.
 6. `Cmd+Shift+P` opens the palette, and `Esc` closes it. Do this check before the next two, which would also
    pass if no key reached the window.
 7. `Cmd+P` opens no Print dialog.
@@ -38,8 +39,8 @@ On macOS, `Cmd` replaces `Ctrl` in Tsugiki's keys.
 
 ## A Repository
 
-9. Add `python/cpython`. The status bar shows the first sync's progress, and the Workbench fills in within
-   about a minute.
+9. Add `python/cpython`. The window's title reads `python/cpython · Tsugiki` and the version, the status bar
+   shows the first sync's progress, and the Workbench fills in within about a minute.
 10. `↑` and `↓` move through the Workbench, `Enter` opens an Issue, and `Cmd+Shift+G` opens that Issue in your
     browser.
 11. Turn Wi-Fi off and click the sync time at the right of the status bar. The status bar says

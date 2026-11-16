@@ -12,6 +12,18 @@ export class AboutState {
   about = $state<About>();
   error = $state<string>();
 
+  /** Tsugiki's name in the window's title, with the build's version once the core answers. The name is the
+   * one the window opens with, before the core answers, so the title takes it from here and not from
+   * `About.name`. */
+  get title(): string {
+    return this.about === undefined ? "Tsugiki" : `Tsugiki ${this.about.version}`;
+  }
+
+  /** The status bar's words when the core gave no answer, with the reason. */
+  get problem(): string | undefined {
+    return this.error === undefined ? undefined : `The core didn't answer: ${this.error}`;
+  }
+
   async load() {
     this.about = undefined;
     this.error = undefined;

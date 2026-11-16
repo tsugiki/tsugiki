@@ -13,6 +13,9 @@ label it carries. Follow `AGENTS.md`, with these changes for a wave:
 
 - Run every command inside your worktree, with `CARGO_TARGET_DIR` unset, so Cargo builds into the
   worktree's own `target/`.
+- Run a crate's tests through `node scripts/test-servers.ts cargo test -p <crate>`, which fetches the
+  language servers some tests start: without them those tests fail, and Cargo stops before the crate's
+  integration tests.
 - Put scratch files (probe scripts, copies of data, logs, message drafts) in your worktree's
   `.temp/scratchpad/`, not the scratchpad folder your system prompt names, where you can't delete them,
   and delete them before you report.

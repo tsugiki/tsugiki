@@ -43,7 +43,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     where it was. The focus goes with the cursor when, at that moment, a row of the list holds it or nothing
     does, and stays put anywhere else, such as in a text box or on the list's header. A cursor on a PR in a
     tree, Mark Seen on an item with nothing waiting, a change of order or view, and any other change leave
-    the cursor on its row.
+    the cursor on its row, and a row that held the focus keeps it, even off the screen. When that row is the
+    Detail pane's and a change takes it off the screen, as an update does By last update, the list scrolls as
+    little as it takes to bring all of it back, and focus in the Detail pane stays there. Tsugiki scrolls the
+    list on a change for that row alone, and leaves the rest to the browser, also when the user had
+    scrolled the Detail pane's row away.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
     it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes
@@ -178,6 +182,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       the accent colour at weight 600, the people at weight 600 and the age in the accent colour.
     - The row under the cursor takes the selected tint, and a row under the pointer a light tint of the
       text colour. A click anywhere on a row opens it.
+- The window's title names the open Repository, then the build: "python/cpython · Tsugiki 0.3.2 (6143447)",
+  or "Tsugiki 0.3.2 (6143447)" on Onboarding. The Repository comes first, so the taskbar and Alt+Tab still
+  show it when they cut the title short. Until the core says which build it is, the title reads "Tsugiki"
+  after the Repository, and if the core doesn't answer, the status bar says so. Nothing on the screen names
+  the build.
 - A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
   no other place. It stays when the Sidebar is hidden.
   - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the

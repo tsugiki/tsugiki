@@ -31,6 +31,45 @@ export function scrollerIn(pane: Element | null | undefined): HTMLElement | unde
   return pane?.querySelector<HTMLElement>("[data-scrolls]:not([inert] *)") ?? undefined;
 }
 
+/** The line along the top of the pane that holds the focus, which sticks there over what scrolls under it,
+ * in CSS pixels. */
+const FOCUS_LINE = 2;
+
+/** The part of a box that must show for it to count as on the screen, in CSS pixels, so a layout that
+ * rounds pixels its own way doesn't count. */
+const SHOWS = 1;
+
+/** The place of `box` in `scroller`, which scrolls it, below the focus line: whether more than `SHOWS` of
+ * it shows, and how far its top lies above the part on show and its bottom below it. The part on show is
+ * the scroller's client box, so its border and a scrollbar along its bottom don't count. */
+function placeIn(box: Element, scroller: Element) {
+  const shownTop = scroller.getBoundingClientRect().top + scroller.clientTop;
+  const shownBottom = shownTop + scroller.clientHeight;
+  const { top, bottom } = box.getBoundingClientRect();
+  const from = shownTop + FOCUS_LINE;
+  return {
+    shows: Math.min(bottom, shownBottom) - Math.max(top, from) > SHOWS,
+    above: from - top,
+    below: bottom - shownBottom,
+  };
+}
+
+/**
+ * Before a change that can move `box` in `scroller`, as an answer from the core moves an item's row in the
+ * Issue list (#796): what brings the box back once the change is drawn, given the box as it is drawn then.
+ * If the box showed and the change took it off the screen, the scroller scrolls as little as it takes to
+ * show all of it below the focus line. `scrollIntoView` would scroll the panes around the scroller too. A box
+ * the user had scrolled off the screen stays off, and so does the scroll while some of the box still shows.
+ */
+export function keepOnScreen(box: Element, scroller: Element): (moved: Element) => void {
+  const before = placeIn(box, scroller).shows;
+  return (moved) => {
+    const after = placeIn(moved, scroller);
+    if (!before || after.shows) return;
+    scroller.scrollTop += after.above > 0 ? -after.above : after.below;
+  };
+}
+
 const CONTROLS = [
   "a[href]",
   "button:not(:disabled)",

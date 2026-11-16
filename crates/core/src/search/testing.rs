@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tsugiki_test_git::git;
 
-use crate::github::CommitSha;
+use crate::facts::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
 use crate::testing::{TempPath, temp_path};
 

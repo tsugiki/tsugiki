@@ -2,8 +2,8 @@ use time::OffsetDateTime;
 
 use super::super::*;
 use super::*;
-use crate::github::issue_content::IssueContent;
-use crate::github::pull_requests::ReviewedCommit;
+use crate::facts::issue_content::IssueContent;
+use crate::facts::pull_requests::ReviewedCommit;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::Store;

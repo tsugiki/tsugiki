@@ -19,7 +19,8 @@ use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::highlight::Span;
-use tsugiki_core::mirror::{CloneRefusal, MirrorSource};
+use tsugiki_core::mirror::CloneRefusal;
+use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::session::SessionRequests;
 use tsugiki_core::settings::{

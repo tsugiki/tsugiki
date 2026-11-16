@@ -9,12 +9,12 @@ use specta::Type;
 
 use super::backports::origins;
 use crate::conventions::Conventions;
-use crate::github::CommitSha;
-use crate::github::pull_requests::{PrHead, PrState, PullRequestFacts};
+use crate::facts::patch_ids::{CantCheck, LastCheck, PatchesOf, ReviewFacts};
+use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
+use crate::facts::{CommitSha, WorkFacts};
 use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of};
 use crate::login::Login;
-use crate::patch_ids::{CantCheck, ChangedFile, PatchesOf, changed_files};
-use crate::store::{LastCheck, ReviewFacts, WorkFacts};
+use crate::patch_ids::{ChangedFile, changed_files};
 
 /// Where the user's Review of a PR stands, which its row shows in place of GitHub's review state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

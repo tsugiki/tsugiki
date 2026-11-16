@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use super::WorkbenchRow;
-use crate::github::issues::IssueFacts;
-use crate::github::pull_requests::PullRequestFacts;
+use crate::facts::issues::IssueFacts;
+use crate::facts::pull_requests::PullRequestFacts;
 use crate::links::{BackportLink, MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
 

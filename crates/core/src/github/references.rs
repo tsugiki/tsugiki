@@ -5,24 +5,17 @@
 use serde::Deserialize;
 
 use super::GitHub;
-use super::issues::{ByNumber, ListedPr, ReadByNumber, query_by_number};
+use super::issues::{ByNumber, ReadByNumber, query_by_number};
 use super::pull_requests::RateLimit;
 use crate::error::Error;
+use crate::facts::issues::ListedPr;
+use crate::facts::references::IssueReferences;
 use crate::repository::RepositoryName;
 
 /// The fields of one page of an Issue's cross-references.
 pub(super) const REFERENCE_FIELDS: &str = "pageInfo { hasPreviousPage startCursor } nodes { ... on \
      CrossReferencedEvent { source { __typename ... on PullRequest { id number updatedAt repository { \
      nameWithOwner } } } } }";
-
-/// The cross-references of one Issue, and the cursor of the older ones if a page didn't hold them all.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueReferences {
-    pub number: u32,
-    /// Only PRs of this Repository, the newest first.
-    pub listed: Vec<ListedPr>,
-    pub next: Option<String>,
-}
 
 /// An answer to a read of Issues by number.
 #[derive(Debug)]

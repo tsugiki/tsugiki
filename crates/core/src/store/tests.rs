@@ -1,14 +1,15 @@
 use super::file::{Contents, contents};
 use super::testing::{V1, V2, backups, has_table, migrated, temp_database, user_version};
 use super::*;
-use crate::github::CommitSha;
-use crate::github::issue_content::Comment;
-use crate::github::issues::IssueState;
-use crate::github::pull_request_content::{
+use crate::facts::CommitSha;
+use crate::facts::filters::FilterProblem;
+use crate::facts::issue_content::Comment;
+use crate::facts::issues::IssueState;
+use crate::facts::pull_request_content::{
     Anchor, DiffHunk, Opening, Resolution, Review, ReviewId, Side, Subject, Submission,
     ThreadComment, ThreadCommentId, ThreadId, ThreadLine,
 };
-use crate::github::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
+use crate::facts::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
 use rusqlite::trace::{TraceEvent, TraceEventCodes};
 use time::OffsetDateTime;
 
@@ -302,15 +303,15 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         pending: vec![drafted],
     };
     pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
-    let patched = ["0123abc", "4567def"].map(|commit| crate::patch_ids::CommitPatches {
-        of: crate::patch_ids::PatchesOf {
+    let patched = ["0123abc", "4567def"].map(|commit| crate::facts::patch_ids::CommitPatches {
+        of: crate::facts::patch_ids::PatchesOf {
             commit: CommitSha::parse(commit).unwrap(),
             target_branch: "main".to_owned(),
         },
-        files: vec![crate::patch_ids::FilePatch {
+        files: vec![crate::facts::patch_ids::FilePatch {
             path: "Lib/ast.py".to_owned(),
-            verbatim: crate::patch_ids::PatchId::parse(&"a".repeat(40)).unwrap(),
-            loose: crate::patch_ids::PatchId::parse(&"b".repeat(40)).unwrap(),
+            verbatim: crate::facts::patch_ids::PatchId::parse(&"a".repeat(40)).unwrap(),
+            loose: crate::facts::patch_ids::PatchId::parse(&"b".repeat(40)).unwrap(),
             generated: false,
         }],
     });

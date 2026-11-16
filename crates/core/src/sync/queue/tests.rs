@@ -1,6 +1,6 @@
 use super::*;
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::github::clock::GitHubClock;
-use crate::github::issues::{IssueFacts, IssueState};
 use crate::github::pull_requests::RateLimit;
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};

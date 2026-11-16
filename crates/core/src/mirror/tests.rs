@@ -10,8 +10,8 @@ use tsugiki_test_git::git;
 
 use super::*;
 use crate::error::ErrorKind;
-use crate::github::CommitSha;
-use crate::github::pull_requests::{PrHead, ReviewedCommit};
+use crate::facts::CommitSha;
+use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::status::Status;
 use crate::testing::TempPath;

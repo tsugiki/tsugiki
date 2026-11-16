@@ -1,14 +1,15 @@
 use super::*;
-use crate::github::issue_content::IssueContent;
-use crate::github::pull_request_content::Review;
-use crate::github::pull_requests::{
-    PrHead, PrState, PullRequestFacts, ReviewState, ReviewedCommit,
-};
+use crate::facts::CommitSha;
+use crate::facts::activity::ActivityFacts;
+use crate::facts::issue_content::IssueContent;
+use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
+use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
+use crate::facts::pull_request_content::Review;
+use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts, ReviewState, ReviewedCommit};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
-use crate::github::{CommitSha, Reply, Request, Transport, Unreachable};
+use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
-use crate::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit};
 use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
@@ -16,7 +17,7 @@ use crate::status::testing::{
     announced, changes_board, failed_reads_board, heads_board, quiet_board, showing, watched_board,
 };
 use crate::status::{Change, FailedRead, MirrorWork, ReadFailure};
-use crate::store::{ActivityFacts, ChangeCheck, LastCheck, ReviewFacts, SyncState};
+use crate::store::{ChangeCheck, SyncState};
 use crate::testing::TempPath;
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};

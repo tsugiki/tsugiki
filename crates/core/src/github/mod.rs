@@ -20,8 +20,8 @@ pub mod window;
 use std::borrow::Cow;
 use std::cell::Cell;
 
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use time::{Date, Duration, OffsetDateTime};
 
@@ -91,38 +91,6 @@ impl From<Unreachable> for Error {
                 "GitHub's certificate isn't valid by this computer's clock. Check the date and time.",
             ),
         }
-    }
-}
-
-/// A commit's SHA in lower case, whole or cut short as a person wrote it.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CommitSha(String);
-
-/// The window reads a SHA as its text.
-impl Serialize for CommitSha {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl CommitSha {
-    /// Git's shortest default abbreviation, and the length of a whole SHA-1.
-    const LENGTHS: std::ops::RangeInclusive<usize> = 7..=40;
-
-    /// The SHA that `text` spells, if it spells one.
-    pub fn parse(text: &str) -> Option<Self> {
-        let is_sha =
-            Self::LENGTHS.contains(&text.len()) && text.chars().all(|c| c.is_ascii_hexdigit());
-        is_sha.then(|| Self(text.to_ascii_lowercase()))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// True when `shorter` is this SHA or the start of it.
-    pub fn starts_with(&self, shorter: &Self) -> bool {
-        self.0.starts_with(&shorter.0)
     }
 }
 

@@ -102,13 +102,3 @@ fn a_path_a_diff_names_twice_compares_both_of_its_changes() {
         }]
     );
 }
-
-#[test]
-fn a_patch_id_is_a_whole_sha_1() {
-    assert_eq!(
-        PatchId::parse(&"AB".repeat(20)).map(|id| id.as_str().to_owned()),
-        Some("ab".repeat(20))
-    );
-    assert_eq!(PatchId::parse("abc1234"), None);
-    assert_eq!(PatchId::parse(&"g".repeat(40)), None);
-}

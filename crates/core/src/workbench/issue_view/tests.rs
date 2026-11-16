@@ -3,12 +3,12 @@ use std::collections::BTreeSet;
 use time::OffsetDateTime;
 
 use super::*;
+use crate::facts::filters::FilterResults;
+use crate::facts::issue_content::{Comment, CommentId, IssueComment};
+use crate::facts::issues::IssueFacts;
+use crate::facts::labels::Label;
+use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery};
-use crate::github::issue_content::{Comment, CommentId, IssueComment};
-use crate::github::issues::IssueFacts;
-use crate::github::labels::Label;
-use crate::github::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
-use crate::store::FilterResults;
 use crate::workbench::testing::{
     ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
 };

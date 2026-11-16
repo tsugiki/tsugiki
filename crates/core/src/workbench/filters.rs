@@ -6,9 +6,9 @@ use serde::Serialize;
 use specta::Type;
 
 use super::{ListedItem, WorkbenchItem, count_of};
+use crate::facts::filters::FilterResults;
 use crate::filters::{Filter, FilterName, FilterQuery};
 use crate::repository_settings::RepositorySettings;
-use crate::store::FilterResults;
 
 /// A Filter's line of the Sidebar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

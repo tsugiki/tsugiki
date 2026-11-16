@@ -1,11 +1,11 @@
 use time::OffsetDateTime;
 
 use super::*;
-use crate::github::issue_content::IssueContent;
-use crate::github::pull_request_content::{PullRequestContent, Review};
-use crate::github::pull_requests::{PrState, ReviewState};
+use crate::facts::issue_content::IssueContent;
+use crate::facts::patch_ids::PatchId;
+use crate::facts::pull_request_content::{PullRequestContent, Review};
+use crate::facts::pull_requests::{PrState, ReviewState};
 use crate::login::Login;
-use crate::patch_ids::PatchId;
 use crate::store::Store;
 use crate::store::testing::temp_database;
 use crate::testing::TempPath;

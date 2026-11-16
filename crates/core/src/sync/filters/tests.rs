@@ -386,7 +386,7 @@ fn a_closed_pr_that_changed_is_fetched_again_as_it_may_have_reopened() {
     let facts = harness.reader.work_facts(&cpython()).unwrap();
     assert_eq!(
         facts.pull_requests[0].state,
-        crate::github::pull_requests::PrState::Open
+        crate::facts::pull_requests::PrState::Open
     );
     harness.finish();
 }

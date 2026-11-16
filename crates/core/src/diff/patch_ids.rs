@@ -8,8 +8,9 @@ use std::io;
 use std::path::Path;
 
 use super::{DIFF_OPTIONS, TargetIndex, git, merge_base};
-use crate::github::{CommitSha, live};
-use crate::patch_ids::{FilePatch, PatchId};
+use crate::facts::CommitSha;
+use crate::facts::patch_ids::{FilePatch, PatchId};
+use crate::github::live;
 
 /// Reads the patch-id of each file `commit` changes since its merge base with the branch `target`, or with
 /// the branch before the merge commit that brought `commit` in: one with every whitespace change counted,

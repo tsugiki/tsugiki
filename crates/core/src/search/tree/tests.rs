@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::github::CommitSha;
+use crate::facts::CommitSha;
 use crate::search::testing::Fixture;
 use crate::search::{Case, Cut, MatchRange, Query, Syntax, Words};
 

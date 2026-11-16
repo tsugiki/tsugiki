@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use super::Seen;
 use super::review_state::YourReview;
-use crate::github::pull_requests::{CiState, PrState, PullRequestFacts};
+use crate::facts::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::login::Login;
 
 /// The reason a PR is on the user's Workbench.

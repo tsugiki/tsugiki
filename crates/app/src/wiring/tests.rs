@@ -7,17 +7,17 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
 use tauri::{App, Listener, WebviewWindow};
-use tsugiki_core::github::CommitSha;
-use tsugiki_core::github::issue_content::{Comment, IssueContent};
-use tsugiki_core::github::pull_request_content::{
+use tsugiki_core::facts::CommitSha;
+use tsugiki_core::facts::issue_content::{Comment, IssueContent};
+use tsugiki_core::facts::pull_request_content::{
     Anchor, DiffHunk, Opening, PullRequestContent, Resolution, Review, Side, Subject, Submission,
     ThreadComment, ThreadId, ThreadLine,
 };
-use tsugiki_core::github::pull_requests::{PrState, PullRequestFacts, ReviewState};
+use tsugiki_core::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
 use tsugiki_core::github::replay::Replayer;
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
-use tsugiki_core::mirror::MirrorSource;
+use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;

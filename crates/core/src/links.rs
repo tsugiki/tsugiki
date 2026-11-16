@@ -8,8 +8,8 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::conventions::{Conventions, gh_number};
-use crate::github::CommitSha;
-use crate::github::pull_requests::{OffDefault, PullRequestFacts};
+use crate::facts::CommitSha;
+use crate::facts::pull_requests::{OffDefault, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::{RepositoryName, issue_number};
 use crate::repository_settings::RepositorySettings;

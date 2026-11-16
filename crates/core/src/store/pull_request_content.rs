@@ -8,13 +8,13 @@ use rusqlite::{Row, Transaction, named_params};
 use super::Connection;
 use super::columns::UnixTime;
 use super::{issue_content, sync_state};
-use crate::github::CommitSha;
-use crate::github::issue_content::Comment;
-use crate::github::pull_request_content::{
+use crate::facts::CommitSha;
+use crate::facts::issue_content::Comment;
+use crate::facts::pull_request_content::{
     DiffHunk, Opening, PullRequestContent, Review, Side, Subject, ThreadComment, ThreadId,
     ThreadLine,
 };
-use crate::github::pull_requests::{ReviewState, ReviewedCommit};
+use crate::facts::pull_requests::{ReviewState, ReviewedCommit};
 use crate::repository::RepositoryName;
 
 /// The Reviews, and a line for each thread one started (#156). A comment hidden on GitHub keeps its reason.

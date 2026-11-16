@@ -6,7 +6,7 @@ use time::OffsetDateTime;
 
 use super::{Seen, TreeEntry, WorkbenchItem};
 use crate::conventions::Conventions;
-use crate::github::issues::{IssueFacts, IssueState};
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::login::Login;
 
 /// An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state.

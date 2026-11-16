@@ -6,6 +6,7 @@ use time::OffsetDateTime;
 
 use super::pull_requests::{Nodes, Person, ReviewerWire};
 use crate::conventions::Conventions;
+use crate::facts::activity::{Activity, ActivityKind, ItemActivity};
 use crate::login::Login;
 
 /// The name GitHub itself gives an account that no longer exists.
@@ -14,42 +15,6 @@ const NO_ACCOUNT: &str = "ghost";
 pub(super) const WEB_COMMITTER: &str = "web-flow";
 /// The end of the name a GitHub App commits under. Those commits have no user to look at.
 pub(super) const APP_NAME_END: &str = "[bot]";
-
-/// The kinds of thing a person, or a backport bot's failure, adds to a timeline.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ActivityKind {
-    /// A pushed commit or a rewritten history.
-    Commit,
-    Comment,
-    Review,
-    /// A Draft PR became ready for review.
-    ReadyForReview,
-    /// The backport bot said it couldn't backport this PR to `target`.
-    BackportFailed {
-        target: String,
-    },
-    /// Someone asked `who` to review this PR. It says when a Review request began, and it's no news itself.
-    ReviewRequested,
-    /// Someone assigned this PR to `who`. It says when a Review request began, and it's no news itself.
-    Assigned,
-    /// A post mentioned `who`, the person GitHub names on this event. `who` didn't write the post.
-    Mentioned,
-}
-
-/// One thing that happened on an Issue or a PR.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Activity {
-    pub kind: ActivityKind,
-    pub who: Login,
-    pub at: OffsetDateTime,
-}
-
-/// The activity GitHub reported on one Issue or PR.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ItemActivity {
-    pub number: u32,
-    pub events: Vec<Activity>,
-}
 
 #[derive(Deserialize)]
 enum ActorKind {

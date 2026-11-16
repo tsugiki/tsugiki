@@ -1,7 +1,8 @@
 //! The per-file patch-ids the Stale review check compares, read in a real mirror (#383).
 
 use super::*;
-use crate::patch_ids::{CantCheck, CommitPatches, PatchReads, PatchesOf, UncheckedCommit};
+use crate::facts::patch_ids::{CantCheck, CommitPatches, PatchesOf, UncheckedCommit};
+use crate::patch_ids::PatchReads;
 
 /// Long enough for a read that was going to happen to have happened.
 const A_MOMENT: Duration = Duration::from_millis(500);

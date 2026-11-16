@@ -1,7 +1,7 @@
 use super::super::testing::temp_database;
 use super::super::*;
-use crate::github::issues::IssueState;
-use crate::github::labels::Label;
+use crate::facts::issues::IssueState;
+use crate::facts::labels::Label;
 use crate::login::Login;
 use time::OffsetDateTime;
 

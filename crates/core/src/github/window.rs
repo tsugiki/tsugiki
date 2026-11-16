@@ -5,13 +5,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 
-use super::activity::ItemActivity;
-use super::issues::{ISSUE_FIELDS, IssueFacts, IssueWire};
+use super::issues::{ISSUE_FIELDS, IssueWire};
 use super::pull_requests::RateLimit;
-use super::references::{IssueReferences, REFERENCE_FIELDS, ReferenceTimeline};
+use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
 use super::refresh::{ChangedPr, ListPlace, Listed, PageInfo, github_time};
 use super::{GitHub, Request};
 use crate::error::Error;
+use crate::facts::activity::ItemActivity;
+use crate::facts::issues::IssueFacts;
+use crate::facts::references::IssueReferences;
 use crate::repository::RepositoryName;
 
 const WINDOW_ISSUES: &str = "WindowIssues";

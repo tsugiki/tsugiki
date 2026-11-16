@@ -11,9 +11,9 @@ use time::OffsetDateTime;
 
 use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
-use crate::github::issues::ListedPr;
+use crate::facts::issues::ListedPr;
+use crate::facts::references::IssueReferences;
 use crate::github::pull_requests::{PageRequest, PrFetch};
-use crate::github::references::IssueReferences;
 use crate::github::refresh::ListPlace;
 use crate::github::window::{ListRequest, Span};
 use crate::links::{possible_numbers, possible_origin};

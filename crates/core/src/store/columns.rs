@@ -5,18 +5,18 @@ use rusqlite::ToSql;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use time::OffsetDateTime;
 
-use crate::filters::FilterQuery;
-use crate::github::CommitSha;
-use crate::github::issue_content::{CommentId, HiddenReason};
-use crate::github::issues::IssueState;
-use crate::github::labels::Label;
-use crate::github::pull_request_content::{
+use crate::facts::CommitSha;
+use crate::facts::issue_content::{CommentId, HiddenReason};
+use crate::facts::issues::IssueState;
+use crate::facts::labels::Label;
+use crate::facts::patch_ids::PatchId;
+use crate::facts::pull_request_content::{
     Anchor, Resolution, ReviewId, Side, Submission, ThreadCommentId,
 };
-use crate::github::pull_requests::{CiState, PrState, ReviewState};
+use crate::facts::pull_requests::{CiState, PrState, ReviewState};
+use crate::filters::FilterQuery;
 use crate::github::refresh::Etag;
 use crate::login::Login;
-use crate::patch_ids::PatchId;
 use crate::repository::RepositoryName;
 
 /// A time in a column, as seconds since the Unix epoch.

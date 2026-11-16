@@ -1,6 +1,6 @@
 use time::{Duration, OffsetDateTime};
 
-use crate::github::pull_requests::{CiState, PrState, PullRequestFacts};
+use crate::facts::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::testing::temp_database;

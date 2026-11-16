@@ -25,15 +25,15 @@ use tsugiki_core::definitions::{
 };
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
+use tsugiki_core::facts::CommitSha;
 use tsugiki_core::folders::Folders;
-use tsugiki_core::github::CommitSha;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{
-    CloneRefusal, Cloning, LookupAt, MirrorProblem, MirrorRequests, MirrorSource, MirrorSources,
-    RepositoryMirror, Unfetched,
+    CloneRefusal, Cloning, LookupAt, MirrorProblem, MirrorRequests, RepositoryMirror, Unfetched,
 };
+use tsugiki_core::mirror_source::{MirrorSource, MirrorSources};
 use tsugiki_core::misses::Miss;
 use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::{RepositoryAccess, RepositoryName};

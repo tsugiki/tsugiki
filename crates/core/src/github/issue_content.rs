@@ -3,15 +3,14 @@
 //! reads ahead only the Conversations of the PRs the user's work reaches (ADR 0015).
 
 use serde::de::{DeserializeOwned, Error as _};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use serde_json::json;
-use specta::Type;
 use time::OffsetDateTime;
 
 use super::pull_requests::{Person, RateLimit};
 use super::{GitHub, Request};
 use crate::error::{Error, ErrorKind};
-use crate::login::Login;
+use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
 use crate::repository::RepositoryName;
 
 /// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments, and
@@ -83,20 +82,6 @@ pub(super) fn big_int<'de, D: Deserializer<'de>>(answer: D) -> Result<Option<u64
     Ok(Some(number))
 }
 
-/// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum HiddenReason {
-    Abuse,
-    OffTopic,
-    Outdated,
-    Resolved,
-    Duplicate,
-    Spam,
-    /// GitHub gave a reason Tsugiki doesn't know, or none.
-    Unstated,
-}
-
 /// GitHub's word on whether a comment, a Review or a thread's first comment is hidden, and the reason.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -125,61 +110,6 @@ impl MinimizedWire {
             },
         )
     }
-}
-
-/// GitHub's number for a comment on an Issue or in a PR's Conversation, which a link names after
-/// `#issuecomment-`. The window gets it as a number, which holds it exactly up to 2^53.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Type)]
-#[serde(transparent)]
-pub struct CommentId(#[specta(type = specta_typescript::Number)] u64);
-
-impl CommentId {
-    pub const fn new(id: u64) -> Self {
-        Self(id)
-    }
-
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-/// A comment on an Issue, or in a PR's Conversation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct IssueComment {
-    /// Nothing, for a comment kept from before Tsugiki asked for it, until the next read.
-    pub id: Option<CommentId>,
-    #[serde(flatten)]
-    pub comment: Comment,
-}
-
-/// What a comment says and who wrote it when, on an Issue, in a PR's Conversation or in a review thread.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct Comment {
-    /// Nothing, for a comment whose author's account has gone.
-    pub author: Option<Login>,
-    #[serde(with = "time::serde::rfc3339")]
-    #[specta(type = String)]
-    pub created_at: OffsetDateTime,
-    /// GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005).
-    pub body_html: String,
-    /// The reason it is hidden on GitHub. Nothing, for a comment that isn't.
-    pub hidden: Option<HiddenReason>,
-}
-
-/// An Issue's description and its recent comments.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-pub struct IssueContent {
-    /// GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005).
-    pub body_html: String,
-    /// The most recent comments, oldest first.
-    pub comments: Vec<IssueComment>,
-    /// The count of older comments that only GitHub shows.
-    pub earlier_comments: u32,
-    /// The time its author opened it. Nothing, for a read kept from before Tsugiki asked, until the next
-    /// read.
-    #[serde(with = "time::serde::rfc3339::option")]
-    #[specta(type = Option<String>)]
-    pub opened_at: Option<OffsetDateTime>,
 }
 
 #[derive(Deserialize)]

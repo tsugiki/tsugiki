@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
-use crate::github::issue_content::{Comment, IssueComment, IssueContent};
+use crate::facts::issue_content::{Comment, IssueComment, IssueContent};
 use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "

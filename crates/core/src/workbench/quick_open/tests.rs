@@ -1,6 +1,6 @@
 use super::*;
-use crate::github::issues::IssueFacts;
-use crate::github::pull_requests::PullRequestFacts;
+use crate::facts::issues::IssueFacts;
+use crate::facts::pull_requests::PullRequestFacts;
 use crate::workbench::testing::{ViewWorld, at, cpython, fixing, issue, stranger};
 
 /// An Issue titled `title`, updated at `seconds`.

@@ -1,7 +1,9 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::facts::labels::Label;
 use crate::github::testing::{Scripted, reply_ok, token};
 use crate::github::{Reply, Unreachable};
+use crate::login::Login;
 use serde_json::Value;
 use std::path::Path;
 use time::format_description::well_known::Rfc3339;

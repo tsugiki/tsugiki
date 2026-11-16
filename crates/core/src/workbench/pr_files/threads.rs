@@ -6,7 +6,7 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{Diff, DiffFile, DiffRow};
-use crate::github::pull_request_content::{
+use crate::facts::pull_request_content::{
     Anchor, CodeRow, DiffHunk, Resolution, Side, Subject, ThreadComment, ThreadId, ThreadLine,
 };
 use crate::highlight::{Language, Parsed, Span};

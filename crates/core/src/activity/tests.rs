@@ -6,14 +6,15 @@ use time::{Duration, OffsetDateTime};
 
 use super::{NewActivity, News, WhatHappened};
 use crate::conventions::{CPYTHON_BACKPORT_BOT, Conventions};
-use crate::github::activity::{Activity, ActivityKind, ItemActivity};
-use crate::github::issues::{IssueFacts, IssueState};
-use crate::github::pull_requests::{
+use crate::facts::WorkFacts;
+use crate::facts::activity::{Activity, ActivityKind, ItemActivity};
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::pull_requests::{
     CiState, LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
 };
 use crate::login::Login;
 use crate::repository::RepositoryName;
-use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, WorkFacts, reader};
+use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
 use crate::testing::TempPath;
 
 const OWN_PR: u32 = 1;

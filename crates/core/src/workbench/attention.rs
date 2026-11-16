@@ -12,11 +12,11 @@ use super::rows::reasons;
 use super::{IssueItem, WorkReason, WorkbenchItem};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
-use crate::github::activity::{Activity, ActivityKind};
-use crate::github::issues::IssueFacts;
-use crate::github::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::facts::WorkFacts;
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind};
+use crate::facts::issues::IssueFacts;
+use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
-use crate::store::{ActivityFacts, WorkFacts};
 
 /// One reason an item Needs attention.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]

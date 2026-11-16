@@ -9,16 +9,19 @@ use serde_json::{Map, Value, json};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
-use super::activity::{ItemActivity, TimelineWire, pull_request_activity};
+use super::activity::{TimelineWire, pull_request_activity};
 use super::filters::{FOUND_FIELDS, FilterPage, FilterSearch, SearchWire};
-use super::issues::{ISSUE_FIELDS, IssueFacts, IssueWire};
+use super::issues::{ISSUE_FIELDS, IssueWire};
 use super::pull_requests::{
-    CiState, LastCommitNode, LatestReview, LatestReviewWire, NodeId, Nodes, PageRequest,
-    PullRequestFacts, RateLimit, ReviewRequestWire, ci_of, requested_logins, reviews_of,
+    LastCommitNode, LatestReviewWire, Nodes, PageRequest, RateLimit, ReviewRequestWire, ci_of,
+    requested_logins, reviews_of,
 };
 use super::{ConditionalGet, GitHub, Request, RestPath, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
+use crate::facts::activity::ItemActivity;
+use crate::facts::issues::IssueFacts;
+use crate::facts::pull_requests::{CiState, LatestReview, NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;

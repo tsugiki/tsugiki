@@ -14,8 +14,8 @@ use std::mem;
 use std::path::{Path, PathBuf};
 
 use super::{Job, Pace, Run, Worker, fetch_args, says_broken};
-use crate::github::CommitSha;
-use crate::github::pull_requests::ReviewedCommit;
+use crate::facts::CommitSha;
+use crate::facts::pull_requests::ReviewedCommit;
 use crate::repository::RepositoryName;
 
 /// Where the reviewed refs go, each named by its PR's number.

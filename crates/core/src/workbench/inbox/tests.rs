@@ -282,6 +282,61 @@ fn the_first_page_holds_the_last_two_days_and_the_next_the_older_batch() {
 }
 
 #[test]
+fn a_first_page_with_items_looks_one_step_down_for_an_older_page() {
+    let world = ViewWorld::new("inbox-one-step");
+    // More older Issues than the step that looks for an older page reads, so it reads only some of them.
+    let count = STEP + 10;
+    let older = (1..=count).map(|number| issue_at(number, ago(100 + i64::from(number))));
+    world.has(
+        vec![],
+        std::iter::once(issue_at(100, ago(1)))
+            .chain(older)
+            .collect(),
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 100, vec![])]);
+    let numbers: Vec<u32> = (outline(&older).into_iter())
+        .map(|(_, number, _)| number)
+        .collect();
+    assert_eq!(numbers, (1..=count).collect::<Vec<u32>>());
+    assert_eq!(older.older, None);
+}
+
+#[test]
+fn a_backport_of_a_backport_stands_on_its_own_line() {
+    let world = ViewWorld::new("inbox-backport-of-backport");
+    // Backport 22 names Backport 21 as its Origin PR, and a tree stays two levels, so each heads a line.
+    let backport_of_backport = PullRequestFacts {
+        title: "[3.13] Fix it (GH-21)".to_owned(),
+        ..backport_at(22, 21, ago(1))
+    };
+    let older_backport = PullRequestFacts {
+        title: "[3.14] gh-1: Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(24 * 10))
+    };
+    world.has(
+        vec![
+            in_state(PrState::Merged, older_backport),
+            backport_of_backport,
+        ],
+        vec![issue_at(1, ago(24 * 10))],
+    );
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone backport", 22, vec![])]);
+    assert_eq!(outline(&older), [("issue", 1, vec![21])]);
+}
+
+#[test]
 fn an_older_page_holds_a_batch_and_says_where_the_next_starts() {
     let world = ViewWorld::new("inbox-batches");
     // Enough Issues that the store's batch of those with no PR fills, and a group can fall past it.

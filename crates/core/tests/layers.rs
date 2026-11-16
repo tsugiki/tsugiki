@@ -176,12 +176,6 @@ const LAYERS: &[Layer] = &[
         why: "Announces app-wide status, which names the signed-in `Login` and the Repositories it is about.",
     },
     Layer {
-        module: "store",
-        uses: &["error", "facts", "filters", "github", "login", "repository"],
-        why: "Saves the facts `github` parses and the Mirror worker reads, in the types of `facts`, so no \
-              second copy of each type drifts from the first. A refresh's ETags come from `github`.",
-    },
-    Layer {
         module: "links",
         uses: &[
             "conventions",
@@ -192,6 +186,22 @@ const LAYERS: &[Layer] = &[
         ],
         why: "Works out the Issues a PR names and a Backport's Origin PR from its facts, through the \
               Repository's Conventions.",
+    },
+    Layer {
+        module: "store",
+        uses: &[
+            "conventions",
+            "error",
+            "facts",
+            "filters",
+            "github",
+            "links",
+            "login",
+            "repository",
+        ],
+        why: "Saves the facts `github` parses and the Mirror worker reads, in the types of `facts`, so no \
+              second copy of each type drifts from the first. A refresh's ETags come from `github`. It keeps \
+              the numbers each PR names under each Conventions, which `links` works out as the PR is saved.",
     },
     Layer {
         module: "activity",

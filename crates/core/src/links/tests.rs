@@ -1,5 +1,5 @@
 use super::*;
-use crate::facts::pull_requests::PrState;
+use crate::facts::pull_requests::{OffDefault, PrState};
 use time::OffsetDateTime;
 
 fn cpython() -> RepositorySettings {

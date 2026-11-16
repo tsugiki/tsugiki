@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
-use super::{WorkbenchRow, candidates};
+use super::{WorkbenchRow, candidates_of};
 use crate::error::Error;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::repository_settings::RepositorySettings;
@@ -36,7 +36,7 @@ impl PrView {
         let causes = Causes::of(&facts, repository.conventions);
         let shares_review_of =
             SharedReviews::of(&facts.pull_requests, repository.conventions).origin_of(number);
-        let row = candidates(facts, repository, &BTreeSet::new(), &causes)
+        let row = candidates_of(facts, repository, &BTreeSet::new(), &causes)
             .iter()
             .find_map(|item| {
                 item.rows()

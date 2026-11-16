@@ -1142,7 +1142,20 @@ fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
             None => vec![*item],
         })
         .collect();
-    assert!(rows.iter().all(|row| row["state"] == "OPEN"), "{rows:?}");
+    assert!(
+        rows.iter().any(|row| row["state"] == "MERGED"),
+        "an Issue lists its merged PRs too: {rows:?}"
+    );
+    for item in items.iter().filter(|item| item["kind"] != "issue") {
+        let backports = item["backports"].as_array().map_or(&[][..], Vec::as_slice);
+        let open = std::iter::once(*item)
+            .chain(backports)
+            .any(|row| row["state"] == "OPEN");
+        assert!(
+            open,
+            "a Standalone PR with no open PR in its tree: {item:?}"
+        );
+    }
     let open_under_open_issues: Vec<&Value> = (listed(&workbench).into_iter())
         .filter(|item| item["state"] == "OPEN")
         .flat_map(|item| item["pull_requests"].as_array().unwrap())

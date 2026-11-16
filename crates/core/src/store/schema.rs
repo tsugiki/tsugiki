@@ -62,6 +62,8 @@ const TABLES: &[(&str, Diagram)] = &[
     ("pull_request_labels", Diagram::PullRequests),
     ("closing_references", Diagram::PullRequests),
     ("cherry_picks", Diagram::PullRequests),
+    ("pr_fixes", Diagram::PullRequests),
+    ("pr_origins", Diagram::PullRequests),
     ("committers", Diagram::PullRequests),
     ("failed_checks", Diagram::PullRequests),
     ("pr_reviews", Diagram::PullRequests),

@@ -1,12 +1,12 @@
-//! The Issues that PRs name, as facts (ADR 0010). The link from a PR to an Issue isn't stored: the core works
-//! it out from a PR's facts when a screen asks (ADR 0011).
+//! The Issues that PRs name, as facts (ADR 0010). The numbers each PR names are kept beside the PR, and a
+//! read joins them with these (#833).
 
 use std::collections::BTreeMap;
 
 use rusqlite::{ToSql, named_params};
-use time::OffsetDateTime;
 
 use super::columns::{Items, Numbers, UnixTime};
+use super::pr_links::{Updates, bound};
 use super::{Connection, TitledItem, TitledKind};
 use super::{activity, pull_requests};
 use crate::facts::activity::ItemActivity;
@@ -270,19 +270,8 @@ const OPEN: IssueState = IssueState::Open;
 pub(super) enum PlaceScope<'a> {
     /// The Issues with these numbers, whatever their state, in number order.
     Numbered(&'a Numbers),
-    /// The open Issues updated at `since` or later, other than those `besides` lists, the latest update
-    /// first.
-    OpenSince {
-        since: OffsetDateTime,
-        besides: &'a Numbers,
-    },
-    /// The `limit` open Issues that follow `after`, a last update and a number, in the order of the latest
-    /// update first and then the highest number first, other than those `besides` lists.
-    OpenAfter {
-        after: (OffsetDateTime, u32),
-        limit: u32,
-        besides: &'a Numbers,
-    },
+    /// The open Issues that `Updates` takes, the latest update first and then the highest number first.
+    Open(Updates),
 }
 
 /// Where each Issue of `repository` that `scope` takes stands in a list.
@@ -291,48 +280,26 @@ pub(super) fn read_places(
     repository: &RepositoryName,
     scope: PlaceScope<'_>,
 ) -> rusqlite::Result<Vec<IssuePlace>> {
-    const COLUMNS: &str =
-        "SELECT number, updated_at, state FROM issues WHERE repository = :repository";
-    const OTHERS: &str = "AND number NOT IN (SELECT value FROM json_each(:besides))";
+    const COLUMNS: &str = "SELECT number, updated_at, state FROM issues WHERE";
     let open: &dyn ToSql = &OPEN;
     let mut asked: Vec<(&str, &dyn ToSql)> = vec![(":repository", repository)];
-    let (since, updated_at, number);
+    let times;
     let query = match scope {
         PlaceScope::Numbered(numbers) => {
             asked.push((":numbers", numbers));
             format!(
-                "{COLUMNS} AND number IN (SELECT value FROM json_each(:numbers)) ORDER BY number"
+                "{COLUMNS} repository = :repository
+                     AND number IN (SELECT value FROM json_each(:numbers))
+                 ORDER BY number"
             )
         }
-        PlaceScope::OpenSince {
-            since: start,
-            besides,
-        } => {
-            since = start.unix_timestamp();
-            asked.extend([(":open", open), (":since", &since), (":besides", besides)]);
-            format!(
-                "{COLUMNS} AND state = :open AND updated_at >= :since {OTHERS}
-                 ORDER BY updated_at DESC, number DESC"
-            )
-        }
-        PlaceScope::OpenAfter {
-            after,
-            ref limit,
-            besides,
-        } => {
-            (updated_at, number) = (after.0.unix_timestamp(), after.1);
-            asked.extend([
-                (":open", open),
-                (":updated_at", &updated_at),
-                (":number", &number),
-                (":limit", limit),
-                (":besides", besides),
-            ]);
-            format!(
-                "{COLUMNS} AND state = :open AND (updated_at, number) < (:updated_at, :number) {OTHERS}
-                 ORDER BY updated_at DESC, number DESC
-                 LIMIT :limit"
-            )
+        PlaceScope::Open(updates) => {
+            let kept = "repository = :repository AND state = :open";
+            let condition;
+            (condition, times) = updates.condition("issues", kept);
+            asked.push((":open", open));
+            asked.extend(bound(&times));
+            format!("{COLUMNS} {kept} {condition} ORDER BY updated_at DESC, number DESC")
         }
     };
     let mut statement = connection.prepare(&query)?;

@@ -6,7 +6,7 @@ use serde::Serialize;
 use specta::Type;
 
 use super::filters::FilterFacts;
-use super::{IssueItem, TreeEntry, WorkbenchItem, candidates};
+use super::{IssueItem, TreeEntry, WorkbenchItem, candidates_of};
 use crate::error::Error;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::IssueFacts;
@@ -63,7 +63,7 @@ impl IssueView {
             .unwrap_or_default();
         let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).matched();
         let causes = Causes::of(&facts, repository.conventions);
-        let found = candidates(facts, repository, &BTreeSet::new(), &causes)
+        let found = candidates_of(facts, repository, &BTreeSet::new(), &causes)
             .into_iter()
             .find_map(|item| match item {
                 WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),

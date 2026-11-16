@@ -160,8 +160,9 @@ fn full_scans(connection: &Connection, sql: &str) -> Vec<String> {
     let mut scans = Vec::new();
     while let Some(row) = rows.next().unwrap() {
         let detail: String = row.get("detail").unwrap();
-        let table = detail
-            .strip_prefix("SCAN ")
+        // The store's only virtual table is `json_each`, whose scan reads the numbers a query lists.
+        let table = (detail.strip_prefix("SCAN "))
+            .filter(|_| !detail.contains("VIRTUAL TABLE"))
             .and_then(|rest| rest.split(' ').next());
         if let Some(table) = table.filter(|table| !SMALL_TABLES.contains(table)) {
             scans.push(table.to_owned());
@@ -335,22 +336,36 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         transaction: connection.transaction().unwrap(),
         repository: cpython.clone(),
     };
-    let linked = snapshot.open_pull_request_links().unwrap();
-    let open = snapshot.pull_requests_numbered(&[1].into()).unwrap();
-    let named = snapshot.issue_places_numbered(&[1].into()).unwrap();
-    let numbered = snapshot.issues_numbered(&[1].into()).unwrap();
-    let besides = Numbers::of([2]);
-    let since = snapshot
-        .open_issue_places_since(saved_at, &besides)
-        .unwrap();
-    let later = saved_at + time::Duration::SECOND;
-    let before = (snapshot.open_issue_places_after((later, 0), 1, &besides)).unwrap();
-    drop(snapshot.activity_of(Some(&viewer), &[1].into()).unwrap());
+    let one = BTreeSet::from([1]);
+    let conventions = crate::conventions::Conventions::Cpython;
+    let linked = snapshot.pr_links(&one, conventions).unwrap();
+    let fixing = snapshot.prs_fixing(&one, conventions).unwrap();
+    // The PR's cherry-pick line names the commit it became, so it names itself.
+    let naming = snapshot.prs_naming_origins(&one, conventions).unwrap();
+    let open = snapshot.pull_requests_numbered(&one).unwrap();
+    let named = snapshot.issue_places_numbered(&one).unwrap();
+    let numbered = snapshot.issues_numbered(&one).unwrap();
+    let since = Updates::Since(saved_at);
+    let before = Updates::Before {
+        before: saved_at + time::Duration::SECOND,
+        at_least: 1,
+    };
+    let issues_since = snapshot.open_issue_places(since).unwrap();
+    let issues_before = snapshot.open_issue_places(before).unwrap();
+    let prs_since = snapshot.pull_requests_updated(since).unwrap();
+    let prs_before = snapshot.pull_requests_updated(before).unwrap();
+    drop(snapshot.activity_of(Some(&viewer), &one).unwrap());
     let reviews = snapshot.reviews_of(&open).unwrap();
     drop(snapshot);
-    let found = [linked.len(), open.len()];
-    let issues_found = [named.len(), numbered.len(), since.len(), before.len()];
-    assert_eq!((found, issues_found), ([1; 2], [1; 4]));
+    let found = [linked.len(), fixing.len(), naming.len(), open.len()];
+    let updated = [prs_since.len(), prs_before.len()];
+    let issues_found = [
+        named.len(),
+        numbered.len(),
+        issues_since.len(),
+        issues_before.len(),
+    ];
+    assert_eq!((found, updated, issues_found), ([1; 4], [1; 2], [1; 4]));
     assert!(reviews.reviewed.contains_key(&1), "{reviews:?}");
     let no_trace = None::<fn(TraceEvent<'_>)>;
     connection.trace_v2(codes, no_trace).unwrap();
@@ -393,8 +408,10 @@ fn the_plan_check_sees_each_table_a_view_reads() {
         "marked_unseen",
         "patched_commits",
         "file_patch_ids",
+        "pr_fixes",
+        "pr_origins",
     ];
-    assert_eq!(tables.map(reads), [true; 20]);
+    assert_eq!(tables.map(reads), [true; 22]);
 }
 
 #[test]
@@ -407,6 +424,8 @@ fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
             "INSERT INTO assignees VALUES ('python/cpython', 1, 'someone')",
             "INSERT INTO closing_references VALUES ('python/cpython', 1, 7)",
             "INSERT INTO cherry_picks VALUES ('python/cpython', 1, '0123abc')",
+            "INSERT INTO pr_fixes VALUES ('python/cpython', 1, 7, 'every')",
+            "INSERT INTO pr_origins VALUES ('python/cpython', 1, 'cherry_pick', 9)",
             "INSERT INTO committers VALUES ('python/cpython', 1, 0, 'someone')",
             "INSERT INTO issue_assignees VALUES ('python/cpython', 7, 'someone')",
             "INSERT INTO issue_labels VALUES ('python/cpython', 7, 'type-bug')",
@@ -424,7 +443,7 @@ fn a_row_for_an_item_the_store_doesnt_hold_is_refused() {
     });
     assert_eq!(
         refused,
-        [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 13]
+        [Some(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY); 15]
     );
 }
 

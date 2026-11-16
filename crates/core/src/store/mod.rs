@@ -12,6 +12,7 @@ mod issue_content;
 mod issues;
 mod migrate;
 mod patch_ids;
+mod pr_links;
 mod pull_request_content;
 mod pull_requests;
 /// Draws the schema in `docs/schema.md` and keeps it current. Only its tests use it.
@@ -33,6 +34,7 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
+use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
 use crate::facts::WorkFacts;
 use crate::facts::activity::{ActivityFacts, ItemActivity};
@@ -49,6 +51,7 @@ use columns::Items;
 pub use columns::Numbers;
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
+pub use pr_links::Updates;
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -660,10 +663,47 @@ impl Snapshot<'_> {
         read_last_login(&self.transaction).map_err(saying(CANT_READ))
     }
 
-    /// The open PRs, the latest update first, with only what places them in a list and groups them under
-    /// their Issues and Origin PRs.
-    pub fn open_pull_request_links(&self) -> Result<Vec<PrLinks>, Error> {
-        pull_requests::read_links(&self.transaction, &self.repository).map_err(saying(CANT_READ))
+    /// The links of each PR with these numbers that the store holds, under `conventions`, in number order.
+    pub fn pr_links(
+        &self,
+        numbers: &BTreeSet<u32>,
+        conventions: Conventions,
+    ) -> Result<Vec<PrLinks>, Error> {
+        let numbers = Numbers::of(numbers.iter().copied());
+        let (transaction, repository) = (&self.transaction, &self.repository);
+        pr_links::read(transaction, repository, conventions, &numbers).map_err(saying(CANT_READ))
+    }
+
+    /// The PRs that fix one of `issues` under `conventions`.
+    pub fn prs_fixing(
+        &self,
+        issues: &BTreeSet<u32>,
+        conventions: Conventions,
+    ) -> Result<BTreeSet<u32>, Error> {
+        let issues = Numbers::of(issues.iter().copied());
+        let (transaction, repository) = (&self.transaction, &self.repository);
+        pr_links::fixing(transaction, repository, conventions, &issues).map_err(saying(CANT_READ))
+    }
+
+    /// The PRs that name one of `origins` as their Origin PR under `conventions`, and some that name it
+    /// below another their links put first.
+    pub fn prs_naming_origins(
+        &self,
+        origins: &BTreeSet<u32>,
+        conventions: Conventions,
+    ) -> Result<BTreeSet<u32>, Error> {
+        let origins = Numbers::of(origins.iter().copied());
+        let (transaction, repository) = (&self.transaction, &self.repository);
+        let named = pr_links::naming_origins(transaction, repository, conventions, &origins);
+        named.map_err(saying(CANT_READ))
+    }
+
+    /// Each PR whose last update `updates` takes, whatever its state, with that update, the latest first.
+    pub fn pull_requests_updated(
+        &self,
+        updates: Updates,
+    ) -> Result<Vec<(u32, OffsetDateTime)>, Error> {
+        pr_links::updated(&self.transaction, &self.repository, updates).map_err(saying(CANT_READ))
     }
 
     /// The PRs with these numbers that the store holds, the latest update first.
@@ -697,31 +737,10 @@ impl Snapshot<'_> {
         self.issue_places(issues::PlaceScope::Numbered(&numbers))
     }
 
-    /// Where each open Issue updated at `since` or later stands, other than those of `besides`, the latest
-    /// update first.
-    pub fn open_issue_places_since(
-        &self,
-        since: OffsetDateTime,
-        besides: &Numbers,
-    ) -> Result<Vec<IssuePlace>, Error> {
-        self.issue_places(issues::PlaceScope::OpenSince { since, besides })
-    }
-
-    /// Where each of the `limit` open Issues that come after `after`, a last update and a number, stands,
-    /// in the order of the latest update first and then the highest number first, other than those of
-    /// `besides`.
-    pub fn open_issue_places_after(
-        &self,
-        after: (OffsetDateTime, u32),
-        limit: u32,
-        besides: &Numbers,
-    ) -> Result<Vec<IssuePlace>, Error> {
-        let scope = issues::PlaceScope::OpenAfter {
-            after,
-            limit,
-            besides,
-        };
-        self.issue_places(scope)
+    /// Where each open Issue whose last update `updates` takes stands, the latest update first and then the
+    /// highest number first.
+    pub fn open_issue_places(&self, updates: Updates) -> Result<Vec<IssuePlace>, Error> {
+        self.issue_places(issues::PlaceScope::Open(updates))
     }
 
     fn issue_places(&self, scope: issues::PlaceScope<'_>) -> Result<Vec<IssuePlace>, Error> {

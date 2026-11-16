@@ -135,7 +135,18 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 27,
         sql: super::issues::BY_UPDATE,
     },
+    Migration {
+        version: 28,
+        sql: super::pr_links::SCHEMA,
+    },
 ];
+
+/// What fills a step's new tables from what the store holds, when SQL alone can't work it out, by the step's
+/// version. Each runs after every pending step's SQL, in the same transaction, so it reads the schema this
+/// version's code reads.
+type Fill = fn(&Connection) -> rusqlite::Result<()>;
+
+pub(super) const FILLS: &[(u32, Fill)] = &[(28, super::pr_links::fill)];
 
 /// The version a file has after all of `migrations`.
 pub(super) fn latest(migrations: &[Migration]) -> u32 {
@@ -197,6 +208,11 @@ fn run_checked(connection: &mut Connection, pending: &[&Migration]) -> Result<()
         transaction
             .pragma_update(None, "user_version", step.version)
             .map_err(saying(CANT_UPDATE))?;
+    }
+    let pending_fills =
+        (FILLS.iter()).filter(|(version, _)| pending.iter().any(|step| step.version == *version));
+    for (_, fill) in pending_fills {
+        fill(&transaction).map_err(saying(CANT_UPDATE))?;
     }
     let broken = broken_keys(&transaction).map_err(saying(CANT_UPDATE))?;
     if !broken.is_empty() {

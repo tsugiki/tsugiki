@@ -1,5 +1,7 @@
 //! What Tsugiki keeps about a PR, which `github` parses from a fetch and the store reads back.
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
@@ -101,17 +103,20 @@ pub struct PullRequestFacts {
     pub off_default: Option<OffDefault>,
 }
 
-/// What places an open PR in a list and groups it under its Issues and Origin PR (ADR 0011), and nothing
-/// else, so a read of every open PR stays cheap. It carries none of what Needs attention reads.
+/// What places a PR in a list and groups it under its Issues and Origin PR, as the link rules read it under
+/// a Repository's Conventions (ADR 0011), and nothing else. The store keeps the links (#833), so a read of
+/// the PRs around a page stays cheap. It carries none of what Needs attention reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrLinks {
     pub number: u32,
-    pub title: String,
-    pub author: Option<Login>,
+    pub state: PrState,
     pub updated_at: OffsetDateTime,
-    pub closing_issues: Vec<u32>,
-    pub merge_commit: Option<CommitSha>,
-    pub off_default: Option<OffDefault>,
+    /// The Issues it fixes. Only a number that the sync fetched as an Issue counts, so a PR's number or a
+    /// typo doesn't.
+    pub fixes: BTreeSet<u32>,
+    /// The Origin PR it names, if it is a Backport. Tsugiki may not have that PR, or it may turn out not to
+    /// be one.
+    pub origin: Option<u32>,
 }
 
 /// The commit a PR's branch is at, which the Repository's mirror fetches, with the branch its diff starts

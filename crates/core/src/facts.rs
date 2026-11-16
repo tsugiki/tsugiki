@@ -38,7 +38,10 @@ impl Serialize for CommitSha {
 
 impl CommitSha {
     /// Git's shortest default abbreviation, and the length of a whole SHA-1.
-    const LENGTHS: std::ops::RangeInclusive<usize> = 7..=40;
+    const LENGTHS: std::ops::RangeInclusive<usize> = Self::SHORTEST..=40;
+
+    /// Git's shortest default abbreviation.
+    pub(crate) const SHORTEST: usize = 7;
 
     /// The SHA that `text` spells, if it spells one.
     pub fn parse(text: &str) -> Option<Self> {

@@ -45,7 +45,8 @@ use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCo
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;
-use columns::{Items, Numbers};
+use columns::Items;
+pub use columns::Numbers;
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
@@ -701,14 +702,9 @@ impl Snapshot<'_> {
     pub fn open_issue_places_since(
         &self,
         since: OffsetDateTime,
-        besides: &BTreeSet<u32>,
+        besides: &Numbers,
     ) -> Result<Vec<IssuePlace>, Error> {
-        let besides = Numbers::of(besides.iter().copied());
-        let scope = issues::PlaceScope::OpenSince {
-            since,
-            besides: &besides,
-        };
-        self.issue_places(scope)
+        self.issue_places(issues::PlaceScope::OpenSince { since, besides })
     }
 
     /// Where each of the `limit` open Issues that come after `after`, a last update and a number, stands,
@@ -718,13 +714,12 @@ impl Snapshot<'_> {
         &self,
         after: (OffsetDateTime, u32),
         limit: u32,
-        besides: &BTreeSet<u32>,
+        besides: &Numbers,
     ) -> Result<Vec<IssuePlace>, Error> {
-        let besides = Numbers::of(besides.iter().copied());
         let scope = issues::PlaceScope::OpenAfter {
             after,
             limit,
-            besides: &besides,
+            besides,
         };
         self.issue_places(scope)
     }

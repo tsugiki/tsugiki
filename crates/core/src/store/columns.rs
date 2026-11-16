@@ -31,11 +31,11 @@ impl FromSql for UnixTime {
 }
 
 /// Some Issue and PR numbers as one parameter: a JSON array, which a query reads with `json_each`, so one
-/// statement asks for all of them.
-pub(super) struct Numbers(String);
+/// statement asks for all of them. A caller that asks with the same numbers more than once builds it once.
+pub struct Numbers(String);
 
 impl Numbers {
-    pub(super) fn of(numbers: impl IntoIterator<Item = u32>) -> Self {
+    pub fn of(numbers: impl IntoIterator<Item = u32>) -> Self {
         let listed: Vec<String> = numbers
             .into_iter()
             .map(|number| number.to_string())

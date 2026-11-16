@@ -494,23 +494,17 @@ fn save_closing_reference(
 fn review_requests(
     connection: &Connection,
     repository: &RepositoryName,
-    scope: Scope<'_>,
+    items: Items<'_>,
 ) -> rusqlite::Result<BTreeMap<u32, Vec<Login>>> {
+    let scope = Scope::Items(items);
     let rows = scope.rows_of("review_requests");
     let mut asked = scope.params(repository);
-    let open: &dyn ToSql = &OPEN;
-    let open_only = match scope {
-        // The scope's own join has kept the open PRs alone.
-        Scope::Open => "",
-        Scope::Items(_) => {
-            asked.push((":open", open));
-            "AND EXISTS (SELECT 1 FROM pull_requests AS asking
-                         WHERE asking.repository = item.repository AND asking.number = item.number
-                             AND asking.state = :open)"
-        }
-    };
+    asked.push((":open", &OPEN));
     let query = format!(
-        "SELECT item.number AS number, item.login AS login FROM {rows} {open_only}
+        "SELECT item.number AS number, item.login AS login FROM {rows}
+             AND EXISTS (SELECT 1 FROM pull_requests AS asking
+                         WHERE asking.repository = item.repository AND asking.number = item.number
+                             AND asking.state = :open)
          ORDER BY item.number, item.login"
     );
     values_by_number(connection.prepare(&query)?, &asked, "login")
@@ -671,11 +665,14 @@ pub(super) fn read_links(
     let mut picks: BTreeMap<u32, Vec<CommitSha>> =
         values_of(connection, of, ("cherry_picks", "sha"))?;
     let mut committed = committers(connection, repository, Scope::Open)?;
-    let query = "SELECT number, title, author, updated_at, off_default_description, merge_commit
-                 FROM pull_requests
-                 WHERE repository = :repository AND state = :open
-                 ORDER BY updated_at DESC, number DESC";
-    let mut statement = connection.prepare(query)?;
+    let condition = Scope::Open.own_rows();
+    let query = format!(
+        "SELECT number, title, author, updated_at, off_default_description, merge_commit
+         FROM pull_requests
+         WHERE repository = :repository {condition}
+         ORDER BY updated_at DESC, number DESC"
+    );
+    let mut statement = connection.prepare(&query)?;
     let asked = Scope::Open.params(repository);
     let mut rows = statement.query(asked.as_slice())?;
     let mut found = Vec::new();
@@ -708,7 +705,7 @@ pub(super) fn read(
 ) -> rusqlite::Result<Vec<PullRequestFacts>> {
     let scope = Scope::Items(items);
     let of = (repository, scope);
-    let mut requests = review_requests(connection, repository, scope)?;
+    let mut requests = review_requests(connection, repository, items)?;
     let mut reviews = latest_reviews(connection, repository, scope)?;
     let mut assigned: BTreeMap<u32, Vec<Login>> =
         values_of(connection, of, ("assignees", "login"))?;

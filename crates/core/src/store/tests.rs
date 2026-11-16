@@ -339,7 +339,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     let open = snapshot.pull_requests_numbered(&[1].into()).unwrap();
     let named = snapshot.issue_places_numbered(&[1].into()).unwrap();
     let numbered = snapshot.issues_numbered(&[1].into()).unwrap();
-    let besides = [2].into();
+    let besides = Numbers::of([2]);
     let since = snapshot
         .open_issue_places_since(saved_at, &besides)
         .unwrap();

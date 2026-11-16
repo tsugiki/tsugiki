@@ -4,12 +4,18 @@
 //! the open PRs, the Issues they name and the page's own rows, so a cache that holds years of closed items
 //! costs no more per page than a new one. Reading it adds nothing to Reach.
 //!
-//! Each page is read on its own. Pages read with no sync between them fit together: each item is on one of
-//! them, and each page starts where the one before it ended. A sync can move an item from one page to
-//! another, because an Issue's place is the latest update of the Issue and its open PRs: a PR that closes
-//! moves its Issue back to where its other PRs put it, and a new PR moves it up. So when the store says it
-//! changed, the window reads its pages again from the first, rather than join pages read on either side of
-//! a sync. An item moves up only when it changes, and then to the time of that change, so it is on the
+//! Each page is read on its own. Pages read with nothing changed between them fit together: each item is on
+//! one of them, and each page starts where the one before it ended. Two changes can move an item from one
+//! page to another, because an Issue's place is the latest update of the Issue and its open PRs:
+//!
+//! - A sync. A PR that closes moves its Issue back to where its other PRs put it, and a new PR moves it up.
+//!   The store then sends `Changed`.
+//! - A change to the Repository's Conventions, which regroups its PRs with no change to the store (ADR 0011).
+//!   No event says so: the window holds the new Conventions in the settings that Apply in the Settings
+//!   dialog, or its reread of the files as it opens, answers with.
+//!
+//! After either, the window reads its pages again from the first, rather than join pages read on either side
+//! of the change. An item a sync moves up moves to the time of the change that moved it, so it is on the
 //! first page after the sync.
 
 use std::cmp::Reverse;
@@ -30,7 +36,7 @@ use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts};
 use crate::links::fixed_numbers;
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{Snapshot, StoreReader};
+use crate::store::{Numbers, Snapshot, StoreReader};
 use crate::work::Causes;
 
 /// How far back from now the first page reaches.
@@ -143,7 +149,10 @@ fn read_page(
     let groups = Groups::read(snapshot, repository, viewer)?;
     let chosen = match page {
         InboxPage::Latest => {
-            let latest = groups.latest(snapshot, whole_second(now - LATEST))?;
+            // The store keeps whole seconds, so a page that started within a second would put an item
+            // updated in that second on this page by one comparison and on the next page by another.
+            let since = now - LATEST;
+            let latest = groups.latest(snapshot, since.replace_nanosecond(0).unwrap_or(since))?;
             match latest.older {
                 Some(after) if latest.members.is_empty() => groups.older(snapshot, after)?,
                 _ => latest,
@@ -155,13 +164,6 @@ fn read_page(
         groups.facts(snapshot, chosen.members)?,
         chosen.older,
     )))
-}
-
-/// `at` without its fraction of a second. The store keeps whole seconds, so a page that started within a
-/// second would put an item updated in that second on the first page by one comparison and on the next page
-/// by another.
-fn whole_second(at: OffsetDateTime) -> OffsetDateTime {
-    at - Duration::nanoseconds(at.nanosecond().into())
 }
 
 /// An item of the Inbox before its rows are read, with the numbers of the PRs it shows.
@@ -183,8 +185,9 @@ enum Member {
 struct Groups {
     viewer: Login,
     by_place: BTreeMap<InboxCursor, Member>,
-    /// The Issues the open PRs name, whatever their state. The pages read the other open Issues.
-    named: BTreeSet<u32>,
+    /// The Issues the open PRs name, whatever their state, listed once for the page's reads of the other
+    /// open Issues.
+    named: Numbers,
 }
 
 impl Groups {
@@ -202,7 +205,7 @@ impl Groups {
             .flat_map(|pr| fixed_numbers(pr, repository))
             .collect();
         let named_issues = snapshot.issue_places_numbered(&named)?;
-        let named = named_issues.iter().map(|issue| issue.number).collect();
+        let named = Numbers::of(named_issues.iter().map(|issue| issue.number));
         let facts = WorkFacts {
             viewer: Some(viewer.clone()),
             pull_requests: open_prs,

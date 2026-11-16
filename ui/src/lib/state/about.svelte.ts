@@ -12,7 +12,9 @@ export class AboutState {
   about = $state<About>();
   error = $state<string>();
 
-  /** Tsugiki's name in the window's title, with the build's version once the core answers. */
+  /** Tsugiki's name in the window's title, with the build's version once the core answers. The name is the
+   * one the window opens with, before the core answers, so the title takes it from here and not from
+   * `About.name`. */
   get title(): string {
     return this.about === undefined ? "Tsugiki" : `Tsugiki ${this.about.version}`;
   }

@@ -64,9 +64,6 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       turnWindow: null,
       ...given,
     };
-    for (const name of refused) {
-      Reflect.deleteProperty(answers, name);
-    }
     const listeners: MockWindow["mockEventListeners"] = {};
     const callbacks = new Map<number, Listener>();
     Object.assign(window, {
@@ -83,6 +80,9 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
             (listeners[args.event] ??= []).push(callbacks.get(args.handler) as Listener);
             return callbacks.size;
           }
+          // The bindings name commands in camelCase, and the core in snake_case.
+          const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
+          if (refused.includes(name)) throw new Error(`the core has no answer for ${command}`);
           // Unless the test answers it, a run comes first in the list `recentCommands` answers with, and the
           // run answers with that list too.
           if (command === "remember_command" && !Object.hasOwn(answers, "rememberCommand")) {
@@ -90,11 +90,9 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
             answers.recentCommands = [args.command, ...recent.filter((id) => id !== args.command)];
             return answers.recentCommands;
           }
-          // The bindings name commands in camelCase, and the core in snake_case.
-          const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());
           if (!Object.hasOwn(answers, name)) throw new Error(`the core has no answer for ${command}`);
           // A command that can fail answers as its binding does, and the binding expects the core's own form.
-          const answer = (answers as Record<string, unknown>)[name] as {
+          const answer = answers[name] as {
             status?: string;
             data?: unknown;
             error?: unknown;

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import type {
   Filter,
   ListedItem_Serialize as ListedItem,
@@ -283,6 +283,107 @@ test("a change keeps the selected Filter and the place the user had scrolled to"
   await expect(page.getByText("A title that changed")).toBeAttached();
   expect(await scrolled()).toBe(600);
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+});
+
+/** Thirty items with nothing waiting, `#1000` to `#1029`, in a window that shows only a few of them. */
+const thirty = Array.from({ length: 30 }, (_, at): ListedItem => {
+  const number = 1000 + at;
+  return {
+    ...own,
+    number,
+    title: `Item ${String(number)}`,
+    seen: { ...own.seen, mark: { numbers: [number], up_to: null } },
+  };
+});
+
+/** Opens `#1020` from the list in the Detail pane, with its row on the screen part way down the list. */
+async function openFarDown(page: Page) {
+  const done = { status: "ok", data: null } as const;
+  const whole = { items: thirty, count: 30, review_requests: 0, stale_reviews: 0, filters: [] };
+  await page.setViewportSize({ width: 900, height: 400 });
+  await mockCore(page, {
+    home: cpython,
+    workbench: { status: "ok", data: whole },
+    openPullRequest: done,
+    fetchPullRequest: done,
+    pullRequest: {
+      status: "ok",
+      data: { ...reviewRow, number: 1020, title: "Item 1020", content: null, shares_review_of: null },
+    },
+  });
+  await page.goto("/");
+  const list = page.locator(".list");
+  const row = list.getByRole("button", { name: "#1020 Item 1020" });
+  await row.scrollIntoViewIfNeeded();
+  await row.click();
+  await expect(page.getByRole("region", { name: "PR view" })).toBeVisible();
+  /** A change that moves `#1020` to the top of the list, as an update does By last update. */
+  const moveToTop = async () => {
+    const moved = [thirty[20] as ListedItem, ...thirty.filter((_, at) => at !== 20)];
+    await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: moved } });
+    await emitFromCore(page, "changed", { repository: repository.name, items: [1020] });
+    await expect(list.getByRole("listitem").first()).toContainText("#1020 Item 1020");
+  };
+  const scrolled = () => list.evaluate((element) => element.scrollTop);
+  return { list, row, scrolled, moveToTop };
+}
+
+test("a change that moves the Detail pane's row off the screen scrolls the list to it, and the row keeps the focus", async ({
+  page,
+}) => {
+  const { row, moveToTop } = await openFarDown(page);
+  // WebKit doesn't focus a button it clicks, as Safari doesn't.
+  await row.focus();
+
+  await moveToTop();
+
+  await expect(row).toBeInViewport();
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row).toBeFocused();
+});
+
+test("a change that moves the Detail pane's row off the screen scrolls the list, and the Detail pane keeps the focus", async ({
+  page,
+}) => {
+  const { row, moveToTop } = await openFarDown(page);
+  const tab = page.getByRole("region", { name: "PR view" }).getByRole("tab", { name: "Conversation" });
+  await tab.focus();
+
+  await moveToTop();
+
+  await expect(row).toBeInViewport();
+  await expect(tab).toBeFocused();
+});
+
+test("a change that moves the Detail pane's item leaves the scroll alone while the cursor is on another row", async ({
+  page,
+}) => {
+  const { row, scrolled, moveToTop } = await openFarDown(page);
+  await row.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("button", { name: "#1021 Item 1021" })).toBeFocused();
+  const before = await scrolled();
+
+  await moveToTop();
+
+  expect(await scrolled()).toBe(before);
+  await expect(row).not.toBeInViewport();
+});
+
+test("a change that moves the Detail pane's row leaves the scroll alone once the user scrolled the row away", async ({
+  page,
+}) => {
+  const { list, row, scrolled, moveToTop } = await openFarDown(page);
+  await list.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(row).not.toBeInViewport();
+  const before = await scrolled();
+
+  await moveToTop();
+
+  expect(await scrolled()).toBe(before);
+  await expect(row).not.toBeInViewport();
 });
 
 test("the status bar says when the Repository last synced, and a click asks again", async ({ page }) => {

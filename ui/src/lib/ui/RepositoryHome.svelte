@@ -33,7 +33,7 @@
     type WorkbenchRow,
     type WorkbenchView,
   } from "$lib/state/workbench.svelte";
-  import { scrollerIn } from "./focus";
+  import { keepOnScreen, scrollerIn } from "./focus";
   import HistoryBar from "./HistoryBar.svelte";
   import IssueDetail from "./IssueDetail.svelte";
   import type { ScreenKeys, View } from "./KeyList.svelte";
@@ -114,7 +114,7 @@
   });
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
-  const workbench = $derived(new WorkbenchState(name, cursorLanded, () => panes.order));
+  const workbench = $derived(new WorkbenchState(name, cursorLanded, () => panes.order, listChanging));
   /** The Issues, PRs and file views the Detail pane has shown, which Alt+← and Alt+→ go back and forward
    * through. Each Repository has its own. */
   const visits = $derived.by(() => {
@@ -401,6 +401,30 @@
     const focused = document.activeElement;
     const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
     if (onRow || focused === document.body) focusCursor();
+  }
+
+  /** Before a change in the view on show: what brings the row of the Detail pane's line back on the screen
+   * once the change is drawn, if the change moved it off, while the cursor is on it (#796). The row gets
+   * back the focus it held, as moving a focused element in the page drops its focus. */
+  function listChanging(): () => void {
+    const row = detailRow();
+    if (!row) return () => {};
+    const keep = keepOnScreen(row.closest(".row") as Element, row.closest(".list") as Element);
+    const focused = document.activeElement === row;
+    return () =>
+      void tick().then(() => {
+        const moved = detailRow();
+        if (!moved) return;
+        keep(moved.closest(".row") as Element);
+        if (focused) moved.focus({ preventScroll: true });
+      });
+  }
+
+  /** The row under the cursor, while the list shows it and it is the Detail pane's line. */
+  function detailRow(): HTMLElement | null {
+    const line = detailLine();
+    if (!line || !sameStop(workbench.cursor, line) || !list) return null;
+    return list.querySelector<HTMLElement>(`[data-item="${lineName(line)}"]`);
   }
 
   async function markUnseen(marked: Marked | undefined) {
@@ -1189,12 +1213,15 @@
     flex: 1;
     min-height: 0;
   }
-  /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. */
+  /* The Detail pane grows from nothing, so the list keeps its width and is the first to shrink. A change that
+     moves an item scrolls the list only to bring back the Detail pane's row (#796): the browser's scroll
+     anchoring would scroll it whenever the rows above the first one on the screen shift. */
   .list {
     flex: 1;
     min-width: 280px;
     overflow-y: auto;
     overscroll-behavior: contain;
+    overflow-anchor: none;
   }
 
   .list.sized {

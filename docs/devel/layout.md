@@ -43,7 +43,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     where it was. The focus goes with the cursor when, at that moment, a row of the list holds it or nothing
     does, and stays put anywhere else, such as in a text box or on the list's header. A cursor on a PR in a
     tree, Mark Seen on an item with nothing waiting, a change of order or view, and any other change leave
-    the cursor on its row.
+    the cursor on its row. When that row is the Detail pane's and a change moves it off the screen, as an
+    update does By last update, the list scrolls as little as it takes to bring it back, so the row under
+    the pointer stays the one the user saw; a row that held the focus keeps it, and focus in the Detail pane
+    stays there. Otherwise a change leaves the scroll alone, also when the user had scrolled that row away.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
     it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes

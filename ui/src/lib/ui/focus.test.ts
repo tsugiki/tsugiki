@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { focusBesideRail, keepFocusIn } from "./focus";
+import { focusBesideRail, keepFocusIn, keepOnScreen } from "./focus";
 
 /** A dialog in the page, with `inside` as its HTML, that keeps the focus in. */
 function dialogOf(inside: string) {
@@ -57,6 +57,69 @@ describe("keepFocusIn", () => {
     dialog.focus();
     expect(press("Tab")).toBe(false);
     expect(document.activeElement).toBe(dialog);
+  });
+});
+
+describe("keepOnScreen", () => {
+  /** A list 100 px tall that shows boxes 20 px tall, with the box drawn `top` px below the list's top, and
+   * a record of the scrolls the box asks for. jsdom lays nothing out, and has no `scrollIntoView`. */
+  const listAndBox = (top: number) => {
+    const list = document.createElement("div");
+    const box = document.createElement("div");
+    list.append(box);
+    const place = { top };
+    list.getBoundingClientRect = () => ({ top: 0, bottom: 100 }) as DOMRect;
+    box.getBoundingClientRect = () => ({ top: place.top, bottom: place.top + 20 }) as DOMRect;
+    const scrolls: ScrollIntoViewOptions[] = [];
+    box.scrollIntoView = (options) => {
+      scrolls.push(options as ScrollIntoViewOptions);
+    };
+    return { list, box, place, scrolls };
+  };
+
+  it("scrolls as little as it takes to the box a change moved off the screen, from all or part of it on show", () => {
+    for (const from of [40, -10]) {
+      const { list, box, place, scrolls } = listAndBox(from);
+      const drawn = keepOnScreen(box, list);
+      place.top = 300;
+
+      drawn(box);
+
+      expect(scrolls).toEqual([{ block: "nearest" }]);
+    }
+  });
+
+  it("scrolls to the box a change moved part of the way off the screen", () => {
+    const { list, box, place, scrolls } = listAndBox(40);
+    const drawn = keepOnScreen(box, list);
+    place.top = 90;
+
+    drawn(box);
+
+    expect(scrolls).toEqual([{ block: "nearest" }]);
+  });
+
+  it("leaves the scroll alone for a box the user had scrolled off the screen, or one the change left in place", () => {
+    const away = listAndBox(-200);
+    const drawnAway = keepOnScreen(away.box, away.list);
+    away.place.top = 300;
+    const put = listAndBox(90);
+    const drawnPut = keepOnScreen(put.box, put.list);
+
+    drawnAway(away.box);
+    drawnPut(put.box);
+
+    expect([away.scrolls, put.scrolls]).toEqual([[], []]);
+  });
+
+  it("leaves the scroll alone for a box the change moved to another place on the screen", () => {
+    const { list, box, place, scrolls } = listAndBox(40);
+    const drawn = keepOnScreen(box, list);
+    place.top = 0;
+
+    drawn(box);
+
+    expect(scrolls).toEqual([]);
   });
 });
 

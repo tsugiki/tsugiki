@@ -31,6 +31,33 @@ export function scrollerIn(pane: Element | null | undefined): HTMLElement | unde
   return pane?.querySelector<HTMLElement>("[data-scrolls]:not([inert] *)") ?? undefined;
 }
 
+/** The place of `box` in `scroller`, which scrolls it: its top in the scroller's content, which a scroll
+ * leaves alone, and whether some of it, or all of it, shows. */
+function placeIn(box: Element, scroller: Element) {
+  const shown = scroller.getBoundingClientRect();
+  const { top, bottom } = box.getBoundingClientRect();
+  return {
+    top: top - shown.top + scroller.scrollTop,
+    some: bottom > shown.top && top < shown.bottom,
+    all: top >= shown.top && bottom <= shown.bottom,
+  };
+}
+
+/**
+ * Before a change that can move `box` in `scroller`, as an answer from the core moves an item's row in the
+ * Issue list (#796): what brings the box back on the screen once the change is drawn, given the box as it
+ * is drawn then. If the change moved the box off the screen, the scroller scrolls as little as it takes, as
+ * `scrollIntoView` does with `block: "nearest"`. A box the user had scrolled off the screen before stays off,
+ * and the scroll stays put while the change leaves the box where it was.
+ */
+export function keepOnScreen(box: Element, scroller: Element): (moved: Element) => void {
+  const before = placeIn(box, scroller);
+  return (moved) => {
+    const after = placeIn(moved, scroller);
+    if (before.some && after.top !== before.top && !after.all) moved.scrollIntoView({ block: "nearest" });
+  };
+}
+
 const CONTROLS = [
   "a[href]",
   "button:not(:disabled)",

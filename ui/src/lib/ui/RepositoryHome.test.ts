@@ -2331,6 +2331,128 @@ it("moves only the cursor to the next row once the palette's Mark Seen from the 
   expect(document.activeElement).toBe(before);
 });
 
+/** Lays the list out as a browser would, which jsdom can't: each item's rows 50 px tall, with `above` px of
+ * the list above its top, and 60 px of it on the screen. Gives the names of the rows each scroll brings into
+ * view, and what puts back jsdom's lack of `scrollIntoView`. */
+const layOutList = (above: number) => {
+  const scrolledTo: (string | null | undefined)[] = [];
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+    const item = this.closest(".item");
+    if (item === null) return { top: 0, bottom: 60 } as DOMRect;
+    const top = Array.from(item.parentElement?.children ?? []).indexOf(item) * 50 - above;
+    return { top, bottom: top + 50 } as DOMRect;
+  });
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value(this: Element) {
+      scrolledTo.push(this.querySelector("[data-item]")?.textContent);
+    },
+  });
+  const putBack = () => {
+    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  };
+  return { scrolledTo, putBack };
+};
+
+/** The list's two items, `#5 Alone` first once `moved`, as an update to it puts it By last update. */
+const answerMoved = (moved: boolean) => {
+  const items = [
+    { ...issue, attention: null },
+    { ...standalone, attention: null },
+  ];
+  answering(...(moved ? items.reverse() : items));
+};
+
+/** The headlines of the list's items, in its order. */
+const itemOrder = () =>
+  Array.from(document.querySelectorAll(".list .item > .row [data-item]"), (button) => button.textContent);
+
+it("scrolls the list to the Detail pane's row once a change moves the row off the screen (#796)", async () => {
+  const send = catchChanged();
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  // The list shows the PR's row and nothing of the Issue's above it.
+  const { scrolledTo, putBack } = layOutList(50);
+
+  answerMoved(true);
+  send("python/cpython", [5]);
+
+  await vi.waitFor(() => {
+    expect(scrolledTo).toEqual(["#5 Alone"]);
+  });
+  expect(document.activeElement).toBe(document.body);
+  putBack();
+});
+
+it("gives the focus back to the Detail pane's row when a change moves it, with no scroll of its own (#796)", async () => {
+  const send = catchChanged();
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  prRow.focus();
+  // A browser drops the focus of an element the page moves, and jsdom keeps it, so the call tells.
+  const focus = vi.spyOn(HTMLElement.prototype, "focus");
+
+  answerMoved(true);
+  send("python/cpython", [5]);
+
+  await vi.waitFor(() => {
+    expect(focus.mock.contexts).toEqual([prRow]);
+  });
+  expect(focus.mock.calls).toEqual([[{ preventScroll: true }]]);
+  expect(itemOrder()).toEqual(["#5 Alone", "#112564 GIL drop during collection"]);
+  expect(document.activeElement).toBe(prRow);
+});
+
+it("leaves the list's scroll alone for a change that moves the Detail pane's item while the list is hidden or the cursor is on another row (#796)", async () => {
+  const send = catchChanged();
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  const { scrolledTo, putBack } = layOutList(50);
+  const changes = async (moved: boolean) => {
+    const asked = core.workbench.mock.calls.length;
+    answerMoved(moved);
+    send("python/cpython", [5]);
+    await vi.waitFor(() => {
+      expect(core.workbench.mock.calls.length).toBe(asked + 1);
+    });
+    // The answer and the page's update take a few promises each, and all of them settle before a timer.
+    await new Promise((settled) => setTimeout(settled, 0));
+  };
+
+  await toggleList();
+  await changes(true);
+  await toggleList();
+  await changes(false);
+  await press("ArrowUp");
+  await changes(true);
+
+  expect(itemOrder()).toEqual(["#5 Alone", "#112564 GIL drop during collection"]);
+  expect(rowNamed("#5 Alone").getAttribute("aria-current")).toBeNull();
+  expect(scrolledTo).toEqual([]);
+  putBack();
+});
+
+it("leaves the list's scroll alone once a change takes the Detail pane's item off the list (#796)", async () => {
+  const send = catchChanged();
+  const { prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  const { scrolledTo, putBack } = layOutList(50);
+
+  answering({ ...issue, attention: null });
+  send("python/cpython", [5]);
+
+  await vi.waitFor(() => {
+    expect(itemOrder()).toEqual(["#112564 GIL drop during collection"]);
+  });
+  await tick();
+  expect(scrolledTo).toEqual([]);
+  putBack();
+});
+
 it("marks nothing on Q and Shift+Q with no line under the cursor, or with the list hidden and nothing open", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   await listing();

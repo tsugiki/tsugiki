@@ -1268,23 +1268,28 @@ it("opens a PR's Files tab one file at a time as the settings say, and switches 
   await fireEvent.click(treeRow);
   const tab = await screen.findByRole("tab", { name: "Files" });
   const command = () => paletteRow(component, "toggle_files_mode");
-  const pressed = () =>
-    screen.getByRole("button", { name: "One file at a time" }).getAttribute("aria-pressed");
+  /** Each segment's `aria-pressed` in the header's switch, All files then One file. */
+  const pressed = () => {
+    const group = within(screen.getByRole("group", { name: "Files" }));
+    return ["All files", "One file"].map((name) =>
+      group.getByRole("button", { name }).getAttribute("aria-pressed"),
+    );
+  };
   // The Conversation tab shows no files to switch.
   component.runChord("toggle_files_mode", chordEnd());
   expect(command()).toBeUndefined();
   await fireEvent.click(tab);
   // The tab reads the diff the first time it shows.
   await screen.findByRole("region", { name: "Diff" });
-  expect(pressed()).toBe("true");
+  expect(pressed()).toEqual(["false", "true"]);
 
   expect(command()?.title).toBe("View: All Files");
   command()?.run();
   await tick();
-  expect([pressed(), command()?.title]).toEqual(["false", "View: One File at a Time"]);
+  expect([pressed(), command()?.title]).toEqual([["true", "false"], "View: One File at a Time"]);
   component.runChord("toggle_files_mode", chordEnd());
   await tick();
-  expect(pressed()).toBe("true");
+  expect(pressed()).toEqual(["false", "true"]);
 });
 
 it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it on either", async () => {

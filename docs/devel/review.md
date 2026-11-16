@@ -14,11 +14,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   files = "one"   # "all" or "one"
   ```
 
-  A value other than the two keeps "all", and the status bar names the file and the line. The toggle in
-  the Files tab's header, `Ctrl+K O` and "View: One File at a Time" / "View: All Files" in the command
-  palette switch the PR on show until it closes. Switching keeps the place: the file at the top of the tab
-  becomes the one shown, and switching back scrolls to where it was. Tsugiki never switches by itself,
-  however large the PR.
+  A value other than the two keeps "all", and the status bar names the file and the line. The switch in
+  the Files tab's header, `[ All files | One file ]`, fills the segment of the mode on show
+  ([#775](https://github.com/tsugiki/tsugiki/issues/775)); a click on the other segment, `Ctrl+K O` and
+  "View: One File at a Time" / "View: All Files" in the command palette switch the PR on show until it
+  closes. The other segment's tooltip names `Ctrl+K O`, or the key `[keys]` puts in its place. A screen
+  reader hears a group named "Files" of two buttons, the one on show pressed. Switching keeps the place:
+  the file at the top of the tab becomes the one shown, and switching back scrolls to where it was.
+  Tsugiki never switches by itself, however large the PR.
 - One file at a time, the NEWS entries come first, on a page of their own, then each file in the order of
   all files, a Generated file collapsed to its header as there. The threads on files no longer in the diff
   get a last page. `Alt+PageDown` and `Alt+PageUp` go to the next and the previous page, and stop at either

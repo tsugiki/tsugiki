@@ -646,18 +646,22 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
   // All the files, with the file that showed at the top.
   await page.keyboard.press("ControlOrMeta+k");
   await page.keyboard.press("o");
-  const toggle = pane.getByRole("button", { name: "One file at a time" });
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  const modes = pane.getByRole("group", { name: "Files" });
+  const all = modes.getByRole("button", { name: "All files" });
+  const one = modes.getByRole("button", { name: "One file" });
+  await expect(all).toHaveAttribute("aria-pressed", "true");
+  await expect(one).toHaveAttribute("aria-pressed", "false");
   await expect(bar).toHaveCount(0);
   await expect.poll(() => belowTop(news)).toBe(0);
   // Alt+PageUp goes to the header of the file before.
   await page.keyboard.press("Alt+PageUp");
   await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
   // The first file stays at the top as the NEWS entries above it go, and as they come back.
-  await toggle.click();
+  await one.click();
   await expect(bar).toContainText("1 of 2");
+  await expect(one).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
-  await toggle.click();
+  await all.click();
   await expect(bar).toHaveCount(0);
   await expect.poll(() => belowTop("Lib/ast.py")).toBe(0);
 });

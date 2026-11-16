@@ -21,7 +21,6 @@ const check: RepositoryCheck = {
   first_sync_seconds: 5,
   first_sync_points: 12,
   mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-  access: "other",
 };
 
 const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
@@ -172,7 +171,6 @@ it("borrows from a clone the user picks, and adds with it", async () => {
   });
   expect(core.addRepository).toHaveBeenCalledWith({
     name: "some-maintainer/gcmon",
-    access: "other",
     source: { kind: "borrow", folder: lender },
   });
 });

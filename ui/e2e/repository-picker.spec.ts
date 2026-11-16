@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Filter } from "../src/lib/data/bindings.ts";
+import type { Filter_Serialize as Filter } from "../src/lib/data/bindings.ts";
 import { changeAnswer, mockCore } from "./mock-core.ts";
 
 const cpython = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;

@@ -23,11 +23,12 @@ use toml_edit::{
 };
 
 use crate::error::{Error, ErrorKind};
+use crate::filters::{FilterQuery, OnWorkbench};
 use crate::folders::Folders;
 use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
 use crate::mirror_source::{MirrorSource, MirrorSources};
-use crate::repository::{RepositoryAccess, RepositoryName};
+use crate::repository::RepositoryName;
 use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
 use crate::theme::{
     GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
@@ -1256,6 +1257,42 @@ impl SettingsFiles {
         Ok(())
     }
 
+    /// Puts `name`'s Filter that searches `query` on the Workbench, or takes it off, with its `on_workbench`
+    /// in `settings.toml`, keeping everything else in the file, and reads the files again (#819). Of two
+    /// Filters with that search it switches the first, the one the settings read. A Repository the file holds
+    /// without `filters` gets the Filters it reads as written out first. Like `write`, it works from what the
+    /// files say now and refuses while either can't be used. It refuses a Repository or a search the file
+    /// doesn't hold.
+    pub fn put_on_workbench(
+        &mut self,
+        name: &RepositoryName,
+        query: &FilterQuery,
+        on: OnWorkbench,
+    ) -> Result<(), Error> {
+        let machine = self.machine_to_edit()?;
+        let path = settings_file(&self.folders, &machine);
+        let mut edit = TomlEdit::<Settings>::open(&path)?;
+        let held = (edit.values.repositories.iter())
+            .find(|one| one.name.is_same(name))
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorKind::NotFound,
+                    &format!("Tsugiki doesn't have {name}."),
+                )
+            })?;
+        let written = as_document(held).remove(FILTERS);
+        let switched = (edit.document.get_mut(REPOSITORIES))
+            .and_then(|repositories| filters_in_file(repositories, name, written))
+            .is_some_and(|filters| switch_filter(filters, query, on));
+        if !switched {
+            let message = format!("{name} has no Filter that searches {}.", query.as_str());
+            return Err(Error::new(ErrorKind::NotFound, &message));
+        }
+        edit.save()?;
+        self.reload();
+        Ok(())
+    }
+
     /// Saves where `name`'s mirror gets its objects in `machine.toml`, keeping everything else in it, and
     /// reads the files again.
     pub fn save_mirror_source(
@@ -1308,8 +1345,13 @@ impl From<Change> for Request {
 enum Change {
     Add {
         name: RepositoryName,
-        access: RepositoryAccess,
         source: MirrorSource,
+        reply: Sender<Result<SettingsView, Error>>,
+    },
+    OnWorkbench {
+        name: RepositoryName,
+        query: FilterQuery,
+        on: OnWorkbench,
         reply: Sender<Result<SettingsView, Error>>,
     },
     MirrorSource {
@@ -1377,17 +1419,28 @@ impl SettingsOwner {
                         Ok(files),
                         Change::Add {
                             name,
-                            access,
                             source,
                             reply,
                         },
                     ) => {
                         let saved = files.add_repository(
-                            &RepositorySettings::added(name, access),
+                            &RepositorySettings::new(name),
                             &source,
                             OffsetDateTime::now_utc(),
                         );
                         (saved.map(|_| files.view()), reply)
+                    }
+                    (
+                        Ok(files),
+                        Change::OnWorkbench {
+                            name,
+                            query,
+                            on,
+                            reply,
+                        },
+                    ) => {
+                        let saved = files.put_on_workbench(&name, &query, on);
+                        (saved.map(|()| files.view()), reply)
                     }
                     (
                         Ok(files),
@@ -1420,6 +1473,7 @@ impl SettingsOwner {
                     (
                         Err(problem),
                         Change::Add { reply, .. }
+                        | Change::OnWorkbench { reply, .. }
                         | Change::MirrorSource { reply, .. }
                         | Change::Panes { reply, .. }
                         | Change::Theme { reply, .. }
@@ -1465,15 +1519,33 @@ impl SettingsOwner {
     pub fn add_repository(
         &self,
         name: RepositoryName,
-        access: RepositoryAccess,
         source: MirrorSource,
     ) -> Result<SettingsView, Error> {
         let (reply, answer) = mpsc::channel();
         self.ask(
             Change::Add {
                 name,
-                access,
                 source,
+                reply,
+            },
+            &answer,
+        )
+    }
+
+    /// Puts `name`'s Filter that searches `query` on the Workbench, or takes it off, in `settings.toml`
+    /// (`SettingsFiles::put_on_workbench`), and answers with what the settings say now.
+    pub fn put_on_workbench(
+        &self,
+        name: RepositoryName,
+        query: FilterQuery,
+        on: OnWorkbench,
+    ) -> Result<SettingsView, Error> {
+        let (reply, answer) = mpsc::channel();
+        self.ask(
+            Change::OnWorkbench {
+                name,
+                query,
+                on,
                 reply,
             },
             &answer,
@@ -1649,6 +1721,65 @@ fn with_filters_as_tables(mut repository: Table) -> Table {
         drop(repository.insert(FILTERS, filters));
     }
     repository
+}
+
+/// The `filters` of the first table of `repositories` that names `name`. A table without them gets `written`
+/// first, the Filters the settings read it as, in blocks of their own like those `append` writes.
+fn filters_in_file<'a>(
+    repositories: &'a mut Item,
+    name: &RepositoryName,
+    written: Option<Item>,
+) -> Option<&'a mut Item> {
+    let names_it = |table: &&mut dyn TableLike| {
+        (table.get(NAME).and_then(Item::as_str))
+            .and_then(|text| RepositoryName::parse(text).ok())
+            .is_some_and(|text| text.is_same(name))
+    };
+    let repository = tables_of(repositories).into_iter().find(names_it)?;
+    if let (false, Some(written)) = (repository.contains_key(FILTERS), written) {
+        let blocks = written
+            .into_array_of_tables()
+            .map_or_else(|kept| kept, Item::ArrayOfTables);
+        drop(repository.insert(FILTERS, blocks));
+    }
+    repository.get_mut(FILTERS)
+}
+
+/// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,
+/// keeping a comment the user wrote on it, and says whether there was one. A Filter switched off says so,
+/// so a hand edit finds the key.
+fn switch_filter(filters: &mut Item, query: &FilterQuery, on: OnWorkbench) -> bool {
+    let searching = tables_of(filters).into_iter().find(|filter| {
+        (filter.get("query").and_then(Item::as_str))
+            .is_some_and(|text| text.trim() == query.as_str())
+    });
+    let Some(filter) = searching else {
+        return false;
+    };
+    merge_value(
+        filter,
+        "on_workbench",
+        &toml_edit::value(bool::from(on)),
+        None,
+    );
+    // A key added to an inline table would follow the space before its `}`: `"label:bug" , on_workbench`.
+    let inline = (filters.as_array_mut().into_iter()).flat_map(Array::iter_mut);
+    (inline.filter_map(Value::as_inline_table_mut)).for_each(InlineTable::fmt);
+    true
+}
+
+/// Each table of `list`, written as blocks or inline.
+fn tables_of(list: &mut Item) -> Vec<&mut dyn TableLike> {
+    if list.is_array_of_tables() {
+        let blocks = (list.as_array_of_tables_mut().into_iter()).flat_map(ArrayOfTables::iter_mut);
+        return blocks
+            .map(|table| -> &mut dyn TableLike { table })
+            .collect();
+    }
+    let inline = (list.as_array_mut().into_iter()).flat_map(Array::iter_mut);
+    (inline.filter_map(Value::as_inline_table_mut))
+        .map(|table| -> &mut dyn TableLike { table })
+        .collect()
 }
 
 /// `write` saves what the Settings window changes, and that window edits neither the Repository list nor

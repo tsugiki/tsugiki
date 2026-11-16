@@ -28,7 +28,7 @@ pub(crate) fn cpython() -> Home {
         repository: RepositorySettings {
             name: RepositoryName::parse("python/cpython").unwrap(),
             conventions: Conventions::Cpython,
-            filters: Filter::starters(RepositoryAccess::Other),
+            filters: Filter::starters(),
         },
         others: Vec::new(),
     }

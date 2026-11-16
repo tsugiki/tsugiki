@@ -141,6 +141,12 @@ export const commands = {
 	 */
 	addRepository: (repository: NewRepository) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
 	/**
+	 *  Puts the Filters of a Repository that search a query on the Workbench, or takes them off it, in
+	 *  `settings.toml` (#819), and hands the session the settings, so Reach follows them. The window then asks
+	 *  for the Workbench again. This waits on a small file and never on GitHub or git.
+	 */
+	putFilterOnWorkbench: (change: FilterSwitch) => typedError<null, Error_Serialize>(__TAURI_INVOKE("put_filter_on_workbench", { change })),
+	/**
 	 *  Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the
 	 *  window shows now. This waits on a small file and never on GitHub or git.
 	 */
@@ -940,10 +946,7 @@ export type FileHits = {
 };
 
 /**  A saved GitHub search, as `settings.toml` holds it. */
-export type Filter = {
-	name: FilterName,
-	query: FilterQuery,
-};
+export type Filter = Filter_Serialize | Filter_Deserialize;
 
 /**  A Filter's line of the Sidebar. */
 export type FilterLine = FilterLine_Serialize | FilterLine_Deserialize;
@@ -952,7 +955,12 @@ export type FilterLine = FilterLine_Serialize | FilterLine_Deserialize;
 export type FilterLine_Deserialize = {
 	name: FilterName,
 	query: FilterQuery,
-	/**  The count of its items that Need attention. */
+	/**  Whether its items go on the Workbench (#819). */
+	on_workbench: OnWorkbench,
+	/**
+	 *  On the Workbench, the count of its items that Need attention. Off it, the count of the items its
+	 *  search found, as a view the user browses has nothing of the Workbench's to wait on.
+	 */
 	count: number,
 	/**  The words for the failure that stopped its last search from being whole. */
 	problem?: string | null,
@@ -962,7 +970,12 @@ export type FilterLine_Deserialize = {
 export type FilterLine_Serialize = {
 	name: FilterName,
 	query: FilterQuery,
-	/**  The count of its items that Need attention. */
+	/**  Whether its items go on the Workbench (#819). */
+	on_workbench: OnWorkbench,
+	/**
+	 *  On the Workbench, the count of its items that Need attention. Off it, the count of the items its
+	 *  search found, as a view the user browses has nothing of the Workbench's to wait on.
+	 */
 	count: number,
 	/**  The words for the failure that stopped its last search from being whole. */
 	problem: string | null,
@@ -977,6 +990,32 @@ export type FilterName = string;
  *  plain string.
  */
 export type FilterQuery = string;
+
+/**
+ *  The switch in a Filter's view: the Repository, the Filter's search, and whether its items go on the
+ *  Workbench (#819). The name stays text until the core parses it, as in `NewRepository`.
+ */
+export type FilterSwitch = {
+	repository: string,
+	query: FilterQuery,
+	on: OnWorkbench,
+};
+
+/**  A saved GitHub search, as `settings.toml` holds it. */
+export type Filter_Deserialize = {
+	name: FilterName,
+	query: FilterQuery,
+	/**  A Filter the file writes without it is off the Workbench. */
+	on_workbench?: OnWorkbench,
+};
+
+/**  A saved GitHub search, as `settings.toml` holds it. */
+export type Filter_Serialize = {
+	name: FilterName,
+	query: FilterQuery,
+	/**  A Filter the file writes without it is off the Workbench. */
+	on_workbench: OnWorkbench,
+};
 
 /**  What a search found, in the order the rows come. */
 export type Found = {
@@ -1858,13 +1897,12 @@ export type NameCheck_Serialize =
 { kind: "new"; check: RepositoryCheck_Serialize };
 
 /**
- *  The user's choice in Add repository: the Repository, by the name GitHub gave it, what they may do in it,
- *  and where its mirror gets its objects. The name stays text until the core parses it, so a name that isn't
- *  one gets the same refusal as everywhere else.
+ *  The user's choice in Add repository: the Repository, by the name GitHub gave it, and where its mirror gets
+ *  its objects. The name stays text until the core parses it, so a name that isn't one gets the same refusal
+ *  as everywhere else.
  */
 export type NewRepository = {
 	name: string,
-	access: RepositoryAccess,
 	source: MirrorSource,
 };
 
@@ -1916,6 +1954,13 @@ export type NewsLink = {
 
 /**  A run of a paragraph's text, all shown one way. */
 export type NewsPiece = { kind: "text"; text: string } | { kind: "emphasis"; text: string } | { kind: "strong"; text: string } | { kind: "code"; text: string } | { kind: "link"; text: string; to: LinkTo };
+
+/**
+ *  Whether a Filter's items go on the Workbench, and so into Reach (#819). One off it is a view the user
+ *  browses, whose items Tsugiki keeps no head of and reads ahead nothing of. `settings.toml` and the window
+ *  write it as a bool.
+ */
+export type OnWorkbench = boolean;
 
 /**  How far the open Repository's sync has got. */
 export type OpenSync = OpenSync_Serialize | OpenSync_Deserialize;
@@ -2326,18 +2371,12 @@ export type ReleaseSettings_Serialize = {
 	check: boolean,
 };
 
-/**  The user's standing in a Repository, as far as adding it needs to know. */
-export type RepositoryAccess = 
-/**  The user administers it on GitHub. */
-"maintained" | "other";
-
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck = RepositoryCheck_Serialize | RepositoryCheck_Deserialize;
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Deserialize = {
 	repository: RepositorySettings_Deserialize,
-	access: RepositoryAccess,
 	open_issues: number,
 	open_prs: number,
 	size: RepositorySize,
@@ -2352,7 +2391,6 @@ export type RepositoryCheck_Deserialize = {
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Serialize = {
 	repository: RepositorySettings_Serialize,
-	access: RepositoryAccess,
 	open_issues: number,
 	open_prs: number,
 	size: RepositorySize,
@@ -2365,32 +2403,41 @@ export type RepositoryCheck_Serialize = {
 };
 
 /**
- *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
- *  would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
- *  means no Filters.
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+ *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+ *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ * 
+ *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+ *  way a Repository written twice comes once.
  */
 export type RepositoryInFile = RepositoryInFile_Serialize | RepositoryInFile_Deserialize;
 
 /**
- *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
- *  would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
- *  means no Filters.
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+ *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+ *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ * 
+ *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+ *  way a Repository written twice comes once.
  */
 export type RepositoryInFile_Deserialize = {
 	name: RepositoryName,
 	conventions?: Conventions | null,
-	filters?: Filter[] | null,
+	filters?: Filter_Deserialize[] | null,
 };
 
 /**
- *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
- *  would give it, as far as the file can say: only GitHub knows if the user administers it. `filters = []`
- *  means no Filters.
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+ *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+ *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ * 
+ *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+ *  way a Repository written twice comes once.
  */
 export type RepositoryInFile_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions | null,
-	filters: Filter[] | null,
+	filters: Filter_Serialize[] | null,
 };
 
 /**  The state of one Repository's mirror. */
@@ -2421,7 +2468,7 @@ export type RepositorySettings_Deserialize = RepositoryInFile_Deserialize;
 export type RepositorySettings_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions,
-	filters: Filter[],
+	filters: Filter_Serialize[],
 };
 
 /**  Which first sync a Repository gets (ADR 0015). */

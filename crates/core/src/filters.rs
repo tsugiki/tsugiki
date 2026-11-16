@@ -3,8 +3,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::repository::RepositoryAccess;
-
 /// Text in `settings.toml` that means nothing when blank, so a blank one stops at the file's boundary.
 macro_rules! never_blank {
     ($name:ident, $what:literal) => {
@@ -58,28 +56,66 @@ impl FilterQuery {
 pub struct Filter {
     pub name: FilterName,
     pub query: FilterQuery,
+    /// A Filter the file writes without it is off the Workbench.
+    #[serde(default)]
+    pub on_workbench: OnWorkbench,
+}
+
+/// Whether a Filter's items go on the Workbench, and so into Reach (#819). One off it is a view the user
+/// browses, whose items Tsugiki keeps no head of and reads ahead nothing of. `settings.toml` and the window
+/// write it as a bool.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(from = "bool", into = "bool")]
+#[specta(type = bool)]
+pub enum OnWorkbench {
+    On,
+    #[default]
+    Off,
+}
+
+impl From<bool> for OnWorkbench {
+    fn from(on: bool) -> Self {
+        if on { Self::On } else { Self::Off }
+    }
+}
+
+impl From<OnWorkbench> for bool {
+    fn from(switch: OnWorkbench) -> Self {
+        switch == OnWorkbench::On
+    }
 }
 
 impl Filter {
-    fn starter(name: &str, query: &str) -> Self {
+    fn starter(name: &str, query: &str, on_workbench: OnWorkbench) -> Self {
         Self {
             name: FilterName(name.to_owned()),
             query: FilterQuery(query.to_owned()),
+            on_workbench,
         }
     }
 
-    /// The Filters a new Repository starts with, which the user can edit or delete (docs/devel/workbench.md).
-    pub fn starters(access: RepositoryAccess) -> Vec<Self> {
-        match access {
-            RepositoryAccess::Maintained => vec![
-                Self::starter("Open Issues", "is:issue is:open"),
-                Self::starter("Open PRs", "is:pr is:open"),
-            ],
-            RepositoryAccess::Other => vec![
-                Self::starter("Mine", "is:open author:@me"),
-                Self::starter("Involved", "is:open involves:@me -author:@me"),
-            ],
+    /// The Filters a new Repository starts with, Maintained or not, which the user can edit or delete
+    /// (docs/devel/workbench.md). Only the user's own work goes on the Workbench: the Inbox lists every open
+    /// item.
+    pub fn starters() -> Vec<Self> {
+        vec![
+            Self::starter("Mine", "is:open author:@me", OnWorkbench::On),
+            Self::starter(
+                "Involved",
+                "is:open involves:@me -author:@me",
+                OnWorkbench::Off,
+            ),
+        ]
+    }
+
+    /// The Filters of a Repository whose settings leave them out: the starters, each switched off. Before
+    /// Filters had the switch (#819), such a Repository had these two, and a Filter it had then stays off.
+    pub fn left_out() -> Vec<Self> {
+        let mut filters = Self::starters();
+        for filter in &mut filters {
+            filter.on_workbench = OnWorkbench::Off;
         }
+        filters
     }
 }
 

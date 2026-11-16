@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
   DiffThread_Serialize as DiffThread,
-  Filter,
+  Filter_Serialize as Filter,
   ListedItem_Serialize as ListedItem,
   PrView_Serialize as PrView,
   WorkbenchRow_Serialize as WorkbenchRow,

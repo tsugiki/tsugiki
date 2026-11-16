@@ -1,12 +1,12 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
-  Filter,
+  Filter_Serialize as Filter,
   ListedItem_Serialize as ListedItem,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
-const mine = { name: "Mine", query: "is:open author:@me", count: 1, problem: null };
+const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 const cpython = { screen: "repository", repository, others: [] as string[] } as const;
 
@@ -219,6 +219,40 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
   await expect(page.getByRole("listitem")).toHaveCount(1);
   await expect(page.getByRole("listitem")).toContainText("#157178 GH-156425: Clear GC frame on early return");
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
+});
+
+test("a Filter's view switches it off the Workbench, beside its name and the list's order", async ({
+  page,
+}) => {
+  const whole = { items: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [mine] };
+  await mockCore(page, {
+    home: cpython,
+    workbench: { status: "ok", data: whole },
+    putFilterOnWorkbench: { status: "ok", data: null },
+  });
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+  const onWorkbench = page.getByRole("checkbox", { name: "On the Workbench" });
+  await expect(sidebar.getByRole("button", { name: "Mine 1" })).toBeVisible();
+  await expect(onWorkbench).toHaveCount(0);
+
+  await sidebar.getByRole("button", { name: "Mine 1" }).click();
+  await expect(onWorkbench).toBeChecked();
+  const header = page.locator("header.view");
+  // A part with no box has no place, and NaN is greater than nothing.
+  const leftOf = async (part: Locator) => (await part.boundingBox())?.x ?? Number.NaN;
+  const headingAt = await leftOf(header.getByRole("heading", { name: "Mine" }));
+  const switchAt = await leftOf(onWorkbench);
+  const orderAt = await leftOf(header.getByRole("button"));
+  expect(switchAt).toBeGreaterThan(headingAt);
+  expect(orderAt).toBeGreaterThan(switchAt);
+
+  const off = { ...whole, filters: [{ ...mine, on_workbench: false, count: 4 }] };
+  await changeAnswer(page, "workbench", { status: "ok", data: off });
+  await onWorkbench.click();
+
+  await expect(onWorkbench).not.toBeChecked();
+  await expect(sidebar.getByRole("button", { name: "Mine 4" })).toBeVisible();
 });
 
 test("a drag past the Sidebar's least width folds it to icons, and a click on one brings it back", async ({

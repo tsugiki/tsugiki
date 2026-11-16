@@ -16,7 +16,6 @@ const check: RepositoryCheck_Serialize = {
   first_sync_seconds: 5,
   first_sync_points: 12,
   mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-  access: "maintained",
 };
 
 const found: NameCheck_Serialize = { kind: "new", check };
@@ -107,7 +106,6 @@ it("adds by the name GitHub gave and returns what the window opens on", async ()
   expect(await adding).toEqual(home);
   expect(commands.addRepository).toHaveBeenCalledWith({
     name: "Some-Maintainer/gcmon",
-    access: "maintained",
     source: { kind: "download" },
   });
 });
@@ -132,7 +130,6 @@ it("adds with the clone the user picked, and forgets it when the text changes", 
 
   expect(commands.addRepository).toHaveBeenCalledWith({
     name: "Some-Maintainer/gcmon",
-    access: "maintained",
     source: { kind: "borrow", folder: lender },
   });
   expect(state.mirror.source).toEqual({ kind: "download" });

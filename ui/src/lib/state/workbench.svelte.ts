@@ -62,6 +62,10 @@ export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
 const said = (answer: { status: "ok" } | { status: "error"; error: { message: string } }) =>
   answer.status === "error" ? answer.error.message : undefined;
 
+/** The answer `asking` brings, with a command that threw read as one that answered with what it threw. */
+const answered = <T>(asking: Promise<T>) =>
+  asking.catch((e: unknown) => ({ status: "error" as const, error: { message: String(e) } }));
+
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
@@ -112,6 +116,13 @@ export class WorkbenchState {
   filters = $state<FilterLine[]>([]);
   selected = $state<WorkbenchView>({ kind: "whole" });
   error = $state<string>();
+  /** The reason the last change to a Filter's "On the Workbench" didn't save, if it didn't. */
+  switchProblem = $state<string>();
+  /** A change to a Filter's "On the Workbench" is saving. */
+  switching = $state(false);
+  /** The "On the Workbench" switch each Filter's search has, as the user last set it, while that waits to
+   * save. */
+  #wanted = new SvelteMap<string, boolean>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
   /** The Issues unfolded in each view, by the view's key. */
@@ -249,6 +260,52 @@ export class WorkbenchState {
     return said(await commands.markUnseen(this.#repository, number));
   }
 
+  /** The Sidebar's line of the Filter whose view is selected, while the settings hold it. */
+  get selectedFilter(): FilterLine | undefined {
+    const selected = this.selected;
+    return selected.kind === "filter"
+      ? this.filters.find((filter) => filter.query === selected.query)
+      : undefined;
+  }
+
+  /** Whether the Filter of line `filter` is on the Workbench, as its switch shows it: as the user last set
+   * the switch while that waits to save, and as the settings hold it otherwise. */
+  onWorkbench(filter: FilterLine): boolean {
+    return this.#wanted.get(filter.query) ?? filter.on_workbench;
+  }
+
+  /** Puts the Filter that searches `query` on the Workbench, or takes it off (#819). One save goes at a
+   * time, as two could land in either order, so a change made while one saves waits for it, and goes with
+   * the switch as the user last set it. Once none is left to save, it asks again, as the Sidebar counts
+   * such a Filter another way. Keeps the reason the first save of such a run failed in `switchProblem`,
+   * until the next run. */
+  async putOnWorkbench(query: string, on: boolean) {
+    this.#wanted.set(query, on);
+    if (this.switching) return;
+    this.switching = true;
+    // The first save of the run that fails says why, though a later one saves.
+    let failed: string | undefined;
+    for (let next = this.#wanted.entries().next(); !next.done; next = this.#wanted.entries().next()) {
+      const [query, on] = next.value;
+      const answer = await answered(
+        commands.putFilterOnWorkbench({ repository: this.#repository, query, on }),
+      );
+      // An answer to a question asked before the save landed reads the settings as they were, so this has
+      // `#ask` drop it, and the next question reads them as saved.
+      this.#lastQuestion += 1;
+      const problem = said(answer);
+      failed ??= problem;
+      this.switchProblem = failed;
+      // The settings hold the switch as saved from now on, though the Sidebar's lines say so only once the
+      // answer to the next question arrives.
+      const saved = problem === undefined && this.filters.find((filter) => filter.query === query);
+      if (saved) saved.on_workbench = on;
+      if (this.#wanted.get(query) === on) this.#wanted.delete(query);
+    }
+    this.switching = false;
+    await this.#ask();
+  }
+
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
   moveCursor(step: 1 | -1) {
     const stops = this.#stops();
@@ -348,12 +405,7 @@ export class WorkbenchState {
     const question = this.#lastQuestion;
     const view = this.selected;
     const order = this.#order();
-    const answer = await hud
-      .timed(() => commands.workbench(this.#repository, view))
-      .catch((e: unknown) => ({
-        status: "error" as const,
-        error: { message: String(e) },
-      }));
+    const answer = await answered(hud.timed(() => commands.workbench(this.#repository, view)));
     // A newer question reads newer facts, so this drops an older answer that arrives late. A stopped state
     // belongs to a Repository the window has left.
     if (question !== this.#lastQuestion || this.#stopped) return;

@@ -6,7 +6,7 @@ use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
-use crate::filters::Filter;
+use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
@@ -41,6 +41,7 @@ fn filtering(queries: &[&str]) -> RepositorySettings {
             .map(|text| Filter {
                 name: format!("Named {text}").try_into().unwrap(),
                 query: query(text),
+                on_workbench: OnWorkbench::On,
             })
             .collect(),
         ..RepositorySettings::new(cpython())
@@ -1156,6 +1157,112 @@ fn a_change_too_new_for_the_search_keeps_its_item_in_the_filter() {
 
     let results = &facts(&harness).filters[&query("a")];
     assert_eq!(results.numbers, BTreeSet::from([1, 2]));
+    harness.finish();
+}
+
+#[test]
+fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reaches() {
+    let now = OffsetDateTime::now_utc().format(&Rfc3339).unwrap();
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(2, &now)], None),
+            &[search(&[], None)],
+        ),
+        fetched_nodes(&[strangers_pr(2, &now)], LOTS),
+        approved(),
+    ];
+    let harness = after_a_sync("switched-mid-refresh", replies);
+    stored_filter(&harness, "a", &[2]);
+    let mut off = filtering(&["a"]);
+    off.filters[0].on_workbench = OnWorkbench::Off;
+    let mut syncs = refreshing(off.clone());
+    drop(syncs.step(&harness.github, &harness.store).unwrap());
+
+    let before = syncs.replace_settings(filtering(&["a"]));
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(before, Some(off));
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
+fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_owed() {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync(
+        "switched-reading-ahead",
+        vec![quiet, approved(), approved()],
+    );
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    stored_filter(&harness, "b", &[3]);
+    let mut b_off = filtering(&["a", "b"]);
+    b_off.filters[1].on_workbench = OnWorkbench::Off;
+    harness
+        .store
+        .owe_read_ahead_at(&cpython(), vec![(2, None)])
+        .unwrap();
+    let mut syncs = refreshing(b_off);
+    while reviews_held(&harness, 2).is_none() {
+        drop(syncs.step(&harness.github, &harness.store).unwrap());
+    }
+
+    // As the session does when the user switches "b" on.
+    drop(syncs.replace_settings(filtering(&["a", "b"])));
+    harness
+        .store
+        .owe_read_ahead_at(&cpython(), vec![(3, None)])
+        .unwrap();
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchPullRequestContent",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 3), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
+fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync("switch-owed", vec![quiet, approved()]);
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    // As a Filter switched on would leave PR 2, and a Filter switched on and then off again PR 3.
+    harness
+        .store
+        .owe_read_ahead_at(&cpython(), vec![(2, None), (3, None)])
+        .unwrap();
+    let mut syncs = refreshing(filtering(&["a"]));
+
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    assert_eq!(reviews_held(&harness, 3), None);
+    assert_eq!(
+        harness.store.read_ahead_owed(&cpython()).unwrap(),
+        BTreeSet::new()
+    );
     harness.finish();
 }
 

@@ -1055,6 +1055,9 @@
   {#if markProblem}
     <p role="alert">{`Tsugiki couldn't mark this item: ${markProblem}`}</p>
   {/if}
+  {#if workbench.switchProblem}
+    <p role="alert">{`Tsugiki couldn't save the Filter's switch: ${workbench.switchProblem}`}</p>
+  {/if}
   {#if panes.problem}
     <p role="alert">{panes.problem}</p>
   {/if}
@@ -1155,6 +1158,20 @@
     >
       <header class="view">
         <h2>{workbench.title}</h2>
+        {#if workbench.selectedFilter}
+          {@const filter = workbench.selectedFilter}
+          <label
+            class="on-workbench"
+            title="Its items go on the Workbench, and Tsugiki keeps them ready to open"
+          >
+            <input
+              type="checkbox"
+              checked={workbench.onWorkbench(filter)}
+              aria-busy={workbench.switching}
+              onchange={(event) => void workbench.putOnWorkbench(filter.query, event.currentTarget.checked)}
+            />On the Workbench</label
+          >
+        {/if}
         <button
           class="link order"
           title="Change the order"
@@ -1279,6 +1296,13 @@
     flex: 1;
     margin: 4px 0;
     font-size: 13px;
+  }
+
+  .on-workbench {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
   }
 
   .order {

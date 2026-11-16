@@ -130,8 +130,8 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "filters",
-        uses: &["repository"],
-        why: "Starts a Repository with the Filters its access suits.",
+        uses: &[],
+        why: "Holds a Filter as `settings.toml` writes it, and the Filters a new Repository starts with.",
     },
     Layer {
         module: "facts",
@@ -278,6 +278,7 @@ const LAYERS: &[Layer] = &[
         module: "settings",
         uses: &[
             "error",
+            "filters",
             "folders",
             "keys",
             "latest",
@@ -286,8 +287,8 @@ const LAYERS: &[Layer] = &[
             "repository_settings",
             "theme",
         ],
-        why: "Reads and writes the Repositories, the mirror sources and the theme names, reads the remapped \
-              keys, and shares them through `latest`.",
+        why: "Reads and writes the Repositories, their Filters' switches, the mirror sources and the theme \
+              names, reads the remapped keys, and shares them through `latest`.",
     },
     Layer {
         module: "workbench",

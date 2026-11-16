@@ -10,7 +10,7 @@ use crate::sync::testing::{
     issue_references_with_more, issues, merged_node, nothing, plain, pr_node, run_to_the_end,
     searches_finding, soon, up_to_the_first_issue,
 };
-use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
+use crate::sync::{Ahead, Phase, RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
 
 fn limited_until(from_now: i64) -> Error {
@@ -225,7 +225,7 @@ fn a_refresh_of_the_open_repository_takes_the_next_turn_beside_another_sync() {
     syncs.add(plain(cpython()));
     syncs
         .queue
-        .retain(|queued| queued.sync.settings.name == peps());
+        .retain(|queued| queued.sync.repository == peps());
     drop(syncs.step(&harness.github, &harness.store).unwrap());
 
     syncs.refresh_open(&harness.store);
@@ -296,7 +296,7 @@ fn with_the_open_repository_idle_the_activity_only_names_the_others() {
     syncs.add(plain(cpython()));
     syncs
         .queue
-        .retain(|queued| queued.sync.settings.name == peps());
+        .retain(|queued| queued.sync.repository == peps());
 
     let activity = syncs.activity().unwrap();
 
@@ -496,7 +496,7 @@ fn after_a_switch_the_timer_refreshes_only_the_repository_opened_last() {
     let queued: Vec<&RepositoryName> = syncs
         .queue
         .iter()
-        .map(|queued| &queued.sync.settings.name)
+        .map(|queued| &queued.sync.repository)
         .collect();
     assert_eq!(queued, [&peps()]);
     harness.finish();
@@ -572,7 +572,7 @@ fn a_step_that_keeps_failing_gives_way_to_the_next_sync() {
     }
 
     assert_eq!(syncs.queue.len(), 1);
-    assert_eq!(syncs.queue.front().unwrap().sync.settings.name, peps());
+    assert_eq!(syncs.queue.front().unwrap().sync.repository, peps());
     assert_eq!(syncs.queue.front().unwrap().failures, 0);
 }
 
@@ -1143,4 +1143,60 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
     let stored = harness.store.issues(&cpython()).unwrap();
     assert_eq!(stored[0].state, Some(IssueState::Open));
     harness.finish();
+}
+
+#[test]
+fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_the_queue() {
+    let mut syncs = Syncs::default();
+    assert_eq!(syncs.replace_settings(plain(cpython())), None);
+    assert_eq!(syncs.settings(&cpython()), None);
+    syncs.add(plain(cpython()));
+    syncs.add(plain(peps()));
+    let changed = RepositorySettings {
+        filters: crate::filters::Filter::starters(),
+        ..plain(cpython())
+    };
+
+    let before = syncs.replace_settings(changed.clone());
+
+    assert_eq!(before, Some(plain(cpython())));
+    assert_eq!(syncs.settings(&cpython()), Some(&changed));
+    assert!(syncs.is_open(&peps()));
+    let queued: Vec<&RepositoryName> = (syncs.queue.iter())
+        .map(|queued| &queued.sync.repository)
+        .collect();
+    assert_eq!(queued, [&peps(), &cpython()]);
+}
+
+#[test]
+fn a_sync_whose_settings_went_missing_says_it_is_tsugikis_mistake_and_asks_github_nothing() {
+    let harness = Harness::new("settings-lost", vec![]);
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    syncs.settings.clear();
+
+    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
+
+    assert_eq!(failure.problem.kind, ErrorKind::Internal);
+    assert_eq!(failure.problem.message, NO_SETTINGS);
+    assert_eq!(harness.operations(), Vec::<String>::new());
+    harness.finish();
+}
+
+#[test]
+fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it_tried() {
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    let ahead = Ahead {
+        left: Some(BTreeSet::from([3, 4])),
+        tried: BTreeSet::from([2]),
+    };
+    syncs.queue[0].sync.phase = Phase::ReadingAhead(ahead);
+
+    drop(syncs.replace_settings(plain(cpython())));
+
+    assert!(matches!(
+        &syncs.queue[0].sync.phase,
+        Phase::ReadingAhead(ahead) if ahead.left.is_none() && ahead.tried == BTreeSet::from([2])
+    ));
 }

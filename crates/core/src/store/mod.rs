@@ -36,7 +36,6 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
-use crate::facts::WorkFacts;
 use crate::facts::activity::{ActivityFacts, ItemActivity};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
@@ -44,6 +43,7 @@ use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
+use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;
@@ -138,6 +138,22 @@ impl Store {
             pull_requests::save_in(&transaction, &repository, &pull_requests, &events)?;
             sync_state::owe_read_ahead(&transaction, &repository, &changed)?;
             transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Owes a read of the Conversation of each PR of `heads` at its head, for the next refresh of
+    /// `repository` to read ahead, unless the store holds one read at that head. A PR whose head Tsugiki
+    /// doesn't know is owed one. A Filter switched on puts PRs in Reach that no change on GitHub would owe a
+    /// read (#819).
+    pub fn owe_read_ahead_at(
+        &self,
+        repository: &RepositoryName,
+        heads: Vec<(u32, Option<CommitSha>)>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            sync_state::owe_read_ahead_at(connection, &repository, &heads)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }

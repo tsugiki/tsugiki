@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Filter } from "../src/lib/data/bindings.ts";
+import type { Filter_Serialize as Filter } from "../src/lib/data/bindings.ts";
 import { mockCore } from "./mock-core.ts";
 
 const check = {
@@ -12,7 +12,6 @@ const check = {
   first_sync_seconds: 546,
   first_sync_points: 223,
   mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-  access: "other",
 } as const;
 
 const cpython = {

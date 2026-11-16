@@ -13,12 +13,11 @@ const FEW: RepositoryCounts = RepositoryCounts {
     disk_kb: 0,
 };
 
-/// The check of a Repository named `text` that GitHub counted so, for a user who doesn't administer it.
+/// The check of a Repository named `text` that GitHub counted so.
 fn checked(text: &str, counts: RepositoryCounts) -> RepositoryCheck {
     RepositoryCheck::new(FoundRepository {
         name: name(text),
         counts,
-        access: RepositoryAccess::Other,
     })
 }
 
@@ -59,15 +58,14 @@ fn up_to_500_open_is_small_and_loads_those_and_what_closed_lately() {
 }
 
 #[test]
-fn a_repository_the_user_administers_starts_with_the_filters_for_its_maintainers() {
-    let check = RepositoryCheck::new(FoundRepository {
-        name: name("a/b"),
-        counts: FEW,
-        access: RepositoryAccess::Maintained,
-    });
+fn a_repository_starts_with_mine_on_the_workbench_and_involved_off_it() {
+    let check = checked("a/b", FEW);
+    let switches: Vec<(String, bool)> = (check.repository.filters.into_iter())
+        .map(|filter| (filter.name.into(), filter.on_workbench.into()))
+        .collect();
     assert_eq!(
-        check.repository.filters,
-        Filter::starters(RepositoryAccess::Maintained)
+        switches,
+        [("Mine".to_owned(), true), ("Involved".to_owned(), false)]
     );
 }
 

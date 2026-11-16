@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type {
-  Filter,
+  Filter_Serialize as Filter,
   IssueView_Serialize as IssueView,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";

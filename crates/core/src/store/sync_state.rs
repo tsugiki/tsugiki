@@ -8,6 +8,7 @@ use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
+use crate::facts::CommitSha;
 use crate::github::refresh::Etag;
 use crate::repository::RepositoryName;
 
@@ -104,6 +105,26 @@ pub(super) fn owe_read_ahead(
     let mut insert = connection.prepare(sql)?;
     for number in numbers {
         let values = named_params! { ":repository": repository, ":number": number };
+        insert.execute(values).map(drop)?;
+    }
+    Ok(())
+}
+
+/// Owes a read of the Conversation of each PR of `heads` at its head, unless the store holds one read at
+/// that head. A PR whose head Tsugiki doesn't know is owed one.
+pub(super) fn owe_read_ahead_at(
+    connection: &Connection,
+    repository: &RepositoryName,
+    heads: &[(u32, Option<CommitSha>)],
+) -> rusqlite::Result<()> {
+    let sql = "INSERT INTO read_ahead (repository, number)
+               SELECT :repository, :number WHERE :head IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM issue_content
+                   WHERE repository = :repository AND number = :number AND head_sha = :head)
+               ON CONFLICT DO NOTHING";
+    let mut insert = connection.prepare(sql)?;
+    for (number, head) in heads {
+        let values = named_params! { ":repository": repository, ":number": number, ":head": head };
         insert.execute(values).map(drop)?;
     }
     Ok(())

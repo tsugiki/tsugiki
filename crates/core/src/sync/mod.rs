@@ -54,9 +54,9 @@ pub const FETCH_BATCH: usize = 25;
 
 /// The progress of one Repository's sync.
 struct UserWorkSync {
-    /// The Repository's settings as the sync started, which say which PRs are in Reach.
-    settings: RepositorySettings,
-    /// The search of each Filter, each once.
+    repository: RepositoryName,
+    /// The search of each Filter as the sync started, each once. Which PRs are in Reach comes from the
+    /// settings `Syncs` holds, which a switch can change while the sync runs.
     filters: Vec<FilterQuery>,
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.
@@ -82,9 +82,18 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish reads the Conversations of the changed PRs in Reach,
-    /// lowest number first (#157).
-    ReadingAhead(BTreeSet<u32>),
+    /// A refresh that would finish reads the Conversations of the PRs in Reach it owes a read, lowest number
+    /// first (#157).
+    ReadingAhead(Ahead),
+}
+
+/// The PRs a refresh reads ahead.
+struct Ahead {
+    /// Those still to read, or None once a change to the settings has the refresh ask the store again: a
+    /// Filter switched on can owe more, and one switched off takes PRs out of Reach.
+    left: Option<BTreeSet<u32>>,
+    /// Those this refresh has asked GitHub for, so it asks for each once.
+    tried: BTreeSet<u32>,
 }
 
 /// The phases a first sync goes through, and so the ones it can stop in and come back to (ADR 0015). A
@@ -274,7 +283,7 @@ struct Link<'a> {
 type Moved = (Step, Option<Phase>);
 
 impl UserWorkSync {
-    fn new(repository: RepositorySettings) -> Self {
+    fn new(repository: &RepositorySettings) -> Self {
         let mut filters: Vec<FilterQuery> = Vec::new();
         for filter in &repository.filters {
             if !filters.contains(&filter.query) {
@@ -282,7 +291,7 @@ impl UserWorkSync {
             }
         }
         Self {
-            settings: repository,
+            repository: repository.name.clone(),
             filters,
             phase: Phase::Starting,
             fetched: BTreeSet::new(),
@@ -294,7 +303,7 @@ impl UserWorkSync {
     }
 
     /// A read of the whole tree of Issue `number`, and nothing else.
-    fn tree_of(repository: RepositorySettings, number: u32) -> Self {
+    fn tree_of(repository: &RepositorySettings, number: u32) -> Self {
         let mut sync = Self::new(repository);
         sync.phase = Resumable::ReadingCrossReferences(Reading {
             issues: vec![number],
@@ -303,6 +312,14 @@ impl UserWorkSync {
         .into();
         sync.kind = Kind::Tree;
         sync
+    }
+
+    /// The Repository's settings changed, so a read ahead under way works out again which PRs it owes a
+    /// read: a Filter switched on can owe more, and one switched off takes PRs out of Reach.
+    fn reach_changed(&mut self) {
+        if let Phase::ReadingAhead(ahead) = &mut self.phase {
+            ahead.left = None;
+        }
     }
 
     /// A first sync's own state, if this is one.
@@ -315,10 +332,16 @@ impl UserWorkSync {
 
     /// Runs one step, then saves a first sync's place, so quitting, a crash or going offline comes back to
     /// the next page. A save that fails keeps the step, whose news still counts, for the next try to report.
-    fn step(&mut self, github: &GitHub, store: &Store) -> Result<Step, Error> {
+    /// `settings` are the Repository's as they are now, which say which PRs a refresh reads ahead.
+    fn step(
+        &mut self,
+        github: &GitHub,
+        store: &Store,
+        settings: &RepositorySettings,
+    ) -> Result<Step, Error> {
         let step = match self.unsaved.take() {
             Some(step) => step,
-            None => self.advance(github, store)?,
+            None => self.advance(github, store, settings)?,
         };
         match self.save_place(store) {
             Ok(()) => Ok(step),
@@ -341,13 +364,13 @@ impl UserWorkSync {
             pages: first_sync.pages,
         };
         let text = serde_json::to_string(&saved).map_err(place_problem)?;
-        store.save_first_sync_place(&self.settings.name, FirstSyncPlace::new(text))
+        store.save_first_sync_place(&self.repository, FirstSyncPlace::new(text))
     }
 
     /// Takes up a first sync where it stopped, or starts one.
     fn start_first_sync(&mut self, store: &Store) -> Result<(), Error> {
         let owner = PlaceOwner::now(store, &self.filters)?;
-        let saved = saved_place(store, &self.settings.name)?;
+        let saved = saved_place(store, &self.repository)?;
         let Some(saved) = saved.filter(|saved| saved.owner == owner) else {
             self.kind = Kind::First(FirstSync { owner, pages: 0 });
             self.phase = Resumable::Searching {
@@ -411,11 +434,16 @@ impl UserWorkSync {
 
     /// Makes one request, or moves on to the next phase. A failure leaves the place it had, so the same step
     /// can run again.
-    fn advance(&mut self, github: &GitHub, store: &Store) -> Result<Step, Error> {
+    fn advance(
+        &mut self,
+        github: &GitHub,
+        store: &Store,
+        settings: &RepositorySettings,
+    ) -> Result<Step, Error> {
         let link = Link {
             github,
             store,
-            repository: &self.settings.name,
+            repository: &self.repository,
             filters: &self.filters,
             window_since: self
                 .first_sync()
@@ -430,13 +458,13 @@ impl UserWorkSync {
                     Some(phase) => self.phase = phase,
                     None => self.start_first_sync(store)?,
                 }
-                return self.advance(github, store);
+                return self.advance(github, store, settings);
             }
             Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::ReadingAhead(numbers) => refresh::read_ahead(&link, numbers)?,
+            Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
                 cursor,
@@ -464,9 +492,11 @@ impl UserWorkSync {
         let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
         if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
             // The store keeps the PRs until the refresh finishes, so a failure here leaves them to the retry.
-            let numbers = refresh::to_read_ahead(&link, &self.settings)?;
-            if !numbers.is_empty() {
-                self.phase = Phase::ReadingAhead(numbers);
+            let left = refresh::to_read_ahead(&link, settings)?;
+            if !left.is_empty() {
+                let tried = BTreeSet::new();
+                let left = Some(left);
+                self.phase = Phase::ReadingAhead(Ahead { left, tried });
                 return Ok(Step::Moved);
             }
         }
@@ -489,9 +519,9 @@ impl UserWorkSync {
             check: self.check.clone(),
             refresh_under_way: false,
         };
-        store.save_sync_state(&self.settings.name, state)?;
+        store.save_sync_state(&self.repository, state)?;
         Ok(LastSync {
-            repository: self.settings.name.clone(),
+            repository: self.repository.clone(),
             at: Some(finished_at),
         })
     }

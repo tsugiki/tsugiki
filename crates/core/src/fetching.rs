@@ -84,6 +84,8 @@ pub(crate) enum SessionMessage {
     },
     /// The user asked to refresh the open Repository now.
     Refresh,
+    /// The user changed what these settings say, and nothing on GitHub changed with them.
+    SettingsChanged(RepositorySettings),
     Mark(Marked),
     Fetch(Fetched),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
@@ -123,6 +125,13 @@ impl Fetching {
     /// The user asked to refresh the open Repository now. A sync already under way covers this.
     pub fn refresh(&self) {
         self.to_session(SessionMessage::Refresh);
+    }
+
+    /// The user saved `repository`'s settings, a Filter's switch among them. The session's syncs read them
+    /// from now on, if it has opened the Repository since launch, and the Mirror worker and the read ahead
+    /// follow the Reach they make. Which Repository is open stays, and no refresh starts.
+    pub fn settings_changed(&self, repository: RepositorySettings) {
+        self.to_session(SessionMessage::SettingsChanged(repository));
     }
 
     /// An Issue on screen: the session reads what it says now. Only Mark Seen moves Last seen, so opening

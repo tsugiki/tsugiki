@@ -1,5 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import type { Filter, ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
+import type {
+  Filter_Serialize as Filter,
+  ListedItem_Serialize as ListedItem,
+} from "../src/lib/data/bindings.ts";
 import { mockCore } from "./mock-core.ts";
 
 // A dialog gives the focus back as it closes, and the browser then acts on the press that closed it. jsdom

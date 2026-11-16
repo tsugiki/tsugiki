@@ -61,7 +61,8 @@ impl IssueView {
                 (author, assignees, labels)
             })
             .unwrap_or_default();
-        let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).matched();
+        // A Matched PR is one any Filter found, on the Workbench or off it, as its view lists it first.
+        let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).found();
         let causes = Causes::of(&facts, repository.conventions);
         let found = candidates_of(facts, repository, &BTreeSet::new(), &causes)
             .into_iter()

@@ -113,6 +113,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.fetch_issue(cpython(), 7);
     fetching.fetch_pull_request(cpython(), 8);
     fetching.refresh();
+    fetching.settings_changed(RepositorySettings::new(cpython()));
     fetching.mark_unseen(cpython(), 9);
     fetching.stop_session();
 
@@ -122,6 +123,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             SessionMessage::Fetch(Fetched::Issue(item)) => format!("Issue #{}", item.number),
             SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
             SessionMessage::Refresh => "refresh".to_owned(),
+            SessionMessage::SettingsChanged(settings) => format!("settings of {}", settings.name),
             SessionMessage::Mark(Marked::Unseen { item, .. }) => format!("unseen #{}", item.number),
             SessionMessage::Stop => "stop".to_owned(),
             SessionMessage::Check { .. }
@@ -130,7 +132,17 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             | SessionMessage::Patched(..) => "other".to_owned(),
         })
         .collect();
-    assert_eq!(heard, ["Issue #7", "PR #8", "refresh", "unseen #9", "stop"]);
+    assert_eq!(
+        heard,
+        [
+            "Issue #7",
+            "PR #8",
+            "refresh",
+            "settings of python/cpython",
+            "unseen #9",
+            "stop"
+        ]
+    );
 }
 
 #[test]

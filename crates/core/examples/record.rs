@@ -23,7 +23,7 @@ use tsugiki_core::github::pull_requests::{PageRequest, PrFetch};
 use tsugiki_core::github::record::Recorder;
 use tsugiki_core::github::refresh::{ListCheck, ListPlace, PollRequest};
 use tsugiki_core::links::{possible_numbers, possible_origin};
-use tsugiki_core::repository::{RepositoryAccess, RepositoryName};
+use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
 use tsugiki_core::token::read_token;
 use tsugiki_token::{Https, run_gh};
@@ -95,7 +95,7 @@ fn check_a_list(scout: &GitHub) {
 
 /// One poll with both starter Filters, a fetch of what it found changed, and a probe of those PRs.
 fn record_a_refresh(github: &GitHub, repository: &RepositoryName) {
-    let starters = Filter::starters(RepositoryAccess::Other);
+    let starters = Filter::starters();
     let filters: Vec<_> = starters.into_iter().map(|filter| filter.query).collect();
     let start = ListPlace::Next(None);
     // A later page carries no searches, and GitHub refuses a query with a variable it doesn't use. The poll
@@ -206,7 +206,7 @@ fn record_a_filter(
     ids: &mut Vec<NodeId>,
     named: &mut BTreeSet<u32>,
 ) {
-    let starters = Filter::starters(RepositoryAccess::Other);
+    let starters = Filter::starters();
     let starter = starters.first().expect("a starter Filter");
     let search = FilterSearch {
         query: &starter.query,

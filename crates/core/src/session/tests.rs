@@ -1,11 +1,14 @@
 use super::*;
 use crate::facts::CommitSha;
 use crate::facts::activity::ActivityFacts;
+use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
 use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
+use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{Reply, Request, Transport, Unreachable};
@@ -1053,6 +1056,179 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
             // The step saved PR 7, so had the user opened it before its head was known, it would go first.
             "some-maintainer/gcmon saved heads #7 at 89abcde on main",
         ]
+    );
+}
+
+/// gcmon with one Filter, which searches `label:bug`, switched on the Workbench or off it.
+fn bugs_switched(on: OnWorkbench) -> RepositorySettings {
+    let bugs = Filter {
+        name: "Bugs".to_owned().try_into().unwrap(),
+        query: bugs_query(),
+        on_workbench: on,
+    };
+    RepositorySettings {
+        filters: vec![bugs],
+        ..RepositorySettings::new(gcmon())
+    }
+}
+
+fn bugs_query() -> FilterQuery {
+    "label:bug".to_owned().try_into().unwrap()
+}
+
+#[test]
+fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread_prs() {
+    let store = store_remembering("octocat");
+    let issue = IssueFacts {
+        number: 5,
+        title: "A bug".to_owned(),
+        author: None,
+        assignees: vec![],
+        labels: vec![],
+        updated_at: OffsetDateTime::UNIX_EPOCH,
+        state: Some(IssueState::Open),
+    };
+    store.save_issues(&gcmon(), vec![issue]).unwrap();
+    let stored = vec![
+        stored_pr(8, "some-author", "4567def"),
+        stored_pr(9, "some-author", "89abcde"),
+        stored_pr(10, "some-author", "0123abc"),
+        stored_pr(11, "some-author", "7654fed"),
+    ];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    // PR 9's Conversation was read at its head, and PR 10's before its head moved.
+    let read_at = |number: u32, head: &str| {
+        let content = reviewed_by("some-reviewer", &CommitSha::parse(head).unwrap());
+        store
+            .save_pull_request_content(&gcmon(), number, content)
+            .unwrap();
+    };
+    read_at(9, "89abcde");
+    read_at(10, "fedcba9");
+    let found = FilterResults {
+        numbers: [5, 8, 9, 10].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    let (mirrors, heard) = HeardRequests::new();
+    let (messages, _incoming) = mpsc::channel();
+    let fetching = Fetching::new(messages, mirrors);
+    let mut syncs = Syncs::default();
+    syncs.add(bugs_switched(OnWorkbench::Off));
+    let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
+
+    let unheld = settings_changed(&fetching, &store, &mut syncs, elsewhere);
+    let switched_on = settings_changed(
+        &fetching,
+        &store,
+        &mut syncs,
+        bugs_switched(OnWorkbench::On),
+    );
+    let on = heard.asked();
+    let held = syncs.settings(&gcmon()).cloned();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    let switched_off = settings_changed(
+        &fetching,
+        &store,
+        &mut syncs,
+        bugs_switched(OnWorkbench::Off),
+    );
+    let off = heard.asked();
+
+    assert_eq!(unheld, None);
+    assert_eq!(switched_on, Some(()));
+    assert_eq!(switched_off, Some(()));
+    assert_eq!(held, Some(bugs_switched(OnWorkbench::On)));
+    assert!(
+        on.iter().any(|line| line.contains("#8 at 4567def")),
+        "{on:?}"
+    );
+    // Issue 5 has no Conversation to read ahead as a PR, PR 9's was read at its head, and nothing reaches
+    // PR 11.
+    assert_eq!(owed, [8, 10].into());
+    assert!(off.iter().all(|line| !line.contains("#8")), "{off:?}");
+}
+
+/// Switches the Bugs Filter on, which finds PR 8, with the store losing call `lost`, if any. Answers with
+/// what the switch said, what the Mirror heard, how many calls the store had, and the reads it owes after.
+fn switch_bugs_on_losing(lost: Option<usize>) -> (Option<()>, Vec<String>, usize, BTreeSet<u32>) {
+    let store = store_remembering("octocat");
+    let stored = vec![stored_pr(8, "some-author", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    let (lossy, calls) = store.failing_at_call(lost);
+    let (mirrors, heard) = HeardRequests::new();
+    let (messages, _incoming) = mpsc::channel();
+    let fetching = Fetching::new(messages, mirrors);
+    let mut syncs = Syncs::default();
+    syncs.add(bugs_switched(OnWorkbench::Off));
+
+    let switched = settings_changed(
+        &fetching,
+        &lossy,
+        &mut syncs,
+        bugs_switched(OnWorkbench::On),
+    );
+
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    (switched, heard.asked(), calls.try_iter().count(), owed)
+}
+
+#[test]
+fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirror_its_heads() {
+    let (_, _, calls, owed) = switch_bugs_on_losing(None);
+    assert_eq!(owed, [8].into());
+
+    let (switched, asked, _, owed) = switch_bugs_on_losing(Some(calls - 1));
+
+    assert_eq!(switched, Some(()));
+    assert!(
+        asked.iter().any(|line| line.contains("#8 at 4567def")),
+        "{asked:?}"
+    );
+    assert_eq!(owed, BTreeSet::new());
+}
+
+#[test]
+fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
+    let (folders, _folder) = temp_folders("switched-session");
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&Login::new("octocat")).unwrap();
+    let stored = vec![stored_pr(8, "some-author", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+    };
+    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
+
+    session.fetching().sync(bugs_switched(OnWorkbench::Off));
+    session
+        .fetching()
+        .settings_changed(bugs_switched(OnWorkbench::On));
+    let handed = heard.asked_through("wants heads #8", PLENTY);
+    session.stop(PLENTY);
+
+    assert!(
+        handed.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
+        "{handed:?}"
     );
 }
 

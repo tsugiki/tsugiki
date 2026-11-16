@@ -16,7 +16,7 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
     workbench: { status: "ok", data: workbench },
   });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/cpython" })).toBeVisible();
 
   await page.keyboard.press("ControlOrMeta+R");
   const picker = page.getByRole("dialog", { name: "Repository picker" });
@@ -30,7 +30,7 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
   await page.keyboard.press("Enter");
 
   await expect(picker).toBeHidden();
-  await expect(page.getByRole("heading", { name: "python/peps" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/peps" })).toBeVisible();
   await expect(page).toHaveTitle("python/peps · Tsugiki");
 
   // Back again: the core now lists cpython first among the others.
@@ -40,7 +40,7 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
   });
   await page.keyboard.press("ControlOrMeta+R");
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/cpython" })).toBeVisible();
 });
 
 // The picker hands the focus back to the button as it closes, and Chromium clicks a focused button on the
@@ -60,6 +60,6 @@ test("Enter in the picker opened from the Sidebar's button leaves it closed", as
   await expect(picker).toBeVisible();
   await page.keyboard.press("Enter");
 
-  await expect(page.getByRole("heading", { name: "python/peps" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/peps" })).toBeVisible();
   await expect(picker).toBeHidden();
 });

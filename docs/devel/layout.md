@@ -18,7 +18,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     saved for the full Sidebar, as a drag or a key let go, and not at a width a drag passed through on its
     way to fold. A drag of the strip's edge past 120 px brings it back at the width
     the drag reaches, and a double-click on the edge at its default width. `Ctrl+B` hides it and brings it
-    back as it was, full or icons. The strip is not the PR view's rail ([review.md](review.md)).
+    back as it was, full or icons. The strip is not the PR view's rail ([review.md](review.md)). The
+    switcher's last row opens Add repository, the one way to it inside a Repository.
   - **Issue list** (middle): one item per Issue for whatever is selected in the Sidebar, laid out like mail.
     **Standalone PRs** and **Dependency updates** are items of their own beside the Issues. Each item shows:
     - the people involved

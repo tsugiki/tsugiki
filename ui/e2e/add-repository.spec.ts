@@ -49,7 +49,7 @@ test("adding the first Repository goes from onboarding to the Repository", async
 
   await input.press("Enter");
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/cpython" })).toBeVisible();
 });
 
 test("a Repository GitHub doesn't have is named in the dialog, and Esc leaves onboarding as it was", async ({
@@ -80,7 +80,7 @@ test("a normal launch opens on the Repository the core names", async ({ page }) 
     },
   });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/cpython" })).toBeVisible();
   await expect(page.getByText("Your token comes from")).toBeHidden();
 });
 
@@ -111,5 +111,5 @@ test("the dialog borrows objects from a clone the user picks", async ({ page }) 
 
   await dialog.getByRole("button", { name: "Add" }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("heading", { name: "python/cpython" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "python/cpython" })).toBeVisible();
 });

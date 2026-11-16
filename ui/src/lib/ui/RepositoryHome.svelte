@@ -84,7 +84,6 @@
 
   let {
     name,
-    onadd,
     onpick,
     onsettings,
     keysActive = true,
@@ -92,7 +91,6 @@
     diffPeek = "inline",
   }: {
     name: string;
-    onadd: () => void;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
     onpick: () => void;
     /** Opens the Settings dialog, from ⚙ atop the Sidebar. */
@@ -1107,8 +1105,6 @@
       data-pane="list"
       bind:this={list}
     >
-      <h1>{name}</h1>
-      <button onclick={onadd}>Add repository</button>
       <header class="view">
         <h2>{workbench.title}</h2>
         <button
@@ -1209,15 +1205,6 @@
     min-width: 320px;
     overflow-y: auto;
     overscroll-behavior: contain;
-  }
-
-  h1 {
-    margin: 8px 10px;
-    font-size: 16px;
-  }
-
-  h1 + button {
-    margin: 0 10px 8px;
   }
 
   /* The view's name, with the list's order at the far end, as the prototype has it. */

@@ -72,6 +72,10 @@ If a round finds flags that fall out of step with each other, ask the builder to
 whose variants carry their data, as AGENTS.md's "Make invalid states unrepresentable" says, and send no fix
 for each case: each such fix lets the flags fall out of step some new way.
 
+In the same way, when a round's findings come from code that guesses which async answer belongs to which
+action, ask the builder to remove the guess, not to patch each race: in 0.3.3 each fix to such a guess
+opened a new race.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
 that drive what it changed, as [builder.md](builder.md) says.

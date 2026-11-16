@@ -2,7 +2,7 @@ use super::*;
 use crate::conventions::Conventions;
 use crate::filters::{Filter, OnWorkbench};
 use crate::mirror_source::MirrorSource;
-use crate::repository::{FoundRepository, RepositoryAccess, RepositoryCounts};
+use crate::repository::{FoundRepository, RepositoryCounts};
 use crate::testing::TempPath;
 use crate::theme::{ThemeChoice, ThemeInForce, ThemeKind, ThemeName, ThemePick};
 use time::format_description::well_known::Rfc3339;
@@ -68,11 +68,20 @@ fn hold_only(folders: &Folders, names: &[&str]) {
 /// The window open on the first of `names`, with `conventions`, and the picker listing the rest below it in
 /// their order.
 fn opened(names: &[&str], conventions: Conventions) -> Home {
+    opened_with(names, conventions, Filter::starters())
+}
+
+/// As `opened`, for a first Repository written by hand without its Filters, which reads them switched off.
+fn opened_by_hand(names: &[&str], conventions: Conventions) -> Home {
+    opened_with(names, conventions, Filter::left_out())
+}
+
+fn opened_with(names: &[&str], conventions: Conventions, filters: Vec<Filter>) -> Home {
     Home::Repository {
         repository: RepositorySettings {
             name: repository(names[0]),
             conventions,
-            filters: Filter::starters(),
+            filters,
         },
         others: names[1..].iter().map(|name| repository(name)).collect(),
     }
@@ -1037,9 +1046,36 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
 }
 
 #[test]
-fn a_repository_with_no_filters_in_the_file_gets_the_starters() {
+fn a_repository_with_no_filters_in_the_file_gets_the_starters_switched_off() {
     let read = the_repository_in("no-filters", "[[repositories]]\nname = \"a/b\"\n");
-    assert_eq!(read.filters, Filter::starters());
+    assert_eq!(read.filters, Filter::left_out());
+    let names: Vec<String> = (read.filters.iter())
+        .map(|filter| filter.name.clone().into())
+        .collect();
+    assert_eq!(names, ["Mine", "Involved"]);
+    assert!(
+        (read.filters.iter()).all(|filter| filter.on_workbench == OnWorkbench::Off),
+        "{:?}",
+        read.filters
+    );
+}
+
+#[test]
+fn of_two_filters_with_the_same_search_the_settings_read_the_first() {
+    let read = the_repository_in(
+        "same-search",
+        "[[repositories]]\nname = \"a/b\"\n
+[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n
+[[repositories.filters]]\nname = \"Docs\"\nquery = \"label:docs\"\n
+[[repositories.filters]]\nname = \"Bug triage\"\nquery = \" label:bug \"\non_workbench = true\n",
+    );
+    let switches: Vec<(String, bool)> = (read.filters.into_iter())
+        .map(|filter| (filter.name.into(), filter.on_workbench.into()))
+        .collect();
+    assert_eq!(
+        switches,
+        [("Bugs".to_owned(), false), ("Docs".to_owned(), false)]
+    );
 }
 
 #[test]
@@ -1075,7 +1111,7 @@ fn switches(files: &SettingsFiles) -> Vec<(String, bool)> {
 }
 
 #[test]
-fn a_switch_puts_each_filter_with_that_search_on_the_workbench_and_keeps_the_users_words() {
+fn a_switch_puts_the_first_filter_with_that_search_on_the_workbench_and_keeps_the_users_words() {
     let (mut files, folders, _root) = settings_saying(
         "switch-on",
         "\
@@ -1127,16 +1163,12 @@ on_workbench = false
 [[repositories.filters]]
 name = \"Bugs again\"
 query = \"label:bug\"
-on_workbench = true # Not yet.
+on_workbench = false # Not yet.
 "
     );
     assert_eq!(
         switches(&files),
-        [
-            ("Bugs".to_owned(), true),
-            ("Docs".to_owned(), false),
-            ("Bugs again".to_owned(), true)
-        ]
+        [("Bugs".to_owned(), true), ("Docs".to_owned(), false)]
     );
 }
 
@@ -1176,12 +1208,12 @@ fn a_switch_on_a_repository_without_filters_writes_out_the_starters_it_reads_as(
     assert_eq!(
         after,
         "[[repositories]]\nname = \"a/b\"\n
-[[repositories.filters]]\nname = \"Mine\"\nquery = \"is:open author:@me\"\non_workbench = true\n
+[[repositories.filters]]\nname = \"Mine\"\nquery = \"is:open author:@me\"\non_workbench = false\n
 [[repositories.filters]]\nname = \"Involved\"\nquery = \"is:open involves:@me -author:@me\"\non_workbench = true\n"
     );
     assert_eq!(
         switches(&files),
-        [("Mine".to_owned(), true), ("Involved".to_owned(), true)]
+        [("Mine".to_owned(), false), ("Involved".to_owned(), true)]
     );
 }
 
@@ -1298,7 +1330,6 @@ fn found(name: &str) -> RepositoryCheck {
             closed_in_window: 35,
             disk_kb: 0,
         },
-        access: RepositoryAccess::Other,
     })
 }
 
@@ -2764,7 +2795,10 @@ fn a_launch_skips_a_name_the_settings_no_longer_hold() {
 
     let home = SettingsFiles::load(folders).home();
 
-    assert_eq!(home, opened(&["a/second", "a/first"], Conventions::Github));
+    assert_eq!(
+        home,
+        opened_by_hand(&["a/second", "a/first"], Conventions::Github)
+    );
 }
 
 #[test]
@@ -2791,7 +2825,7 @@ fn the_home_lists_the_repositories_most_recently_opened_first_then_the_others() 
     // The settings no longer hold a/gone, and a/never and a/later were never opened on this machine.
     assert_eq!(
         home,
-        opened(
+        opened_by_hand(
             &["a/first", "a/third", "a/second", "a/never", "a/later"],
             Conventions::Github
         )
@@ -2807,7 +2841,10 @@ fn with_no_name_in_recent_left_a_launch_opens_the_first_repository() {
 
     let home = SettingsFiles::load(folders).home();
 
-    assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
+    assert_eq!(
+        home,
+        opened_by_hand(&["a/first", "a/second"], Conventions::Github)
+    );
 }
 
 #[test]
@@ -2831,7 +2868,7 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
     assert_eq!(
         (home, problems),
         (
-            opened(&["a/second", "a/first"], Conventions::Github),
+            opened_by_hand(&["a/second", "a/first"], Conventions::Github),
             Vec::<String>::new()
         )
     );
@@ -2863,7 +2900,10 @@ fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() 
     add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
-    assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
+    assert_eq!(
+        reopened,
+        opened_by_hand(&["a/old", "a/first"], Conventions::Github)
+    );
     assert_eq!(
         machine,
         "# This laptop.
@@ -2921,7 +2961,10 @@ sidebar = 240
 list = 500
 "
     );
-    assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
+    assert_eq!(
+        reopened,
+        opened_by_hand(&["a/old", "a/first"], Conventions::Github)
+    );
 }
 
 #[test]
@@ -2936,7 +2979,10 @@ fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
     files.save_panes(PaneLayout::default()).unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
-    assert_eq!(reopened, opened(&["a/one", "a/old"], Conventions::Github));
+    assert_eq!(
+        reopened,
+        opened_by_hand(&["a/one", "a/old"], Conventions::Github)
+    );
     assert_eq!(machine, "recent = [\n    { name = \"a/one\" },\n]\n");
 }
 
@@ -2952,7 +2998,10 @@ fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
     add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
-    assert_eq!(reopened, opened(&["a/old", "a/first"], Conventions::Github));
+    assert_eq!(
+        reopened,
+        opened_by_hand(&["a/old", "a/first"], Conventions::Github)
+    );
     assert!(
         machine.starts_with(
             "recent = [
@@ -2978,7 +3027,10 @@ fn a_recent_written_as_tables_keeps_its_entries() {
     add_all(&mut files, &["a/three"], at("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
-    assert_eq!(reopened, opened(&["a/one", "a/two"], Conventions::Github));
+    assert_eq!(
+        reopened,
+        opened_by_hand(&["a/one", "a/two"], Conventions::Github)
+    );
     assert!(
         machine.starts_with(
             "recent = [
@@ -3245,7 +3297,10 @@ fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt
         }
     );
     // What the owner read is in the view too, so the picker's list loses the name.
-    assert_eq!(owner.view().home, opened(&["a/first"], Conventions::Github));
+    assert_eq!(
+        owner.view().home,
+        opened_by_hand(&["a/first"], Conventions::Github)
+    );
 }
 
 #[test]

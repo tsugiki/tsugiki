@@ -107,6 +107,16 @@ impl Filter {
             ),
         ]
     }
+
+    /// The Filters of a Repository whose settings leave them out: the starters, each switched off. Before
+    /// Filters had the switch (#819), such a Repository had these two, and a Filter it had then stays off.
+    pub fn left_out() -> Vec<Self> {
+        let mut filters = Self::starters();
+        for filter in &mut filters {
+            filter.on_workbench = OnWorkbench::Off;
+        }
+        filters
+    }
 }
 
 #[cfg(test)]

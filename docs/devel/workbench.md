@@ -10,13 +10,19 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   parentheses.
 - Each Filter has an "On the Workbench" switch, `on_workbench` in `settings.toml`, off unless the file says
   so ([#819](https://github.com/tsugiki/tsugiki/issues/819)). The Filter's view has it beside its name, and a
-  change there saves it at once. The items of a Filter switched off stay out of the Workbench and out of
-  **Reach**: Tsugiki fetches no head and reads ahead no Conversation for them. The sync still runs its
-  search, so its view lists what it found, its **Matched PRs** first. In an Issue view, a PR any Filter
-  found, switched on or off, stays out of the fold.
+  change there saves it at once. The switch waits while a change saves. The items of a Filter switched off
+  stay out of the Workbench and out of **Reach**: Tsugiki fetches no head and reads ahead no Conversation for
+  them. The sync still runs its search, so its view lists what it found, its **Matched PRs** first. In an
+  Issue view, a PR any Filter found, switched on or off, stays out of the fold.
+- Switching a Filter on puts its items in Reach at once, without a refresh: the Mirror fetches the heads of
+  the PRs it newly reaches, and Tsugiki reads their Conversations ahead, after any tree the user opened and
+  before the syncs. Switching one off stops the Mirror wanting the heads of the PRs it alone reached.
+- A Filter's view goes by its search, so a Repository holds one Filter for each search: of two with the
+  same search, Tsugiki reads the first.
 - Adding a Repository, Maintained or not, creates two starter Filters, ordinary ones the user can edit or
   delete: "Mine" (`is:open author:@me`), switched on, and "Involved" (`is:open involves:@me -author:@me`),
-  switched off. Repositories added before the switch keep their Filters, switched off.
+  switched off. Repositories added before the switch keep their Filters, switched off, and so does a
+  Repository whose settings leave its Filters out: it reads as having both starters, switched off.
 - Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues
   their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
 - **All issues** is an unsaved Filter over the Repository's open Issues and open PRs, newest update first,

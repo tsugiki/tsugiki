@@ -124,7 +124,6 @@ pub(super) fn counted_as(counts: RepositoryCounts) -> Result<Reply, Unreachable>
     let body = json!({ "data": {
         "repository": {
             "nameWithOwner": "python/cpython",
-            "viewerPermission": "READ",
             "diskUsage": counts.disk_kb,
             "issues": { "totalCount": counts.open_issues },
             "pullRequests": { "totalCount": counts.open_prs },

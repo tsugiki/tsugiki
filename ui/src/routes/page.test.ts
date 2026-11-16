@@ -327,7 +327,6 @@ it("adds a Repository from onboarding and then shows it", async () => {
         first_sync_seconds: 5,
         first_sync_points: 12,
         mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-        access: "other",
       },
     },
   });

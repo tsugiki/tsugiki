@@ -101,15 +101,6 @@ pub(crate) fn issue_number(digits: &str) -> Option<u32> {
         .and_then(|number| u32::try_from(number).ok())
 }
 
-/// The user's standing in a Repository, as far as adding it needs to know.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum RepositoryAccess {
-    /// The user administers it on GitHub.
-    Maintained,
-    Other,
-}
-
 /// Up to this many open Issues and PRs loads everything open, and more loads a window (ADR 0015).
 const SMALL_UP_TO: u32 = 500;
 /// How far back the first sync looks, in days (ADR 0015).
@@ -159,13 +150,12 @@ impl RepositoryCounts {
     }
 }
 
-/// What GitHub says about a Repository the user asked about: its name as GitHub spells it, what it holds,
-/// and the user's access to it.
+/// What GitHub says about a Repository the user asked about: its name as GitHub spells it, and what it
+/// holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FoundRepository {
     pub name: RepositoryName,
     pub counts: RepositoryCounts,
-    pub access: RepositoryAccess,
 }
 
 #[cfg(test)]

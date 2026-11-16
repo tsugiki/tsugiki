@@ -4,7 +4,7 @@ use time::{Duration, OffsetDateTime};
 use crate::github::testing::{dated, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
-use crate::repository::{FoundRepository, RepositoryAccess, RepositoryCounts};
+use crate::repository::{FoundRepository, RepositoryCounts};
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
 use crate::status::SyncPart;
 use crate::store::FirstSyncPlace;
@@ -971,12 +971,21 @@ fn a_first_sync_taken_up_again_keeps_when_it_started() {
     );
     let harness = Harness::with_window("window-started", replies);
     drop(harness.github.viewer().unwrap());
-    let mut first = UserWorkSync::new(plain(cpython()));
-    drop(first.step(&harness.github, &harness.store).unwrap());
+    let settings = plain(cpython());
+    let mut first = UserWorkSync::new(&settings);
+    drop(
+        first
+            .step(&harness.github, &harness.store, &settings)
+            .unwrap(),
+    );
     drop(harness.github.viewer().unwrap());
 
-    let mut taken_up = UserWorkSync::new(plain(cpython()));
-    drop(taken_up.step(&harness.github, &harness.store).unwrap());
+    let mut taken_up = UserWorkSync::new(&settings);
+    drop(
+        taken_up
+            .step(&harness.github, &harness.store, &settings)
+            .unwrap(),
+    );
 
     assert!((first.started_at - long_ago).abs() < Duration::minutes(1));
     assert_eq!(taken_up.started_at, first.started_at);
@@ -1059,21 +1068,28 @@ fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
     let mut replies = up_to_the_queue();
     replies.push(window_page(&[window_issue(1, &hours_ago(1))], None, LOTS));
     let harness = Harness::with_window("window-unsaved", replies);
-    let mut sync = UserWorkSync::new(plain(cpython()));
+    let settings = plain(cpython());
+    let mut sync = UserWorkSync::new(&settings);
     // Four searches and the moves between them leave the page to read.
     while !matches!(
         sync.phase,
         crate::sync::Phase::Resumable(crate::sync::Resumable::Loading(_))
     ) {
-        drop(sync.step(&harness.github, &harness.store).unwrap());
+        drop(
+            sync.step(&harness.github, &harness.store, &settings)
+                .unwrap(),
+        );
     }
     // The count goes before the page.
-    drop(sync.step(&harness.github, &harness.store).unwrap());
+    drop(
+        sync.step(&harness.github, &harness.store, &settings)
+            .unwrap(),
+    );
     // Reading the frozen PRs and this page's save land, but saving its place doesn't.
     let (saves_once, _calls) = harness.store.failing_at_call(Some(2));
 
-    let failed = sync.step(&harness.github, &saves_once);
-    let again = sync.step(&harness.github, &saves_once).unwrap();
+    let failed = sync.step(&harness.github, &saves_once, &settings);
+    let again = sync.step(&harness.github, &saves_once, &settings).unwrap();
 
     saves_once.close();
     assert!(failed.is_err());
@@ -1139,7 +1155,6 @@ fn a_small_repository_loads_what_the_add_dialog_counted() {
     let check = RepositoryCheck::new(FoundRepository {
         name: cpython(),
         counts,
-        access: RepositoryAccess::Other,
     });
     let mut issues: Vec<u32> = harness
         .store

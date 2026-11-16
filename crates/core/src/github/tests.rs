@@ -162,7 +162,6 @@ fn checking_a_repository_reads_a_recorded_answer() {
                 closed_in_window: 2613,
                 disk_kb: 912_867,
             },
-            access: RepositoryAccess::Other,
         }
     );
 }
@@ -203,31 +202,6 @@ fn a_check_gives_the_name_as_github_spells_it() {
             disk_kb: 0,
         }
     );
-}
-
-fn checked_with_permission(permission: &str) -> FoundRepository {
-    let body = format!(
-        r#"{{"data":{{"repository":{{"nameWithOwner":"a/b","viewerPermission":{permission},
-            "issues":{{"totalCount":1}},"pullRequests":{{"totalCount":1}}}},
-            "updated":{{"issueCount":1}},"closed":{{"issueCount":1}}}}}}"#
-    );
-    client(answered(200, &body))
-        .check_repository(&name("a/b"), the_day())
-        .unwrap()
-}
-
-#[test]
-fn a_repository_the_user_administers_is_maintained() {
-    let found = checked_with_permission(r#""ADMIN""#);
-    assert_eq!(found.access, RepositoryAccess::Maintained);
-}
-
-#[test]
-fn writing_to_a_repository_doesnt_make_it_maintained() {
-    for permission in [r#""WRITE""#, r#""MAINTAIN""#, "null"] {
-        let found = checked_with_permission(permission);
-        assert_eq!(found.access, RepositoryAccess::Other, "{permission}");
-    }
 }
 
 /// Answers as GitHub did for `mitsuhiko/flask`, which became `pallets/flask`: the Repository follows the

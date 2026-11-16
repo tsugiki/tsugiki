@@ -2371,18 +2371,12 @@ export type ReleaseSettings_Serialize = {
 	check: boolean,
 };
 
-/**  The user's standing in a Repository, as far as adding it needs to know. */
-export type RepositoryAccess = 
-/**  The user administers it on GitHub. */
-"maintained" | "other";
-
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck = RepositoryCheck_Serialize | RepositoryCheck_Deserialize;
 
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Deserialize = {
 	repository: RepositorySettings_Deserialize,
-	access: RepositoryAccess,
 	open_issues: number,
 	open_prs: number,
 	size: RepositorySize,
@@ -2397,7 +2391,6 @@ export type RepositoryCheck_Deserialize = {
 /**  What the add dialog shows before the user decides. */
 export type RepositoryCheck_Serialize = {
 	repository: RepositorySettings_Serialize,
-	access: RepositoryAccess,
 	open_issues: number,
 	open_prs: number,
 	size: RepositorySize,
@@ -2410,14 +2403,22 @@ export type RepositoryCheck_Serialize = {
 };
 
 /**
- *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
- *  would give it. `filters = []` means no Filters.
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+ *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+ *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ * 
+ *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+ *  way a Repository written twice comes once.
  */
 export type RepositoryInFile = RepositoryInFile_Serialize | RepositoryInFile_Deserialize;
 
 /**
- *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
- *  would give it. `filters = []` means no Filters.
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+ *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+ *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ * 
+ *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+ *  way a Repository written twice comes once.
  */
 export type RepositoryInFile_Deserialize = {
 	name: RepositoryName,
@@ -2426,8 +2427,12 @@ export type RepositoryInFile_Deserialize = {
 };
 
 /**
- *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
- *  would give it. `filters = []` means no Filters.
+ *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+ *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+ *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ * 
+ *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+ *  way a Repository written twice comes once.
  */
 export type RepositoryInFile_Serialize = {
 	name: RepositoryName,

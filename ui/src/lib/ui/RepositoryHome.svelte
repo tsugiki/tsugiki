@@ -379,8 +379,9 @@
     return stop && seen ? { stop, number: stop.number, seen } : undefined;
   }
 
-  /** Puts the Filters that search `query` on the Workbench as the switch `input` now says, or takes them off
-   * it (#819). A change that doesn't save turns the switch back, and the Workbench says why. */
+  /** Puts the Filter that searches `query` on the Workbench as the switch `input` now says, or takes it off
+   * (#819). The switch waits while the change saves. A change that doesn't save turns the switch back, and
+   * the Workbench says why. */
   async function putOnWorkbench(input: HTMLInputElement, query: string) {
     const on = input.checked;
     const problem = await workbench.putOnWorkbench(query, on);
@@ -1129,6 +1130,7 @@
             <input
               type="checkbox"
               checked={filter.on_workbench}
+              disabled={workbench.switching}
               onchange={(event) => void putOnWorkbench(event.currentTarget, filter.query)}
             />On the Workbench</label
           >

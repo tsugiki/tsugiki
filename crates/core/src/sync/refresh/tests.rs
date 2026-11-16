@@ -1161,6 +1161,41 @@ fn a_change_too_new_for_the_search_keeps_its_item_in_the_filter() {
 }
 
 #[test]
+fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reaches() {
+    let now = OffsetDateTime::now_utc().format(&Rfc3339).unwrap();
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(2, &now)], None),
+            &[search(&[], None)],
+        ),
+        fetched_nodes(&[strangers_pr(2, &now)], LOTS),
+        approved(),
+    ];
+    let harness = after_a_sync("switched-mid-refresh", replies);
+    stored_filter(&harness, "a", &[2]);
+    let mut off = filtering(&["a"]);
+    off.filters[0].on_workbench = OnWorkbench::Off;
+    let mut syncs = refreshing(off.clone());
+    drop(syncs.step(&harness.github, &harness.store).unwrap());
+
+    let before = syncs.replace_settings(filtering(&["a"]));
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(before, Some(off));
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
 fn a_backport_a_refresh_brought_gets_its_origin_pr_when_a_tree_lists_it() {
     let backport = pr_node(
         10,

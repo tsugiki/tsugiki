@@ -1,11 +1,13 @@
 use super::*;
 use crate::facts::CommitSha;
 use crate::facts::activity::ActivityFacts;
+use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
 use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
+use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::replay::Replayer;
 use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
 use crate::github::{Reply, Request, Transport, Unreachable};
@@ -1053,6 +1055,114 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
             // The step saved PR 7, so had the user opened it before its head was known, it would go first.
             "some-maintainer/gcmon saved heads #7 at 89abcde on main",
         ]
+    );
+}
+
+/// gcmon with one Filter, which searches `label:bug`, switched on the Workbench or off it.
+fn bugs_switched(on: OnWorkbench) -> RepositorySettings {
+    let bugs = Filter {
+        name: "Bugs".to_owned().try_into().unwrap(),
+        query: bugs_query(),
+        on_workbench: on,
+    };
+    RepositorySettings {
+        filters: vec![bugs],
+        ..RepositorySettings::new(gcmon())
+    }
+}
+
+fn bugs_query() -> FilterQuery {
+    "label:bug".to_owned().try_into().unwrap()
+}
+
+#[test]
+fn a_filter_switched_on_hands_the_mirror_its_heads_and_reads_its_prs_ahead_without_a_refresh() {
+    let store = store_remembering("octocat");
+    let stored = vec![
+        stored_pr(8, "some-author", "4567def"),
+        stored_pr(9, "some-author", "89abcde"),
+    ];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    let (mirrors, heard) = HeardRequests::new();
+    let (messages, _incoming) = mpsc::channel();
+    let fetching = Fetching::new(messages, mirrors);
+    let mut syncs = Syncs::default();
+    syncs.add(bugs_switched(OnWorkbench::Off));
+    let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
+
+    let unheld = settings_changed(&fetching, &store, &mut syncs, elsewhere);
+    let switched_on = settings_changed(
+        &fetching,
+        &store,
+        &mut syncs,
+        bugs_switched(OnWorkbench::On),
+    );
+    let on = heard.asked();
+    let held = syncs.settings(&gcmon()).cloned();
+    let (script, asked) = Scripted::new(vec![]);
+    let github = GitHub::new(Box::new(script), crate::github::testing::token());
+    let _offline = syncs.step(&github, &store);
+    let switched_off = settings_changed(
+        &fetching,
+        &store,
+        &mut syncs,
+        bugs_switched(OnWorkbench::Off),
+    );
+    let off = heard.asked();
+
+    assert_eq!(unheld, None);
+    assert_eq!(switched_on, Some(()));
+    assert_eq!(switched_off, Some(()));
+    assert_eq!(held, Some(bugs_switched(OnWorkbench::On)));
+    assert!(
+        on.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
+        "{on:?}"
+    );
+    let (operation, variables) = asked.try_recv().unwrap();
+    assert_eq!(operation, "FetchPullRequestContent");
+    assert_eq!(variables["number"], 8, "{variables}");
+    assert!(off.iter().all(|line| !line.contains("#8")), "{off:?}");
+}
+
+#[test]
+fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
+    let (folders, _folder) = temp_folders("switched-session");
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&Login::new("octocat")).unwrap();
+    let stored = vec![stored_pr(8, "some-author", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+    };
+    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
+
+    session.fetching().sync(bugs_switched(OnWorkbench::Off));
+    session
+        .fetching()
+        .settings_changed(bugs_switched(OnWorkbench::On));
+    let handed = heard.asked_through("wants heads #8", PLENTY);
+    session.stop(PLENTY);
+
+    assert!(
+        handed.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
+        "{handed:?}"
     );
 }
 

@@ -566,6 +566,25 @@ describe("WorkbenchState", () => {
     expect(state.switchProblem).toBeUndefined();
   });
 
+  it("says a Filter's switch is saving until the save and the new answer are in", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer(1));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const save = Promise.withResolvers<{ status: "ok"; data: null }>();
+    vi.mocked(commands.putFilterOnWorkbench).mockReturnValueOnce(save.promise);
+
+    const switching = state.putOnWorkbench(mine.query, false);
+    expect(state.switching).toBe(true);
+    save.resolve({ status: "ok", data: null });
+    await switching;
+    expect(state.switching).toBe(false);
+
+    vi.mocked(commands.putFilterOnWorkbench).mockRejectedValueOnce(new Error("gone"));
+    await expect(state.putOnWorkbench(mine.query, false)).rejects.toThrow("gone");
+    expect(state.switching).toBe(false);
+  });
+
   it("keeps a selected Filter when the facts change", async () => {
     const { send } = catchListener();
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));

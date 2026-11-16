@@ -28,9 +28,7 @@ use time::{Date, Duration, OffsetDateTime};
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
 use crate::login::Login;
-use crate::repository::{
-    FoundRepository, RepositoryAccess, RepositoryCounts, RepositoryName, WINDOW_DAYS,
-};
+use crate::repository::{FoundRepository, RepositoryCounts, RepositoryName, WINDOW_DAYS};
 use crate::token::{RunGh, Token};
 pub use tsugiki_token::RestPath;
 
@@ -128,7 +126,7 @@ const VIEWER: Request<'static> = Request {
 };
 
 const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
-                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner viewerPermission diskUsage \
+                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner diskUsage \
                                 issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
                                 updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
                                 closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }";
@@ -238,18 +236,10 @@ impl GitHub {
         #[serde(rename_all = "camelCase")]
         struct Repository {
             name_with_owner: RepositoryName,
-            viewer_permission: Option<Permission>,
             /// In kilobytes, or nothing for a Repository with no commits.
             disk_usage: Option<u64>,
             issues: Total,
             pull_requests: Total,
-        }
-        #[derive(Deserialize)]
-        enum Permission {
-            #[serde(rename = "ADMIN")]
-            Admin,
-            #[serde(other)]
-            Lower,
         }
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -293,10 +283,6 @@ impl GitHub {
             | ErrorKind::QueryRefused
             | ErrorKind::Internal => problem,
         })?;
-        let access = match data.repository.viewer_permission {
-            Some(Permission::Admin) => RepositoryAccess::Maintained,
-            Some(Permission::Lower) | None => RepositoryAccess::Other,
-        };
         Ok(FoundRepository {
             name: data.repository.name_with_owner,
             counts: RepositoryCounts {
@@ -306,7 +292,6 @@ impl GitHub {
                 closed_in_window: data.closed.issue_count,
                 disk_kb: data.repository.disk_usage.unwrap_or(0),
             },
-            access,
         })
     }
 

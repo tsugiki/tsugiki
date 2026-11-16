@@ -6,9 +6,7 @@ use specta::Type;
 
 use crate::conventions::Conventions;
 use crate::filters::Filter;
-use crate::repository::{
-    FoundRepository, RepositoryAccess, RepositoryName, RepositorySize, WINDOW_DAYS,
-};
+use crate::repository::{FoundRepository, RepositoryName, RepositorySize, WINDOW_DAYS};
 
 /// Measured on CPython's last 30 days (#132): 4,760 items took about 485 points and 20.5 minutes, one request
 /// at a time, with whole trees for the user's own Issues. About 10 of those points are the user's own work
@@ -45,8 +43,12 @@ impl RepositorySettings {
     }
 }
 
-/// A Repository added by hand may leave its Conventions and its Filters out. Then it gets what adding it
-/// would give it. `filters = []` means no Filters.
+/// A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
+/// adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
+/// had the switch (#819) keeps them. `filters = []` means no Filters.
+///
+/// The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
+/// way a Repository written twice comes once.
 #[derive(Deserialize, Type)]
 struct RepositoryInFile {
     name: RepositoryName,
@@ -59,7 +61,12 @@ impl From<RepositoryInFile> for RepositorySettings {
         let conventions = file
             .conventions
             .unwrap_or_else(|| Conventions::for_repository(&file.name));
-        let filters = file.filters.unwrap_or_else(Filter::starters);
+        let mut filters: Vec<Filter> = Vec::new();
+        for filter in file.filters.unwrap_or_else(Filter::left_out) {
+            if !filters.iter().any(|kept| kept.query == filter.query) {
+                filters.push(filter);
+            }
+        }
         Self {
             name: file.name,
             conventions,
@@ -72,7 +79,6 @@ impl From<RepositoryInFile> for RepositorySettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct RepositoryCheck {
     pub repository: RepositorySettings,
-    pub access: RepositoryAccess,
     pub open_issues: u32,
     pub open_prs: u32,
     pub size: RepositorySize,
@@ -108,11 +114,7 @@ impl MirrorCost {
 impl RepositoryCheck {
     /// What adding the Repository GitHub `found` would give and cost.
     pub fn new(found: FoundRepository) -> Self {
-        let FoundRepository {
-            name,
-            counts,
-            access,
-        } = found;
+        let FoundRepository { name, counts } = found;
         let size = counts.size();
         let items = match size {
             RepositorySize::Small => counts.open().saturating_add(counts.closed_in_window),
@@ -120,7 +122,6 @@ impl RepositoryCheck {
         };
         Self {
             repository: RepositorySettings::new(name),
-            access,
             open_issues: counts.open_issues,
             open_prs: counts.open_prs,
             size,

@@ -466,8 +466,8 @@ pub(crate) struct FilterSwitch {
     on: OnWorkbench,
 }
 
-/// Puts the Filters that `switch` names on the Workbench, or takes them off it, and hands the session the
-/// settings saved, so the next step that saves works out Reach with them.
+/// Puts the Filter that `switch` names on the Workbench, or takes it off, and hands the session the settings
+/// saved, which work out Reach with them at once. The open Repository stays as it is.
 fn switch_filter(
     switch: FilterSwitch,
     owner: &SettingsOwner,
@@ -480,7 +480,8 @@ fn switch_filter(
     } = switch;
     let name = RepositoryName::parse(&repository)?;
     let view = owner.put_on_workbench(name.clone(), query, on)?;
-    work.fetching.sync(view.loaded.settings.repository(name));
+    work.fetching
+        .settings_changed(view.loaded.settings.repository(name));
     Ok(())
 }
 

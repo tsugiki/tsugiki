@@ -1257,11 +1257,12 @@ impl SettingsFiles {
         Ok(())
     }
 
-    /// Puts each of `name`'s Filters that searches `query` on the Workbench, or takes it off, with its
-    /// `on_workbench` in `settings.toml`, keeping everything else in the file, and reads the files again
-    /// (#819). A Repository the file holds without `filters` gets the Filters it reads as written out
-    /// first. Like `write`, it works from what the files say now and refuses while either can't be used. It
-    /// refuses a Repository or a search the file doesn't hold.
+    /// Puts `name`'s Filter that searches `query` on the Workbench, or takes it off, with its `on_workbench`
+    /// in `settings.toml`, keeping everything else in the file, and reads the files again (#819). Of two
+    /// Filters with that search it switches the first, the one the settings read. A Repository the file holds
+    /// without `filters` gets the Filters it reads as written out first. Like `write`, it works from what the
+    /// files say now and refuses while either can't be used. It refuses a Repository or a search the file
+    /// doesn't hold.
     pub fn put_on_workbench(
         &mut self,
         name: &RepositoryName,
@@ -1282,8 +1283,8 @@ impl SettingsFiles {
         let written = as_document(held).remove(FILTERS);
         let switched = (edit.document.get_mut(REPOSITORIES))
             .and_then(|repositories| filters_in_file(repositories, name, written))
-            .map_or(0, |filters| switch_filters(filters, query, on));
-        if switched == 0 {
+            .is_some_and(|filters| switch_filter(filters, query, on));
+        if !switched {
             let message = format!("{name} has no Filter that searches {}.", query.as_str());
             return Err(Error::new(ErrorKind::NotFound, &message));
         }
@@ -1531,7 +1532,7 @@ impl SettingsOwner {
         )
     }
 
-    /// Puts `name`'s Filters that search `query` on the Workbench, or takes them off it, in `settings.toml`
+    /// Puts `name`'s Filter that searches `query` on the Workbench, or takes it off, in `settings.toml`
     /// (`SettingsFiles::put_on_workbench`), and answers with what the settings say now.
     pub fn put_on_workbench(
         &self,
@@ -1743,27 +1744,27 @@ fn filters_in_file<'a>(
     repository.get_mut(FILTERS)
 }
 
-/// Sets `on_workbench` on each Filter of `filters` that searches `query`, keeping a comment the user wrote
-/// on it, and answers how many it set. A Filter switched off says so, so a hand edit finds the key.
-fn switch_filters(filters: &mut Item, query: &FilterQuery, on: OnWorkbench) -> usize {
-    let searching = tables_of(filters).into_iter().filter(|filter| {
+/// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,
+/// keeping a comment the user wrote on it, and says whether there was one. A Filter switched off says so,
+/// so a hand edit finds the key.
+fn switch_filter(filters: &mut Item, query: &FilterQuery, on: OnWorkbench) -> bool {
+    let searching = tables_of(filters).into_iter().find(|filter| {
         (filter.get("query").and_then(Item::as_str))
             .is_some_and(|text| text.trim() == query.as_str())
     });
-    let mut switched = 0;
-    for filter in searching {
-        merge_value(
-            filter,
-            "on_workbench",
-            &toml_edit::value(bool::from(on)),
-            None,
-        );
-        switched += 1;
-    }
+    let Some(filter) = searching else {
+        return false;
+    };
+    merge_value(
+        filter,
+        "on_workbench",
+        &toml_edit::value(bool::from(on)),
+        None,
+    );
     // A key added to an inline table would follow the space before its `}`: `"label:bug" , on_workbench`.
     let inline = (filters.as_array_mut().into_iter()).flat_map(Array::iter_mut);
     (inline.filter_map(Value::as_inline_table_mut)).for_each(InlineTable::fmt);
-    switched
+    true
 }
 
 /// Each table of `list`, written as blocks or inline.

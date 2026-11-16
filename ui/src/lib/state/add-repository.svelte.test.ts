@@ -16,7 +16,6 @@ const check: RepositoryCheck_Serialize = {
   first_sync_seconds: 5,
   first_sync_points: 12,
   mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-  access: "maintained",
 };
 
 const found: NameCheck_Serialize = { kind: "new", check };

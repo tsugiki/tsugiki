@@ -490,6 +490,30 @@ it("switches a Filter on and off the Workbench from its view, and only there", a
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
+it("holds a Filter's switch still while its change saves", async () => {
+  const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
+  core.workbench.mockResolvedValue({
+    status: "ok",
+    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
+  });
+  const save = Promise.withResolvers<{ status: "ok"; data: null }>();
+  core.putFilterOnWorkbench.mockReturnValueOnce(save.promise);
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
+  const onWorkbench = await screen.findByRole<HTMLInputElement>("checkbox", { name: "On the Workbench" });
+  await fireEvent.click(onWorkbench);
+
+  await waitFor(() => {
+    expect(onWorkbench.disabled).toBe(true);
+  });
+  save.resolve({ status: "ok", data: null });
+  await waitFor(() => {
+    expect(onWorkbench.disabled).toBe(false);
+  });
+  expect(core.putFilterOnWorkbench).toHaveBeenCalledTimes(1);
+});
+
 it("turns a Filter's switch back and says why when the core can't save it", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: false, count: 0, problem: null };
   core.workbench.mockResolvedValue({

@@ -103,6 +103,9 @@ export class WorkbenchState {
   error = $state<string>();
   /** The reason the last change to a Filter's "On the Workbench" didn't save, if it didn't. */
   switchProblem = $state<string>();
+  /** A change to a Filter's "On the Workbench" is saving. Another waits for it, as two saves could land in
+   * either order. */
+  switching = $state(false);
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
   /** The Issues unfolded in each view, by the view's key. */
@@ -244,15 +247,20 @@ export class WorkbenchState {
       : undefined;
   }
 
-  /** Puts the Filters that search `query` on the Workbench, or takes them off it (#819), then asks again, as
+  /** Puts the Filter that searches `query` on the Workbench, or takes it off (#819), then asks again, as
    * the Sidebar counts such a Filter another way. Says what went wrong, if anything did, and keeps it in
-   * `switchProblem` until the next change. */
+   * `switchProblem` until the next change. `switching` holds while it saves. */
   async putOnWorkbench(query: string, on: boolean) {
-    const answer = await commands.putFilterOnWorkbench({ repository: this.#repository, query, on });
-    const problem = said(answer);
-    this.switchProblem = problem;
-    await this.#ask();
-    return problem;
+    this.switching = true;
+    try {
+      const answer = await commands.putFilterOnWorkbench({ repository: this.#repository, query, on });
+      const problem = said(answer);
+      this.switchProblem = problem;
+      await this.#ask();
+      return problem;
+    } finally {
+      this.switching = false;
+    }
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */

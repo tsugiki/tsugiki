@@ -81,9 +81,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   leaves `[keys]` as the user wrote it. Only a hand edit sets it for now: the Keyboard page shows the keys it
   gives, and gets remapping later (#552).
 - Each `[[repositories.filters]]` in `settings.toml` takes `on_workbench`, which puts the Filter's items on
-  the Workbench; a Filter without it is off ([workbench.md](workbench.md), #819). The switch in the Filter's
-  view saves it at once, without Apply, and writes the Filters of a Repository the file holds without them
-  first. A Repository's page gets the switch with its Filters (#535).
+  the Workbench; a Filter without it is off ([workbench.md](workbench.md), #819). A Repository without
+  `filters` reads as having the two starter Filters, both off. Of two Filters with the same `query`, Tsugiki
+  reads the first. The switch in the Filter's view saves it at once, without Apply, on the first Filter with
+  that search, and writes the Filters of a Repository the file holds without them first. A Repository's page
+  gets the switch with its Filters (#535).
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).

@@ -4,10 +4,7 @@ use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::store::Store;
 use crate::store::testing::temp_database;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::testing::cpython;
 
 fn at(seconds: i64, check: ChangeCheck) -> SyncState {
     let started_at = OffsetDateTime::from_unix_timestamp(seconds).unwrap();

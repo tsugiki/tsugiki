@@ -5,42 +5,21 @@ use time::{Duration, OffsetDateTime};
 use super::super::testing::{migrated, temp_database};
 use super::super::{Connection, MIGRATIONS, Store, issues, open_with, pull_requests};
 use super::*;
-use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{OffDefault, PrState};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::testing::{cpython, issue_facts, pr_facts, sha};
 
 fn at(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH + Duration::seconds(seconds)
 }
 
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text).unwrap()
-}
-
 fn pr(number: u32, title: &str) -> PullRequestFacts {
     PullRequestFacts {
-        number,
         title: title.to_owned(),
-        state: PrState::Open,
-        is_draft: false,
-        author: None,
-        target_branch: "main".to_owned(),
-        ci: None,
         updated_at: at(i64::from(number)),
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: None,
-        off_default: None,
+        ..pr_facts(number)
     }
 }
 
@@ -67,13 +46,8 @@ fn merged_as(number: u32, title: &str, commit: &str) -> PullRequestFacts {
 
 fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        number,
-        title: format!("Issue {number}"),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
         updated_at: at(i64::from(number)),
-        state: Some(IssueState::Open),
+        ..issue_facts(number)
     }
 }
 

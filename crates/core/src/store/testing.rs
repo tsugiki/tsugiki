@@ -27,6 +27,44 @@ pub(super) fn temp_database(name: &str) -> (PathBuf, TempPath) {
     (folder.join("tsugiki.db"), folder)
 }
 
+/// A database in a new temp folder, the store that writes it and a reader of it.
+pub(crate) struct OpenStore {
+    pub(crate) store: Store,
+    pub(crate) reader: StoreReader,
+    pub(crate) path: PathBuf,
+    pub(crate) open: OpenReader,
+    /// Dropped last, once `close` has closed the database in it.
+    _folder: TempPath,
+}
+
+impl OpenStore {
+    /// A new database in the temp folder `name` names.
+    pub(crate) fn new(name: &str) -> Self {
+        let (path, folder) = temp_database(name);
+        Self::of(path, folder)
+    }
+
+    /// The database at `path` in the temp `folder`, which a test has written to before.
+    pub(crate) fn of(path: PathBuf, folder: TempPath) -> Self {
+        let store = Store::open(&path).unwrap();
+        let (to_open, reader) = reader();
+        let open = to_open.open(&path).unwrap();
+        Self {
+            store,
+            reader,
+            path,
+            open,
+            _folder: folder,
+        }
+    }
+
+    /// Closes the reader and the store, so the folder can go.
+    pub(crate) fn close(self) {
+        self.open.close();
+        self.store.close();
+    }
+}
+
 pub(super) fn user_version(path: &Path) -> u32 {
     Connection::open(path)
         .unwrap()

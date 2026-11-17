@@ -7,15 +7,12 @@ use crate::facts::pull_requests::ReviewedCommit;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::Store;
-use crate::store::testing::temp_database;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::store::testing::{OpenStore, temp_database};
+use crate::testing::{cpython, sha};
 
 #[test]
 fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read() {
-    let (path, _folder) = temp_database("conversation-before-ids");
+    let (path, folder) = temp_database("conversation-before-ids");
     let before = MIGRATIONS
         .iter()
         .position(|step| step.sql == super::DATABASE_IDS)
@@ -40,12 +37,9 @@ fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read()
         )
         .unwrap();
 
-    let store = Store::open(&path).unwrap();
-    let (to_open, reader) = reader();
-    let open = to_open.open(&path).unwrap();
-    let (_, kept) = reader.pull_request_facts(&cpython(), 1).unwrap();
-    open.close();
-    store.close();
+    let db = OpenStore::of(path, folder);
+    let (_, kept) = db.reader.pull_request_facts(&cpython(), 1).unwrap();
+    db.close();
 
     let kept = kept.unwrap();
     assert_eq!(kept.conversation.comments.len(), 1);
@@ -55,10 +49,6 @@ fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read()
     let thread = &kept.reviews[0].threads[0];
     assert_eq!(thread.comments.len(), 1);
     assert_eq!(thread.comments[0].id, None);
-}
-
-fn sha(hex: &str) -> CommitSha {
-    CommitSha::parse(hex).unwrap()
 }
 
 /// A Review by `author` of the commit `commit`, `hours` after 1970.

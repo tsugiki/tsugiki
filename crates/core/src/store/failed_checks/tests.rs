@@ -1,47 +1,18 @@
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use crate::facts::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::login::Login;
-use crate::repository::RepositoryName;
-use crate::store::testing::temp_database;
-use crate::store::{Store, reader};
-
-fn me() -> Login {
-    Login::new("octocat")
-}
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::store::Store;
+use crate::store::testing::OpenStore;
+use crate::testing::{cpython, hours_ago, me, pr_facts};
 
 fn failing(number: u32) -> PullRequestFacts {
     PullRequestFacts {
-        number,
-        title: format!("PR {number}"),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(me()),
-        target_branch: "main".to_owned(),
         ci: Some(CiState::Failure),
-        updated_at: OffsetDateTime::now_utc() - Duration::hours(1),
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: None,
-        off_default: None,
+        updated_at: hours_ago(1),
+        ..pr_facts(number)
     }
-}
-
-/// The folder of a database, and a store of it. The folder comes first, so a pattern that binds them all
-/// drops it last.
-fn opened(name: &str) -> (crate::testing::TempPath, Store, std::path::PathBuf) {
-    let (path, folder) = temp_database(&format!("failed-checks-{name}"));
-    let store = Store::open(&path).unwrap();
-    (folder, store, path)
 }
 
 fn unread(store: &Store) -> Vec<u32> {
@@ -52,8 +23,8 @@ fn unread(store: &Store) -> Vec<u32> {
 
 #[test]
 fn only_the_users_open_prs_whose_ci_failed_are_worth_asking_about() {
-    let (_folder, store, _path) = opened("which");
-    store
+    let db = OpenStore::new("failed-checks-which");
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![
@@ -78,45 +49,42 @@ fn only_the_users_open_prs_whose_ci_failed_are_worth_asking_about() {
         )
         .unwrap();
 
-    assert_eq!(unread(&store), [1, 5]);
-    store.close();
+    assert_eq!(unread(&db.store), [1, 5]);
+    db.close();
 }
 
 #[test]
 fn asking_once_is_enough_and_the_names_replace_the_last_ones() {
-    let (_folder, store, path) = opened("once");
-    store
+    let db = OpenStore::new("failed-checks-once");
+    db.store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
     let first = vec!["Docs".to_owned(), "Tests".to_owned()];
-    store
+    db.store
         .save_failed_checks(&cpython(), vec![(1, first)])
         .unwrap();
-    assert_eq!(unread(&store), [0_u32; 0]);
+    assert_eq!(unread(&db.store), [0_u32; 0]);
 
     let then = vec!["Tests".to_owned()];
-    store
+    db.store
         .save_failed_checks(&cpython(), vec![(1, then.clone())])
         .unwrap();
-    let (to_open, reader) = reader();
-    let open = to_open.open(&path).unwrap();
-    let facts = reader.work_facts(&cpython()).unwrap();
+    let facts = db.reader.work_facts(&cpython()).unwrap();
 
     assert_eq!(facts.activity.failed_checks.get(&1), Some(&then));
-    open.close();
-    store.close();
+    db.close();
 }
 
 #[test]
 fn a_pr_that_moved_while_failing_is_worth_asking_about_again() {
-    let (_folder, store, _path) = opened("moved");
-    store
+    let db = OpenStore::new("failed-checks-moved");
+    db.store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
-    store
+    db.store
         .save_failed_checks(&cpython(), vec![(1, vec!["Docs".to_owned()])])
         .unwrap();
-    store
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![PullRequestFacts {
@@ -126,20 +94,20 @@ fn a_pr_that_moved_while_failing_is_worth_asking_about_again() {
         )
         .unwrap();
 
-    assert_eq!(unread(&store), [1]);
-    store.close();
+    assert_eq!(unread(&db.store), [1]);
+    db.close();
 }
 
 #[test]
 fn a_later_failure_is_worth_asking_about_again() {
-    let (_folder, store, _path) = opened("again");
-    store
+    let db = OpenStore::new("failed-checks-again");
+    db.store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
-    store
+    db.store
         .save_failed_checks(&cpython(), vec![(1, vec!["Docs".to_owned()])])
         .unwrap();
-    store
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![PullRequestFacts {
@@ -148,10 +116,10 @@ fn a_later_failure_is_worth_asking_about_again() {
             }],
         )
         .unwrap();
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![failing(1)])
         .unwrap();
 
-    assert_eq!(unread(&store), [1]);
-    store.close();
+    assert_eq!(unread(&db.store), [1]);
+    db.close();
 }

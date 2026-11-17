@@ -3,13 +3,8 @@ use time::OffsetDateTime;
 use super::*;
 use crate::facts::issue_content::CommentId;
 use crate::login::Login;
-use crate::store::Store;
-use crate::store::reader;
-use crate::store::testing::temp_database;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::store::testing::OpenStore;
+use crate::testing::cpython;
 
 fn comment(id: Option<u64>, body_html: &str) -> IssueComment {
     IssueComment {
@@ -34,15 +29,12 @@ fn content(body_html: &str, comments: Vec<IssueComment>) -> IssueContent {
 
 #[test]
 fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
-    let (path, _folder) = temp_database("issue-content");
-    let store = Store::open(&path).unwrap();
-    let (to_open, reader) = reader();
-    let open = to_open.open(&path).unwrap();
+    let db = OpenStore::new("issue-content");
     let first = content(
         "<p>One</p>",
         vec![comment(Some(1), "<p>a</p>"), comment(Some(2), "<p>b</p>")],
     );
-    store.save_issue_content(&cpython(), 1, first).unwrap();
+    db.store.save_issue_content(&cpython(), 1, first).unwrap();
     // SQLite's integers stop at i64::MAX, and GitHub's numbers don't.
     let other = content(
         "<p>Other</p>",
@@ -51,7 +43,7 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
             comment(Some(u64::MAX), "<p>e</p>"),
         ],
     );
-    store
+    db.store
         .save_issue_content(&cpython(), 2, other.clone())
         .unwrap();
     // A read kept from before Tsugiki asked when an Issue was opened has no time for it, and one from before
@@ -60,15 +52,14 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
         opened_at: None,
         ..content("<p>Two</p>", vec![comment(None, "<p>d</p>")])
     };
-    store
+    db.store
         .save_issue_content(&cpython(), 1, second.clone())
         .unwrap();
 
-    let read = |number| reader.issue_facts(&cpython(), number).unwrap().1;
+    let read = |number| db.reader.issue_facts(&cpython(), number).unwrap().1;
 
     assert_eq!(read(1), Some(second));
     assert_eq!(read(2), Some(other));
     assert_eq!(read(3), None);
-    open.close();
-    store.close();
+    db.close();
 }

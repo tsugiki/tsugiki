@@ -1,18 +1,12 @@
-use super::super::testing::temp_database;
+use super::super::testing::{OpenStore, temp_database};
 use super::super::*;
 use crate::error::ErrorKind;
-use crate::facts::CommitSha;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, LatestReview, OffDefault, PrState, ReviewState};
 use crate::repository::RepositoryName;
-use crate::testing::TempPath;
+use crate::testing::{cpython, sha};
 use std::fs;
-use std::path::PathBuf;
 use time::OffsetDateTime;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
 
 fn facts(number: u32) -> PullRequestFacts {
     PullRequestFacts {
@@ -46,16 +40,6 @@ fn at(seconds: i64, facts: PullRequestFacts) -> PullRequestFacts {
     }
 }
 
-/// The folder of a database, and a store and a reader of it. The folder comes first, so a pattern that binds
-/// them all drops it last.
-fn opened(name: &str) -> (TempPath, Store, OpenReader, StoreReader, PathBuf) {
-    let (path, folder) = temp_database(name);
-    let store = Store::open(&path).unwrap();
-    let (to_open, reader) = reader();
-    let open = to_open.open(&path).unwrap();
-    (folder, store, open, reader, path)
-}
-
 fn numbers(reader: &StoreReader, repository: &RepositoryName) -> Vec<u32> {
     let facts = reader.work_facts(repository).unwrap();
     facts.pull_requests.iter().map(|pr| pr.number).collect()
@@ -63,15 +47,14 @@ fn numbers(reader: &StoreReader, repository: &RepositoryName) -> Vec<u32> {
 
 #[test]
 fn what_the_writer_saves_the_reader_reads() {
-    let (_folder, store, open, reader, _path) = opened("pr-roundtrip");
-    store.remember_login(&Login::new("Octocat")).unwrap();
+    let db = OpenStore::new("pr-roundtrip");
+    db.store.remember_login(&Login::new("Octocat")).unwrap();
 
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
-    let read = reader.work_facts(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    db.close();
 
     assert_eq!(read.viewer, Some(Login::new("octocat")));
     assert_eq!(read.pull_requests, [facts(1)]);
@@ -79,7 +62,7 @@ fn what_the_writer_saves_the_reader_reads() {
 
 #[test]
 fn a_pr_with_nothing_optional_reads_back_the_same() {
-    let (_folder, store, open, reader, _path) = opened("pr-sparse");
+    let db = OpenStore::new("pr-sparse");
     let sparse = PullRequestFacts {
         author: None,
         ci: None,
@@ -95,23 +78,18 @@ fn a_pr_with_nothing_optional_reads_back_the_same() {
         ..facts(2)
     };
 
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, sparse.clone())])
         .unwrap();
-    let read = reader.work_facts(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    db.close();
 
     assert_eq!(read.pull_requests, [sparse]);
 }
 
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text).unwrap()
-}
-
 #[test]
 fn a_backports_facts_read_back_the_same() {
-    let (_folder, store, open, reader, _path) = opened("pr-backport");
+    let db = OpenStore::new("pr-backport");
     let backport = PullRequestFacts {
         off_default: Some(OffDefault {
             description: "(cherry picked from commit 0123abc)".to_owned(),
@@ -131,22 +109,21 @@ fn a_backports_facts_read_back_the_same() {
         ..facts(6)
     };
 
-    store
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![at(2, backport.clone()), at(1, origin.clone())],
         )
         .unwrap();
-    let read = reader.work_facts(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    db.close();
 
     assert_eq!(read.pull_requests, [at(2, backport), at(1, origin)]);
 }
 
 #[test]
 fn saving_a_backport_again_replaces_its_commits() {
-    let (_folder, store, open, reader, _path) = opened("pr-backport-again");
+    let db = OpenStore::new("pr-backport-again");
     let first = PullRequestFacts {
         off_default: Some(OffDefault {
             description: String::new(),
@@ -164,20 +141,19 @@ fn saving_a_backport_again_replaces_its_commits() {
         ..first.clone()
     };
 
-    store.save_pull_requests(&cpython(), vec![first]).unwrap();
-    store
+    db.store.save_pull_requests(&cpython(), vec![first]).unwrap();
+    db.store
         .save_pull_requests(&cpython(), vec![again.clone()])
         .unwrap();
-    let read = reader.work_facts(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    db.close();
 
     assert_eq!(read.pull_requests, [again]);
 }
 
 #[test]
 fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
-    let (_folder, store, open, _reader, _path) = opened("pr-frozen");
+    let db = OpenStore::new("pr-frozen");
     let in_state = |number, state| PullRequestFacts {
         state,
         ..facts(number)
@@ -188,7 +164,7 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
         head: None,
         ..in_state(number, PrState::Merged)
     };
-    store
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![
@@ -201,13 +177,12 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
         )
         .unwrap();
     let elsewhere = RepositoryName::parse("some-maintainer/gcmon").unwrap();
-    store
+    db.store
         .save_pull_requests(&elsewhere, vec![merged(4)])
         .unwrap();
 
-    let frozen = store.frozen_pull_requests(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let frozen = db.store.frozen_pull_requests(&cpython()).unwrap();
+    db.close();
 
     let mut numbers: Vec<u32> = frozen.iter().map(|pr| pr.number).collect();
     numbers.sort_unstable();
@@ -216,8 +191,8 @@ fn merged_and_closed_prs_are_frozen_and_open_ones_are_not() {
 
 #[test]
 fn saving_a_pr_again_replaces_what_was_known() {
-    let (_folder, store, open, reader, _path) = opened("pr-replace");
-    store
+    let db = OpenStore::new("pr-replace");
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
     let changed = PullRequestFacts {
@@ -234,12 +209,11 @@ fn saving_a_pr_again_replaces_what_was_known() {
         ..at(2, facts(1))
     };
 
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![changed.clone()])
         .unwrap();
-    let read = reader.work_facts(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    db.close();
 
     assert_eq!(read.pull_requests, [changed]);
 }
@@ -273,12 +247,12 @@ fn a_pr_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
 
 #[test]
 fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
-    let (_folder, store, open, reader, _path) = opened("pr-order");
+    let db = OpenStore::new("pr-order");
     let merged = PullRequestFacts {
         state: PrState::Merged,
         ..facts(3)
     };
-    store
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![
@@ -290,40 +264,38 @@ fn every_pr_is_read_whatever_its_state_and_the_latest_update_comes_first() {
         )
         .unwrap();
 
-    let found = numbers(&reader, &cpython());
-    open.close();
-    store.close();
+    let found = numbers(&db.reader, &cpython());
+    db.close();
 
     assert_eq!(found, [3, 2, 4, 1]);
 }
 
 #[test]
 fn repositories_keep_apart_and_their_names_ignore_case() {
-    let (_folder, store, open, reader, _path) = opened("pr-repositories");
+    let db = OpenStore::new("pr-repositories");
     let peps = RepositoryName::parse("python/peps").unwrap();
     let shouting = RepositoryName::parse("Python/CPython").unwrap();
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
-    store
+    db.store
         .save_pull_requests(&peps, vec![at(1, facts(2))])
         .unwrap();
 
-    let found = numbers(&reader, &shouting);
-    open.close();
-    store.close();
+    let found = numbers(&db.reader, &shouting);
+    db.close();
 
     assert_eq!(found, [1]);
 }
 
 #[test]
 fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
-    let (_folder, store, open, reader, _path) = opened("pr-requests");
+    let db = OpenStore::new("pr-requests");
     let in_state = |number, state| PullRequestFacts {
         state,
         ..facts(number)
     };
-    store
+    db.store
         .save_pull_requests(
             &cpython(),
             vec![
@@ -334,10 +306,9 @@ fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
         )
         .unwrap();
 
-    let read = reader.work_facts(&cpython()).unwrap();
-    let stored = count(&store, "SELECT count(*) AS found FROM review_requests");
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    let stored = count(&db.store,"SELECT count(*) AS found FROM review_requests");
+    db.close();
 
     let requests: Vec<(u32, usize)> = read
         .pull_requests
@@ -365,14 +336,14 @@ fn count(store: &Store, query: &'static str) -> u32 {
 
 #[test]
 fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
-    let (_folder, store, open, _reader, _path) = opened("pr-columns");
+    let db = OpenStore::new("pr-columns");
 
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![at(7, facts(1))])
         .unwrap();
     let found = [
             count(
-                &store,
+                &db.store,
                 "SELECT count(*) AS found FROM pull_requests
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
                    AND title = 'gh-1: Fix it' AND state = 'OPEN' AND is_draft = 0
@@ -380,39 +351,38 @@ fn a_saved_pr_holds_the_same_text_in_the_same_columns() {
                    AND updated_at = 7 AND off_default_description = 'Fixes #9'",
             ),
             count(
-                &store,
+                &db.store,
                 "SELECT count(*) AS found FROM review_requests
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
                    AND login = 'Octocat' COLLATE BINARY",
             ),
             count(
-                &store,
+                &db.store,
                 "SELECT count(*) AS found FROM latest_reviews
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
                    AND login = 'some-reviewer' COLLATE BINARY AND state = 'APPROVED'",
             ),
             count(
-                &store,
+                &db.store,
                 "SELECT count(*) AS found FROM assignees
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1
                    AND login = 'some-assignee' COLLATE BINARY",
             ),
             count(
-                &store,
+                &db.store,
                 "SELECT count(*) AS found FROM closing_references
                  WHERE repository = 'python/cpython' COLLATE BINARY AND number = 1 AND issue IN (7, 8)",
             ),
         ];
-    open.close();
-    store.close();
+    db.close();
 
     assert_eq!(found, [1, 1, 1, 1, 2]);
 }
 
 #[test]
 fn a_row_an_earlier_tsugiki_wrote_reads_back() {
-    let (_folder, store, open, reader, _path) = opened("pr-earlier");
-    store
+    let db = OpenStore::new("pr-earlier");
+    db.store
             .call(|connection| {
                 connection.execute_batch(
                     "INSERT INTO pull_requests
@@ -427,9 +397,8 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
             .unwrap()
             .unwrap();
 
-    let read = reader.work_facts(&cpython()).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    db.close();
 
     let earlier = PullRequestFacts {
         labels: vec![],
@@ -445,20 +414,19 @@ fn a_row_an_earlier_tsugiki_wrote_reads_back() {
 
 #[test]
 fn logins_keep_githubs_casing_and_the_database_ignores_case() {
-    let (_folder, store, open, reader, _path) = opened("pr-casing");
-    store.remember_login(&Login::new("OctoCat")).unwrap();
+    let db = OpenStore::new("pr-casing");
+    db.store.remember_login(&Login::new("OctoCat")).unwrap();
     let twice = PullRequestFacts {
         review_requests: vec![Login::new("Some-Reviewer"), Login::new("some-reviewer")],
         ..facts(1)
     };
 
-    store
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, twice)])
         .unwrap();
-    let read = reader.work_facts(&cpython()).unwrap();
-    let viewer = store.last_login().unwrap().unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(&cpython()).unwrap();
+    let viewer = db.store.last_login().unwrap().unwrap();
+    db.close();
 
     let requested: Vec<_> = read
         .pull_requests
@@ -472,8 +440,8 @@ fn logins_keep_githubs_casing_and_the_database_ignores_case() {
 
 #[test]
 fn a_reader_doesnt_wait_for_a_write_in_progress() {
-    let (_folder, store, open, reader, _path) = opened("pr-no-wait");
-    store
+    let db = OpenStore::new("pr-no-wait");
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
     let (started, writing) = mpsc::channel();
@@ -489,26 +457,25 @@ fn a_reader_doesnt_wait_for_a_write_in_progress() {
         released.recv().unwrap();
         transaction.commit().unwrap();
     });
-    store.jobs.send(job).unwrap();
+    db.store.jobs.send(job).unwrap();
     writing.recv().unwrap();
 
-    let read = reader.work_facts(&cpython());
+    let read = db.reader.work_facts(&cpython());
     release.send(()).unwrap();
-    open.close();
-    store.close();
+    db.close();
 
     assert_eq!(read.unwrap().pull_requests, [facts(1)]);
 }
 
 #[test]
 fn a_reader_cant_write() {
-    let (_folder, store, open, reader, _path) = opened("pr-read-only");
+    let db = OpenStore::new("pr-read-only");
 
-    let written = reader
+    let written = db
+        .reader
         .call(|connection| write_last_login(connection, &Login::new("octocat")))
         .unwrap();
-    open.close();
-    store.close();
+    db.close();
 
     assert!(written.is_err());
 }
@@ -551,15 +518,15 @@ fn a_reader_with_no_file_to_read_says_so() {
 
 #[test]
 fn closing_both_connections_leaves_only_the_database() {
-    let (_folder, store, open, reader, path) = opened("pr-close");
-    store
+    let db = OpenStore::new("pr-close");
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
 
-    open.close();
-    let refused = reader.work_facts(&cpython()).unwrap_err();
-    store.close();
-    let mut left: Vec<_> = fs::read_dir(path.parent().unwrap())
+    db.open.close();
+    let refused = db.reader.work_facts(&cpython()).unwrap_err();
+    db.store.close();
+    let mut left: Vec<_> = fs::read_dir(db.path.parent().unwrap())
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
         .collect();
@@ -571,26 +538,25 @@ fn closing_both_connections_leaves_only_the_database() {
 
 #[test]
 fn a_row_tsugiki_cant_understand_is_a_read_error() {
-    let (_folder, store, open, reader, _path) = opened("pr-bad-row");
-    store
+    let db = OpenStore::new("pr-bad-row");
+    db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
-    let _ = store
+    let _ = db.store
         .call(|connection| connection.execute("UPDATE pull_requests SET ci = 'SOMETHING NEW'", []))
         .unwrap()
         .unwrap();
 
-    let refused = reader.work_facts(&cpython()).unwrap_err();
-    open.close();
-    store.close();
+    let refused = db.reader.work_facts(&cpython()).unwrap_err();
+    db.close();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_READ));
 }
 
 #[test]
 fn a_save_that_fails_says_so_and_keeps_nothing_of_the_batch() {
-    let (_folder, store, open, reader, _path) = opened("pr-bad-save");
-    store
+    let db = OpenStore::new("pr-bad-save");
+    db.store
         .call(|connection| {
             connection.execute_batch(
                 "CREATE TRIGGER refuse BEFORE INSERT ON assignees
@@ -601,12 +567,11 @@ fn a_save_that_fails_says_so_and_keeps_nothing_of_the_batch() {
         .unwrap()
         .unwrap();
 
-    let refused = store
+    let refused = db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1)), at(1, facts(2))])
         .unwrap_err();
-    let found = numbers(&reader, &cpython());
-    open.close();
-    store.close();
+    let found = numbers(&db.reader, &cpython());
+    db.close();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_WRITE));
     assert_eq!(found, [0_u32; 0]);

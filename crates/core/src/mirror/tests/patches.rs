@@ -198,7 +198,11 @@ fn a_hand_over_during_the_reads_hands_over_what_they_read_and_doesnt_read_it_aga
         BTreeSet::from([&first, &second])
     );
     let handed_commits: Vec<CommitSha> = paths(&handed).into_keys().collect();
-    assert_eq!(handed_commits, [one_commit], "the hand-over takes what was read");
+    assert_eq!(
+        handed_commits,
+        [one_commit],
+        "the hand-over takes what was read"
+    );
     assert_eq!(paths(&then).into_keys().collect::<Vec<_>>(), [other_commit]);
     assert!(!read_again, "each commit is read once");
     assert!(after.is_err(), "{after:?}");

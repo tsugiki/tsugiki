@@ -707,16 +707,24 @@ fn fake_rev_list(mirror: &Path, args: &[&OsStr]) -> io::Result<String> {
         let words = format!("fatal: cannot change to '{}'", mirror.display());
         return Err(io::Error::other(words));
     }
-    let commits = args.iter().filter_map(|arg| CommitSha::parse(arg.to_str()?));
+    let commits = args
+        .iter()
+        .filter_map(|arg| CommitSha::parse(arg.to_str()?));
     let held = commits.filter(|commit| fake_object(mirror, commit).exists());
-    Ok(held.map(|commit| format!("{}\n", commit.as_str())).collect())
+    Ok(held
+        .map(|commit| format!("{}\n", commit.as_str()))
+        .collect())
 }
 
 /// The URL of each remote of a clone `fake_clone` made, as `config --get-regexp` lists them.
 fn fake_remote_urls(folder: &Path) -> io::Result<String> {
     let config = fs::read_to_string(folder.join(".git").join("config"))?;
-    let urls = config.lines().filter_map(|line| line.trim().strip_prefix("url = "));
-    Ok(urls.map(|url| format!("remote.origin.url {url}\n")).collect())
+    let urls = config
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("url = "));
+    Ok(urls
+        .map(|url| format!("remote.origin.url {url}\n"))
+        .collect())
 }
 
 impl Mirrors {

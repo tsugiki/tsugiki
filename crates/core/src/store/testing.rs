@@ -2,6 +2,7 @@ use super::*;
 use crate::facts::activity::{Activity, ItemActivity};
 use crate::testing::{TempPath, cpython};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 pub(super) const V1: Migration = Migration {
     version: 1,
@@ -38,10 +39,20 @@ pub(crate) struct OpenStore {
     _folder: TempPath,
 }
 
+/// The file of a new database once its migrations have run. Each [`OpenStore::new`] starts from a copy, and
+/// skips running them again.
+static MIGRATED: OnceLock<Vec<u8>> = OnceLock::new();
+
 impl OpenStore {
     /// A new database in the temp folder `name` names.
     pub(crate) fn new(name: &str) -> Self {
+        let migrated = MIGRATED.get_or_init(|| {
+            let (path, _folder) = temp_database("migrated");
+            Store::open(&path).unwrap().close();
+            fs::read(&path).unwrap()
+        });
         let (path, folder) = temp_database(name);
+        fs::write(&path, migrated).unwrap();
         Self::of(path, folder)
     }
 

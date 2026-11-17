@@ -71,7 +71,7 @@ flowchart LR
 
 | Thread | Owns | Where |
 |---|---|---|
-| Session | The token, the GitHub client, the sync queue. Takes the user's demands between sync steps. | `core/src/session.rs` |
+| Session | The token, the GitHub client, the sync queue, and the hour's points the client sums from each answer's cost. Takes the user's demands between sync steps. | `core/src/session.rs` |
 | Store | The one writing SQLite connection. Only the session sends it jobs. | `core/src/store/mod.rs` |
 | StoreReader | A read-only connection that the window's commands share. | `core/src/store/mod.rs` |
 | Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep, and each Repository's Lookup checkout, which it moves to the PR on screen and tells readers where it is once it stops moving. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. It ranks its queue as `fetching` says: the user's demands first, a move of the Lookup checkout and then the heads of the PRs they opened, in a fetch of their own; then the rules' wants, each the whole set for a Repository, which replaces the last; then clones and upkeep. | `core/src/mirror.rs` |
@@ -112,10 +112,10 @@ Tauri's managed state.
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again.
 
-App-wide status (the connection, the last sync, cloning progress, a Mirror's problem, each Mirror's state,
-whether the Mirror worker holds back git, a newer version) takes a shorter path. The app keeps the newest
-value in a `latest` copy for its command, then emits an event. A window that starts listening late asks the
-command and still gets the newest value.
+App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
+problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter
+path. The app keeps the newest value in a `latest` copy for its command, then emits an event. A window that
+starts listening late asks the command and still gets the newest value.
 
 A diff takes a third path, because it is too big to send whole
 ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)). The core runs `git diff` in the Mirror
@@ -150,7 +150,7 @@ The big ones, in the order data passes through them:
 
 | Module | What it does |
 |---|---|
-| `github/` | The GitHub client: the GraphQL queries and their answers, parsed into the types of `facts`. It talks through a `Transport`, so tests replay recorded answers. |
+| `github/` | The GitHub client: the GraphQL queries and their answers, parsed into the types of `facts`. It talks through a `Transport`, so tests replay recorded answers. It sums the points each answer cost this hour (`points.rs`). |
 | `facts.rs`, `facts/` | The facts `work` judges: what GitHub says of each Issue and PR, the patch-ids the Mirror worker reads, and `WorkFacts`, the bundle a screen reads from the store. Neither the client nor the store owns them. |
 | `sync/` | Decides what to ask GitHub for, how much at a time and when to pause: the first sync in tiers, then `refresh`. It saves its place after each step. |
 | `store/` | Saves and reads the facts, a file for each kind: Issues, PRs, activity, Filters, sync state. [schema.md](schema.md) draws its tables. It keeps the links each PR names under each Conventions, which `links` works out as the PR is saved (`pr_links.rs`). A `Snapshot` is one read transaction for a view that works out what to read next from what it read, as the Inbox does. |

@@ -22,8 +22,9 @@ pub struct Replayer {
     dir: PathBuf,
 }
 
-const NO_ISSUES: &str =
-    r#"{"data":{"repository":{},"rateLimit":{"remaining":4000,"resetAt":"2026-11-04T23:00:00Z"}}}"#;
+/// The answer to a read by numbers that no recording holds: none of them are there.
+const NO_ISSUES: &str = r#"{"data":{"repository":{},"rateLimit":{"cost":1,"limit":5000,"used":1000,
+    "remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#;
 
 impl Replayer {
     pub fn new(dir: PathBuf) -> Self {

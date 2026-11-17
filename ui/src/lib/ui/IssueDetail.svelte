@@ -249,7 +249,8 @@
   >{` ${row.title}`}{/snippet}
 
 <!-- A count in the row above the tree, after a comma only a screen reader hears: "Open, 1". -->
-{#snippet counted(count: number)}<span class="unseen">{PAUSE}</span><span class="count">{count}</span
+{#snippet counted(count: number)}<span class="for-screen-readers">{PAUSE}</span><span class="count"
+    >{count}</span
   >{/snippet}
 
 <style>
@@ -348,16 +349,6 @@
 
   .counts .none :global(.octicon) {
     color: var(--state-muted);
-  }
-
-  /* The comma between a word and its count, which only a screen reader reads. */
-  .unseen {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   /* The tree: a box with a line between its rows. */

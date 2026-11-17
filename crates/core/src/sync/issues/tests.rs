@@ -2,7 +2,7 @@ use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::Syncs;
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, fetched, fetched_titled, issues, no_issue_references, plain,
+    FEW, Harness, RATE_LIMIT, cpython, fetched, fetched_titled, issues, no_issue_references, plain,
     run_to_the_end, searches_finding,
 };
 use std::time::{Duration, Instant};
@@ -15,9 +15,9 @@ fn fetched_naming_issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachab
 #[test]
 fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
     let mut replies = searches_finding(&["a", "b"]);
-    replies.push(fetched_naming_issues(&[1, 2], LOTS));
-    replies.push(issues(&[1, 2], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_naming_issues(&[1, 2], RATE_LIMIT));
+    replies.push(issues(&[1, 2], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issues", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -39,7 +39,7 @@ fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
 #[test]
 fn a_sync_with_no_named_issues_asks_for_none() {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched(&[1], LOTS));
+    replies.push(fetched(&[1], RATE_LIMIT));
     let harness = Harness::new("no-issues", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -53,9 +53,9 @@ fn a_sync_with_no_named_issues_asks_for_none() {
 #[test]
 fn a_sync_fetches_a_titles_issue_whatever_the_conventions_of_its_repository() {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_naming_issues(&[1], LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_naming_issues(&[1], RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("conventions", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
@@ -73,10 +73,10 @@ fn a_sync_fetches_a_titles_issue_whatever_the_conventions_of_its_repository() {
 fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
     let ids: Vec<u32> = (1..=30).collect();
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_naming_issues(&ids, LOTS));
+    replies.push(fetched_naming_issues(&ids, RATE_LIMIT));
     replies.push(issues(&[1], FEW));
-    replies.push(issues(&[2], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[2], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issue-batches", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));

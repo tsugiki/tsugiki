@@ -3,7 +3,7 @@ use std::sync::mpsc::Receiver;
 use time::format_description::well_known::Rfc3339;
 
 use super::*;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
 use crate::login::Login;
 
 fn cpython() -> RepositoryName {
@@ -16,8 +16,7 @@ fn moment(text: &str) -> OffsetDateTime {
 
 /// A `GitHub` that gives one `issue`, and what it was asked.
 fn answering(issue: &Value) -> (GitHub, Receiver<(String, Value)>) {
-    let rate_limit = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
-    let data = json!({ "repository": { "issue": issue }, "rateLimit": rate_limit });
+    let data = json!({ "repository": { "issue": issue }, "rateLimit": rate_limit() });
     let body = json!({ "data": data }).to_string();
     let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
     (GitHub::new(Box::new(script), token()), asked)

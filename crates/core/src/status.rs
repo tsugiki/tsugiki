@@ -1,10 +1,12 @@
-//! App-wide status, owned by the core (ADR 0008). For now: the connection, who is signed in, and problems.
+//! App-wide status, owned by the core (ADR 0008). For now: the connection, who is signed in, problems, the
+//! syncs' work and the hour's points.
 
 use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
+use crate::github::points::HourPoints;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -136,6 +138,8 @@ pub struct OpenSync {
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
+type AnnouncePoints = Box<dyn FnMut(Option<&HourPoints>) + Send>;
+
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
 /// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
@@ -147,6 +151,8 @@ pub struct StatusBoard {
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
     sync_activity: Option<SyncActivity>,
     announce_sync_activity: AnnounceActivity,
+    hour_points: Option<HourPoints>,
+    announce_hour_points: AnnouncePoints,
 }
 
 impl StatusBoard {
@@ -159,6 +165,8 @@ impl StatusBoard {
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
+            hour_points: None,
+            announce_hour_points: Box::new(|_| {}),
         }
     }
 
@@ -188,6 +196,23 @@ impl StatusBoard {
     pub fn with_sync_activity(mut self, announce: AnnounceActivity) -> Self {
         self.announce_sync_activity = announce;
         self
+    }
+
+    /// Also tells `announce` the hour's points, each time an answer from GitHub changes them, and nothing
+    /// once the hour resets.
+    #[must_use]
+    pub fn with_hour_points(mut self, announce: AnnouncePoints) -> Self {
+        self.announce_hour_points = announce;
+        self
+    }
+
+    /// Announces `points` if they changed, going back to nothing when the hour resets. Before GitHub's first
+    /// answer that counts them, nothing is no change.
+    pub(crate) fn hour_points(&mut self, points: Option<HourPoints>) {
+        if self.hour_points != points {
+            self.hour_points = points;
+            (self.announce_hour_points)(self.hour_points.as_ref());
+        }
     }
 
     pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {

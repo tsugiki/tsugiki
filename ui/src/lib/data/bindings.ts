@@ -21,6 +21,11 @@ export const commands = {
 	lastSync: () => __TAURI_INVOKE<LastSync_Serialize | null>("last_sync"),
 	/**  What the queue of syncs is doing, for a window that has just loaded. */
 	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
+	/**
+	 *  The hour's GitHub points, for a window that has just loaded. Nothing, until GitHub's first answer of the
+	 *  run says, and from the hour's reset until an answer of the next hour says.
+	 */
+	hourPoints: () => __TAURI_INVOKE<HourPoints_Serialize | null>("hour_points"),
 	/**  The clone of a mirror under way, for a window that has just loaded. */
 	cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
 	/**  The latest reason no mirror can be made, for a window as it loads. */
@@ -302,6 +307,7 @@ export const events = {
 	cloningChanged: makeEvent<CloningChanged_Serialize, CloningChanged_Deserialize>("cloning-changed"),
 	headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
 	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
+	hourPointsChanged: makeEvent<HourPointsChanged_Serialize, HourPointsChanged_Deserialize>("hour-points-changed"),
 	languageServersChanged: makeEvent<LanguageServersChanged_Serialize, LanguageServersChanged_Deserialize>("language-servers-changed"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
@@ -1145,6 +1151,72 @@ export type Home_Serialize =
  *  the rest in the settings' order.
  */
 others: RepositoryName[] };
+
+/**
+ *  The hour's points, as GitHub's last answer counted them, with the points Tsugiki's answers cost. It lives
+ *  in memory only, so a restart counts again from its first answer.
+ */
+export type HourPoints = HourPoints_Serialize | HourPoints_Deserialize;
+
+/**
+ *  Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+ *  status bar can say.
+ */
+export type HourPointsChanged = HourPointsChanged_Serialize | HourPointsChanged_Deserialize;
+
+/**
+ *  Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+ *  status bar can say.
+ */
+export type HourPointsChanged_Deserialize = HourPoints_Deserialize | null;
+
+/**
+ *  Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+ *  status bar can say.
+ */
+export type HourPointsChanged_Serialize = HourPoints_Serialize | null;
+
+/**
+ *  The hour's points, as GitHub's last answer counted them, with the points Tsugiki's answers cost. It lives
+ *  in memory only, so a restart counts again from its first answer.
+ */
+export type HourPoints_Deserialize = {
+	/**  The points an hour gives. */
+	limit: number,
+	/**  The points every tool that uses the token spent this hour, Tsugiki among them. */
+	used: number,
+	remaining: number,
+	resets_at: string,
+	/**  The points Tsugiki's answers cost this hour. */
+	spent: number,
+	/**
+	 *  The time Tsugiki started counting, if its first answer of the run came after the hour had spent
+	 *  points: what it spent before a restart is gone. Nothing, when the count holds all Tsugiki spent this
+	 *  hour.
+	 */
+	since: string | null,
+};
+
+/**
+ *  The hour's points, as GitHub's last answer counted them, with the points Tsugiki's answers cost. It lives
+ *  in memory only, so a restart counts again from its first answer.
+ */
+export type HourPoints_Serialize = {
+	/**  The points an hour gives. */
+	limit: number,
+	/**  The points every tool that uses the token spent this hour, Tsugiki among them. */
+	used: number,
+	remaining: number,
+	resets_at: string,
+	/**  The points Tsugiki's answers cost this hour. */
+	spent: number,
+	/**
+	 *  The time Tsugiki started counting, if its first answer of the run came after the hour had spent
+	 *  points: what it spent before a restart is gone. Nothing, when the count holds all Tsugiki spent this
+	 *  hour.
+	 */
+	since: string | null,
+};
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
 export type Inbox = Inbox_Serialize | Inbox_Deserialize;

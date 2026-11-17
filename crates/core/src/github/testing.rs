@@ -1,6 +1,17 @@
 use super::*;
 use crate::token::GhOutput;
 
+/// The points field of an answer's data: one point of 1,000 spent, with plenty left, so nothing pauses, in an
+/// hour that hasn't reset.
+pub(crate) const RATE_LIMIT: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
+    "resetAt":"2999-01-01T00:00:00Z"}"#;
+
+/// [`RATE_LIMIT`] as a value, for an answer built with `json!`.
+pub(crate) fn rate_limit() -> Value {
+    let data: Value = serde_json::from_str(&format!("{{{RATE_LIMIT}}}")).unwrap();
+    data["rateLimit"].clone()
+}
+
 /// Answers every request the same way: the small builder ADR 0009 allows for rare cases.
 pub(crate) struct Canned(pub(crate) Result<Reply, Unreachable>);
 

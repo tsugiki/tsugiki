@@ -2,8 +2,11 @@
   "body": {
     "data": {
       "rateLimit": {
+        "cost": 1,
+        "limit": 5000,
         "remaining": 4900,
-        "resetAt": "2026-11-04T23:00:00Z"
+        "resetAt": "2026-11-04T23:00:00Z",
+        "used": 100
       },
       "repository": {
         "list": {
@@ -16,7 +19,7 @@
       }
     }
   },
-  "query": "query WindowPullRequests($owner: String!, $name: String!, $first: Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { id number updatedAt } } } rateLimit { remaining resetAt } }",
+  "query": "query WindowPullRequests($owner: String!, $name: String!, $first: Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } nodes { id number updatedAt } } } rateLimit { cost limit used remaining resetAt } }",
   "reset": null,
   "status": 200
 }

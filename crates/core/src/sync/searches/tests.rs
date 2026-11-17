@@ -1,5 +1,5 @@
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, fetched, found, nothing, plain, run_to_the_end,
+    FEW, Harness, RATE_LIMIT, cpython, fetched, found, nothing, plain, run_to_the_end,
 };
 use crate::sync::{Syncs, WORK_SEARCHES};
 use serde_json::{Value, json};
@@ -10,11 +10,11 @@ fn a_sync_searches_in_order_then_stores_what_it_found() {
     let harness = Harness::new(
         "order",
         vec![
-            found(&["a"], None, LOTS),
-            found(&["b"], None, LOTS),
-            found(&["c"], None, LOTS),
-            found(&["d"], None, LOTS),
-            fetched(&[1, 2, 3, 4], LOTS),
+            found(&["a"], None, RATE_LIMIT),
+            found(&["b"], None, RATE_LIMIT),
+            found(&["c"], None, RATE_LIMIT),
+            found(&["d"], None, RATE_LIMIT),
+            fetched(&[1, 2, 3, 4], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
@@ -42,12 +42,12 @@ fn a_search_follows_its_pages_before_the_next_search() {
     let harness = Harness::new(
         "pages",
         vec![
-            found(&["a"], Some("next"), LOTS),
-            found(&["b"], None, LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            fetched(&[1, 2], LOTS),
+            found(&["a"], Some("next"), RATE_LIMIT),
+            found(&["b"], None, RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            fetched(&[1, 2], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();

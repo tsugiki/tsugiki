@@ -172,8 +172,9 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "status",
-        uses: &["error", "login", "repository"],
-        why: "Announces app-wide status, which names the signed-in `Login` and the Repositories it is about.",
+        uses: &["error", "github", "login", "repository"],
+        why: "Announces app-wide status, which names the signed-in `Login` and the Repositories it is about, \
+              and the hour's points that `github` counts.",
     },
     Layer {
         module: "links",

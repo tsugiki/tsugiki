@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import { counted } from "$lib/state/counted";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import { treeRows, type TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import MarkButton from "./MarkButton.svelte";
@@ -57,14 +57,7 @@
     return words[why ?? "reading"];
   };
 
-  let browserProblem = $state<string>();
-
-  const onGitHub = async (item: GitHubItem) => {
-    browserProblem = await openOnGitHub(repository, item);
-  };
-  const followLink = async (address: string) => {
-    browserProblem = await openLink(address);
-  };
+  const links = new LinkOpener();
   const openPr = (number: number) => () => {
     onopenpr(number);
   };
@@ -134,8 +127,8 @@
   {#if issue.error}
     <p role="alert">{`Tsugiki can't show this Issue: ${issue.error}`}</p>
   {/if}
-  {#if browserProblem}
-    <p role="alert">{browserProblem}</p>
+  {#if links.problem}
+    <p role="alert">{links.problem}</p>
   {/if}
   {#if issue.view === null}
     <p>{notHeld(issue.number, issue.failedRead)}</p>
@@ -150,7 +143,10 @@
         {#if icon}
           <StateIcon {icon} />
         {/if}
-        <button class="link" onclick={() => void onGitHub({ kind: "issue", number: view.number })}>
+        <button
+          class="link"
+          onclick={() => void links.openOnGitHub(repository, { kind: "issue", number: view.number })}
+        >
           {headline(view)}
         </button>
       </h2>
@@ -235,7 +231,7 @@
       {/if}
 
       {#if view.content}
-        <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
+        <Conversation content={view.content} {now} onlink={(address) => void links.openLink(address)} />
       {:else}
         <p class="by">{UNREAD[issue.failedRead ?? "reading"]}</p>
       {/if}

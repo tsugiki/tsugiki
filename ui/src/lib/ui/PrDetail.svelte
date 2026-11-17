@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type Snippet, untrack } from "svelte";
-  import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     BESIDE_RAIL_LEAST,
     type PanesState,
@@ -64,7 +64,7 @@
     other: "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why.",
   };
 
-  let browserProblem = $state<string>();
+  const links = new LinkOpener();
   // Svelte sets each to null as its element goes.
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
@@ -130,13 +130,6 @@
   function handOnFocus() {
     if (document.activeElement === section && conversationScrolls) panel?.focus({ preventScroll: true });
   }
-
-  const onGitHub = async (item: GitHubItem) => {
-    browserProblem = await openOnGitHub(repository, item);
-  };
-  const followLink = async (address: string) => {
-    browserProblem = await openLink(address);
-  };
 </script>
 
 <!-- The rail's Files tab, which the tree of the PR's changed files fills (#604). -->
@@ -159,8 +152,8 @@
   {#if pr.error}
     <p role="alert">{`Tsugiki can't show this PR: ${pr.error}`}</p>
   {/if}
-  {#if browserProblem}
-    <p role="alert">{browserProblem}</p>
+  {#if links.problem}
+    <p role="alert">{links.problem}</p>
   {/if}
   <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
   {#if pr.issue !== undefined || pr.view}
@@ -187,7 +180,10 @@
     {@const stale = staleReviewLine(view.your_review, view.shares_review_of)}
     <h2>
       <StateIcon icon={prIcon(view)} />
-      <button class="link" onclick={() => void onGitHub({ kind: "pull_request", number: view.number })}>
+      <button
+        class="link"
+        onclick={() => void links.openOnGitHub(repository, { kind: "pull_request", number: view.number })}
+      >
         {headline(view)}
       </button>
     </h2>
@@ -262,7 +258,7 @@
             <Conversation
               content={view.content}
               {now}
-              onlink={(address) => void followLink(address)}
+              onlink={(address) => void links.openLink(address)}
               onthread={(id) => {
                 pr.openThread(id);
               }}
@@ -271,7 +267,7 @@
             <p class="by">{UNREAD[pr.failedRead ?? "reading"]}</p>
           {/if}
         {:else}
-          <FilesTab files={pr.files} {now} onlink={(address) => void followLink(address)} />
+          <FilesTab files={pr.files} {now} onlink={(address) => void links.openLink(address)} />
         {/if}
       </div>
       {#if railed}

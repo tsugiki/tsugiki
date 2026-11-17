@@ -503,9 +503,13 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   const points = page.getByText(/points left/);
   await expect(points).toHaveCount(0);
 
-  const first = { limit: 5000, used: 3760, remaining: 1240, resets_at: "2026-11-17T14:32:00Z", spent: 3610 };
+  // The part goes once the hour has reset, so it resets half an hour from now.
+  const resetsAt = new Date(Date.now() + 30 * 60_000).toISOString();
+  const first = { limit: 5000, used: 3760, remaining: 1240, resets_at: resetsAt, spent: 3610 };
   await emitFromCore(page, "hour-points-changed", { ...first, since: null });
   await expect(points).toContainText("1,240 points left · resets");
+  // What a screen reader reads, as it can't reach the tooltip.
+  await expect(points).toContainText("Tsugiki spent 3,610 of them");
   await expect(points).toHaveAttribute(
     "title",
     /^This hour: 3,760 of 5,000 points used\. Tsugiki spent 3,610/,

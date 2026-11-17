@@ -1,5 +1,17 @@
 //! Tsugiki's GitHub client. It talks through a [`Transport`], so tests replay recorded answers (ADR 0009).
 
+/// The fields of `rateLimit` each query asks for, which `RateLimit` reads, as a literal so a `const` query
+/// can `concat!` it. A query built with `format!` takes [`RATE_LIMIT_FIELDS`]. An answer whose points don't
+/// parse fails, so a query that missed a field would fail each time.
+macro_rules! rate_limit_fields {
+    () => {
+        "rateLimit { cost limit used remaining resetAt }"
+    };
+}
+
+/// The fields of `rateLimit` each query asks for.
+const RATE_LIMIT_FIELDS: &str = rate_limit_fields!();
+
 pub mod activity;
 pub mod checks;
 pub mod clock;
@@ -126,18 +138,23 @@ pub struct Viewer {
 // points were too.
 const VIEWER: Request<'static> = Request {
     operation: "Viewer",
-    query: Cow::Borrowed(
-        "query Viewer { viewer { login } rateLimit { cost limit used remaining resetAt } }",
-    ),
+    query: Cow::Borrowed(concat!(
+        "query Viewer { viewer { login } ",
+        rate_limit_fields!(),
+        " }"
+    )),
     variables: Value::Null,
 };
 
-const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
-                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner diskUsage \
-                                issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
-                                updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
-                                closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } \
-                                rateLimit { cost limit used remaining resetAt } }";
+const CHECK_REPOSITORY: &str = concat!(
+    "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
+     $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner diskUsage \
+     issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
+     updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
+     closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } ",
+    rate_limit_fields!(),
+    " }"
+);
 
 const REPOSITORY_SIZE: &str = "query RepositorySize($owner: String!, $name: String!) { \
                                repository(owner: $owner, name: $name) { diskUsage } }";

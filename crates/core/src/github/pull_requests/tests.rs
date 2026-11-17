@@ -3,11 +3,11 @@ use crate::error::ErrorKind;
 use crate::facts::labels::Label;
 use crate::github::Reply;
 use crate::github::Unreachable;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 
-const RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+use crate::github::testing::RATE_LIMIT as RATE;
 
 const MINE: PrSearch = PrSearch {
     operation: "SearchMine",
@@ -410,9 +410,11 @@ fn a_pr_with_no_checks_and_no_author_says_so() {
 #[test]
 fn a_batch_keeps_the_rest_when_github_no_longer_knows_an_id() {
     // The shape real GitHub sends for an ID it can't resolve.
-    let body = r#"{"data":{"nodes":[null],"rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}},
-            "errors":[{"type":"NOT_FOUND","path":["nodes",0],"message":"Could not resolve to a node"}]}"#;
-    let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
+    let body = format!(
+        r#"{{"data":{{"nodes":[null],{RATE}}},
+            "errors":[{{"type":"NOT_FOUND","path":["nodes",0],"message":"Could not resolve to a node"}}]}}"#
+    );
+    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["gone"]), 25)
@@ -480,7 +482,7 @@ fn a_null_in_a_search_is_left_out() {
             "pageInfo": { "hasNextPage": false, "endCursor": null },
             "nodes": [null, { "id": "a" }],
         },
-        "rateLimit": { "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" },
+        "rateLimit": rate_limit(),
     }});
     let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
 

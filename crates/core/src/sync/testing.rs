@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use super::{Progress, Syncs};
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryCounts, RepositoryName};
 use crate::repository_settings::RepositorySettings;
@@ -18,8 +18,7 @@ use crate::store::{OpenReader, Store, StoreReader};
 use crate::testing::TempPath;
 use crate::token::Token;
 
-pub(super) const LOTS: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
-    "resetAt":"2026-11-04T12:00:00Z"}"#;
+pub(super) const LOTS: &str = RATE_LIMIT;
 
 pub(super) const FEW: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":4990,"remaining":10,
     "resetAt":"2999-01-01T00:00:00Z"}"#;

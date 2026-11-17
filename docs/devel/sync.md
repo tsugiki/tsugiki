@@ -16,10 +16,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   newest first, with the PRs that changed in the window, and for a small one its open items from before the
   window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
   loads only the added days; narrowing it deletes nothing.
-- Every GraphQL answer says what it cost, and Tsugiki sums those costs since the hour began, whichever job
+- A GraphQL answer says what it cost, and Tsugiki sums those costs since the hour began, whichever job
   asked: a sync, opening an Issue or a PR, the checks, asking who is signed in. The sum starts again when
   GitHub's reset moves to the next hour, and lives in memory only. The status bar shows the points left and
-  what Tsugiki spent of those used ([layout.md](layout.md)).
+  what Tsugiki spent of those used ([layout.md](layout.md)), until the reset. Two of Tsugiki's requests count
+  nothing, so the status bar puts them down to other tools: an answer that doesn't say its cost, such as a 502
+  or a timeout, and the size the Mirror worker asks before a clone, on a connection of its own, a point each.
 - Older items come on demand: opening one fetches it and keeps it, a search in All issues also runs on GitHub,
   and All issues ends with "Load 30 more days".
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own

@@ -89,6 +89,11 @@
     };
   });
 
+  // The points come back at the reset, and Tsugiki doesn't know how many until GitHub answers again, so the
+  // part goes then, as offline it would say the old hour's count for good.
+  const points = $derived(
+    visible && hourPoints !== null && new Date(hourPoints.resets_at) > now ? hourPoints : null,
+  );
   const offline = $derived(status?.state === "offline" || status?.state === "offline_as");
   // Hiding the bar can't hide these: nothing else would tell the user.
   const showStatus = $derived(visible || offline || status?.state === "problem" || Boolean(error));
@@ -176,9 +181,13 @@
   {#if lastSync !== null && showStatus}
     <button class:offline onclick={onrefresh}>{syncWords}</button>
   {/if}
-  <!-- Outside the live region too, as it changes with each answer from GitHub. -->
-  {#if hourPoints !== null && visible}
-    <span class="points" class:offline title={pointsTip(hourPoints)}>{pointsWords(hourPoints)}</span>
+  <!-- Outside the live region too, as it changes with each answer from GitHub. A screen reader reads the
+       tooltip with it, as it can't reach a tooltip. -->
+  {#if points !== null}
+    {@const tip = pointsTip(points)}
+    <span class="points" class:offline title={tip}
+      >{pointsWords(points)}<span class="unseen">{` · ${tip}`}</span></span
+    >
   {/if}
   {#if chord !== null && visible}
     <kbd class:offline>{keyLabel(chord, currentOs())}</kbd>
@@ -235,6 +244,16 @@
   .offline {
     background: var(--warn-bg);
     color: var(--warn-fg);
+  }
+
+  /* The points' tooltip, which only a screen reader reads. */
+  .unseen {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   /* An empty bar takes no room and draws no line. */

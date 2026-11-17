@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 
 use super::activity::{TimelineWire, pull_request_activity};
 use super::labels::{LabelWire, label_names};
-use super::{BAD_GATEWAY, GitHub, Request, Unreachable};
+use super::{BAD_GATEWAY, GitHub, RATE_LIMIT_FIELDS, Request, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::CommitSha;
@@ -44,7 +44,7 @@ fn search_query(operation: &str) -> String {
         "query {operation}($query: String!, $first: Int!, $after: String) {{ \
          search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) {{ \
          pageInfo {{ hasNextPage endCursor }} nodes {{ ... on PullRequest {{ id }} }} }} \
-         rateLimit {{ cost limit used remaining resetAt }} }}"
+         {RATE_LIMIT_FIELDS} }}"
     )
 }
 
@@ -84,7 +84,7 @@ pub(super) const PULL_REQUEST_FIELDS: &str = "number title state isDraft updated
 fn fetch_by_ids_query(operation: PrFetch) -> String {
     format!(
         "query {}($ids: [ID!]!) {{ nodes(ids: $ids) {{ ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} \
-         rateLimit {{ cost limit used remaining resetAt }} }}",
+         {RATE_LIMIT_FIELDS} }}",
         operation.name()
     )
 }
@@ -94,7 +94,7 @@ fn fetch_by_number_query() -> String {
     format!(
         "query {FETCH_ORIGIN}($owner: String!, $name: String!, $number: Int!) {{ \
          repository(owner: $owner, name: $name) {{ pullRequest(number: $number) {{ {PULL_REQUEST_FIELDS} }} }} \
-         rateLimit {{ cost limit used remaining resetAt }} }}"
+         {RATE_LIMIT_FIELDS} }}"
     )
 }
 

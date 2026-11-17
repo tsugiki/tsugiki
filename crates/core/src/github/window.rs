@@ -9,7 +9,7 @@ use super::issues::{ISSUE_FIELDS, IssueWire};
 use super::pull_requests::RateLimit;
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
 use super::refresh::{ChangedPr, ListPlace, Listed, PageInfo, github_time};
-use super::{GitHub, Request};
+use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
 use crate::facts::issues::IssueFacts;
@@ -62,7 +62,7 @@ fn issues_query(span: Span) -> (&'static str, String) {
          $after: String) {{ repository(owner: $owner, name: $name) {{ \
          list: issues(first: $first, after: $after, {list}) {{ totalCount pageInfo {{ hasNextPage endCursor }} \
          nodes {{ {ISSUE_FIELDS} references: timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) \
-         {{ {REFERENCE_FIELDS} }} }} }} }} rateLimit {{ cost limit used remaining resetAt }} }}"
+         {{ {REFERENCE_FIELDS} }} }} }} }} {RATE_LIMIT_FIELDS} }}"
     );
     (operation, query)
 }
@@ -79,15 +79,23 @@ fn after_page(place: &ListPlace, read: usize, kept: usize, page: PageInfo) -> Li
 
 /// GitHub's list of PRs takes no `since`, so the walk stops at the first PR older than the window. It asks
 /// only for what says whether to fetch a PR, because a PR is fetched in full once, from the queue.
-const WINDOW_PULL_REQUESTS_QUERY: &str = "query WindowPullRequests($owner: String!, $name: String!, $first: \
+const WINDOW_PULL_REQUESTS_QUERY: &str = concat!(
+    "query WindowPullRequests($owner: String!, $name: String!, $first: \
      Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, \
      after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } \
-     nodes { id number updatedAt } } } rateLimit { cost limit used remaining resetAt } }";
+     nodes { id number updatedAt } } } ",
+    rate_limit_fields!(),
+    " }"
+);
 
-const OLDER_OPEN_PULL_REQUESTS_QUERY: &str = "query OlderOpenPullRequests($owner: String!, $name: String!, \
+const OLDER_OPEN_PULL_REQUESTS_QUERY: &str = concat!(
+    "query OlderOpenPullRequests($owner: String!, $name: String!, \
      $first: Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, \
      after: $after, states: OPEN, orderBy: { field: UPDATED_AT, direction: ASC }) { pageInfo { hasNextPage \
-     endCursor } nodes { id number updatedAt } } } rateLimit { cost limit used remaining resetAt } }";
+     endCursor } nodes { id number updatedAt } } } ",
+    rate_limit_fields!(),
+    " }"
+);
 
 /// One page of one of a first sync's lists.
 #[derive(Debug, Clone, Copy)]

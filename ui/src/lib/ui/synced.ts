@@ -102,7 +102,8 @@ export function questionWords(repository: string): string {
   return `${repository}'s mirror waits for your answer`;
 }
 
-/** The time of day `at` names, such as "14:32", by the window's clock. */
+/** The time of day `at` names, by the window's clock in the system's format: "14:32", or "02:32 PM" on a
+ * 12-hour clock. */
 export function clockTime(at: string): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

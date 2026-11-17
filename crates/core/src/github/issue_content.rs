@@ -8,7 +8,7 @@ use serde_json::json;
 use time::OffsetDateTime;
 
 use super::pull_requests::{Person, RateLimit};
-use super::{GitHub, Request};
+use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::{Error, ErrorKind};
 use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
 use crate::repository::RepositoryName;
@@ -55,7 +55,7 @@ impl Thread {
         format!(
             "query {}($owner: String!, $name: String!, $number: Int!) {{ \
              repository(owner: $owner, name: $name) {{ {}(number: $number) {{ {CONVERSATION_FIELDS}{} }} }} \
-             rateLimit {{ cost limit used remaining resetAt }} }}",
+             {RATE_LIMIT_FIELDS} }}",
             self.operation(),
             self.field(),
             self.more_fields(),

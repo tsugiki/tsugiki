@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::path::Path;
 use time::format_description::well_known::Rfc3339;
 
-const RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+use crate::github::testing::RATE_LIMIT as RATE;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()

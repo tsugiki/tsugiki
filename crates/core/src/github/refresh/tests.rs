@@ -9,7 +9,7 @@ use crate::token::Token;
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
 
-const RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+use crate::github::testing::RATE_LIMIT as RATE;
 const START: ListPlace = ListPlace::Next(None);
 const NEWER: &str = "2026-11-04T10:30:00Z";
 const OLDER: &str = "2026-11-04T09:00:00Z";

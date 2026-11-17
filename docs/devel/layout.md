@@ -195,10 +195,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     or a low API rate limit, each opening the Settings page that fixes it.
   - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the hour's GitHub points
     ("1,240 points left · resets 14:32"), and the first key of a chord while Tsugiki waits for the second.
-    The points part shows from GitHub's first answer of the run, since until then Tsugiki doesn't know them.
-    Its tooltip says what Tsugiki spent: "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them;
-    other tools using your token spent the rest." Tsugiki counts in memory only, so after a restart in the
-    middle of the hour it says "Tsugiki spent 410 since 14:05".
+    The points part shows from GitHub's first answer of the run, since until then Tsugiki doesn't know them,
+    and goes at the reset until the next answer. Its tooltip, which a screen reader reads with the part, says
+    what Tsugiki spent: "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using
+    your token spent the rest." Tsugiki counts in memory only, so after a restart in the middle of the hour it
+    says "Tsugiki spent 410 since 14:05".
   - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can
     be hidden ("View: Toggle Status Bar"). Being offline or an expired token still shows: the bar comes back
     with only that problem, since nothing else would tell the user.

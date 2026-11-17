@@ -16,7 +16,7 @@ use super::pull_requests::{
     LastCommitNode, LatestReviewWire, Nodes, PageRequest, RateLimit, ReviewRequestWire, ci_of,
     requested_logins, reviews_of,
 };
-use super::{ConditionalGet, GitHub, Request, RestPath, Unreachable};
+use super::{ConditionalGet, GitHub, RATE_LIMIT_FIELDS, Request, RestPath, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
@@ -228,7 +228,7 @@ fn poll_query(searches: usize) -> String {
          nodes {{ {ISSUE_FIELDS} }} }} \
          pullRequests(first: $prs, after: $prsAfter, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ \
          pageInfo {{ hasNextPage endCursor }} nodes {{ id number updatedAt }} }} }} \
-         {asked}rateLimit {{ cost limit used remaining resetAt }} }}"
+         {asked}{RATE_LIMIT_FIELDS} }}"
     )
 }
 
@@ -250,7 +250,7 @@ fn probe_query(numbers: &[u32]) -> String {
         .collect();
     format!(
         "query {PROBE_PULL_REQUESTS}($owner: String!, $name: String!) {{ \
-         repository(owner: $owner, name: $name) {{ {} }} rateLimit {{ cost limit used remaining resetAt }} }}",
+         repository(owner: $owner, name: $name) {{ {} }} {RATE_LIMIT_FIELDS} }}",
         fields.join(" ")
     )
 }

@@ -324,12 +324,25 @@ fn watching_follows_github_until_told_to_stop() {
     assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
 }
 
+/// GitHub's answer whose data holds the fields `data` spells, and its points.
+fn answer_with(data: &str) -> Result<Reply, Unreachable> {
+    reply_ok(&format!(r#"{{"data":{{{data},{WORK_RATE}}}}}"#))
+}
+
 /// The answer to `FetchIssueContent`.
 fn issue_content_reply() -> Result<Reply, Unreachable> {
-    reply_ok(
-        r#"{"data":{"repository":{"issue":{"bodyHTML":"<p>It crashes</p>","createdAt":"2026-11-01T09:00:00Z",
-            "comments":{"totalCount":0,"nodes":[]}}},
-            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+    answer_with(
+        r#""repository":{"issue":{"bodyHTML":"<p>It crashes</p>","createdAt":"2026-11-01T09:00:00Z",
+            "comments":{"totalCount":0,"nodes":[]}}}"#,
+    )
+}
+
+/// The answer to `FetchPullRequestContent` for a PR with a body and nothing else.
+fn pr_content_reply() -> Result<Reply, Unreachable> {
+    answer_with(
+        r#""repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
+            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
+            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}}"#,
     )
 }
 
@@ -462,13 +475,7 @@ fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
 
 #[test]
 fn reading_a_pr_on_screen_leaves_last_seen_alone() {
-    let reply = reply_ok(
-        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
-            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
-            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
-            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
-    );
-    let access = replying(vec![signed_in(), reply]);
+    let access = replying(vec![signed_in(), pr_content_reply()]);
 
     let (content, activity, _) = after_asking("fetch-pr", access, |asked| {
         asked.fetch_pull_request(gcmon(), 7)
@@ -535,10 +542,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
 
 #[test]
 fn an_issue_github_has_lost_troubles_only_the_log() {
-    let gone = reply_ok(
-        r#"{"data":{"repository":{"issue":null},
-            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
-    );
+    let gone = answer_with(r#""repository":{"issue":null}"#);
     let access = replying(vec![signed_in(), gone]);
 
     let (content, _, shown) =
@@ -652,10 +656,7 @@ fn an_issue_read_without_the_network_waits_on_github() {
 
 #[test]
 fn an_issue_github_doesnt_have_says_so() {
-    let gone = reply_ok(
-        r#"{"data":{"repository":{"issue":null},
-            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
-    );
+    let gone = answer_with(r#""repository":{"issue":null}"#);
     let access = replying(vec![signed_in(), gone]);
 
     let failed = failed_reads_of_issue_7("gone-issue-read", access);
@@ -695,10 +696,7 @@ fn a_pr_read_with_no_token_says_so() {
 
 #[test]
 fn a_pr_github_doesnt_have_says_so() {
-    let gone = reply_ok(
-        r#"{"data":{"repository":{"pullRequest":null},
-            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
-    );
+    let gone = answer_with(r#""repository":{"pullRequest":null}"#);
     let access = replying(vec![signed_in(), gone]);
 
     let failed = failed_reads_of_pr_7("gone-pr", access);
@@ -717,13 +715,7 @@ fn a_pr_whose_answer_cant_be_read_says_so() {
 
 #[test]
 fn a_pr_read_that_lands_fails_nothing() {
-    let reply = reply_ok(
-        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
-            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
-            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
-            "rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
-    );
-    let access = replying(vec![signed_in(), reply]);
+    let access = replying(vec![signed_in(), pr_content_reply()]);
 
     let failed = failed_reads_of_pr_7("landed-pr", access);
 
@@ -847,7 +839,7 @@ fn checks_dont_put_off_the_next_refresh() {
     assert!(started.elapsed() < PLENTY);
 }
 
-const WORK_RATE: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
+use crate::github::testing::RATE_LIMIT as WORK_RATE;
 
 fn work_search(ids: &[&str]) -> Result<Reply, Unreachable> {
     let nodes: Vec<serde_json::Value> = ids

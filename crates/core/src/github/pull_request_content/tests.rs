@@ -9,6 +9,7 @@ use crate::error::ErrorKind;
 use crate::facts::issue_content::HiddenReason;
 use crate::facts::pull_request_content::CodeRow;
 use crate::github::replay::Replayer;
+use crate::github::testing::rate_limit;
 use crate::github::testing::{Scripted, reply_ok, token};
 use crate::login::Login;
 
@@ -99,11 +100,6 @@ fn read(comments: Value, reviews: (u32, Value), threads: Value) -> PullRequestCo
         .pull_request_content(&cpython(), 7)
         .unwrap()
         .content
-}
-
-/// GitHub's count of the points left, with plenty of them.
-fn rate_limit() -> Value {
-    json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" })
 }
 
 #[test]

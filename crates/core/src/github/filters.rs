@@ -8,7 +8,7 @@ use time::{Date, Duration, OffsetDateTime};
 
 use super::pull_requests::{PageRequest, RateLimit};
 use super::refresh::github_time;
-use super::{GitHub, Request};
+use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::Error;
 use crate::facts::pull_requests::NodeId;
 use crate::filters::FilterQuery;
@@ -26,7 +26,7 @@ fn search_filter_query() -> String {
         "query {SEARCH_FILTER}($query: String!, $first: Int!, $after: String) {{ \
          search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) {{ \
          issueCount pageInfo {{ hasNextPage endCursor }} nodes {{ {FOUND_FIELDS} }} }} \
-         rateLimit {{ cost limit used remaining resetAt }} }}"
+         {RATE_LIMIT_FIELDS} }}"
     )
 }
 

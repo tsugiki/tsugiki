@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
 import StatusBar from "./StatusBar.svelte";
 
@@ -495,7 +495,17 @@ describe("StatusBar's points", () => {
     since: null,
   };
   const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const tip =
+    "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using your token spent the rest.";
   const part = () => screen.getByText(/points left/);
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: new Date("2026-11-17T14:00:00Z") });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("shows nothing before GitHub's first answer says", () => {
     render(StatusBar, { status: online });
@@ -504,16 +514,27 @@ describe("StatusBar's points", () => {
 
   it("shows the points left and the reset on the right, outside the live region", () => {
     render(StatusBar, { status: online, hourPoints });
-    expect(part().textContent).toBe(`1,240 points left · resets ${time(hourPoints.resets_at)}`);
+    expect(part().firstChild?.textContent).toBe(`1,240 points left · resets ${time(hourPoints.resets_at)}`);
     expect(bar().contains(part())).toBe(false);
     expect(part().parentElement).toBe(bar().parentElement);
   });
 
   it("says in its tooltip what Tsugiki spent and what other tools did", () => {
     render(StatusBar, { status: online, hourPoints });
-    expect(part().title).toBe(
-      "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using your token spent the rest.",
-    );
+    expect(part().title).toBe(tip);
+  });
+
+  it("gives a screen reader the tooltip's words too", () => {
+    render(StatusBar, { status: online, hourPoints });
+    expect(part().textContent).toBe(`1,240 points left · resets ${time(hourPoints.resets_at)} · ${tip}`);
+  });
+
+  it("goes at the reset, as the next hour's count waits for GitHub's next answer", async () => {
+    render(StatusBar, { status: online, hourPoints });
+    await vi.advanceTimersByTimeAsync(31 * 60_000);
+    expect(part()).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(screen.queryByText(/points left/)).toBeNull();
   });
 
   it("updates with each answer", async () => {

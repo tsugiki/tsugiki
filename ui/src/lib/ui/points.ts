@@ -2,6 +2,8 @@
 import type { HourPoints } from "$lib/state/status.svelte";
 import { clockTime } from "./synced";
 
+/** A count in the English the words around it are in, as text search writes its counts. The time beside it
+ * follows the system's clock, as the user set it. */
 const count = (points: number) => points.toLocaleString("en-US");
 
 /** The part of the bar, such as "1,240 points left · resets 14:32". */

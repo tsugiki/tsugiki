@@ -122,8 +122,10 @@ pub fn mirror_with_branch(
 ) -> String {
     static BUILT: Mutex<BTreeMap<BuiltFrom, Arc<Built>>> = Mutex::new(BTreeMap::new());
     let owned = |files: &[(&str, &str)]| -> Vec<(String, String)> {
-        let owned = files.iter().map(|(path, text)| ((*path).to_owned(), (*text).to_owned()));
-        owned.collect()
+        files
+            .iter()
+            .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
+            .collect()
     };
     let key = BuiltFrom {
         base: owned(base),

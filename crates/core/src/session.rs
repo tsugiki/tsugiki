@@ -475,11 +475,9 @@ fn settings_changed(
     syncs: &mut Syncs,
     settings: RepositorySettings,
 ) -> Option<RepositorySettings> {
-    let repository = settings.name.clone();
+    let now = settings.clone();
     let before = syncs.replace_settings(settings)?;
-    if let Some(now) = syncs.settings(&repository) {
-        follow_reach(fetching, store, now, &before);
-    }
+    let _followed = follow_reach(fetching, store, &now, &before);
     Some(before)
 }
 
@@ -491,16 +489,15 @@ fn settings_changed(
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. One that can't keep what
 /// it owes leaves the Conversations to the PR view, which reads one when it opens, and the log says so.
+/// Says whether it handed the Mirror worker anything.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
     now: &RepositorySettings,
     before: &RepositorySettings,
-) {
+) -> Option<()> {
     let repository = &now.name;
-    let Ok(facts) = store.work_facts(repository) else {
-        return;
-    };
+    let facts = store.work_facts(repository).ok()?;
     hand_over_wants(fetching, store, now, &facts);
     let reached = reach(&facts, now);
     let reached_before = reach(&facts, before);
@@ -514,6 +511,7 @@ fn follow_reach(
             problem.message
         );
     }
+    Some(())
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose

@@ -476,6 +476,4 @@ fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: 
 }
 
 #[cfg(test)]
-mod testing;
-#[cfg(test)]
 mod tests;

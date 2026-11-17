@@ -78,9 +78,11 @@ release. Coverage is held at 100%, and CI fails below it.
   enough. A weekly run also checks for new advisories, so one still reaches us in a week with no PRs.
 - On every PR, on Linux: the CodSpeed benchmarks
   ([ADR 0017](0017-performance-budgets-codspeed-gates-prs-the-window-is-measured-before-release.md)). The
-  query-plan check from that ADR is a test in the core, so it runs on Windows and macOS. They run on a PR
-  that changes only `ui/` too: they measure the UI as well, and the check the ruleset requires comes from
-  CodSpeed's app, which no job of ours can report in place of.
+  query-plan check from that ADR is a test in the core, so it runs on Windows and macOS. The UI benchmarks
+  run on every PR, since the check the ruleset requires comes from CodSpeed's app, which no job of ours can
+  report in place of. The Rust benchmarks run when the PR reaches what the Rust checks read, counted against
+  its base and not since its last run: CodSpeed fills a benchmark a run skips with the base's figure, so a
+  benchmark the PR changed must run on each push.
 - Before a release (in the release workflow, and runnable by hand): the CPython mirror suite, the smoke tests
   on Windows, a check that live GitHub responses still match the recorded fixtures (read-only), the macOS
   checklist (once the maintainer takes macOS on, as ADR 0012 says), and the performance budgets measured in

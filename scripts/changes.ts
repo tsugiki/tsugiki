@@ -3,6 +3,9 @@
 //
 //   node scripts/changes.ts --every
 //     On a push to main: every job.
+//   node scripts/changes.ts --base
+//     On a PR, for the benchmarks: the jobs the whole PR needs against its base. CodSpeed fills a benchmark a
+//     run skips with the base's figure, so a run can only skip what the PR doesn't change against its base.
 //   node scripts/changes.ts --pr <last-tested.json> <tested.json>
 //     On a PR, whose checkout is the merge commit HEAD of base HEAD^1 and the PR's head HEAD^2: the jobs the
 //     PR needs against its base, less those whose inputs are the same as in the tree its last passed run
@@ -51,12 +54,18 @@ function readIfThere(file: string): string | undefined {
   }
 }
 
-/** The jobs this PR's run needs, and writes what it tests to `record`. */
-function prJobs(lastTested: string, record: string): Job[] {
+/** The jobs the whole PR needs against its base. */
+function baseJobs(): Job[] {
   const changed = paths(git("diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"));
   const whole = jobs(changed, () => cargoDiffSince("HEAD^1"));
   const listed = changed.length > 0 ? changed.join(", ") : "nothing git can name";
   console.log(`Against its base the PR changes ${listed}, and needs ${JSON.stringify(whole)}.`);
+  return whole;
+}
+
+/** The jobs this PR's run needs, and writes what it tests to `record`. */
+function prJobs(lastTested: string, record: string): Job[] {
+  const whole = baseJobs();
   const since = sincePassed(readIfThere(lastTested), TREE_GIT);
   console.log(
     since.jobs === undefined ? since.note : `${since.note} That needs ${JSON.stringify(since.jobs)}.`,
@@ -73,12 +82,14 @@ const output = process.env["GITHUB_OUTPUT"];
 let needed: Job[];
 if (output !== undefined && mode === "--every") {
   needed = [...EVERY_JOB];
+} else if (output !== undefined && mode === "--base") {
+  needed = baseJobs();
 } else if (output !== undefined && mode === "--pr" && lastTested !== undefined && record !== undefined) {
   needed = prJobs(lastTested, record);
 } else {
   console.error(
-    "Usage: `node scripts/changes.ts --every` or `node scripts/changes.ts --pr <last-tested.json> " +
-      "<tested.json>`, from a GitHub Actions step.",
+    "Usage: `node scripts/changes.ts --every`, `node scripts/changes.ts --base` or " +
+      "`node scripts/changes.ts --pr <last-tested.json> <tested.json>`, from a GitHub Actions step.",
   );
   process.exit(1);
 }

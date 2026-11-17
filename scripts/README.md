@@ -6,40 +6,40 @@ or `npm run`, and CI calls the same npm scripts.
 
 ## What each one does
 
-| Script                | Called by                               | What it does                                                                         |
-| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------ |
-| `ship.ts`             | `just ship`                             | Pushes the branch and opens the PR; `--check` and `--release` run `just check` first |
-| `merged.ts`           | `just merged`                           | After GitHub merges a PR: switches to main, pulls, deletes the local branch          |
-| `worktree.ts`         | `just worktree`, `just worktree-remove` | Makes a worktree ready to build a ticket, and deletes it with its builds             |
-| `worktrees.ts`        | `worktree.ts`                           | Its branch names, ticket titles and refusals                                         |
-| `next.ts`             | `just next`                             | Lists the open tickets of the release being built, each under its blockers           |
-| `tickets.ts`          | `next.ts`                               | The order and indent of those tickets: blockers first, then ready-for-agent          |
-| `print-tree.ts`       | `just tree`                             | Draws the open tickets below some tickets as a tree of their blockers                |
-| `tree.ts`             | `print-tree.ts`                         | Reads the open issues GitHub gives, and lays out that tree with each ticket's depth  |
-| `blockers.ts`         | `next.ts`, `tree.ts`                    | Reads an issue's open blockers from GitHub, here and in other repositories           |
-| `pr.ts`               | `ship.ts`, `next.ts`, `merged.ts`       | Their arguments, branch rules, failure summary, milestone order and merged check     |
-| `doc-width.ts`        | `just doc-width`                        | Fails on a line of Markdown, a comment or a docstring past 110 columns               |
-| `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts`        | Picks out the lines of a file that hold prose                                        |
-| `prose-check.ts`      | `just prose-check`                      | Lists prose to reread against /stop-slop; never fails                                |
-| `prose.ts`            | `prose-check.ts`                        | The rules behind `just prose-check`                                                  |
-| `rust-gates.ts`       | `just rust-gates`, `check`, `preflight` | Runs each Rust gate whose CI job the branch reaches, and skips the rest              |
-| `changes.ts`          | CI                                      | Tells CI's `changes` job which jobs a push needs since the PR's last run that passed |
-| `scope.ts`            | `rust-gates.ts`, `changes.ts`           | Which jobs read each path, so CI and `just check` agree                              |
-| `rust-coverage.ts`    | `just rust-coverage`                    | Rust's coverage gate: runs the tests and fails below 100%                            |
-| `coverage-gaps.ts`    | `rust-coverage.ts`                      | Finds the lines and functions the Rust coverage gate fell short on                   |
-| `test-servers.ts`     | `just test-servers`, the Rust tests     | Fetches ty and finds rust-analyzer, and runs the Rust tests with their paths set     |
-| `token-deps.ts`       | `just lint`                             | Fails when `crates/token` gains a dependency off its list (ADR 0019)                 |
-| `token-crate.ts`      | `token-deps.ts`                         | That list, and how the check reads a Cargo manifest                                  |
-| `bindings.ts`         | `just bindings`                         | Regenerates the UI's TypeScript bindings from the Rust commands                      |
-| `release-check.ts`    | `just release-check`, CI                | Checks a version against CHANGELOG.md and prints its release page                    |
-| `release-notes.ts`    | `release-check.ts`, the release scripts | The rules a version has to meet before a release builds, and the release page's text |
-| `prepare-release.ts`  | `just prepare-release`                  | Starts a release's branch: sets the version, renames CHANGELOG.md's WIP              |
-| `tag-release.ts`      | `just release`                          | Tags the merged release on main and pushes the tag; ask before you run it            |
-| `releasing.ts`        | the release scripts, `ship.ts`          | Their refusals, and how they rewrite Cargo.toml and CHANGELOG.md                     |
-| `portable-zip.ts`     | `just portable-zip`, release            | Zips the Windows portable copy, and with `--try` starts it                           |
-| `smoke.ts`            | `just smoke`                            | Builds a release and drives its real window; ask before you run it                   |
-| `shell-edits-hook.ts` | `.claude/settings.json`                 | The hook that refuses a shell command editing code or docs in place                  |
-| `shell-edits.ts`      | `shell-edits-hook.ts`                   | The rules that hook applies                                                          |
+| Script                | Called by                               | What it does                                                                                                                                 |
+| --------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ship.ts`             | `just ship`                             | Pushes the branch and opens the PR; `--check` and `--release` run `just check` first                                                         |
+| `merged.ts`           | `just merged`                           | After GitHub merges a PR: switches to main, pulls, deletes the local branch                                                                  |
+| `worktree.ts`         | `just worktree`, `just worktree-remove` | Makes a worktree ready to build a ticket, and deletes it with its builds                                                                     |
+| `worktrees.ts`        | `worktree.ts`                           | Its branch names, ticket titles and refusals                                                                                                 |
+| `next.ts`             | `just next`                             | Lists the open tickets of the release being built, each under its blockers                                                                   |
+| `tickets.ts`          | `next.ts`                               | The order and indent of those tickets: blockers first, then ready-for-agent                                                                  |
+| `print-tree.ts`       | `just tree`                             | Draws the open tickets below some tickets as a tree of their blockers                                                                        |
+| `tree.ts`             | `print-tree.ts`                         | Reads the open issues GitHub gives, and lays out that tree with each ticket's depth                                                          |
+| `blockers.ts`         | `next.ts`, `tree.ts`                    | Reads an issue's open blockers from GitHub, here and in other repositories                                                                   |
+| `pr.ts`               | `ship.ts`, `next.ts`, `merged.ts`       | Their arguments, branch rules, failure summary, milestone order and merged check                                                             |
+| `doc-width.ts`        | `just doc-width`                        | Fails on a line of Markdown, a comment or a docstring past 110 columns                                                                       |
+| `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts`        | Picks out the lines of a file that hold prose                                                                                                |
+| `prose-check.ts`      | `just prose-check`                      | Lists prose to reread against /stop-slop; never fails                                                                                        |
+| `prose.ts`            | `prose-check.ts`                        | The rules behind `just prose-check`                                                                                                          |
+| `rust-gates.ts`       | `just rust-gates`, `check`, `preflight` | Runs each Rust gate whose CI job the branch reaches, and skips the rest                                                                      |
+| `changes.ts`          | CI, the benchmarks                      | Tells CI's `changes` job which jobs a push needs since the PR's last run that passed, and the benchmarks which the PR needs against its base |
+| `scope.ts`            | `rust-gates.ts`, `changes.ts`           | Which jobs read each path, so CI and `just check` agree                                                                                      |
+| `rust-coverage.ts`    | `just rust-coverage`                    | Rust's coverage gate: runs the tests and fails below 100%                                                                                    |
+| `coverage-gaps.ts`    | `rust-coverage.ts`                      | Finds the lines and functions the Rust coverage gate fell short on                                                                           |
+| `test-servers.ts`     | `just test-servers`, the Rust tests     | Fetches ty and finds rust-analyzer, and runs the Rust tests with their paths set                                                             |
+| `token-deps.ts`       | `just lint`                             | Fails when `crates/token` gains a dependency off its list (ADR 0019)                                                                         |
+| `token-crate.ts`      | `token-deps.ts`                         | That list, and how the check reads a Cargo manifest                                                                                          |
+| `bindings.ts`         | `just bindings`                         | Regenerates the UI's TypeScript bindings from the Rust commands                                                                              |
+| `release-check.ts`    | `just release-check`, CI                | Checks a version against CHANGELOG.md and prints its release page                                                                            |
+| `release-notes.ts`    | `release-check.ts`, the release scripts | The rules a version has to meet before a release builds, and the release page's text                                                         |
+| `prepare-release.ts`  | `just prepare-release`                  | Starts a release's branch: sets the version, renames CHANGELOG.md's WIP                                                                      |
+| `tag-release.ts`      | `just release`                          | Tags the merged release on main and pushes the tag; ask before you run it                                                                    |
+| `releasing.ts`        | the release scripts, `ship.ts`          | Their refusals, and how they rewrite Cargo.toml and CHANGELOG.md                                                                             |
+| `portable-zip.ts`     | `just portable-zip`, release            | Zips the Windows portable copy, and with `--try` starts it                                                                                   |
+| `smoke.ts`            | `just smoke`                            | Builds a release and drives its real window; ask before you run it                                                                           |
+| `shell-edits-hook.ts` | `.claude/settings.json`                 | The hook that refuses a shell command editing code or docs in place                                                                          |
+| `shell-edits.ts`      | `shell-edits-hook.ts`                   | The rules that hook applies                                                                                                                  |
 
 ## Adding one
 

@@ -1602,7 +1602,8 @@ describe("WorkbenchState's Inbox", () => {
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({
       latest: page([3], at(3, 9)),
-      "through 3": page([4, 3], at(3, 9)),
+      // An answer that would end the pages further down, had it gone on show.
+      "through 3": page([4, 3, 2], at(2, 8)),
       "older 3": page([2]),
       all: page([4, 3, 2]),
     });
@@ -1619,11 +1620,40 @@ describe("WorkbenchState's Inbox", () => {
     // Asking for the Inbox again reads its pages on show, and the change hook runs.
     await expect(state.select(inbox)).rejects.toThrow("the hook broke");
     hook.throws = false;
+    expect(numbers(state)).toEqual([3]);
     await state.readOlder();
     await state.select(inbox);
 
+    // The next page starts where the items on show end, not where the answer that didn't show did.
     expect(pagesAsked()).toEqual(["latest", "through 3", "older 3", "all"]);
     expect(numbers(state)).toEqual([4, 3, 2]);
+    state.stop();
+  });
+
+  it("says why a change's answer didn't go on show when a page's hook throws", async () => {
+    const { send } = catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: page([3], at(3, 9)), "through 3": page([4, 3], at(3, 9)) });
+    const hook = { throws: true };
+    const state = new WorkbenchState("python/cpython", {
+      changing: () => {
+        if (hook.throws) throw new Error("the hook broke");
+        return () => {};
+      },
+    });
+    await state.load();
+    await state.select(inbox);
+
+    send("python/cpython");
+    await settle();
+    expect(state.error).toBe("Error: the hook broke");
+    expect(numbers(state)).toEqual([3]);
+
+    hook.throws = false;
+    send("python/cpython");
+    await settle();
+    expect(state.error).toBeUndefined();
+    expect(numbers(state)).toEqual([4, 3]);
     state.stop();
   });
 

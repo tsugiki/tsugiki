@@ -181,7 +181,10 @@ export class WorkbenchState {
       // items it names.
       const stopListening = await events.changed.listen(({ payload }) => {
         if (payload.repository !== this.#repository) return;
-        void this.#ask();
+        // Nothing waits on this question, so a page hook that throws while it goes on show says so here.
+        this.#ask().catch((e: unknown) => {
+          this.error = String(e);
+        });
       });
       if (this.#stopped) {
         stopListening();
@@ -514,22 +517,24 @@ export class WorkbenchState {
       this.staleReviews = answer.data.stale_reviews;
       this.filters = answer.data.filters;
     }
-    if (list?.status === "ok") this.#reach = list.data.older;
     const listed = list ?? answer;
     if (listed.status === "ok") {
-      this.#show(view, order, listed.data.items);
+      this.#show(view, order, listed.data.items, list?.status === "ok" ? list.data.older : null);
       this.olderError = undefined;
     }
     const failed = [answer, listed].find((one) => one.status === "error");
     this.error = failed?.error.message;
   }
 
-  /** Puts `items` on show, the answer for `view` in `order`, with the cursor placed on them. */
-  #show(view: SidebarView, order: ListOrder, items: ListedItem[]) {
+  /** Puts `items` on show, the answer for `view` in `order`, with the cursor placed on them. For the Inbox,
+   * `reach` says where its pages among them end. The page's hooks run first and last, so one that throws
+   * leaves the items and where they end as they were, or both as answered. */
+  #show(view: SidebarView, order: ListOrder, items: ListedItem[], reach: InboxCursor | null) {
     const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
     const before = same ? this.items : undefined;
     const changed = before ? this.#changing() : undefined;
     this.items = items;
+    this.#reach = reach;
     this.#shown = view;
     this.#shownOrder = order;
     this.#placeCursor(items, before);

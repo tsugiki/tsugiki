@@ -189,6 +189,12 @@ pub(crate) fn connect_core<R: Runtime>(
     };
     let view = settings.view();
     work.start(&view.home, &view.mirror_sources);
+    // From here the owner hands the session each Repository's settings it saves otherwise, before the window
+    // can ask for a change.
+    let session_settings = fetching.clone();
+    settings.tell_session(Box::new(move |repository, by| {
+        session_settings.settings_changed(repository, by);
+    }));
     // The Repositories added before 0.2 have no mirror yet, and get theirs after the open one's. One the user
     // hasn't said where its objects come from asks when its turn comes.
     for repository in &view.loaded.settings.repositories {

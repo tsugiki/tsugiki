@@ -19,7 +19,7 @@ use crate::mirror::{CloneRefusal, LookupAt, MirrorRequests};
 use crate::mirror_source::MirrorSource;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
-use crate::repository_settings::{RepositoryCheck, RepositorySettings};
+use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
 use crate::work::SeenMark;
 
 pub(crate) const NOT_CONNECTED: &str =
@@ -85,7 +85,7 @@ pub(crate) enum SessionMessage {
     /// The user asked to refresh the open Repository now.
     Refresh,
     /// The user changed what these settings say, and nothing on GitHub changed with them.
-    SettingsChanged(RepositorySettings),
+    SettingsChanged(RepositorySettings, SavedBy),
     Mark(Marked),
     Fetch(Fetched),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
@@ -127,11 +127,11 @@ impl Fetching {
         self.to_session(SessionMessage::Refresh);
     }
 
-    /// The user saved `repository`'s settings, a Filter's switch among them. The session's syncs read them
+    /// The settings owner saved `repository`'s settings otherwise, as `by` did. The session's syncs read them
     /// from now on, if it has opened the Repository since launch, and the Mirror worker and the read ahead
     /// follow the Reach they make. Which Repository is open stays, and no refresh starts.
-    pub fn settings_changed(&self, repository: RepositorySettings) {
-        self.to_session(SessionMessage::SettingsChanged(repository));
+    pub fn settings_changed(&self, repository: RepositorySettings, by: SavedBy) {
+        self.to_session(SessionMessage::SettingsChanged(repository, by));
     }
 
     /// An Issue on screen: the session reads what it says now. Only Mark Seen moves Last seen, so opening

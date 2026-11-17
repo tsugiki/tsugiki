@@ -148,6 +148,48 @@ kbd {
   background: var(--backdrop);
 }
 
+/* The box on the scrim, which Dialog.svelte draws for each dialog and the command palette. */
+.dialog {
+  margin: 60px auto 0;
+  padding: 12px;
+  box-sizing: border-box;
+  font-size: 13px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 30px var(--shadow);
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialog.flush {
+  padding: 0;
+}
+
+/* A list that scrolls inside the box, which stays in the window. */
+.dialog.narrow {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.dialog.wide {
+  width: min(640px, calc(100vw - 32px));
+}
+
+/* Pages beside their list, between a header and a footer, which each scroll inside their own column. */
+.dialog.large {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 32px));
+  height: min(520px, calc(100vh - 80px));
+  margin-top: 40px;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
 /* The Theme's syntax colours, wherever code is highlighted: the diff's rows, a thread's code, and the
    Definition peek's and the file view's lines. The classes come from the spans the core sends. */
 .hl-keyword {

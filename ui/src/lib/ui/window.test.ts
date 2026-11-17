@@ -58,7 +58,8 @@ const fits = (value: string) => {
   return layer ? layers.has(layer) : /^\d+$/.test(value) && Number(value) < Math.min(...layers.values());
 };
 
-/** The opening tag of each element in `source`'s markup whose test id ends in `-scrim`. A tag runs to the
+/** The opening tag of each element in `source`'s markup whose test id ends in `-scrim`, as written or as a
+ * template literal. A tag runs to the
  * first `>` outside quotes and `{…}`, so an arrow function in a handler doesn't end it. A `<` inside the
  * `<script>` or `<style>` block starts no tag. */
 const scrimTags = (source: string) => {
@@ -81,7 +82,7 @@ const scrimTags = (source: string) => {
       }
       return source.slice(index);
     })
-    .filter((tag) => /\bdata-testid="[\w-]+-scrim"/.test(tag));
+    .filter((tag) => /\bdata-testid=(?:"[\w-]+-scrim"|\{`[^`]*-scrim`\})/.test(tag));
 };
 
 /** Whether `tag` carries the `scrim` class among its classes. */
@@ -96,9 +97,12 @@ it("reads each z-index as written, and finds each scrim's tag", () => {
   ).toEqual(["2", "30", "20", "var(--layer-hud)", "String(z)", "5"]);
   expect(
     scrimTags(
-      '<script>const t = `<p data-testid="t-scrim">`;</script>\n<style>a<b[data-testid="s-scrim"] {}</style>\n<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>\n<div data-testid="b">',
+      '<script>const t = `<p data-testid="t-scrim">`;</script>\n<style>a<b[data-testid="s-scrim"] {}</style>\n<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>\n<div data-testid="b">\n<div data-testid={`${id}-scrim`}>',
     ),
-  ).toEqual(['<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>']);
+  ).toEqual([
+    '<div class="scrim wide" data-testid="a-scrim" onmousedown={() => close()}>',
+    "<div data-testid={`${id}-scrim`}>",
+  ]);
   expect(hasScrimClass('<div class="scrim wide">')).toBe(true);
   expect(hasScrimClass('<div class="scrimmed">')).toBe(false);
 });
@@ -163,13 +167,15 @@ it("reads a stylesheet's rules, nested ones and those with a comment among their
   expect(rulesOf("/* Never closed")).toEqual([]);
 });
 
-it("puts each overlay on the scrim, and the performance HUD above it", () => {
+// Each dialog and the palette drew its own scrim and box, until Dialog.svelte drew them for all (#857).
+it("puts each overlay on the scrim, from Dialog.svelte, and the performance HUD above it", () => {
   const scrimRule = bodiesOf(windowCss, (selector) => selector === ".scrim").join("");
-  const tags = Object.values(sources).flatMap(scrimTags);
+  const drawn = Object.entries(sources).flatMap(([path, source]) =>
+    scrimTags(source).map((tag) => ({ path, scrim: hasScrimClass(tag) })),
+  );
 
   expect(zIndices(scrimRule)).toEqual(["var(--layer-overlay)"]);
-  expect(tags.length).toBeGreaterThanOrEqual(4);
-  expect(tags.filter((tag) => !hasScrimClass(tag))).toEqual([]);
+  expect(drawn).toEqual([{ path: "src/lib/ui/Dialog.svelte", scrim: true }]);
   expect(zIndices(sources["src/lib/ui/PerformanceHud.svelte"] ?? "")).toEqual(["var(--layer-hud)"]);
 });
 

@@ -10,6 +10,7 @@ import {
   type Job,
   jobs,
   narrowed,
+  needsRustBenchmarks,
   outputs,
   paths,
   readTested,
@@ -203,6 +204,42 @@ function fakeGit(changed: string[] | Error, merge: string | Error = "tree", carg
 }
 
 const LAST_TESTED = JSON.stringify({ head: HEAD, base: BASE });
+
+describe("needsRustBenchmarks", () => {
+  it.each([
+    [["crates/core/src/store.rs"]],
+    [["crates/core/benches/store.rs", "ui/src/App.svelte"]],
+    [["Cargo.lock"]],
+    [["rust-toolchain.toml"]],
+    [[".github/workflows/bench.yml"]],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "crates/core/src/lib.rs"]],
+  ])("runs them for %j", (given) => {
+    expect(needsRustBenchmarks(given, () => SETS_VERSION)).toBe(true);
+  });
+
+  it.each([
+    [["ui/src/App.svelte"]],
+    [["docs/scope.md", "README.md"]],
+    [["crates/app/src/lib.rs", "crates/token/Cargo.toml"]],
+    [["docs/schema.md", "clippy.toml", "deny.toml"]],
+    [["scripts/scope.ts", ".github/workflows/ci.yml"]],
+  ])("skips them for %j", (given) => {
+    expect(needsRustBenchmarks(given, unread)).toBe(false);
+  });
+
+  it("skips them for a release PR that only sets the version", () => {
+    expect(needsRustBenchmarks(["CHANGELOG.md", "Cargo.lock", "Cargo.toml"], () => SETS_VERSION)).toBe(false);
+  });
+
+  it("runs them for a release PR that changes a dependency", () => {
+    const dependency = bump("Cargo.lock", "1.0.0", "1.0.1");
+    expect(needsRustBenchmarks(["Cargo.lock", "Cargo.toml"], () => dependency + SETS_VERSION)).toBe(true);
+  });
+
+  it("runs them when it can't see a path", () => {
+    expect(needsRustBenchmarks([], unread)).toBe(true);
+  });
+});
 
 describe("sincePassed", () => {
   it("gives the jobs the change since the passed run's tree needs, and the paths that led there", () => {

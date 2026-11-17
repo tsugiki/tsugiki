@@ -293,6 +293,19 @@ it("cancels the query before one that a newer one, or the view's end, stops on i
   expect(core.textSearch).toHaveBeenCalledTimes(2);
 });
 
+it("says nothing of a cancel the core couldn't take", async () => {
+  core.textSearchCancel.mockRejectedValue(new Error("no core"));
+  const search = ready();
+  search.seed("spam");
+  await nextTask();
+
+  search.seed("");
+  await nextTask();
+
+  expect(cancelled()).toEqual([1]);
+  expect(search.troubled).toBe(false);
+});
+
 it("sends nothing of a query a newer one replaced while the listener was on its way", async () => {
   const placed = Promise.withResolvers<() => void>();
   core.listen.mockReturnValueOnce(placed.promise);

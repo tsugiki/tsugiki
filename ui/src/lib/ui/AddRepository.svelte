@@ -1,7 +1,8 @@
 <script lang="ts">
   import { AddRepositoryState } from "$lib/state/add-repository.svelte";
   import type { Home } from "$lib/state/home.svelte";
-  import { closeOnPress, takeFocus } from "./focus";
+  import Dialog from "./Dialog.svelte";
+  import { takeFocus } from "./focus";
   import MirrorChoices from "./MirrorChoices.svelte";
   import { describeCheck } from "./repository-check";
 
@@ -41,81 +42,47 @@
       onadded(home);
     }
   }
-
-  function closeOnEscape(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      onclose();
-    }
-  }
 </script>
 
-<svelte:window onkeydown={closeOnEscape} />
-
-<!-- The keyboard's way out is Esc, on the window above. This is the mouse's. It goes by the press, because a
-     drag that starts in the text box and ends out here also counts as a click out here. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="add-repository-scrim" onmousedown={closeOnPress(onclose)}>
-  <div
-    class="dialog"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Add repository"
-    tabindex="-1"
-    onmousedown={(e) => {
-      e.stopPropagation();
-    }}
-  >
-    <form onsubmit={submit}>
-      <label>
-        Repository
-        <input
-          {@attach takeFocus}
-          bind:value={adding.input}
-          readonly={step.step === "adding"}
-          placeholder="owner/name"
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </label>
-      {#if step.step === "checking"}
-        <p>Asking GitHub…</p>
-      {:else if step.step === "failed"}
-        <p role="alert">{step.problem}</p>
-      {:else if step.step === "held"}
-        <p>{`Tsugiki has ${step.name} already.`}</p>
-      {:else if check}
-        <h2>{check.repository.name}</h2>
-        {#each describeCheck(check) as line (line)}
-          <p>{line}</p>
-        {/each}
-        <MirrorChoices
-          repository={check.repository.name}
-          cost={check.mirror}
-          choosing={adding.mirror}
-          disabled={step.step === "adding"}
-        />
-      {/if}
-      <div class="buttons">
-        <button type="button" onclick={onclose}>Cancel</button>
-        <button type="submit" disabled={waiting || undecided}>{action}</button>
-      </div>
-    </form>
-  </div>
-</div>
+<Dialog label="Add repository" testid="add-repository" size="wide" childTakesFocus {onclose}>
+  <form onsubmit={submit}>
+    <label>
+      Repository
+      <input
+        {@attach takeFocus}
+        bind:value={adding.input}
+        readonly={step.step === "adding"}
+        placeholder="owner/name"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </label>
+    {#if step.step === "checking"}
+      <p>Asking GitHub…</p>
+    {:else if step.step === "failed"}
+      <p role="alert">{step.problem}</p>
+    {:else if step.step === "held"}
+      <p>{`Tsugiki has ${step.name} already.`}</p>
+    {:else if check}
+      <h2>{check.repository.name}</h2>
+      {#each describeCheck(check) as line (line)}
+        <p>{line}</p>
+      {/each}
+      <MirrorChoices
+        repository={check.repository.name}
+        cost={check.mirror}
+        choosing={adding.mirror}
+        disabled={step.step === "adding"}
+      />
+    {/if}
+    <div class="buttons">
+      <button type="button" onclick={onclose}>Cancel</button>
+      <button type="submit" disabled={waiting || undecided}>{action}</button>
+    </div>
+  </form>
+</Dialog>
 
 <style>
-  .dialog {
-    width: min(640px, calc(100vw - 32px));
-    margin: 60px auto 0;
-    padding: 12px;
-    box-sizing: border-box;
-    font-size: 13px;
-    background: var(--bg-overlay);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 8px 30px var(--shadow);
-  }
-
   label {
     display: flex;
     gap: 8px;

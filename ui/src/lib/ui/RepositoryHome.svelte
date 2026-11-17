@@ -1,9 +1,10 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import type { GitHubItem } from "$lib/state/browser";
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { IssueViewState } from "$lib/state/issue-view.svelte";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     DETAIL_LEAST,
     LIST_LEAST,
@@ -65,8 +66,8 @@
     summary,
     treeCount,
   } from "./workbench-row";
+  import { minuteClock } from "./clock.svelte";
 
-  const MINUTE = 60_000;
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
@@ -104,15 +105,7 @@
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
-  let now = $state(new Date());
-  $effect(() => {
-    const ticking = setInterval(() => {
-      now = new Date();
-    }, MINUTE);
-    return () => {
-      clearInterval(ticking);
-    };
-  });
+  const now = minuteClock();
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(
@@ -131,7 +124,7 @@
     return () => {
       opened.stop();
       swap(undefined);
-      browserProblem = undefined;
+      links.forget();
       markProblem = undefined;
     };
   });
@@ -146,7 +139,7 @@
   let detail = $state<IssueViewState | PrViewState>();
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
-  let browserProblem = $state<string>();
+  const links = new LinkOpener();
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
   let list = $state<HTMLElement>();
@@ -168,10 +161,6 @@
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
    * it with `:focus-within` (#602). */
   let windowFocused = $state(document.hasFocus());
-
-  const onGitHub = async (item: GitHubItem) => {
-    browserProblem = await openOnGitHub(name, item);
-  };
 
   /** The title of each Issue and PR the Detail pane has shown, for the history's arrows and lists. Each
    * Repository has its own, as its numbers name other items. */
@@ -774,7 +763,7 @@
     },
     open_on_github: () => {
       const current = currentOnGitHub();
-      return current && (() => void onGitHub(current));
+      return current && (() => void links.openOnGitHub(name, current));
     },
     toggle_diff_view: onDiff(() => diffView.toggle()),
     find_in_diff: onDiff((files) => files.openSearch()),
@@ -1072,8 +1061,8 @@
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
     <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
   {/if}
-  {#if browserProblem}
-    <p role="alert">{browserProblem}</p>
+  {#if links.problem}
+    <p role="alert">{links.problem}</p>
   {/if}
   {#if markProblem}
     <p role="alert">{`Tsugiki couldn't mark this item: ${markProblem}`}</p>

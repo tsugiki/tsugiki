@@ -26,6 +26,7 @@ import {
   type YourReview,
 } from "$lib/data/bindings";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { ask, problemIn } from "./answer";
 import { hud } from "./hud.svelte";
 
 export type Attention = Attention_Serialize;
@@ -71,14 +72,6 @@ export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number
 /** Each PR an Issue's tree holds, in the order the list shows them: each entry, then its Backports. */
 export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
   entries.flatMap((entry) => (entry.kind === "pr" ? [entry, ...entry.backports] : [entry]));
-
-/** The problem a command that answers nothing ran into, if it ran into one. */
-const said = (answer: { status: "ok" } | { status: "error"; error: { message: string } }) =>
-  answer.status === "error" ? answer.error.message : undefined;
-
-/** The answer `asking` brings, with a command that threw read as one that answered with what it threw. */
-const answered = <T>(asking: Promise<T>) =>
-  asking.catch((e: unknown) => ({ status: "error" as const, error: { message: String(e) } }));
 
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
@@ -329,12 +322,12 @@ export class WorkbenchState {
 
   /** Mark Seen with `mark`, as the window drew it. Says what went wrong, if anything did. */
   async markSeen(mark: SeenMark) {
-    return said(await commands.markSeen(this.#repository, mark));
+    return problemIn(commands.markSeen(this.#repository, mark));
   }
 
   /** Mark Unseen on item `number`. Says what went wrong, if anything did. */
   async markUnseen(number: number) {
-    return said(await commands.markUnseen(this.#repository, number));
+    return problemIn(commands.markUnseen(this.#repository, number));
   }
 
   /** The Sidebar's line of the Filter whose view is selected, while the settings hold it. */
@@ -364,13 +357,12 @@ export class WorkbenchState {
     let failed: string | undefined;
     for (let next = this.#wanted.entries().next(); !next.done; next = this.#wanted.entries().next()) {
       const [query, on] = next.value;
-      const answer = await answered(
+      const problem = await problemIn(
         commands.putFilterOnWorkbench({ repository: this.#repository, query, on }),
       );
       // An answer to a question asked before the save landed reads the settings as they were, so this has
       // `#ask` drop it, and the next question reads them as saved.
       this.#lastQuestion += 1;
-      const problem = said(answer);
       failed ??= problem;
       this.switchProblem = failed;
       // The settings hold the switch as saved from now on, though the Sidebar's lines say so only once the
@@ -507,7 +499,7 @@ export class WorkbenchState {
     if (!this.#current(question)) return;
     const inbox = view.kind === "inbox";
     const [answer, list] = await Promise.all([
-      answered(hud.timed(() => commands.workbench(this.#repository, inbox ? { kind: "whole" } : view))),
+      ask(hud.timed(() => commands.workbench(this.#repository, inbox ? { kind: "whole" } : view))),
       inbox ? this.#inboxPage(this.#againPage()) : undefined,
     ]);
     if (!this.#current(question)) return;
@@ -551,6 +543,6 @@ export class WorkbenchState {
 
   /** Reads page `page` of the Inbox, timed as a view query. */
   #inboxPage(page: InboxPage_Deserialize) {
-    return answered(hud.timed(() => commands.inbox(this.#repository, page)));
+    return ask(hud.timed(() => commands.inbox(this.#repository, page)));
   }
 }

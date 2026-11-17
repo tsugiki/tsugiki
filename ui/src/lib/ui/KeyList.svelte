@@ -24,7 +24,7 @@
 
 <script lang="ts">
   import { CONTEXT_NAMES, keysIn } from "$lib/state/keymap.svelte";
-  import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
+  import Dialog from "./Dialog.svelte";
   import { bindingLabel, currentOs } from "./keys";
 
   let { here, onclose }: { here: KeysHere; onclose: () => void } = $props();
@@ -39,66 +39,27 @@
       }))
       .filter((group) => group.rows.length > 0),
   );
-
-  function closeOnEscape(e: KeyboardEvent) {
-    if (e.key === "Escape") onclose();
-  }
 </script>
 
-<svelte:window onkeydown={closeOnEscape} />
-
-<!-- The keyboard's way out is Esc, on the window above. This is the mouse's. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="key-list-scrim" onmousedown={closeOnPress(onclose)}>
-  <div
-    class="dialog"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Keys"
-    tabindex="-1"
-    {@attach takeFocus}
-    onkeydown={keepFocusIn}
-    onmousedown={(e) => {
-      e.stopPropagation();
-    }}
-  >
-    <h2>Keys</h2>
-    {#each groups as { heading, rows } (heading)}
-      <section aria-label={heading}>
-        <h3>{heading}</h3>
-        <dl>
-          {#each rows as row (row.action)}
-            <dt><kbd>{bindingLabel(row.key, os)}</kbd></dt>
-            <dd>{row.title}</dd>
-          {/each}
-        </dl>
-      </section>
-    {/each}
-    <div class="buttons">
-      <button onclick={onclose}>Close</button>
-    </div>
+<Dialog label="Keys" testid="key-list" size="narrow" {onclose}>
+  <h2>Keys</h2>
+  {#each groups as { heading, rows } (heading)}
+    <section aria-label={heading}>
+      <h3>{heading}</h3>
+      <dl>
+        {#each rows as row (row.action)}
+          <dt><kbd>{bindingLabel(row.key, os)}</kbd></dt>
+          <dd>{row.title}</dd>
+        {/each}
+      </dl>
+    </section>
+  {/each}
+  <div class="buttons">
+    <button onclick={onclose}>Close</button>
   </div>
-</div>
+</Dialog>
 
 <style>
-  .dialog {
-    width: min(560px, calc(100vw - 32px));
-    max-height: calc(100vh - 120px);
-    margin: 60px auto 0;
-    padding: 12px;
-    box-sizing: border-box;
-    overflow: auto;
-    font-size: 13px;
-    background: var(--bg-overlay);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 8px 30px var(--shadow);
-  }
-
-  .dialog:focus {
-    outline: none;
-  }
-
   h2 {
     margin: 0;
     font-size: 14px;

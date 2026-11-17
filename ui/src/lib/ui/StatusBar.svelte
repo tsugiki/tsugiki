@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { openLink } from "$lib/state/browser";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import type {
     Cloning,
     HourPoints,
@@ -22,8 +22,8 @@
     syncedWords,
     syncingWords,
   } from "./synced";
+  import { minuteClock } from "./clock.svelte";
 
-  const MINUTE = 60_000;
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
   let {
@@ -67,27 +67,13 @@
     onquestion?: (repository: string) => void;
   } = $props();
 
-  /** The problem that kept the browser from opening git's downloads, until the next try. */
-  let browserProblem = $state<string>();
-  const getGit = async () => {
-    browserProblem = await openLink(GIT_DOWNLOADS);
-  };
-  /** The problem that kept the browser from opening the new version's release page, until the next try. */
-  let releaseProblem = $state<string>();
-  const openRelease = async (release: NewVersion) => {
-    releaseProblem = await openLink(release.page);
-  };
+  /** Opens git's downloads, and keeps what kept the browser from it until the next try. */
+  const gitPage = new LinkOpener();
+  /** Opens the new version's release page, and keeps what kept the browser from it until the next try. */
+  const releasePage = new LinkOpener();
 
   // "Synced 2 min ago" has to move on by itself between syncs.
-  let now = $state(new Date());
-  $effect(() => {
-    const ticking = setInterval(() => {
-      now = new Date();
-    }, MINUTE);
-    return () => {
-      clearInterval(ticking);
-    };
-  });
+  const now = minuteClock();
 
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
   const points = $derived(visible ? hourPoints : null);
@@ -105,8 +91,8 @@
       ...problems,
       paused,
       mirror,
-      needsGit ? browserProblem : undefined,
-      showRelease ? releaseProblem : undefined,
+      needsGit ? gitPage.problem : undefined,
+      showRelease ? releasePage.problem : undefined,
     ]
       .filter((words) => Boolean(words))
       .join(" · "),
@@ -163,7 +149,7 @@
     {/if}
   </footer>
   {#if needsGit}
-    <button onclick={() => void getGit()}>Get git</button>
+    <button onclick={() => void gitPage.openLink(GIT_DOWNLOADS)}>Get git</button>
   {/if}
   {#if mirrorProblem !== null}
     <button onclick={oncheckagain}>Check again</button>
@@ -171,7 +157,9 @@
   <!-- Tsugiki doesn't update itself (ADR 0012), so this only opens the release page. -->
   {#if showRelease && newVersion !== null}
     {@const release = newVersion}
-    <button onclick={() => void openRelease(release)}>{`Tsugiki ${release.version} is out`}</button>
+    <button onclick={() => void releasePage.openLink(release.page)}
+      >{`Tsugiki ${release.version} is out`}</button
+    >
   {/if}
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->

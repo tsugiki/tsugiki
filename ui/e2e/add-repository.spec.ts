@@ -34,7 +34,7 @@ test("adding the first Repository goes from onboarding to the Repository", async
   await input.press("Enter");
 
   const dialog = page.getByRole("dialog", { name: "Add repository" });
-  await expect(dialog.getByText("6935 open Issues, 2308 open PRs.")).toBeVisible();
+  await expect(dialog.getByText("6,935 open Issues, 2,308 open PRs.")).toBeVisible();
   await expect(dialog.getByText(/^Large:/)).toBeVisible();
   await expect(dialog.getByText(/about 9 minutes, about 223 points/)).toBeVisible();
   await expect(dialog.getByText("Conventions: CPython.")).toBeVisible();

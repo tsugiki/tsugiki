@@ -45,6 +45,40 @@ samp,
   background: color-mix(in srgb, var(--find-current) 50%, transparent);
 }
 
+/* A row of code: a line's number, then its text, which keeps its spaces and tabs. The diff's rows, a
+   thread's code and the Definition peek's and the file view's lines draw so. */
+.code-lines .row {
+  display: flex;
+  height: 20px;
+  line-height: 20px;
+  white-space: pre;
+  tab-size: 8;
+}
+
+.code-lines .number {
+  flex: none;
+  width: 48px;
+  padding-right: 8px;
+  box-sizing: border-box;
+  text-align: right;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+/* The word the user picked, on a tint of the accent, with a caret that takes no room. */
+.code-lines .text .picked {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.code-lines .caret {
+  display: inline-block;
+  width: 0;
+  height: 14px;
+  margin-right: -1px;
+  border-left: 1px solid currentColor;
+  vertical-align: -3px;
+}
+
 /* Prose inside something in the code font, such as a review thread in the diff. */
 .sans {
   font-family: var(--sans);
@@ -146,6 +180,70 @@ kbd {
   inset: 0;
   z-index: var(--layer-overlay);
   background: var(--backdrop);
+}
+
+/* The Detail pane while it shows an Issue or a PR. It takes the window's height and scrolls by itself, as
+   each pane does, and the wheel stops at its end. */
+.detail-pane {
+  flex: 1;
+  min-width: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The line under an Issue's or a PR's title, which names its author in bold, or says why there's nothing
+   to show. */
+.byline {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.byline b {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* The box on the scrim, which Dialog.svelte draws for each dialog and the command palette. */
+.dialog {
+  margin: 60px auto 0;
+  padding: 12px;
+  box-sizing: border-box;
+  font-size: 13px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 30px var(--shadow);
+}
+
+.dialog:focus {
+  outline: none;
+}
+
+.dialog.flush {
+  padding: 0;
+}
+
+/* A list that scrolls inside the box, which stays in the window. */
+.dialog.narrow {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+
+.dialog.wide {
+  width: min(640px, calc(100vw - 32px));
+}
+
+/* Pages beside their list, between a header and a footer, which each scroll inside their own column. */
+.dialog.large {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 32px));
+  height: min(520px, calc(100vh - 80px));
+  margin-top: 40px;
+  overflow: hidden;
+  border-radius: 8px;
 }
 
 /* The Theme's syntax colours, wherever code is highlighted: the diff's rows, a thread's code, and the

@@ -153,17 +153,6 @@
 </div>
 
 <style>
-  h3 {
-    margin: 16px 0 8px;
-    padding-bottom: 4px;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  h3:first-child {
-    margin-top: 4px;
-  }
-
   .row {
     margin-bottom: 10px;
   }

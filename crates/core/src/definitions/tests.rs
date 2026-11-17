@@ -1,5 +1,6 @@
-//! Each test that looks a name up starts the real ty that CI fetches, on a Repository built with the real
-//! git, and nothing reaches the network.
+//! A test of what a server finds starts the real ty, rust-analyzer or clangd that CI fetches, on a
+//! Repository built with the real git, and nothing reaches the network. A test of what the owner does with a
+//! server, such as a cancel or a PR that moves, runs a [`FakeClangd`] in its place where it can.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -7,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 use tsugiki_test_git::within;
 
-use super::server::Ready;
+use super::server::{Ready, Setup};
 use super::testing::{FakeClangd, Initialize, Notified, ty};
 use super::*;
 use crate::diff::FileChange;
@@ -472,7 +473,7 @@ fn a_lookup_while_the_checkout_is_elsewhere_fails_and_starts_nothing() {
 fn a_lookup_at_commits_the_checkout_isn_t_at_leaves_the_running_ty_alone() {
     let fixture = cpython_pr("definitions-stale");
     let other = another("definitions-stale-other");
-    let mut owner = opened(&fixture);
+    let (mut owner, _fake) = fake_ty(&fixture, vec![json!([])]);
 
     let answer = look(&mut owner, &lookup(&other, DiffEnd::Head, 12, "eggs"));
 
@@ -665,7 +666,7 @@ fn a_cancel_cancels_the_lookup_running_and_ty_goes_on() {
 #[test]
 fn a_cancel_the_core_takes_before_its_lookup_cancels_it_and_ty_is_asked_nothing() {
     let fixture = cpython_pr("definitions-cancel-early");
-    let mut owner = opened(&fixture);
+    let (mut owner, fake) = fake_ty(&fixture, vec![json!([])]);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
     let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
@@ -675,6 +676,7 @@ fn a_cancel_the_core_takes_before_its_lookup_cancels_it_and_ty_is_asked_nothing(
     assert_eq!(asked.waited.try_iter().count(), 0);
     assert!(owner.running.is_none());
     assert_eq!(owner.asked, 0);
+    assert_eq!(fake.asked(), 0);
 }
 
 #[test]
@@ -931,7 +933,8 @@ fn diff_file(path: &str) -> DiffFile {
 #[test]
 fn a_lookup_at_a_path_that_isn_t_a_file_of_the_checkout_fails_and_ty_goes_on() {
     let fixture = cpython_pr("definitions-odd-path");
-    let mut owner = opened(&fixture);
+    let only_head = location(&fixture, SHOP, (4, 4));
+    let (mut owner, _fake) = fake_ty(&fixture, vec![only_head]);
     let odd = Lookup {
         path: "D:odd.py".to_owned(),
         ..lookup(&fixture, DiffEnd::Head, 12, "eggs")
@@ -1221,7 +1224,20 @@ fn rust_analyzer_finds_a_local_a_method_a_function_elsewhere_or_at_the_head_and_
 fn a_pr_at_other_commits_stops_its_rust_analyzer_and_cancels_the_lookup_on_it() {
     let fixture = crate_with_a_build_script("definitions-rust-moved");
     let moved = another("definitions-rust-moved-on");
-    let mut owner = rust_opened(&fixture);
+    let program = super::testing::rust_analyzer();
+    let sources = sources_for(
+        Some(fixture.checkout.clone()),
+        ServerName::RustAnalyzer,
+        Some(program.clone()),
+    );
+    let mut setup = rust_analyzer::setup(&program).unwrap();
+    // The fake never says it is quiescent: a real rust-analyzer takes seconds to load the workspace, as
+    // `rust_analyzer_finds_a_local_…` waits for.
+    setup.ready = Ready::Initialized;
+    let playing = (ServerName::RustAnalyzer, setup, vec![SHOP_RS.to_owned()]);
+    // Its answer never comes, so the lookup is under way when the PR moves.
+    let silent = vec![json!({"silent": true})];
+    let (mut owner, _fake) = fake_server(&fixture, sources, playing, (silent, &|_| {}));
     let asked = ask(&mut owner, &rust_lookup(&fixture, 10, "left"), Ticket(1));
     let started = owner.servers.len();
 
@@ -1472,20 +1488,36 @@ fn fake_clangd_within(
     fixture: &Fixture,
     sources: Sources,
     (answers, index_within): (Vec<serde_json::Value>, Duration),
-    before: &dyn Fn(&FakeClangd),
+    before: Before<'_>,
+) -> (Owner, FakeClangd) {
+    let program = (sources.servers)(ServerName::Clangd).unwrap();
+    let mut setup = clangd::setup(&fixture.checkout.folder, &program).unwrap();
+    setup.troubles.as_mut().unwrap().index_within = index_within;
+    let playing = (ServerName::Clangd, setup, vec![EGGS_C.to_owned()]);
+    fake_server(fixture, sources, playing, (answers, before))
+}
+
+/// Has a [`FakeClangd`] say what it says before it answers `initialize`.
+type Before<'a> = &'a dyn Fn(&FakeClangd);
+
+/// The servers' thread, run here, with the fixture's PR, which changes the files `changed` names, opened and
+/// a [`FakeClangd`] playing `server` with `setup` on its checkout. The fake gives `answers` as
+/// [`FakeClangd::start`] says, and `before` has it say what it says before it answers `initialize`. For a
+/// test of what the owner does with a server, which a real one would only slow down: the real ty and
+/// rust-analyzer each have tests of their own. As clangd does, the fake refuses a lookup in a document it
+/// wasn't sent, so a test of another server looks up a file the PR changes. The owner is as `opened` leaves
+/// it, without the call: [`Owner::opened`] would start the real server.
+fn fake_server(
+    fixture: &Fixture,
+    sources: Sources,
+    (server, setup, changed): (ServerName, Setup, Vec<String>),
+    (answers, before): (Vec<serde_json::Value>, Before<'_>),
 ) -> (Owner, FakeClangd) {
     let mut owner = owner_of(sources);
     let (fake, client) = FakeClangd::start(answers);
     // What the fake says now comes before its answer to `initialize`.
     before(&fake);
-    let key = (cpython(), ServerName::Clangd);
-    let program = (owner.sources.servers)(ServerName::Clangd).unwrap();
-    let mut setup = clangd::setup(&fixture.checkout.folder, &program).unwrap();
-    setup.troubles = Some(clangd::Troubles {
-        program,
-        index_within,
-    });
-    let changed = [EGGS_C.to_owned()];
+    let key = (cpython(), server);
     let server = LanguageServer::initialize(
         (setup, client),
         (fixture.checkout.clone(), &changed),
@@ -1495,12 +1527,21 @@ fn fake_clangd_within(
     let _none = owner.servers.insert(key, server);
     let pr = Pr {
         at: fixture.checkout.at.clone(),
-        changed: changed.to_vec(),
+        changed,
     };
     let _none = owner.prs.insert(cpython(), pr);
     // The rows show the Repository whose PR is open, as the window opened it.
     owner.shown = Some(cpython());
     (owner, fake)
+}
+
+/// The owner of [`opened`], with a [`FakeClangd`] in ty's place that gives `answers` as
+/// [`FakeClangd::start`] says, put there as [`fake_server`] says.
+fn fake_ty(fixture: &Fixture, answers: Vec<serde_json::Value>) -> (Owner, FakeClangd) {
+    let sources = sources_for(Some(fixture.checkout.clone()), ServerName::Ty, Some(ty()));
+    let setup = ty::setup(&fixture.checkout.folder);
+    let playing = (ServerName::Ty, setup, changed());
+    fake_server(fixture, sources, playing, (answers, &|_| {}))
 }
 
 /// [`with_fake_clangd`] with sources that hold the fixture's checkout, and answers about `spam_count`.
@@ -1981,6 +2022,10 @@ fn a_pr_at_other_commits_tells_the_lookup_that_its_clangd_stopped() {
         &[("a.c", Some("int a;\n"))],
     );
     checkout.lock().unwrap().clone_from(&moved.checkout);
+    // The clangd the owner starts in the moved checkout can't, so no real one runs, and the owner stops the
+    // old one all the same. The owner read each path once, as it started.
+    let missing = Some(fixture.checkout.folder.join("no-clangd.exe"));
+    let _real = owner.known.insert(ServerName::Clangd, missing);
 
     let pr = Pr {
         at: moved.checkout.at.clone(),
@@ -1990,8 +2035,6 @@ fn a_pr_at_other_commits_tells_the_lookup_that_its_clangd_stopped() {
 
     let heard: Vec<Index> = asked.indexed.try_iter().collect();
     assert_eq!(heard, [uncounted(), Index::Stopped]);
-    // The real clangd started in the moved checkout, so that folder goes once the owner has stopped it.
-    drop(owner);
 }
 
 #[test]
@@ -2415,7 +2458,7 @@ fn clangd_finding_nothing_after(
     fixture: &Fixture,
     program: PathBuf,
     index_within: Duration,
-    before: &dyn Fn(&FakeClangd),
+    before: Before<'_>,
 ) -> (Owner, FakeClangd) {
     let checkout = Arc::new(Mutex::new(fixture.checkout.clone()));
     let sources = clangd_sources(checkout, program);
@@ -2616,7 +2659,7 @@ fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
     let soon = Duration::from_millis(300);
     // This fake reports its index before it answers `initialize`, so the report comes first however slow
     // the machine.
-    let indexes_at_once: &dyn Fn(&FakeClangd) = &|fake| begin(fake, 1);
+    let indexes_at_once: Before<'_> = &|fake| begin(fake, 1);
     let (mut indexing, _indexing_fake) =
         clangd_finding_nothing_after(&fixture, program.clone(), soon, indexes_at_once);
     let (mut owner, _fake) = clangd_finding_nothing(&fixture, program, soon);

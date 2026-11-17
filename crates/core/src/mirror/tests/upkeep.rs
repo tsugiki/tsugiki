@@ -459,11 +459,11 @@ fn without_upkeep_tsugiki_leaves_mirrors_as_they_are() {
 }
 
 #[test]
-fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_and_gc() {
+fn a_real_mirror_keeps_reviewed_refs_drops_those_of_prs_gone_and_gets_maintenance_and_gc() {
     let place = Place::new("upkeep-real");
     let hello = named("octo-org/hello");
     place.remote(&hello);
-    let heads: Vec<PrHead> = [1, 2]
+    let heads: Vec<PrHead> = [1, 2, 3]
         .map(|number| PrHead {
             commit: CommitSha::parse(&place.pull_request(&hello, number)).unwrap(),
             ..head(number)
@@ -473,14 +473,19 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
     mirrors.requests().clone_mirror(hello.clone(), download());
     let _clone = one_clone(&announced);
     mirrors.requests().fetch_heads(hello.clone(), heads.clone());
-    wait_until(|| place.pull_refs(&hello).lines().count() == 2);
+    // PR 2 keeps a reviewed ref once it leaves the work, and PR 3's commit is left with no ref at all.
+    let review = reviewed(2, &heads[1].commit);
+    mirrors
+        .requests()
+        .keep_reviewed(hello.clone(), vec![review]);
+    wait_until(|| place.pull_refs(&hello).lines().count() == 4);
     mirrors.stop_cleanly(PLENTY);
     let config = git(
         &place.folders.mirror(&hello),
         &["config", "maintenance.auto"],
     );
 
-    // A day later, PR 2 has left the work.
+    // A day later, PRs 2 and 3 have left the work.
     let collected =
         UNIX_EPOCH + Duration::from_secs(ago(HOUR).duration_since(UNIX_EPOCH).unwrap().as_secs());
     place.upkept(&hello, ago(HOUR * 25), collected);
@@ -507,48 +512,11 @@ fn a_real_mirror_drops_the_refs_of_prs_gone_from_the_work_and_gets_maintenance_a
         OsStr::new("--no-progress"),
     ]);
 
+    let kept = "refs/tsugiki/pull/1/head\nrefs/tsugiki/reviewed/2\n";
     assert_eq!(config.trim(), "false");
-    assert_eq!(after_maintenance, "refs/tsugiki/pull/1/head\n");
+    assert_eq!(after_maintenance, kept);
     assert!(fsck.is_ok(), "{fsck:?}");
-    assert_eq!(place.pull_refs(&hello), "refs/tsugiki/pull/1/head\n");
-}
-
-#[test]
-fn upkeep_leaves_the_reviewed_ref_of_a_pr_gone_from_the_work() {
-    let place = Place::new("upkeep-reviewed");
-    let hello = named("octo-org/hello");
-    place.remote(&hello);
-    let heads: Vec<PrHead> = [1, 2]
-        .map(|number| PrHead {
-            commit: CommitSha::parse(&place.pull_request(&hello, number)).unwrap(),
-            ..head(number)
-        })
-        .into();
-    let (mirrors, announced) = place.start_live_keeping();
-    mirrors.requests().clone_mirror(hello.clone(), download());
-    let _clone = one_clone(&announced);
-    mirrors.requests().fetch_heads(hello.clone(), heads.clone());
-    let review = reviewed(2, &heads[1].commit);
-    mirrors
-        .requests()
-        .keep_reviewed(hello.clone(), vec![review]);
-    wait_until(|| place.pull_refs(&hello).lines().count() == 3);
-    mirrors.stop_cleanly(PLENTY);
-
-    // A day later, PR 2 has left the work.
-    place.upkept(&hello, ago(HOUR * 25), SystemTime::now());
-    let (mirrors, _announced) = place.start_live_keeping();
-    mirrors
-        .requests()
-        .fetch_heads(hello.clone(), heads[..1].to_vec());
-    mirrors.requests().clone_mirror(hello.clone(), download());
-    wait_until(|| place.upkept_just_now(&hello, "maintained"));
-    mirrors.stop_cleanly(PLENTY);
-
-    assert_eq!(
-        place.pull_refs(&hello),
-        "refs/tsugiki/pull/1/head\nrefs/tsugiki/reviewed/2\n"
-    );
+    assert_eq!(place.pull_refs(&hello), kept);
 }
 
 #[test]

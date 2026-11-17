@@ -5,7 +5,7 @@
 // Ship a PR without it and let CI run the gates, unless it's a release PR or changes the gates (AGENTS.md).
 // `just ship --release` is the only way it pushes a `release/` branch, since that push rehearses the release
 // on CI: ask the user first. It refuses unless the branch names Cargo.toml's version and `just release-check`
-// passes. `just ship --release --check` opens the release PR, and `just ship --release` pushes a fix to it.
+// passes. `just ship --release` opens the release PR and pushes each fix to it, and CI runs the gates.
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 

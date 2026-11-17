@@ -17,11 +17,11 @@ that matches GitHub's, `just prepare-release X.Y.Z` does the mechanical part and
 
 Then edit the notes under the new heading by hand: ADR 0012 says what the section needs, and
 `just release-check` prints the release page: the notes, then which file to download and how to check it
-(`scripts/release-notes.ts`). Commit, and run `just ship --release --check`, which pushes the branch and
-opens the PR after `just check` passes. It stops before the push unless the branch names `Cargo.toml`'s
-version and `just release-check` passes. Each push rehearses the release on CI (see
-[Rehearsing](#rehearsing)), so an agent asks the user first. Plain `just ship` refuses a `release/` branch,
-and `just ship --release` pushes a fix for a gate you reran yourself.
+(`scripts/release-notes.ts`). Commit, and run `just ship --release`, which pushes the branch and opens the
+PR. It stops before the push unless the branch names `Cargo.toml`'s version and `just release-check` passes.
+It leaves `just check` to CI, since the branch changes only the notes, the version and `Cargo.lock` on a main
+that passed CI. Each push rehearses the release on CI (see [Rehearsing](#rehearsing)), so an agent asks the
+user first. Plain `just ship` refuses a `release/` branch.
 
 CI's `release-check` job fails the PR if `CHANGELOG.md` has no section for that version, and the `deny` job
 fails it if `Cargo.lock` didn't follow.

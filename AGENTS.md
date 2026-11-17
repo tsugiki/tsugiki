@@ -46,9 +46,10 @@ where a CI round trip costs more. It takes less time than `just check`, and catc
 fails on.
 
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
-log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the
-`justfile`, `scripts/` or `.github/workflows/`. `just next` lists the open tickets of the release being built.
-`just tree 393` draws the open tickets below #393 as a tree of blockers, with how deep each chain runs.
+log's tail. Use it for a PR that changes the gates themselves: the `justfile`, `scripts/` or
+`.github/workflows/`. A release PR ships with `just ship --release` (`docs/releasing.md`). `just next` lists
+the open tickets of the release being built. `just tree 393` draws the open tickets below #393 as a tree of
+blockers, with how deep each chain runs.
 
 A hook in `.claude/settings.json` refuses a shell command that rewrites code or docs in place, such as
 `sed -i` or a redirect into `crates/`. Edit those files with the Edit or Write tool.

@@ -341,6 +341,10 @@ enum Message {
     Ended {
         last_words: String,
     },
+    /// A test asks to hear once the worker has handled the messages before this one and has nothing to do
+    /// at once, so it can say that no other git started.
+    #[cfg(test)]
+    Idle(Sender<()>),
     Stop,
 }
 
@@ -584,6 +588,7 @@ impl HeardRequests {
             | Message::CheckAgain
             | Message::Progress(_)
             | Message::Ended { .. }
+            | Message::Idle(_)
             | Message::Stop) => Err(other),
         })
     }
@@ -682,6 +687,8 @@ impl Mirrors {
             told_states: Vec::new(),
             upkept: Vec::new(),
             replaced: Vec::new(),
+            #[cfg(test)]
+            awaiting_idle: Vec::new(),
         };
         let worker = thread::spawn(move || {
             // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
@@ -1010,6 +1017,9 @@ struct Worker {
     upkept: Vec<(RepositoryName, Upkept)>,
     /// The Repositories whose broken mirror the worker cloned again since launch.
     replaced: Vec<RepositoryName>,
+    /// The tests that wait to hear the worker is idle.
+    #[cfg(test)]
+    awaiting_idle: Vec<Sender<()>>,
 }
 
 /// A Repository whose clone failed.
@@ -1027,7 +1037,10 @@ impl Worker {
             self.start_next();
             self.tell_states();
             self.tell_unchecked();
-            let message = match self.next_due() {
+            let due = self.next_due();
+            #[cfg(test)]
+            self.tell_idle(due);
+            let message = match due {
                 Some(at) => {
                     match incoming.recv_timeout(at.saturating_duration_since(Instant::now())) {
                         Err(RecvTimeoutError::Timeout) => continue,
@@ -1081,6 +1094,8 @@ impl Worker {
                         self.finish_job(job, &last_words);
                     }
                 }
+                #[cfg(test)]
+                Ok(Message::Idle(reply)) => self.awaiting_idle.push(reply),
                 Ok(Message::Stop) | Err(_) => break,
             }
         }
@@ -1558,6 +1573,19 @@ impl Worker {
             .chain(upkeep.flatten())
             .chain(patches)
             .min()
+    }
+
+    /// Tells each test that asked that the worker is idle, unless something is `due` at once: a read of
+    /// patch-ids waits for the next turn of the loop. Something due a moment later doesn't count, so a test
+    /// that says nothing started gives its retries and upkeep longer than it runs.
+    #[cfg(test)]
+    fn tell_idle(&mut self, due: Option<Instant>) {
+        if due.is_none_or(|at| at > Instant::now()) {
+            for reply in self.awaiting_idle.drain(..) {
+                // A test that has stopped waiting doesn't hear it.
+                let _unheard = reply.send(());
+            }
+        }
     }
 
     /// Puts each head that is due to be fetched once more with the waiting ones. A newer one handed over

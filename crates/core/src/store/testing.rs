@@ -1,5 +1,6 @@
 use super::*;
-use crate::testing::TempPath;
+use crate::facts::activity::{Activity, ItemActivity};
+use crate::testing::{TempPath, cpython};
 use std::path::PathBuf;
 
 pub(super) const V1: Migration = Migration {
@@ -62,6 +63,61 @@ impl OpenStore {
     pub(crate) fn close(self) {
         self.open.close();
         self.store.close();
+    }
+}
+
+/// A database of `cpython` whose user signed in as `me()` and whose first sync began three days ago: the
+/// world of the scenarios of New activity and Needs attention. Each scenario's file adds what it reads.
+pub(crate) struct World {
+    pub(crate) db: OpenStore,
+}
+
+impl World {
+    /// The world in the temp folder `name` names, once the first sync has finished.
+    pub(crate) fn new(name: &str) -> Self {
+        let world = Self::before_its_first_sync(name);
+        world.finishes_its_first_sync();
+        world
+    }
+
+    pub(crate) fn before_its_first_sync(name: &str) -> Self {
+        let db = OpenStore::new(name);
+        db.store.remember_login(&crate::testing::me()).unwrap();
+        Self { db }
+    }
+
+    pub(crate) fn finishes_its_first_sync(&self) {
+        let started_at = crate::testing::hours_ago(72);
+        let state = SyncState {
+            started_at,
+            finished_at: started_at,
+            check: ChangeCheck::Skipped,
+            refresh_under_way: false,
+        };
+        self.db.store.save_sync_state(&cpython(), state).unwrap();
+    }
+
+    pub(crate) fn has(&self, pull_requests: Vec<PullRequestFacts>) {
+        (self.db.store)
+            .save_pull_requests(&cpython(), pull_requests)
+            .unwrap();
+    }
+
+    pub(crate) fn happened(&self, number: u32, events: Vec<Activity>) {
+        let activity = vec![ItemActivity { number, events }];
+        (self.db.store)
+            .save_fetched_pull_requests(&cpython(), vec![], activity)
+            .unwrap();
+    }
+
+    pub(crate) fn marked_seen(&self, number: u32, up_to: OffsetDateTime) {
+        (self.db.store)
+            .mark_seen(&cpython(), vec![number], Some(up_to))
+            .unwrap();
+    }
+
+    pub(crate) fn finish(self) {
+        self.db.close();
     }
 }
 

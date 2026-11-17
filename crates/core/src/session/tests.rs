@@ -1,4 +1,5 @@
 use super::*;
+use crate::conventions::Conventions;
 use crate::facts::CommitSha;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::filters::FilterResults;
@@ -1180,6 +1181,37 @@ fn switch_bugs_on_losing(lost: Option<usize>) -> (Option<()>, Vec<String>, usize
 
     let owed = store.read_ahead_owed(&gcmon()).unwrap();
     (switched, heard.asked(), calls.try_iter().count(), owed)
+}
+
+#[test]
+fn new_conventions_tell_the_window_the_repository_changed_and_other_settings_dont() {
+    let (sent, changes) = mpsc::channel();
+    let mut board = quiet_board().with_changes(Box::new(move |change: &Change| {
+        sent.send(change.clone()).unwrap();
+    }));
+    let mut syncs = Syncs::default();
+    let with = |conventions| RepositorySettings {
+        conventions,
+        ..bugs_switched(OnWorkbench::Off)
+    };
+    // GitHub's Conventions, as every Repository but CPython starts with.
+    syncs.add(with(Conventions::Github));
+    let elsewhere = RepositorySettings {
+        conventions: Conventions::Cpython,
+        ..RepositorySettings::new(RepositoryName::parse("a/b").unwrap())
+    };
+
+    conventions_changed(&mut board, &syncs, &elsewhere);
+    conventions_changed(&mut board, &syncs, &bugs_switched(OnWorkbench::On));
+    conventions_changed(&mut board, &syncs, &with(Conventions::Cpython));
+
+    assert_eq!(
+        changes.try_iter().collect::<Vec<_>>(),
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
+    );
 }
 
 #[test]

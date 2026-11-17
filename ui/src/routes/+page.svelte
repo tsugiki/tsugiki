@@ -446,7 +446,6 @@
     <RepositoryHome
       bind:this={repositoryHome}
       name={home.current.repository.name}
-      conventions={settings.conventionsOf(home.current.repository.name)}
       onpick={openPicker}
       onsettings={openSettings}
       {keysActive}

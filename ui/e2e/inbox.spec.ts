@@ -153,6 +153,43 @@ test("with a cache the size of CPython's, the Inbox draws only the items on scre
   expect(halfway.length).toBeLessThan(50);
 });
 
+test("the Detail pane's item comes on screen from far down the Inbox, past items never drawn", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 600 });
+  // Fewer than the 3000 above, as each click weighs every row, and still some 130 screens of them.
+  const count = 1000;
+  await mockCore(page, { home: cpython, workbench, inbox: inboxPage(issues(count, 1), false) });
+  await page.goto("/");
+  await openInbox(page);
+  const row = (number: number) => page.locator(`[data-item="#${String(number)}"]`);
+  await row(count).click();
+  await expect(page.getByRole("region", { name: "Issue view" })).toBeVisible();
+
+  // A change takes the item from the top of the list to its end.
+  await changeAnswer(page, "inbox", inboxPage([...issues(count - 1, 1), issue(count)], false));
+  await emitFromCore(page, "changed", { repository: repository.name, items: [count] });
+  await expect(
+    page
+      .locator(".list li.item")
+      .last()
+      .locator(`[data-item="#${String(count)}"]`),
+  ).toHaveCount(1);
+  await expect(row(count)).toBeInViewport();
+
+  // History goes back to it from the top of the list, and on again.
+  await page.locator(".list").evaluate((list) => {
+    list.scrollTop = 0;
+  });
+  await row(count - 1).click();
+  await expect(row(count)).not.toBeInViewport();
+  await page.keyboard.press("Alt+ArrowLeft");
+  await expect(row(count)).toBeInViewport();
+  await expect(row(count)).toBeFocused();
+  await page.keyboard.press("Alt+ArrowRight");
+  await expect(row(count - 1)).toBeInViewport();
+});
+
 test("an item that closed leaves the Inbox at the next refresh", async ({ page }) => {
   await mockCore(page, { home: cpython, workbench, inbox: inboxPage(issues(3, 1), false) });
   await page.goto("/");

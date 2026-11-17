@@ -585,6 +585,35 @@ fn settings_reads_a_hand_edit_as_it_opens_and_apply_lasts_through_a_restart() {
     );
 }
 
+/// Conventions edited by hand regroup a Repository's PRs with no change to the store (ADR 0011), so the
+/// Settings dialog's reread tells the window, whose views read their items again (#822).
+#[test]
+fn conventions_edited_by_hand_reach_the_window_as_a_change_once_the_settings_are_read_again() {
+    let (folders, _root) = temp_folders("wired-conventions");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    drop(wired.ask("add_repository", add_cpython()).unwrap());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+
+    drop(wired.ask("reread_settings", json!({})).unwrap());
+    let unchanged = wired.workbenches.recv_timeout(Duration::from_millis(500));
+    let edited = file.replace("conventions = \"cpython\"", "conventions = \"github\"");
+    std::fs::write(folders.settings_file(), &edited).unwrap();
+    let reread = wired.ask("reread_settings", json!({})).unwrap();
+    let changed = wired.workbenches.recv_timeout(PLENTY);
+    drop(wired.stop());
+
+    assert_ne!(edited, file, "{file}");
+    assert!(unchanged.is_err(), "{unchanged:?}");
+    assert_eq!(
+        reread["settings"]["repositories"][0]["conventions"],
+        "github"
+    );
+    assert_eq!(
+        changed.unwrap(),
+        json!({ "repository": CPYTHON, "items": [] })
+    );
+}
+
 #[test]
 fn the_add_dialogs_check_of_a_repository_tsugiki_has_answers_without_github() {
     let (folders, _root) = temp_folders("wired-held");

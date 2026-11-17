@@ -170,7 +170,8 @@ export const commands = {
 	saveTheme: (pick: ThemePick) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { pick })),
 	/**
 	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
-	 *  it and takes effect (ADR 0014). This waits on small files.
+	 *  it and takes effect (ADR 0014). The session gets the settings of each Repository the edit changed, so
+	 *  its syncs read them, and new Conventions reach the window as a change. This waits on small files.
 	 */
 	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
 	/**
@@ -1184,14 +1185,34 @@ export type InboxPage_Deserialize =
 /**  The items updated in the last two days, or the first older batch when none were. */
 { kind: "latest" } | 
 /**  The next older batch: the items that come after `after` in the Inbox's order. */
-{ kind: "older"; after: InboxCursor_Deserialize };
+{ kind: "older"; after: InboxCursor_Deserialize } | 
+/**
+ *  Every item from the first down to `until`, where the pages the window shows end, as one page: those
+ *  pages read again after a change, at the cost of what they hold (#822).
+ */
+{ kind: "through"; until: InboxCursor_Deserialize } | 
+/**
+ *  Every item the cache holds, as one page: the pages the window shows read again once they reached
+ *  the end.
+ */
+{ kind: "all" };
 
 /**  The page of the Inbox the window asks for. */
 export type InboxPage_Serialize = 
 /**  The items updated in the last two days, or the first older batch when none were. */
 { kind: "latest" } | 
 /**  The next older batch: the items that come after `after` in the Inbox's order. */
-{ kind: "older"; after: InboxCursor_Serialize };
+{ kind: "older"; after: InboxCursor_Serialize } | 
+/**
+ *  Every item from the first down to `until`, where the pages the window shows end, as one page: those
+ *  pages read again after a change, at the cost of what they hold (#822).
+ */
+{ kind: "through"; until: InboxCursor_Serialize } | 
+/**
+ *  Every item the cache holds, as one page: the pages the window shows read again once they reached
+ *  the end.
+ */
+{ kind: "all" };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
 export type Inbox_Deserialize = {

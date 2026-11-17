@@ -1,6 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { SvelteMap } from "svelte/reactivity";
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import { FileView } from "$lib/state/file-view.svelte";
 import type { HitCode } from "$lib/state/hit-code.svelte";
@@ -4263,7 +4262,7 @@ it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order"
   expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "whole" });
   expect(screen.getByRole("button", { name: "Inbox" }).getAttribute("aria-current")).toBe("true");
   expect(screen.queryByRole("button", { name: /⇅$/ })).toBeNull();
-  // The browser draws only the items on screen.
+  // The browser lays out and paints only the items on screen.
   expect(issueList()?.querySelector("ul.lazy")).not.toBeNull();
   await fireEvent.click(screen.getByRole("button", { name: "PRs of #112564" }));
   expect(screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" })).toBeTruthy();
@@ -4354,40 +4353,14 @@ it("offers the palette the Inbox, which keeps its own order", async () => {
   expect(titles().filter((title) => title.startsWith("Sort by"))).toEqual([]);
 });
 
-it("asks for the list again when the Repository's Conventions change, and only then", async () => {
-  // Each prop on its own, as the page passes them: `rerender` changes them all at once.
-  const props = new SvelteMap<"name" | "conventions", string>([["name", "python/cpython"]]);
-  render(RepositoryHome, {
-    get name() {
-      return props.get("name") ?? "";
-    },
-    get conventions() {
-      return props.get("conventions") as "cpython" | "github" | undefined;
-    },
-    onpick: () => {},
-    onsettings: () => {},
-  });
-  await screen.findByText(/^Nothing here yet/);
-  const asked = () => core.workbench.mock.calls.map(([repository]: unknown[]) => repository);
+it("says why it couldn't read the Inbox's older items, and keeps the list on show", async () => {
+  core.inbox
+    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "disk gone" } });
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
 
-  // The first question went with the Conventions the core read, so the settings' arrival says nothing new.
-  props.set("conventions", "cpython");
-  await tick();
-  props.set("conventions", "cpython");
-  await tick();
-  expect(asked()).toEqual(["python/cpython"]);
-
-  props.set("conventions", "github");
-  await vi.waitFor(() => {
-    expect(asked()).toEqual(["python/cpython", "python/cpython"]);
-  });
-
-  // Another Repository asks for its own list once.
-  props.set("name", "python/peps");
-  props.set("conventions", "cpython");
-  await vi.waitFor(() => {
-    expect(asked()).toEqual(["python/cpython", "python/cpython", "python/peps"]);
-  });
-  await tick();
-  expect(asked()).toHaveLength(3);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Tsugiki can't read the Inbox's older items: disk gone");
+  expect(screen.getByRole("button", { name: "#112564 GIL drop during collection" })).toBeTruthy();
 });

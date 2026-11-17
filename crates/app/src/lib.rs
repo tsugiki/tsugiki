@@ -529,6 +529,17 @@ impl RepositoryWork {
         self.fetching
             .clone_mirror_next(repository.name.clone(), source);
     }
+
+    /// Hands the session the settings of each Repository that `after` holds otherwise than `before`, as a
+    /// hand edit of the files can leave them.
+    fn settings_changed(&self, before: &SettingsView, after: &SettingsView) {
+        let was = &before.loaded.settings.repositories;
+        for repository in &after.loaded.settings.repositories {
+            if !was.contains(repository) {
+                self.fetching.settings_changed(repository.clone());
+            }
+        }
+    }
 }
 
 fn read_workbench(

@@ -226,14 +226,21 @@ pub(crate) fn save_theme(pick: ThemePick, owner: State<'_, SettingsOwner>) -> Re
 }
 
 /// Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
-/// it and takes effect (ADR 0014). This waits on small files.
+/// it and takes effect (ADR 0014). The session gets the settings of each Repository the edit changed, so
+/// its syncs read them, and new Conventions reach the window as a change. This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn reread_settings(
     owner: State<'_, SettingsOwner>,
     work: State<'_, crate::DiffWork>,
+    repositories: State<'_, crate::RepositoryWork>,
 ) -> Result<LoadedSettings, Error> {
-    crate::settings_in_force(owner.reread(), &work)
+    let before = owner.view();
+    let reread = owner.reread();
+    if let Ok(after) = &reread {
+        repositories.settings_changed(&before, after);
+    }
+    crate::settings_in_force(reread, &work)
 }
 
 /// Saves the tables the Settings dialog's Apply changed to `settings.toml`, and the language servers to

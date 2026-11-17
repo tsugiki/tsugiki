@@ -21,7 +21,6 @@
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
   import type { TextSearchState } from "$lib/state/text-search.svelte";
   import { RAIL_ORDER, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
-  import type { Conventions } from "$lib/state/settings.svelte";
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
@@ -86,7 +85,6 @@
 
   let {
     name,
-    conventions,
     onpick,
     onsettings,
     keysActive = true,
@@ -94,8 +92,6 @@
     diffPeek = "inline",
   }: {
     name: string;
-    /** The Repository's Conventions, as the settings the window last took from the core give them. */
-    conventions?: Conventions | undefined;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
     onpick: () => void;
     /** Opens the Settings dialog, from ⚙ atop the Sidebar. */
@@ -169,18 +165,6 @@
     readOlderNearEnd();
   });
 
-  /** The Workbench state and Conventions the list last asked with. */
-  let askedWith: { opened: WorkbenchState; conventions: Conventions | undefined } | undefined;
-  // A change to the Conventions regroups the PRs with no change to the store, so no `changed` event says so
-  // (ADR 0011): the list asks again, and the Inbox reads its pages again from the first. Conventions that
-  // arrive after the first question asked with the core's own say nothing new.
-  $effect(() => {
-    const last = askedWith;
-    askedWith = { opened: workbench, conventions };
-    if (last?.opened === workbench && last.conventions && last.conventions !== conventions) {
-      void workbench.refresh();
-    }
-  });
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
    * it with `:focus-within` (#602). */
   let windowFocused = $state(document.hasFocus());
@@ -1096,6 +1080,9 @@
   {/if}
   {#if workbench.switchProblem}
     <p role="alert">{`Tsugiki couldn't save the Filter's switch: ${workbench.switchProblem}`}</p>
+  {/if}
+  {#if workbench.olderError}
+    <p role="alert">{`Tsugiki can't read the Inbox's older items: ${workbench.olderError}`}</p>
   {/if}
   {#if panes.problem}
     <p role="alert">{panes.problem}</p>

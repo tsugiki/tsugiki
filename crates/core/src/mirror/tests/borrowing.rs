@@ -5,9 +5,6 @@ use std::time::SystemTime;
 
 use super::*;
 
-/// Long enough for a clone that was going to start to have started.
-const A_MOMENT: Duration = Duration::from_millis(300);
-
 impl Place {
     /// A clone of `name`'s remote outside Tsugiki's folders, as a user keeps one, whose `origin` is the URL
     /// Tsugiki clones from.
@@ -269,7 +266,8 @@ fn a_clone_nobody_has_answered_for_asks_and_starts_on_the_answer() {
     requests.clone_mirror(hello.clone(), None);
     let question = asked.recv_timeout(PLENTY).unwrap();
     requests.clone_mirror(hello.clone(), None);
-    let held = starts.recv_timeout(A_MOMENT).is_err();
+    mirrors.wait_idle();
+    let held = starts.try_recv().is_err();
     requests.clone_mirror_next(hello, download());
     let answered = asked.recv_timeout(PLENTY).unwrap();
     let clone = starts.recv_timeout(PLENTY).unwrap();
@@ -298,7 +296,8 @@ fn a_switch_to_a_clone_that_waits_for_an_answer_asks_nothing_new_and_the_answer_
     requests.clone_mirror(named("octo-org/waiting"), download());
     // The switch, which has no answer to give.
     requests.clone_mirror_next(asking.clone(), None);
-    let asked_again = asked.recv_timeout(A_MOMENT).ok();
+    mirrors.wait_idle();
+    let asked_again = asked.try_recv().ok();
     // The answer, as the window gives it.
     requests.clone_mirror_next(asking.clone(), download());
     let answered = asked.recv_timeout(PLENTY).unwrap();
@@ -347,7 +346,8 @@ fn an_app_that_hears_only_of_clones_still_holds_a_clone_nobody_answered_for() {
     mirrors
         .requests()
         .clone_mirror(named("octo-org/hello"), None);
-    let held = starts.recv_timeout(A_MOMENT).is_err();
+    mirrors.wait_idle();
+    let held = starts.try_recv().is_err();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(held);

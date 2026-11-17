@@ -8,9 +8,6 @@ use super::*;
 
 const HOUR: Duration = Duration::from_secs(60 * 60);
 
-/// Long enough for a git that was going to start to have started.
-const A_MOMENT: Duration = Duration::from_millis(300);
-
 impl Place {
     /// The worker with the fake git and each mirror's upkeep on `schedule`, each start of it, and what it
     /// says of each clone.
@@ -101,7 +98,8 @@ fn a_mirror_that_never_had_upkeep_gets_gc_at_once_and_notes_when() {
     let gc = starts.recv_timeout(PLENTY).unwrap();
     let args = gc.args.clone();
     gc.succeed();
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     let mirror = place.folders.mirror(&cpython);
@@ -151,6 +149,7 @@ fn a_mirror_kept_lately_waits_for_its_turn_and_the_worker_wakes_for_it() {
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
     place.upkept(&cpython, SystemTime::now(), SystemTime::now());
+    // The file keeps whole seconds, so the maintenance falls due one to two seconds from now.
     let schedule = Schedule {
         maintain: Duration::from_secs(2),
         collect: HOUR,
@@ -158,7 +157,8 @@ fn a_mirror_kept_lately_waits_for_its_turn_and_the_worker_wakes_for_it() {
     let (mirrors, starts, _announced) = place.start_keeping(schedule);
 
     mirrors.requests().clone_mirror(cpython.clone(), download());
-    let early = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let early = starts.try_recv();
     let on_time = starts.recv_timeout(PLENTY).unwrap();
     let args = on_time.args.clone();
     on_time.succeed();
@@ -272,7 +272,8 @@ fn an_upkeep_that_fails_waits_for_its_next_turn_and_leaves_the_mirror() {
         gc,
         "fatal: gc is already running on machine 'here' pid 1 (use --force if not)\n",
     );
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err());
@@ -353,7 +354,8 @@ fn a_mirror_an_upkeep_finds_broken_is_cloned_again() {
     let is_clone = clone.args.first().is_some_and(|arg| arg == "clone");
     fs::create_dir_all(clone.args.last().unwrap()).unwrap();
     clone.succeed();
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(is_clone);
@@ -375,7 +377,8 @@ fn a_broken_mirror_that_cant_be_set_aside_stays_and_its_fetches_wait_for_news() 
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(fetch, "fatal: bad object HEAD\n");
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err(), "no clone, and no fetch until news");
@@ -393,7 +396,8 @@ fn a_broken_mirror_whose_upkeep_failed_and_cant_be_set_aside_waits_for_its_next_
     mirrors.requests().clone_mirror(cpython.clone(), download());
     let gc = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(gc, "fatal: bad object HEAD\n");
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err());
@@ -451,7 +455,8 @@ fn without_upkeep_tsugiki_leaves_mirrors_as_they_are() {
     let (mirrors, starts) = place.start_faked();
 
     mirrors.requests().clone_mirror(cpython.clone(), download());
-    let nothing = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing.is_err());
@@ -567,7 +572,8 @@ fn an_upkeep_file_that_cant_be_written_leaves_a_trace_and_the_worker_goes_by_its
 
     mirrors.requests().clone_mirror(cpython.clone(), download());
     starts.recv_timeout(PLENTY).unwrap().succeed();
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err());
@@ -587,7 +593,8 @@ fn a_broken_mirror_the_new_clone_cant_delete_leaves_a_trace() {
     let clone = starts.recv_timeout(PLENTY).unwrap();
     fs::create_dir_all(clone.args.last().unwrap()).unwrap();
     clone.succeed();
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(nothing_more.is_err(), "a new clone needs no upkeep yet");
@@ -630,7 +637,8 @@ fn a_mirror_found_broken_again_since_launch_stays_and_its_fetches_wait_for_news(
         starts.recv_timeout(PLENTY).unwrap(),
         "fatal: bad object HEAD\n",
     );
-    let nothing_more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing_more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(

@@ -2,9 +2,6 @@
 
 use super::*;
 
-/// Long enough for a git or an answer that was going to come to have come.
-const A_MOMENT: Duration = Duration::from_millis(300);
-
 impl Place {
     /// The working copy the remote for `name` came from, where the tests commit.
     fn work(&self, name: &RepositoryName) -> PathBuf {
@@ -253,7 +250,8 @@ fn three_prs_opened_in_a_row_end_at_the_thirds_base_in_two_moves() {
     let first = end_move(&starts, &folder);
     let second = end_move(&starts, &folder);
     let checkout = requests.lookup_checkout(cpython.clone());
-    let more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     let base = |number: u32| fake_at(number).base.as_str().to_owned();
@@ -278,18 +276,16 @@ fn a_lookup_asked_during_a_move_waits_and_reads_the_commit_it_moved_to() {
 
     requests.look_up(cpython.clone(), fake_at(1));
     let make = starts.recv_timeout(PLENTY).unwrap();
-    let reader = thread::spawn({
-        let (requests, cpython) = (requests.clone(), cpython.clone());
-        move || requests.lookup_checkout(cpython)
-    });
+    let reader = requests.ask_lookup_checkout(cpython.clone());
     // The same PR again asks for nothing more.
     requests.look_up(cpython.clone(), fake_at(1));
-    thread::sleep(A_MOMENT);
-    let waited = !reader.is_finished();
+    mirrors.wait_idle();
+    let waited = reader.try_recv().is_err();
     make.succeed();
     let (commands, _base) = end_move(&starts, &folder);
-    let read = reader.join().unwrap();
-    let more = starts.recv_timeout(A_MOMENT);
+    let read = reader.recv_timeout(PLENTY).unwrap();
+    mirrors.wait_idle();
+    let more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(waited);
@@ -304,16 +300,6 @@ fn a_lookup_asked_during_a_move_waits_and_reads_the_commit_it_moved_to() {
     assert!(more.is_err());
 }
 
-/// Asks where `repository`'s Lookup checkout is on a thread of its own, as the answer may wait for a move.
-fn ask(requests: &MirrorRequests, repository: &RepositoryName) -> Receiver<Option<LookupCheckout>> {
-    let (answering, answer) = channel();
-    let (requests, repository) = (requests.clone(), repository.clone());
-    drop(thread::spawn(move || {
-        drop(answering.send(requests.lookup_checkout(repository)));
-    }));
-    answer
-}
-
 #[test]
 fn a_failed_move_leaves_no_checkout_and_only_a_reader_tries_it_again_afresh() {
     let place = Place::new("lookup-failed");
@@ -325,8 +311,8 @@ fn a_failed_move_leaves_no_checkout_and_only_a_reader_tries_it_again_afresh() {
 
     requests.look_up(cpython.clone(), fake_at(1));
     let make = starts.recv_timeout(PLENTY).unwrap();
-    let waiting = ask(&requests, &cpython);
-    thread::sleep(A_MOMENT);
+    // The worker hears this before git's end, which comes once the test has failed it.
+    let waiting = requests.ask_lookup_checkout(cpython.clone());
     // git got as far as the file in the folder.
     fs::create_dir_all(&folder).unwrap();
     fs::write(folder.join(".git"), "gitdir: elsewhere\n").unwrap();
@@ -334,8 +320,9 @@ fn a_failed_move_leaves_no_checkout_and_only_a_reader_tries_it_again_afresh() {
     let failed = waiting.recv_timeout(PLENTY).unwrap();
     // The Files tab reads the same PR again.
     requests.look_up(cpython.clone(), fake_at(1));
-    let tried_again = starts.recv_timeout(A_MOMENT);
-    let retried = ask(&requests, &cpython);
+    mirrors.wait_idle();
+    let tried_again = starts.try_recv();
+    let retried = requests.ask_lookup_checkout(cpython.clone());
     let (commands, _base) = end_move(&starts, &folder);
     let moved = retried.recv_timeout(PLENTY).unwrap();
     mirrors.stop_cleanly(PLENTY);
@@ -386,11 +373,11 @@ fn a_reset_that_fails_in_the_checkout_the_move_made_ends_the_move() {
     requests.look_up(cpython.clone(), fake_at(1));
     starts.recv_timeout(PLENTY).unwrap().succeed();
     let reset = starts.recv_timeout(PLENTY).unwrap();
-    let waiting = ask(&requests, &cpython);
-    thread::sleep(A_MOMENT);
+    let waiting = requests.ask_lookup_checkout(cpython.clone());
     fail_saying(reset, "fatal: Could not reset index file to revision\n");
     let checkout = waiting.recv_timeout(PLENTY).unwrap();
-    let more = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let more = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(checkout, None);
@@ -433,7 +420,8 @@ fn without_its_mirror_a_lookup_hears_at_once_there_is_no_checkout() {
 
     mirrors.requests().look_up(cpython.clone(), fake_at(1));
     let checkout = mirrors.requests().lookup_checkout(cpython);
-    let started = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let started = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(checkout, None);
@@ -456,7 +444,8 @@ fn short_of_disk_a_checkout_isnt_made() {
     mirrors.requests().clone_mirror(hello, download());
     mirrors.requests().look_up(cpython.clone(), fake_at(1));
     let checkout = mirrors.requests().lookup_checkout(cpython);
-    let started = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let started = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(checkout, None);
@@ -475,7 +464,8 @@ fn a_move_that_cant_clear_the_folder_or_start_git_leaves_no_checkout() {
 
     requests.look_up(cpython.clone(), fake_at(1));
     let uncleared = requests.lookup_checkout(cpython.clone());
-    let started = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let started = starts.try_recv();
     fs::remove_file(&folder).unwrap();
     drop(starts);
     requests.look_up(cpython.clone(), fake_at(1));

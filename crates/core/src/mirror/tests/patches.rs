@@ -4,9 +4,6 @@ use super::*;
 use crate::facts::patch_ids::{CantCheck, CommitPatches, PatchesOf, UncheckedCommit};
 use crate::patch_ids::PatchReads;
 
-/// Long enough for a read that was going to happen to have happened.
-const A_MOMENT: Duration = Duration::from_millis(500);
-
 /// Each Repository's patch-ids the worker handed over, by name.
 type Patched = Receiver<(String, Vec<CommitPatches>)>;
 
@@ -165,7 +162,8 @@ fn a_hand_over_during_the_reads_hands_over_what_they_read_and_doesnt_read_it_aga
     requests.read_patch_ids(cpython.clone(), both);
     let (_, one) = patched.recv_timeout(PLENTY).unwrap();
     let (_, other) = patched.recv_timeout(PLENTY).unwrap();
-    let after = patched.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let after = patched.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     let read: Vec<CommitSha> = [one, other]
@@ -188,7 +186,8 @@ fn a_reviewed_commit_the_mirror_lacks_is_read_once_its_fetch_brings_it() {
     let requests = mirrors.requests();
 
     requests.read_patch_ids(cpython.clone(), vec![on_main(&pull_request)]);
-    let before = patched.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let before = patched.try_recv();
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &pull_request)]);
     let (_, read) = patched.recv_timeout(PLENTY).unwrap();
     mirrors.stop_cleanly(PLENTY);
@@ -209,7 +208,8 @@ fn a_commit_the_mirror_lacks_is_read_once_a_fetch_brings_it() {
     mirrors
         .requests()
         .read_patch_ids(cpython.clone(), vec![on_main(&pull_request)]);
-    let before = patched.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let before = patched.try_recv();
     mirrors
         .requests()
         .fetch_heads(cpython.clone(), vec![head_at(&pull_request)]);
@@ -322,7 +322,8 @@ fn a_commit_cant_be_checked_without_a_git_new_enough_and_the_reason_says_which()
             .requests()
             .read_patch_ids(cpython.clone(), vec![on_main(&commit)]);
         let told = unchecked.recv_timeout(PLENTY).unwrap();
-        let read = patched.recv_timeout(A_MOMENT);
+        mirrors.wait_idle();
+        let read = patched.try_recv();
         mirrors.stop_cleanly(PLENTY);
 
         assert_eq!(told, cant_check(&commit, reason), "{said:?}");

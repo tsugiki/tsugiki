@@ -633,6 +633,25 @@ impl Git for FakeGit {
     }
 }
 
+impl Mirrors {
+    /// Waits until the worker has handled each request sent before this, has read the patch-ids waiting,
+    /// and has started what it would start now, so a test can then say that nothing else started. A git
+    /// that waits for the one under way, or a fetch tried again after a wait, hasn't started yet.
+    fn wait_idle(&self) {
+        let (reply, idle) = channel();
+        let sent = self.messages.send(Message::Idle(reply));
+        match sent.map(|()| idle.recv_timeout(PLENTY)) {
+            Ok(Ok(())) => {}
+            Ok(Err(RecvTimeoutError::Timeout)) => {
+                panic!("the mirror worker wasn't idle within {PLENTY:?}")
+            }
+            Err(_) | Ok(Err(RecvTimeoutError::Disconnected)) => {
+                panic!("the mirror worker ended before it was idle")
+            }
+        }
+    }
+}
+
 impl Place {
     /// The worker with the fake git, and each start of it. A head that is behind waits longer than a test.
     fn start_faked(&self) -> (Mirrors, Receiver<FakeStart>) {
@@ -1699,8 +1718,6 @@ mod problems {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     const GIB: u64 = 1 << 30;
-    /// Long enough for a git that would start to have started.
-    const A_MOMENT: Duration = Duration::from_millis(300);
 
     /// Announces each problem the worker finds, and nothing else.
     fn hearing_problems() -> (Announce, Receiver<Option<MirrorProblem>>) {
@@ -1778,7 +1795,8 @@ mod problems {
             .clone_mirror(named("octo-org/hello"), download());
         mirrors.requests().fetch_heads(cpython, vec![head(1)]);
         let missing = told.recv_timeout(PLENTY).unwrap();
-        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.wait_idle();
+        let held = starts.try_recv().is_err();
         mirrors.requests().check_again();
         let found = told.recv_timeout(PLENTY).unwrap();
         let fetch = starts.recv_timeout(PLENTY).unwrap();
@@ -1804,7 +1822,8 @@ mod problems {
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
         let old = told.recv_timeout(PLENTY).unwrap();
-        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.wait_idle();
+        let held = starts.try_recv().is_err();
         mirrors.stop_cleanly(PLENTY);
 
         let version = "git version 2.29.2".to_owned();
@@ -2146,7 +2165,8 @@ mod problems {
         mirrors
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
-        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.wait_idle();
+        let held = starts.try_recv().is_err();
         mirrors.stop_cleanly(PLENTY);
 
         assert!(held);

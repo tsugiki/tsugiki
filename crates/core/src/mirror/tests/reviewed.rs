@@ -2,9 +2,6 @@
 
 use super::*;
 
-/// Long enough for a git that was going to start to have started.
-const A_MOMENT: Duration = Duration::from_millis(300);
-
 /// What GitHub says of a commit it won't send.
 const NOT_OUR_REF: &str = "fatal: remote error: upload-pack: not our ref";
 
@@ -167,13 +164,15 @@ fn a_refused_commit_isnt_asked_for_again_even_after_a_relaunch() {
     let input = fetch.input.clone();
     fail_saying(fetch, &format!("{NOT_OUR_REF} {}\n", commit.as_str()));
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);
-    let again = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let again = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
     let (mirrors, starts) = place.start_faked();
     mirrors
         .requests()
         .keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);
-    let after_relaunch = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let after_relaunch = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(input, reviewed_refspec(1, &commit));
@@ -202,7 +201,8 @@ fn a_fetch_that_fails_for_another_reason_notes_nothing_and_tries_again_at_the_ne
     let input = again.input.clone();
     again.succeed_unread();
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);
-    let once_kept = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let once_kept = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(input, reviewed_refspec(1, &commit));
@@ -219,7 +219,8 @@ fn a_reviewed_commit_waits_for_its_mirror_to_be_cloned() {
     mirrors
         .requests()
         .keep_reviewed(cpython.clone(), vec![reviewed(1, &head(1).commit)]);
-    let nothing = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing = starts.try_recv();
     place.bare_mirror(&cpython);
     mirrors
         .requests()
@@ -262,7 +263,8 @@ fn a_hand_over_during_a_failed_fetch_tries_again_at_once_and_one_during_a_fetch_
     let second = starts.recv_timeout(PLENTY).unwrap();
     hand_over();
     second.succeed_unread();
-    let third = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let third = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(
@@ -287,7 +289,8 @@ fn a_reviewed_commit_that_leaves_the_want_during_its_failed_fetch_isnt_tried_aga
         first,
         "fatal: unable to access 'https://github.com/': Could not resolve host\n",
     );
-    let again = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let again = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(
@@ -317,7 +320,8 @@ fn a_refusal_that_cant_be_noted_on_disk_still_isnt_asked_for_again() {
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     fail_saying(fetch, &format!("{NOT_OUR_REF} {}\n", commit.as_str()));
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);
-    let again = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let again = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(again.is_err(), "no second fetch");
@@ -337,7 +341,8 @@ fn a_mirror_git_cant_look_in_has_its_reviewed_commits_tried_again_at_the_next_ha
     let requests = mirrors.requests();
 
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);
-    let nothing = starts.recv_timeout(A_MOMENT);
+    mirrors.wait_idle();
+    let nothing = starts.try_recv();
     fs::remove_file(&mirror).unwrap();
     place.bare_mirror(&cpython);
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);

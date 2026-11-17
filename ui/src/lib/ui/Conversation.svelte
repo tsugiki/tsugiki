@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
+  import { counted } from "$lib/state/counted";
   import type { HiddenReason, IssueComment, IssueContent } from "$lib/state/issue-view.svelte";
   import type { PullRequestContent, Review, ReviewState, ThreadLine } from "$lib/state/pr-view.svelte";
   import { REASONS } from "./hidden";
@@ -73,7 +74,7 @@
     const line = subject.kind === "line" ? (subject.line ?? subject.original) : null;
     return line === null ? path : `${path}:${String(line)}`;
   };
-  const replies = (count: number) => (count === 1 ? "1 reply" : `${String(count)} replies`);
+  const replies = (count: number) => counted(count, "reply", "replies");
 </script>
 
 {#snippet body(id: string, html: string, hidden: HiddenReason | null)}

@@ -1,12 +1,11 @@
 // The words for what the core worked out about a Repository: Add repository's check, and what its mirror
 // takes, which the Files tab says too.
 import type { Conventions, RepositoryCheck, RepositorySize } from "$lib/state/add-repository.svelte";
+import { counted } from "$lib/state/counted";
 import type { MirrorCost } from "$lib/state/mirror-source";
 import { sizeWords } from "./synced";
 
 const CONVENTIONS: Record<Conventions, string> = { cpython: "CPython", github: "GitHub" };
-
-const counted = (count: number, one: string, many: string) => `${String(count)} ${count === 1 ? one : many}`;
 
 const WHAT_LOADS: Record<RepositorySize, (days: string) => string> = {
   small: (days) => `Small: Tsugiki loads everything open, plus what closed in the last ${days} days.`,

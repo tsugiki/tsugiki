@@ -17,6 +17,7 @@ import {
   type SearchState,
 } from "$lib/data/bindings";
 import { ask } from "./answer";
+import { counted } from "./counted";
 import { type DiffEnds, diffKey } from "./diff-ends";
 import type { PrFilesState } from "./pr-files.svelte";
 
@@ -78,9 +79,6 @@ type Shown =
 
 /** A row by what it shows, so the cursor stays on it as results come in above it. */
 type RowKey = { path: string; line: number | undefined };
-
-const counted = (count: number, one: string, many: string) =>
-  `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
 
 /** `text` as a regex that matches it as it is, as VS Code puts the picked text in a box with regex on. */
 export function literalRegex(text: string): string {

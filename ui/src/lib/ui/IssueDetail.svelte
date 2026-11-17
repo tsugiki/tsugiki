@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import { counted } from "$lib/state/counted";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import { treeRows, type TreeEntry } from "$lib/state/workbench.svelte";
@@ -113,7 +114,7 @@
 
   /** The line the fully merged PRs fold into, which says what a click does (#588). */
   const mergedWords = (shown: boolean, count: number) =>
-    `${shown ? "Hide" : "Show"} ${String(count)} merged ${count === 1 ? "PR" : "PRs"}`;
+    `${shown ? "Hide" : "Show"} ${counted(count, "merged PR", "merged PRs")}`;
 </script>
 
 <!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
@@ -209,11 +210,11 @@
         <ul class="counts" role="list" aria-label="PR counts">
           {#each counts as { words, icon, count } (words)}
             <li class={{ none: count === 0 }}>
-              <span aria-hidden="true"><StateIcon {icon} /></span><span>{words}</span>{@render counted(count)}
+              <span aria-hidden="true"><StateIcon {icon} /></span><span>{words}</span>{@render tally(count)}
             </li>
           {/each}
           <li class={{ none: view.needs_attention.length === 0 }}>
-            <span><span aria-hidden="true"><b>Bold</b>:</span> Needs attention</span>{@render counted(
+            <span><span aria-hidden="true"><b>Bold</b>:</span> Needs attention</span>{@render tally(
               view.needs_attention.length,
             )}
           </li>
@@ -249,7 +250,7 @@
   >{` ${row.title}`}{/snippet}
 
 <!-- A count in the row above the tree, after a comma only a screen reader hears: "Open, 1". -->
-{#snippet counted(count: number)}<span class="for-screen-readers">{PAUSE}</span><span class="count"
+{#snippet tally(count: number)}<span class="for-screen-readers">{PAUSE}</span><span class="count"
     >{count}</span
   >{/snippet}
 

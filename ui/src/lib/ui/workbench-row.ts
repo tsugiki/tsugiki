@@ -15,6 +15,7 @@ import {
   type Why,
   type YourReview,
 } from "$lib/state/workbench.svelte";
+import { counted } from "$lib/state/counted";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -94,12 +95,12 @@ export function ago(updatedAt: string, now: Date): string {
 }
 
 /** How many comments an Issue, a PR or a review thread has. */
-export const commentCount = (count: number) => (count === 1 ? "1 comment" : `${String(count)} comments`);
+export const commentCount = (count: number) => counted(count, "comment", "comments");
 
 /** An Issue's or a PR's first line. */
 export const headline = (item: { number: number; title: string }) => `#${String(item.number)} ${item.title}`;
 
-const prCount = (count: number) => (count === 1 ? "1 PR" : `${String(count)} PRs`);
+const prCount = (count: number) => counted(count, "PR", "PRs");
 
 /** An item's first line: the people an Issue involves, a dash once they have all gone, or a PR's author. */
 export function peopleOf(item: ListedItem): string {
@@ -131,7 +132,7 @@ export type WordTone = "request" | "bad" | "good" | "plain";
 /** A word of a PR's state, and what its hover says, if it says more. */
 export type StateWord = { words: string; tone: WordTone; hover?: string };
 
-const fileCount = (count: number) => (count === 1 ? "1 file" : `${String(count)} files`);
+const fileCount = (count: number) => counted(count, "file", "files");
 
 /** Why the Stale review check can't run, for the hover of a Stale review it couldn't check, `cant` naming
  * the Review. */

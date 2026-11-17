@@ -1,5 +1,6 @@
 // The status bar's words for when the open Repository last synced, for a sync under way, for the other
 // Repositories syncing, and for a mirror's clone and what keeps one from starting.
+import { counted } from "$lib/state/counted";
 import type { Cloning, MirrorProblem, RepositoryMirror, SyncActivity } from "$lib/state/status.svelte";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
@@ -41,8 +42,7 @@ export function syncingWords(activity: SyncActivity | null): string | null {
   if (!open || open.part === "refresh") return null;
   if (open.load) return `${PART_WORDS[open.part]} · ${loadWords(open.load)}`;
   if (open.pages === 0) return PART_WORDS[open.part];
-  const pages = open.pages === 1 ? "1 page" : `${String(open.pages)} pages`;
-  return `${PART_WORDS[open.part]} · ${pages}`;
+  return `${PART_WORDS[open.part]} · ${counted(open.pages, "page", "pages")}`;
 }
 
 /** The other Repositories syncing, which take turns with the open one: the next by name, then a count. */

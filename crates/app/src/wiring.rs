@@ -88,8 +88,8 @@ impl<T: Clone + Send + 'static, R: Runtime> WindowState<T, R> {
         }
     }
 
-    /// Sets the state to `value`, then sends the event `event` makes of it. A window that starts listening too
-    /// late for the event asks the command once it has loaded, so the value has to be there first.
+    /// Sets the state to `value`, then sends the event `event` makes of it. A window that starts listening
+    /// too late for the event asks the command once it has loaded, so the value has to be there first.
     fn set<E: Event + Serialize + Clone>(&mut self, value: T, event: impl FnOnce(T) -> E) {
         self.latest.set(&value);
         log_if_unsent(event(value).emit(&self.app));

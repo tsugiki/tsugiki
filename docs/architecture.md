@@ -19,7 +19,8 @@ Tsugiki is a Tauri app with five crates and a webview
   (ADR 0020). It knows nothing of PRs, Mirrors or the database: the core says which server to start, which
   documents to open and what to ask. One thread owns each server, one writes to it, two more read its
   output and its error output, and requests reach the owner as messages. Its
-  [README](../crates/lsp/README.md) says what it does and what it leaves to the core.
+  [README](../crates/lsp/README.md) says what it does and what it leaves to the core. Its `testing` feature
+  also builds `tsugiki-fake-server`, a fake server the core's tests start as a process.
 - `crates/app` (`tsugiki-app`) is the Tauri app. It starts the core's threads, turns commands and events
   into calls on the core, and owns the window.
 - `crates/webview-keys` holds the one `unsafe` call that turns off WebView2's browser shortcuts

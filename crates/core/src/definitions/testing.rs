@@ -1,8 +1,10 @@
-//! The servers the tests start, and a fake server for what a real one does only at moments a test can't
-//! pick. The Repository with a PR that they work in is [`crate::testing::Fixture`].
+//! The servers the tests start, a fake server for what a real one does only at moments a test can't pick,
+//! and a fake server program for the tests of what the owner does as it starts and stops one. The
+//! Repository with a PR that they work in is [`crate::testing::Fixture`].
 
 use std::collections::HashSet;
-use std::io::{BufRead, PipeWriter, Write};
+use std::fs;
+use std::io::{BufRead, ErrorKind, PipeWriter, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -10,10 +12,32 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde_json::{Value, json};
-use tsugiki_lsp::testing::{pipes, read_message, write_message};
+use tsugiki_lsp::testing::{
+    FAKE_SERVER_SCRIPT, fake_server_script, nth_answer, pipes, read_message, reply_to,
+    write_message,
+};
 use tsugiki_lsp::{Event, Starting, Uri};
 /// The ty, rust-analyzer and clangd that `just cargo-test` and `just rust-coverage` name.
 pub(crate) use tsugiki_test_git::{clangd, rust_analyzer, ty};
+
+/// Puts the fake server program `tsugiki-lsp` builds at `program`, in place of any file there, beside a
+/// script that has it print `version` for `--version` and answer lookups with `answers`, the first lookup
+/// with the first and the rest as [`FakeClangd::start`] says. Unlike [`FakeClangd`] it runs as a process
+/// that the owner starts from its path, so a test of the owner's own starts and stops can run it, and it
+/// holds its working folder as a real server does. It answers a lookup in a document it wasn't sent, and
+/// reports no problems in each document opened on it, which keeps events coming as a real server's do.
+pub(crate) fn fake_program(program: &Path, version: &str, answers: Vec<Value>) {
+    let folder = program.parent().unwrap();
+    fs::create_dir_all(folder).unwrap();
+    // A file there that can't go fails here, not as a copy that fails after.
+    if let Err(error) = fs::remove_file(program) {
+        assert_eq!(error.kind(), ErrorKind::NotFound, "{error}");
+    }
+    // A copy, not a link: the program is small, and the build may be on another drive.
+    let _copied = fs::copy(tsugiki_test_git::fake_server(), program).unwrap();
+    let script = fake_server_script(version, answers).to_string();
+    fs::write(folder.join(FAKE_SERVER_SCRIPT), script).unwrap();
+}
 
 /// A fake clangd, which threads of the test play over in-memory pipes: it answers each lookup with the
 /// locations it was given, and reports its index's progress when the test says. The real clangd indexes a
@@ -204,19 +228,11 @@ fn serve(
                 let message = "trying to get AST for non-added document";
                 json!({"error": {"code": -32602, "message": message}})
             }
-            "textDocument/definition" => {
-                let count = asked.fetch_add(1, Ordering::SeqCst);
-                answers[count.min(answers.len() - 1)].clone()
-            }
+            "textDocument/definition" => nth_answer(answers, asked.fetch_add(1, Ordering::SeqCst)),
             _ => Value::Null,
         };
-        // A notification gets no answer, nor does a request whose answer is `silent`, and an answer with
-        // an `error` fails its request.
-        if let Some(id) = id.filter(|_| result.get("silent").is_none()) {
-            let reply = match result.get("error") {
-                Some(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
-                None => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-            };
+        // A notification gets no answer.
+        if let Some(reply) = id.and_then(|id| reply_to(id, result)) {
             let _gone = replies.send(Some(reply));
         }
     }

@@ -11,7 +11,11 @@ release. Coverage is held at 100%, and CI fails below it.
 - **git.** Tests build tiny repositories in a temp directory with the real `git` CLI, each set up for one
   case: a rebase that leaves the diff the same, a whitespace-only change, a merge from main, a force-push, a
   Generated file. A separate opt-in suite runs against a real CPython mirror (bootstrap, polling many PR
-  heads, maintenance) before releases only.
+  heads, maintenance) before releases only. Language servers go the same way: a test of what a server finds
+  starts the real ty, rust-analyzer or clangd. A test of our own logic, where the program is only a
+  backdrop, may run a fake in its place, such as the mirror worker's fake git or a fake language server. It
+  may do so only while a test of the real program checks the behaviour the fake imitates, because a fake
+  keeps passing after the real program changes.
 - **Domain rules and view models.** Each rule has small scenario tests written in the glossary's words ("a
   Review request on a Draft PR needs attention"). View models ([ADR
   0008](0008-view-models-and-invalidation-over-ipc.md)) are snapshot-tested with `insta` against recorded

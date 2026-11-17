@@ -128,12 +128,13 @@ test: vitest cargo-test stale-bindings
 vitest:
     npm run vitest -- --maxWorkers=2
 
-# Run the Rust tests, after fetching the ty and clangd they start
+# Run the Rust tests, after fetching the ty and clangd they start and building their fake server
 cargo-test:
     npm run cargo-test
 
-# Fetch the ty and clangd that the Rust tests start into target/tools, unless they are there, and print the
-# paths for TSUGIKI_TY, TSUGIKI_RUST_ANALYZER and TSUGIKI_CLANGD
+# Fetch the ty and clangd that the Rust tests start into target/tools, unless they are there, build their
+# fake server, and print the paths for TSUGIKI_TY, TSUGIKI_RUST_ANALYZER, TSUGIKI_CLANGD and
+# TSUGIKI_FAKE_SERVER
 test-servers:
     npm run test-servers
 

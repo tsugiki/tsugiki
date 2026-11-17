@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 
 import { notesFor, notesOfWorkspace, releasePage, versionOfTag } from "./release-notes.ts";
+import { messageOf, stop } from "./run.ts";
 
 try {
   const [tag] = process.argv.slice(2);
@@ -21,6 +22,5 @@ try {
     ),
   );
 } catch (cause) {
-  console.error(cause instanceof Error ? cause.message : String(cause));
-  process.exit(1);
+  stop(messageOf(cause));
 }

@@ -5,21 +5,8 @@
 // reached the PR stays.
 import { execFileSync } from "node:child_process";
 
-import { type Pr, unmergedReason } from "./pr.ts";
-
-function stop(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
-
-/** Runs a command and returns its output, or stops with `failed` after the command's own message. */
-function run(failed: string, command: string, ...args: string[]): string {
-  try {
-    return execFileSync(command, args, { encoding: "utf8" }).trim();
-  } catch {
-    stop(failed);
-  }
-}
+import { type Pr, PR_FIELDS, unmergedReason } from "./pr.ts";
+import { attempt, run, stop } from "./run.ts";
 
 /** Runs a command that prints for the user, and stops if it fails. */
 function step(command: string, ...args: string[]): void {
@@ -27,15 +14,6 @@ function step(command: string, ...args: string[]): void {
     execFileSync(command, args, { stdio: "inherit" });
   } catch {
     stop(`\`${command} ${args.join(" ")}\` failed, so the script stopped there.`);
-  }
-}
-
-function succeeds(command: string, ...args: string[]): boolean {
-  try {
-    execFileSync(command, args, { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -55,11 +33,14 @@ const pr = JSON.parse(
     "view",
     branch,
     "--json",
-    "number,state,headRefName,headRefOid",
+    PR_FIELDS,
   ),
 ) as Pr;
-const unmerged = unmergedReason(branch, tip, pr, (commit, of) =>
-  succeeds("git", "merge-base", "--is-ancestor", commit, of),
+const unmerged = unmergedReason(
+  branch,
+  tip,
+  pr,
+  (commit, of) => attempt("git", "merge-base", "--is-ancestor", commit, of) !== undefined,
 );
 if (unmerged !== undefined) stop(unmerged);
 

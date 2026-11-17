@@ -4,7 +4,7 @@
 import { execFileSync } from "node:child_process";
 
 import { BLOCKED_BY, type BlockedBy, cutWarning, openBlockers } from "./blockers.ts";
-import { byVersion } from "./pr.ts";
+import { byVersion } from "./releasing.ts";
 import { type Ticket, ticketLines } from "./tickets.ts";
 
 function gh(...args: string[]): string {

@@ -1,5 +1,7 @@
-// The decisions behind `just ship`, `just next` and whether a branch's PR merged, kept apart from the git and
-// GitHub calls in ship.ts, next.ts, merged.ts and worktree.ts so that tests can reach them.
+// The decisions behind `just ship` and whether a branch's PR merged, kept apart from the git and GitHub calls
+// in ship.ts, merged.ts and worktree.ts so that tests can reach them.
+
+import { isReleaseBranch } from "./releasing.ts";
 
 /** The options `just ship` was given. */
 export interface ShipArgs {
@@ -22,7 +24,7 @@ export function branchRefusal(branch: string, release: boolean): string | undefi
   if (branch === "" || branch === "main") {
     return "Ship from the PR's branch, not main.";
   }
-  const isRelease = branch.startsWith("release/");
+  const isRelease = isReleaseBranch(branch);
   if (isRelease && !release) {
     return (
       "A push to a release/ branch rehearses the release on CI, smoke test included: ask the user, then " +
@@ -35,13 +37,24 @@ export function branchRefusal(branch: string, release: boolean): string | undefi
   return undefined;
 }
 
-/** A branch's PR, as `gh pr view --json number,state,headRefName,headRefOid` gives it. */
+/** A branch's PR, as `gh pr view --json` gives it with `PR_FIELDS`. */
 export interface Pr {
   number: number;
   state: string;
   headRefName: string;
   headRefOid: string;
 }
+
+/** Each field of `Pr`: TypeScript fails on one missing here, or one `Pr` lacks. */
+const PR_FIELD_SET: Record<keyof Pr, true> = {
+  number: true,
+  state: true,
+  headRefName: true,
+  headRefOid: true,
+};
+
+/** The fields `gh pr view --json` takes to give a `Pr`. */
+export const PR_FIELDS = Object.keys(PR_FIELD_SET).join(",");
 
 /**
  * Why `branch`, whose last commit is `tip`, doesn't count as merged by `pr`, or `undefined` when it does:
@@ -67,17 +80,4 @@ export function failureSummary(log: string): string {
   const lines = log.trimEnd().split(/\r?\n/);
   const failed = lines.filter((line) => /recipe `[\w-]+` failed/.test(line));
   return [...lines.slice(-30), "", ...failed].join("\n");
-}
-
-/** A milestone's version as numbers, padded to three parts. A title that isn't a version sorts last. */
-function version(title: string): number[] {
-  const parts = title.split(".").map(Number);
-  return parts.every(Number.isInteger) ? [...parts, 0, 0].slice(0, 3) : [Infinity, Infinity, Infinity];
-}
-
-/** Sorts milestone titles by version, earliest first, for `Array.prototype.sort`. */
-export function byVersion(a: string, b: string): number {
-  const [x, y] = [version(a), version(b)];
-  const at = x.findIndex((part, i) => part !== y[i]);
-  return at === -1 ? 0 : Number(x[at]) - Number(y[at]);
 }

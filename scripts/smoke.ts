@@ -22,6 +22,8 @@ import { createServer, type AddressInfo, type Socket } from "node:net";
 import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
+import { stop } from "./run.ts";
+
 const DEBUG_PORT = 9333;
 // Only this page gets the test's scripts, in case something else already listens on the port.
 const APP_ADDRESS = "http://tauri.localhost/";
@@ -477,11 +479,6 @@ async function close(app: ChildProcess): Promise<void> {
   }
 }
 
-function exitWith(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
-
 /** Where `--at x,y` puts the window, if it's on the command line. */
 function windowPlace(): { x: number; y: number } | undefined {
   const [flag, place, ...others] = process.argv.slice(2);
@@ -490,7 +487,7 @@ function windowPlace(): { x: number; y: number } | undefined {
   }
   const numbers = flag === "--at" && others.length === 0 ? /^(-?\d+),(-?\d+)$/.exec(place ?? "") : null;
   if (numbers === null) {
-    exitWith("The only option is --at x,y, in whole numbers.");
+    stop("The only option is --at x,y, in whole numbers.");
   }
   return { x: Number(numbers[1]), y: Number(numbers[2]) };
 }
@@ -515,12 +512,12 @@ function writeBuildConfig(): string {
 }
 
 if (process.platform !== "win32") {
-  exitWith("The smoke test runs on Windows: WKWebView doesn't speak the DevTools Protocol (ADR 0009).");
+  stop("The smoke test runs on Windows: WKWebView doesn't speak the DevTools Protocol (ADR 0009).");
 }
 // A folder here makes the release portable, so the test never touches the real data (ADR 0014).
 const data = resolve("target/release/data");
 if (existsSync(data)) {
-  exitWith(`${data} already exists, and the test deletes it afterwards, so look at it first.`);
+  stop(`${data} already exists, and the test deletes it afterwards, so look at it first.`);
 }
 
 // This build opens an unguarded debugging port, and without `data` it would use the real data and sign-in, so
@@ -533,7 +530,7 @@ process.on("exit", () => {
 const buildCommand = `npx tauri build --no-bundle --config ${writeBuildConfig()} -- --locked`;
 const build = spawnSync(buildCommand, { stdio: "inherit", shell: true, windowsHide: true });
 if (build.status !== 0) {
-  exitWith("The release didn't build.");
+  stop("The release didn't build.");
 }
 
 const github = await startFakeGitHub();

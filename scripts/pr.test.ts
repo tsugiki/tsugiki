@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type Pr, branchRefusal, byVersion, failureSummary, shipArgs, unmergedReason } from "./pr.ts";
+import { type Pr, branchRefusal, failureSummary, shipArgs, unmergedReason } from "./pr.ts";
 
 describe("shipArgs", () => {
   it.each([
@@ -82,20 +82,5 @@ describe("unmergedReason", () => {
     expect(unmergedReason("738-x", "1234567890", merged, () => false)).toBe(
       "738-x is at 1234567, which #750 doesn't hold.",
     );
-  });
-});
-
-describe("byVersion", () => {
-  it("puts the earliest version first, a short one as if padded, and other titles last", () => {
-    const titles = ["Backlog", "1.0.0", "0.10.0", "0.4.1", "0.2.0", "0.4", "Someday"];
-    expect(titles.sort(byVersion)).toEqual([
-      "0.2.0",
-      "0.4",
-      "0.4.1",
-      "0.10.0",
-      "1.0.0",
-      "Backlog",
-      "Someday",
-    ]);
   });
 });

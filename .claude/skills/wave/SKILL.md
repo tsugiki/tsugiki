@@ -80,6 +80,10 @@ When a fix adds a queue or scheduler beside one the code already has, ask the bu
 the existing one: in 0.3.3 a second queue of reads drew five of a round's eight findings, and folding it
 into the refresh fixed all five.
 
+When a round finds an owner's data reaching another thread in a different order than the owner saved it,
+because each caller forwards its copy after the owner answers, ask the builder to have the owner send it
+itself, from its own thread, in save order: in 0.3.3 that took a stale copy out of every path at once.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
 that drive what it changed, as [builder.md](builder.md) says.

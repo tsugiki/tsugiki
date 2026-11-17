@@ -23,7 +23,7 @@ use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
 use tsugiki_core::token::{GhOutput, Token};
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_test_git::git;
+use tsugiki_test_git::{TempPath, git, mirror_with_branch, ty, within};
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -1796,10 +1796,7 @@ fn a_sync_fetches_the_heads_of_the_users_prs_into_the_mirror() {
     let _clone = clones(&wired, 1);
     let mirror = folders.mirror(&tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap());
     let fetched = mirror.join("refs/tsugiki/pull/157178/head");
-    let deadline = Instant::now() + PLENTY;
-    while !fetched.exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    let _fetched = within(PLENTY, || fetched.exists());
     drop(wired.stop());
     let head = std::fs::read_to_string(&fetched).unwrap_or_default();
 
@@ -1986,8 +1983,6 @@ fn a_failed_fetch_of_a_prs_head_reaches_the_window_with_why() {
 /// A mirror of cpython in `folders` whose `Lib/spam.py` has 30 lines on main, and PR #1's commit, which
 /// changes line 15, on the branch `pr`. Gives the PR's commit.
 fn mirror_with_pr_1(folders: &Folders, root: &Path) -> String {
-    let work = root.join("work");
-    std::fs::create_dir_all(work.join("Lib")).unwrap();
     let lines = |line_15: &str| {
         (1..=30)
             .map(|line| match line {
@@ -1996,37 +1991,51 @@ fn mirror_with_pr_1(folders: &Folders, root: &Path) -> String {
             })
             .collect::<String>()
     };
-    let _ = git(&work, &["init", "-q", "-b", "main"]);
-    std::fs::write(work.join("Lib/spam.py"), lines("x15 = 15")).unwrap();
-    let _ = git(&work, &["add", "."]);
-    let _ = git(&work, &["commit", "-qm", "One"]);
-    let _ = git(&work, &["switch", "-qc", "pr"]);
-    std::fs::write(work.join("Lib/spam.py"), lines("x15 = 'fifteen'")).unwrap();
-    let _ = git(&work, &["commit", "-qam", "PR 1"]);
-    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
-    let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
-    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
-    let (work, mirror) = (work.to_string_lossy(), mirror.to_string_lossy());
-    let _ = git(root, &["clone", "-q", "--bare", &work, &mirror]);
-    commit
+    let (base, head) = (lines("x15 = 15"), lines("x15 = 'fifteen'"));
+    cpython_mirror(
+        folders,
+        root,
+        &[("Lib/spam.py", &base)],
+        &[("Lib/spam.py", &head)],
+    )
 }
 
-#[test]
-fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds() {
-    let (folders, root) = temp_folders("wiring-offline-definitions");
-    let head = mirror_with_pr_1(&folders, &root);
+/// The app with no network and the ty that `just cargo-test` and `just rust-coverage` fetch set up in
+/// `machine.toml`, on folders in a new folder named for `name`, where `mirror` makes cpython's mirror with
+/// someone else's PR #1. Gives the folder, the app once it holds the PR, and the PR's base and head.
+fn offline_with_ty(
+    name: &str,
+    mirror: fn(&Folders, &Path) -> String,
+) -> (TempPath, Wired, String, String) {
+    let (folders, root) = temp_folders(name);
+    let head = mirror(&folders, &root);
     someone_elses_pr_1(&folders, &head);
-    // The ty that `just cargo-test` and `just rust-coverage` fetch.
-    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
-    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
+    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty().display());
     std::fs::write(folders.machine_file(), machine).unwrap();
     let wired = Wired::start(Ok(folders), no_network());
-
     let _held = wired.held.recv_timeout(PLENTY).unwrap();
     let pr = json!({ "repository": CPYTHON, "number": 1 });
     let files = wired.ask("pull_request_files", pr).unwrap();
     let base = files["base"].as_str().unwrap_or_default().to_owned();
+    (root, wired, base, head)
+}
+
+/// [`mirror_with_branch`] for the mirror of cpython in `folders`, from a working copy in `root`.
+fn cpython_mirror(
+    folders: &Folders,
+    root: &Path,
+    base: &[(&str, &str)],
+    head: &[(&str, &str)],
+) -> String {
+    let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
+    mirror_with_branch(&root.join("work"), &mirror, base, head)
+}
+
+#[test]
+fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds() {
+    let (_root, wired, base, head) =
+        offline_with_ty("wiring-offline-definitions", mirror_with_pr_1);
+
     let look = |ticket: u32, side: &str, path: &str| {
         let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0, "ticket": ticket });
         // The window hears what the lookup waits for on a channel of its own, and how a server's index goes
@@ -2192,8 +2201,7 @@ fn a_server_set_up_in_settings_shows_its_version_answers_lookups_and_opens_its_l
     let (folders, root) = temp_folders("wiring-server-settings");
     let head = mirror_with_pr_1(&folders, &root);
     someone_elses_pr_1(&folders, &head);
-    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
+    let ty = ty();
     let program = ty.clone();
     let pick = Arc::new(move |what| (what == crate::Pick::Program).then(|| program.clone()));
     let remotes = Remotes::under("no-remotes/".to_owned());
@@ -2261,41 +2269,17 @@ fn a_server_set_up_in_settings_shows_its_version_answers_lookups_and_opens_its_l
 /// A mirror of cpython in `folders` whose PR #1, on the branch `pr`, calls `ham` in `spam.py`, which
 /// `eggs.py` defines and the PR doesn't change. Gives the PR's commit.
 fn mirror_with_a_call_into_an_unchanged_file(folders: &Folders, root: &Path) -> String {
-    let work = root.join("work");
-    std::fs::create_dir_all(&work).unwrap();
-    let _ = git(&work, &["init", "-q", "-b", "main"]);
     let eggs = "x = 1\n\n\ndef ham():\n    return 2\n";
-    std::fs::write(work.join("eggs.py"), eggs).unwrap();
-    std::fs::write(work.join("spam.py"), "from eggs import ham\n").unwrap();
-    let _ = git(&work, &["add", "."]);
-    let _ = git(&work, &["commit", "-qm", "One"]);
-    let _ = git(&work, &["switch", "-qc", "pr"]);
-    std::fs::write(work.join("spam.py"), "from eggs import ham\n\nham()\n").unwrap();
-    let _ = git(&work, &["commit", "-qam", "PR 1"]);
-    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
-    let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
-    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
-    let (work, mirror) = (work.to_string_lossy(), mirror.to_string_lossy());
-    let _ = git(root, &["clone", "-q", "--bare", &work, &mirror]);
-    commit
+    let base = [("eggs.py", eggs), ("spam.py", "from eggs import ham\n")];
+    let head = [("spam.py", "from eggs import ham\n\nham()\n")];
+    cpython_mirror(folders, root, &base, &head)
 }
 
 #[test]
 fn offline_go_to_definition_into_an_unchanged_file_reads_it_from_the_mirror_at_the_base() {
-    let (folders, root) = temp_folders("wiring-offline-file-view");
-    let head = mirror_with_a_call_into_an_unchanged_file(&folders, &root);
-    someone_elses_pr_1(&folders, &head);
-    // The ty that `just cargo-test` and `just rust-coverage` fetch.
-    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
-    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
-    std::fs::write(folders.machine_file(), machine).unwrap();
-    let wired = Wired::start(Ok(folders), no_network());
+    let mirror = mirror_with_a_call_into_an_unchanged_file;
+    let (_root, wired, base, head) = offline_with_ty("wiring-offline-file-view", mirror);
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
-    let pr = json!({ "repository": CPYTHON, "number": 1 });
-    let files = wired.ask("pull_request_files", pr).unwrap();
-    let base = files["base"].as_str().unwrap_or_default().to_owned();
     // F12 on `ham` in `ham()`, which the PR adds.
     let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": "spam.py", "side": "head", "line": 3, "column": 0, "ticket": 1 });
     let found = wired.ask(

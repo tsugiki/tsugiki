@@ -56,7 +56,9 @@ libc.workspace = true
 [dev-dependencies]
 divan.workspace = true
 insta.workspace = true
+tsugiki-lsp = { workspace = true, features = ["testing"] }
 tsugiki-test-git.workspace = true
+tsugiki-token = { workspace = true, features = ["testing"] }
 
 [[bench]]
 name = "about"

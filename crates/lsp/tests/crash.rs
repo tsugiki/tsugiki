@@ -22,10 +22,11 @@
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{env, thread};
 
 use tsugiki_lsp::{Launch, Server};
+use tsugiki_test_git::within;
 
 const TEST: &str = "a_killed_parent_leaves_no_server_behind";
 /// The role a run of this binary plays: none for the test itself.
@@ -122,16 +123,4 @@ fn hold(role: &str) -> ! {
     fs::write(folder().join(format!("{role}.ready")), "").unwrap();
     thread::sleep(LIFETIME);
     process::exit(0);
-}
-
-/// Whether `check` holds within `patience`.
-fn within(patience: Duration, check: impl Fn() -> bool) -> bool {
-    let until = Instant::now() + patience;
-    while Instant::now() < until {
-        if check() {
-            return true;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    check()
 }

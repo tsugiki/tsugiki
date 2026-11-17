@@ -65,6 +65,31 @@ fn a_test_that_fails_leaves_its_path_for_reading() {
 }
 
 #[test]
+fn a_generated_file_updated_says_what_generated_it_whatever_its_line_ends() {
+    use tsugiki_test_git::{Generated, check_generated};
+    let file = testing::temp_path("generated");
+
+    check_generated(&file, "fresh\n", Generated::Update, "just generate");
+    let updated = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(&file, "fresh\r\n").unwrap();
+    check_generated(&file, "fresh\n", Generated::Compare, "just generate");
+
+    assert_eq!(updated, "fresh\n");
+}
+
+#[test]
+#[should_panic(expected = "is out of date: run `just generate` and commit the result")]
+fn a_generated_file_that_differs_says_how_to_bring_it_up_to_date() {
+    let missing = testing::temp_path("generated-missing");
+    tsugiki_test_git::check_generated(
+        &missing,
+        "fresh\n",
+        tsugiki_test_git::Generated::Compare,
+        "just generate",
+    );
+}
+
+#[test]
 fn a_backtrace_keeps_the_file_and_line() {
     // `[profile.dev]` keeps only line tables, and this is what they're for. Only this test's own frame
     // counts: the line after its name says where it stands, and libtest's frames keep their lines too.

@@ -10,8 +10,8 @@ mod client;
 mod framing;
 mod process;
 mod rpc;
-#[cfg(test)]
-mod testing;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod types;
 pub mod utf16;
 

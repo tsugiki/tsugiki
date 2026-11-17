@@ -2,45 +2,18 @@
 //! pick. The Repository with a PR that they work in is [`crate::testing::Fixture`].
 
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
-use std::path::{Path, PathBuf};
+use std::io::{BufRead, PipeWriter, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::{env, thread};
+use std::thread;
 
 use serde_json::{Value, json};
-use tsugiki_lsp::{Event, Process, Server, Starting, Streams, Uri};
-
-/// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
-/// `scripts/test-servers.ts` fetches.
-pub(crate) fn ty() -> PathBuf {
-    let ty = PathBuf::from(env::var_os("TSUGIKI_TY").unwrap_or_default());
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
-    ty
-}
-
-/// The rust-analyzer that `TSUGIKI_RUST_ANALYZER` names, which `just cargo-test` and `just rust-coverage`
-/// set to the one in the toolchain `rust-toolchain.toml` pins.
-pub(crate) fn rust_analyzer() -> PathBuf {
-    let path = PathBuf::from(env::var_os("TSUGIKI_RUST_ANALYZER").unwrap_or_default());
-    assert!(
-        path.is_file(),
-        "TSUGIKI_RUST_ANALYZER={path:?}: see just test-servers"
-    );
-    path
-}
-
-/// The clangd that `TSUGIKI_CLANGD` names, which `just cargo-test` and `just rust-coverage` set to the one
-/// `scripts/test-servers.ts` fetches.
-pub(crate) fn clangd() -> PathBuf {
-    let path = PathBuf::from(env::var_os("TSUGIKI_CLANGD").unwrap_or_default());
-    assert!(
-        path.is_file(),
-        "TSUGIKI_CLANGD={path:?}: see just test-servers"
-    );
-    path
-}
+use tsugiki_lsp::testing::{pipes, read_message, write_message};
+use tsugiki_lsp::{Event, Starting, Uri};
+/// The ty, rust-analyzer and clangd that `just cargo-test` and `just rust-coverage` name.
+pub(crate) use tsugiki_test_git::{clangd, rust_analyzer, ty};
 
 /// A fake clangd, which threads of the test play over in-memory pipes: it answers each lookup with the
 /// locations it was given, and reports its index's progress when the test says. The real clangd indexes a
@@ -90,40 +63,32 @@ impl FakeClangd {
         answers: Vec<Value>,
         initialize: Initialize,
     ) -> (Self, (Starting, Receiver<Event>)) {
-        let (client_reads, server_writes) = pipe().unwrap();
-        let (server_reads, client_writes) = pipe().unwrap();
-        let (errors_read, errors_written) = pipe().unwrap();
-        let errors = Arc::new(Mutex::new(Some(errors_written)));
+        let (starting, events, ends) = pipes(None);
+        let errors = Arc::new(Mutex::new(Some(ends.errors)));
+        let code = Arc::new(AtomicI32::new(0));
         let (says, said) = mpsc::channel();
-        let (ended, end) = mpsc::channel::<()>();
-        let crashed = ended.clone();
+        // The process ends with the code it holds once the fake stops writing, as a crash does, or reading.
+        let (ended, crashed) = (
+            Ended(ends.exit.clone(), Arc::clone(&code)),
+            Ended(ends.exit, Arc::clone(&code)),
+        );
+        let mut writes = ends.writes;
         let _writes = thread::spawn(move || {
-            write_messages(server_writes, &said);
-            let _gone = crashed.send(());
+            write_messages(&mut writes, &said);
+            crashed.end();
         });
         let (replies, asked) = (says.clone(), Arc::new(AtomicUsize::new(0)));
         let (counts, closes) = (Arc::clone(&asked), Arc::clone(&errors));
         let documents = Arc::new(Mutex::new(Vec::new()));
         let logs = Arc::clone(&documents);
+        let mut reads = ends.reads;
         let _reads = thread::spawn(move || {
-            serve(
-                server_reads,
-                &replies,
-                (&answers, &counts, &logs),
-                initialize,
-            );
-            // The process ends, and its error output with it, once it stops reading.
-            let _gone = ended.send(());
+            serve(&mut reads, &replies, (&answers, &counts, &logs), initialize);
+            // Its error output ends with it.
+            ended.end();
             drop(closes.lock().unwrap().take());
         });
-        let code = Arc::new(AtomicI32::new(0));
-        let client = Server::over(Streams {
-            input: Box::new(client_writes),
-            output: Box::new(client_reads),
-            errors: Box::new(errors_read),
-            log: None,
-            process: Box::new(FakeProcess(end, Arc::clone(&code))),
-        });
+        let client = (starting, events);
         let fake = Self {
             says,
             asked,
@@ -181,17 +146,13 @@ impl FakeClangd {
     }
 }
 
-/// The process a [`FakeClangd`] stands in for, which ends once the fake stops reading or crashes, with the
-/// exit code it holds.
-struct FakeProcess(Receiver<()>, Arc<AtomicI32>);
+/// Ends the process a [`FakeClangd`] stands in for, with the exit code it holds then.
+struct Ended(Sender<Option<i32>>, Arc<AtomicI32>);
 
-impl Process for FakeProcess {
-    fn wait(&mut self) -> Option<i32> {
-        let _ended = self.0.recv();
-        Some(self.1.load(Ordering::SeqCst))
+impl Ended {
+    fn end(&self) {
+        let _gone = self.0.send(Some(self.1.load(Ordering::SeqCst)));
     }
-
-    fn kill(&mut self) {}
 }
 
 /// Answers each request the client writes to `input` until it sends `exit` or closes the input: each
@@ -199,14 +160,13 @@ impl Process for FakeProcess {
 /// with an empty result. A lookup in a document the client hasn't opened fails, as clangd's does, and
 /// `documents` logs each the client opens or closes. It does what `initialize` says with `initialize`.
 fn serve(
-    input: PipeReader,
+    input: &mut impl BufRead,
     replies: &Sender<Option<Value>>,
     (answers, asked, documents): (&[Value], &AtomicUsize, &Mutex<Vec<Notified>>),
     initialize: Initialize,
 ) {
-    let mut input = BufReader::new(input);
     let mut open = HashSet::new();
-    while let Some(message) = read_message(&mut input) {
+    while let Some(message) = read_message(input) {
         let (Some(method), id) = (message["method"].as_str(), message.get("id")) else {
             continue;
         };
@@ -256,33 +216,11 @@ fn serve(
     }
 }
 
-/// The next message on `input`, or `None` once it has ended.
-fn read_message(input: &mut impl BufRead) -> Option<Value> {
-    // The client writes one header, `Content-Length`, then a blank line.
-    let mut header = String::new();
-    let _read = input.read_line(&mut header).ok()?;
-    let length = header
-        .strip_prefix("Content-Length:")?
-        .trim()
-        .parse()
-        .ok()?;
-    let mut blank = String::new();
-    let _read = input.read_line(&mut blank).ok()?;
-    let mut body = vec![0; length];
-    input.read_exact(&mut body).ok()?;
-    serde_json::from_slice(&body).ok()
-}
-
 /// Writes each message `said` gives to `output`, framed, until the client stops reading.
-fn write_messages(mut output: PipeWriter, said: &Receiver<Option<Value>>) {
+fn write_messages(output: &mut impl Write, said: &Receiver<Option<Value>>) {
     // A `None` ends the output.
     while let Ok(Some(message)) = said.recv() {
-        let body = message.to_string();
-        let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        let written = (output.write_all(header.as_bytes()))
-            .and_then(|()| output.write_all(body.as_bytes()))
-            .and_then(|()| output.flush());
-        if written.is_err() {
+        if write_message(output, &message).is_err() {
             return;
         }
     }

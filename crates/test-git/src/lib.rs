@@ -1,7 +1,8 @@
-//! Git repositories for the tests of `tsugiki-core` and `tsugiki-app`, built with the real git (ADR 0009),
-//! and the folders under `.temp` that the tests of those and `tsugiki-lsp` work in. Core's `testing`
-//! modules are private to core, so the helpers the crates' tests share live here, and a change to how a
-//! test runs git or where it keeps its files is made once.
+//! The test helpers that several crates share and that use no crate's types: git repositories built with
+//! the real git (ADR 0009), the folders under `.temp` the tests work in, the language servers they start,
+//! the repo's files they read, and a wait for what another thread does. A change to how a test runs git or
+//! where it keeps its files is then made once. A helper that needs a crate's types lives in that crate's
+//! `testing` module instead, which other crates' tests reach through its `testing` feature.
 
 #![expect(
     clippy::disallowed_types,
@@ -12,7 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
-use std::{fs, io, iter, thread};
+use std::{env, fs, io, iter, thread};
 
 /// The author of each commit a test makes, so a commit needs no git config on the machine.
 const AUTHOR: [&str; 4] = [
@@ -80,9 +81,7 @@ pub fn remote(remotes: &Path, name: &str) {
 pub fn pull_request(remotes: &Path, name: &str, number: u32) -> String {
     let work = work(remotes, name);
     fs::write(work.join("NEWS"), format!("PR {number}\n")).unwrap();
-    let _ = git(&work, &["add", "NEWS"]);
-    let _ = git(&work, &["commit", "-qm", &format!("PR {number}")]);
-    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
+    let commit = commit(&work, &format!("PR {number}"));
     let _ = git(
         &work,
         &[
@@ -94,6 +93,145 @@ pub fn pull_request(remotes: &Path, name: &str, number: u32) -> String {
     );
     let _ = git(&work, &["reset", "-q", "--hard", "HEAD~1"]);
     commit
+}
+
+/// Commits all that changed in the working copy at `dir`, or nothing if nothing did, with `message`, and
+/// gives the commit.
+pub fn commit(dir: &Path, message: &str) -> String {
+    let _ = git(dir, &["add", "-A"]);
+    let _ = git(dir, &["commit", "-q", "--allow-empty", "-m", message]);
+    git(dir, &["rev-parse", "HEAD"]).trim().to_owned()
+}
+
+/// Makes a repository at `work` whose `main` holds the files `base`, each a path and its text, and whose
+/// branch `pr` writes the files `head` on top of them, deleting each whose text is empty. Clones it bare to
+/// `mirror`, as a Mirror holds a PR, and gives the commit at the end of `pr`.
+pub fn mirror_with_branch(
+    work: &Path,
+    mirror: &Path,
+    base: &[(&str, &str)],
+    head: &[(&str, &str)],
+) -> String {
+    fs::create_dir_all(work).unwrap();
+    let _ = git(work, &["init", "-q", "-b", "main"]);
+    write_files(work, base);
+    let _ = commit(work, "Base");
+    let _ = git(work, &["switch", "-qc", "pr"]);
+    write_files(work, head);
+    let pr = commit(work, "PR");
+    fs::create_dir_all(mirror.parent().unwrap()).unwrap();
+    let (from, to) = (work.to_string_lossy(), mirror.to_string_lossy());
+    let _ = git(work, &["clone", "-q", "--bare", &from, &to]);
+    pr
+}
+
+/// Writes each of `files`, a path under `dir` and its text, or deletes the file where the text is empty.
+fn write_files(dir: &Path, files: &[(&str, &str)]) {
+    for (path, text) in files {
+        let path = dir.join(path);
+        if text.is_empty() {
+            fs::remove_file(path).unwrap();
+        } else {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+    }
+}
+
+/// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
+/// `scripts/test-servers.ts` fetches.
+pub fn ty() -> PathBuf {
+    test_server("TSUGIKI_TY")
+}
+
+/// The rust-analyzer that `TSUGIKI_RUST_ANALYZER` names, which `just cargo-test` and `just rust-coverage`
+/// set to the one in the toolchain `rust-toolchain.toml` pins.
+pub fn rust_analyzer() -> PathBuf {
+    test_server("TSUGIKI_RUST_ANALYZER")
+}
+
+/// The clangd that `TSUGIKI_CLANGD` names, which `just cargo-test` and `just rust-coverage` set to the one
+/// `scripts/test-servers.ts` fetches.
+pub fn clangd() -> PathBuf {
+    test_server("TSUGIKI_CLANGD")
+}
+
+/// The language server the environment variable `name` names. One that isn't there fails the test.
+fn test_server(name: &str) -> PathBuf {
+    let path = PathBuf::from(env::var_os(name).unwrap_or_default());
+    assert!(path.is_file(), "{name}={path:?}: see just test-servers");
+    path
+}
+
+/// The top of the repo.
+pub fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+/// The `.rs` files under `dir`, at any depth.
+pub fn rust_sources(dir: &Path) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            sources.extend(rust_sources(&path));
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            sources.push(path);
+        }
+    }
+    sources
+}
+
+/// What [`check_generated`] does with a generated file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Generated {
+    /// Fails unless the file says what was generated.
+    Compare,
+    /// Writes what was generated to the file.
+    Update,
+}
+
+/// Checks a file the repo commits against `fresh`, what generates it now: [`check_generated`] on `path`,
+/// from the top of the repo, which updates it when the environment variable `env_var` is `1`. A failure
+/// says to run `fix`.
+pub fn compare_or_update(path: &str, fresh: &str, env_var: &str, fix: &str) {
+    use Generated::{Compare, Update};
+    let update = env::var(env_var).as_deref() == Ok("1");
+    let generated = if update { Update } else { Compare };
+    check_generated(&repo_root().join(path), fresh, generated, fix);
+}
+
+/// Writes `fresh` to `file`, or fails unless `file` already says the same. Line ends don't count, since git
+/// can check a file out with CRLF. A failure says to run `fix` and commit the result.
+pub fn check_generated(file: &Path, fresh: &str, generated: Generated, fix: &str) {
+    if generated == Generated::Update {
+        fs::write(file, fresh).unwrap();
+    }
+    let committed = fs::read_to_string(file).unwrap_or_default();
+    assert!(
+        committed.replace("\r\n", "\n") == fresh.replace("\r\n", "\n"),
+        "{} is out of date: run `{fix}` and commit the result",
+        file.display()
+    );
+}
+
+/// How long [`within`] waits between checks.
+const CHECK_AGAIN: Duration = Duration::from_millis(20);
+
+/// Whether `check` holds within `patience`. It checks again every little while, and gives up on the first
+/// check that fails once `patience` is up.
+pub fn within(patience: Duration, mut check: impl FnMut() -> bool) -> bool {
+    let until = Instant::now() + patience;
+    // No line here runs only on a second check, which a fast machine never makes.
+    let pauses = iter::once(Duration::ZERO).chain(iter::repeat(CHECK_AGAIN));
+    pauses
+        .map(|pause| {
+            thread::sleep(pause);
+            (check(), Instant::now() >= until)
+        })
+        .find(|(held, late)| *held || *late)
+        .unwrap()
+        .0
 }
 
 /// Where `remotes` are, as a `file://` URL that ends in a slash. git reports progress over it as it does
@@ -108,7 +246,7 @@ pub fn url(remotes: &Path) -> String {
 /// by the time this returns; the path itself doesn't. Windows reuses process IDs, so a later run can get
 /// the path a failed run left: this removes what it finds there.
 pub fn temp_path(name: &str) -> TempPath {
-    let temp = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.temp");
+    let temp = repo_root().join(".temp");
     fs::create_dir_all(&temp).unwrap();
     let path = temp.join(format!("{name}-{}", std::process::id()));
     remove(&path);

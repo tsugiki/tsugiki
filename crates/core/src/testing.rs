@@ -167,8 +167,7 @@ fn write(folder: &Path, path: &str, bytes: &[u8]) {
 }
 
 fn commit(folder: &Path, message: &str) -> CommitSha {
-    let _ = git(folder, &["commit", "-q", "--allow-empty", "-m", message]);
-    sha(&git(folder, &["rev-parse", "HEAD"]))
+    sha(&tsugiki_test_git::commit(folder, message))
 }
 
 /// An open Issue `number`, with no author or anything else: a base whose fields a test overrides.

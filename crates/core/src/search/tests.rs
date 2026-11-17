@@ -1,5 +1,6 @@
 use std::sync::Mutex;
-use std::time::Instant;
+
+use tsugiki_test_git::within;
 
 use super::*;
 use crate::mirror::{HeardRequests, LookupCheckout};
@@ -31,12 +32,8 @@ fn ends(digit: u8) -> LookupAt {
 }
 
 /// Waits up to 10 seconds for `done` to hold.
-fn wait_until(mut done: impl FnMut() -> bool) {
-    let until = Instant::now() + Duration::from_secs(10);
-    while !done() {
-        assert!(Instant::now() < until, "timed out");
-        thread::sleep(Duration::from_millis(5));
-    }
+fn wait_until(done: impl FnMut() -> bool) {
+    assert!(within(Duration::from_secs(10), done), "timed out");
 }
 
 /// A text search whose questions reach the test, and how many times it announced a change.

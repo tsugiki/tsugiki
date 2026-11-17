@@ -3,8 +3,6 @@
 //! bindings` does that. `npm run cargo-test` skips both tests by the `bindings_are_up_to_date` in their
 //! names, and `npm run stale-bindings` runs them.
 
-use std::path::Path;
-
 use specta_typescript::Typescript;
 
 const HEADER: &str = "// Generated from tsugiki-app's commands by `npm run bindings`. Do not edit.";
@@ -12,18 +10,7 @@ const HEADER: &str = "// Generated from tsugiki-app's commands by `npm run bindi
 /// Writes `fresh` to `path`, from the top of the repo, under `TSUGIKI_UPDATE_BINDINGS=1`, and otherwise fails
 /// unless the committed file says the same.
 fn compare_or_update(path: &str, fresh: &str) {
-    let committed = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join(path);
-    if std::env::var("TSUGIKI_UPDATE_BINDINGS").as_deref() == Ok("1") {
-        let written = std::fs::write(committed, fresh);
-        assert!(written.is_ok(), "write {path}: {written:?}");
-        return;
-    }
-    assert!(
-        std::fs::read_to_string(committed).unwrap_or_default() == fresh,
-        "{path} is out of date: run `npm run bindings` and commit the result"
-    );
+    tsugiki_test_git::compare_or_update(path, fresh, "TSUGIKI_UPDATE_BINDINGS", "npm run bindings");
 }
 
 #[test]

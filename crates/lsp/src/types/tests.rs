@@ -7,22 +7,7 @@ use super::{
     Progress, ProgressToken, Range, Severity, ShowMessage, Uri, WorkDone, hears_folder_changes,
 };
 
-fn uri(text: &str) -> Uri {
-    Uri::try_from(text.to_owned()).unwrap()
-}
-
-fn range(line: u32, from: u32, to: u32) -> Range {
-    Range {
-        start: Position {
-            line,
-            character: from,
-        },
-        end: Position {
-            line,
-            character: to,
-        },
-    }
-}
+use crate::testing::{range, uri};
 
 fn definitions(reply: Value) -> Definitions {
     serde_json::from_value(reply).unwrap()

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
 import StatusBar from "./StatusBar.svelte";
 
@@ -495,17 +495,16 @@ describe("StatusBar's points", () => {
     since: null,
   };
   const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const words = `1,240 points left · resets ${time(hourPoints.resets_at)}`;
   const tip =
     "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using your token spent the rest.";
-  const part = () => screen.getByText(/points left/);
-
-  beforeEach(() => {
-    vi.useFakeTimers({ now: new Date("2026-11-17T14:00:00Z") });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  const shown = () => screen.getByText(words);
+  const read = () => screen.getByText(`${words} · ${tip}`);
+  const part = (): HTMLElement => {
+    const parent = shown().parentElement;
+    if (parent === null) throw new Error("the points' words sit in no part");
+    return parent;
+  };
 
   it("shows nothing before GitHub's first answer says", () => {
     render(StatusBar, { status: online });
@@ -514,26 +513,27 @@ describe("StatusBar's points", () => {
 
   it("shows the points left and the reset on the right, outside the live region", () => {
     render(StatusBar, { status: online, hourPoints });
-    expect(part().firstChild?.textContent).toBe(`1,240 points left · resets ${time(hourPoints.resets_at)}`);
+    expect(shown()).toBeTruthy();
     expect(bar().contains(part())).toBe(false);
     expect(part().parentElement).toBe(bar().parentElement);
   });
 
   it("says in its tooltip what Tsugiki spent and what other tools did", () => {
     render(StatusBar, { status: online, hourPoints });
-    expect(part().title).toBe(tip);
+    expect(shown().title).toBe(tip);
   });
 
-  it("gives a screen reader the tooltip's words too", () => {
+  it("gives a screen reader the words and the tooltip once, from a copy of their own", () => {
     render(StatusBar, { status: online, hourPoints });
-    expect(part().textContent).toBe(`1,240 points left · resets ${time(hourPoints.resets_at)} · ${tip}`);
+    expect(read().parentElement).toBe(part());
+    expect(shown().getAttribute("aria-hidden")).toBe("true");
+    expect(part().title).toBe("");
+    expect([...part().querySelectorAll("[title]")]).toEqual([shown()]);
   });
 
-  it("goes at the reset, as the next hour's count waits for GitHub's next answer", async () => {
-    render(StatusBar, { status: online, hourPoints });
-    await vi.advanceTimersByTimeAsync(31 * 60_000);
-    expect(part()).toBeTruthy();
-    await vi.advanceTimersByTimeAsync(60_000);
+  it("goes when the core says the hour has reset", async () => {
+    const { rerender } = render(StatusBar, { status: online, hourPoints });
+    await rerender({ status: online, hourPoints: null });
     expect(screen.queryByText(/points left/)).toBeNull();
   });
 
@@ -543,7 +543,7 @@ describe("StatusBar's points", () => {
       status: online,
       hourPoints: { ...hourPoints, used: 3770, remaining: 1230, spent: 3620 },
     });
-    expect(part().textContent).toContain("1,230 points left");
+    expect(screen.getByText(/^1,230 points left · resets [^·]*$/)).toBeTruthy();
   });
 
   it("goes with the bar", () => {

@@ -15,8 +15,8 @@ use crate::status::Change;
 use crate::store::Store;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, cross_references, fetched_nodes, issues, no_cross_references,
-    pr_node,
+    FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
+    no_cross_references, pr_node,
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::Token;
@@ -89,7 +89,7 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
 
 /// PR `number` as a fetch would read it from `node`.
 fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
-    let script = fetched_nodes(std::slice::from_ref(node), LOTS);
+    let script = fetched_nodes(std::slice::from_ref(node), RATE_LIMIT);
     let (script, _asked) = crate::github::testing::Scripted::new(vec![script]);
     let github = crate::github::GitHub::new(Box::new(script), crate::github::testing::token());
     let id: NodeId = serde_json::from_value(json!("id")).unwrap();
@@ -199,7 +199,7 @@ fn polled_with_open(
         .map(|(position, answer)| format!(r#""f{position}":{answer},"#))
         .collect();
     reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{fields}{LOTS}}}}}"#
+        r#"{{"data":{{"repository":{repository},{fields}{RATE_LIMIT}}}}}"#
     ))
 }
 
@@ -225,7 +225,7 @@ fn probed(states: &[(u32, &str)]) -> Result<Reply, Unreachable> {
         })
         .collect();
     reply_ok(&format!(
-        r#"{{"data":{{"repository":{},{LOTS}}}}}"#,
+        r#"{{"data":{{"repository":{},{RATE_LIMIT}}}}}"#,
         Value::Object(fields)
     ))
 }
@@ -299,20 +299,20 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
                 search(&[issue_hit(8)], None),
             ],
         ),
-        fetched_nodes(&[strangers_pr(3, AFTER_IT)], LOTS),
+        fetched_nodes(&[strangers_pr(3, AFTER_IT)], RATE_LIMIT),
         probed(&[(4, "FAILURE")]),
         failed_checks(4, &["Tests"]),
         reply_ok(&format!(
-            r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
             search(&[issue_hit(2), issue_hit(5)], None)
         )),
-        issues(&[2, 5, 6, 8], LOTS),
-        cross_references(&[7], None, LOTS),
-        no_cross_references(LOTS),
-        no_cross_references(LOTS),
-        no_cross_references(LOTS),
-        no_cross_references(LOTS),
-        fetched_nodes(&[strangers_pr(7, AFTER_IT)], LOTS),
+        issues(&[2, 5, 6, 8], RATE_LIMIT),
+        cross_references(&[7], None, RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        fetched_nodes(&[strangers_pr(7, AFTER_IT)], RATE_LIMIT),
         approved(),
     ];
     let scenario = Scenario {
@@ -354,9 +354,9 @@ fn a_refresh_that_redoes_an_interrupted_one_recovers_from_a_failure_at_each_poin
             &[],
         ),
         quiet_poll(),
-        fetched_nodes(&[pr_node(4, &json!({ "updatedAt": AFTER_IT }))], LOTS),
-        issues(&[1], LOTS),
-        no_cross_references(LOTS),
+        fetched_nodes(&[pr_node(4, &json!({ "updatedAt": AFTER_IT }))], RATE_LIMIT),
+        issues(&[1], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
         approved(),
     ];
     let scenario = Scenario {
@@ -450,7 +450,7 @@ fn holding_issue_with_no_state(harness: &Harness, number: u32) {
 fn a_refresh_fetches_the_issues_saved_before_tsugiki_kept_states_once() {
     let harness = after_a_sync(
         "states",
-        vec![quiet_poll(), issues(&[1, 2], LOTS), quiet_poll()],
+        vec![quiet_poll(), issues(&[1, 2], RATE_LIMIT), quiet_poll()],
     );
     holding_issue_with_no_state(&harness, 1);
     holding_issue_with_no_state(&harness, 2);
@@ -480,7 +480,7 @@ fn a_refresh_fetches_the_issues_saved_before_tsugiki_kept_states_once() {
 fn an_issue_github_no_longer_has_is_asked_for_once_a_launch() {
     let harness = after_a_sync(
         "states-gone",
-        vec![quiet_poll(), issues(&[1], LOTS), quiet_poll()],
+        vec![quiet_poll(), issues(&[1], RATE_LIMIT), quiet_poll()],
     );
     holding_issue_with_no_state(&harness, 1);
     holding_issue_with_no_state(&harness, 2);
@@ -517,7 +517,7 @@ fn until_finished(syncs: &mut Syncs, harness: &Harness) {
 fn a_refresh_goes_before_the_fetch_of_the_issues_with_no_state() {
     let harness = after_a_sync(
         "states-behind",
-        vec![quiet_poll(), quiet_poll(), issues(&[1], LOTS)],
+        vec![quiet_poll(), quiet_poll(), issues(&[1], RATE_LIMIT)],
     );
     holding_issue_with_no_state(&harness, 1);
     let mut syncs = refreshing(filtering(&[]));
@@ -581,8 +581,8 @@ fn an_issue_the_poll_changed_is_saved_named_and_gets_its_tree_read() {
     let issues_list = list(&[issue_node(1, AFTER_IT)], None);
     let replies = vec![
         polled(&issues_list, &list(&[], None), &[]),
-        cross_references(&[7], None, LOTS),
-        fetched_nodes(&[strangers_pr(7, AFTER_IT)], LOTS),
+        cross_references(&[7], None, RATE_LIMIT),
+        fetched_nodes(&[strangers_pr(7, AFTER_IT)], RATE_LIMIT),
     ];
     let harness = after_a_sync("issue-moved", replies);
     holding_issue(&harness, 1, LONG_BEFORE);
@@ -624,7 +624,7 @@ fn a_refresh_keeps_the_labels_an_issue_gained_and_drops_those_it_lost() {
     relabelled["labels"] = label_nodes(&["type-bug", "3.14"]);
     let replies = vec![
         polled(&list(&[relabelled], None), &list(&[], None), &[]),
-        cross_references(&[], None, LOTS),
+        cross_references(&[], None, RATE_LIMIT),
     ];
     let harness = after_a_sync("issue-relabelled", replies);
     let held = IssueFacts {
@@ -661,7 +661,7 @@ fn a_refresh_keeps_the_labels_a_pr_gained_and_drops_those_it_lost() {
             &list(&[changed_pr(1, AFTER_IT)], None),
             &[],
         ),
-        fetched_nodes(&[relabelled(&["awaiting merge"], AFTER_IT)], LOTS),
+        fetched_nodes(&[relabelled(&["awaiting merge"], AFTER_IT)], RATE_LIMIT),
     ];
     let harness = after_a_sync("pr-relabelled", replies);
     let held = read_pr(&relabelled(&["awaiting review", "skip news"], LONG_BEFORE));
@@ -719,7 +719,7 @@ fn a_long_list_of_changes_reads_each_page_with_its_cursor() {
         ),
         fetched_nodes(
             &[strangers_pr(5, AFTER_IT), strangers_pr(6, AFTER_IT)],
-            LOTS,
+            RATE_LIMIT,
         ),
     ];
     let harness = after_a_sync("pages", replies);
@@ -757,7 +757,7 @@ fn a_stale_pr_is_fetched_and_a_current_or_merged_one_isnt() {
                 strangers_pr(3, AFTER_IT),
                 strangers_pr(4, AFTER_IT),
             ],
-            LOTS,
+            RATE_LIMIT,
         ),
     ];
     let harness = after_a_sync("stale", replies);
@@ -792,7 +792,7 @@ fn a_fetch_that_brings_what_tsugiki_holds_says_nothing() {
             &list(&[changed_pr(1, AFTER_IT)], None),
             &[],
         ),
-        fetched_nodes(&[strangers_pr(1, LONG_BEFORE)], LOTS),
+        fetched_nodes(&[strangers_pr(1, LONG_BEFORE)], RATE_LIMIT),
     ];
     let harness = after_a_sync("same-again", replies);
     holding_pr(&harness, &strangers_pr(1, LONG_BEFORE));
@@ -824,11 +824,11 @@ fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
                     }),
                 ),
             ],
-            LOTS,
+            RATE_LIMIT,
         ),
         probed(&[]),
-        issues(&[40], LOTS),
-        no_cross_references(LOTS),
+        issues(&[40], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
     ];
     let harness = after_a_sync("whose", replies);
     let mut syncs = refreshing(filtering(&[]));
@@ -968,7 +968,7 @@ fn a_pr_the_refresh_just_fetched_skips_the_probe() {
                 1,
                 &json!({ "title": "A change", "updatedAt": AFTER_IT }),
             )],
-            LOTS,
+            RATE_LIMIT,
         ),
         approved(),
     ];
@@ -1034,7 +1034,7 @@ fn a_changed_pr_the_users_work_reaches_has_its_reviews_read_before_it_opens() {
                 own_open_pr(1, &json!({ "title": "A change", "updatedAt": AFTER_IT })),
                 strangers_pr(2, AFTER_IT),
             ],
-            LOTS,
+            RATE_LIMIT,
         ),
         approved(),
     ];
@@ -1075,7 +1075,7 @@ fn a_pr_github_wont_give_the_conversation_of_leaves_the_rest_to_read() {
                 own_open_pr(1, &json!({ "title": "A change", "updatedAt": AFTER_IT })),
                 own_open_pr(2, &json!({ "title": "Another", "updatedAt": AFTER_IT })),
             ],
-            LOTS,
+            RATE_LIMIT,
         ),
         // The query ran out of its 10 seconds on this PR.
         Ok(Reply {
@@ -1108,7 +1108,7 @@ fn with_nobody_signed_in_nothing_counts_as_the_users() {
         ),
         fetched_nodes(
             &[own_open_pr(1, &json!({ "title": "gh-40: A change" }))],
-            LOTS,
+            RATE_LIMIT,
         ),
     ];
     let harness = Harness::new("nobody", replies);
@@ -1144,7 +1144,7 @@ fn a_change_too_new_for_the_search_keeps_its_item_in_the_filter() {
             &list(&[changed_pr(2, &now)], None),
             &[search(&[], None)],
         ),
-        fetched_nodes(&[strangers_pr(2, &now)], LOTS),
+        fetched_nodes(&[strangers_pr(2, &now)], RATE_LIMIT),
         approved(),
     ];
     let harness = after_a_sync("too-new", replies);
@@ -1167,7 +1167,7 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
             &list(&[changed_pr(2, &now)], None),
             &[search(&[], None)],
         ),
-        fetched_nodes(&[strangers_pr(2, &now)], LOTS),
+        fetched_nodes(&[strangers_pr(2, &now)], RATE_LIMIT),
         approved(),
     ];
     let harness = after_a_sync("switched-mid-refresh", replies);
@@ -1276,7 +1276,7 @@ fn a_backport_a_refresh_brought_gets_its_origin_pr_when_a_tree_lists_it() {
         }),
     );
     let origin = reply_ok(&format!(
-        r#"{{"data":{{"repository":{{"pullRequest":{}}},{LOTS}}}}}"#,
+        r#"{{"data":{{"repository":{{"pullRequest":{}}},{RATE_LIMIT}}}}}"#,
         pr_node(
             9,
             &json!({ "state": "MERGED", "mergeCommit": { "oid": "0".repeat(40) } })
@@ -1288,8 +1288,8 @@ fn a_backport_a_refresh_brought_gets_its_origin_pr_when_a_tree_lists_it() {
             &list(&[changed_pr(10, AFTER_IT)], None),
             &[],
         ),
-        fetched_nodes(&[backport], LOTS),
-        cross_references(&[10], None, LOTS),
+        fetched_nodes(&[backport], RATE_LIMIT),
+        cross_references(&[10], None, RATE_LIMIT),
         origin,
     ];
     let harness = after_a_sync("refresh-origin", replies);
@@ -1310,7 +1310,7 @@ fn a_refresh_that_stopped_reads_the_trees_it_owed_at_the_next_start() {
             &[],
         )
     };
-    let replies = vec![moved(), moved(), no_cross_references(LOTS)];
+    let replies = vec![moved(), moved(), no_cross_references(RATE_LIMIT)];
     let harness = after_a_sync("stopped-issue", replies);
     holding_issue(&harness, 1, LONG_BEFORE);
 
@@ -1341,8 +1341,8 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
             &[],
         ),
         probed(&[]),
-        issues(&[40], LOTS),
-        no_cross_references(LOTS),
+        issues(&[40], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
         approved(),
     ];
     let harness = after_a_sync("stopped-pr", replies);
@@ -1386,7 +1386,9 @@ fn probed_approved(number: u32) -> Result<Reply, Unreachable> {
         ] },
         "lastCommit": { "nodes": [] },
     } });
-    reply_ok(&format!(r#"{{"data":{{"repository":{fields},{LOTS}}}}}"#))
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{fields},{RATE_LIMIT}}}}}"#
+    ))
 }
 
 #[test]
@@ -1432,7 +1434,7 @@ fn a_refresh_that_stopped_after_the_probe_reads_ahead_what_the_probe_found() {
 #[test]
 fn a_tree_the_user_opened_leaves_what_a_stopped_refresh_owes_to_the_refresh() {
     let replies = vec![
-        cross_references(&[], None, LOTS),
+        cross_references(&[], None, RATE_LIMIT),
         quiet_poll(),
         probed(&[]),
         approved(),
@@ -1470,7 +1472,7 @@ fn a_refresh_that_stopped_reading_ahead_leaves_the_next_only_what_it_hadnt_read(
                 own_open_pr(1, &json!({ "title": "A change", "updatedAt": AFTER_IT })),
                 own_open_pr(2, &json!({ "title": "Another", "updatedAt": AFTER_IT })),
             ],
-            LOTS,
+            RATE_LIMIT,
         ),
         approved(),
         quiet_poll(),
@@ -1530,7 +1532,7 @@ fn a_probe_that_lists_people_in_another_order_says_nothing() {
         ] },
         "lastCommit": { "nodes": [] },
     });
-    let answer = format!(r#"{{"data":{{"repository":{{"p1":{probe}}},{LOTS}}}}}"#);
+    let answer = format!(r#"{{"data":{{"repository":{{"p1":{probe}}},{RATE_LIMIT}}}}}"#);
     let harness = after_a_sync("probe-order", vec![quiet_poll(), reply_ok(&answer)]);
     holding_pr(&harness, &own_open_pr(1, &people));
     let mut syncs = refreshing(filtering(&[]));
@@ -1549,8 +1551,8 @@ fn a_filter_merges_its_narrowed_answer_and_brings_what_it_newly_reached() {
             &list(&[], None),
             &[search(&[issue_hit(2)], None)],
         ),
-        issues(&[2], LOTS),
-        no_cross_references(LOTS),
+        issues(&[2], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
     ];
     let harness = after_a_sync("filter-merge", replies);
     stored_filter(&harness, "a", &[1, 9]);
@@ -1579,10 +1581,10 @@ fn the_window_hears_of_each_save_with_call_lost(lost: Option<usize>) -> usize {
             &list(&[], None),
             &[search(&[issue_hit(2)], None), search(&[issue_hit(3)], None)],
         ),
-        issues(&[2, 3], LOTS),
-        no_cross_references(LOTS),
-        no_cross_references(LOTS),
-        no_cross_references(LOTS),
+        issues(&[2, 3], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
     ];
     let harness = after_a_sync(&format!("poll-news-{lost:?}"), replies);
     holding_issue(&harness, 1, LONG_BEFORE);
@@ -1627,12 +1629,12 @@ fn a_filter_with_more_than_one_page_walks_narrowed_after_the_poll() {
             &[search(&[issue_hit(2)], Some("more"))],
         ),
         reply_ok(&format!(
-            r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
             search(&[issue_hit(2), issue_hit(3)], None)
         )),
-        issues(&[2, 3], LOTS),
-        no_cross_references(LOTS),
-        no_cross_references(LOTS),
+        issues(&[2, 3], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
     ];
     let harness = after_a_sync("filter-walks", replies);
     stored_filter(&harness, "a", &[1, 9]);
@@ -1656,11 +1658,11 @@ fn a_filter_that_has_never_run_searches_whole() {
     let replies = vec![
         quiet_poll(),
         reply_ok(&format!(
-            r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
             search(&[issue_hit(2)], None)
         )),
-        issues(&[2], LOTS),
-        no_cross_references(LOTS),
+        issues(&[2], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
     ];
     let harness = after_a_sync("filter-new", replies);
     let mut syncs = refreshing(filtering(&["new"]));
@@ -1692,7 +1694,7 @@ fn a_filter_github_refused_last_time_searches_whole_and_clears_its_problem() {
     let replies = vec![
         quiet_poll(),
         reply_ok(&format!(
-            r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
             search(&[], None)
         )),
     ];
@@ -1720,11 +1722,11 @@ fn a_refused_poll_goes_again_without_its_searches_and_they_walk_alone() {
         quiet_poll(),
         refused,
         reply_ok(&format!(
-            r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
             search(&[issue_hit(2)], None)
         )),
-        issues(&[2], LOTS),
-        no_cross_references(LOTS),
+        issues(&[2], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
     ];
     let harness = after_a_sync("poll-refused", replies);
     stored_filter(&harness, "bad", &[1]);
@@ -1888,7 +1890,7 @@ fn a_304_skips_the_poll_and_the_probe_still_runs() {
 #[test]
 fn a_304_still_runs_a_filter_that_has_never_searched() {
     let search_answer = reply_ok(&format!(
-        r#"{{"data":{{"search":{},{LOTS}}}}}"#,
+        r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
         search(&[], None)
     ));
     let (harness, _tags) = small_repository(
@@ -1990,7 +1992,7 @@ fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
         "updatedAt": AFTER_IT,
         "timelineItems": { "nodes": [conflict] },
     });
-    let replies = vec![fetched_nodes(&[pr_node(3, &after)], LOTS)];
+    let replies = vec![fetched_nodes(&[pr_node(3, &after)], RATE_LIMIT)];
 
     let harness = a_merged_pr_moves("merged-moved", replies);
 
@@ -2073,7 +2075,7 @@ fn a_moved_issue_keeps_who_commented_and_one_tsugiki_doesnt_hold_keeps_nothing()
     let issues_list = list(&[commented(1), commented(2)], None);
     let replies = vec![
         polled(&issues_list, &list(&[], None), &[]),
-        cross_references(&[], None, LOTS),
+        cross_references(&[], None, RATE_LIMIT),
     ];
     let harness = after_a_sync("issue-activity", replies);
     holding_issue(&harness, 1, LONG_BEFORE);
@@ -2100,7 +2102,7 @@ fn a_probe_keeps_a_review_that_didnt_move_the_pr() {
         "latestReviews": { "nodes": [] },
         "lastCommit": { "nodes": [] },
     } });
-    let answer = format!(r#"{{"data":{{"repository":{fields},{LOTS}}}}}"#);
+    let answer = format!(r#"{{"data":{{"repository":{fields},{RATE_LIMIT}}}}}"#);
     let harness = after_a_sync("probe-activity", vec![quiet_poll(), reply_ok(&answer)]);
     holding_pr(
         &harness,
@@ -2178,7 +2180,7 @@ fn a_change_under_two_minutes_old_by_githubs_clock_keeps_its_item_in_the_filter(
             &list(&[changed_pr(2, &changed)], None),
             &[search(&[], None)],
         ),
-        fetched_nodes(&[strangers_pr(2, &changed)], LOTS),
+        fetched_nodes(&[strangers_pr(2, &changed)], RATE_LIMIT),
         approved(),
     ];
     let harness = on_githubs_clock("github-clock-settled", github_time, replies);

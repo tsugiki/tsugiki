@@ -1082,7 +1082,7 @@
 {/snippet}
 
 <!-- The Sidebar shows the name. This heading names the Repository to a screen reader whatever panes show. -->
-<h1 class="hidden-name">{name}</h1>
+<h1 class="for-screen-readers">{name}</h1>
 <!-- The list says what went wrong, and while it's hidden a row above the panes does. -->
 {#if panes.hidden("list")}
   {@render problems()}
@@ -1270,17 +1270,6 @@
     min-width: 320px;
     overflow-y: auto;
     overscroll-behavior: contain;
-  }
-
-  /* Out of sight and out of the layout, but still in the accessibility tree, as `display: none` isn't. */
-  .hidden-name {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: 0;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   /* The view's name, with the list's order at the far end, as the prototype has it. */

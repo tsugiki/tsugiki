@@ -1,14 +1,12 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
 use serde_json::Value;
 use std::path::Path;
 use time::format_description::well_known::Rfc3339;
-
-use crate::github::testing::RATE_LIMIT as RATE;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -20,7 +18,7 @@ fn github(script: Scripted) -> GitHub {
 
 fn answer(repository: &Value) -> Result<Reply, Unreachable> {
     reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{RATE}}}}}"#
+        r#"{{"data":{{"repository":{repository},{RATE_LIMIT}}}}}"#
     ))
 }
 
@@ -119,7 +117,7 @@ fn cross_references_say_where_the_older_ones_start() {
 #[test]
 fn an_issue_github_no_longer_has_has_no_cross_references() {
     let body = format!(
-        r#"{{"data":{{"repository":{{"issue":null}},{RATE}}},"errors":[{{"type":"NOT_FOUND",
+        r#"{{"data":{{"repository":{{"issue":null}},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND",
                 "message":"gone","path":["repository","issue"]}}]}}"#
     );
     let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
@@ -267,7 +265,7 @@ fn an_issue_whose_author_has_gone_has_no_author() {
 #[test]
 fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
     let body = format!(
-        r#"{{"data":{{"repository":{},{RATE}}},"errors":[{{"type":"NOT_FOUND","message":"gone",
+        r#"{{"data":{{"repository":{},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND","message":"gone",
                 "path":["repository","i3"]}}]}}"#,
         json!({ "i1": issue_json(1), "i2": { "__typename": "PullRequest" }, "i3": null })
     );

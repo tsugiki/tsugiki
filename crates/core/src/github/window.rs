@@ -79,23 +79,23 @@ fn after_page(place: &ListPlace, read: usize, kept: usize, page: PageInfo) -> Li
 
 /// GitHub's list of PRs takes no `since`, so the walk stops at the first PR older than the window. It asks
 /// only for what says whether to fetch a PR, because a PR is fetched in full once, from the queue.
-const WINDOW_PULL_REQUESTS_QUERY: &str = concat!(
-    "query WindowPullRequests($owner: String!, $name: String!, $first: \
-     Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, \
-     after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { hasNextPage endCursor } \
-     nodes { id number updatedAt } } } ",
-    rate_limit_fields!(),
-    " }"
-);
+fn window_pull_requests_query() -> String {
+    format!(
+        "query WindowPullRequests($owner: String!, $name: String!, $first: \
+         Int!, $after: String) {{ repository(owner: $owner, name: $name) {{ list: pullRequests(first: $first, \
+         after: $after, orderBy: {{ field: UPDATED_AT, direction: DESC }}) {{ pageInfo {{ hasNextPage \
+         endCursor }} nodes {{ id number updatedAt }} }} }} {RATE_LIMIT_FIELDS} }}"
+    )
+}
 
-const OLDER_OPEN_PULL_REQUESTS_QUERY: &str = concat!(
-    "query OlderOpenPullRequests($owner: String!, $name: String!, \
-     $first: Int!, $after: String) { repository(owner: $owner, name: $name) { list: pullRequests(first: $first, \
-     after: $after, states: OPEN, orderBy: { field: UPDATED_AT, direction: ASC }) { pageInfo { hasNextPage \
-     endCursor } nodes { id number updatedAt } } } ",
-    rate_limit_fields!(),
-    " }"
-);
+fn older_open_pull_requests_query() -> String {
+    format!(
+        "query OlderOpenPullRequests($owner: String!, $name: String!, \
+         $first: Int!, $after: String) {{ repository(owner: $owner, name: $name) {{ list: pullRequests(first: \
+         $first, after: $after, states: OPEN, orderBy: {{ field: UPDATED_AT, direction: ASC }}) {{ pageInfo {{ \
+         hasNextPage endCursor }} nodes {{ id number updatedAt }} }} }} {RATE_LIMIT_FIELDS} }}"
+    )
+}
 
 /// One page of one of a first sync's lists.
 #[derive(Debug, Clone, Copy)]
@@ -235,13 +235,13 @@ impl GitHub {
         asked: ListRequest<'_>,
     ) -> Result<ListedPullRequests, Error> {
         let (operation, query) = match asked.span {
-            Span::Window => (WINDOW_PULL_REQUESTS, WINDOW_PULL_REQUESTS_QUERY),
-            Span::OlderOpen => (OLDER_OPEN_PULL_REQUESTS, OLDER_OPEN_PULL_REQUESTS_QUERY),
+            Span::Window => (WINDOW_PULL_REQUESTS, window_pull_requests_query()),
+            Span::OlderOpen => (OLDER_OPEN_PULL_REQUESTS, older_open_pull_requests_query()),
         };
         let (data, _): (PullRequestData, usize) =
             self.query_at_size(asked.size, |first| Request {
                 operation,
-                query: query.into(),
+                query: query.as_str().into(),
                 variables: json!({
                     "owner": repository.owner(),
                     "name": repository.name(),

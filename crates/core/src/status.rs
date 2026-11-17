@@ -138,7 +138,7 @@ pub struct OpenSync {
 
 type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
-type AnnouncePoints = Box<dyn FnMut(&HourPoints) + Send>;
+type AnnouncePoints = Box<dyn FnMut(Option<&HourPoints>) + Send>;
 
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
@@ -198,21 +198,20 @@ impl StatusBoard {
         self
     }
 
-    /// Also tells `announce` the hour's points, each time an answer from GitHub changes them.
+    /// Also tells `announce` the hour's points, each time an answer from GitHub changes them, and nothing
+    /// once the hour resets.
     #[must_use]
     pub fn with_hour_points(mut self, announce: AnnouncePoints) -> Self {
         self.announce_hour_points = announce;
         self
     }
 
-    /// Announces `points` if they changed. Before GitHub's first answer that counts them there is nothing to
-    /// say, and once there is, there is no going back to nothing.
+    /// Announces `points` if they changed, going back to nothing when the hour resets. Before GitHub's first
+    /// answer that counts them, nothing is no change.
     pub(crate) fn hour_points(&mut self, points: Option<HourPoints>) {
-        if let Some(points) = points
-            && self.hour_points != Some(points)
-        {
-            self.hour_points = Some(points);
-            (self.announce_hour_points)(&points);
+        if self.hour_points != points {
+            self.hour_points = points;
+            (self.announce_hour_points)(self.hour_points.as_ref());
         }
     }
 

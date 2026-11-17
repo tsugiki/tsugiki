@@ -3,13 +3,12 @@ use crate::error::ErrorKind;
 use crate::facts::pull_requests::{PrState, ReviewState};
 use crate::github::Unreachable;
 use crate::github::replay::Replayer;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
 use crate::github::{ConditionalReply, Reply, Transport};
 use crate::token::Token;
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
 
-use crate::github::testing::RATE_LIMIT as RATE;
 const START: ListPlace = ListPlace::Next(None);
 const NEWER: &str = "2026-11-04T10:30:00Z";
 const OLDER: &str = "2026-11-04T09:00:00Z";
@@ -64,7 +63,7 @@ fn polled(issues: &Value, prs: &Value, searches: &str) -> Result<Reply, Unreacha
         "pullRequests": prs,
     });
     reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{searches}{RATE}}}}}"#
+        r#"{{"data":{{"repository":{repository},{searches}{RATE_LIMIT}}}}}"#
     ))
 }
 
@@ -331,7 +330,9 @@ fn a_transport_with_no_rest_counts_as_unreachable() {
 }
 
 fn probe_answer(fields: &Value) -> Result<Reply, Unreachable> {
-    reply_ok(&format!(r#"{{"data":{{"repository":{fields},{RATE}}}}}"#))
+    reply_ok(&format!(
+        r#"{{"data":{{"repository":{fields},{RATE_LIMIT}}}}}"#
+    ))
 }
 
 fn probed(number: u32) -> Value {

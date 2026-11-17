@@ -1,9 +1,7 @@
 use super::*;
 use crate::token::GhOutput;
 
-/// The points field of an answer's data: one point of 1,000 spent, with plenty left, so nothing pauses.
-pub(crate) const RATE_LIMIT: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
-    "resetAt":"2026-11-04T12:00:00Z"}"#;
+pub(crate) use super::replay::RATE_LIMIT;
 
 /// [`RATE_LIMIT`] as a value, for an answer built with `json!`.
 pub(crate) fn rate_limit() -> Value {

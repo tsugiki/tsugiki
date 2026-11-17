@@ -33,8 +33,12 @@ export class StatusState {
   syncActivity = $state<SyncActivity | null>(null);
   /** An event has said, so an answer asked for before it is out of date. */
   #heardActivity = false;
-  /** The hour's GitHub points. Nothing, until GitHub's first answer of the run says. */
+  /**
+   * The hour's GitHub points. Nothing, until GitHub's first answer of the run says, and from the hour's reset
+   * until an answer of the next hour says.
+   */
   hourPoints = $state<HourPoints | null>(null);
+  #heardPoints = false;
   /** A mirror's clone under way. Nothing, between clones. */
   cloning = $state<Cloning | null>(null);
   #heardCloning = false;
@@ -67,6 +71,7 @@ export class StatusState {
       });
       await events.hourPointsChanged.listen(({ payload }) => {
         this.hourPoints = payload;
+        this.#heardPoints = true;
       });
       await events.cloningChanged.listen(({ payload }) => {
         this.cloning = payload;
@@ -100,8 +105,7 @@ export class StatusState {
       this.status ??= current;
       this.lastSync ??= lastSync;
       if (!this.#heardActivity) this.syncActivity = syncActivity;
-      // Points an event brought while asking are newer, and the core never sends nothing in their place.
-      this.hourPoints ??= hourPoints;
+      if (!this.#heardPoints) this.hourPoints = hourPoints;
       if (!this.#heardCloning) this.cloning = cloning;
       if (!this.#heardProblem) this.mirrorProblem = mirrorProblem;
       if (!this.#heardQuestion) this.mirrorQuestion = mirrorQuestion;

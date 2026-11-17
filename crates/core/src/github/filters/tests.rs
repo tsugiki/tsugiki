@@ -1,10 +1,8 @@
 use super::*;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
 use crate::github::{Reply, Transport, Unreachable};
 use serde_json::Value;
 use time::Month;
-
-use crate::github::testing::RATE_LIMIT as RATE;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -41,7 +39,7 @@ fn first_page<'a>(query: &'a FilterQuery, created: Option<CreatedRange>) -> Filt
 fn page_of(nodes: &Value, next: Option<&str>) -> Result<Reply, Unreachable> {
     let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
     reply_ok(&format!(
-        r#"{{"data":{{"search":{{"issueCount":3214,"pageInfo":{info},"nodes":{nodes}}},{RATE}}}}}"#
+        r#"{{"data":{{"search":{{"issueCount":3214,"pageInfo":{info},"nodes":{nodes}}},{RATE_LIMIT}}}}}"#
     ))
 }
 

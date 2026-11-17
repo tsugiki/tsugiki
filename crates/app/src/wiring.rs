@@ -122,8 +122,9 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     }))
     .with_hour_points(Box::new(move |points| {
         // Before the event, for the reason the status gives above.
-        latest_points.set(&Some(*points));
-        log_if_unsent(HourPointsChanged(*points).emit(&points_handle));
+        let points = points.copied();
+        latest_points.set(&points);
+        log_if_unsent(HourPointsChanged(points).emit(&points_handle));
     }))
 }
 

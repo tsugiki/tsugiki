@@ -1,9 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
-use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, rate_limit, reply_ok, token};
 use serde_json::{Value, json};
-
-use crate::github::testing::RATE_LIMIT as RATE;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -41,7 +39,7 @@ fn a_read_by_number_answers_each_issue_and_passes_over_a_pr() {
         "i9": null,
     });
     let reply = reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{RATE}}}}}"#
+        r#"{{"data":{{"repository":{repository},{RATE_LIMIT}}}}}"#
     ));
     let (script, asked) = Scripted::new(vec![reply]);
     let github = GitHub::new(Box::new(script), token());

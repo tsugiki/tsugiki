@@ -198,6 +198,8 @@ enum Turn {
     Fetch(Fetched),
     /// The Mirror worker read patch-ids, or found commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
+    /// The hour's points reset, so the window stops showing the old hour's count.
+    HourEnded,
     SyncStep,
     Stop,
 }
@@ -230,9 +232,11 @@ impl Refreshes {
     fn next_turn(&self, github: &GitHub, syncs: &mut Syncs, due: Due) -> Turn {
         let next_refresh = due.status.min(due.repository);
         loop {
-            let wake = syncs
-                .ready_at()
-                .map_or(next_refresh, |at| at.min(next_refresh));
+            let hour_end = hour_end(github);
+            let wake = [syncs.ready_at(), hour_end]
+                .into_iter()
+                .flatten()
+                .fold(next_refresh, Ord::min);
             match self
                 .incoming
                 .recv_timeout(wake.saturating_duration_since(Instant::now()))
@@ -272,10 +276,23 @@ impl Refreshes {
                 Err(RecvTimeoutError::Timeout) if Instant::now() >= due.repository => {
                     return Turn::RefreshRepository;
                 }
+                Err(RecvTimeoutError::Timeout)
+                    if hour_end.is_some_and(|end| Instant::now() >= end) =>
+                {
+                    return Turn::HourEnded;
+                }
                 Err(RecvTimeoutError::Timeout) => return Turn::SyncStep,
             }
         }
     }
+}
+
+/// The instant the hour's points reset by GitHub's clock, while the window shows them. The hour's count then
+/// ends, and the next hour's waits for GitHub's next answer.
+fn hour_end(github: &GitHub) -> Option<Instant> {
+    let points = github.hour_points()?;
+    let left = points.resets_at - github.clock().now();
+    Some(Instant::now() + Duration::try_from(left).unwrap_or(Duration::ZERO))
 }
 
 /// The database a session opens when it starts.
@@ -361,6 +378,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Mark(marked) => mark(board, store, marked),
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
+            // The board hears of it below, as after each turn.
+            Turn::HourEnded => {}
             Turn::Fetch(fetched) => {
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);

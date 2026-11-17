@@ -124,7 +124,7 @@ describe("StatusState's last sync", () => {
       since: null,
     };
     const catchPoints = () => {
-      const listener = vi.fn<(payload: typeof points) => void>();
+      const listener = vi.fn<(payload: typeof points | null) => void>();
       vi.mocked(events.hourPointsChanged.listen).mockImplementation(async (callback) => {
         listener.mockImplementation((payload) => {
           callback({ event: "hour-points-changed", id: 1, payload });
@@ -153,6 +153,8 @@ describe("StatusState's last sync", () => {
       const later = { ...points, used: 3761, remaining: 1239, spent: 3611 };
       pointsChanged(later);
       expect(state.hourPoints).toEqual(later);
+      pointsChanged(null);
+      expect(state.hourPoints).toBeNull();
     });
 
     it("lets points that arrive while asking win", async () => {
@@ -166,6 +168,18 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.hourPoints).toEqual(later);
+    });
+
+    it("lets a reset that arrives while asking win", async () => {
+      catchLastSync();
+      const pointsChanged = catchPoints();
+      vi.mocked(commands.hourPoints).mockImplementation(async () => {
+        pointsChanged(null);
+        return points;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.hourPoints).toBeNull();
     });
   });
 

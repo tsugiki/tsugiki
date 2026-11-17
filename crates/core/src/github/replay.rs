@@ -22,8 +22,15 @@ pub struct Replayer {
     dir: PathBuf,
 }
 
-const NO_ISSUES: &str = r#"{"data":{"repository":{},"rateLimit":{"cost":1,"limit":5000,"used":1000,
-    "remaining":4000,"resetAt":"2026-11-04T23:00:00Z"}}}"#;
+/// The points field of an answer's data that no recording holds, which tests use too: one point of 1,000
+/// spent, with plenty left, so nothing pauses, in an hour that hasn't reset.
+pub(crate) const RATE_LIMIT: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
+    "resetAt":"2999-01-01T00:00:00Z"}"#;
+
+/// The answer to a read by numbers that no recording holds: none of them are there.
+fn no_issues() -> String {
+    format!(r#"{{"data":{{"repository":{{}},{RATE_LIMIT}}}}}"#)
+}
 
 impl Replayer {
     pub fn new(dir: PathBuf) -> Self {
@@ -71,7 +78,7 @@ impl Transport for Replayer {
                 status: 200,
                 reset: None,
                 date: None,
-                body: NO_ISSUES.to_owned(),
+                body: no_issues(),
             });
         }
         assert_eq!(

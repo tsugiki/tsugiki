@@ -7,7 +7,7 @@ use crate::store::Store;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LARGE, LOTS, counted, cpython, empty_window_page, fetched, fetched_nodes,
+    FEW, Harness, LARGE, RATE_LIMIT, counted, cpython, empty_window_page, fetched, fetched_nodes,
     issue_references, issues, no_issue_references, nothing, pr_node, run_to_the_end,
     searches_finding,
 };
@@ -58,7 +58,7 @@ fn filter_page(total: u32, nodes: &[Value], next: Option<&str>) -> Result<Reply,
     let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
     let nodes = json!(nodes);
     reply_ok(&format!(
-        r#"{{"data":{{"search":{{"issueCount":{total},"pageInfo":{info},"nodes":{nodes}}},{LOTS}}}}}"#
+        r#"{{"data":{{"search":{{"issueCount":{total},"pageInfo":{info},"nodes":{nodes}}},{RATE_LIMIT}}}}}"#
     ))
 }
 
@@ -94,10 +94,10 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
     posts.push(reply_ok(
         r#"{"errors":[{"message":"That search is too long"}]}"#,
     ));
-    posts.push(fetched(&[10], LOTS));
-    posts.push(issues(&[1, 2], LOTS));
+    posts.push(fetched(&[10], RATE_LIMIT));
+    posts.push(issues(&[1, 2], RATE_LIMIT));
     posts.push(counted(LARGE));
-    posts.push(no_issue_references(LOTS));
+    posts.push(no_issue_references(RATE_LIMIT));
     posts.push(empty_window_page());
     posts.push(empty_window_page());
     let scenario = Scenario {
@@ -132,8 +132,8 @@ fn a_filter_walk_recovers_from_a_failure_at_each_point() {
 fn a_save_that_failed_goes_again_with_no_new_search() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-save-again", replies);
     let broken = Store::stopped();
     let mut syncs = Syncs::default();
@@ -162,9 +162,9 @@ fn a_save_that_failed_goes_again_with_no_new_search() {
 fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1), pr_hit(10, "2026-11-04T10:00:00Z")]));
-    replies.push(fetched(&[10], LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched(&[10], RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-first", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -190,8 +190,8 @@ fn a_filters_search_says_the_repository_and_follows_its_pages() {
     let mut replies = searches_finding(&[]);
     replies.push(filter_page(2, &[issue_hit(1)], Some("more")));
     replies.push(filter_page(2, &[issue_hit(2)], None));
-    replies.push(issues(&[1, 2], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1, 2], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-pages", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["label:bug"]));
@@ -211,8 +211,8 @@ fn each_filter_keeps_its_own_results_and_a_shared_item_is_fetched_once() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1), issue_hit(2)]));
     replies.push(all_of(&[issue_hit(2), issue_hit(3)]));
-    replies.push(issues(&[1, 2, 3], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1, 2, 3], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-shared", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a", "b"]));
@@ -283,10 +283,10 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
                 }),
             ),
         ],
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issues(&[1, 2, 3], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1, 2, 3], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[
         issue_hit(1),
@@ -295,9 +295,9 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
         pr_hit(11, LATER),
         pr_hit(12, LATER),
     ]));
-    replies.push(fetched(&[11], LOTS));
-    replies.push(issues(&[2, 3], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched(&[11], RATE_LIMIT));
+    replies.push(issues(&[2, 3], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-missing", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -331,11 +331,11 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
 fn an_issue_a_filter_found_as_tsugiki_has_it_isnt_fetched_again() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[issue_hit(1)]));
-    replies.push(no_issue_references(LOTS));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-held-issue", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -364,7 +364,7 @@ fn a_closed_pr_that_changed_is_fetched_again_as_it_may_have_reopened() {
             10,
             &json!({ "updatedAt": SAVED, "title": "PR 10", "state": "CLOSED" }),
         )],
-        LOTS,
+        RATE_LIMIT,
     ));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[pr_hit(10, LATER)]));
@@ -373,7 +373,7 @@ fn a_closed_pr_that_changed_is_fetched_again_as_it_may_have_reopened() {
             10,
             &json!({ "updatedAt": LATER, "title": "PR 10" }),
         )],
-        LOTS,
+        RATE_LIMIT,
     ));
     let harness = Harness::new("filter-reopened", replies);
     let mut syncs = Syncs::default();
@@ -402,20 +402,20 @@ fn a_tree_fetches_again_an_open_pr_a_filter_found_unchanged_as_its_ci_may_have_m
             10,
             &json!({ "updatedAt": SAVED, "title": "gh-1: Fix it" }),
         )],
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issues(&[1], LOTS));
-    replies.push(issue_references(&[(1, &[10])], LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(issue_references(&[(1, &[10])], RATE_LIMIT));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[pr_hit(10, SAVED)]));
-    replies.push(issues(&[1], LOTS));
-    replies.push(issue_references(&[(1, &[10])], LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(issue_references(&[(1, &[10])], RATE_LIMIT));
     replies.push(fetched_nodes(
         &[pr_node(
             10,
             &json!({ "updatedAt": SAVED, "title": "gh-1: Fix it" }),
         )],
-        LOTS,
+        RATE_LIMIT,
     ));
     let harness = Harness::new("filter-tree", replies);
     let mut syncs = Syncs::default();
@@ -443,7 +443,7 @@ fn a_tree_fetches_again_an_open_pr_a_filter_found_unchanged_as_its_ci_may_have_m
 fn a_pr_the_users_searches_and_a_filter_both_found_is_fetched_once() {
     let mut replies = searches_finding(&["id10"]);
     replies.push(all_of(&[pr_hit(10, "2026-11-04T10:00:00Z")]));
-    replies.push(fetched(&[10], LOTS));
+    replies.push(fetched(&[10], RATE_LIMIT));
     let harness = Harness::new("filter-and-work", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -459,8 +459,8 @@ fn a_pr_the_users_searches_and_a_filter_both_found_is_fetched_once() {
 fn a_search_the_user_edited_away_loses_its_results_at_the_next_sync() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     replies.extend(searches_finding(&[]));
     replies.push(all_of(&[]));
     let harness = Harness::new("filter-edited", replies);
@@ -480,15 +480,15 @@ fn a_search_the_user_edited_away_loses_its_results_at_the_next_sync() {
 fn a_filter_github_wont_answer_says_why_and_stops_nothing_else() {
     let mut replies = searches_finding(&[]);
     replies.push(all_of(&[issue_hit(1)]));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     replies.extend(searches_finding(&[]));
     replies.push(reply_ok(
         r#"{"errors":[{"message":"That search is too long"}]}"#,
     ));
     replies.push(all_of(&[issue_hit(2)]));
-    replies.push(issues(&[2], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[2], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-refused", replies);
     let mut syncs = Syncs::default();
     syncs.add(filtering(&["a"]));
@@ -541,8 +541,8 @@ fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
         let mut replies = searches_finding(&[]);
         replies.extend(failures);
         replies.push(all_of(&[issue_hit(1)]));
-        replies.push(issues(&[1], LOTS));
-        replies.push(no_issue_references(LOTS));
+        replies.push(issues(&[1], RATE_LIMIT));
+        replies.push(no_issue_references(RATE_LIMIT));
         let harness = Harness::new(name, replies);
         let mut syncs = Syncs::default();
         syncs.add(filtering(&["a"]));
@@ -603,11 +603,11 @@ impl Transport for ByCreated {
                 drop(self.asked.send(request.variables.clone()));
                 Ok(self.answer(request.variables["query"].as_str().unwrap_or_default()))
             }
-            "FetchIssues" => issues(&[], LOTS),
-            "FetchIssueReferences" => no_issue_references(LOTS),
+            "FetchIssues" => issues(&[], RATE_LIMIT),
+            "FetchIssueReferences" => no_issue_references(RATE_LIMIT),
             "WindowIssues" | "WindowPullRequests" => empty_window_page(),
             "CheckRepository" => counted(LARGE),
-            _ => nothing(LOTS),
+            _ => nothing(RATE_LIMIT),
         }
     }
 }

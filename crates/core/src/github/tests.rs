@@ -1,6 +1,7 @@
 use super::testing::{Canned, Scripted, answered, dated, signed_in_as, token};
 use super::*;
 use std::path::Path;
+use time::format_description::well_known::Rfc3339;
 
 fn client(transport: impl Transport + 'static) -> GitHub {
     GitHub::new(Box::new(transport), token())
@@ -179,7 +180,7 @@ fn a_check_asks_about_the_last_30_days_and_keeps_the_name_out_of_the_query() {
             "closed": "repo:a-b/c.d is:closed closed:>=2026-10-05",
         })
     );
-    assert!(!CHECK_REPOSITORY.contains("a-b"));
+    assert!(!check_repository_query().contains("a-b"));
 }
 
 #[test]
@@ -332,13 +333,42 @@ fn a_reply_github_didnt_send_leaves_its_clock() {
     assert!(github.clock().now() < ahead - Duration::minutes(4));
 }
 
-/// GitHub's answer that `reviewer` is signed in, which cost `cost` of the `used` points this hour.
+/// GitHub's answer that `reviewer` is signed in, which cost `cost` of the `used` points of an hour that
+/// hasn't reset.
 fn viewer_costing(cost: u32, used: u32) -> Result<Reply, Unreachable> {
+    viewer_resetting(cost, used, "2999-01-01T00:00:00Z")
+}
+
+/// GitHub's answer that `reviewer` is signed in, which cost `cost` of the `used` points of the hour that
+/// resets `at`.
+fn viewer_resetting(cost: u32, used: u32, at: &str) -> Result<Reply, Unreachable> {
     let remaining = 5000 - used;
     super::testing::reply_ok(&format!(
         r#"{{"data":{{"viewer":{{"login":"reviewer"}},"rateLimit":{{"cost":{cost},"limit":5000,
-            "used":{used},"remaining":{remaining},"resetAt":"2026-11-17T14:32:00Z"}}}}}}"#
+            "used":{used},"remaining":{remaining},"resetAt":"{at}"}}}}}}"#
     ))
+}
+
+#[test]
+fn the_hours_points_end_at_its_reset_by_githubs_clock_not_the_computers() {
+    let now = OffsetDateTime::now_utc();
+    let in_an_hour = (now + Duration::hours(1)).format(&Rfc3339).unwrap();
+    let an_hour_ago = (now - Duration::hours(1)).format(&Rfc3339).unwrap();
+    let cases = [
+        // This computer's clock is two hours slow: by it the hour has a while to go.
+        (now + Duration::hours(2), in_an_hour, None),
+        // Two hours fast: by it the hour reset an hour ago.
+        (now - Duration::hours(2), an_hour_ago, Some(1)),
+    ];
+    for (date, reset, spent) in cases {
+        let (script, _) = Scripted::new(vec![dated(viewer_resetting(1, 1, &reset), date)]);
+        let github = client(script);
+
+        drop(github.viewer().unwrap());
+
+        let points = github.hour_points();
+        assert_eq!(points.map(|points| points.spent), spent, "{reset}");
+    }
 }
 
 #[test]
@@ -378,7 +408,7 @@ fn a_first_answer_into_a_spent_hour_says_since_when_tsugiki_counted() {
 #[test]
 fn a_query_that_failed_still_counts_its_points() {
     let body = r#"{"data":{"viewer":null,"rateLimit":{"cost":1,"limit":5000,"used":7,"remaining":4993,
-        "resetAt":"2026-11-17T14:32:00Z"}},"errors":[{"message":"Something went wrong"}]}"#;
+        "resetAt":"2999-01-01T00:00:00Z"}},"errors":[{"message":"Something went wrong"}]}"#;
     let github = client(answered(200, body));
 
     assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::QueryRefused);

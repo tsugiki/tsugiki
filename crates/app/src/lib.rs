@@ -133,7 +133,7 @@ fn sync_activity(latest: State<'_, LatestSyncActivity>) -> Option<SyncActivity> 
 type LatestHourPoints = LatestReader<Option<HourPoints>>;
 
 /// The hour's GitHub points, for a window that has just loaded. Nothing, until GitHub's first answer of the
-/// run says.
+/// run says, and from the hour's reset until an answer of the next hour says.
 #[tauri::command]
 #[specta::specta]
 fn hour_points(latest: State<'_, LatestHourPoints>) -> Option<HourPoints> {
@@ -1002,9 +1002,10 @@ struct LastSyncChanged(LastSync);
 #[derive(Clone, Serialize, Type, Event)]
 struct SyncActivityChanged(Option<SyncActivity>);
 
-/// Sent when an answer from GitHub changes the hour's points, so the status bar can say.
+/// Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+/// status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
-struct HourPointsChanged(HourPoints);
+struct HourPointsChanged(Option<HourPoints>);
 
 /// Sent when a mirror's clone moves on, and when it ends, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]

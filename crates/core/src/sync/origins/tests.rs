@@ -2,7 +2,7 @@ use crate::github::testing::reply_ok;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LARGE, LOTS, comment_by, counted, cpython, cross_references, fetched_nodes,
+    FEW, Harness, LARGE, RATE_LIMIT, comment_by, counted, cpython, cross_references, fetched_nodes,
     found, hours_ago, issue_references, issue_references_with_more, issues, merged_node,
     no_issue_references, nothing, origin_answer, plain, pr_node, run_to_the_end, searches_finding,
     up_to_the_first_issue, window_issue_referencing, window_page, window_pr,
@@ -29,14 +29,14 @@ fn a_first_sync_keeps_what_happened_on_the_prs_it_fetched_and_on_their_origin_pr
     let mut origin = merged_node(9);
     origin["timelineItems"] = timeline("some-author");
     let replies = vec![
-        found(&["a"], None, LOTS),
-        nothing(LOTS),
-        nothing(LOTS),
-        nothing(LOTS),
-        fetched_nodes(&[backport], LOTS),
-        origin_answer(&origin, LOTS),
-        issues(&[1], LOTS),
-        no_issue_references(LOTS),
+        found(&["a"], None, RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        fetched_nodes(&[backport], RATE_LIMIT),
+        origin_answer(&origin, RATE_LIMIT),
+        issues(&[1], RATE_LIMIT),
+        no_issue_references(RATE_LIMIT),
     ];
     let harness = Harness::new("origin-activity", replies);
     let mut syncs = Syncs::default();
@@ -59,31 +59,31 @@ fn a_first_sync_keeps_what_happened_on_the_prs_it_fetched_and_on_their_origin_pr
 #[test]
 fn a_first_sync_recovers_from_a_failure_at_each_point() {
     let posts = vec![
-        found(&["a"], Some("next"), LOTS),
-        found(&["b"], None, LOTS),
-        nothing(LOTS),
-        nothing(LOTS),
-        nothing(LOTS),
-        fetched_nodes(&[pr_node(1, &json!({})), backport_node(2, 9)], LOTS),
-        origin_answer(&merged_node(9), LOTS),
-        issues(&[1], LOTS),
+        found(&["a"], Some("next"), RATE_LIMIT),
+        found(&["b"], None, RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        fetched_nodes(&[pr_node(1, &json!({})), backport_node(2, 9)], RATE_LIMIT),
+        origin_answer(&merged_node(9), RATE_LIMIT),
+        issues(&[1], RATE_LIMIT),
         counted(LARGE),
-        issue_references_with_more(1, &[3], "older", LOTS),
-        cross_references(&[4, 21], None, LOTS),
+        issue_references_with_more(1, &[3], "older", RATE_LIMIT),
+        cross_references(&[4, 21], None, RATE_LIMIT),
         fetched_nodes(
             &[merged_node(3), backport_node(4, 8), merged_node(21)],
-            LOTS,
+            RATE_LIMIT,
         ),
-        origin_answer(&merged_node(8), LOTS),
+        origin_answer(&merged_node(8), RATE_LIMIT),
         window_page(
             &[window_issue_referencing(20, &hours_ago(1), &[22])],
             None,
-            LOTS,
+            RATE_LIMIT,
         ),
-        fetched_nodes(&[merged_node(22)], LOTS),
-        window_page(&[window_pr(23, &hours_ago(2))], Some("older"), LOTS),
-        fetched_nodes(&[merged_node(23)], LOTS),
-        window_page(&[window_pr(21, &hours_ago(3))], None, LOTS),
+        fetched_nodes(&[merged_node(22)], RATE_LIMIT),
+        window_page(&[window_pr(23, &hours_ago(2))], Some("older"), RATE_LIMIT),
+        fetched_nodes(&[merged_node(23)], RATE_LIMIT),
+        window_page(&[window_pr(21, &hours_ago(3))], None, RATE_LIMIT),
     ];
     let scenario = Scenario {
         name: "recovery-first",
@@ -124,10 +124,10 @@ fn a_first_sync_recovers_from_a_failure_at_each_point() {
 #[test]
 fn a_sync_fetches_a_users_backports_missing_origin_pr_by_number() {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
-    replies.push(origin_answer(&merged_node(9), LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_nodes(&[backport_node(2, 9)], RATE_LIMIT));
+    replies.push(origin_answer(&merged_node(9), RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -157,10 +157,10 @@ fn a_sync_fetches_the_issues_a_users_backports_origin_pr_names() {
         2,
         &json!({ "title": "[3.14] Fix it (GH-9)", "baseRefName": "3.14" }),
     );
-    replies.push(fetched_nodes(&[untitled], LOTS));
-    replies.push(origin_answer(&merged_node(9), LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_nodes(&[untitled], RATE_LIMIT));
+    replies.push(origin_answer(&merged_node(9), RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin-issue", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -176,9 +176,9 @@ fn a_sync_fetches_the_issues_a_users_backports_origin_pr_names() {
 #[test]
 fn a_sync_fetches_a_tree_backports_missing_origin_pr_after_the_tree() {
     let mut replies = up_to_the_first_issue();
-    replies.push(issue_references(&[(1, &[2])], LOTS));
-    replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
-    replies.push(origin_answer(&merged_node(9), LOTS));
+    replies.push(issue_references(&[(1, &[2])], RATE_LIMIT));
+    replies.push(fetched_nodes(&[backport_node(2, 9)], RATE_LIMIT));
+    replies.push(origin_answer(&merged_node(9), RATE_LIMIT));
     let harness = Harness::new("tree-origin", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -194,20 +194,20 @@ fn a_sync_doesnt_ask_for_an_origin_pr_it_has_fetched_or_frozen() {
     let mut replies = searches_finding(&["a"]);
     replies.push(fetched_nodes(
         &[pr_node(9, &json!({})), backport_node(2, 9)],
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     // The next sync finds only the Backport, and its Origin PR has merged by then.
     replies.extend(searches_finding(&["a"]));
-    replies.push(fetched_nodes(&[backport_node(2, 8)], LOTS));
-    replies.push(origin_answer(&merged_node(8), LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_nodes(&[backport_node(2, 8)], RATE_LIMIT));
+    replies.push(origin_answer(&merged_node(8), RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     replies.extend(searches_finding(&["a"]));
-    replies.push(fetched_nodes(&[backport_node(2, 8)], LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_nodes(&[backport_node(2, 8)], RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin-known", replies);
     let mut syncs = Syncs::default();
 
@@ -237,14 +237,14 @@ fn a_frozen_origin_pr_still_leads_a_new_backport_to_its_issue() {
         )
     };
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[untitled(2)], LOTS));
-    replies.push(origin_answer(&merged_node(9), LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(fetched_nodes(&[untitled(2)], RATE_LIMIT));
+    replies.push(origin_answer(&merged_node(9), RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     replies.extend(searches_finding(&["b"]));
-    replies.push(fetched_nodes(&[untitled(3)], LOTS));
-    replies.push(issues(&[1], LOTS));
-    replies.push(issue_references(&[(1, &[])], LOTS));
+    replies.push(fetched_nodes(&[untitled(3)], RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(issue_references(&[(1, &[])], RATE_LIMIT));
     let harness = Harness::new("origin-frozen", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -265,13 +265,13 @@ fn a_frozen_origin_pr_still_leads_a_new_backport_to_its_issue() {
 #[test]
 fn an_origin_number_that_names_no_pr_is_asked_for_once() {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
+    replies.push(fetched_nodes(&[backport_node(2, 9)], RATE_LIMIT));
     replies.push(reply_ok(&format!(
-        r#"{{"data":{{"repository":{{"pullRequest":null}},{LOTS}}},"errors":[{{"type":"NOT_FOUND",
+        r#"{{"data":{{"repository":{{"pullRequest":null}},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND",
                 "message":"gone","path":["repository","pullRequest"]}}]}}"#
     )));
-    replies.push(issues(&[1], LOTS));
-    replies.push(no_issue_references(LOTS));
+    replies.push(issues(&[1], RATE_LIMIT));
+    replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin-gone", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -285,7 +285,7 @@ fn an_origin_number_that_names_no_pr_is_asked_for_once() {
 #[test]
 fn an_origin_fetch_below_the_floor_holds_the_next_step_back() {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[backport_node(2, 9)], LOTS));
+    replies.push(fetched_nodes(&[backport_node(2, 9)], RATE_LIMIT));
     replies.push(origin_answer(&merged_node(9), FEW));
     let harness = Harness::new("origin-floor", replies);
     let mut syncs = Syncs::default();

@@ -23,7 +23,7 @@ export const commands = {
 	syncActivity: () => __TAURI_INVOKE<SyncActivity_Serialize | null>("sync_activity"),
 	/**
 	 *  The hour's GitHub points, for a window that has just loaded. Nothing, until GitHub's first answer of the
-	 *  run says.
+	 *  run says, and from the hour's reset until an answer of the next hour says.
 	 */
 	hourPoints: () => __TAURI_INVOKE<HourPoints_Serialize | null>("hour_points"),
 	/**  The clone of a mirror under way, for a window that has just loaded. */
@@ -1158,14 +1158,23 @@ others: RepositoryName[] };
  */
 export type HourPoints = HourPoints_Serialize | HourPoints_Deserialize;
 
-/**  Sent when an answer from GitHub changes the hour's points, so the status bar can say. */
+/**
+ *  Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+ *  status bar can say.
+ */
 export type HourPointsChanged = HourPointsChanged_Serialize | HourPointsChanged_Deserialize;
 
-/**  Sent when an answer from GitHub changes the hour's points, so the status bar can say. */
-export type HourPointsChanged_Deserialize = HourPoints_Deserialize;
+/**
+ *  Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+ *  status bar can say.
+ */
+export type HourPointsChanged_Deserialize = HourPoints_Deserialize | null;
 
-/**  Sent when an answer from GitHub changes the hour's points, so the status bar can say. */
-export type HourPointsChanged_Serialize = HourPoints_Serialize;
+/**
+ *  Sent when an answer from GitHub changes the hour's points, and with nothing when the hour resets, so the
+ *  status bar can say.
+ */
+export type HourPointsChanged_Serialize = HourPoints_Serialize | null;
 
 /**
  *  The hour's points, as GitHub's last answer counted them, with the points Tsugiki's answers cost. It lives

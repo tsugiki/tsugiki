@@ -11,7 +11,9 @@ use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
-use crate::github::testing::{Canned, Scripted, answered, reply_ok, signed_in_as, signed_in_gh};
+use crate::github::testing::{
+    Canned, RATE_LIMIT, Scripted, answered, dated, reply_ok, signed_in_as, signed_in_gh,
+};
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
 use crate::mirror::HeardRequests;
@@ -326,7 +328,7 @@ fn watching_follows_github_until_told_to_stop() {
 
 /// GitHub's answer whose data holds the fields `data` spells, and its points.
 fn answer_with(data: &str) -> Result<Reply, Unreachable> {
-    reply_ok(&format!(r#"{{"data":{{{data},{WORK_RATE}}}}}"#))
+    reply_ok(&format!(r#"{{"data":{{{data},{RATE_LIMIT}}}}}"#))
 }
 
 /// The answer to `FetchIssueContent`.
@@ -839,15 +841,13 @@ fn checks_dont_put_off_the_next_refresh() {
     assert!(started.elapsed() < PLENTY);
 }
 
-use crate::github::testing::RATE_LIMIT as WORK_RATE;
-
 fn work_search(ids: &[&str]) -> Result<Reply, Unreachable> {
     let nodes: Vec<serde_json::Value> = ids
         .iter()
         .map(|id| serde_json::json!({ "id": id }))
         .collect();
     let body = format!(
-        r#"{{"data":{{"search":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":{}}},{WORK_RATE}}}}}"#,
+        r#"{{"data":{{"search":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":{}}},{RATE_LIMIT}}}}}"#,
         serde_json::json!(nodes)
     );
     reply_ok(&body)
@@ -879,7 +879,7 @@ fn work_fetch() -> Result<Reply, Unreachable> {
         "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     });
-    reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{WORK_RATE}}}}}"#))
+    reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{RATE_LIMIT}}}}}"#))
 }
 
 /// The recorded `python/cpython` work as the Workbench lists it: the items in order, with each item's
@@ -974,12 +974,12 @@ fn a_sync_fills_the_workbench_and_says_so() {
 
 #[test]
 fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
-    // The same hour as `WORK_RATE`, and a cost that tells this read apart from the sync's answers.
+    // The same hour as `RATE_LIMIT`, and a cost that tells this read apart from the sync's answers.
     let pr_read = reply_ok(
         r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
             "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
             "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
-            "rateLimit":{"cost":3,"limit":5000,"used":990,"remaining":4010,"resetAt":"2026-11-04T12:00:00Z"}}}"#,
+            "rateLimit":{"cost":3,"limit":5000,"used":990,"remaining":4010,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
     );
     let (script, _asked) = Scripted::new(vec![
         signed_in(),
@@ -995,8 +995,8 @@ fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
         run_gh: signed_in_gh,
     };
     let (passed, seen) = mpsc::channel();
-    let board = quiet_board().with_hour_points(Box::new(move |points: &HourPoints| {
-        passed.send(*points).unwrap();
+    let board = quiet_board().with_hour_points(Box::new(move |points: Option<&HourPoints>| {
+        passed.send(*points.unwrap()).unwrap();
     }));
     let (folders, _folder) = temp_folders("hour-points");
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
@@ -1016,6 +1016,37 @@ fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
     assert!(first.since.is_some());
     let last = announced.last().unwrap();
     assert_eq!((last.spent, last.used, last.since), (8, 1000, first.since));
+}
+
+#[test]
+fn the_window_stops_showing_the_hours_points_at_its_reset_by_githubs_clock() {
+    // This computer's clock is an hour slow, and the hour resets two seconds after GitHub answered.
+    let github_now = OffsetDateTime::now_utc() + time::Duration::hours(1);
+    let reset = (github_now + time::Duration::seconds(2))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let viewer = reply_ok(&format!(
+        r#"{{"data":{{"viewer":{{"login":"octocat"}},"rateLimit":{{"cost":1,"limit":5000,"used":1,
+            "remaining":4999,"resetAt":"{reset}"}}}}}}"#
+    ));
+    let (script, _asked) = Scripted::new(vec![dated(viewer, github_now)]);
+    let access = GitHubAccess {
+        transport: Box::new(script),
+        run_gh: signed_in_gh,
+    };
+    let (passed, seen) = mpsc::channel();
+    let board = quiet_board().with_hour_points(Box::new(move |points: Option<&HourPoints>| {
+        passed.send(points.map(|points| points.spent)).unwrap();
+    }));
+    let (folders, _folder) = temp_folders("hour-reset");
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+
+    let shown = seen.recv_timeout(PLENTY).unwrap();
+    // Long before the next refresh, an hour away.
+    let reset = seen.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    assert_eq!((shown, reset), (Some(1), None));
 }
 
 /// A PR of `author` in `gcmon`, stored with its branch at `head`.
@@ -1809,7 +1840,7 @@ impl Transport for QuietRepository {
                         "openIssues":{{"totalCount":900}},"openPrs":{{"totalCount":0}},
                         "issues":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}},
                         "pullRequests":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}}
-                    }},{WORK_RATE}}}}}"#
+                    }},{RATE_LIMIT}}}}}"#
             ),
         };
         Ok(Reply {

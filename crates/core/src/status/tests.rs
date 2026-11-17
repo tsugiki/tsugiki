@@ -99,12 +99,13 @@ fn the_status_reaches_the_ui_tagged_by_its_state() {
 }
 
 #[test]
-fn the_hour_points_reach_the_ui_from_the_first_answer_and_only_when_they_change() {
+fn the_hour_points_reach_the_ui_from_the_first_answer_until_the_reset_and_only_when_they_change() {
     let (passed, seen) = std::sync::mpsc::channel();
-    let mut board =
-        super::testing::quiet_board().with_hour_points(Box::new(move |points: &HourPoints| {
-            passed.send(*points).unwrap();
-        }));
+    let mut board = super::testing::quiet_board().with_hour_points(Box::new(
+        move |points: Option<&HourPoints>| {
+            passed.send(points.copied()).unwrap();
+        },
+    ));
     let points = HourPoints {
         limit: 5000,
         used: 3760,
@@ -124,8 +125,14 @@ fn the_hour_points_reach_the_ui_from_the_first_answer_and_only_when_they_change(
     board.hour_points(Some(points));
     board.hour_points(Some(points));
     board.hour_points(Some(later));
+    // The hour reset.
+    board.hour_points(None);
+    board.hour_points(None);
 
-    assert_eq!(seen.try_iter().collect::<Vec<_>>(), [points, later]);
+    assert_eq!(
+        seen.try_iter().collect::<Vec<_>>(),
+        [Some(points), Some(later), None]
+    );
     assert_eq!(
         serde_json::to_value(points).unwrap(),
         serde_json::json!({

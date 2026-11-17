@@ -62,7 +62,8 @@ jobs:
           path: release-notes.md
           if-no-files-found: error
 
-  # It builds its own release with a debugging port open, so the downloads below are separate builds.
+  # It builds its own release with a debugging port open, so the downloads below are separate builds. The
+  # builds don't wait for it: the attest job's `needs` lists it, and must list each pre-release suite added.
   smoke:
     name: npm run smoke
     needs: [check]

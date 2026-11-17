@@ -2,10 +2,10 @@
 // commit gives the PR its title and, without `just ship body.md`, its body.
 // `just ship --check` runs `just check` first, which writes to .temp/check.log, and prints only its outcome
 // and, on a failure, the failed recipe and the log's tail, so an agent reads a few lines of a long run.
-// Ship a PR without it and let CI run the gates, unless it's a release PR or changes the gates (AGENTS.md).
+// Ship a PR without it and let CI run the gates, unless it changes the gates (AGENTS.md).
 // `just ship --release` is the only way it pushes a `release/` branch, since that push rehearses the release
 // on CI: ask the user first. It refuses unless the branch names Cargo.toml's version and `just release-check`
-// passes. `just ship --release` opens the release PR and pushes each fix to it, and CI runs the gates.
+// passes. A release PR that only sets the version ships with `just ship --release`, and CI runs the gates.
 import { execFileSync, spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 

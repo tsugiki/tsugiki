@@ -19,9 +19,11 @@ Then edit the notes under the new heading by hand: ADR 0012 says what the sectio
 `just release-check` prints the release page: the notes, then which file to download and how to check it
 (`scripts/release-notes.ts`). Commit, and run `just ship --release`, which pushes the branch and opens the
 PR. It stops before the push unless the branch names `Cargo.toml`'s version and `just release-check` passes.
-It leaves `just check` to CI, since the branch changes only the notes, the version and `Cargo.lock` on a main
-that passed CI. Each push rehearses the release on CI (see [Rehearsing](#rehearsing)), so an agent asks the
-user first. Plain `just ship` refuses a `release/` branch.
+A branch that changes only the notes, the version and `Cargo.lock`, on a main that passed CI, leaves
+`just check` to CI. One that also changes the gates, such as `release.yml`, ships with
+`just ship --release --check`, which runs `just check` before the push. Each push rehearses the release on
+CI (see [Rehearsing](#rehearsing)), so an agent asks the user first. Plain `just ship` refuses a `release/`
+branch.
 
 CI's `release-check` job fails the PR if `CHANGELOG.md` has no section for that version, and the `deny` job
 fails it if `Cargo.lock` didn't follow.

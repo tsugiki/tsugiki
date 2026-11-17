@@ -243,3 +243,6 @@ fn is_outside_certificate_dates(cause: &ureq::Error) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;

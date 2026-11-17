@@ -5,9 +5,8 @@ use crate::github::Unreachable;
 use crate::github::replay::Replayer;
 use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, page_info, replied, reply_ok};
 use crate::github::{ConditionalReply, Reply, Transport};
-use crate::testing::{cpython, moment};
+use crate::testing::{cpython, moment, recordings};
 use crate::token::Token;
-use std::path::Path;
 use std::sync::mpsc::{self, Sender};
 
 const START: ListPlace = ListPlace::Next(None);
@@ -411,13 +410,9 @@ fn a_probe_changes_only_what_it_read() {
     );
 }
 
-fn fixtures() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github")
-}
-
 /// The text of the recorded query in `<operation>.json`, which says what a test has to ask to replay it.
 fn recorded_query(operation: &str) -> String {
-    let text = std::fs::read_to_string(fixtures().join(format!("{operation}.json"))).unwrap();
+    let text = std::fs::read_to_string(recordings().join(format!("{operation}.json"))).unwrap();
     let recording: Value = serde_json::from_str(&text).unwrap();
     recording["query"].as_str().unwrap().to_owned()
 }
@@ -425,7 +420,7 @@ fn recorded_query(operation: &str) -> String {
 #[test]
 fn the_recorded_poll_reads_as_a_poll() {
     let filters = [filter("a"), filter("b")];
-    let github = github(Replayer::new(fixtures()));
+    let github = github(Replayer::new(recordings()));
 
     let answer = github
         .poll_repository(&cpython(), &poll_of(&START, &START, &filters))
@@ -444,7 +439,7 @@ fn the_recorded_probe_reads_as_a_probe() {
         .skip(1)
         .filter_map(|field| field.split_once(':')?.0.parse().ok())
         .collect();
-    let github = github(Replayer::new(fixtures()));
+    let github = github(Replayer::new(recordings()));
 
     let batch = github
         .probe_pull_requests(&cpython(), &numbers, numbers.len())

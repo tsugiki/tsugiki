@@ -8,28 +8,15 @@ use serde_json::{Value, json};
 
 use crate::client::{Event, Exit, Fallback, Init, Pending, RequestError, Server};
 use crate::testing::{
-    Fake, PATIENCE, connect, connect_logged, initialize, initialized, initialized_with, uri,
+    Fake, PATIENCE, connect, connect_logged, initialize, initialized, initialized_with, range, uri,
 };
 use crate::types::{
     Definitions, Diagnostics, Language, Location, LocationLink, Position, Progress, ProgressToken,
-    Range, ServerInfo, Status, WorkDone,
+    ServerInfo, Status, WorkDone,
 };
 
 fn next_event(events: &Receiver<Event>) -> Event {
     events.recv_timeout(PATIENCE).unwrap()
-}
-
-fn range(line: u32, from: u32, to: u32) -> Range {
-    Range {
-        start: Position {
-            line,
-            character: from,
-        },
-        end: Position {
-            line,
-            character: to,
-        },
-    }
 }
 
 fn json_range(line: u32, from: u32, to: u32) -> Value {

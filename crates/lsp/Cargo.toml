@@ -21,6 +21,11 @@ url.workspace = true
 win32job.workspace = true
 windows.workspace = true
 
+[features]
+# Makes `testing`, a fake server over in-memory pipes, reachable from other crates' tests. Only
+# `[dev-dependencies]` turn it on, so no release build has it.
+testing = []
+
 [dev-dependencies]
 tsugiki-test-git.workspace = true
 

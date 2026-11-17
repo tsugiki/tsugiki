@@ -7,31 +7,14 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde_json::Value;
-
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+use tsugiki_test_git::{repo_root, rust_sources};
 
 fn json(path: &str) -> Value {
-    let text = fs::read_to_string(repo().join(path)).unwrap();
+    let text = fs::read_to_string(repo_root().join(path)).unwrap();
     serde_json::from_str(&text).unwrap()
-}
-
-/// The Rust sources in `dir` and below.
-fn rust_sources(dir: &Path) -> Vec<PathBuf> {
-    let mut sources = Vec::new();
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            sources.extend(rust_sources(&path));
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            sources.push(path);
-        }
-    }
-    sources
 }
 
 /// The hosts of the `http://` and `https://` addresses in `text`, past a user such as `someone@`.
@@ -53,7 +36,7 @@ fn hosts(text: &str) -> Vec<String> {
 fn rust_names_only_github_as_a_host() {
     let mut found = BTreeSet::new();
     for crate_src in ["crates/core/src", "crates/app/src", "crates/token/src"] {
-        for source in rust_sources(&repo().join(crate_src)) {
+        for source in rust_sources(&repo_root().join(crate_src)) {
             // The token crate's tests name other hosts to show that its client refuses them.
             let refused_in_tests = crate_src == "crates/token/src" && source.ends_with("tests.rs");
             if !refused_in_tests {
@@ -89,7 +72,7 @@ fn core_app_and_token_forbid_unsafe_code() {
         "crates/app/src/main.rs",
         "crates/token/src/lib.rs",
     ] {
-        let source = fs::read_to_string(repo().join(root)).unwrap();
+        let source = fs::read_to_string(repo_root().join(root)).unwrap();
         assert!(source.contains("#![forbid(unsafe_code)]"), "{root}");
     }
 }
@@ -111,7 +94,7 @@ fn unsafe_lines(dir: &Path) -> usize {
 
 #[test]
 fn webview_keys_has_the_one_unsafe_block_and_no_other_crate_has_any() {
-    for entry in fs::read_dir(repo().join("crates")).unwrap() {
+    for entry in fs::read_dir(repo_root().join("crates")).unwrap() {
         let path = entry.unwrap().path();
         let expected = usize::from(path.ends_with("webview-keys"));
         assert_eq!(unsafe_lines(&path), expected, "{}", path.display());
@@ -217,7 +200,7 @@ fn the_webview_has_only_tauris_core_permissions() {
 fn no_http_shell_or_file_system_plugin_is_installed() {
     let manifests = ["crates/app/Cargo.toml", "package.json", "ui/package.json"];
     for manifest in manifests {
-        let text = fs::read_to_string(repo().join(manifest)).unwrap();
+        let text = fs::read_to_string(repo_root().join(manifest)).unwrap();
         for plugin in ["http", "shell", "fs"] {
             assert!(
                 !text.contains(&format!("tauri-plugin-{plugin}")),

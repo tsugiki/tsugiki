@@ -67,9 +67,9 @@ pub fn about(version: &version::Version, build: build::Build) -> About {
     }
 }
 
-/// What the core's tests share.
-#[cfg(test)]
-pub(crate) mod testing;
+/// What the core's tests share, and share with other crates' tests.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 #[cfg(test)]
 mod tests;

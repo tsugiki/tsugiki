@@ -8,13 +8,7 @@ use std::time::Duration;
 use rustls::pki_types::UnixTime;
 
 use super::*;
-
-fn gh_prints(stdout: &str) -> io::Result<GhOutput> {
-    Ok(GhOutput {
-        success: true,
-        stdout: stdout.to_owned(),
-    })
-}
+use crate::testing::gh_prints;
 
 fn example() -> Token {
     Token::from_gh(|_| gh_prints("gho_example\n")).unwrap()

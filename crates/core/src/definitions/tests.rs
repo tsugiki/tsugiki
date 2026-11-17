@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
+use tsugiki_test_git::within;
 
 use super::server::Ready;
 use super::testing::{FakeClangd, Initialize, Notified, ty};
@@ -288,17 +289,14 @@ fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
     // ty asks for its settings again once it has refused them, which a lookup at once can beat, and a
     // lookup while its workspace comes back may fail. Each miss waits a moment before the next try. The
     // 5 s cap is approximate: a lookup that starts at 4.9 s runs to its own end.
-    let until = Instant::now() + Duration::from_secs(5);
-    let found = (0..)
-        .map(|tries: u32| {
-            thread::sleep(Duration::from_millis(50) * tries.min(1));
-            look(&mut owner, &eggs)
-        })
-        .find(|answer| {
-            let landed = matches!(answer, Ok(Answer::Found { hits }) if *hits == spam);
-            landed || Instant::now() > until
-        })
-        .unwrap();
+    let mut found = None;
+    let _landed = within(Duration::from_secs(5), || {
+        let answer = look(&mut owner, &eggs);
+        let landed = matches!(&answer, Ok(Answer::Found { hits }) if *hits == spam);
+        found = Some(answer);
+        landed
+    });
+    let found = found.unwrap();
 
     assert_eq!(hits(found), spam);
 }
@@ -1403,12 +1401,16 @@ fn after_its_index_clangd_finds_a_function_defined_in_another_file() {
         "int spam_count(int limit)",
     );
 
-    let until = Instant::now() + PATIENCE;
-    let mut found = hits(look(&mut owner, &lookup));
-    while found != [defined.clone()] && Instant::now() < until {
-        thread::sleep(Duration::from_millis(100));
+    let mut found = Vec::new();
+    // Each try asks clangd while it indexes, so a miss waits a little longer than `within` would.
+    let _found = within(PATIENCE, || {
         found = hits(look(&mut owner, &lookup));
-    }
+        let landed = found == [defined.clone()];
+        if !landed {
+            thread::sleep(Duration::from_millis(80));
+        }
+        landed
+    });
 
     assert_eq!(found, [defined]);
     // clangd keeps its index beside its compile database, outside the checkout.
@@ -1804,10 +1806,7 @@ fn an_index_built_after_clangd_was_asked_and_before_it_answered_asks_it_again_at
 
     let asked = ask(&mut owner, &lookup, Ticket(1));
     fake.progress(json!({"kind": "end"}));
-    let until = Instant::now() + PATIENCE;
-    while owner.indexing_of(&key) != Indexing::Built && Instant::now() < until {
-        thread::sleep(Duration::from_millis(10));
-    }
+    let _built = within(PATIENCE, || owner.indexing_of(&key) == Indexing::Built);
     let found = hits(answer_of(&mut owner, &asked));
     let built = heard_next(&mut owner, &asked);
 

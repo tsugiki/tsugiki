@@ -541,9 +541,8 @@ fn read_workbench(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Workbench, Error> {
-    let name = RepositoryName::parse(repository)?;
     let settings = owner.view();
-    let repository = settings.loaded.settings.repository(name);
+    let repository = repository_settings(repository, &settings)?;
     Workbench::read(reader, &repository, view, settings.panes.order)
 }
 
@@ -553,9 +552,11 @@ fn read_inbox(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Inbox, Error> {
-    let name = RepositoryName::parse(repository)?;
-    let repository = owner.view().loaded.settings.repository(name);
-    Inbox::read_now(reader, &repository, page)
+    Inbox::read_now(
+        reader,
+        &repository_settings(repository, &owner.view())?,
+        page,
+    )
 }
 
 fn read_issue(
@@ -564,9 +565,11 @@ fn read_issue(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Option<IssueView>, Error> {
-    let name = RepositoryName::parse(repository)?;
-    let repository = owner.view().loaded.settings.repository(name);
-    IssueView::read(reader, &repository, number)
+    IssueView::read(
+        reader,
+        &repository_settings(repository, &owner.view())?,
+        number,
+    )
 }
 
 fn read_pull_request(
@@ -575,9 +578,18 @@ fn read_pull_request(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Option<PrView>, Error> {
-    let name = RepositoryName::parse(repository)?;
-    let repository = owner.view().loaded.settings.repository(name);
-    PrView::read(reader, &repository, number)
+    PrView::read(
+        reader,
+        &repository_settings(repository, &owner.view())?,
+        number,
+    )
+}
+
+/// The settings `view` holds for the Repository the window names `name`, or the defaults for one it holds
+/// none for. A name that isn't one fails.
+fn repository_settings(name: &str, view: &SettingsView) -> Result<RepositorySettings, Error> {
+    let name = RepositoryName::parse(name)?;
+    Ok(view.loaded.settings.repository(name))
 }
 
 fn find_items(

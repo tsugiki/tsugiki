@@ -1,13 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
 use std::io;
-
-fn gh_prints(stdout: &str) -> io::Result<GhOutput> {
-    Ok(GhOutput {
-        success: true,
-        stdout: stdout.to_owned(),
-    })
-}
+use tsugiki_token::testing::gh_prints;
 
 #[test]
 fn the_token_is_what_gh_printed() {

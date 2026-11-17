@@ -33,9 +33,7 @@ impl Place {
 
     /// Commits everything, and gives the commit.
     fn commit(&self, message: &str) -> CommitSha {
-        let _ = git(&self.work, &["add", "-A"]);
-        let _ = git(&self.work, &["commit", "-qm", message]);
-        self.at("HEAD")
+        CommitSha::parse(&tsugiki_test_git::commit(&self.work, message)).unwrap()
     }
 
     fn at(&self, revision: &str) -> CommitSha {

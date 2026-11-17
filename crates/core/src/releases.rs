@@ -107,3 +107,7 @@ fn latest(ask: &mut AskPublic) -> Result<Version, String> {
 
 #[cfg(test)]
 mod tests;
+
+/// What GitHub Releases answers in the release check's tests, and in other crates' tests.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;

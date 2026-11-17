@@ -147,8 +147,5 @@ fn write(folder: &Path, file: u32, version: &str) {
 
 #[expect(clippy::expect_used, reason = "git names a commit by its SHA")]
 fn commit(folder: &Path, message: &str) -> CommitSha {
-    let _ = git(folder, &["add", "-A"]);
-    let _ = git(folder, &["commit", "-q", "-m", message]);
-    let commit = git(folder, &["rev-parse", "HEAD"]);
-    CommitSha::parse(commit.trim()).expect("a commit's SHA")
+    CommitSha::parse(&tsugiki_test_git::commit(folder, message)).expect("a commit's SHA")
 }

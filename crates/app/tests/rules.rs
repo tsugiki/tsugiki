@@ -3,18 +3,15 @@
 //! ADR 0009), and the rule that keeps each test module in a file of its own.
 
 use std::fs;
-use std::path::{Path, PathBuf};
 
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+use tsugiki_test_git::{repo_root, rust_sources};
 
 #[expect(
     clippy::expect_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
 fn read(path: &str) -> String {
-    fs::read_to_string(repo().join(path)).expect("read a file from the repo")
+    fs::read_to_string(repo_root().join(path)).expect("read a file from the repo")
 }
 
 /// The parts of a Cargo manifest under `[workspace.lints]`, which other tables don't need reasons.
@@ -109,7 +106,7 @@ fn every_clippy_setting_says_why_it_is_set() {
 
 #[test]
 fn every_crate_follows_the_workspace_lints() {
-    let crates: Vec<_> = fs::read_dir(repo().join("crates"))
+    let crates: Vec<_> = fs::read_dir(repo_root().join("crates"))
         .unwrap()
         .map(|entry| entry.unwrap().path().join("Cargo.toml"))
         .collect();
@@ -240,24 +237,6 @@ fn opens_inline_module(item: &str) -> bool {
     body.trim_start().starts_with('{')
 }
 
-/// The `.rs` files under `dir`, at any depth.
-#[expect(
-    clippy::expect_used,
-    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
-)]
-fn rust_sources(dir: &Path) -> Vec<PathBuf> {
-    let mut sources = Vec::new();
-    for entry in fs::read_dir(dir).expect("list a source folder") {
-        let path = entry.expect("read a source folder entry").path();
-        if path.is_dir() {
-            sources.extend(rust_sources(&path));
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            sources.push(path);
-        }
-    }
-    sources
-}
-
 #[test]
 fn an_inline_test_module_is_found() {
     let source = "#[cfg(test)]\nmod tests;\n\
@@ -277,7 +256,7 @@ fn an_inline_test_module_is_found() {
 
 #[test]
 fn each_test_module_lives_in_a_file_of_its_own() {
-    let crates = fs::read_dir(repo().join("crates")).unwrap();
+    let crates = fs::read_dir(repo_root().join("crates")).unwrap();
     let crates = crates
         .map(|entry| entry.unwrap().path())
         .filter(|path| path.is_dir());

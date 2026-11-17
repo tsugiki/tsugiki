@@ -23,7 +23,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// A top-level module of `crates/core/src`, the modules it may use, and why.
 #[derive(Clone, Copy)]
@@ -674,23 +674,20 @@ impl Table<'_> {
     clippy::expect_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
-fn sources(root: &Path, dir: &Path) -> Vec<Source> {
-    let mut found = Vec::new();
-    for entry in fs::read_dir(dir).expect("list a source folder") {
-        let path = entry.expect("read a source folder entry").path();
-        if path.is_dir() {
-            found.extend(sources(root, &path));
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            let relative = path.strip_prefix(root).expect("a path below the root");
-            let parts: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
-            let text = fs::read_to_string(&path).expect("read a source file");
-            found.push(Source {
-                path: parts.join("/"),
-                text,
-            });
+fn sources(root: &Path) -> Vec<Source> {
+    let read = |path: PathBuf| {
+        let relative = path.strip_prefix(root).expect("a path below the root");
+        let parts: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
+        let text = fs::read_to_string(&path).expect("read a source file");
+        Source {
+            path: parts.join("/"),
+            text,
         }
-    }
-    found
+    };
+    tsugiki_test_git::rust_sources(root)
+        .into_iter()
+        .map(read)
+        .collect()
 }
 
 /// Each module of `rule`'s group whose line in `layers` lets it use a module it keeps out of, and each with
@@ -953,7 +950,7 @@ fn the_view_models_send_nothing() {
 #[test]
 fn the_core_keeps_to_its_layers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let sources = sources(&root, &root);
+    let sources = sources(&root);
     let lib = &sources
         .iter()
         .find(|source| source.path == "lib.rs")

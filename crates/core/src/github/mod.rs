@@ -470,9 +470,9 @@ fn read<D: DeserializeOwned>(reply: &Reply, count: impl FnOnce(RateLimit)) -> Re
     serde_json::from_value(data).map_err(unreadable)
 }
 
-/// What the core's tests share.
-#[cfg(test)]
-pub(crate) mod testing;
+/// The fake GitHub the core's tests share, and share with other crates' tests.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 #[cfg(test)]
 mod tests;

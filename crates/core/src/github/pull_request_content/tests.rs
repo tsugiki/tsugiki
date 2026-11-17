@@ -1,5 +1,4 @@
 use std::fmt::Write as _;
-use std::path::Path;
 
 use serde_json::{Value, json};
 
@@ -454,8 +453,7 @@ fn a_conversation_asks_for_pages_that_cost_about_a_point() {
 /// A recorded CPython PR, as the Conversation lists it: each Review, then a line for each of its threads.
 #[test]
 fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
-    let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let github = github(Replayer::new(recordings));
+    let github = github(Replayer::new(crate::testing::recordings()));
 
     let content = github
         .pull_request_content(&cpython(), 152_326)

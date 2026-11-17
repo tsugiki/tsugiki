@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::{git, within};
 
 use super::*;
 use crate::error::ErrorKind;
@@ -755,11 +755,8 @@ fn reviewed(number: u32, commit: &CommitSha) -> ReviewedCommit {
 }
 
 /// Waits until `done` says so, or a minute has gone.
-fn wait_until(mut done: impl FnMut() -> bool) {
-    let deadline = Instant::now() + PLENTY;
-    while !done() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
+fn wait_until(done: impl FnMut() -> bool) {
+    let _done = within(PLENTY, done);
 }
 
 #[test]
@@ -1647,10 +1644,7 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     ];
     mirrors.requests().fetch_heads(hello.clone(), heads);
     let fetched = mirror.join("refs/tsugiki/pull/1/head");
-    let deadline = Instant::now() + PLENTY;
-    while (!fetched.exists() || dropped.exists()) && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(|| fetched.exists() && !dropped.exists());
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(

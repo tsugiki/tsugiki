@@ -18,6 +18,30 @@ export interface Existing {
   onGitHub: boolean;
 }
 
+/** Where CI's run on main's commit stands: a release PR that only sets the version runs no tests itself. */
+export type MainCi = "passed" | "running" | "failed" | "missing";
+
+/**
+ * Reads what `gh run list --json status,conclusion` printed for CI's runs on main's commit, newest first.
+ * Anything it can't read counts as `missing`, which stops the tag.
+ */
+export function mainCi(listed: string): MainCi {
+  let runs: unknown;
+  try {
+    runs = JSON.parse(listed);
+  } catch {
+    return "missing";
+  }
+  const [run] = Array.isArray(runs) ? (runs as { status?: unknown; conclusion?: unknown }[]) : [];
+  if (run === undefined) {
+    return "missing";
+  }
+  if (run.status !== "completed") {
+    return "running";
+  }
+  return run.conclusion === "success" ? "passed" : "failed";
+}
+
 /** `arg` when it's a version such as `0.2.4`, or `undefined` for anything else, such as `v0.2.4`. */
 export function releaseVersion(arg: string | undefined): string | undefined {
   return arg !== undefined && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(arg) ? arg : undefined;
@@ -119,11 +143,22 @@ export function shipRefusal(branch: string, cargoToml: string, changelog: string
   return undefined;
 }
 
+/** Why `ci` stops a tag, or `undefined` once CI passed on main's commit. */
+const CI_REFUSALS: Record<MainCi, string | undefined> = {
+  passed: undefined,
+  running: "CI is still running on main's commit: tag it once the run passes.",
+  failed: "CI failed on main's commit: fix it in a PR, then tag the commit that passes.",
+  missing: "CI hasn't run on main's commit yet, or gh can't say: wait for the run to pass, then tag.",
+};
+
 /** The reason `just release` won't push `tag`, or `undefined` when it may. */
-export function tagRefusal(tree: Tree, tag: string, existing: Existing): string | undefined {
+export function tagRefusal(tree: Tree, tag: string, existing: Existing, ci: MainCi): string | undefined {
   const refusal = treeRefusal(tree);
   if (refusal !== undefined) {
     return refusal;
+  }
+  if (CI_REFUSALS[ci] !== undefined) {
+    return CI_REFUSALS[ci];
   }
   if (existing.here) {
     return (

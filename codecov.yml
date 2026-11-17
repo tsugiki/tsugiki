@@ -8,7 +8,8 @@
 # Codecov counts those two toward the four (`len(report.sessions)` in its worker). On a PR that runs Rust,
 # they count until its first Rust upload replaces them. The comment can then show main's Rust figure until
 # the PR's own arrives, and keeps showing it if both Rust uploads are cancelled. Any other cancelled upload
-# means no report until a rerun sends it.
+# means no report until a rerun sends it. A PR that changes only docs, or only sets the version, sends no
+# upload, so it gets no report.
 codecov:
   notify:
     after_n_builds: 4

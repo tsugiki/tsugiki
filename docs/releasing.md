@@ -24,7 +24,9 @@ version and `just release-check` passes. Each push rehearses the release on CI (
 and `just ship --release` pushes a fix for a gate you reran yourself.
 
 CI's `release-check` job fails the PR if `CHANGELOG.md` has no section for that version, and the `deny` job
-fails it if `Cargo.lock` didn't follow.
+fails it if `Cargo.lock` didn't follow. On a PR that changes only `CHANGELOG.md` and the version lines of
+`Cargo.toml` and `Cargo.lock`, CI runs those two, `machete`, doc-width and pre-commit, and skips the builds
+and tests: the rehearsal builds and starts the app with the new version, and the merge to main runs them all.
 
 If `just prepare-release` stops halfway, finish by hand: `git switch -c release/X.Y.Z`, edit the two files as
 above, and run `cargo check`. If `just ship --release` can't push or open the PR,
@@ -33,10 +35,11 @@ above, and run `cargo check`. If `just ship --release` can't push or open the PR
 ## 2. Tag it
 
 Once the PR has merged, run `just release` on main; an agent asks the user first, since the tag starts the
-workflow. It fetches, then refuses unless the tree is clean and main matches `origin/main`. It takes the
-version from `Cargo.toml`, so the tag can't disagree with the downloads, and refuses when `vX.Y.Z` exists in
-this clone or on GitHub, or when `just release-check` fails. Then it tags HEAD, pushes the tag and prints
-the link to the release run.
+workflow. It fetches, then refuses unless the tree is clean, main matches `origin/main`, and CI passed on
+main's commit: the release PR skipped the tests, so that run is the first to test the new version. It takes
+the version from `Cargo.toml`, so the tag can't disagree with the downloads, and refuses when `vX.Y.Z`
+exists in this clone or on GitHub, or when `just release-check` fails. Then it tags HEAD, pushes the tag and
+prints the link to the release run.
 
 By hand, it does this:
 

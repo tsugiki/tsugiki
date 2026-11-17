@@ -4,14 +4,12 @@
 // only sets the version runs cargo-deny and cargo-machete alone. Uncommitted and untracked files count, and
 // so does each commit on the branch. On main, or when git can't say what changed, every gate runs. Recipes
 // named as arguments run in place of those four, as `just preflight` names Clippy and `rust-coverage`.
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
-import { cargoDiffArgs, EVERY_JOB, type Job, jobs, paths } from "./scope.ts";
+import { git, untracked } from "./run.ts";
+import { changedJobs, EVERY_JOB, type Job } from "./scope.ts";
 
-const named = process.argv.slice(2);
-const GATES = named.length > 0 ? named : ["clippy", "rust-coverage", "deny", "machete"];
-
-/** CI's job for each gate. A gate it doesn't name always runs. */
+/** The gates that run by default, each with CI's job for it. A gate named but not listed here always runs. */
 const JOB_OF: Record<string, Job> = {
   clippy: "rust",
   "rust-coverage": "rust",
@@ -19,21 +17,16 @@ const JOB_OF: Record<string, Job> = {
   machete: "dependencies",
 };
 
-function git(...args: string[]): string {
-  return execFileSync("git", args, { encoding: "utf8" });
-}
+const named = process.argv.slice(2);
+const GATES = named.length > 0 ? named : Object.keys(JOB_OF);
 
 /** The jobs the branch needs since it left origin/main, or every job on main or when git can't say. */
 function branchJobs(): readonly Job[] {
   try {
-    if (paths(git("branch", "--show-current"))[0] === "main") {
+    if (git("branch", "--show-current") === "main") {
       return EVERY_JOB;
     }
-    const changed = [
-      ...paths(git("diff", "--no-renames", "--name-only", "--merge-base", "origin/main")),
-      ...paths(git("ls-files", "--others", "--exclude-standard")),
-    ];
-    return jobs(changed, () => git(...cargoDiffArgs("--merge-base", "origin/main")));
+    return changedJobs(git, ["--merge-base", "origin/main"], untracked()).jobs;
   } catch {
     return EVERY_JOB;
   }

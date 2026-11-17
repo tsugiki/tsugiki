@@ -6,35 +6,14 @@
 // `just ship --release` is the only way it pushes a `release/` branch, since that push rehearses the release
 // on CI: ask the user first. It refuses unless the branch names Cargo.toml's version and `just release-check`
 // passes. `just ship --release --check` opens the release PR, and `just ship --release` pushes a fix to it.
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 
 import { branchRefusal, failureSummary, shipArgs } from "./pr.ts";
 import { shipRefusal } from "./releasing.ts";
+import { attempt, run, stop } from "./run.ts";
 
 const LOG = ".temp/check.log";
-
-function stop(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
-
-/** Runs a command and returns its output, or stops with `failed`. */
-function run(failed: string, command: string, ...args: string[]): string {
-  try {
-    return execFileSync(command, args, { encoding: "utf8" }).trim();
-  } catch {
-    stop(failed);
-  }
-}
-
-function attempt(command: string, ...args: string[]): string | undefined {
-  try {
-    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return undefined;
-  }
-}
 
 const args = shipArgs(process.argv.slice(2));
 if (args === undefined) stop("Usage: `just ship [--check] [--release] [body.md]`.");

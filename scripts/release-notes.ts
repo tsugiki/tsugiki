@@ -17,15 +17,44 @@ function sectionsOf(text: string, isHeading: (line: string) => boolean, nextHead
   });
 }
 
-export function workspaceVersion(cargoToml: string): string {
-  const version = sectionsOf(cargoToml, (line) => line === "[workspace.package]", "[")
-    .flat()
-    .map((line) => /^version = "(.+)"$/.exec(line)?.[1])
-    .find((found) => found !== undefined);
-  if (version === undefined) {
-    throw new Error("Cargo.toml has no version in [workspace.package].");
+const VERSION_LINE = /^version = "(.+)"$/;
+
+/** The `version = "..."` line of `[workspace.package]` among Cargo.toml's `lines`: where, and its version. */
+export function workspaceVersionLine(lines: readonly string[]): { at: number; version: string } {
+  let inWorkspace = false;
+  for (const [at, line] of lines.entries()) {
+    if (line.startsWith("[")) {
+      inWorkspace = line === "[workspace.package]";
+    }
+    const version = inWorkspace ? VERSION_LINE.exec(line)?.[1] : undefined;
+    if (version !== undefined) {
+      return { at, version };
+    }
   }
-  return version;
+  throw new Error("Cargo.toml has no version in [workspace.package].");
+}
+
+/** The version in Cargo.toml's `[workspace.package]`, which every crate and download carries. */
+export function workspaceVersion(cargoToml: string): string {
+  return workspaceVersionLine(cargoToml.split("\n")).version;
+}
+
+/** CHANGELOG.md's heading over the notes not released yet. */
+export const WIP = "## WIP";
+
+/** How CHANGELOG.md's heading over the notes of `version` starts, whatever its date. */
+export function versionHeadingStart(version: string): string {
+  return `## Version ${version} (`;
+}
+
+/** CHANGELOG.md's heading over the notes of `version`, released on `date`. */
+export function versionHeading(version: string, date: string): string {
+  return `${versionHeadingStart(version)}${date})`;
+}
+
+/** The version a CHANGELOG.md heading names, or `undefined` when the line isn't a version's heading. */
+function headingVersion(line: string): string | undefined {
+  return /^## Version (\S+) \(\d{4}-\d{2}-\d{2}\)$/.exec(line)?.[1];
 }
 
 /** The text of the one section `isHeading` picks, without its heading. `shown` is that heading in words. */
@@ -64,8 +93,8 @@ export function notesFor(changelog: string, version: string): string {
   return notesUnder(
     changelog,
     version,
-    `## Version ${version} (YYYY-MM-DD)`,
-    (line) => /^## Version (\S+) \(\d{4}-\d{2}-\d{2}\)$/.exec(line)?.[1] === version,
+    versionHeading(version, "YYYY-MM-DD"),
+    (line) => headingVersion(line) === version,
   );
 }
 
@@ -151,6 +180,6 @@ export function releasePage(notes: string): string {
 export function notesOfWorkspace(cargoToml: string, changelog: string): string {
   const version = workspaceVersion(cargoToml);
   return version === NEVER_RELEASED
-    ? notesUnder(changelog, "WIP", "## WIP", (line) => line === "## WIP")
+    ? notesUnder(changelog, "WIP", WIP, (line) => line === WIP)
     : notesFor(changelog, version);
 }

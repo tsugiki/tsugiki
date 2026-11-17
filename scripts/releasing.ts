@@ -2,7 +2,14 @@
 // calls in prepare-release.ts and tag-release.ts so that tests can reach them. docs/releasing.md says when
 // to run each.
 
-import { notesFor, workspaceVersion } from "./release-notes.ts";
+import {
+  notesFor,
+  versionHeading,
+  versionHeadingStart,
+  WIP,
+  workspaceVersion,
+  workspaceVersionLine,
+} from "./release-notes.ts";
 
 /** The clone's branch, whether it has changes, and the commits of HEAD and `origin/main`. */
 export interface Tree {
@@ -47,29 +54,36 @@ export function releaseVersion(arg: string | undefined): string | undefined {
   return arg !== undefined && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(arg) ? arg : undefined;
 }
 
-function isLater(version: string, than: string): boolean {
-  const theirs = than.split(".").map(Number);
-  for (const [at, part] of version.split(".").map(Number).entries()) {
-    const other = theirs[at] ?? 0;
-    if (part !== other) {
-      return part > other;
-    }
-  }
-  return false;
+/** A version or milestone title as numbers, padded to three parts. Other titles sort last. */
+function versionParts(title: string): number[] {
+  const parts = title.split(".").map(Number);
+  return parts.every(Number.isInteger) ? [...parts, 0, 0].slice(0, 3) : [Infinity, Infinity, Infinity];
+}
+
+/** Sorts versions or milestone titles, earliest first, for `Array.prototype.sort`. */
+export function byVersion(a: string, b: string): number {
+  const [x, y] = [versionParts(a), versionParts(b)];
+  const at = x.findIndex((part, i) => part !== y[i]);
+  return at === -1 ? 0 : Number(x[at]) - Number(y[at]);
+}
+
+/** The prefix of a release branch, the one kind the Release workflow rehearses (ADR 0012). */
+const RELEASE_BRANCHES = "release/";
+
+/** The branch of the PR that releases `version`. */
+export function releaseBranch(version: string): string {
+  return `${RELEASE_BRANCHES}${version}`;
+}
+
+/** Whether `branch` is a release branch, whatever version it names. */
+export function isReleaseBranch(branch: string): boolean {
+  return branch.startsWith(RELEASE_BRANCHES);
 }
 
 /** `cargoToml` with `version` in `[workspace.package]`, every other line as it was. */
 export function withVersion(cargoToml: string, version: string): string {
   const lines = cargoToml.split("\n");
-  const start = lines.indexOf("[workspace.package]");
-  const end = lines.findIndex((line, at) => at > start && line.startsWith("["));
-  const at = lines.findIndex(
-    (line, i) => start !== -1 && i > start && (end === -1 || i < end) && /^version = ".+"$/.test(line),
-  );
-  if (at === -1) {
-    throw new Error("Cargo.toml has no version in [workspace.package].");
-  }
-  lines[at] = `version = "${version}"`;
+  lines[workspaceVersionLine(lines).at] = `version = "${version}"`;
   return lines.join("\n");
 }
 
@@ -79,18 +93,19 @@ export function withVersion(cargoToml: string, version: string): string {
  */
 export function withReleasedWip(changelog: string, version: string, date: string): string {
   const lines = changelog.split("\n");
-  const wip = lines.flatMap((line, at) => (line === "## WIP" ? [at] : []));
+  const wip = lines.flatMap((line, at) => (line === WIP ? [at] : []));
   const [at] = wip;
   if (at === undefined) {
-    throw new Error('CHANGELOG.md has no section "## WIP".');
+    throw new Error(`CHANGELOG.md has no section "${WIP}".`);
   }
   if (wip.length > 1) {
-    throw new Error(`CHANGELOG.md has ${String(wip.length)} sections "## WIP".`);
+    throw new Error(`CHANGELOG.md has ${String(wip.length)} sections "${WIP}".`);
   }
-  if (lines.some((line) => line.startsWith(`## Version ${version} (`))) {
+  // Any heading for the version counts, even one whose date the release check wouldn't read.
+  if (lines.some((line) => line.startsWith(versionHeadingStart(version)))) {
     throw new Error(`CHANGELOG.md has a section for ${version} already.`);
   }
-  lines.splice(at, 1, "## WIP", "", `## Version ${version} (${date})`);
+  lines.splice(at, 1, WIP, "", versionHeading(version, date));
   return lines.join("\n");
 }
 
@@ -119,7 +134,7 @@ export function prepareRefusal(tree: Tree, version: string | undefined, current:
   if (version === undefined) {
     return "Usage: `just prepare-release X.Y.Z`, such as `just prepare-release 0.2.4`.";
   }
-  if (!isLater(version, current)) {
+  if (byVersion(version, current) <= 0) {
     return `The version has to be later than ${current}, the one in Cargo.toml.`;
   }
   return treeRefusal(tree);
@@ -132,8 +147,9 @@ export function prepareRefusal(tree: Tree, version: string | undefined, current:
 export function shipRefusal(branch: string, cargoToml: string, changelog: string): string | undefined {
   try {
     const version = workspaceVersion(cargoToml);
-    if (branch !== `release/${version}`) {
-      return `Cargo.toml says ${version}, so the branch should be release/${version}, not ${branch}.`;
+    const expected = releaseBranch(version);
+    if (branch !== expected) {
+      return `Cargo.toml says ${version}, so the branch should be ${expected}, not ${branch}.`;
     }
     notesFor(changelog, version);
   } catch (cause) {

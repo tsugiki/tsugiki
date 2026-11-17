@@ -2,9 +2,10 @@
 //! tests build: it needs `tsugiki-test-git`.
 
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::{git, git_reading};
 
 use super::{TempPath, sha, temp_path};
 use crate::facts::CommitSha;
@@ -44,24 +45,18 @@ impl Fixture {
         let mirror = root.join("mirror");
         fs::create_dir_all(&mirror).unwrap();
         let _ = git(&mirror, &["init", "-q", "-b", "main"]);
-        let _ = git(&mirror, &["config", "core.autocrlf", "false"]);
-        for (path, bytes) in base {
-            write(&mirror, path, bytes);
-        }
-        let base_commit = commit(&mirror, "base");
-        let mut added = Vec::new();
-        for (path, bytes) in head {
-            match bytes {
-                Some(bytes) => {
-                    if !mirror.join(path).exists() {
-                        added.push(*path);
-                    }
-                    write(&mirror, path, bytes);
-                }
-                None => fs::remove_file(mirror.join(path)).unwrap(),
-            }
-        }
-        let head_commit = commit(&mirror, "head");
+        // What `git config core.autocrlf false` writes, without a git to write it. The checkout reads it, so
+        // it holds the bytes the commits do on a machine whose git turns LF into CRLF.
+        let mut config = fs::OpenOptions::new()
+            .append(true)
+            .open(mirror.join(".git").join("config"))
+            .unwrap();
+        config.write_all(b"[core]\n\tautocrlf = false\n").unwrap();
+        let (base_commit, head_commit) = import(&root, &mirror, base, head);
+        let added: Vec<&str> = (head.iter())
+            .filter(|(path, bytes)| bytes.is_some() && !base.iter().any(|(old, _)| old == path))
+            .map(|(path, _)| *path)
+            .collect();
         let folder = root.join("lookup");
         let folder_arg = folder.to_string_lossy().into_owned();
         let at = [
@@ -92,14 +87,55 @@ impl Fixture {
     }
 }
 
-/// Writes the file for the next commit, which stages it with the rest: a `git add` here would start one git
-/// for each file.
-fn write(folder: &Path, path: &str, bytes: &[u8]) {
-    let file = folder.join(path);
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(&file, bytes).unwrap();
+/// Commits `base` to `main` in the repository at `mirror`, then `head` on top of it, with one `git
+/// fast-import`: about 30 ms for each git started on Windows, where adds and commits would start six. Gives
+/// the two commits. The repository's working tree and index stay empty, as a Mirror has none.
+fn import(
+    root: &Path,
+    mirror: &Path,
+    base: &[(&str, &[u8])],
+    head: &[(&str, Option<&[u8]>)],
+) -> (CommitSha, CommitSha) {
+    let mut stream = Vec::new();
+    let base_files = base.iter().map(|(path, bytes)| (*path, Some(*bytes)));
+    commit_into(&mut stream, 1, "base", base_files);
+    commit_into(&mut stream, 2, "head", head.iter().copied());
+    let marks = root.join("marks");
+    let export = format!("--export-marks={}", marks.display());
+    let args = ["fast-import", "--quiet", "--date-format=now", &export];
+    let _ = git_reading(mirror, &args, &stream);
+    let marks = fs::read_to_string(marks).unwrap();
+    let commit = |mark: &str| {
+        let found = marks.lines().find_map(|line| line.strip_prefix(mark));
+        sha(found.unwrap())
+    };
+    (commit(":1 "), commit(":2 "))
 }
 
-fn commit(folder: &Path, message: &str) -> CommitSha {
-    sha(&tsugiki_test_git::commit(folder, message))
+/// Adds to `stream` a commit on `main` that writes each file with bytes and deletes each without, marked
+/// `mark` for `--export-marks` to name.
+fn commit_into<'a>(
+    stream: &mut Vec<u8>,
+    mark: u32,
+    message: &str,
+    files: impl Iterator<Item = (&'a str, Option<&'a [u8]>)>,
+) {
+    let author = "Contributor <contributor@example.com>";
+    let length = message.len();
+    let header = format!("commit refs/heads/main\nmark :{mark}\ncommitter {author} now\n");
+    stream.extend_from_slice(header.as_bytes());
+    stream.extend_from_slice(format!("data {length}\n{message}\n").as_bytes());
+    for (path, bytes) in files {
+        match bytes {
+            Some(bytes) => {
+                let length = bytes.len();
+                let line = format!("M 100644 inline {path}\ndata {length}\n");
+                stream.extend_from_slice(line.as_bytes());
+                stream.extend_from_slice(bytes);
+                stream.push(b'\n');
+            }
+            None => stream.extend_from_slice(format!("D {path}\n").as_bytes()),
+        }
+    }
+    stream.push(b'\n');
 }

@@ -11,8 +11,9 @@
 #![expect(clippy::unwrap_used, reason = "a failed setup step ends the test")]
 
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, fs, io, iter, thread};
@@ -35,22 +36,35 @@ const ELSEWHERE: [&str; 3] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"];
 
 /// Runs git in `dir` and gives what it printed. A git that fails ends the test with what it said.
 pub fn git(dir: &Path, args: &[&str]) -> String {
+    git_reading(dir, args, &[])
+}
+
+/// [`git`], with `input` on git's stdin, as `git fast-import` reads a whole history from one stream. git
+/// reads all of it before it says much, so this writes it all before it reads what git printed.
+pub fn git_reading(dir: &Path, args: &[&str], input: &[u8]) -> String {
     let mut command = Command::new("git");
     for name in ELSEWHERE {
         let _ = command.env_remove(name);
     }
-    let output = command
+    let mut child = command
         .args(CONFIG)
         .args(args)
         .current_dir(dir)
-        .output()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .unwrap();
+    // A git that ends early closes its stdin, and then what it said tells more than the failed write.
+    let written = child.stdin.take().unwrap().write_all(input);
+    let output = child.wait_with_output().unwrap();
     assert!(
         output.status.success(),
         "git {args:?}: {}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    written.unwrap();
     String::from_utf8(output.stdout).unwrap()
 }
 

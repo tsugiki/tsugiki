@@ -166,7 +166,8 @@ fn serve(
     initialize: Initialize,
 ) {
     let mut open = HashSet::new();
-    while let Some(message) = read_message(input) {
+    // The fake ends as a server does whose input breaks off.
+    while let Ok(Some(message)) = read_message(input) {
         let (Some(method), id) = (message["method"].as_str(), message.get("id")) else {
             continue;
         };

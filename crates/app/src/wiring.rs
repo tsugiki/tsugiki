@@ -88,11 +88,11 @@ impl<T: Clone + Send + 'static, R: Runtime> WindowState<T, R> {
         }
     }
 
-    /// Sets the state to `value`, then sends `event`. A window that starts listening too late for the event
-    /// asks the command once it has loaded, so the value has to be there first.
-    fn set(&mut self, value: &T, event: impl Event + Serialize + Clone) {
-        self.latest.set(value);
-        log_if_unsent(event.emit(&self.app));
+    /// Sets the state to `value`, then sends the event `event` makes of it. A window that starts listening too
+    /// late for the event asks the command once it has loaded, so the value has to be there first.
+    fn set<E: Event + Serialize + Clone>(&mut self, value: T, event: impl FnOnce(T) -> E) {
+        self.latest.set(&value);
+        log_if_unsent(event(value).emit(&self.app));
     }
 }
 
@@ -107,7 +107,7 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     let failed_reads_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
         following.follow(status);
-        status_state.set(status, StatusChanged(status.clone()));
+        status_state.set(status.clone(), StatusChanged);
     }))
     .with_changes(Box::new(move |change| {
         log_if_unsent(Changed(change.clone()).emit(&changes_handle));
@@ -117,15 +117,15 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
         log_if_unsent(ReadFailed(failed.clone()).emit(&failed_reads_handle));
     }))
     .with_last_syncs(Box::new(move |last_sync| {
-        sync_state.set(&Some(last_sync.clone()), LastSyncChanged(last_sync.clone()));
+        sync_state.set(Some(last_sync.clone()), |_| {
+            LastSyncChanged(last_sync.clone())
+        });
     }))
     .with_sync_activity(Box::new(move |activity| {
-        let activity = activity.cloned();
-        activity_state.set(&activity, SyncActivityChanged(activity.clone()));
+        activity_state.set(activity.cloned(), SyncActivityChanged);
     }))
     .with_hour_points(Box::new(move |points| {
-        let points = points.copied();
-        points_state.set(&points, HourPointsChanged(points));
+        points_state.set(points.copied(), HourPointsChanged);
     }))
 }
 
@@ -267,7 +267,7 @@ fn check_releases<R: Runtime>(app: &AppHandle<R>, ask: Option<AskPublic>) -> Opt
             ask,
             RELEASE_CHECK,
             Box::new(move |new| {
-                version_state.set(&Some(new.clone()), NewVersionFound(new.clone()));
+                version_state.set(Some(new.clone()), |_| NewVersionFound(new.clone()));
             }),
         )
     })
@@ -285,10 +285,7 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
     let heads_handle = app.clone();
     let failed_handle = app.clone();
     Announce {
-        cloning: Box::new(move |cloning| {
-            let cloning = cloning.cloned();
-            cloning_state.set(&cloning, CloningChanged(cloning.clone()));
-        }),
+        cloning: Box::new(move |cloning| cloning_state.set(cloning.cloned(), CloningChanged)),
         fetched: Box::new(move |repository, numbers| {
             let change = Change {
                 repository: repository.clone(),
@@ -307,19 +304,14 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
             log_if_unsent(HeadsFetchFailed(failed).emit(&failed_handle));
         }),
         problem: Box::new(move |problem| {
-            let problem = problem.cloned();
-            problem_state.set(&problem, MirrorProblemChanged(problem.clone()));
+            problem_state.set(problem.cloned(), MirrorProblemChanged);
         }),
         question: Box::new(move |repository| {
-            let repository = repository.cloned();
-            question_state.set(&repository, MirrorQuestionChanged(repository.clone()));
+            question_state.set(repository.cloned(), MirrorQuestionChanged);
         }),
-        states: Box::new(move |states| {
-            let states = states.to_vec();
-            states_state.set(&states, MirrorStatesChanged(states.clone()));
-        }),
+        states: Box::new(move |states| states_state.set(states.to_vec(), MirrorStatesChanged)),
         held: Box::new(move |held| {
-            held_state.set(&MirrorsHeld(held), MirrorsHeldChanged(held));
+            held_state.set(MirrorsHeld(held), |_| MirrorsHeldChanged(held));
         }),
     }
 }

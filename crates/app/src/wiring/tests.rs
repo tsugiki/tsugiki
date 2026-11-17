@@ -877,17 +877,20 @@ fn issue_over(workbench: &Value, number: u64) -> &Value {
 
 /// Waits for a `changed` event that names item `number`.
 fn wait_for_change_to(changes: &Receiver<Value>, number: &Value) {
-    let _changed = heard_until(changes, |change| {
-        change["items"].as_array().unwrap().contains(number)
+    heard_until(changes, |change| {
+        change["items"]
+            .as_array()
+            .unwrap()
+            .contains(number)
+            .then_some(())
     });
 }
 
-/// The first of what `events` hears that `wanted` accepts, past the ones before it.
-fn heard_until<T>(events: &Receiver<T>, mut wanted: impl FnMut(&T) -> bool) -> T {
+/// What `found` finds in the first of what `events` hears that it finds anything in.
+fn heard_until<T, U>(events: &Receiver<T>, mut found: impl FnMut(T) -> Option<U>) -> U {
     loop {
-        let heard = events.recv_timeout(PLENTY).unwrap();
-        if wanted(&heard) {
-            return heard;
+        if let Some(found) = found(events.recv_timeout(PLENTY).unwrap()) {
+            return found;
         }
     }
 }
@@ -1311,7 +1314,7 @@ impl Transport for Refreshing {
 }
 
 fn wait_for(asked: &Receiver<String>, operation: &str) {
-    let _asked = heard_until(asked, |asked| asked == operation);
+    heard_until(asked, |asked| (asked == operation).then_some(()));
 }
 
 /// The first thing the first item of a Workbench says about itself.
@@ -2067,10 +2070,9 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
     let not_a_repository = search("cpython", base, "x", "literal");
     let not_a_commit = search(CPYTHON, &json!("main"), "x", "literal");
     let asked = search(CPYTHON, base, "FIFTEEN", "literal").unwrap();
-    let mut found = Value::Null;
-    let _changed = heard_until(&changes, |_| {
-        found = wired.ask("text_search_state", json!({})).unwrap();
-        found["state"] == "results" && found["end"] != "running"
+    let found = heard_until(&changes, |_| {
+        let state = wired.ask("text_search_state", json!({})).unwrap();
+        (state["state"] == "results" && state["end"] != "running").then_some(state)
     });
     // A query that has ended has nothing to cancel, and its results stay.
     let cancelled = wired.ask("text_search_cancel", json!({ "id": asked["id"] }));
@@ -2094,15 +2096,11 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
 
 /// The first row the window hears for `server` that `wanted` accepts.
 fn server_row(wired: &Wired, server: &str, wanted: impl Fn(&Value) -> bool) -> Value {
-    let row = |rows: &Value| {
-        let row = rows
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["server"] == server);
+    heard_until(&wired.servers, |rows| {
+        let rows = rows.as_array().unwrap();
+        let row = rows.iter().find(|row| row["server"] == server);
         row.filter(|row| wanted(row)).cloned()
-    };
-    row(&heard_until(&wired.servers, |rows| row(rows).is_some())).unwrap()
+    })
 }
 
 /// What Open log opens for ty in cpython, without a program to show it; and the answers to Open log for

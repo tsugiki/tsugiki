@@ -1,3 +1,5 @@
+use tsugiki_test_git::{Generated, GeneratedFile, check_generated};
+
 use super::*;
 
 /// `diff --exit-code` fails on files that differ, and says how on stdout, where git says some failures.
@@ -66,27 +68,46 @@ fn a_test_that_fails_leaves_its_path_for_reading() {
 
 #[test]
 fn a_generated_file_updated_says_what_generated_it_whatever_its_line_ends() {
-    use tsugiki_test_git::{Generated, check_generated};
-    let file = testing::temp_path("generated");
+    let path = testing::temp_path("generated");
+    let file = generated(&path);
 
-    check_generated(&file, "fresh\n", Generated::Update, "just generate");
-    let updated = std::fs::read_to_string(&file).unwrap();
-    std::fs::write(&file, "fresh\r\n").unwrap();
-    check_generated(&file, "fresh\n", Generated::Compare, "just generate");
+    check_generated(&file, "fresh\n", Generated::Update);
+    let updated = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, "fresh\r\n").unwrap();
+    check_generated(&file, "fresh\n", Generated::Compare);
 
     assert_eq!(updated, "fresh\n");
 }
 
 #[test]
-#[should_panic(expected = "is out of date: run `just generate` and commit the result")]
 fn a_generated_file_that_differs_says_how_to_bring_it_up_to_date() {
-    let missing = testing::temp_path("generated-missing");
-    tsugiki_test_git::check_generated(
-        &missing,
-        "fresh\n",
-        tsugiki_test_git::Generated::Compare,
-        "just generate",
-    );
+    let path = testing::temp_path("generated-stale");
+    std::fs::write(&path, "stale\n").unwrap();
+
+    // Caught, so the file goes when the test passes.
+    let failed = std::panic::catch_unwind(|| {
+        check_generated(&generated(&path), "fresh\n", Generated::Compare);
+    });
+
+    let message = *failed.unwrap_err().downcast::<String>().unwrap();
+    let says = "is out of date: run `just generate` and commit the result";
+    assert!(message.contains(says), "{message}");
+}
+
+#[test]
+#[should_panic(expected = "is out of date (it can't be read: ")]
+fn a_generated_file_that_cant_be_read_says_why() {
+    let path = testing::temp_path("generated-missing");
+    check_generated(&generated(&path), "fresh\n", Generated::Compare);
+}
+
+/// The generated file at `path`, which `just generate` would write.
+fn generated(path: &std::path::Path) -> GeneratedFile<'_> {
+    GeneratedFile {
+        path: path.to_str().unwrap(),
+        update_with: "TSUGIKI_UPDATE_NOTHING",
+        fix: "just generate",
+    }
 }
 
 #[test]

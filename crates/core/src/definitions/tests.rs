@@ -1402,9 +1402,14 @@ fn after_its_index_clangd_finds_a_function_defined_in_another_file() {
     );
 
     let mut found = Vec::new();
+    // Each try asks clangd while it indexes, so a miss waits a little longer than `within` would.
     let _found = within(PATIENCE, || {
         found = hits(look(&mut owner, &lookup));
-        found == [defined.clone()]
+        let landed = found == [defined.clone()];
+        if !landed {
+            thread::sleep(Duration::from_millis(80));
+        }
+        landed
     });
 
     assert_eq!(found, [defined]);

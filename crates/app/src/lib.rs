@@ -541,8 +541,9 @@ fn read_workbench(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Workbench, Error> {
-    let repository = repository_settings(repository, owner)?;
-    Workbench::read(reader, &repository, view, owner.view().panes.order)
+    let settings = owner.view();
+    let repository = repository_settings(repository, &settings)?;
+    Workbench::read(reader, &repository, view, settings.panes.order)
 }
 
 fn read_inbox(
@@ -551,7 +552,11 @@ fn read_inbox(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Inbox, Error> {
-    Inbox::read_now(reader, &repository_settings(repository, owner)?, page)
+    Inbox::read_now(
+        reader,
+        &repository_settings(repository, &owner.view())?,
+        page,
+    )
 }
 
 fn read_issue(
@@ -560,7 +565,11 @@ fn read_issue(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Option<IssueView>, Error> {
-    IssueView::read(reader, &repository_settings(repository, owner)?, number)
+    IssueView::read(
+        reader,
+        &repository_settings(repository, &owner.view())?,
+        number,
+    )
 }
 
 fn read_pull_request(
@@ -569,14 +578,18 @@ fn read_pull_request(
     owner: &SettingsOwner,
     reader: &StoreReader,
 ) -> Result<Option<PrView>, Error> {
-    PrView::read(reader, &repository_settings(repository, owner)?, number)
+    PrView::read(
+        reader,
+        &repository_settings(repository, &owner.view())?,
+        number,
+    )
 }
 
-/// The settings `owner` keeps for the Repository the window names `name`, or the defaults for one it keeps
+/// The settings `view` holds for the Repository the window names `name`, or the defaults for one it holds
 /// none for. A name that isn't one fails.
-fn repository_settings(name: &str, owner: &SettingsOwner) -> Result<RepositorySettings, Error> {
+fn repository_settings(name: &str, view: &SettingsView) -> Result<RepositorySettings, Error> {
     let name = RepositoryName::parse(name)?;
-    Ok(owner.view().loaded.settings.repository(name))
+    Ok(view.loaded.settings.repository(name))
 }
 
 fn find_items(

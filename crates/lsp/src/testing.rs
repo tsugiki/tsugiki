@@ -68,10 +68,12 @@ pub fn pipes(log: Option<Box<dyn Write + Send>>) -> (Starting, Receiver<Event>, 
     (starting, events, ends)
 }
 
-/// The next message on `input`, or `None` once it has ended or broken off.
-pub fn read_message(input: &mut impl BufRead) -> Option<Value> {
-    let body = framing::read(input).ok().flatten()?;
-    serde_json::from_slice(&body).ok()
+/// The next message on `input`, or `None` once it has ended between messages. A message cut off, framed
+/// wrong or not JSON fails.
+pub fn read_message(input: &mut impl BufRead) -> io::Result<Option<Value>> {
+    let body = framing::read(input)?;
+    body.map(|body| serde_json::from_slice(&body).map_err(io::Error::other))
+        .transpose()
 }
 
 /// Writes `message` to `output`, framed.
@@ -187,12 +189,12 @@ impl Fake {
         reason = "the messages never end, so the fake is no iterator"
     )]
     pub fn next(&mut self) -> Value {
-        read_message(self.reads.as_mut().unwrap()).unwrap()
+        read_message(self.reads.as_mut().unwrap()).unwrap().unwrap()
     }
 
     /// Whether the client has closed the server's input with nothing more written to it.
     pub fn ended(&mut self) -> bool {
-        framing::read(self.reads.as_mut().unwrap())
+        read_message(self.reads.as_mut().unwrap())
             .unwrap()
             .is_none()
     }

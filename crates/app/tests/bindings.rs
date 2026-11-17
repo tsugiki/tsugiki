@@ -4,13 +4,19 @@
 //! names, and `npm run stale-bindings` runs them.
 
 use specta_typescript::Typescript;
+use tsugiki_test_git::GeneratedFile;
 
 const HEADER: &str = "// Generated from tsugiki-app's commands by `npm run bindings`. Do not edit.";
 
 /// Writes `fresh` to `path`, from the top of the repo, under `TSUGIKI_UPDATE_BINDINGS=1`, and otherwise fails
 /// unless the committed file says the same.
 fn compare_or_update(path: &str, fresh: &str) {
-    tsugiki_test_git::compare_or_update(path, fresh, "TSUGIKI_UPDATE_BINDINGS", "npm run bindings");
+    let file = GeneratedFile {
+        path,
+        update_with: "TSUGIKI_UPDATE_BINDINGS",
+        fix: "npm run bindings",
+    };
+    tsugiki_test_git::compare_or_update(&file, fresh);
 }
 
 #[test]

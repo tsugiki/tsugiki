@@ -182,6 +182,17 @@ pub fn rust_sources(dir: &Path) -> Vec<PathBuf> {
     sources
 }
 
+/// A file the repo commits that code generates, and how a developer brings it up to date.
+#[derive(Debug, Clone, Copy)]
+pub struct GeneratedFile<'a> {
+    /// Where it is, from the top of the repo, unless the path is absolute.
+    pub path: &'a str,
+    /// The environment variable that, set to `1`, has [`compare_or_update`] write the file.
+    pub update_with: &'a str,
+    /// The command that sets [`GeneratedFile::update_with`] and runs the check.
+    pub fix: &'a str,
+}
+
 /// What [`check_generated`] does with a generated file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Generated {
@@ -191,27 +202,35 @@ pub enum Generated {
     Update,
 }
 
-/// Checks a file the repo commits against `fresh`, what generates it now: [`check_generated`] on `path`,
-/// from the top of the repo, which updates it when the environment variable `env_var` is `1`. A failure
-/// says to run `fix`.
-pub fn compare_or_update(path: &str, fresh: &str, env_var: &str, fix: &str) {
+/// Checks `file` against `fresh`, what generates it now, with [`check_generated`], which updates it when the
+/// environment variable [`GeneratedFile::update_with`] is `1`.
+pub fn compare_or_update(file: &GeneratedFile<'_>, fresh: &str) {
     use Generated::{Compare, Update};
-    let update = env::var(env_var).as_deref() == Ok("1");
+    let update = env::var(file.update_with).as_deref() == Ok("1");
     let generated = if update { Update } else { Compare };
-    check_generated(&repo_root().join(path), fresh, generated, fix);
+    check_generated(file, fresh, generated);
 }
 
 /// Writes `fresh` to `file`, or fails unless `file` already says the same. Line ends don't count, since git
-/// can check a file out with CRLF. A failure says to run `fix` and commit the result.
-pub fn check_generated(file: &Path, fresh: &str, generated: Generated, fix: &str) {
+/// can check a file out with CRLF. A failure says to run [`GeneratedFile::fix`] and commit the result.
+pub fn check_generated(file: &GeneratedFile<'_>, fresh: &str, generated: Generated) {
+    let path = repo_root().join(file.path);
     if generated == Generated::Update {
-        fs::write(file, fresh).unwrap();
+        fs::write(&path, fresh).unwrap();
     }
-    let committed = fs::read_to_string(file).unwrap_or_default();
+    let committed = fs::read_to_string(&path);
+    let lines = |text: &str| text.replace("\r\n", "\n");
+    let same = committed
+        .as_deref()
+        .is_ok_and(|text| lines(text) == lines(fresh));
+    let unread = (committed.err())
+        .map(|cause| format!(" (it can't be read: {cause})"))
+        .unwrap_or_default();
     assert!(
-        committed.replace("\r\n", "\n") == fresh.replace("\r\n", "\n"),
-        "{} is out of date: run `{fix}` and commit the result",
-        file.display()
+        same,
+        "{} is out of date{unread}: run `{}` and commit the result",
+        path.display(),
+        file.fix
     );
 }
 

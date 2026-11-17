@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use tsugiki_test_git::compare_or_update;
+use tsugiki_test_git::{GeneratedFile, compare_or_update};
 
 use super::*;
 use crate::store::testing::migrated;
@@ -9,12 +9,12 @@ use crate::store::testing::migrated;
 #[test]
 fn the_schema_file_draws_what_the_migrations_leave() {
     let fresh = markdown().unwrap();
-    compare_or_update(
-        "docs/schema.md",
-        &fresh,
-        "TSUGIKI_UPDATE_SCHEMA",
-        "just schema",
-    );
+    let file = GeneratedFile {
+        path: "docs/schema.md",
+        update_with: "TSUGIKI_UPDATE_SCHEMA",
+        fix: "just schema",
+    };
+    compare_or_update(&file, &fresh);
 }
 
 #[test]

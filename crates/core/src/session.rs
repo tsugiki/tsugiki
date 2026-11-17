@@ -356,7 +356,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::SettingsChanged(settings) => {
-                conventions_changed(board, &syncs, &settings);
+                settings_changed_for_window(board, &syncs, &settings);
                 let _handed = settings_changed(&refreshes.fetching, store, &mut syncs, settings);
             }
             Turn::Mark(marked) => mark(board, store, marked),
@@ -448,12 +448,18 @@ fn hand_over_wants(
     fetching.want(repository, want);
 }
 
-/// Before the syncs take `settings`: tells the window when they hold other Conventions than the syncs do.
-/// New Conventions regroup the Repository's PRs with no change to the store (ADR 0011), so the window hears
-/// them as a change to the Repository that names no item, and its views read their items again (#822).
-fn conventions_changed(board: &mut StatusBoard, syncs: &Syncs, settings: &RepositorySettings) {
+/// Before the syncs take `settings`: tells the window when they differ from what the syncs hold, however
+/// the window's settings took them in first. New Conventions regroup the Repository's PRs with no change to
+/// the store (ADR 0011), and a Filter's new search or switch changes what the Workbench and the Sidebar
+/// list, so the window hears either as a change to the Repository that names no item, and its views read
+/// their items again (#822).
+fn settings_changed_for_window(
+    board: &mut StatusBoard,
+    syncs: &Syncs,
+    settings: &RepositorySettings,
+) {
     let held = syncs.settings(&settings.name);
-    if held.is_some_and(|held| held.conventions != settings.conventions) {
+    if held.is_some_and(|held| held != settings) {
         board.changed(&Change {
             repository: settings.name.clone(),
             items: Vec::new(),
@@ -467,7 +473,6 @@ fn conventions_changed(board: &mut StatusBoard, syncs: &Syncs, settings: &Reposi
 /// store owes a read of each PR newly in Reach whose Conversation it doesn't hold at the PR's head, which
 /// the next refresh reads ahead while the PR is still in Reach. One switched off takes PRs out, and the
 /// Mirror worker stops wanting their heads.
-///
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. One that can't keep what
 /// it owes leaves the Conversations to the PR view, which reads one when it opens, and the log says so.

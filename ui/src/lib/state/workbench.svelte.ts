@@ -242,11 +242,12 @@ export class WorkbenchState {
   }
 
   /** Runs `read` once each read of the Inbox asked before it is done. One read at a time then reads the
-   * Inbox, from where the one before it left the list, and only they write `#reach`. `read` never rejects,
-   * as each command's answer says what went wrong. */
+   * Inbox, from where the one before it left the list, and only they write `#reach`. A read that throws, as
+   * a page's hook can while its answer goes on show, rejects for its caller alone, and the next read runs. */
   #inOrder(read: () => Promise<void>): Promise<void> {
-    this.#reading = this.#reading.then(read);
-    return this.#reading;
+    const run = this.#reading.then(read);
+    this.#reading = run.catch(() => {});
+    return run;
   }
 
   /** Asks for the view on show again once the list's order has changed. Its lines then moved for the order

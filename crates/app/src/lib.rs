@@ -530,14 +530,11 @@ impl RepositoryWork {
             .clone_mirror_next(repository.name.clone(), source);
     }
 
-    /// Hands the session the settings of each Repository that `after` holds otherwise than `before`, as a
-    /// hand edit of the files can leave them.
-    fn settings_changed(&self, before: &SettingsView, after: &SettingsView) {
-        let was = &before.loaded.settings.repositories;
-        for repository in &after.loaded.settings.repositories {
-            if !was.contains(repository) {
-                self.fetching.settings_changed(repository.clone());
-            }
+    /// Hands the session each Repository's settings as `view` holds them. The session compares them with
+    /// its own copy, so a hand edit that any reload of the files took in first still reaches it.
+    fn settings_changed(&self, view: &SettingsView) {
+        for repository in &view.loaded.settings.repositories {
+            self.fetching.settings_changed(repository.clone());
         }
     }
 }

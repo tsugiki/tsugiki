@@ -1184,7 +1184,7 @@ fn switch_bugs_on_losing(lost: Option<usize>) -> (Option<()>, Vec<String>, usize
 }
 
 #[test]
-fn new_conventions_tell_the_window_the_repository_changed_and_other_settings_dont() {
+fn settings_other_than_the_syncs_hold_tell_the_window_the_repository_changed() {
     let (sent, changes) = mpsc::channel();
     let mut board = quiet_board().with_changes(Box::new(move |change: &Change| {
         sent.send(change.clone()).unwrap();
@@ -1200,11 +1200,27 @@ fn new_conventions_tell_the_window_the_repository_changed_and_other_settings_don
         conventions: Conventions::Cpython,
         ..RepositorySettings::new(RepositoryName::parse("a/b").unwrap())
     };
+    let heard = |board: &mut StatusBoard, settings: &RepositorySettings| {
+        settings_changed_for_window(board, &syncs, settings);
+        changes.try_iter().count()
+    };
 
-    conventions_changed(&mut board, &syncs, &elsewhere);
-    conventions_changed(&mut board, &syncs, &bugs_switched(OnWorkbench::On));
-    conventions_changed(&mut board, &syncs, &with(Conventions::Cpython));
+    let unheld = heard(&mut board, &elsewhere);
+    let same = heard(&mut board, &bugs_switched(OnWorkbench::Off));
+    let switched = heard(&mut board, &bugs_switched(OnWorkbench::On));
+    let regrouped = heard(&mut board, &with(Conventions::Cpython));
+    let renamed = RepositorySettings {
+        filters: vec![Filter {
+            name: "Crashes".to_owned().try_into().unwrap(),
+            ..bugs_switched(OnWorkbench::Off).filters[0].clone()
+        }],
+        ..bugs_switched(OnWorkbench::Off)
+    };
+    let filter_renamed = heard(&mut board, &renamed);
 
+    assert_eq!([unheld, same], [0, 0]);
+    assert_eq!([switched, regrouped, filter_renamed], [1, 1, 1]);
+    settings_changed_for_window(&mut board, &syncs, &renamed);
     assert_eq!(
         changes.try_iter().collect::<Vec<_>>(),
         [Change {

@@ -1597,6 +1597,36 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("goes on reading the Inbox after a page's hook throws while an answer goes on show", async () => {
+    catchListener();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({
+      latest: page([3], at(3, 9)),
+      "through 3": page([4, 3], at(3, 9)),
+      "older 3": page([2]),
+      all: page([4, 3, 2]),
+    });
+    const hook = { throws: true };
+    const state = new WorkbenchState("python/cpython", {
+      changing: () => {
+        if (hook.throws) throw new Error("the hook broke");
+        return () => {};
+      },
+    });
+    await state.load();
+    await state.select(inbox);
+
+    // Asking for the Inbox again reads its pages on show, and the change hook runs.
+    await expect(state.select(inbox)).rejects.toThrow("the hook broke");
+    hook.throws = false;
+    await state.readOlder();
+    await state.select(inbox);
+
+    expect(pagesAsked()).toEqual(["latest", "through 3", "older 3", "all"]);
+    expect(numbers(state)).toEqual([4, 3, 2]);
+    state.stop();
+  });
+
   it("drops an older page that lands after the window left the Repository", async () => {
     catchListener();
     vi.mocked(commands.workbench).mockResolvedValue(answer());

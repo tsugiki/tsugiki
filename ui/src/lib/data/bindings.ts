@@ -170,8 +170,8 @@ export const commands = {
 	saveTheme: (pick: ThemePick) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { pick })),
 	/**
 	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
-	 *  it and takes effect (ADR 0014). The session gets the settings of each Repository the edit changed, so
-	 *  its syncs read them, and new Conventions reach the window as a change. This waits on small files.
+	 *  it and takes effect (ADR 0014). The session gets each Repository's settings, so its syncs read a hand
+	 *  edit, and new Conventions or Filters reach the window as a change. This waits on small files.
 	 */
 	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
 	/**

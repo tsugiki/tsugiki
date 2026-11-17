@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
+import { workbenchRow } from "$lib/testing/fixtures";
 import {
   ago,
   backportWords,
@@ -19,19 +20,11 @@ const REVIEWED = "1".repeat(40);
 /** The head the check compared it with. */
 const HEAD = "2".repeat(40);
 
-const row: WorkbenchRow = {
-  number: 160662,
+const row: WorkbenchRow = workbenchRow(160662, {
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
-};
+});
 
 const issue: IssueItem = {
   number: 112564,

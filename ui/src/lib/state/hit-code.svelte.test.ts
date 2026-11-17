@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { DefinitionCode, Hit } from "$lib/data/bindings";
+import { ok } from "$lib/testing/fixtures";
+import { nextTask } from "$lib/testing/helpers";
 import { CODE_CHUNK, HitCode } from "./hit-code.svelte";
 import { SPANS_WAIT } from "./spans-wait";
 
@@ -11,8 +13,6 @@ const core = vi.hoisted(() => ({
 vi.mock("$lib/data/bindings", () => ({
   commands: { definitionCode: core.definitionCode, definitionSpans: core.definitionSpans },
 }));
-
-const ok = <T>(data: T) => ({ status: "ok" as const, data });
 
 /** A file of `count` lines, each its own number. */
 function answerFrom(count: number) {
@@ -93,7 +93,7 @@ it("leaves the lines plain when their spans fail", async () => {
   await vi.waitFor(() => {
     expect([lost.line(1), failing.line(1)]).toEqual(["line 1", "line 1"]);
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await nextTask();
 
   expect([lost.spans(1), failing.spans(1)]).toEqual([undefined, undefined]);
 });

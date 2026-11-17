@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Miss } from "$lib/data/bindings";
+import { keydown } from "$lib/testing/helpers";
 import { browserClock, HudState } from "./hud.svelte";
 
 /** A clock the test moves by hand, and frames that come only when the test draws one. */
@@ -134,7 +135,7 @@ describe("keys", () => {
 
   it("listens for keys only while it shows", () => {
     const { hud, frame } = harness();
-    const press = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "j" }));
+    const press = () => window.dispatchEvent(keydown({ key: "j" }));
     press();
     hud.toggle();
     frame(0);

@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
+import { refused } from "$lib/testing/fixtures";
 import { chooseMirrorSource, mirrorCost, pickClone } from "./mirror-source";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -53,8 +54,7 @@ it("checks nothing when the user cancels", async () => {
 });
 
 it("says why the picker or the check failed", async () => {
-  const refused = { status: "error", error: { kind: "internal", message: "no picker" } } as const;
-  vi.mocked(commands.pickFolder).mockResolvedValueOnce(refused);
+  vi.mocked(commands.pickFolder).mockResolvedValueOnce(refused("no picker"));
   const noPicker = await pickClone("python/cpython");
   vi.mocked(commands.pickFolder).mockResolvedValue({ status: "ok", data: folder });
   vi.mocked(commands.checkClone).mockRejectedValue(new Error("no core"));

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
+import { done, ok, refused } from "$lib/testing/fixtures";
+import { catchChanged } from "$lib/testing/state";
 import { IssueViewState, type IssueView } from "./issue-view.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -24,23 +26,6 @@ const view = (title: string): IssueView => ({
   seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
 });
 
-const ok = (data: IssueView | null) => ({ status: "ok" as const, data });
-const done = { status: "ok" as const, data: null };
-const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
-
-/** Catches the listener the state registers, so a test can say a Repository changed as the core would. */
-const catchListener = () => {
-  const stop = vi.fn();
-  const send = vi.fn();
-  vi.mocked(events.changed.listen).mockImplementation(async (callback) => {
-    send.mockImplementation((repository: string, items: number[] = []) => {
-      callback({ event: "changed", id: 1, payload: { repository, items } });
-    });
-    return stop;
-  });
-  return { stop, send };
-};
-
 describe("IssueViewState", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -54,7 +39,7 @@ describe("IssueViewState", () => {
   });
 
   it("opens the Issue with the core and holds what it answers", async () => {
-    catchListener();
+    catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     expect(state.view).toBeUndefined();
 
@@ -67,7 +52,7 @@ describe("IssueViewState", () => {
   });
 
   it("holds null for an Issue Tsugiki doesn't hold", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.issue).mockResolvedValue(ok(null));
     const state = new IssueViewState("python/cpython", 7);
 
@@ -78,7 +63,7 @@ describe("IssueViewState", () => {
   });
 
   it("forgets why a read failed once a later read saves the Issue it doesn't hold", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.issue).mockResolvedValue(ok(null));
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
@@ -93,7 +78,7 @@ describe("IssueViewState", () => {
   });
 
   it("keeps why a read failed when the Issue it holds changes, as Mark Seen changes it too", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
     state.failedRead = "waits_on_github";
@@ -105,7 +90,7 @@ describe("IssueViewState", () => {
   });
 
   it("asks again when its Repository changes, and only then", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
     vi.mocked(commands.issue).mockResolvedValue(ok(view("Second")));
@@ -123,7 +108,7 @@ describe("IssueViewState", () => {
   });
 
   it("opening it again tells the core again", async () => {
-    catchListener();
+    catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
 
@@ -135,7 +120,7 @@ describe("IssueViewState", () => {
 
   it("reads the Issue from GitHub once a minute while it's on screen, without opening it again", async () => {
     vi.useFakeTimers();
-    catchListener();
+    catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
 
@@ -148,7 +133,7 @@ describe("IssueViewState", () => {
 
   it("leaves GitHub alone while the window is hidden, and once it stops", async () => {
     vi.useFakeTimers();
-    catchListener();
+    catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
     const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
@@ -163,7 +148,7 @@ describe("IssueViewState", () => {
 
   it("leaves GitHub alone while a PR hides it, and reads the minute it missed once it shows", async () => {
     vi.useFakeTimers();
-    catchListener();
+    catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
 
@@ -184,7 +169,7 @@ describe("IssueViewState", () => {
 
   it("has nothing to catch up on once it shows, when it was opened again while hidden", async () => {
     vi.useFakeTimers();
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
     state.hide();
@@ -200,7 +185,7 @@ describe("IssueViewState", () => {
   });
 
   it("comes back as it was, without asking the core, when nothing changed while it was hidden", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
 
@@ -215,7 +200,7 @@ describe("IssueViewState", () => {
   });
 
   it("asks the core again once it shows, when its Repository changed while it was hidden", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
     vi.mocked(commands.issue).mockResolvedValue(ok(view("Second")));
@@ -236,7 +221,7 @@ describe("IssueViewState", () => {
   });
 
   it("stops listening when told to", async () => {
-    const { stop } = catchListener();
+    const { stop } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
 
@@ -246,7 +231,7 @@ describe("IssueViewState", () => {
   });
 
   it("stops listening if it was told to while the listener was on its way", async () => {
-    const { stop } = catchListener();
+    const { stop } = catchChanged();
     const state = new IssueViewState("python/cpython", 7);
     const loading = state.load();
 
@@ -268,9 +253,9 @@ describe("IssueViewState", () => {
   });
 
   it("says why the core refused to open it, and the next good read clears only a read's error", async () => {
-    catchListener();
-    vi.mocked(commands.openIssue).mockResolvedValue(refused);
-    vi.mocked(commands.issue).mockResolvedValue(refused);
+    catchChanged();
+    vi.mocked(commands.openIssue).mockResolvedValue(refused("no database"));
+    vi.mocked(commands.issue).mockResolvedValue(refused("no database"));
     const state = new IssueViewState("python/cpython", 7);
 
     await state.load();
@@ -285,7 +270,7 @@ describe("IssueViewState", () => {
   });
 
   it("says so when the core doesn't answer at all", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.openIssue).mockRejectedValue(new Error("no core"));
     vi.mocked(commands.issue).mockRejectedValue(new Error("no core"));
     const state = new IssueViewState("python/cpython", 7);
@@ -297,8 +282,8 @@ describe("IssueViewState", () => {
   });
 
   it("drops an older answer that arrives late", async () => {
-    const { send } = catchListener();
-    const older = Promise.withResolvers<ReturnType<typeof ok>>();
+    const { send } = catchChanged();
+    const older = Promise.withResolvers<ReturnType<typeof ok<IssueView>>>();
     const state = new IssueViewState("python/cpython", 7);
     await state.load();
     vi.mocked(commands.issue).mockReturnValueOnce(older.promise);

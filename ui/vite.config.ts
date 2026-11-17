@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "eslint/**/*.test.ts", "../scripts/**/*.test.ts"],
+    setupFiles: ["src/lib/testing/setup.ts"],
     // TypeScript's coverage gate (ADR 0009). `npm run coverage -w ui` turns it on.
     coverage: {
       provider: "v8",

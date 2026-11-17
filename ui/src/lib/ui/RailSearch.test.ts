@@ -8,6 +8,7 @@ import {
   type SearchState,
   TextSearchState,
 } from "$lib/state/text-search.svelte";
+import { ok } from "$lib/testing/fixtures";
 import RailSearch from "./RailSearch.svelte";
 
 const core = vi.hoisted(() => ({
@@ -79,21 +80,12 @@ const cursorText = () =>
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
   core.listen.mockResolvedValue(() => {});
-  core.textSearch.mockResolvedValue({ status: "ok", data: { kind: "running", id: 1 } });
+  core.textSearch.mockResolvedValue(ok({ kind: "running", id: 1 }));
 });
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
 });
 
 it("reads the PR's diff, waits for it, then searches and shows the results grouped by file, matches marked", async () => {
@@ -349,7 +341,7 @@ it("puts the list back at its top for a new query's results, and when it draws t
 });
 
 it("marks the line under the box as trouble when the query can't run", async () => {
-  core.textSearch.mockResolvedValue({ status: "ok", data: { kind: "bad_query", message: "unclosed group" } });
+  core.textSearch.mockResolvedValue(ok({ kind: "bad_query", message: "unclosed group" }));
   const pr = prView();
   render(RailSearch, { pr: pr as unknown as PrViewState });
 

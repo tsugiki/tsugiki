@@ -1,30 +1,22 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
-  Filter_Serialize as Filter,
   IssueView_Serialize as IssueView,
   ListedItem_Serialize as ListedItem,
   TreeEntry_Serialize as TreeEntry,
-  WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
+import { done, ok, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { dragEdge, home, palette } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
-const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-const cpython = { screen: "repository", repository, others: [] as string[] } as const;
-
-const row: Omit<WorkbenchRow, "number"> = {
-  title: "gh-7: Fix it",
+/** A merged PR's row, reviewed, which each place that spreads it numbers. */
+const row = workbenchRow(10, {
   author: "some-author",
   state: "MERGED",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
   your_review: { kind: "reviewed" },
   seen: { mark: { numbers: [], up_to: null }, state: "seen" },
-};
+});
 
 const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = []): ListedItem => ({
   kind: "issue",
@@ -40,16 +32,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
     : null,
 });
 
-const listing = (waiting: boolean) => ({
-  status: "ok" as const,
-  data: {
-    items: [issue(7, waiting), issue(8, false)],
-    count: waiting ? 1 : 0,
-    review_requests: 0,
-    stale_reviews: 0,
-    filters: [],
-  },
-});
+const listing = (waiting: boolean) => workbenchPage([issue(7, waiting), issue(8, false)]);
 
 const view = (bodyHtml: string): IssueView => ({
   number: 7,
@@ -65,9 +48,9 @@ const view = (bodyHtml: string): IssueView => ({
   pull_requests: [
     {
       kind: "pr",
-      number: 10,
       ...row,
-      backports: [{ number: 11, ...row, target_branch: "3.14", backport: "bot" }],
+      number: 10,
+      backports: [{ ...row, number: 11, target_branch: "3.14", backport: "bot" }],
     },
   ],
   merged: [],
@@ -88,16 +71,14 @@ const view = (bodyHtml: string): IssueView => ({
   },
 });
 
-const held = (bodyHtml: string) => ({ status: "ok", data: view(bodyHtml) }) as const;
-const done = { status: "ok", data: null } as const;
 const answers = (bodyHtml: string) => ({
-  home: cpython,
+  home,
   workbench: listing(true),
   openIssue: done,
   fetchIssue: done,
   openOnGithub: done,
   openLink: done,
-  issue: held(bodyHtml),
+  issue: ok(view(bodyHtml)),
 });
 
 test("an Issue opens in the Detail pane and stops looking unread", async ({ page }) => {
@@ -131,20 +112,20 @@ test("a row above the tree counts the PRs of each state, and mutes a state at 0"
     pull_requests: [
       {
         kind: "pr",
-        number: 10,
         ...row,
+        number: 10,
         state: "OPEN",
         backports: [
-          { number: 11, ...row, state: "OPEN", is_draft: true, target_branch: "3.14", backport: "manual" },
+          { ...row, number: 11, state: "OPEN", is_draft: true, target_branch: "3.14", backport: "manual" },
         ],
       },
     ],
     merged: [
       {
         kind: "pr",
-        number: 20,
         ...row,
-        backports: [{ number: 21, ...row, target_branch: "3.14", backport: "bot" }],
+        number: 20,
+        backports: [{ ...row, number: 21, target_branch: "3.14", backport: "bot" }],
       },
     ],
     merged_count: 2,
@@ -152,8 +133,8 @@ test("a row above the tree counts the PRs of each state, and mutes a state at 0"
   await page.emulateMedia({ colorScheme: "light" });
   await mockCore(page, {
     ...answers(""),
-    issue: { status: "ok", data: counted },
-    themes: { status: "ok", data: themes },
+    issue: ok(counted),
+    themes: ok(themes),
   });
   await page.goto("/");
 
@@ -247,16 +228,7 @@ test("an Issue opened far down a long list shows beside it", async ({ page }) =>
   const numbers = Array.from({ length: 40 }, (_, at) => 100 + at);
   await mockCore(page, {
     ...answers("<p>It crashes</p>"),
-    workbench: {
-      status: "ok",
-      data: {
-        items: numbers.map((number) => issue(number, false)),
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    },
+    workbench: workbenchPage(numbers.map((number) => issue(number, false))),
   });
   await page.goto("/");
 
@@ -271,10 +243,10 @@ test("an Issue opened far down a long list shows beside it", async ({ page }) =>
 const longIssue = async (page: Page) => {
   await page.setViewportSize({ width: 1000, height: 400 });
   const paragraphs = Array.from({ length: 60 }, (_, at) => `<p>Paragraph ${String(at)}</p>`).join("");
-  const tree = issue(7, false, [{ number: 10, kind: "pr", ...row, backports: [] }]);
+  const tree = issue(7, false, [{ kind: "pr", ...row, number: 10, backports: [] }]);
   await mockCore(page, {
     ...answers(paragraphs),
-    workbench: { ...listing(false), data: { ...listing(false).data, items: [tree, issue(8, false)] } },
+    workbench: workbenchPage([tree, issue(8, false)]),
     openPullRequest: done,
     fetchPullRequest: done,
     pullRequest: done,
@@ -325,7 +297,7 @@ test("the wheel scrolls the pane under the pointer, and stops at the pane's end"
   const many = [issue(7, false), ...Array.from({ length: 40 }, (_, at) => issue(100 + at, false))];
   await mockCore(page, {
     ...answers(paragraphs),
-    workbench: { ...listing(false), data: { ...listing(false).data, items: many } },
+    workbench: workbenchPage(many),
   });
   await page.goto("/");
   await inList(page, "#7 Issue 7").click();
@@ -555,7 +527,7 @@ test("a refresh that signs an upload's address afresh leaves the description as 
   await expect.poll(() => loaded(page, "a screenshot")).toBe(true);
   await image.evaluate((drawn) => Object.assign(drawn, { drawnBefore: true }));
 
-  await changeAnswer(page, "issue", held(screenshot("two")));
+  await changeAnswer(page, "issue", ok(view(screenshot("two"))));
   // Listening from before the refresh, which would ask for the fresh address at once if it loaded it.
   const refetch = page.waitForRequest(upload("two"), { timeout: 1000 }).then(
     () => true,
@@ -581,17 +553,10 @@ test("the edges between the panes drag, a double-click resets one, and the list 
   const list = page.locator(".list");
   const pane = page.getByRole("region", { name: "Issue view" });
   const width = async (part: typeof list) => (await part.boundingBox())?.width ?? 0;
-  const drag = async (name: string, by: number) => {
-    const edge = (await page.getByRole("separator", { name }).boundingBox()) ?? { x: 0, y: 0 };
-    await page.mouse.move(edge.x + 8, edge.y + 20);
-    await page.mouse.down();
-    await page.mouse.move(edge.x + 8 + by, edge.y + 20, { steps: 4 });
-    await page.mouse.up();
-  };
-  await drag("Sidebar width", 60);
+  await dragEdge(page.getByRole("separator", { name: "Sidebar width" }), 60);
   const even = await width(list);
 
-  await drag("Workbench width", 100);
+  await dragEdge(page.getByRole("separator", { name: "Workbench width" }), 100);
   const dragged = [await width(sidebar), await width(list)];
   await page.setViewportSize({ width: 900, height: 600 });
   const narrow = [await width(list), await width(pane)];
@@ -614,23 +579,15 @@ test("Ctrl+B and the palette hide the Sidebar, and the Issue list takes its room
   const width = async () => (await list.boundingBox())?.width ?? 0;
   await expect(sidebar).toBeVisible();
   const shown = await width();
-  const palette = async (title: string) => {
-    await page.keyboard.press("ControlOrMeta+Shift+P");
-    // The box opens with `>` typed, which marks the commands, and `fill` replaces it.
-    await page.getByRole("combobox", { name: "Command" }).fill(`>${title}`);
-    // One row, named for what it does: its key describes it, and stays out of its name.
-    await expect(page.getByRole("option")).toHaveAccessibleName(title);
-    await page.keyboard.press("Enter");
-  };
 
   await page.keyboard.press("ControlOrMeta+B");
   await expect(sidebar).toHaveCount(0);
   const hidden = await width();
   await expect(edge).toHaveCount(0);
-  await palette("Show Sidebar");
+  await palette(page, "Show Sidebar");
   await expect(sidebar).toBeVisible();
   const back = await width();
-  await palette("Hide Sidebar");
+  await palette(page, "Hide Sidebar");
   await expect(sidebar).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Shift+P");
   await page.keyboard.press("ControlOrMeta+B");
@@ -705,14 +662,7 @@ test("Reset Layout in the palette brings back both panes, with the focus on the 
   const width = async () => (await list.boundingBox())?.width ?? 0;
   await expect(page.getByRole("region", { name: "Issue view" })).toBeVisible();
   const shown = await width();
-  const edge = (await page.getByRole("separator", { name: "Workbench width" }).boundingBox()) ?? {
-    x: 0,
-    y: 0,
-  };
-  await page.mouse.move(edge.x + 8, edge.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(edge.x + 108, edge.y + 20, { steps: 4 });
-  await page.mouse.up();
+  await dragEdge(page.getByRole("separator", { name: "Workbench width" }), 100);
   const dragged = await width();
   await page.keyboard.press("ControlOrMeta+B");
   await page.keyboard.press("ControlOrMeta+Alt+B");
@@ -730,7 +680,7 @@ test("Reset Layout in the palette brings back both panes, with the focus on the 
 
 test("the Octicons take the theme's state colours on either side", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
-  await mockCore(page, { ...answers("<p>It crashes</p>"), themes: { status: "ok", data: themes } });
+  await mockCore(page, { ...answers("<p>It crashes</p>"), themes: ok(themes) });
   await page.goto("/");
   await page.getByRole("button", { name: "#7 Issue 7" }).click();
   const pane = page.getByRole("region", { name: "Issue view" });

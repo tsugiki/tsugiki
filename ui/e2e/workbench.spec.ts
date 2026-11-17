@@ -1,28 +1,16 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import type {
-  Filter_Serialize as Filter,
-  ListedItem_Serialize as ListedItem,
-  WorkbenchRow_Serialize as WorkbenchRow,
-} from "../src/lib/data/bindings.ts";
+import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
+import { done, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { grabEdge, home, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
-const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-const cpython = { screen: "repository", repository, others: [] as string[] } as const;
 
-const reviewRow: WorkbenchRow = {
-  number: 160662,
+const reviewRow = workbenchRow(160662, {
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
-};
+});
 
 const review: ListedItem = {
   attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
@@ -38,14 +26,12 @@ const review: ListedItem = {
       ...reviewRow,
       backports: [
         {
-          ...reviewRow,
-          number: 160700,
-          title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
-          state: "MERGED",
-          target_branch: "3.14",
-          reasons: [],
-          your_review: { kind: "unreviewed" },
-          seen: { mark: { numbers: [160700], up_to: null }, state: "seen" },
+          ...workbenchRow(160700, {
+            title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
+            author: "some-author",
+            state: "MERGED",
+            target_branch: "3.14",
+          }),
           backport: "bot",
         },
       ],
@@ -60,28 +46,20 @@ const review: ListedItem = {
 const own: ListedItem = {
   attention: null,
   kind: "standalone_pr",
-  number: 157178,
-  title: "GH-156425: Clear GC frame on early return",
-  author: "octocat",
-  state: "OPEN",
-  is_draft: true,
-  target_branch: "3.14",
-  ci: "FAILURE",
-  updated_at: "2026-11-04T09:00:00Z",
-  reasons: ["own_pr"],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [157178], up_to: null }, state: "seen" },
+  ...workbenchRow(157178, {
+    title: "GH-156425: Clear GC frame on early return",
+    author: "octocat",
+    is_draft: true,
+    target_branch: "3.14",
+    ci: "FAILURE",
+    updated_at: "2026-11-04T09:00:00Z",
+    reasons: ["own_pr"],
+  }),
   backports: [],
 };
 
 test("the Workbench lists what waits on the user", async ({ page }) => {
-  await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [review, own], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
-  });
+  await mockCore(page, { home, workbench: workbenchPage([review, own], { count: 2 }) });
   await page.goto("/");
 
   const rows = page.getByRole("listitem");
@@ -102,13 +80,7 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
   page,
 }) => {
   const long = { ...own, title: "A title long enough to run past the list's edge ".repeat(4) };
-  await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [review, long], count: 2, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
-  });
+  await mockCore(page, { home, workbench: workbenchPage([review, long], { count: 2 }) });
   await page.setViewportSize({ width: 900, height: 600 });
   await page.goto("/");
 
@@ -131,32 +103,25 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
 test("an item with nothing waiting sits in the one list below what does, and Alt+← goes back to it", async ({
   page,
 }) => {
-  const done = { status: "ok", data: null } as const;
   const ownView = { ...reviewRow, ...own, content: null, shares_review_of: null };
   await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [review, own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    home,
+    workbench: workbenchPage([review, own]),
     openIssue: done,
     fetchIssue: done,
-    issue: {
-      status: "ok",
-      data: {
-        ...review,
-        merged: [],
-        merged_count: 0,
-        author: "issue-author",
-        assignees: [],
-        labels: [],
-        content: null,
-        needs_attention: [],
-      },
-    },
+    issue: ok({
+      ...review,
+      merged: [],
+      merged_count: 0,
+      author: "issue-author",
+      assignees: [],
+      labels: [],
+      content: null,
+      needs_attention: [],
+    }),
     openPullRequest: done,
     fetchPullRequest: done,
-    pullRequest: { status: "ok", data: ownView },
+    pullRequest: ok(ownView),
   });
   await page.goto("/");
   const ownRow = page
@@ -177,20 +142,11 @@ test("an item with nothing waiting sits in the one list below what does, and Alt
 });
 
 test("the first sync's rows appear as the core saves them", async ({ page }) => {
-  await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
-  });
+  await mockCore(page, { home, workbench: workbenchPage([]) });
   await page.goto("/");
   await expect(page.getByText(/Nothing here yet/)).toBeVisible();
 
-  await changeAnswer(page, "workbench", {
-    status: "ok",
-    data: { items: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  await changeAnswer(page, "workbench", workbenchPage([own], { count: 1 }));
   await emitFromCore(page, "changed", { repository: "tsugiki/tsugiki", items: [1] });
   await emitFromCore(page, "changed", { repository: repository.name, items: [1] });
 
@@ -199,21 +155,15 @@ test("the first sync's rows appear as the core saves them", async ({ page }) => 
 });
 
 test("the Sidebar lists the Filters, and selecting one shows its Issues", async ({ page }) => {
-  const whole = {
-    items: [review, own],
-    count: 2,
-    review_requests: 0,
-    stale_reviews: 0,
-    filters: [mine],
-  };
-  await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
+  const more = { count: 2, filters: [mine] };
+  await mockCore(page, { home, workbench: workbenchPage([review, own], more) });
   await page.goto("/");
 
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
   await expect(sidebar.getByRole("button", { name: "Workbench 2" })).toHaveAttribute("aria-current", "true");
   await expect(page.getByRole("listitem")).toHaveCount(2);
 
-  await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: [own] } });
+  await changeAnswer(page, "workbench", workbenchPage([own], more));
   await sidebar.getByRole("button", { name: "Mine 1" }).click();
 
   await expect(page.getByRole("listitem")).toHaveCount(1);
@@ -224,11 +174,10 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
 test("a Filter's view switches it off the Workbench, beside its name and the list's order", async ({
   page,
 }) => {
-  const whole = { items: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [mine] };
   await mockCore(page, {
-    home: cpython,
-    workbench: { status: "ok", data: whole },
-    putFilterOnWorkbench: { status: "ok", data: null },
+    home,
+    workbench: workbenchPage([own], { count: 1, filters: [mine] }),
+    putFilterOnWorkbench: done,
   });
   await page.goto("/");
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
@@ -247,8 +196,8 @@ test("a Filter's view switches it off the Workbench, beside its name and the lis
   expect(switchAt).toBeGreaterThan(headingAt);
   expect(orderAt).toBeGreaterThan(switchAt);
 
-  const off = { ...whole, filters: [{ ...mine, on_workbench: false, count: 4 }] };
-  await changeAnswer(page, "workbench", { status: "ok", data: off });
+  const off = workbenchPage([own], { count: 1, filters: [{ ...mine, on_workbench: false, count: 4 }] });
+  await changeAnswer(page, "workbench", off);
   await onWorkbench.click();
 
   await expect(onWorkbench).not.toBeChecked();
@@ -258,28 +207,19 @@ test("a Filter's view switches it off the Workbench, beside its name and the lis
 test("a drag past the Sidebar's least width folds it to icons, and a click on one brings it back", async ({
   page,
 }) => {
-  const whole = {
-    items: [review, own],
-    count: 2,
-    review_requests: 0,
-    stale_reviews: 0,
-    filters: [mine],
-  };
   await page.setViewportSize({ width: 1200, height: 600 });
-  await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
+  await mockCore(page, { home, workbench: workbenchPage([review, own], { count: 2, filters: [mine] }) });
   await page.goto("/");
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
   await expect(sidebar.getByRole("button", { name: "Workbench 2" })).toBeVisible();
   const width = async () => (await sidebar.boundingBox())?.width ?? 0;
-  const edge = (await page.getByRole("separator", { name: "Sidebar width" }).boundingBox()) ?? { x: 0, y: 0 };
 
   // From 200 px, 70 px left is past the least width and short of where it folds, and 90 px is past that.
-  await page.mouse.move(edge.x + 8, edge.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(edge.x + 8 - 70, edge.y + 20, { steps: 4 });
+  const grip = await grabEdge(page.getByRole("separator", { name: "Sidebar width" }));
+  await grip.moveBy(-70);
   const short = await width();
-  await page.mouse.move(edge.x + 8 - 90, edge.y + 20, { steps: 4 });
-  await page.mouse.up();
+  await grip.moveBy(-90);
+  await grip.release();
   await expect(sidebar).toHaveClass(/icons/);
   const strip = await width();
   await expect(sidebar.getByRole("button", { name: "Workbench (2)" })).toHaveText("2");
@@ -295,9 +235,9 @@ test("a drag past the Sidebar's least width folds it to icons, and a click on on
 
 test("a change keeps the selected Filter and the place the user had scrolled to", async ({ page }) => {
   const many = Array.from({ length: 80 }, (_, at) => ({ ...own, number: 1000 + at }));
-  const whole = { items: many, count: 80, review_requests: 0, stale_reviews: 0, filters: [mine] };
+  const more = { count: 80, filters: [mine] };
   await page.setViewportSize({ width: 800, height: 400 });
-  await mockCore(page, { home: cpython, workbench: { status: "ok", data: whole } });
+  await mockCore(page, { home, workbench: workbenchPage(many, more) });
   await page.goto("/");
 
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
@@ -311,7 +251,7 @@ test("a change keeps the selected Filter and the place the user had scrolled to"
   await expect.poll(scrolled).toBe(600);
 
   const fresher = many.map((item, at) => (at === 5 ? { ...item, title: "A title that changed" } : item));
-  await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: fresher } });
+  await changeAnswer(page, "workbench", workbenchPage(fresher, more));
   await emitFromCore(page, "changed", { repository: repository.name, items: [1005] });
 
   await expect(page.getByText("A title that changed")).toBeAttached();
@@ -332,18 +272,19 @@ const thirty = Array.from({ length: 30 }, (_, at): ListedItem => {
 
 /** Opens `#1020` from the list in the Detail pane, with its row on the screen part way down the list. */
 async function openFarDown(page: Page) {
-  const done = { status: "ok", data: null } as const;
-  const whole = { items: thirty, count: 30, review_requests: 0, stale_reviews: 0, filters: [] };
   await page.setViewportSize({ width: 900, height: 400 });
   await mockCore(page, {
-    home: cpython,
-    workbench: { status: "ok", data: whole },
+    home,
+    workbench: workbenchPage(thirty, { count: 30 }),
     openPullRequest: done,
     fetchPullRequest: done,
-    pullRequest: {
-      status: "ok",
-      data: { ...reviewRow, number: 1020, title: "Item 1020", content: null, shares_review_of: null },
-    },
+    pullRequest: ok({
+      ...reviewRow,
+      number: 1020,
+      title: "Item 1020",
+      content: null,
+      shares_review_of: null,
+    }),
   });
   await page.goto("/");
   const list = page.locator(".list");
@@ -355,7 +296,7 @@ async function openFarDown(page: Page) {
   const moveToTop = async (number = 1020) => {
     const at = number - 1000;
     const moved = [thirty[at] as ListedItem, ...thirty.filter((_, other) => other !== at)];
-    await changeAnswer(page, "workbench", { status: "ok", data: { ...whole, items: moved } });
+    await changeAnswer(page, "workbench", workbenchPage(moved, { count: 30 }));
     await emitFromCore(page, "changed", { repository: repository.name, items: [number] });
     await expect(list.getByRole("listitem").first()).toContainText(
       `#${String(number)} Item ${String(number)}`,
@@ -467,11 +408,8 @@ test("a change that moves the focused row under the cursor gives it back the foc
 
 test("the status bar says when the Repository last synced, and a click asks again", async ({ page }) => {
   await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    home,
+    workbench: workbenchPage([]),
     status: { state: "online", login: "octocat" },
     lastSync: { repository: repository.name, at: null },
   });
@@ -490,11 +428,8 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   page,
 }) => {
   await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    home,
+    workbench: workbenchPage([]),
     status: { state: "online", login: "octocat" },
   });
   await page.goto("/");
@@ -524,10 +459,7 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
 });
 
 test("the Workbench says why it can't read", async ({ page }) => {
-  await mockCore(page, {
-    home: cpython,
-    workbench: { status: "error", error: { kind: "internal", message: "The database stopped." } },
-  });
+  await mockCore(page, { home, workbench: refused("The database stopped.") });
   await page.goto("/");
   await expect(page.getByRole("alert")).toHaveText(
     "Tsugiki can't read this Workbench: The database stopped.",

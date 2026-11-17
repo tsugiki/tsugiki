@@ -8,6 +8,8 @@ import { keyTarget } from "./keys";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
+import { done, ok, readyFiles, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 /** What the page asks the screen for the palette's rows, from the screen's own exports. */
@@ -54,55 +56,42 @@ const core = vi.hoisted(() => ({
   stopListening: vi.fn(),
 }));
 
-// jsdom has no `inert`, which a browser reflects to the attribute, as Svelte sets the property.
-Object.defineProperty(HTMLElement.prototype, "inert", {
-  get(this: HTMLElement) {
-    return this.hasAttribute("inert");
-  },
-  set(this: HTMLElement, inert: boolean) {
-    this.toggleAttribute("inert", inert);
-  },
+vi.mock("$lib/data/bindings", async () => {
+  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      workbench: core.workbench,
+      inbox: core.inbox,
+      issue: core.issue,
+      openIssue: core.openIssue,
+      fetchIssue: core.fetchIssue,
+      pullRequest: core.pullRequest,
+      openPullRequest: core.openPullRequest,
+      fetchPullRequest: core.fetchPullRequest,
+      markSeen: core.markSeen,
+      markUnseen: core.markUnseen,
+      putFilterOnWorkbench: core.putFilterOnWorkbench,
+      openOnGithub: core.openOnGithub,
+      pullRequestFiles: core.pullRequestFiles,
+      pullRequestFind: core.pullRequestFind,
+      definitions: core.definitions,
+      cancelDefinitions: core.cancelDefinitions,
+      cloning: core.cloning,
+      mirrorStates: core.mirrorStates,
+      mirrorsHeld: core.mirrorsHeld,
+      paneLayout: core.paneLayout,
+      savePaneLayout: core.savePaneLayout,
+      recordMiss: core.recordMiss,
+      textSearch: core.textSearch,
+      textSearchState: core.textSearchState,
+      textSearchCancel: () => Promise.resolve(null),
+    },
+    events: {
+      ...prFilesEvents(() => core.listen),
+      textSearchChanged: { listen: core.listen },
+    },
+  };
 });
-
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    workbench: core.workbench,
-    inbox: core.inbox,
-    issue: core.issue,
-    openIssue: core.openIssue,
-    fetchIssue: core.fetchIssue,
-    pullRequest: core.pullRequest,
-    openPullRequest: core.openPullRequest,
-    fetchPullRequest: core.fetchPullRequest,
-    markSeen: core.markSeen,
-    markUnseen: core.markUnseen,
-    putFilterOnWorkbench: core.putFilterOnWorkbench,
-    openOnGithub: core.openOnGithub,
-    pullRequestFiles: core.pullRequestFiles,
-    pullRequestFind: core.pullRequestFind,
-    definitions: core.definitions,
-    cancelDefinitions: core.cancelDefinitions,
-    cloning: core.cloning,
-    mirrorStates: core.mirrorStates,
-    mirrorsHeld: core.mirrorsHeld,
-    paneLayout: core.paneLayout,
-    savePaneLayout: core.savePaneLayout,
-    recordMiss: core.recordMiss,
-    textSearch: core.textSearch,
-    textSearchState: core.textSearchState,
-    textSearchCancel: () => Promise.resolve(null),
-  },
-  events: {
-    changed: { listen: core.listen },
-    textSearchChanged: { listen: core.listen },
-    readFailed: { listen: core.listen },
-    headsFetched: { listen: core.listen },
-    headsFetchFailed: { listen: core.listen },
-    cloningChanged: { listen: core.listen },
-    mirrorStatesChanged: { listen: core.listen },
-    mirrorsHeldChanged: { listen: core.listen },
-  },
-}));
 
 // A lookup hears what it waits for on a channel, which these tests leave quiet.
 vi.mock("$lib/data/channel", () => ({
@@ -111,22 +100,15 @@ vi.mock("$lib/data/channel", () => ({
   },
 }));
 
-const row = {
-  number: 160662,
+const row = workbenchRow(160662, {
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: { kind: "unreviewed" },
   seen: {
     mark: { numbers: [160662], up_to: "2026-11-04T10:00:00Z" },
     state: "new_activity",
   },
-};
+});
 
 const issue = {
   kind: "issue",
@@ -158,8 +140,8 @@ const DEFAULT_LAYOUT = {
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(core.stopListening);
-  core.openIssue.mockResolvedValue({ status: "ok", data: null });
-  core.openPullRequest.mockResolvedValue({ status: "ok", data: null });
+  core.openIssue.mockResolvedValue(done);
+  core.openPullRequest.mockResolvedValue(done);
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
   core.cloning.mockResolvedValue(null);
@@ -170,9 +152,9 @@ beforeEach(() => {
   core.pullRequest.mockImplementation((_repository: string, number: number) =>
     Promise.resolve({ status: "ok", data: { ...row, number, title: `PR ${String(number)}`, content: null } }),
   );
-  core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
-  core.markSeen.mockResolvedValue({ status: "ok", data: null });
-  core.markUnseen.mockResolvedValue({ status: "ok", data: null });
+  core.openOnGithub.mockResolvedValue(done);
+  core.markSeen.mockResolvedValue(done);
+  core.markUnseen.mockResolvedValue(done);
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -192,15 +174,11 @@ beforeEach(() => {
       seen: issue.seen,
     },
   });
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([]));
 });
 
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllGlobals();
 });
 
 /** The Issue list's pane, or null while it's hidden. */
@@ -237,16 +215,9 @@ it("opens the Repository picker from the name atop the Sidebar", async () => {
 
 it("lists a Standalone PR with the time it changed", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ kind: "standalone_pr", ...row, backports: [] }],
-      count: 1,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ kind: "standalone_pr", ...row, backports: [] }], { count: 1 }),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   const item = await screen.findByRole("listitem");
@@ -264,10 +235,7 @@ it("moves a time on while the window stays open", async () => {
   // Only these, because the wait for the first answer runs on the real `setTimeout`.
   vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
   vi.setSystemTime("2026-11-04T13:00:00Z");
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [issue], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([issue], { count: 1 }));
   const { unmount } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -283,16 +251,9 @@ it("moves a time on while the window stays open", async () => {
 });
 
 it("says an Issue has no PR yet, with no count of none", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, people: [], pull_requests: [] }],
-      count: 1,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ ...issue, people: [], pull_requests: [] }], { count: 1 }),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   const item = await screen.findByRole("listitem");
@@ -307,16 +268,7 @@ it("says an Issue has no PR yet, with no count of none", async () => {
 it("lists an Issue folded, and its PRs under it once unfolded", async () => {
   vi.setSystemTime("2026-11-04T13:00:00Z");
   const attention = { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, attention }],
-      count: 1,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   const fold = await screen.findByRole("button", { name: "PRs of #112564", expanded: false });
   const folded = [screen.getAllByRole("listitem").length, fold.textContent];
@@ -355,16 +307,9 @@ it("says so while there is nothing to list", async () => {
 
 it("shows a Filter's Issues when the user selects it, with the Sidebar's counts", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
-  core.workbench.mockImplementation(async (_: string, selected: { kind: string }) => ({
-    status: "ok",
-    data: {
-      items: selected.kind === "whole" ? [] : [issue],
-      count: 7,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [mine],
-    },
-  }));
+  core.workbench.mockImplementation(async (_: string, selected: { kind: string }) =>
+    workbenchPage(selected.kind === "whole" ? [] : [issue], { count: 7, filters: [mine] }),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 1" }));
@@ -381,10 +326,7 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
     why: [{ kind: "changes_requested", by: "some-reviewer" }, { kind: "review_requested" }],
   };
   const unread = { kind: "standalone_pr", ...row, backports: [], attention };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [unread], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([unread]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   const item = await screen.findByRole("listitem");
@@ -400,16 +342,7 @@ it("marks what Needs attention the way unread mail is, and says why", async () =
 it("lists the items with nothing waiting in the one list, in the core's order, with no section to fold", async () => {
   const standalone = { kind: "standalone_pr", ...row, number: 7, backports: [], attention: null };
   const other = { ...issue, number: 8, title: "Another" };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [standalone, issue, other],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([standalone, issue, other]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   const title = await screen.findByRole("button", { name: "#7 gh-112564: Fix UAF for gc debug print" });
@@ -426,10 +359,7 @@ it("lists the items with nothing waiting in the one list, in the core's order, w
 });
 
 it("says when nobody has asked for a review", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Review requests 0" }));
@@ -439,10 +369,7 @@ it("says when nobody has asked for a review", async () => {
 });
 
 it("asks for Stale reviews when the user picks it, and says when no Review of theirs is stale", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 2, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([], { stale_reviews: 2 }));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Stale reviews 2" }));
@@ -455,19 +382,12 @@ it("asks for Stale reviews when the user picks it, and says when no Review of th
 it("switches a Filter on and off the Workbench from its view, and only there", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
   let saved = true;
-  core.workbench.mockImplementation(async () => ({
-    status: "ok",
-    data: {
-      items: [],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [{ ...mine, on_workbench: saved }],
-    },
-  }));
+  core.workbench.mockImplementation(async () =>
+    workbenchPage([], { filters: [{ ...mine, on_workbench: saved }] }),
+  );
   core.putFilterOnWorkbench.mockImplementation(async ({ on }: { on: boolean }) => {
     saved = on;
-    return { status: "ok", data: null };
+    return done;
   });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await screen.findByRole("button", { name: "Mine 0" });
@@ -494,13 +414,10 @@ it("switches a Filter on and off the Workbench from its view, and only there", a
 
 it("keeps a Filter's switch in focus while its change saves, and saves the next change after it", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([], { filters: [mine] }));
   const save = Promise.withResolvers<{ status: "ok"; data: null }>();
   core.putFilterOnWorkbench.mockReturnValueOnce(save.promise);
-  core.putFilterOnWorkbench.mockResolvedValue({ status: "ok", data: null });
+  core.putFilterOnWorkbench.mockResolvedValue(done);
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
@@ -516,7 +433,7 @@ it("keeps a Filter's switch in focus while its change saves, and saves the next 
   await fireEvent.click(onWorkbench);
   expect(onWorkbench.checked).toBe(true);
   expect(core.putFilterOnWorkbench).toHaveBeenCalledTimes(1);
-  save.resolve({ status: "ok", data: null });
+  save.resolve(done);
 
   await waitFor(() => {
     expect(onWorkbench.getAttribute("aria-busy")).toBe("false");
@@ -531,10 +448,7 @@ it("keeps a Filter's switch in focus while its change saves, and saves the next 
 
 it("turns a Filter's switch back and says why when the core can't save it", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: false, count: 0, problem: null };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([], { filters: [mine] }));
   core.putFilterOnWorkbench.mockResolvedValue({
     status: "error",
     error: { kind: "internal", message: "settings.toml is read-only" },
@@ -555,10 +469,7 @@ it("turns a Filter's switch back and says why when the core can't save it", asyn
 
 it("says how to check a Filter that holds nothing", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([], { filters: [mine] }));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mine 0" }));
@@ -604,19 +515,16 @@ it("stops listening when it goes", async () => {
 });
 
 const answering = (...items: unknown[]) => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items, count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage(items, { count: items.length }));
 };
 
 const backportRow = {
-  ...row,
-  number: 160700,
-  title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
-  target_branch: "3.14",
-  reasons: [],
-  your_review: { kind: "unreviewed" },
+  ...workbenchRow(160700, {
+    title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
+    author: "some-author",
+    target_branch: "3.14",
+    seen: row.seen,
+  }),
   backport: "bot",
 };
 
@@ -715,19 +623,12 @@ const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", b
 
 /** A window on two items: the Issue, which it unfolds, and a Standalone PR. */
 const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout } = {}) => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [
-        { ...issue, attention: null },
-        { ...standalone, attention: null },
-      ],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...issue, attention: null },
+      { ...standalone, attention: null },
+    ]),
+  );
   const { component, rerender } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -759,8 +660,9 @@ const press = (key: string, init: KeyboardEventInit = {}) =>
 /** How many of the listeners the page started haven't stopped. */
 const listening = () => core.listen.mock.calls.length - core.stopListening.mock.calls.length;
 
-/** Says a Repository changed to every listener the page started, as the core would. */
-const catchChanged = () => {
+/** Catches every listener the page starts, of any event, so a test can say a Repository changed to them all,
+ * as the core would. */
+const catchEveryListener = () => {
   const callbacks: ((event: { payload: unknown }) => void)[] = [];
   core.listen.mockImplementation((callback: (event: { payload: unknown }) => void) => {
     callbacks.push(callback);
@@ -824,19 +726,12 @@ it("opening the Issue on show again tells the core again", async () => {
 });
 
 it("swaps the Detail pane for the next Issue", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [
-        { ...issue, attention: null },
-        { ...issue, number: 2, title: "Next", attention: null },
-      ],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...issue, attention: null },
+      { ...issue, number: 2, title: "Next", attention: null },
+    ]),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
@@ -993,7 +888,7 @@ it("keeps the Issue view while a PR from its tree is on show, and shows it again
 });
 
 it("shows the Issue view it keeps at once on a click on the Issue's line, and tells the core", async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const { issueRow, treeRow } = await listing();
   await fireEvent.click(issueRow);
   await screen.findByRole("heading", { name: /GIL drop during collection/ });
@@ -1026,8 +921,8 @@ it("opens the Issue afresh on the way back when its view couldn't read it", asyn
 
 it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gives way to another", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-  core.fetchIssue.mockResolvedValue({ status: "ok", data: null });
-  core.fetchPullRequest.mockResolvedValue({ status: "ok", data: null });
+  core.fetchIssue.mockResolvedValue(done);
+  core.fetchPullRequest.mockResolvedValue(done);
   const { issueRow, treeRow, prRow } = await listing();
   await fireEvent.click(issueRow);
   await screen.findByRole("region", { name: "Issue view" });
@@ -1115,7 +1010,7 @@ it.each([
   const prRow = await screen.findByRole("button", { name });
   await fireEvent.click(prRow);
   await screen.findByRole("tab", { name: "Conversation" });
-  const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  const escape = keydown({ key: "Escape" });
 
   await fireEvent(document.body, escape);
 
@@ -1139,12 +1034,7 @@ it("switches the PR view's tabs with Ctrl+PageDown and Ctrl+PageUp", async () =>
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   const files = await screen.findByRole("tab", { name: "Files" });
-  const pageDown = new KeyboardEvent("keydown", {
-    key: "PageDown",
-    ctrlKey: true,
-    bubbles: true,
-    cancelable: true,
-  });
+  const pageDown = keydown({ key: "PageDown", ctrlKey: true });
 
   await fireEvent(document.body, pageDown);
   expect(files.getAttribute("aria-selected")).toBe("true");
@@ -1154,24 +1044,11 @@ it("switches the PR view's tabs with Ctrl+PageDown and Ctrl+PageUp", async () =>
 });
 
 it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for each PR after", async () => {
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { prRow, treeRow } = await listing();
   await fireEvent.click(prRow);
   const files = await screen.findByRole("tab", { name: "Files" });
-  const toggle = () =>
-    new KeyboardEvent("keydown", { key: "u", ctrlKey: true, altKey: true, bubbles: true, cancelable: true });
+  const toggle = () => keydown({ key: "u", ctrlKey: true, altKey: true });
   // The Conversation tab has no diff to switch.
   const onConversation = toggle();
   await fireEvent(document.body, onConversation);
@@ -1189,19 +1066,7 @@ it("switches the Files tab between unified and side by side with Ctrl+Alt+U, for
 });
 
 it("moves through a PR's open threads with F8 and Shift+F8 on its Files tab", async () => {
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const next = vi.spyOn(PrFilesState.prototype, "nextThread");
   const { prRow } = await listing();
   await fireEvent.click(prRow);
@@ -1218,19 +1083,7 @@ it("moves through a PR's open threads with F8 and Shift+F8 on its Files tab", as
 
 /** Opens the Files tab of the Standalone PR #5, whose diff is empty, and returns the tab. */
 const onFiles = async () => {
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  // jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { treeRow } = await listing();
   await fireEvent.click(treeRow);
   return screen.findByRole("tab", { name: "Files" });
@@ -1250,18 +1103,7 @@ it("moves through a PR's changes with F7 and Shift+F7 on its Files tab", async (
 });
 
 it("names the views whose keys work where a press goes, for the `?` list", async () => {
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { component, treeRow } = await listing();
   const views = (target: EventTarget | null) => component.keysHere(keyTarget(target, component.paneOf)).views;
   const onList = [views(document.body), views(treeRow)];
@@ -1280,19 +1122,12 @@ it("names the views whose keys work where a press goes, for the `?` list", async
 });
 
 it("opens what quick open found on its line, unfolded, which takes the focus, or one the list hasn't", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [
-        { ...issue, attention: null },
-        { ...standalone, attention: null },
-      ],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...issue, attention: null },
+      { ...standalone, attention: null },
+    ]),
+  );
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -1366,29 +1201,11 @@ it("moves between a PR's files with Alt+PageDown and Alt+PageUp on its Files tab
 
 it("opens a PR's Files tab one file at a time as the settings say, and switches it with Ctrl+K O and the palette", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { component, treeRow } = await listing({ diffFiles: "one" });
   await fireEvent.click(treeRow);
   const tab = await screen.findByRole("tab", { name: "Files" });
   const command = () => paletteRow(component, "toggle_files_mode");
-  /** Each segment's `aria-pressed` in the header's switch, All files then One file. */
-  const pressed = () => {
-    const group = within(screen.getByRole("group", { name: "Files" }));
-    return ["All files", "One file"].map((name) =>
-      group.getByRole("button", { name }).getAttribute("aria-pressed"),
-    );
-  };
   // The Conversation tab shows no files to switch.
   component.runChord("toggle_files_mode", chordEnd());
   expect(command()).toBeUndefined();
@@ -1435,18 +1252,7 @@ it("opens the rail with Ctrl+K F and the palette while a PR shows, and closes it
 
 it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selection or the picked word in its box, and focuses it", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   core.textSearch.mockResolvedValue({ status: "ok", data: { kind: "running", id: 1 } });
   core.textSearchState.mockResolvedValue({ state: "results", id: 1, files: [], matches: 0, end: "done" });
   const selection = vi.spyOn(window, "getSelection");
@@ -1537,8 +1343,8 @@ it("opens the rail on Search with Ctrl+Shift+F and the palette, puts the selecti
 });
 
 it("offers no rail for a PR Tsugiki doesn't hold, which has no tabs to sit beside", async () => {
-  const changed = catchChanged();
-  core.pullRequest.mockResolvedValue({ status: "ok", data: null });
+  const changed = catchEveryListener();
+  core.pullRequest.mockResolvedValue(ok(null));
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await screen.findByText("Tsugiki doesn't hold PR #160662.");
@@ -1556,18 +1362,7 @@ it("offers no rail for a PR Tsugiki doesn't hold, which has no tabs to sit besid
 });
 
 it("keeps the PR on show on Esc in the rail, gives the diff the focus, and gives it the focus as Ctrl+K F closes the rail from its edge", async () => {
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
@@ -1594,18 +1389,7 @@ it("unfolds the files unchanged since a Stale review with Ctrl+K J and the palet
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const unfold = vi.spyOn(PrFilesState.prototype, "unfoldUnchanged").mockImplementation(() => {});
   const folded = vi.spyOn(PrFilesState.prototype, "foldedUnchanged", "get").mockReturnValue(2);
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   const tab = await screen.findByRole("tab", { name: "Files" });
@@ -1680,18 +1464,7 @@ it("opens the Definition peek where [diff] peek says, below the file view's code
     this.openFileView(view);
     return Promise.resolve();
   });
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { treeRow } = await listing({ diffPeek: "split" });
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
@@ -1780,18 +1553,7 @@ it("closes the file view over the PR on show when quick open picks that PR, on t
     this.openFileView(view);
     return Promise.resolve();
   });
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
@@ -1928,18 +1690,7 @@ it("leaves the diff's keys alone while the file view covers it, and the cursor o
 
 it("leaves the diff's lookups alone of its keys for `?` while the file view covers it", async () => {
   vi.spyOn(PrFilesState.prototype, "fileView", "get").mockReturnValue(eggsView());
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news: [], threads: [] },
-  });
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0)));
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await fireEvent.click(await screen.findByRole("tab", { name: "Files" }));
@@ -2194,16 +1945,7 @@ it("leaves the item on show as it is when a pick from the history's list lands o
 });
 
 it("leaves the mouse's own buttons to a dialog on top, and still keeps the page where it is", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention: null }]));
   render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -2284,7 +2026,7 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
  * `markedSeen` answers as the core does once it saved Mark Seen on #5, or once a sync took #5's attention,
  * which drops it below the others, and says that the change names `items`. */
 const threeAlone = async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const alone = (number: number, title: string) => ({
     ...standalone,
     number,
@@ -2299,10 +2041,7 @@ const threeAlone = async () => {
       data: { ...row, ...alone(number, `PR ${String(number)}`), content: null },
     }),
   );
-  const answer = (items: object[]) => ({
-    status: "ok",
-    data: { items, count: items.length, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  const answer = (items: object[]) => workbenchPage(items, { count: items.length });
   core.workbench.mockResolvedValue(answer([first, next, last]));
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
@@ -2489,7 +2228,7 @@ const itemOrder = () =>
   Array.from(document.querySelectorAll(".list .item > .row [data-item]"), (button) => button.textContent);
 
 it("scrolls the list to the Detail pane's row once a change moves the row off the screen (#796)", async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
@@ -2506,7 +2245,7 @@ it("scrolls the list to the Detail pane's row once a change moves the row off th
 });
 
 it("gives the focus back to the row under the cursor when a change moves it off the screen, and scrolls nothing with nothing open (#796)", async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const { prRow } = await listing();
   for (let step = 0; step < 3; step++) await press("ArrowDown");
   await vi.waitFor(() => {
@@ -2528,7 +2267,7 @@ it("gives the focus back to the row under the cursor when a change moves it off 
 });
 
 it("follows the Detail pane's PR to its line under an Issue, with the focus and the scroll (#796)", async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
@@ -2551,7 +2290,7 @@ it("follows the Detail pane's PR to its line under an Issue, with the focus and 
 });
 
 it("leaves the list's scroll alone for a change that moves the Detail pane's item while the list is hidden or the cursor is on another row (#796)", async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
@@ -2564,7 +2303,7 @@ it("leaves the list's scroll alone for a change that moves the Detail pane's ite
       expect(core.workbench.mock.calls.length).toBe(asked + 1);
     });
     // The answer and the page's update take a few promises each, and all of them settle before a timer.
-    await new Promise((settled) => setTimeout(settled, 0));
+    await nextTask();
   };
 
   await toggleList();
@@ -2580,7 +2319,7 @@ it("leaves the list's scroll alone for a change that moves the Detail pane's ite
 });
 
 it("leaves the list's scroll alone once a change takes the Detail pane's item off the list (#796)", async () => {
-  const send = catchChanged();
+  const send = catchEveryListener();
   const { prRow } = await listing();
   await fireEvent.click(prRow);
   await screen.findByRole("region", { name: "PR view" });
@@ -2639,7 +2378,7 @@ it("lets Q and Shift+Q type in a text box", async () => {
 });
 
 it("marks from the palette the item as it is when the row runs, after a sync that came while it was open", async () => {
-  const changed = catchChanged();
+  const changed = catchEveryListener();
   const { component, treeRow } = await listing();
   await fireEvent.click(treeRow);
   await screen.findByRole("button", { name: "Mark Seen" });
@@ -2746,7 +2485,7 @@ it("leaves a mark's refusal behind with the Repository it was made in", async ()
   await vi.waitFor(() => {
     expect(core.workbench).toHaveBeenLastCalledWith("python/other", { kind: "whole" });
   });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await nextTask();
 
   expect(screen.queryByText(/couldn't mark/)).toBeNull();
 });
@@ -2767,16 +2506,9 @@ it("offers no command to fold the items with nothing waiting", async () => {
 
 it("shows another Repository as a launch does: its Workbench, an empty Detail pane, the cursor on top", async () => {
   const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, attention: null }],
-      count: 1,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [mine],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ ...issue, attention: null }], { count: 1, filters: [mine] }),
+  );
   const { rerender } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -2835,7 +2567,7 @@ it("leaves ← and → to whatever has the focus outside the list, such as a dif
   await fireEvent.click(issueRow);
   const pane = await screen.findByRole("region", { name: "Issue view" });
 
-  const sideways = new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true });
+  const sideways = keydown({ key: "ArrowLeft" });
   pane.dispatchEvent(sideways);
 
   expect(sideways.defaultPrevented).toBe(false);
@@ -2905,12 +2637,7 @@ it("starts the way back fresh in another Repository", async () => {
 it("leaves Ctrl+PageDown alone with no PR on show", async () => {
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
-  const pageDown = new KeyboardEvent("keydown", {
-    key: "PageDown",
-    ctrlKey: true,
-    bubbles: true,
-    cancelable: true,
-  });
+  const pageDown = keydown({ key: "PageDown", ctrlKey: true });
 
   await fireEvent(document.body, pageDown);
 
@@ -3015,12 +2742,7 @@ it("leaves Enter alone with nothing selected, and on a focused control", async (
 it("takes a held Enter as one press", async () => {
   const { issueRow } = await listing();
   await press("ArrowDown");
-  const repeat = new KeyboardEvent("keydown", {
-    key: "Enter",
-    repeat: true,
-    bubbles: true,
-    cancelable: true,
-  });
+  const repeat = keydown({ key: "Enter", repeat: true });
 
   await fireEvent(issueRow, repeat);
 
@@ -3029,7 +2751,7 @@ it("takes a held Enter as one press", async () => {
 
 it("leaves F12 to the window's guard away from the Files tab, where it has nothing to go to", async () => {
   await listing();
-  const f12 = new KeyboardEvent("keydown", { key: "F12", bubbles: true, cancelable: true });
+  const f12 = keydown({ key: "F12" });
 
   await fireEvent(document.body, f12);
 
@@ -3058,16 +2780,7 @@ it("leaves the arrows to a text box", async () => {
 });
 
 it("leaves its keys alone while a dialog is on top", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention: null }]));
   render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -3127,16 +2840,7 @@ it("Ctrl+Shift+G opens the PR on show on GitHub", async () => {
 });
 
 it("closes the Detail pane when the Repository changes", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, attention: null }]));
   const { rerender } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -3156,8 +2860,6 @@ const laidOut = (sidebar: number, list: number, detail: number) => {
     const width = this.matches("nav") ? sidebar : this.matches(".list") ? list : detail;
     return { width } as DOMRect;
   });
-  // jsdom has no pointer capture.
-  HTMLElement.prototype.setPointerCapture = vi.fn();
 };
 
 const home = () => document.querySelector<HTMLElement>(".home") as HTMLElement;
@@ -4000,16 +3702,7 @@ it("brings the list back with the focus on the cursor's row when the open item i
   await screen.findByRole("region", { name: "PR view" });
   await press("ArrowUp");
   // The PR leaves the Issue's tree, so the list has no row for what the Detail pane shows.
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...issue, pull_requests: [], attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...issue, pull_requests: [], attention: null }]));
   await fireEvent.click(screen.getByRole("button", { name: "Review requests 0" }));
   await vi.waitFor(() => {
     expect(
@@ -4198,20 +3891,13 @@ it("offers a button to bring the list back once [keys] leaves its key with none"
 });
 
 it("marks each Issue and PR in the list with the icon of its state", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [
-        { ...issue, state: "NOT_PLANNED", attention: null },
-        { ...issue, number: 1, state: null, pull_requests: [], attention: null },
-        { ...standalone, is_draft: true, attention: null },
-      ],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...issue, state: "NOT_PLANNED", attention: null },
+      { ...issue, number: 1, state: null, pull_requests: [], attention: null },
+      { ...standalone, is_draft: true, attention: null },
+    ]),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await unfoldAll();
 
@@ -4221,10 +3907,8 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
 });
 
 /** A page of the Inbox holding `items`, whose next page starts after item `older`, if it names one. */
-const inboxPage = (items: unknown[], older?: number) => ({
-  status: "ok" as const,
-  data: { items, older: older === undefined ? null : { updated_at: "2026-11-04T09:00:00Z", number: older } },
-});
+const inboxPage = (items: unknown[], older?: number) =>
+  ok({ items, older: older === undefined ? null : { updated_at: "2026-11-04T09:00:00Z", number: older } });
 
 /** Lays the Issue list out, as jsdom doesn't: 500 px of room over `content` px of items. */
 function listRoom(content: number) {
@@ -4238,16 +3922,7 @@ function listRoom(content: number) {
 }
 
 it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order", async () => {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ ...standalone, attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await screen.findByRole("button", { name: "#5 Alone" });

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { About } from "$lib/state/about.svelte";
 import { actionOn, remapKeys } from "$lib/state/keymap.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
+import { diffFile, done, ok, readyFiles, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import Page from "./+page.svelte";
 
 const core = vi.hoisted(() => ({
@@ -80,82 +81,62 @@ const THEMES = {
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    status: async () => ({ state: "online", login: "octocat" }),
-    lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
-    syncActivity: async () => null,
-    hourPoints: async () => null,
-    cloning: async () => null,
-    newVersion: async () => null,
-    refresh: async () => null,
-    languageServers: async () => [],
-    ...core,
-  },
-  events: {
-    statusChanged: { listen: async () => () => {} },
-    lastSyncChanged: { listen: async () => () => {} },
-    syncActivityChanged: { listen: async () => () => {} },
-    hourPointsChanged: { listen: async () => () => {} },
-    cloningChanged: { listen: async () => () => {} },
-    mirrorProblemChanged: { listen: async () => () => {} },
-    mirrorQuestionChanged: { listen: async () => () => {} },
-    newVersionFound: { listen: async () => () => {} },
-    mirrorStatesChanged: {
-      listen: async (callback: (event: { payload: unknown }) => void) => {
-        mirrorStates.changed.mockImplementation((payload) => {
-          callback({ payload });
-        });
-        return () => {};
-      },
+vi.mock("$lib/data/bindings", async () => {
+  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      status: async () => ({ state: "online", login: "octocat" }),
+      lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
+      syncActivity: async () => null,
+      hourPoints: async () => null,
+      cloning: async () => null,
+      newVersion: async () => null,
+      refresh: async () => null,
+      languageServers: async () => [],
+      ...core,
     },
-    changed: { listen: async () => () => {} },
-    readFailed: { listen: async () => () => {} },
-    languageServersChanged: { listen: async () => () => {} },
-    headsFetched: { listen: async () => () => {} },
-    headsFetchFailed: { listen: async () => () => {} },
-    mirrorsHeldChanged: { listen: async () => () => {} },
-  },
-}));
+    events: {
+      ...prFilesEvents(() => async () => () => {}),
+      statusChanged: { listen: async () => () => {} },
+      lastSyncChanged: { listen: async () => () => {} },
+      syncActivityChanged: { listen: async () => () => {} },
+      hourPointsChanged: { listen: async () => () => {} },
+      mirrorProblemChanged: { listen: async () => () => {} },
+      mirrorQuestionChanged: { listen: async () => () => {} },
+      newVersionFound: { listen: async () => () => {} },
+      mirrorStatesChanged: {
+        listen: async (callback: (event: { payload: unknown }) => void) => {
+          mirrorStates.changed.mockImplementation((payload) => {
+            callback({ payload });
+          });
+          return () => {};
+        },
+      },
+      languageServersChanged: { listen: async () => () => {} },
+    },
+  };
+});
 
 // jsdom has no `matchMedia`: the system stays on its dark side.
 vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: () => {} }));
-// jsdom lays nothing out, so the diff's bind:clientHeight has nothing to observe.
-vi.stubGlobal(
-  "ResizeObserver",
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  },
-);
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
 const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
 /** The window open on gcmon, the only Repository. */
 const gcmonHome = { screen: "repository", repository: gcmon, others: [] } as const;
 /** The Workbench with one Issue, #7, on it. */
-const oneIssue = {
-  status: "ok",
-  data: {
-    items: [
-      {
-        kind: "issue",
-        number: 7,
-        title: "It crashes",
-        state: "OPEN",
-        people: [],
-        updated_at: "2026-11-04T10:00:00Z",
-        pull_requests: [],
-        attention: null,
-      },
-    ],
-    count: 0,
-    review_requests: 0,
-    stale_reviews: 0,
-    filters: [],
+const oneIssue = workbenchPage([
+  {
+    kind: "issue",
+    number: 7,
+    title: "It crashes",
+    state: "OPEN",
+    people: [],
+    updated_at: "2026-11-04T10:00:00Z",
+    pull_requests: [],
+    attention: null,
   },
-} as const;
+]);
 
 /** A palette row's text without the key on its right, which describes the row and stays out of its name. */
 const rowText = (option: HTMLElement) => {
@@ -165,6 +146,10 @@ const rowText = (option: HTMLElement) => {
 };
 /** The text of each of the palette's rows, without their keys. */
 const rowTexts = () => screen.getAllByRole("option").map(rowText);
+/** Presses Ctrl+Shift+P, which opens the command palette. */
+const ctrlShiftP = () => fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+/** Presses Ctrl+K, which starts a chord. */
+const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
 
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
@@ -180,10 +165,7 @@ beforeEach(() => {
   core.themes.mockResolvedValue({ status: "ok", data: structuredClone(THEMES) });
   core.turnWindow.mockResolvedValue(null);
   core.tokenSource.mockResolvedValue("gh");
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-  });
+  core.workbench.mockResolvedValue(workbenchPage([]));
   core.settings.mockResolvedValue(structuredClone(SETTINGS));
   core.recentCommands.mockResolvedValue([]);
   core.quickOpen.mockResolvedValue({ status: "ok", data: { named: null, others: [] } });
@@ -350,7 +332,7 @@ it("keeps the palette from opening over the add dialog", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   render(Page);
   await fireEvent.click(await screen.findByRole("button", { name: "Add repository" }));
-  await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  await ctrlShiftP();
   expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
   expect(screen.getByRole("dialog", { name: "Add repository" })).toBeTruthy();
 });
@@ -423,7 +405,7 @@ it("opens the command palette on Ctrl+Shift+P and closes it on Esc", async () =>
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   render(Page);
   expect(screen.queryByRole("dialog")).toBeNull();
-  await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  await ctrlShiftP();
   expect(screen.getByRole("dialog", { name: "Command palette" })).toBeTruthy();
   await fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -435,7 +417,7 @@ it("gives the list's keys to a dialog on top of it", async () => {
   render(Page);
   const row = await screen.findByRole("button", { name: "#7 It crashes" });
 
-  await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+  await ctrlShiftP();
   await fireEvent.keyDown(document.body, { key: "ArrowDown" });
   expect(document.activeElement).not.toBe(row);
 
@@ -445,8 +427,6 @@ it("gives the list's keys to a dialog on top of it", async () => {
 });
 
 describe("the focus under the palette", () => {
-  const ctrlShiftP = () =>
-    fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
   const palette = () => screen.queryByRole("dialog", { name: "Command palette" });
 
   /** The page open on gcmon, with the focus on its one row. */
@@ -568,7 +548,7 @@ describe("the performance HUD", () => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     render(Page);
     const fromPalette = async (title: string) => {
-      await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+      await ctrlShiftP();
       await fireEvent.click(screen.getByRole("option", { name: title }));
     };
     await fromPalette("Show performance HUD");
@@ -581,7 +561,7 @@ describe("the performance HUD", () => {
 describe("Open DevTools", () => {
   /** Opens the palette and gives the title of each of its rows. */
   const paletteTitles = async () => {
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     return rowTexts();
   };
 
@@ -628,57 +608,19 @@ const openAddFromPicker = async () => {
 };
 
 /** A Standalone PR, #70. */
-const pr = {
-  number: 70,
-  title: "gh-7: Fix the crash",
-  author: "some-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: null,
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [70], up_to: null }, state: "seen" },
-};
-const diffFile = (path: string, row: number) => ({
-  path,
-  old_path: null,
-  change: { kind: "lines", added: 1, removed: 0 },
-  row,
-  columns: 4,
-  generated: false,
-  gaps: [],
-  rest: null,
-  pairs: [],
-});
+const pr = workbenchRow(70, { title: "gh-7: Fix the crash", author: "some-author", ci: null });
 /** #70's diff, of three files. */
-const diff = {
-  status: "ok",
-  data: {
-    state: "ready",
-    head: "abc",
-    base: "base",
-    files: ["Lib/gc.py", "Modules/gcmodule.c", "Lib/test/test_70.py"].map(diffFile),
-    rows: 3,
-    news: [],
-    threads: { kind: "shown", threads: [] },
-  },
-};
+const diff = ok(
+  readyFiles(3, {
+    files: ["Lib/gc.py", "Modules/gcmodule.c", "Lib/test/test_70.py"].map((path, row) => diffFile(path, row)),
+  }),
+);
 
 /** The core with #70 alone on the Workbench, its view and its diff. */
 function listOnePr() {
-  core.workbench.mockResolvedValue({
-    status: "ok",
-    data: {
-      items: [{ kind: "standalone_pr", ...pr, backports: [], attention: null }],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [],
-    },
-  });
-  const done = { status: "ok", data: null };
+  core.workbench.mockResolvedValue(
+    workbenchPage([{ kind: "standalone_pr", ...pr, backports: [], attention: null }]),
+  );
   core.openPullRequest.mockResolvedValue(done);
   core.fetchPullRequest.mockResolvedValue(done);
   core.pullRequest.mockResolvedValue({
@@ -755,7 +697,7 @@ describe("quick open", () => {
     const commands = rowTexts();
     await fireEvent.keyDown(window, { key: "Escape" });
 
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
 
     expect(commands).toEqual(["Open Settings"]);
     expect((box() as HTMLInputElement).value).toBe(">");
@@ -901,7 +843,7 @@ describe("quick open", () => {
 
     await ctrlP();
     const opened = screen.queryByRole("dialog");
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
 
     expect(opened).toBeNull();
     expect((box() as HTMLInputElement).value).toBe("");
@@ -911,7 +853,7 @@ describe("quick open", () => {
 
 describe("a switch from the palette", () => {
   const palette = async () => {
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
   };
 
   beforeEach(() => {
@@ -973,7 +915,7 @@ describe("a switch from the palette", () => {
 
 describe("the palette's order", () => {
   const palette = async () => {
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
   };
   const titles = rowTexts;
 
@@ -1068,8 +1010,6 @@ describe("the palette's order", () => {
 });
 
 describe("every action in the palette", () => {
-  const ctrlShiftP = () =>
-    fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
   /** Each of the palette's rows: its text, and the key on its right, or null for none. */
   const rows = () =>
     screen
@@ -1475,12 +1415,12 @@ describe("the Repository picker", () => {
     render(Page);
     await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
     expect(picker()).toBeTruthy();
 
     await fireEvent.keyDown(window, { key: "Escape" });
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     await ctrlR();
     expect(picker()).toBeNull();
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeTruthy();
@@ -1488,7 +1428,6 @@ describe("the Repository picker", () => {
 });
 
 describe("a chord", () => {
-  const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
   const chord = () => screen.queryByText("Ctrl+K");
 
   beforeEach(() => {
@@ -1550,7 +1489,7 @@ describe("a chord", () => {
   it("doesn't start under the palette", async () => {
     render(Page);
     await screen.findByRole("button", { name: gcmon.name });
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     await ctrlK();
     expect(chord()).toBeNull();
   });
@@ -1574,7 +1513,6 @@ describe("a chord", () => {
 });
 
 describe("the theme picker", () => {
-  const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
   const ctrlKT = async () => {
     await ctrlK();
     await fireEvent.keyDown(document.body, { key: "t", code: "KeyT" });
@@ -1619,7 +1557,7 @@ describe("the theme picker", () => {
 
   it("opens from the palette, and Enter saves the theme, which stays on the window", async () => {
     await opened();
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     await fireEvent.click(screen.getByRole("option", { name: "Pick a Theme" }));
     const box = await screen.findByRole("combobox", { name: "Theme" });
     const reads = core.settings.mock.calls.length;
@@ -1697,7 +1635,7 @@ describe("the theme picker", () => {
       expect(screen.getByRole("status").textContent).toContain(problem);
     });
     expect(core.themes).toHaveBeenCalledTimes(reads + 1);
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     await fireEvent.click(screen.getByRole("option", { name: /^Reload Themes/ }));
     await vi.waitFor(() => {
       expect(core.themes).toHaveBeenCalledTimes(reads + 2);
@@ -1707,7 +1645,7 @@ describe("the theme picker", () => {
   it("keeps the palette, the Repository picker and the chords from opening over it", async () => {
     await opened();
     await ctrlKT();
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     await fireEvent.keyDown(document.body, { key: "r", code: "KeyR", ctrlKey: true });
     await ctrlK();
 
@@ -1721,8 +1659,6 @@ describe("the theme picker", () => {
 describe("the Settings dialog", () => {
   const ctrlComma = (target: Element = document.body) =>
     fireEvent.keyDown(target, { key: ",", code: "Comma", ctrlKey: true });
-  const ctrlShiftP = () =>
-    fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
   const settings = () => screen.queryByRole("dialog", { name: "Settings" });
   /** The Account page's value beside "Signed in as". */
   const signedInAs = () =>
@@ -1878,7 +1814,7 @@ describe("the Settings dialog", () => {
     await fireEvent.keyDown(document.body, { key: "ArrowDown" });
     await ctrlShiftP();
     await fireEvent.keyDown(document.body, { key: "r", code: "KeyR", ctrlKey: true });
-    await fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
+    await ctrlK();
 
     expect(document.activeElement).toBe(settings());
     expect(screen.queryByRole("dialog", { name: "Command palette" })).toBeNull();
@@ -2086,7 +2022,7 @@ describe("the key list", () => {
     await vi.waitFor(() => {
       expect(actionOn("ctrl+/")).toBe("show_keys");
     });
-    await fireEvent.keyDown(window, { key: "P", code: "KeyP", ctrlKey: true, shiftKey: true });
+    await ctrlShiftP();
     // Ctrl+/ types nothing, so the palette's text box doesn't keep it.
     await fireEvent.keyDown(screen.getByRole("combobox", { name: "Command" }), {
       key: "/",
@@ -2117,7 +2053,7 @@ describe("keys remapped in [keys]", () => {
       expect(actionOn("ctrl+t")).toBe("pick_theme");
     });
 
-    await fireEvent.keyDown(document.body, { key: "k", code: "KeyK", ctrlKey: true });
+    await ctrlK();
     await fireEvent.keyDown(document.body, { key: "c", code: "KeyC" });
     const palette = screen.queryByRole("dialog", { name: "Command palette" });
     // Behind the palette, Pick a Theme does nothing, as a chord can't start there.

@@ -1,56 +1,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events, type FailedRead } from "$lib/data/bindings";
+import { diffFile, done, ok, readyFiles, workbenchRow } from "$lib/testing/fixtures";
 import { PanesState } from "./panes.svelte";
 import { PrViewState, type PrView } from "./pr-view.svelte";
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    pullRequest: vi.fn(),
-    openPullRequest: vi.fn(),
-    fetchPullRequest: vi.fn(),
-    pullRequestFiles: vi.fn(),
-    cloning: vi.fn(),
-    mirrorStates: vi.fn(async () => []),
-    mirrorsHeld: vi.fn(async () => false),
-    textSearch: vi.fn(async () => ({ status: "ok", data: { kind: "running", id: 1 } })),
-    textSearchState: vi.fn(async () => ({ state: "no_checkout", id: 1 })),
-    textSearchCancel: vi.fn(async () => null),
-  },
-  events: {
-    changed: { listen: vi.fn(async () => () => {}) },
-    textSearchChanged: { listen: vi.fn(async () => () => {}) },
-    readFailed: { listen: vi.fn(async () => () => {}) },
-    headsFetched: { listen: vi.fn(async () => () => {}) },
-    headsFetchFailed: { listen: vi.fn(async () => () => {}) },
-    cloningChanged: { listen: vi.fn(async () => () => {}) },
-    mirrorStatesChanged: { listen: vi.fn(async () => () => {}) },
-    mirrorsHeldChanged: { listen: vi.fn(async () => () => {}) },
-  },
-}));
+vi.mock("$lib/data/bindings", async () => {
+  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      pullRequest: vi.fn(),
+      openPullRequest: vi.fn(),
+      fetchPullRequest: vi.fn(),
+      pullRequestFiles: vi.fn(),
+      cloning: vi.fn(),
+      mirrorStates: vi.fn(async () => []),
+      mirrorsHeld: vi.fn(async () => false),
+      textSearch: vi.fn(async () => ({ status: "ok", data: { kind: "running", id: 1 } })),
+      textSearchState: vi.fn(async () => ({ state: "no_checkout", id: 1 })),
+      textSearchCancel: vi.fn(async () => null),
+    },
+    events: {
+      ...prFilesEvents(() => vi.fn(async () => () => {})),
+      textSearchChanged: { listen: vi.fn(async () => () => {}) },
+    },
+  };
+});
 
 const view: PrView = {
-  number: 11,
-  title: "gh-10: Fix the crash",
-  author: "some-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: null,
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [11], up_to: null }, state: "seen" },
+  ...workbenchRow(11, { title: "gh-10: Fix the crash", author: "some-author", ci: null }),
   content: null,
   shares_review_of: null,
 };
-
-const done = { status: "ok" as const, data: null };
 
 describe("PrViewState", () => {
   beforeEach(() => {
     vi.mocked(commands.openPullRequest).mockResolvedValue(done);
     vi.mocked(commands.fetchPullRequest).mockResolvedValue(done);
-    vi.mocked(commands.pullRequest).mockResolvedValue({ status: "ok", data: view });
+    vi.mocked(commands.pullRequest).mockResolvedValue(ok(view));
     vi.mocked(commands.pullRequestFiles).mockResolvedValue({ status: "ok", data: { state: "fetching" } });
     vi.mocked(commands.cloning).mockResolvedValue(null);
   });
@@ -199,30 +185,10 @@ describe("PrViewState", () => {
         files: [{ path: "Lib/os.py", whitespace_only: false }],
       },
     };
-    const file = (path: string, row: number) => ({
-      path,
-      old_path: null,
-      change: { kind: "lines" as const, added: 1, removed: 0 },
-      row,
-      columns: 4,
-      generated: false,
-      gaps: [],
-      rest: null,
-      pairs: [],
-    });
-    vi.mocked(commands.pullRequest).mockResolvedValue({ status: "ok", data: stale });
-    vi.mocked(commands.pullRequestFiles).mockResolvedValue({
-      status: "ok",
-      data: {
-        state: "ready",
-        head: "abc",
-        base: "base",
-        files: [file("Lib/ast.py", 0), file("Lib/os.py", 3)],
-        rows: 6,
-        news: [],
-        threads: { kind: "shown", threads: [] },
-      },
-    });
+    vi.mocked(commands.pullRequest).mockResolvedValue(ok(stale));
+    vi.mocked(commands.pullRequestFiles).mockResolvedValue(
+      ok(readyFiles(6, { files: [diffFile("Lib/ast.py", 0), diffFile("Lib/os.py", 3)] })),
+    );
     const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
 

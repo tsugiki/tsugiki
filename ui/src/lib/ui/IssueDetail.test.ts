@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/sve
 import { beforeEach, expect, it, vi } from "vitest";
 import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
+import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
 import IssueDetail from "./IssueDetail.svelte";
 
 const core = vi.hoisted(() => ({
@@ -24,29 +25,18 @@ vi.mock("$lib/data/bindings", () => ({
   events: { changed: { listen: core.listen }, readFailed: { listen: core.listen } },
 }));
 
-const row = {
-  title: "gh-7: Fix it",
-  author: "some-author",
-  state: "MERGED" as const,
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS" as const,
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "reviewed" as const },
-  seen: { mark: { numbers: [], up_to: null }, state: "seen" as const },
-};
+/** PR `number`'s row, merged and reviewed. */
+const row = (number: number) =>
+  workbenchRow(number, { author: "some-author", state: "MERGED", your_review: { kind: "reviewed" } });
 
 const opened: TreeEntry = {
   kind: "pr",
-  number: 13,
-  ...row,
+  ...row(13),
   state: "OPEN",
   your_review: { kind: "unreviewed" },
-  reasons: [],
   backports: [],
 };
-const orphan: TreeEntry = { kind: "backport", number: 14, ...row, target_branch: "3.12", backport: "manual" };
+const orphan: TreeEntry = { kind: "backport", ...row(14), target_branch: "3.12", backport: "manual" };
 
 const view: IssueView = {
   number: 7,
@@ -61,11 +51,10 @@ const view: IssueView = {
   pull_requests: [
     {
       kind: "pr",
-      number: 10,
-      ...row,
+      ...row(10),
       backports: [
-        { number: 11, ...row, target_branch: "3.14", backport: "bot" },
-        { number: 12, ...row, state: "OPEN", target_branch: "3.13", backport: "manual" },
+        { ...row(11), target_branch: "3.14", backport: "bot" },
+        { ...row(12), state: "OPEN", target_branch: "3.13", backport: "manual" },
       ],
     },
     opened,
@@ -107,7 +96,7 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 const REVIEWED = { reviewed: "1".repeat(40), head: "2".repeat(40) };
 
 const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn()) => {
-  core.issue.mockResolvedValue({ status: "ok", data: answer });
+  core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr, onmark });
@@ -118,9 +107,9 @@ const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.f
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(vi.fn());
-  core.openIssue.mockResolvedValue({ status: "ok", data: null });
-  core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
-  core.openLink.mockResolvedValue({ status: "ok", data: null });
+  core.openIssue.mockResolvedValue(done);
+  core.openOnGithub.mockResolvedValue(done);
+  core.openLink.mockResolvedValue(done);
 });
 
 it("shows the title and author, the description and the recent comments", async () => {
@@ -235,7 +224,7 @@ it("shows a Stale review in the danger tone, with the files changed since the Re
 it("keeps the Stale review of a merged PR, whose check froze with it, with the changed files", async () => {
   const files = [{ path: "Lib/ast.py", whitespace_only: false }];
   const review = { kind: "stale_review" as const, ...REVIEWED, files };
-  const merged: TreeEntry = { kind: "pr", number: 15, ...row, your_review: review, backports: [] };
+  const merged: TreeEntry = { kind: "pr", ...row(15), your_review: review, backports: [] };
   await shown({ ...view, pull_requests: [merged] });
 
   const words = [...document.querySelectorAll(".words")].map((line) => line.textContent);
@@ -340,12 +329,11 @@ const withMerged: IssueView = {
   merged: [
     {
       kind: "pr",
-      number: 20,
-      ...row,
+      ...row(20),
       title: "gh-7: First fix",
-      backports: [{ number: 21, ...row, target_branch: "3.14", backport: "bot" }],
+      backports: [{ ...row(21), target_branch: "3.14", backport: "bot" }],
     },
-    { kind: "pr", number: 22, ...row, title: "gh-7: Second fix", backports: [] },
+    { kind: "pr", ...row(22), title: "gh-7: Second fix", backports: [] },
   ],
   merged_count: 3,
 };
@@ -431,10 +419,7 @@ it("opens a PR row and a Backport in the PR view", async () => {
 });
 
 it("sends a link in a comment to the browser, and says if that fails", async () => {
-  core.openLink.mockResolvedValue({
-    status: "error",
-    error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
-  });
+  core.openLink.mockResolvedValue(refused("Tsugiki couldn't open the system browser."));
   await shown(view);
 
   await fireEvent.click(screen.getByRole("link", { name: "A link" }));
@@ -527,7 +512,7 @@ it("keeps how far down the user scrolled its pane", async () => {
 });
 
 it("says why it can't show the Issue", async () => {
-  core.issue.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
+  core.issue.mockResolvedValue(refused("no database"));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   render(IssueDetail, {

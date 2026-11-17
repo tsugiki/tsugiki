@@ -83,6 +83,12 @@ Before you write a test helper, grep for one that does the job. A Rust helper li
 module or crate it serves, or in `crates/test-git` when the tests of several crates need it and it uses no
 crate's types. A helper that a second test file needs moves there.
 
+The UI's shared test helpers live in `ui/src/lib/testing/`, which only tests may import. `setup.ts` fills
+jsdom's gaps, such as `ResizeObserver`, for every test file. `fixtures.ts` builds what the core answers, such
+as a Workbench page or a ready diff, and imports no Vitest, so the e2e specs use it too. `helpers.ts` drives
+the DOM, as `keydown` and `nextTask` do, and `state.ts` holds the helpers that reach into the app's bindings
+and state. What the e2e specs alone share lives in `ui/e2e/fixtures.ts`.
+
 ## One copy
 
 Code that a second place needs moves to one place that both use, in Rust, TypeScript, Svelte and the

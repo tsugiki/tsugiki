@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { Hit, ServerName } from "$lib/data/bindings";
+import { hitIn, looking, showing } from "$lib/testing/state";
 import type { LaidThread, ThreadAnchor } from "./diff-layout";
-import { HitCode } from "./hit-code.svelte";
 import { PEEK_ID, PEEK_ROWS, peekPlaces, peekWords, withPeek, type Peek } from "./peek";
 
 const laid = <At extends ThreadAnchor>(id: string, at: At) => ({ id, at, places: 3 });
@@ -31,15 +31,6 @@ it("puts the peek under a line among the threads under lines of its own file", (
   expect(under(0, 4).indexOf(PEEK_ID)).toBe(1);
   expect(under(0, 7).indexOf(PEEK_ID)).toBe(5);
   expect(under(1, 2).indexOf(PEEK_ID)).toBe(3);
-});
-
-const looking = (lookup: Peek["lookup"]): Peek => ({
-  at: { kind: "row", row: 2 },
-  layout: "inline",
-  symbol: "eggs",
-  side: "head",
-  commit: "abcdef123",
-  lookup,
 });
 
 it("says what a lookup waits for, with the seconds once they pass one", () => {
@@ -94,24 +85,6 @@ it("says a lookup was cancelled, in a peek with words only", () => {
   expect(peekWords(cancelled).body).toBe("The lookup was cancelled");
 });
 
-/** A hit in `path` at line `line` at the PR's head. */
-const hitIn = (path: string, line: number): Hit => ({
-  place: { kind: "repository", path, side: "head", commit: "fedcba987" },
-  line,
-  column: 4,
-  text: `def area${String(line)}():`,
-});
-
-/** A peek with `hits` that shows the code of the one at `index`. */
-const showing = (hits: Hit[], index: number): Peek => {
-  const hit = hits[index];
-  if (hit === undefined) throw new Error("no such hit");
-  return {
-    ...looking({ state: "answered", answer: { state: "found", hits } }),
-    code: new HitCode("python/cpython", hit, index),
-  };
-};
-
 it("names the hit the peek shows in its header, and counts it among the hits", () => {
   const hits = [hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9), hitIn("Lib/c.py", 12)];
 
@@ -121,7 +94,7 @@ it("names the hit the peek shows in its header, and counts it among the hits", (
     where: "Lib/c.py:12",
     commit: "at fedcba9 · the PR's head",
     count: "3 of 3",
-    body: "def area12():",
+    body: "    def area12(self):",
   });
 });
 

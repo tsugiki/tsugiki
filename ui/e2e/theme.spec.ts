@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { LoadedSettings_Serialize } from "../src/lib/data/bindings.ts";
+import { ok } from "../src/lib/testing/fixtures.ts";
 import { mockCore, noServers } from "./mock-core.ts";
 import { appearance, themes } from "./themes.ts";
 
@@ -15,7 +16,7 @@ const colours = (page: Page) =>
 
 test("the window takes the theme of the side the system is on, and turns with it", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
-  await mockCore(page, { themes: { status: "ok", data: themes } });
+  await mockCore(page, { themes: ok(themes) });
   await page.goto("/");
   await expect
     .poll(() => colours(page))
@@ -29,7 +30,7 @@ test("the window takes the theme of the side the system is on, and turns with it
 
 test("the theme picker previews a theme on the window, and Esc puts the old one back", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
-  await mockCore(page, { themes: { status: "ok", data: themes } });
+  await mockCore(page, { themes: ok(themes) });
   await page.goto("/");
   const darkModern = { background: "rgb(31, 31, 31)", text: "rgb(204, 204, 204)", scheme: "dark" };
   await expect.poll(() => colours(page)).toEqual(darkModern);
@@ -56,7 +57,7 @@ test("the theme picker previews a theme on the window, and Esc puts the old one 
 test("A light theme the settings name shows while the system is dark", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   const theme = { kind: "named", name: themes.light.chosen, side: "light" } as const;
-  await mockCore(page, { themes: { status: "ok", data: { ...themes, theme } } });
+  await mockCore(page, { themes: ok({ ...themes, theme }) });
   await page.goto("/");
   await expect
     .poll(() => colours(page))
@@ -80,14 +81,11 @@ test("Settings › General shows a dark Theme on the window before Apply, and Ca
     problems: [],
   };
   await mockCore(page, {
-    themes: { status: "ok", data: themes },
+    themes: ok(themes),
     settings: loaded,
-    rereadSettings: { status: "ok", data: loaded },
+    rereadSettings: ok(loaded),
     // What the core works out for Gruvbox Dark Hard picked in the dialog.
-    previewThemes: {
-      status: "ok",
-      data: { ...themes, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } },
-    },
+    previewThemes: ok({ ...themes, theme: { kind: "named", name: "Gruvbox Dark Hard", side: "dark" } }),
   });
   await page.goto("/");
   const lightModern = { background: "rgb(255, 255, 255)", text: "rgb(59, 59, 59)", scheme: "light" };

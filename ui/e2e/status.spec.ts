@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { done, ok } from "../src/lib/testing/fixtures.ts";
 import { emitFromCore, mockCore, noServers } from "./mock-core.ts";
 import { appearance } from "./themes.ts";
 
@@ -113,10 +114,10 @@ test("a hidden status bar says a mirror waits for an answer, and its dialog says
     settings: hidden,
     status: online,
     mirrorQuestion: "python/cpython",
-    mirrorCost: { status: "ok", data: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 } },
-    pickFolder: { status: "ok", data: "D:/somewhere" },
-    checkClone: { status: "ok", data: { kind: "no_remote" } },
-    chooseMirrorSource: { status: "ok", data: null },
+    mirrorCost: ok({ mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 }),
+    pickFolder: ok("D:/somewhere"),
+    checkClone: ok({ kind: "no_remote" }),
+    chooseMirrorSource: done,
   });
   await page.goto("/");
   const line = page.getByRole("button", { name: "python/cpython's mirror waits for your answer" });

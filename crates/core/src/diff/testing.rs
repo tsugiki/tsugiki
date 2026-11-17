@@ -2,8 +2,9 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::{Snapshot, git};
 
 use super::{Diff, MirrorDiff, Start, read};
 use crate::facts::CommitSha;
@@ -29,12 +30,29 @@ pub(crate) struct Mirrored {
 /// A NEWS entry main has before the PR starts, which a PR can delete.
 pub(super) const OLD_NEWS: &str = "Misc/NEWS.d/next/Library/2026-01-01-00-00-00.gh-issue-2.Old.rst";
 
+/// The mirror [`Mirrored::new`] copies, and its PR's head. About 15 gits build it, once in a test run.
+static BUILT: OnceLock<(Snapshot, CommitSha)> = OnceLock::new();
+
 impl Mirrored {
+    /// A copy of the mirror, which the test can change: the copy shares nothing with another test's.
     pub(crate) fn new(name: &str) -> Self {
-        Self::with(name, |_| {})
+        let (snapshot, head) = BUILT.get_or_init(|| {
+            let built = Self::with("built", |_| {});
+            // A copy would point `origin` at the working copy, which goes once the mirror is read.
+            let _ = git(&built.mirror, &["remote", "remove", "origin"]);
+            (Snapshot::of(&built.mirror), built.head)
+        });
+        let root = crate::testing::temp_path(&format!("diff-{name}"));
+        let mirror = root.join("mirror.git");
+        snapshot.write(&mirror);
+        Self {
+            mirror,
+            head: head.clone(),
+            root,
+        }
     }
 
-    /// The same, with what `more` adds to the PR's commit in the folder it gets.
+    /// A mirror built for this test alone, with what `more` adds to the PR's commit in the folder it gets.
     pub(super) fn with(name: &str, more: impl FnOnce(&Path)) -> Self {
         let root = crate::testing::temp_path(&format!("diff-{name}"));
         let work = root.join("work");

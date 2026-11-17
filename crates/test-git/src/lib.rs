@@ -10,8 +10,10 @@
 )]
 #![expect(clippy::unwrap_used, reason = "a failed setup step ends the test")]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, fs, io, iter, thread};
 
@@ -107,15 +109,32 @@ pub fn commit(dir: &Path, message: &str) -> String {
     git(dir, &["rev-parse", "HEAD"]).trim().to_owned()
 }
 
-/// Makes a repository at `work` whose `main` holds the files `base`, each a path and its text, and whose
-/// branch `pr` writes the files `head` on top of them, deleting each whose text is empty. Clones it bare to
-/// `mirror`, as a Mirror holds a PR, and gives the commit at the end of `pr`.
+/// Makes a bare repository at `mirror`, as a Mirror holds a PR, whose `main` holds the files `base`, each a
+/// path and its text, and whose branch `pr` writes the files `head` on top of them, deleting each whose text
+/// is empty. Gives the commit at the end of `pr`. The repository it clones from is built at `work` and gone
+/// by the time this returns, and the mirror has no remote. A test run builds the mirror of the same files
+/// once, and later calls copy it.
 pub fn mirror_with_branch(
     work: &Path,
     mirror: &Path,
     base: &[(&str, &str)],
     head: &[(&str, &str)],
 ) -> String {
+    static BUILT: Mutex<BTreeMap<BuiltFrom, Arc<Built>>> = Mutex::new(BTreeMap::new());
+    let owned = |files: &[(&str, &str)]| -> Vec<(String, String)> {
+        let owned = files.iter().map(|(path, text)| ((*path).to_owned(), (*text).to_owned()));
+        owned.collect()
+    };
+    let key = BuiltFrom {
+        base: owned(base),
+        head: owned(head),
+    };
+    // Two tests that build the same mirror at once each build it, rather than one waiting on the other.
+    let found = BUILT.lock().unwrap().get(&key).cloned();
+    if let Some(built) = found {
+        built.mirror.write(mirror);
+        return built.pr.clone();
+    }
     fs::create_dir_all(work).unwrap();
     let _ = git(work, &["init", "-q", "-b", "main"]);
     write_files(work, base);
@@ -126,7 +145,28 @@ pub fn mirror_with_branch(
     fs::create_dir_all(mirror.parent().unwrap()).unwrap();
     let (from, to) = (work.to_string_lossy(), mirror.to_string_lossy());
     let _ = git(work, &["clone", "-q", "--bare", &from, &to]);
+    // A copy would point `origin` at the folder of the test that built it, which may be gone.
+    let _ = git(mirror, &["remote", "remove", "origin"]);
+    remove(work);
+    let built = Built {
+        mirror: Snapshot::of(mirror),
+        pr: pr.clone(),
+    };
+    let _ = BUILT.lock().unwrap().insert(key, Arc::new(built));
     pr
+}
+
+/// The files a [`mirror_with_branch`] call gave, each a path and its text.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct BuiltFrom {
+    base: Vec<(String, String)>,
+    head: Vec<(String, String)>,
+}
+
+/// A mirror [`mirror_with_branch`] built, and the commit at the end of its PR.
+struct Built {
+    mirror: Snapshot,
+    pr: String,
 }
 
 /// Writes each of `files`, a path under `dir` and its text, or deletes the file where the text is empty.
@@ -369,6 +409,51 @@ fn remove_once(path: &Path) -> io::Result<()> {
     match removed {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         other => other,
+    }
+}
+
+/// What a folder holds, read into memory: each folder in it, empty ones included, and each file with its
+/// bytes. A fixture that many tests share builds once with git, and each test writes its own copy from this
+/// without starting a git. On Windows a git costs about 30 ms to start.
+pub struct Snapshot {
+    /// Paths relative to the folder read, each folder before what it holds.
+    entries: Vec<(PathBuf, Entry)>,
+}
+
+enum Entry {
+    Folder,
+    File(Vec<u8>),
+}
+
+impl Snapshot {
+    /// Reads what `folder` holds.
+    pub fn of(folder: &Path) -> Self {
+        let mut entries = Vec::new();
+        let mut folders = vec![PathBuf::new()];
+        while let Some(relative) = folders.pop() {
+            for entry in fs::read_dir(folder.join(&relative)).unwrap() {
+                let entry = entry.unwrap();
+                let path = relative.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    entries.push((path.clone(), Entry::Folder));
+                    folders.push(path);
+                } else {
+                    entries.push((path, Entry::File(fs::read(entry.path()).unwrap())));
+                }
+            }
+        }
+        Self { entries }
+    }
+
+    /// Writes what the folder held into `folder`, which this makes.
+    pub fn write(&self, folder: &Path) {
+        fs::create_dir_all(folder).unwrap();
+        for (path, entry) in &self.entries {
+            match entry {
+                Entry::Folder => fs::create_dir_all(folder.join(path)).unwrap(),
+                Entry::File(bytes) => fs::write(folder.join(path), bytes).unwrap(),
+            }
+        }
     }
 }
 

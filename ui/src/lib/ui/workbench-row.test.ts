@@ -20,8 +20,7 @@ const REVIEWED = "1".repeat(40);
 /** The head the check compared it with. */
 const HEAD = "2".repeat(40);
 
-const row: WorkbenchRow = workbenchRow({
-  number: 160662,
+const row: WorkbenchRow = workbenchRow(160662, {
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
   reasons: ["review_request"],

@@ -23,7 +23,7 @@ export const repository = {
 export const home = { screen: "repository", repository, others: [] as string[] } as const;
 
 /** PR #10's row: open and unreviewed, its CI passed, seen. */
-export const row = workbenchRow();
+export const row = workbenchRow(10);
 
 /** Issue #7, with PR #10 under it, seen, and with nothing waiting. */
 export const issue: Extract<ListedItem, { kind: "issue" }> = {

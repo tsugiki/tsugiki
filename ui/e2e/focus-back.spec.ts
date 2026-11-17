@@ -10,8 +10,7 @@ import { mockCore } from "./mock-core.ts";
 const own: ListedItem = {
   attention: null,
   kind: "standalone_pr",
-  ...workbenchRow({
-    number: 157178,
+  ...workbenchRow(157178, {
     title: "GH-156425: Clear GC frame on early return",
     author: "octocat",
     is_draft: true,

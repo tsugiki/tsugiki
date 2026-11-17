@@ -27,7 +27,7 @@ vi.mock("$lib/data/bindings", () => ({
 
 /** PR `number`'s row, merged and reviewed. */
 const row = (number: number) =>
-  workbenchRow({ number, author: "some-author", state: "MERGED", your_review: { kind: "reviewed" } });
+  workbenchRow(number, { author: "some-author", state: "MERGED", your_review: { kind: "reviewed" } });
 
 const opened: TreeEntry = {
   kind: "pr",

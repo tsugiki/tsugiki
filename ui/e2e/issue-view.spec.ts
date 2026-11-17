@@ -10,8 +10,8 @@ import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 import { themes } from "./themes.ts";
 
-/** A merged PR's row, reviewed, numbered as each place that spreads it says. */
-const row = workbenchRow({
+/** A merged PR's row, reviewed, which each place that spreads it numbers. */
+const row = workbenchRow(10, {
   author: "some-author",
   state: "MERGED",
   your_review: { kind: "reviewed" },

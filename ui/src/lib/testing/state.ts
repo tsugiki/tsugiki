@@ -37,12 +37,8 @@ export const hitIn = (path: string, line: number): Hit => ({
   text: `    def area${String(line)}(self):`,
 });
 
-/** A peek that found `hits` and shows the code of the one at `index`. */
-export const showing = (hits: Hit[], index: number): Peek => {
-  const hit = hits[index];
-  if (hit === undefined) throw new Error("no such hit");
-  return {
-    ...looking({ state: "answered", answer: { state: "found", hits } }),
-    code: new HitCode("python/cpython", hit, index),
-  };
-};
+/** A peek that found `hits` and shows the code of the one at `index`, which a test names among them. */
+export const showing = (hits: Hit[], index: number): Peek => ({
+  ...looking({ state: "answered", answer: { state: "found", hits } }),
+  code: new HitCode("python/cpython", hits[index]!, index),
+});

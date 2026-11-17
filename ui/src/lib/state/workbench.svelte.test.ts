@@ -37,12 +37,12 @@ const seen = (...numbers: number[]): Seen => ({
 const item = (number: number): ListedItem => ({
   attention: null,
   kind: "standalone_pr",
-  ...workbenchRow({ number, title: `PR ${String(number)}`, author: "octocat", reasons: ["own_pr"] }),
+  ...workbenchRow(number, { title: `PR ${String(number)}`, author: "octocat", reasons: ["own_pr"] }),
   backports: [],
 });
 
 /** A PR in an Issue's tree. */
-const row: WorkbenchRow = workbenchRow({ number: 0, title: "PR", author: "octocat", ci: null });
+const row: WorkbenchRow = workbenchRow(0, { title: "PR", author: "octocat", ci: null });
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 const whole = { kind: "whole" } as const;

@@ -6,8 +6,7 @@ import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 
-const reviewRow = workbenchRow({
-  number: 160662,
+const reviewRow = workbenchRow(160662, {
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
   reasons: ["review_request"],
@@ -27,8 +26,7 @@ const review: ListedItem = {
       ...reviewRow,
       backports: [
         {
-          ...workbenchRow({
-            number: 160700,
+          ...workbenchRow(160700, {
             title: "[3.14] gh-112564: Fix UAF for gc debug print (GH-160662)",
             author: "some-author",
             state: "MERGED",
@@ -48,8 +46,7 @@ const review: ListedItem = {
 const own: ListedItem = {
   attention: null,
   kind: "standalone_pr",
-  ...workbenchRow({
-    number: 157178,
+  ...workbenchRow(157178, {
     title: "GH-156425: Clear GC frame on early return",
     author: "octocat",
     is_draft: true,

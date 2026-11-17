@@ -608,7 +608,7 @@ const openAddFromPicker = async () => {
 };
 
 /** A Standalone PR, #70. */
-const pr = workbenchRow({ number: 70, title: "gh-7: Fix the crash", author: "some-author", ci: null });
+const pr = workbenchRow(70, { title: "gh-7: Fix the crash", author: "some-author", ci: null });
 /** #70's diff, of three files. */
 const diff = ok(
   readyFiles(3, {

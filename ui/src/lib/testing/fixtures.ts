@@ -34,24 +34,24 @@ export const workbenchPage = <Item, Filter = never>(
     filters: more.filters ?? ([] as Filter[]),
   });
 
-/** A PR's row, open and unreviewed, its CI passed, seen, with what `overrides` says instead. */
-export const workbenchRow = (overrides: Partial<WorkbenchRow> = {}): WorkbenchRow => {
-  const number = overrides.number ?? 10;
-  return {
-    number,
-    title: "gh-7: Fix it",
-    author: "pr-author",
-    state: "OPEN",
-    is_draft: false,
-    target_branch: "main",
-    ci: "SUCCESS",
-    updated_at: "2026-11-04T10:00:00Z",
-    reasons: [],
-    your_review: { kind: "unreviewed" },
-    seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
-    ...overrides,
-  };
-};
+/** PR `number`'s row, open and unreviewed, its CI passed, seen, with what `overrides` says instead. */
+export const workbenchRow = (
+  number: number,
+  overrides: Omit<Partial<WorkbenchRow>, "number"> = {},
+): WorkbenchRow => ({
+  number,
+  title: "gh-7: Fix it",
+  author: "pr-author",
+  state: "OPEN",
+  is_draft: false,
+  target_branch: "main",
+  ci: "SUCCESS",
+  updated_at: "2026-11-04T10:00:00Z",
+  reasons: [],
+  your_review: { kind: "unreviewed" },
+  seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
+  ...overrides,
+});
 
 /** A file of the diff at `path` whose header is row `row`, adding a line, with what `more` says instead. */
 export const diffFile = (path: string, row: number, more: Partial<DiffFile> = {}): DiffFile => ({

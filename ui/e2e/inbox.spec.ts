@@ -24,7 +24,7 @@ const issue = (number: number): ListedItem => {
     pull_requests: [
       {
         kind: "pr",
-        ...workbenchRow({ number: pr, title: `PR for ${String(number)}`, author: "some-author", updated_at }),
+        ...workbenchRow(pr, { title: `PR for ${String(number)}`, author: "some-author", updated_at }),
         backports: [],
       },
     ],

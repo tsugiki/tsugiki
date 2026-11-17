@@ -41,8 +41,7 @@ vi.mock("$lib/data/bindings", async () => {
 });
 
 const view: PrView = {
-  ...workbenchRow({
-    number: 11,
+  ...workbenchRow(11, {
     title: "gh-10: Fix the crash",
     seen: { mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
   }),

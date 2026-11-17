@@ -52,7 +52,7 @@ impl Fixture {
             .open(mirror.join(".git").join("config"))
             .unwrap();
         config.write_all(b"[core]\n\tautocrlf = false\n").unwrap();
-        let (base_commit, head_commit) = import(&root, &mirror, base, head);
+        let (base_commit, head_commit) = import(&mirror, base, head);
         let added: Vec<&str> = (head.iter())
             .filter(|(path, bytes)| bytes.is_some() && !base.iter().any(|(old, _)| old == path))
             .map(|(path, _)| *path)
@@ -91,7 +91,6 @@ impl Fixture {
 /// fast-import`: about 30 ms for each git started on Windows, where adds and commits would start six. Gives
 /// the two commits. The repository's working tree and index stay empty, as a Mirror has none.
 fn import(
-    root: &Path,
     mirror: &Path,
     base: &[(&str, &[u8])],
     head: &[(&str, Option<&[u8]>)],
@@ -100,27 +99,23 @@ fn import(
     let base_files = base.iter().map(|(path, bytes)| (*path, Some(*bytes)));
     commit_into(&mut stream, 1, "base", base_files);
     commit_into(&mut stream, 2, "head", head.iter().copied());
-    let marks = root.join("marks");
-    let export = format!("--export-marks={}", marks.display());
-    let args = ["fast-import", "--quiet", "--date-format=now", &export];
-    let _ = git_reading(mirror, &args, &stream);
-    let marks = fs::read_to_string(marks).unwrap();
-    let commit = |mark: &str| {
-        let found = marks.lines().find_map(|line| line.strip_prefix(mark));
-        sha(found.unwrap())
-    };
-    (commit(":1 "), commit(":2 "))
+    // fast-import prints the commit of each mark it's asked for, a line each.
+    stream.extend_from_slice(b"get-mark :1\nget-mark :2\n");
+    let args = ["fast-import", "--quiet", "--date-format=now"];
+    let printed = git_reading(mirror, &args, &stream);
+    let mut commits = printed.lines().map(sha);
+    (commits.next().unwrap(), commits.next().unwrap())
 }
 
 /// Adds to `stream` a commit on `main` that writes each file with bytes and deletes each without, marked
-/// `mark` for `--export-marks` to name.
+/// `mark` for `get-mark` to name.
 fn commit_into<'a>(
     stream: &mut Vec<u8>,
     mark: u32,
     message: &str,
     files: impl Iterator<Item = (&'a str, Option<&'a [u8]>)>,
 ) {
-    let author = "Contributor <contributor@example.com>";
+    let author = tsugiki_test_git::committer();
     let length = message.len();
     let header = format!("commit refs/heads/main\nmark :{mark}\ncommitter {author} now\n");
     stream.extend_from_slice(header.as_bytes());

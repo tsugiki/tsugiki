@@ -14,21 +14,34 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, fs, io, iter, thread};
 
-/// The config of each git a test runs. The author lets a commit need no git config on the machine. Without
-/// `maintenance.auto=false`, each commit would start a `git maintenance run --auto`, about 500 processes in
-/// a run of the core's tests, for repositories too small to need it.
-const CONFIG: [&str; 6] = [
-    "-c",
-    "user.name=Contributor",
-    "-c",
-    "user.email=contributor@example.com",
-    "-c",
-    "maintenance.auto=false",
-];
+/// The name of the author of each commit a test makes, so a commit needs no git config on the machine.
+const NAME: &str = "Contributor";
+/// That author's address.
+const EMAIL: &str = "contributor@example.com";
+
+/// The author of each commit a test makes, as a `git fast-import` stream names its committer.
+pub fn committer() -> String {
+    format!("{NAME} <{EMAIL}>")
+}
+
+/// The config of each git a test runs: the author, and `maintenance.auto=false`. Without it, each commit
+/// would start a `git maintenance run --auto`, about 500 processes in a run of the core's tests, for
+/// repositories too small to need it.
+fn config() -> [String; 6] {
+    [
+        "-c".to_owned(),
+        format!("user.name={NAME}"),
+        "-c".to_owned(),
+        format!("user.email={EMAIL}"),
+        "-c".to_owned(),
+        "maintenance.auto=false".to_owned(),
+    ]
+}
 
 /// What points git at another repository than the one in the folder it runs in. A hook or an alias that
 /// runs the tests can leave these set, and then `reset --hard` would act on the developer's checkout.
@@ -47,7 +60,7 @@ pub fn git_reading(dir: &Path, args: &[&str], input: &[u8]) -> String {
         let _ = command.env_remove(name);
     }
     let mut child = command
-        .args(CONFIG)
+        .args(config())
         .args(args)
         .current_dir(dir)
         .stdin(Stdio::piped())
@@ -69,50 +82,58 @@ pub fn git_reading(dir: &Path, args: &[&str], input: &[u8]) -> String {
 }
 
 /// Makes a bare repository for `name`, an `owner/name`, under `remotes` where GitHub keeps it:
-/// `owner/name.git`. It has one commit on `main` and the tag `v3.15.0a0`. The working copy it came from
-/// stays at `work/owner/name`, for [`pull_request`] to commit in.
+/// `owner/name.git`. It has one commit on `main` and the tag `v3.15.0a0`, and no remote of its own. The
+/// working copy it came from stays at `work/owner/name`, for a test to commit in and push from. A test run
+/// builds the remote of each `name` once, and later calls copy it.
 pub fn remote(remotes: &Path, name: &str) {
-    let work = work(remotes, name);
-    fs::create_dir_all(&work).unwrap();
-    let _ = git(&work, &["init", "-q", "-b", "main"]);
-    fs::write(
-        work.join("README.rst"),
-        "This is Python version 3.15.0 alpha 0\n",
-    )
-    .unwrap();
-    let _ = git(&work, &["add", "README.rst"]);
-    let _ = git(&work, &["commit", "-qm", "One"]);
-    let _ = git(&work, &["tag", "v3.15.0a0"]);
-    let bare = bare(remotes, name);
-    let _ = git(
-        remotes,
-        &[
-            "clone",
-            "-q",
-            "--bare",
-            &work.to_string_lossy(),
-            &bare.to_string_lossy(),
-        ],
-    );
+    /// The working copy and the bare repository of each `name` built so far.
+    static BUILT: Mutex<BTreeMap<String, Arc<(Snapshot, Snapshot)>>> = Mutex::new(BTreeMap::new());
+    /// Tells apart the folders of two tests that build the same remote at once.
+    static BUILDS: AtomicUsize = AtomicUsize::new(0);
+    // Two tests that build the same remote at once each build it, rather than one waiting on the other.
+    let found = BUILT.lock().unwrap().get(name).cloned();
+    let built = found.unwrap_or_else(|| {
+        let build = BUILDS.fetch_add(1, Ordering::Relaxed);
+        let folder = temp_path(&format!("remote-{build}"));
+        let (work, bare) = (work(&folder, name), bare(&folder, name));
+        fs::create_dir_all(&work).unwrap();
+        let _ = git(&work, &["init", "-q", "-b", "main"]);
+        fs::write(
+            work.join("README.rst"),
+            "This is Python version 3.15.0 alpha 0\n",
+        )
+        .unwrap();
+        let _ = git(&work, &["add", "README.rst"]);
+        let _ = git(&work, &["commit", "-qm", "One"]);
+        let _ = git(&work, &["tag", "v3.15.0a0"]);
+        let (from, to) = (work.to_string_lossy(), bare.to_string_lossy());
+        let _ = git(&folder, &["clone", "-q", "--bare", &from, &to]);
+        // A copy would point `origin` at the working copy this folder held.
+        let _ = git(&bare, &["remote", "remove", "origin"]);
+        let built = Arc::new((Snapshot::of(&work), Snapshot::of(&bare)));
+        let mut all = BUILT.lock().unwrap();
+        Arc::clone(all.entry(name.to_owned()).or_insert(built))
+    });
+    built.0.write(&work(remotes, name));
+    built.1.write(&bare(remotes, name));
 }
 
 /// Puts a commit of PR `number`'s own on the [`remote`] for `name`, under `refs/pull/N/head` as GitHub
-/// keeps it, on no branch. Gives the commit.
+/// keeps it, on no branch: the remote's `main` with a file `NEWS` added. Gives the commit. One `git
+/// fast-import` writes it, where a commit in the working copy and a push would start nine gits.
 pub fn pull_request(remotes: &Path, name: &str, number: u32) -> String {
-    let work = work(remotes, name);
-    fs::write(work.join("NEWS"), format!("PR {number}\n")).unwrap();
-    let commit = commit(&work, &format!("PR {number}"));
-    let _ = git(
-        &work,
-        &[
-            "push",
-            "-q",
-            &bare(remotes, name).to_string_lossy(),
-            &format!("HEAD:refs/pull/{number}/head"),
-        ],
+    let (message, news) = (format!("PR {number}"), format!("PR {number}\n"));
+    let stream = format!(
+        "commit refs/pull/{number}/head\nmark :1\ncommitter {} now\ndata {}\n{message}\n\
+         from refs/heads/main\nM 100644 inline NEWS\ndata {}\n{news}\nget-mark :1\n",
+        committer(),
+        message.len(),
+        news.len(),
     );
-    let _ = git(&work, &["reset", "-q", "--hard", "HEAD~1"]);
-    commit
+    let args = ["fast-import", "--quiet", "--date-format=now"];
+    git_reading(&bare(remotes, name), &args, stream.as_bytes())
+        .trim()
+        .to_owned()
 }
 
 /// Commits all that changed in the working copy at `dir`, or nothing if nothing did, with `message`, and

@@ -1,5 +1,4 @@
-# The checks of ADR 0009, on every push to main and every PR that changes more than docs. A PR that changes
-# only `ui/` and docs skips the Rust ones.
+# The checks of ADR 0009, on every push to main, and on each push to a PR the checks that read what changed.
 # On Windows each is its own job, and a job's name is the npm script it runs, so a PR shows what failed and
 # where. macOS runs only what can differ there, as steps of one job: GitHub cancels a macOS job that waits too
 # long for a runner, and the more jobs a run has, the likelier that gets (ADR 0009).
@@ -18,33 +17,63 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Decides which checks run. It compares the PR's merge commit with its base, and a rename counts as both
-  # of its paths. `docs-only` skips every check but doc-width and pre-commit. `ui-only`, when each path is
-  # docs or under `ui/`, skips the Rust ones. `release-only`, when the PR changes only CHANGELOG.md and the
-  # version lines of Cargo.toml and Cargo.lock, runs only doc-width, pre-commit, deny, machete and
-  # release-check, and `just release` waits for main's run, which runs the rest. scripts/scope.ts holds the
-  # rule, which `just check` applies too. A push to main sets none of them, so it runs every check.
+  # Decides which checks run, as the list `jobs` that each job's `if:` reads: scripts/scope.ts gives each path
+  # the jobs that read it, and `just check` applies the same rule. On a PR it takes the jobs the PR needs
+  # against its base, and drops those whose inputs are the same as in the tree the PR's last run that passed
+  # tested. Docs need none of them, and a PR that only sets the version needs only deny and machete:
+  # `just release` waits for main's run, which runs the rest. A push to main runs every check.
   changes:
     name: changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read # finds the PR's last run that passed, and downloads what it tested
     outputs:
-      docs-only: ${{ steps.diff.outputs.docs-only }}
-      ui-only: ${{ steps.diff.outputs.ui-only }}
-      release-only: ${{ steps.diff.outputs.release-only }}
+      jobs: ${{ steps.jobs.outputs.jobs }}
     steps:
-      - if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The whole history, so git can merge the last run's head and base again, whatever they were. A push to
+      # main doesn't need it, and fetching it there costs a few seconds.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
-      - if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+      # Only this repository's runs count: a fork's run could say it tested anything. Without one, or its
+      # tested.json, the step leaves nothing and the whole PR counts.
+      - name: Find what the PR's last run that passed tested
+        if: >-
+          ${{ github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          run=$(gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f event=pull_request -f status=success -f branch="$HEAD_REF" -F per_page=20 \
+            --jq "[.workflow_runs[] | select(.head_repository.full_name == \"$GITHUB_REPOSITORY\")][0].id // empty")
+          if [ -n "$run" ]; then
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" --name tested --dir "$RUNNER_TEMP/last-passed"
+          fi
+      - id: jobs
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            node scripts/changes.ts --pr "$RUNNER_TEMP/last-passed/tested.json" "$RUNNER_TEMP/tested.json"
+          else
+            node scripts/changes.ts --every
+          fi
+      # What this run tested, for the PR's runs after it. A run that fails leaves it too, and they skip it.
       - if: ${{ github.event_name == 'pull_request' }}
-        id: diff
-        run: node scripts/changes.ts HEAD^1 HEAD
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tested
+          path: ${{ runner.temp }}/tested.json
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: error
 
   # Runs on a docs-only PR too, because that's where a wide line of Markdown lands.
   doc-width:
@@ -86,7 +115,7 @@ jobs:
   rust:
     name: ${{ matrix.check }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.ui-only != 'true' && needs.changes.outputs.release-only != 'true' }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') }}
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
@@ -111,7 +140,7 @@ jobs:
   dependencies:
     name: ${{ matrix.check }}
     needs: [changes]
-    if: ${{ needs.changes.outputs.ui-only != 'true' }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'dependencies') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -134,11 +163,10 @@ jobs:
           fallback: none
       - run: npm run ${{ matrix.check }}
 
-  # A PR that sets a version fails here without its changelog section, before anyone tags it (ADR 0012).
+  # A PR that sets a version fails here without its changelog section, before anyone tags it (ADR 0012). It
+  # takes seconds, so it runs on every PR, as doc-width and pre-commit do.
   release-check:
     name: release-check
-    needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -166,11 +194,11 @@ jobs:
             exit 1
           fi
 
-  # Codecov carries main's Rust figure forward on a PR that skips this job (codecov.yml).
+  # Codecov carries the last Rust figure forward on a run that skips this job (codecov.yml).
   rust-coverage:
     name: rust-coverage (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.ui-only != 'true' && needs.changes.outputs.release-only != 'true' }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust-coverage') }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -203,7 +231,7 @@ jobs:
   ui:
     name: ${{ matrix.check }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.release-only != 'true' }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -233,7 +261,7 @@ jobs:
   playwright:
     name: Playwright ${{ matrix.browser }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.release-only != 'true' }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'playwright') }}
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -263,14 +291,19 @@ jobs:
           if-no-files-found: ignore
 
   # What can differ on macOS, as steps of one job so a run needs one macOS runner. A failed check doesn't stop
-  # the checks after it. As on Windows, Rust's coverage gate runs the tests and the bindings check. A
-  # `ui-only` PR skips the Rust steps.
+  # the checks after it. As on Windows, Rust's coverage gate runs the tests and the bindings check. The Rust
+  # steps run when `jobs` lists `macos-rust`, and the UI ones when it lists `macos-ui`.
   macos:
     name: checks (macos-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.release-only != 'true' }}
+    if: >-
+      ${{ contains(fromJSON(needs.changes.outputs.jobs), 'macos-rust') ||
+      contains(fromJSON(needs.changes.outputs.jobs), 'macos-ui') }}
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      RUST_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'macos-rust') }}
+      UI_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'macos-ui') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -280,27 +313,28 @@ jobs:
           node-version-file: .node-version
           cache: npm
       - name: Install the Rust toolchain from rust-toolchain.toml
-        if: ${{ needs.changes.outputs.ui-only != 'true' }}
+        if: ${{ env.RUST_STEPS == 'true' }}
         run: rustup toolchain install
-      - if: ${{ needs.changes.outputs.ui-only != 'true' }}
+      - if: ${{ env.RUST_STEPS == 'true' }}
         uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
           tool: cargo-llvm-cov@0.9.1
-      - if: ${{ needs.changes.outputs.ui-only != 'true' }}
+      - if: ${{ env.RUST_STEPS == 'true' }}
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: macos
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - run: npx playwright install webkit
+      - if: ${{ env.UI_STEPS == 'true' }}
+        run: npx playwright install webkit
       - name: clippy
-        if: ${{ !cancelled() && needs.changes.outputs.ui-only != 'true' }}
+        if: ${{ !cancelled() && env.RUST_STEPS == 'true' }}
         run: npm run clippy
       - name: rust-coverage
-        if: ${{ !cancelled() && needs.changes.outputs.ui-only != 'true' }}
+        if: ${{ !cancelled() && env.RUST_STEPS == 'true' }}
         run: npm run rust-coverage
       # Also when a gate fails: that's when the uncovered lines are worth seeing.
-      - if: ${{ !cancelled() && needs.changes.outputs.ui-only != 'true' }}
+      - if: ${{ !cancelled() && env.RUST_STEPS == 'true' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -309,9 +343,9 @@ jobs:
           flags: rust
           name: rust-macos-latest
       - name: vitest
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.UI_STEPS == 'true' }}
         run: npm run vitest
-      - if: ${{ !cancelled() }}
+      - if: ${{ !cancelled() && env.UI_STEPS == 'true' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -320,10 +354,10 @@ jobs:
           flags: typescript
           name: typescript-macos-latest
       - name: Playwright webkit
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.UI_STEPS == 'true' }}
         run: npm run e2e -w ui -- --project=webkit
       - name: Keep the Playwright traces of a failed run
-        if: ${{ failure() }}
+        if: ${{ failure() && env.UI_STEPS == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-webkit-macos-latest
@@ -349,26 +383,24 @@ jobs:
       - macos
     runs-on: ubuntu-latest
     steps:
-      # A release-only PR keeps doc-width, pre-commit, the dependency checks and release-check: the Release
-      # workflow's rehearsal builds and starts the app with the new version.
-      - name: >-
-          Every job succeeded, or skipped on a docs-only PR, or skipped a Rust check on a ui-only PR, or skipped
-          a build or test on a release-only PR
+      # A job may skip only when `changes` left it out of `jobs`. The macOS job counts as listed when either
+      # of its parts is, and the jobs with no `if:` always count as listed.
+      - name: Every job succeeded, or skipped because the change doesn't reach what it reads
         env:
-          DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
-          UI_ONLY: ${{ needs.changes.outputs.ui-only }}
-          RELEASE_ONLY: ${{ needs.changes.outputs.release-only }}
+          JOBS: ${{ needs.changes.outputs.jobs }}
           NEEDS: ${{ toJSON(needs) }}
-        # A failed jq stops the step here: read from `<(jq ...)`, it would leave the loop nothing to check.
+        # A failed jq stops the step here, as when `changes` failed and left no `jobs`: read from
+        # `<(jq ...)`, it would leave the loop nothing to check.
         run: |
           results=$(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
           while read -r job result; do
-            case "$result $DOCS_ONLY $UI_ONLY $RELEASE_ONLY $job" in
-              "success "* | "skipped true "* | "skipped false true false rust" | \
-                "skipped false true false rust-coverage" | "skipped false true false dependencies" | \
-                "skipped false false true rust" | "skipped false false true rust-coverage" | \
-                "skipped false false true ui" | "skipped false false true playwright" | \
-                "skipped false false true macos") ;;
+            case "$job" in
+              macos) listed=$(jq -r 'any(.[]; . == "macos-rust" or . == "macos-ui")' <<< "$JOBS") ;;
+              changes | doc-width | pre-commit | release-check) listed=true ;;
+              *) listed=$(jq -r --arg job "$job" 'index($job) != null' <<< "$JOBS") ;;
+            esac
+            case "$result $listed" in
+              "success "* | "skipped false") ;;
               *) echo "$job ended with: $result"; exit 1 ;;
             esac
           done <<< "$results"

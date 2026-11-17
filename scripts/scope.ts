@@ -1,13 +1,19 @@
-// The checks a change needs, from the paths it touches. CI's `changes` job and `just rust-gates` both ask
+// The CI jobs a change needs, from the paths it touches. CI's `changes` job and `just rust-gates` both ask
 // this module, so the two agree on which paths count.
 
-/**
- * The part of the repo a change touches: only docs, only the window's code and docs, only the version and
- * its notes, or anything else.
- */
-export type Scope = "docs" | "ui" | "release" | "all";
+/** A CI job, or a part of the macOS job, that runs only when a change reaches what it reads. */
+export type Job = "rust" | "dependencies" | "rust-coverage" | "ui" | "playwright" | "macos-rust" | "macos-ui";
 
-/** Files outside `crates/` that a Rust check reads, so a change to one runs the Rust checks. */
+/** The jobs that read the Rust code: rustfmt and Clippy, cargo-deny and cargo-machete, and the tests. */
+const RUST_JOBS: readonly Job[] = ["rust", "dependencies", "rust-coverage", "macos-rust"];
+
+/** The jobs that read the window's code: ESLint, Prettier, svelte-check, Vitest and Playwright. */
+const UI_JOBS: readonly Job[] = ["ui", "playwright", "macos-ui"];
+
+/** Every job, in the order CI lists them. A change to anything no rule below claims runs them all. */
+export const EVERY_JOB: readonly Job[] = [...RUST_JOBS, ...UI_JOBS];
+
+/** Files outside `crates/` that a Rust check reads, so a change to one runs the Rust jobs. */
 const READ_BY_RUST = new Set([
   // Drawn from the migrations, and crates/core/src/store/schema/tests.rs compares the two.
   "docs/schema.md",
@@ -24,14 +30,35 @@ const READ_BY_RUST = new Set([
   "ui/src/app.html",
 ]);
 
-/** Markdown under `crates/` doesn't count: the highlighter's tests read a sample there. */
+/** Files under `crates/` that a UI job reads, so a change to one runs the UI jobs too. */
+const READ_BY_UI = new Set([
+  // ui/e2e/tauri-csp.ts gives the Playwright pages the app's CSP.
+  "crates/app/tauri.conf.json",
+  // The ui job's token-deps check reads it (scripts/token-deps.ts).
+  "crates/token/Cargo.toml",
+]);
+
+/** The Rust toolchain's files at the root of the repo. */
+const RUST_ROOT = new Set(["Cargo.toml", "Cargo.lock", "clippy.toml", "deny.toml", "rust-toolchain.toml"]);
+
+/**
+ * Docs, which only doc-width and pre-commit read. Markdown under `crates/` is Rust's: the highlighter's tests
+ * read a sample there.
+ */
 function isDocs(path: string): boolean {
-  if (READ_BY_RUST.has(path)) return false;
   return path.startsWith("docs/") || (path.endsWith(".md") && !path.startsWith("crates/"));
 }
 
-function isUi(path: string): boolean {
-  return isDocs(path) || (path.startsWith("ui/") && !READ_BY_RUST.has(path));
+/**
+ * The jobs a change to `path` needs. Docs need none, and a path no rule claims, such as a script, needs all.
+ */
+function jobsOf(path: string): readonly Job[] {
+  const rust = READ_BY_RUST.has(path) || RUST_ROOT.has(path) || path.startsWith("crates/");
+  const ui = READ_BY_UI.has(path) || (path.startsWith("ui/") && !isDocs(path));
+  if (rust || ui) {
+    return [...(rust ? RUST_JOBS : []), ...(ui ? UI_JOBS : [])];
+  }
+  return isDocs(path) ? [] : EVERY_JOB;
 }
 
 /** The paths in what `git diff --name-only` printed, one a line. */
@@ -77,35 +104,57 @@ export function isVersionBump(diff: string): boolean {
 }
 
 /**
- * The scope of a change to `paths`. With no path to read, nothing is ruled out. `cargoDiff` gives what
- * `git diff -U0` prints for `Cargo.toml` and `Cargo.lock`, which tells a release PR that only sets the
- * version from one that changes a dependency. It runs only when the paths could be such a PR.
+ * The jobs a change to `paths` needs, in CI's order. With no path to read, nothing is ruled out. `cargoDiff`
+ * gives what `git diff -U0` prints for `Cargo.toml` and `Cargo.lock`, which tells a release PR that only
+ * sets the version from one that changes a dependency: such a PR needs only cargo-deny and cargo-machete,
+ * which check that Cargo.lock followed. `cargoDiff` runs only when the paths could be such a PR.
  */
-export function scope(paths: readonly string[], cargoDiff: () => string): Scope {
+export function jobs(paths: readonly string[], cargoDiff: () => string): Job[] {
   if (paths.length === 0) {
-    return "all";
-  }
-  if (paths.every(isDocs)) {
-    return "docs";
-  }
-  if (paths.every(isUi)) {
-    return "ui";
+    return [...EVERY_JOB];
   }
   // A new version moves each workspace crate's line in Cargo.lock, so a Cargo.toml change without one isn't
   // the workspace's version.
   const both = paths.includes("Cargo.toml") && paths.includes("Cargo.lock");
-  const setsVersion = both && paths.every((path) => RELEASE_FILES.has(path));
-  return setsVersion && isVersionBump(cargoDiff()) ? "release" : "all";
+  if (both && paths.every((path) => RELEASE_FILES.has(path)) && isVersionBump(cargoDiff())) {
+    return ["dependencies"];
+  }
+  const needed = new Set(paths.flatMap(jobsOf));
+  return EVERY_JOB.filter((job) => needed.has(job));
+}
+
+/** The commits a CI run on a PR tested: the PR's head, and the base it was merged with. */
+export interface Tested {
+  head: string;
+  base: string;
+}
+
+const COMMIT = /^[0-9a-f]{40}$/;
+
+/** Reads the `tested.json` a run left, or `undefined` for anything that isn't two commits. */
+export function readTested(text: string): Tested | undefined {
+  let tested: unknown;
+  try {
+    tested = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const { head, base } = (tested ?? {}) as { head?: unknown; base?: unknown };
+  return typeof head === "string" && COMMIT.test(head) && typeof base === "string" && COMMIT.test(base)
+    ? { head, base }
+    : undefined;
 }
 
 /**
- * The lines CI's `changes` job writes to `$GITHUB_OUTPUT`. Docs alone count as `ui-only` too. A `release`
- * change sets only `release-only`.
+ * The jobs a PR's run needs: those the whole PR needs against its base, less those whose inputs haven't
+ * changed since a run that passed. `sincePassed` is the jobs the change since that run's tree needs, or
+ * `undefined` when no such run can be found.
  */
-export function outputs(given: Scope): string {
-  const uiOnly = given === "docs" || given === "ui";
-  return (
-    `docs-only=${String(given === "docs")}\nui-only=${String(uiOnly)}\n` +
-    `release-only=${String(given === "release")}\n`
-  );
+export function narrowed(whole: readonly Job[], sincePassed: readonly Job[] | undefined): Job[] {
+  return whole.filter((job) => sincePassed === undefined || sincePassed.includes(job));
+}
+
+/** The line CI's `changes` job writes to `$GITHUB_OUTPUT`: the jobs to run, as a JSON list. */
+export function outputs(given: readonly Job[]): string {
+  return `jobs=${JSON.stringify(given)}\n`;
 }

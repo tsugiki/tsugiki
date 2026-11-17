@@ -112,7 +112,7 @@
 
 <!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
 <section
-  class="detail"
+  class="detail-pane"
   aria-label="Issue view"
   tabindex={focusable ? -1 : undefined}
   data-pane="detail"
@@ -150,7 +150,7 @@
           {headline(view)}
         </button>
       </h2>
-      <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
+      <p class="byline"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
       <div class="meta">
         {#if view.labels.length > 0}
           <ul class="labels" role="list" aria-label="Labels">
@@ -233,7 +233,7 @@
       {#if view.content}
         <Conversation content={view.content} {now} onlink={(address) => void links.openLink(address)} />
       {:else}
-        <p class="by">{UNREAD[issue.failedRead ?? "reading"]}</p>
+        <p class="byline">{UNREAD[issue.failedRead ?? "reading"]}</p>
       {/if}
     </div>
   {/if}
@@ -251,14 +251,6 @@
   >{/snippet}
 
 <style>
-  /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
-  .detail {
-    flex: 1;
-    min-width: 320px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   /* Lines stay short enough to read in a wide window. */
   .page {
     max-width: 900px;
@@ -274,17 +266,6 @@
   h2 {
     margin: 4px 0 2px;
     font-size: 18px;
-  }
-
-  .by {
-    margin: 0 0 8px;
-    font-size: 13px;
-    color: var(--fg-muted);
-  }
-
-  .by b {
-    font-weight: 600;
-    color: var(--fg);
   }
 
   /* The labels' chips, then the Mark Seen button, on one line that wraps in a narrow pane. */

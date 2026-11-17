@@ -182,6 +182,28 @@ kbd {
   background: var(--backdrop);
 }
 
+/* The Detail pane while it shows an Issue or a PR. It takes the window's height and scrolls by itself, as
+   each pane does, and the wheel stops at its end. */
+.detail-pane {
+  flex: 1;
+  min-width: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The line under an Issue's or a PR's title, which names its author in bold, or says why there's nothing
+   to show. */
+.byline {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.byline b {
+  font-weight: 600;
+  color: var(--fg);
+}
+
 /* The box on the scrim, which Dialog.svelte draws for each dialog and the command palette. */
 .dialog {
   margin: 60px auto 0;

@@ -135,7 +135,7 @@ it("says over the title which Issue the PR is under, where it goes and when it c
   expect(document.querySelector(".crumb")?.textContent.replace(/\s+/g, " ").trim()).toBe(
     "gh-10 › into main · updated 1h ago",
   );
-  expect(document.querySelector("p.by")?.textContent).toBe(
+  expect(document.querySelector("p.byline")?.textContent).toBe(
     `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
   );
 });

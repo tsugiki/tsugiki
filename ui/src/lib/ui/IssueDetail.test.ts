@@ -142,7 +142,7 @@ it("offers Mark Seen in its header while something is new or it is Marked unseen
 
 /** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
 const authorLine = () => {
-  const author = screen.getByText((_, element) => element?.matches("p.by b") ?? false);
+  const author = screen.getByText((_, element) => element?.matches("p.byline b") ?? false);
   return { author, opened: author.parentElement as HTMLElement, line: author.closest("p") as HTMLElement };
 };
 

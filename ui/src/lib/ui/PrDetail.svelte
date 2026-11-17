@@ -140,7 +140,7 @@
 
 <section
   bind:this={section}
-  class="detail"
+  class="detail-pane"
   class:files={pr.tab === "files"}
   class:railed
   aria-label="PR view"
@@ -187,7 +187,7 @@
         {headline(view)}
       </button>
     </h2>
-    <p class="by"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
+    <p class="byline"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
     <MarkButton seen={view.seen} {onmark} />
 
     <!-- The tabs, and at the right a button for each of the rail's tabs, which opens the rail beside them on
@@ -264,7 +264,7 @@
               }}
             />
           {:else}
-            <p class="by">{UNREAD[pr.failedRead ?? "reading"]}</p>
+            <p class="byline">{UNREAD[pr.failedRead ?? "reading"]}</p>
           {/if}
         {:else}
           <FilesTab files={pr.files} {now} onlink={(address) => void links.openLink(address)} />
@@ -296,26 +296,18 @@
 </section>
 
 <style>
-  /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
-  .detail {
-    flex: 1;
-    min-width: 320px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   /* The diff scrolls by itself, and so do the Conversation and the rail beside each other, so the pane
      doesn't. */
-  .detail.files,
-  .detail.railed {
+  .detail-pane.files,
+  .detail-pane.railed {
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
   /* The tab and the rail on its right fill the pane under the tab row. */
-  .detail.files .body,
-  .detail.railed .body {
+  .detail-pane.files .body,
+  .detail-pane.railed .body {
     display: flex;
     flex: 1;
     min-height: 0;
@@ -330,7 +322,7 @@
   }
 
   /* The file view covers the tab, and stacks over nothing outside it. */
-  .detail.files .body > [role="tabpanel"] {
+  .detail-pane.files .body > [role="tabpanel"] {
     position: relative;
     isolation: isolate;
     display: flex;
@@ -338,7 +330,7 @@
     min-height: 0;
   }
 
-  .detail.railed:not(.files) .body > [role="tabpanel"] {
+  .detail-pane.railed:not(.files) .body > [role="tabpanel"] {
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -347,14 +339,14 @@
   [role="alert"],
   .crumb,
   h2,
-  h2 + .by,
+  h2 + .byline,
   .tab-row,
   .stale,
-  .detail:not(.files) [role="tabpanel"] {
+  .detail-pane:not(.files) [role="tabpanel"] {
     padding-inline: 16px;
   }
 
-  .detail:not(.files) [role="tabpanel"] {
+  .detail-pane:not(.files) [role="tabpanel"] {
     padding-bottom: 24px;
   }
 
@@ -373,17 +365,6 @@
   h2 {
     margin: 4px 0 2px;
     font-size: 18px;
-  }
-
-  .by {
-    margin: 0 0 8px;
-    font-size: 13px;
-    color: var(--fg-muted);
-  }
-
-  .by b {
-    font-weight: 600;
-    color: var(--fg);
   }
 
   /* The open tab underlined in the accent colour, on a line across the pane, with the rail's button at the

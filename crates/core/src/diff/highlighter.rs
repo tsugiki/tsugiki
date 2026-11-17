@@ -18,7 +18,6 @@
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::ffi::OsStr;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -965,50 +964,16 @@ pub(crate) fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
 /// The files `names` names, read from `mirror` with one `git cat-file --batch`: the text of each, or
 /// nothing for one git has no blob for. If git fails, the list stops short.
 pub(crate) fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
-    if names.is_empty() {
-        return Vec::new();
-    }
-    let input: String = names.iter().map(|name| format!("{name}\n")).collect();
-    let args = [
-        OsStr::new("-C"),
-        mirror.as_os_str(),
-        OsStr::new("cat-file"),
-        OsStr::new("--batch"),
-    ];
-    match live::read_git_bytes(&args, input.into_bytes()) {
-        Ok(output) => parse_batch(&output),
+    match live::read_blobs(mirror, names) {
+        Ok(blobs) => (blobs.into_iter())
+            .map(|blob| blob.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+            .collect(),
         Err(cause) => {
             let mirror = mirror.display();
             log::warn!("Tsugiki can't read files from {mirror}: {cause}");
             Vec::new()
         }
     }
-}
-
-/// What `git cat-file --batch` printed: for each name, `<id> <type> <size>`, a line feed, the object and a
-/// line feed, or a line such as `<name> missing`. Only a blob gives text. Output cut short stops the list.
-fn parse_batch(mut output: &[u8]) -> Vec<Option<String>> {
-    let mut blobs = Vec::new();
-    while let Some(end) = output.iter().position(|&byte| byte == b'\n') {
-        let header = String::from_utf8_lossy(output.get(..end).unwrap_or_default());
-        output = output.get(end + 1..).unwrap_or_default();
-        let fields: Vec<&str> = header.split(' ').collect();
-        let found = match fields.as_slice() {
-            [_, kind, size] => size.parse::<usize>().ok().map(|size| (*kind, size)),
-            _ => None,
-        };
-        let Some((kind, size)) = found else {
-            log::warn!("Tsugiki can't read a file to highlight it: git says {header}");
-            blobs.push(None);
-            continue;
-        };
-        let Some(object) = output.get(..size) else {
-            break;
-        };
-        blobs.push((kind == "blob").then(|| String::from_utf8_lossy(object).into_owned()));
-        output = output.get(size + 1..).unwrap_or_default();
-    }
-    blobs
 }
 
 #[cfg(test)]

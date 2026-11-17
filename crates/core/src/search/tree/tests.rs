@@ -276,9 +276,3 @@ fn keep_first_keeps_the_matches_that_fit_and_their_lines() {
         .collect();
     assert_eq!(kept, [(1, 2), (2, 2)]);
 }
-
-#[test]
-fn a_batch_cut_short_ends_the_list_and_a_missing_object_reads_as_nothing() {
-    let output = b"abc missing\n111 blob 4\nspam\n222 blob 9\nshort";
-    assert_eq!(parse_batch(output), [None, Some(b"spam".to_vec())]);
-}

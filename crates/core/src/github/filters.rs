@@ -7,7 +7,7 @@ use serde_json::json;
 use time::{Date, Duration, OffsetDateTime};
 
 use super::pull_requests::{PageRequest, RateLimit};
-use super::refresh::github_time;
+use super::refresh::{PageInfo, github_time};
 use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::Error;
 use crate::facts::pull_requests::NodeId;
@@ -165,13 +165,6 @@ impl Found {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PageInfo {
-    has_next_page: bool,
-    end_cursor: Option<String>,
-}
-
 /// GitHub's answer to one search.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -187,14 +180,13 @@ impl SearchWire {
         repository: &RepositoryName,
         rate_limit: RateLimit,
     ) -> FilterPage {
-        let info = self.page_info;
         let found = self.nodes.into_iter().flatten();
         FilterPage {
             total: self.issue_count,
             hits: found
                 .filter_map(|found| found.into_hit(repository))
                 .collect(),
-            next: info.end_cursor.filter(|_| info.has_next_page),
+            next: self.page_info.next(),
             rate_limit,
         }
     }

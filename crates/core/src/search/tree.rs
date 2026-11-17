@@ -74,10 +74,11 @@ pub(super) fn search(
             });
         }
         // The disk's threads search while git reads the PR's files.
-        let ids: Vec<&BlobId> = (changed.iter())
+        let ids: Vec<&str> = (changed.iter())
             .filter_map(|file| file.blob.as_ref())
+            .map(|BlobId(id)| id.as_str())
             .collect();
-        let blobs = blobs(folder, &ids)?;
+        let blobs = live::read_blobs(folder, &ids)?;
         let (run, changed) = (&run, &changed);
         let _blob_reader = scope.spawn(move || {
             let mut hand = Hand::new(send);
@@ -237,49 +238,6 @@ fn parse_tree(output: &[u8]) -> Vec<(String, BlobId)> {
             }
         })
         .collect()
-}
-
-/// The blobs `ids` names, read with one `git cat-file --batch`: the bytes of each, or nothing for one git
-/// has no blob for. Output cut short ends the list.
-fn blobs(folder: &Path, ids: &[&BlobId]) -> io::Result<Vec<Option<Vec<u8>>>> {
-    if ids.is_empty() {
-        return Ok(Vec::new());
-    }
-    let input: Vec<u8> = (ids.iter())
-        .flat_map(|BlobId(id)| id.bytes().chain(*b"\n"))
-        .collect();
-    let args = [
-        OsStr::new("-C"),
-        folder.as_os_str(),
-        OsStr::new("cat-file"),
-        OsStr::new("--batch"),
-    ];
-    let output = live::read_git_bytes(&args, input)?;
-    Ok(parse_batch(&output))
-}
-
-/// What `git cat-file --batch` printed: for each name, `<id> <type> <size>`, a line feed, the object and a
-/// line feed, or a line such as `<id> missing`.
-fn parse_batch(mut output: &[u8]) -> Vec<Option<Vec<u8>>> {
-    let mut objects = Vec::new();
-    while let Some(end) = output.iter().position(|&byte| byte == b'\n') {
-        let header = String::from_utf8_lossy(output.get(..end).unwrap_or_default());
-        output = output.get(end.saturating_add(1)..).unwrap_or_default();
-        let size = match header.split(' ').collect::<Vec<_>>().as_slice() {
-            [_, "blob", size] => size.parse::<usize>().ok(),
-            _ => None,
-        };
-        let Some(size) = size else {
-            objects.push(None);
-            continue;
-        };
-        let Some(object) = output.get(..size) else {
-            break;
-        };
-        objects.push(Some(object.to_vec()));
-        output = output.get(size.saturating_add(1)..).unwrap_or_default();
-    }
-    objects
 }
 
 /// Which of `paths` the attributes in the checkout mark `linguist-generated`, set or `true`, as the Files

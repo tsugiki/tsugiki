@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 
 use super::activity::{TimelineWire, pull_request_activity};
 use super::labels::{LabelWire, label_names};
+use super::refresh::PageInfo;
 use super::{BAD_GATEWAY, GitHub, RATE_LIMIT_FIELDS, Request, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
@@ -447,12 +448,6 @@ impl GitHub {
         }
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct PageInfo {
-            has_next_page: bool,
-            end_cursor: Option<String>,
-        }
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
         struct Search {
             page_info: PageInfo,
             nodes: Vec<Option<Found>>,
@@ -470,7 +465,6 @@ impl GitHub {
             query: query.as_str().into(),
             variables: json!({ "query": text, "first": first, "after": page.after }),
         })?;
-        let info = data.search.page_info;
         Ok(SearchPage {
             ids: data
                 .search
@@ -479,7 +473,7 @@ impl GitHub {
                 .flatten()
                 .map(|found| found.id)
                 .collect(),
-            next: info.end_cursor.filter(|_| info.has_next_page),
+            next: data.search.page_info.next(),
             rate_limit: data.rate_limit,
         })
     }

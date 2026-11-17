@@ -79,6 +79,18 @@ loads `sync/refresh/tests.rs`, and a `mod.rs` or `lib.rs` loads the `tests.rs` b
 scan of the source can tell the two by path. `crates/app/tests/rules.rs` fails on an inline
 `#[cfg(test)] mod name { ... }`.
 
+Before you write a test helper, grep for one that does the job. A Rust helper lives in the `testing.rs` of the
+module or crate it serves, or in `crates/test-git` when the tests of several crates need it and it uses no
+crate's types. A helper that a second test file needs moves there.
+
+## One copy
+
+Code that a second place needs moves to one place that both use, in Rust, TypeScript, Svelte and the
+scripts alike. Two copies drift apart once someone edits one and misses the other. Keep two
+copies only where they change for different reasons, and say why in the PR. Two files that can't share code,
+such as a workflow and a script, get a test that fails when they disagree. A comment that names the other
+copy goes stale.
+
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can

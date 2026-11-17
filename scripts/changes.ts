@@ -1,6 +1,6 @@
 // CI's `changes` job: `node scripts/changes.ts HEAD^1 HEAD` prints the paths a PR changes and writes
-// `docs-only` and `ui-only` to `$GITHUB_OUTPUT`. A rename counts as both of its paths. scope.ts holds the
-// rule, which `just rust-gates` applies too.
+// `docs-only`, `ui-only` and `release-only` to `$GITHUB_OUTPUT`. A rename counts as both of its paths.
+// scope.ts holds the rule, which `just rust-gates` applies too.
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
@@ -15,5 +15,8 @@ if (base === undefined || head === undefined || output === undefined) {
 const changed = paths(
   execFileSync("git", ["diff", "--no-renames", "--name-only", base, head], { encoding: "utf8" }),
 );
+const cargoDiff = execFileSync("git", ["diff", "-U0", base, head, "--", "Cargo.toml", "Cargo.lock"], {
+  encoding: "utf8",
+});
 console.log(changed.join("\n"));
-appendFileSync(output, outputs(scope(changed)));
+appendFileSync(output, outputs(scope(changed, cargoDiff)));

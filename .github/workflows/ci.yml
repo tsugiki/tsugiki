@@ -20,8 +20,10 @@ concurrency:
 jobs:
   # Decides which checks run. It compares the PR's merge commit with its base, and a rename counts as both
   # of its paths. `docs-only` skips every check but doc-width and pre-commit. `ui-only`, when each path is
-  # docs or under `ui/`, skips the Rust ones. scripts/scope.ts holds the rule, which `just check` applies too.
-  # A push to main sets neither, so it runs every check.
+  # docs or under `ui/`, skips the Rust ones. `release-only`, when the PR changes only CHANGELOG.md and the
+  # version lines of Cargo.toml and Cargo.lock, skips every build and test but the dependency checks and
+  # release-check. scripts/scope.ts holds the rule, which `just check` applies too. A push to main sets none
+  # of them, so it runs every check.
   changes:
     name: changes
     runs-on: ubuntu-latest
@@ -29,6 +31,7 @@ jobs:
     outputs:
       docs-only: ${{ steps.diff.outputs.docs-only }}
       ui-only: ${{ steps.diff.outputs.ui-only }}
+      release-only: ${{ steps.diff.outputs.release-only }}
     steps:
       - if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -83,7 +86,7 @@ jobs:
   rust:
     name: ${{ matrix.check }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.ui-only != 'true' }}
+    if: ${{ needs.changes.outputs.ui-only != 'true' && needs.changes.outputs.release-only != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 45
     strategy:
@@ -167,7 +170,7 @@ jobs:
   rust-coverage:
     name: rust-coverage (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.ui-only != 'true' }}
+    if: ${{ needs.changes.outputs.ui-only != 'true' && needs.changes.outputs.release-only != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -200,7 +203,7 @@ jobs:
   ui:
     name: ${{ matrix.check }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.release-only != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -230,7 +233,7 @@ jobs:
   playwright:
     name: Playwright ${{ matrix.browser }} (windows-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.release-only != 'true' }}
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -265,7 +268,7 @@ jobs:
   macos:
     name: checks (macos-latest)
     needs: [changes]
-    if: ${{ needs.changes.outputs.docs-only != 'true' }}
+    if: ${{ needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.release-only != 'true' }}
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -346,18 +349,26 @@ jobs:
       - macos
     runs-on: ubuntu-latest
     steps:
-      - name: Every job succeeded, or skipped on a docs-only PR, or skipped a Rust check on a ui-only PR
+      # A release-only PR keeps doc-width, pre-commit, the dependency checks and release-check: the Release
+      # workflow's rehearsal builds and starts the app with the new version.
+      - name: >-
+          Every job succeeded, or skipped on a docs-only PR, or skipped a Rust check on a ui-only PR, or skipped
+          a build or test on a release-only PR
         env:
           DOCS_ONLY: ${{ needs.changes.outputs.docs-only }}
           UI_ONLY: ${{ needs.changes.outputs.ui-only }}
+          RELEASE_ONLY: ${{ needs.changes.outputs.release-only }}
           NEEDS: ${{ toJSON(needs) }}
         # A failed jq stops the step here: read from `<(jq ...)`, it would leave the loop nothing to check.
         run: |
           results=$(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
           while read -r job result; do
-            case "$result $DOCS_ONLY $UI_ONLY $job" in
-              "success "* | "skipped true "* | "skipped false true rust" | \
-                "skipped false true rust-coverage" | "skipped false true dependencies") ;;
+            case "$result $DOCS_ONLY $UI_ONLY $RELEASE_ONLY $job" in
+              "success "* | "skipped true "* | "skipped false true false rust" | \
+                "skipped false true false rust-coverage" | "skipped false true false dependencies" | \
+                "skipped false false true rust" | "skipped false false true rust-coverage" | \
+                "skipped false false true ui" | "skipped false false true playwright" | \
+                "skipped false false true macos") ;;
               *) echo "$job ended with: $result"; exit 1 ;;
             esac
           done <<< "$results"

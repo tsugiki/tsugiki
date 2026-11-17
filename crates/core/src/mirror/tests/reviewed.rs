@@ -42,22 +42,11 @@ impl Place {
         fs::read_to_string(file).unwrap_or_default()
     }
 
-    /// An empty mirror that is really there, for the real git to look in while the fake one runs the rest.
-    fn bare_mirror(&self, repository: &RepositoryName) {
-        let mirror = self.folders.mirror(repository);
-        fs::create_dir_all(&mirror).unwrap();
-        let _ = git(&mirror, &["init", "-q", "--bare"]);
-    }
-
-    /// A mirror cloned by hand from a new remote for `repository`, and the one commit it has.
+    /// A mirror the fake git sees with one commit, which it gives.
     fn mirror_with_a_commit(&self, repository: &RepositoryName) -> CommitSha {
-        self.remote(repository);
-        let mirror = self.folders.mirror(repository);
-        fs::create_dir_all(mirror.parent().unwrap()).unwrap();
-        let remote = self.remotes.join(format!("{repository}.git"));
-        let (from, to) = (remote.to_string_lossy(), mirror.to_string_lossy());
-        let _ = git(&self.remotes, &["clone", "-q", "--bare", &from, &to]);
-        CommitSha::parse(git(&mirror, &["rev-parse", "HEAD"]).trim()).unwrap()
+        let commit = head(5).commit;
+        self.mirrored_holding(repository, &commit);
+        commit
     }
 
     /// A real mirror of a new remote for `name`, and the worker that cloned it.
@@ -154,7 +143,7 @@ fn a_commit_github_refuses_is_noted_beside_the_mirror_and_the_others_still_arriv
 fn a_refused_commit_isnt_asked_for_again_even_after_a_relaunch() {
     let place = Place::new("reviewed-refused-once");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     let commit = head(1).commit;
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
@@ -184,7 +173,7 @@ fn a_refused_commit_isnt_asked_for_again_even_after_a_relaunch() {
 fn a_fetch_that_fails_for_another_reason_notes_nothing_and_tries_again_at_the_next_hand_over() {
     let place = Place::new("reviewed-failed");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     let commit = head(1).commit;
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
@@ -221,7 +210,7 @@ fn a_reviewed_commit_waits_for_its_mirror_to_be_cloned() {
         .keep_reviewed(cpython.clone(), vec![reviewed(1, &head(1).commit)]);
     mirrors.wait_idle();
     let nothing = starts.try_recv();
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     mirrors
         .requests()
         .fetch_heads(cpython.clone(), vec![head(2)]);
@@ -247,7 +236,7 @@ fn a_hand_over_during_a_failed_fetch_tries_again_at_once_and_one_during_a_fetch_
  {
     let place = Place::new("reviewed-news");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     let commit = head(1).commit;
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
@@ -277,7 +266,7 @@ fn a_hand_over_during_a_failed_fetch_tries_again_at_once_and_one_during_a_fetch_
 fn a_reviewed_commit_that_leaves_the_want_during_its_failed_fetch_isnt_tried_again() {
     let place = Place::new("reviewed-left");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
@@ -303,7 +292,7 @@ fn a_reviewed_commit_that_leaves_the_want_during_its_failed_fetch_isnt_tried_aga
 fn a_refusal_that_cant_be_noted_on_disk_still_isnt_asked_for_again() {
     let place = Place::new("reviewed-refused-unnoted");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     // A folder where the file goes can be neither read nor written.
     fs::create_dir_all(
         place
@@ -331,8 +320,7 @@ fn a_refusal_that_cant_be_noted_on_disk_still_isnt_asked_for_again() {
 fn a_mirror_git_cant_look_in_has_its_reviewed_commits_tried_again_at_the_next_hand_over() {
     let place = Place::new("reviewed-unreadable");
     let cpython = named("python/cpython");
-    // Something is where the mirror goes, but git can't go into it. An empty folder wouldn't do: git would
-    // look in the repository around it.
+    // Something is where the mirror goes, but git can't go into it.
     let mirror = place.folders.mirror(&cpython);
     fs::create_dir_all(mirror.parent().unwrap()).unwrap();
     fs::write(&mirror, "").unwrap();
@@ -344,7 +332,7 @@ fn a_mirror_git_cant_look_in_has_its_reviewed_commits_tried_again_at_the_next_ha
     mirrors.wait_idle();
     let nothing = starts.try_recv();
     fs::remove_file(&mirror).unwrap();
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     requests.keep_reviewed(cpython.clone(), vec![reviewed(1, &commit)]);
     let fetch = starts.recv_timeout(PLENTY).unwrap();
     let input = fetch.input.clone();
@@ -419,7 +407,7 @@ fn a_mirror_found_broken_while_pointing_reviewed_refs_is_cloned_again() {
 fn a_mirror_found_broken_while_fetching_reviewed_commits_is_cloned_again_and_gets_them_all_back() {
     let place = Place::new("reviewed-broken-fetch");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
     requests.clone_mirror(cpython.clone(), download());
@@ -433,9 +421,7 @@ fn a_mirror_found_broken_while_fetching_reviewed_commits_is_cloned_again_and_get
         "fatal: bad object 0123456789abcdef0123456789abcdef01234567\n",
     );
     let clone = starts.recv_timeout(PLENTY).unwrap();
-    let partial = PathBuf::from(clone.args.last().unwrap());
-    fs::create_dir_all(&partial).unwrap();
-    let _ = git(&partial, &["init", "-q", "--bare"]);
+    fs::create_dir_all(clone.args.last().unwrap()).unwrap();
     clone.succeed();
     let again = starts.recv_timeout(PLENTY).unwrap();
     let input = again.input.clone();
@@ -450,7 +436,7 @@ fn a_mirror_found_broken_while_fetching_reviewed_commits_is_cloned_again_and_get
 fn quitting_stops_a_fetch_of_reviewed_commits_under_way() {
     let place = Place::new("reviewed-quit");
     let cpython = named("python/cpython");
-    place.bare_mirror(&cpython);
+    place.mirrored(&cpython);
     let (mirrors, starts) = place.start_faked();
 
     mirrors

@@ -151,6 +151,10 @@ fn the_checkout_holds_a_prs_base_and_added_files_moves_on_and_goes_with_the_repo
     let first = place.look_up(&mirrors, &hello, at_one.clone());
     let first_commit = checked_out(&first.folder);
     let first_news = fs::read_to_string(first.folder.join("NEWS")).unwrap();
+    // The next move needs only what the mirror holds, so GitHub can be out of reach.
+    mirrors.requests().follow(&Status::Offline);
+    let gone = place.remotes.with_file_name("remotes-gone");
+    fs::rename(&place.remotes, &gone).unwrap();
     let at_two = LookupAt {
         base: second_base.clone(),
         head: two,
@@ -212,27 +216,23 @@ fn the_mirrors_gc_keeps_the_commit_the_checkout_is_on() {
 }
 
 #[test]
-fn with_no_network_the_checkout_moves_to_a_base_the_mirror_holds() {
+fn with_no_network_the_checkout_still_moves() {
     let place = Place::new("lookup-offline");
-    let hello = named("octo-org/hello");
-    place.remote(&hello);
-    let base = place.main(&hello);
-    let one = place.pull_request_adding(&hello, 1, "NEWS");
-    let mirrors = place.mirror_with(&hello, &[(1, &one)]);
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let folder = place.folders.lookup(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
 
-    mirrors.requests().follow(&Status::Offline);
-    let gone = place.remotes.with_file_name("remotes-gone");
-    fs::rename(&place.remotes, &gone).unwrap();
-    let at = LookupAt {
-        base: base.clone(),
-        head: one,
-    };
-    let checkout = place.look_up(&mirrors, &hello, at.clone());
+    requests.follow(&Status::Offline);
+    requests.look_up(cpython.clone(), fake_at(1));
+    let moved = end_move(&starts, &folder);
+    let checkout = requests.lookup_checkout(cpython.clone());
     mirrors.stop_cleanly(PLENTY);
 
-    assert_eq!(checkout.at, at);
-    assert_eq!(checked_out(&checkout.folder), base.as_str());
-    assert!(checkout.folder.join("NEWS").is_file());
+    let base = fake_at(1).base.as_str().to_owned();
+    assert_eq!(moved, (vec!["worktree".into(), "reset".into()], base));
+    assert_eq!(checkout.map(|checkout| checkout.at), Some(fake_at(1)));
 }
 
 #[test]

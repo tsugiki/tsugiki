@@ -8,12 +8,13 @@ use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
-use crate::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
+use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
-    Canned, RATE_LIMIT, Scripted, answered, dated, reply_ok, signed_in_as, signed_in_gh,
+    Canned, RATE_LIMIT, Scripted, answer, answered, dated, fetched_nodes, github, page_info,
+    pr_content, pr_node, pull_request_answer, reply_ok, search_page, signed_in_as, signed_in_gh,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -25,10 +26,12 @@ use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
 use crate::status::{Change, FailedRead, ReadFailure};
+use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
-use crate::testing::TempPath;
+use crate::testing::{TempPath, cpython, cpython_settings, hours_ago, me, pr_facts};
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
+use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
@@ -327,26 +330,19 @@ fn watching_follows_github_until_told_to_stop() {
     assert_eq!(announced(&seen), [octocat(), offline_as, octocat()]);
 }
 
-/// GitHub's answer whose data holds the fields `data` spells, and its points.
-fn answer_with(data: &str) -> Result<Reply, Unreachable> {
-    reply_ok(&format!(r#"{{"data":{{{data},{RATE_LIMIT}}}}}"#))
-}
-
 /// The answer to `FetchIssueContent`.
 fn issue_content_reply() -> Result<Reply, Unreachable> {
-    answer_with(
-        r#""repository":{"issue":{"bodyHTML":"<p>It crashes</p>","createdAt":"2026-11-01T09:00:00Z",
-            "comments":{"totalCount":0,"nodes":[]}}}"#,
-    )
+    let issue = json!({
+        "bodyHTML": "<p>It crashes</p>",
+        "createdAt": "2026-11-01T09:00:00Z",
+        "comments": { "totalCount": 0, "nodes": [] },
+    });
+    answer(json!({ "repository": { "issue": issue } }), RATE_LIMIT)
 }
 
 /// The answer to `FetchPullRequestContent` for a PR with a body and nothing else.
 fn pr_content_reply() -> Result<Reply, Unreachable> {
-    answer_with(
-        r#""repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
-            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
-            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}}"#,
-    )
+    pull_request_answer(pr_content(&json!({})), RATE_LIMIT)
 }
 
 /// A session that runs `ask` and stops, what the database then holds of Issue 7, and the activity facts of
@@ -356,19 +352,15 @@ fn after_asking(
     access: GitHubAccess,
     ask: impl FnOnce(&Fetching),
 ) -> (Option<IssueContent>, ActivityFacts, Vec<Status>) {
-    let (folders, _folder) = temp_folders(name);
+    let (folders, folder) = temp_folders(name);
     let (board, seen) = watched_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
     ask(&session.fetching());
     session.stop(PLENTY);
 
-    let path = folders.database();
-    let store = Store::open(&path).unwrap();
-    let (to_open, reader) = store::reader();
-    let open = to_open.open(&path).unwrap();
-    let (facts, content) = reader.issue_facts(&gcmon(), 7).unwrap();
-    open.close();
-    store.close();
+    let db = OpenStore::of(folders.database(), folder);
+    let (facts, content) = db.reader.issue_facts(&gcmon(), 7).unwrap();
+    db.close();
     (content, facts.activity, announced(&seen))
 }
 
@@ -381,12 +373,6 @@ fn opening_an_issue_keeps_what_it_says_and_leaves_last_seen_alone() {
 
     assert_eq!(content.unwrap().body_html, "<p>It crashes</p>");
     assert_eq!(activity.last_seen, BTreeMap::new());
-}
-
-/// A moment in whole seconds, as the database keeps it.
-fn hours_ago(hours: i64) -> OffsetDateTime {
-    let at = OffsetDateTime::now_utc() - time::Duration::hours(hours);
-    at.replace_nanosecond(0).unwrap()
 }
 
 #[test]
@@ -434,15 +420,12 @@ fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
     let (folders, _folder) = temp_folders("open-pr");
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
-    let cpython = RepositoryName::parse("python/cpython").unwrap();
 
-    session
-        .fetching()
-        .fetch_pull_request(cpython.clone(), 152_326);
+    session.fetching().fetch_pull_request(cpython(), 152_326);
     let _change = changes.recv_timeout(PLENTY).unwrap();
     let (facts, content) = session
         .reader()
-        .pull_request_facts(&cpython, 152_326)
+        .pull_request_facts(&cpython(), 152_326)
         .unwrap();
     session.stop(PLENTY);
 
@@ -545,7 +528,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
 
 #[test]
 fn an_issue_github_has_lost_troubles_only_the_log() {
-    let gone = answer_with(r#""repository":{"issue":null}"#);
+    let gone = answer(json!({ "repository": { "issue": null } }), RATE_LIMIT);
     let access = replying(vec![signed_in(), gone]);
 
     let (content, _, shown) =
@@ -659,7 +642,7 @@ fn an_issue_read_without_the_network_waits_on_github() {
 
 #[test]
 fn an_issue_github_doesnt_have_says_so() {
-    let gone = answer_with(r#""repository":{"issue":null}"#);
+    let gone = answer(json!({ "repository": { "issue": null } }), RATE_LIMIT);
     let access = replying(vec![signed_in(), gone]);
 
     let failed = failed_reads_of_issue_7("gone-issue-read", access);
@@ -699,7 +682,7 @@ fn a_pr_read_with_no_token_says_so() {
 
 #[test]
 fn a_pr_github_doesnt_have_says_so() {
-    let gone = answer_with(r#""repository":{"pullRequest":null}"#);
+    let gone = pull_request_answer(Value::Null, RATE_LIMIT);
     let access = replying(vec![signed_in(), gone]);
 
     let failed = failed_reads_of_pr_7("gone-pr", access);
@@ -751,13 +734,7 @@ fn plain_gcmon() -> RepositorySettings {
 #[test]
 fn a_session_answers_a_check_between_refreshes() {
     // `Replies` panics if it is asked a third time, so the check can't bring a refresh with it.
-    let gcmon_reply = Reply {
-        status: 200,
-        reset: None,
-        date: None,
-        body: GCMON.to_owned(),
-    };
-    let access = replying(vec![signed_in(), Ok(gcmon_reply)]);
+    let access = replying(vec![signed_in(), reply_ok(GCMON)]);
     let (folders, _folder) = temp_folders("check");
     let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
 
@@ -816,10 +793,7 @@ fn checks_dont_put_off_the_next_refresh() {
         incoming,
         fetching: unheard(),
     };
-    let github = GitHub::new(
-        Box::new(answered(200, GCMON)),
-        crate::github::testing::token(),
-    );
+    let github = github(answered(200, GCMON));
     let started = Instant::now();
     let due = Due::starting_at(started, refreshes.intervals);
     let mut syncs = Syncs::default();
@@ -843,44 +817,22 @@ fn checks_dont_put_off_the_next_refresh() {
 }
 
 fn work_search(ids: &[&str]) -> Result<Reply, Unreachable> {
-    let nodes: Vec<serde_json::Value> = ids
-        .iter()
-        .map(|id| serde_json::json!({ "id": id }))
-        .collect();
-    let body = format!(
-        r#"{{"data":{{"search":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":{}}},{RATE_LIMIT}}}}}"#,
-        serde_json::json!(nodes)
-    );
-    reply_ok(&body)
+    search_page(ids, None, RATE_LIMIT)
 }
 
+/// The fetch of the user's PR 7 in `gcmon`.
 fn work_fetch() -> Result<Reply, Unreachable> {
-    let node = serde_json::json!({
-        "number": 7,
-        "title": "gh-7: Fix it",
-        "state": "OPEN",
-        "isDraft": false,
-        "updatedAt": "2026-11-04T10:00:00Z",
-        "baseRefName": "main",
-        "body": "",
-        "repository": {
-            "nameWithOwner": "some-maintainer/gcmon",
-            "defaultBranchRef": { "name": "main" },
-        },
-        "closingIssuesReferences": { "nodes": [] },
-        "author": { "login": "octocat" },
-        "assignees": { "nodes": [] },
-        "labels": { "nodes": [] },
-        "reviewRequests": { "nodes": [] },
-        "timelineItems": { "nodes": [] },
-        "latestReviews": { "nodes": [] },
-        "lastCommit": { "nodes": [] },
-        "mergeCommit": null,
-        "baseRefOid": "0123456789abcdef0123456789abcdef01234567",
-        "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
-        "commits": { "totalCount": 0, "nodes": [] },
-    });
-    reply_ok(&format!(r#"{{"data":{{"nodes":[{node}],{RATE_LIMIT}}}}}"#))
+    let node = pr_node(
+        7,
+        &json!({
+            "title": "gh-7: Fix it",
+            "repository": {
+                "nameWithOwner": "some-maintainer/gcmon",
+                "defaultBranchRef": { "name": "main" },
+            },
+        }),
+    );
+    fetched_nodes(&[node], RATE_LIMIT)
 }
 
 /// The recorded `python/cpython` work as the Workbench lists it: the items in order, with each item's
@@ -911,7 +863,7 @@ fn the_recorded_cpython_work_reads_as_an_inbox() {
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
     let reader = session.reader();
-    let cpython = RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap());
+    let cpython = cpython_settings();
 
     session.fetching().sync(cpython.clone());
     // Two Filters, the PRs they found, their Issues, one Issue's tree and an Origin PR.
@@ -976,11 +928,9 @@ fn a_sync_fills_the_workbench_and_says_so() {
 #[test]
 fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
     // The same hour as `RATE_LIMIT`, and a cost that tells this read apart from the sync's answers.
-    let pr_read = reply_ok(
-        r#"{"data":{"repository":{"pullRequest":{"bodyHTML":"<p>Fixes the crash</p>","createdAt":"2026-11-01T09:00:00Z",
-            "comments":{"totalCount":0,"nodes":[]},"reviews":{"totalCount":0,"nodes":[]},
-            "reviewThreads":{"nodes":[]},"headRefOid":"0123abc"}},
-            "rateLimit":{"cost":3,"limit":5000,"used":990,"remaining":4010,"resetAt":"2999-01-01T00:00:00Z"}}}"#,
+    let pr_read = pull_request_answer(
+        pr_content(&json!({})),
+        r#""rateLimit":{"cost":3,"limit":5000,"used":990,"remaining":4010,"resetAt":"2999-01-01T00:00:00Z"}"#,
     );
     let (script, _asked) = Scripted::new(vec![
         signed_in(),
@@ -1052,13 +1002,8 @@ fn the_window_stops_showing_the_hours_points_at_its_reset_by_githubs_clock() {
 
 #[test]
 fn a_reset_far_off_is_looked_at_again_within_a_minute_as_a_sleeping_mac_stops_its_instant() {
-    let viewer = reply_ok(&format!(
-        r#"{{"data":{{"viewer":{{"login":"octocat"}},{RATE_LIMIT}}}}}"#
-    ));
-    let github = GitHub::new(
-        Box::new(Scripted::new(vec![viewer]).0),
-        crate::github::testing::token(),
-    );
+    let viewer = answer(json!({ "viewer": { "login": "octocat" } }), RATE_LIMIT);
+    let github = github(Scripted::new(vec![viewer]).0);
     assert_eq!(hour_check(&github), None, "no points, nothing to look at");
 
     drop(github.viewer().unwrap());
@@ -1070,23 +1015,11 @@ fn a_reset_far_off_is_looked_at_again_within_a_minute_as_a_sleeping_mac_stops_it
 /// A PR of `author` in `gcmon`, stored with its branch at `head`.
 fn stored_pr(number: u32, author: &str, head: &str) -> PullRequestFacts {
     PullRequestFacts {
-        number,
         title: format!("gh-{number}: Fix it"),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(Login::new(author)),
-        target_branch: "main".to_owned(),
-        ci: None,
         updated_at: OffsetDateTime::from_unix_timestamp(1).unwrap(),
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
         head: CommitSha::parse(head),
-        off_default: None,
+        ..pr_facts(number)
     }
 }
 
@@ -1292,7 +1225,7 @@ fn board_hearing_settings() -> (StatusBoard, mpsc::Receiver<Change>) {
 fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesnt() {
     let (folders, _folder) = temp_folders("settings-announced");
     let store = Store::open(&folders.database()).unwrap();
-    store.remember_login(&Login::new("octocat")).unwrap();
+    store.remember_login(&me()).unwrap();
     store.close();
     let (board, changes) = board_hearing_settings();
     let (mirrors, _heard) = HeardRequests::new();
@@ -1388,7 +1321,7 @@ fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirro
 fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let (folders, _folder) = temp_folders("switched-session");
     let store = Store::open(&folders.database()).unwrap();
-    store.remember_login(&Login::new("octocat")).unwrap();
+    store.remember_login(&me()).unwrap();
     let stored = vec![stored_pr(8, "some-author", "4567def")];
     store.save_pull_requests(&gcmon(), stored).unwrap();
     let found = FilterResults {
@@ -1502,7 +1435,7 @@ fn keeping_patches(
 ) -> (Vec<Change>, ReviewFacts) {
     let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
-    store.remember_login(&Login::new("octocat")).unwrap();
+    store.remember_login(&me()).unwrap();
     let stored = vec![
         stored_pr(7, "octocat", "89abcde"),
         stored_pr(8, "some-author", "4567def"),
@@ -1657,10 +1590,7 @@ fn a_check_goes_ahead_of_the_next_step_of_a_sync() {
         incoming,
         fetching: unheard(),
     };
-    let github = GitHub::new(
-        Box::new(answered(200, GCMON)),
-        crate::github::testing::token(),
-    );
+    let github = github(answered(200, GCMON));
     let mut syncs = Syncs::default();
     syncs.add(plain_gcmon());
     let due = Due::starting_at(Instant::now(), HOURLY);
@@ -1950,22 +1880,17 @@ struct QuietRepository {
 impl Transport for QuietRepository {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         drop(self.asked.send(request.operation.to_owned()));
-        let body = match request.operation {
-            "Viewer" => r#"{"data":{"viewer":{"login":"octocat"}}}"#.to_owned(),
-            _ => format!(
-                r#"{{"data":{{"repository":{{
-                        "openIssues":{{"totalCount":900}},"openPrs":{{"totalCount":0}},
-                        "issues":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}},
-                        "pullRequests":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}}
-                    }},{RATE_LIMIT}}}}}"#
-            ),
-        };
-        Ok(Reply {
-            status: 200,
-            reset: None,
-            date: None,
-            body,
-        })
+        if request.operation == "Viewer" {
+            return reply_ok(r#"{"data":{"viewer":{"login":"octocat"}}}"#);
+        }
+        let none = json!({ "pageInfo": page_info(None), "nodes": [] });
+        let repository = json!({
+            "openIssues": { "totalCount": 900 },
+            "openPrs": { "totalCount": 0 },
+            "issues": none,
+            "pullRequests": none,
+        });
+        answer(json!({ "repository": repository }), RATE_LIMIT)
     }
 }
 

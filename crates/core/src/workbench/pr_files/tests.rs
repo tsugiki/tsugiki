@@ -4,7 +4,7 @@ use tsugiki_test_git::git;
 
 use super::*;
 use crate::diff::MirrorDiff;
-use crate::diff::tests::Mirrored;
+use crate::diff::testing::Mirrored;
 use crate::facts::pull_request_content::{Side, Subject, ThreadCommentId};
 use crate::facts::pull_requests::PrHead;
 use crate::workbench::testing::{ViewWorld, mine};
@@ -39,7 +39,7 @@ impl World {
 
     fn sources(&self) -> DiffSources<'_> {
         DiffSources {
-            reader: &self.view.reader,
+            reader: &self.view.db.reader,
             folders: &self.folders,
             diffs: &self.diffs,
             highlighter: &self.highlighter,
@@ -256,6 +256,7 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
     let name = world.repository();
     world
         .view
+        .db
         .store
         .save_pull_request_content(&name, 7, content)
         .unwrap();
@@ -404,6 +405,7 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
     let save = |content| {
         world
             .view
+            .db
             .store
             .save_pull_request_content(&name, 7, content)
             .unwrap();

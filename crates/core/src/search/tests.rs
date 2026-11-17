@@ -1,9 +1,9 @@
 use std::sync::Mutex;
 use std::time::Instant;
 
-use super::testing::Fixture;
 use super::*;
 use crate::mirror::{HeardRequests, LookupCheckout};
+use crate::testing::{Fixture, cpython};
 
 fn query(text: &str) -> Query {
     Query {
@@ -14,13 +14,9 @@ fn query(text: &str) -> Query {
     }
 }
 
-fn repository() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
 /// Asks `search` for `text` in `fixture`'s PR, at the ends its checkout holds.
 fn search_in(search: &TextSearch, fixture: &Fixture, text: &str) -> SearchId {
-    (search.search(repository(), fixture.checkout.at.clone(), &query(text))).unwrap()
+    (search.search(cpython(), fixture.checkout.at.clone(), &query(text))).unwrap()
 }
 
 /// The ends of a diff no fixture holds, each commit a run of `digit`.
@@ -60,7 +56,7 @@ fn asked(heard: &HeardRequests) -> Sender<Option<LookupCheckout>> {
         found.is_some()
     });
     let (repository, reply) = found.unwrap();
-    assert_eq!(repository, self::repository());
+    assert_eq!(repository, self::cpython());
     reply
 }
 
@@ -90,7 +86,7 @@ fn ended(search: &TextSearch, id: SearchId) -> (Vec<(String, Vec<u32>)>, End, u3
 }
 
 fn pr(name: &str) -> Fixture {
-    Fixture::new(
+    Fixture::of_bytes(
         name,
         &[
             ("b.py", b"spam\neggs\nspam spam\n"),
@@ -156,9 +152,7 @@ fn a_second_query_cancels_the_first() {
 #[test]
 fn a_query_with_no_checkout_says_so() {
     let (search, heard, _) = started();
-    let id = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     asked(&heard).send(None).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }
@@ -167,9 +161,7 @@ fn a_query_with_no_checkout_says_so() {
 fn a_query_searches_none_of_a_checkout_at_another_diff() {
     let fixture = pr("search-owner-elsewhere");
     let (search, heard, _) = started();
-    let id = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     // The checkout went to another diff, the fixture's, while the query waited.
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
@@ -182,9 +174,7 @@ fn queries_on_older_and_newer_diffs_move_no_checkout_whatever_order_their_thread
         let (search, heard, _) = started();
         // A query on the diff before, then one on the diff the PR now shows, whose threads hear where the
         // checkout is in the order the loop gives.
-        let _older = search
-            .search(repository(), ends(1), &query("spam"))
-            .unwrap();
+        let _older = search.search(cpython(), ends(1), &query("spam")).unwrap();
         let older_reply = asked(&heard);
         let newer = search_in(&search, &fixture, "eggs");
         let newer_reply = asked(&heard);
@@ -255,7 +245,7 @@ fn a_bad_regex_returns_its_error_and_leaves_the_query_running_alone() {
         ..query("(")
     };
     let refused = search
-        .search(repository(), fixture.checkout.at.clone(), &bad)
+        .search(cpython(), fixture.checkout.at.clone(), &bad)
         .err()
         .unwrap();
     assert!(
@@ -292,7 +282,7 @@ fn with_no_network_a_query_searches_a_commit_the_mirror_holds() {
 #[test]
 fn a_search_past_the_most_matches_stops_and_says_so() {
     let text = format!("{}\n", "spam ".repeat(40)).repeat(150);
-    let fixture = Fixture::new("search-owner-most", &[("many.txt", text.as_bytes())], &[]);
+    let fixture = Fixture::of_bytes("search-owner-most", &[("many.txt", text.as_bytes())], &[]);
     let (search, heard, _) = started();
     let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
@@ -303,9 +293,7 @@ fn a_search_past_the_most_matches_stops_and_says_so() {
 #[test]
 fn a_worker_that_stops_without_an_answer_leaves_no_checkout() {
     let (search, heard, _) = started();
-    let id = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     drop(asked(&heard));
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }

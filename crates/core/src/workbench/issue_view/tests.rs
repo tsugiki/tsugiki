@@ -92,11 +92,12 @@ fn a_merged_backport_a_filter_matched_keeps_its_origin_pr_listed() {
         problem: None,
     };
     world
+        .db
         .store
         .save_filter_results(&settings.name, &query, found)
         .unwrap();
 
-    let shown = IssueView::read(&world.reader, &settings, 1)
+    let shown = IssueView::read(&world.db.reader, &settings, 1)
         .unwrap()
         .unwrap();
 
@@ -148,7 +149,7 @@ fn a_merged_pr_that_needs_attention_or_matched_a_filter_keeps_its_origin_pr_out_
 }
 
 fn view(world: &ViewWorld, number: u32) -> Option<IssueView> {
-    IssueView::read(&world.reader, &world.settings(), number).unwrap()
+    IssueView::read(&world.db.reader, &world.settings(), number).unwrap()
 }
 
 fn pr_row(view: &IssueView) -> &WorkbenchRow {
@@ -227,6 +228,7 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
         opened_at: Some(OffsetDateTime::UNIX_EPOCH),
     };
     world
+        .db
         .store
         .save_issue_content(&world.settings().name, 1, content.clone())
         .unwrap();

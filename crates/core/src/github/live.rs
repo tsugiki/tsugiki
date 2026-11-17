@@ -9,6 +9,7 @@
 
 use std::ffi::OsStr;
 use std::io::{self, Write};
+use std::path::Path;
 use std::process::{ChildStderr, Command, Stdio};
 use std::thread;
 #[cfg(not(windows))]
@@ -171,6 +172,53 @@ pub(crate) fn read_git_bytes_with_env(
     let mut command = local_git(args);
     let _ = command.envs(envs.iter().copied());
     git_bytes(command, input)
+}
+
+/// The blobs `names` names, read from the git folder `folder` with one `git cat-file --batch`: the bytes of
+/// each, or nothing for a name git has no blob for. A name is a blob's id or `<commit>:<path>`, and holds no
+/// line break. Output cut short ends the list.
+pub(crate) fn read_blobs(folder: &Path, names: &[&str]) -> io::Result<Vec<Option<Vec<u8>>>> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let input: Vec<u8> = (names.iter())
+        .flat_map(|name| name.bytes().chain(*b"\n"))
+        .collect();
+    let args = [
+        OsStr::new("-C"),
+        folder.as_os_str(),
+        OsStr::new("cat-file"),
+        OsStr::new("--batch"),
+    ];
+    Ok(parse_batch(&read_git_bytes(&args, input)?))
+}
+
+/// What `git cat-file --batch` printed: for each name, `<id> <type> <size>`, a line feed, the object and a
+/// line feed, or a line such as `<name> missing`. Only a blob gives bytes. Output cut short ends the list.
+fn parse_batch(mut output: &[u8]) -> Vec<Option<Vec<u8>>> {
+    let mut objects = Vec::new();
+    while let Some(end) = output.iter().position(|&byte| byte == b'\n') {
+        let header = String::from_utf8_lossy(output.get(..end).unwrap_or_default());
+        output = output.get(end.saturating_add(1)..).unwrap_or_default();
+        let found = match header.split(' ').collect::<Vec<_>>().as_slice() {
+            [_, kind, size] => size
+                .parse::<usize>()
+                .ok()
+                .map(|size| (*kind == "blob", size)),
+            _ => None,
+        };
+        let Some((blob, size)) = found else {
+            log::warn!("Tsugiki can't read a file from git: git says {header}");
+            objects.push(None);
+            continue;
+        };
+        let Some(object) = output.get(..size) else {
+            break;
+        };
+        objects.push(blob.then(|| object.to_vec()));
+        output = output.get(size.saturating_add(1)..).unwrap_or_default();
+    }
+    objects
 }
 
 fn git_bytes(mut command: Command, input: Vec<u8>) -> io::Result<Vec<u8>> {

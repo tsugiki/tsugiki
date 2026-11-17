@@ -1,6 +1,5 @@
-//! A Repository with a PR, a Lookup checkout at its base as the Mirror worker leaves one, built with the
-//! real git (ADR 0009), the servers the tests start, and a fake server for what a real one does only at
-//! moments a test can't pick.
+//! The servers the tests start, and a fake server for what a real one does only at moments a test can't
+//! pick. The Repository with a PR that they work in is [`crate::testing::Fixture`].
 
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
@@ -8,15 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::{env, fs, thread};
+use std::{env, thread};
 
 use serde_json::{Value, json};
 use tsugiki_lsp::{Event, Process, Server, Starting, Streams, Uri};
-use tsugiki_test_git::git;
-
-use crate::facts::CommitSha;
-use crate::mirror::{LookupAt, LookupCheckout};
-use crate::testing::{TempPath, temp_path};
 
 /// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
 /// `scripts/test-servers.ts` fetches.
@@ -46,87 +40,6 @@ pub(crate) fn clangd() -> PathBuf {
         "TSUGIKI_CLANGD={path:?}: see just test-servers"
     );
     path
-}
-
-/// A repository whose `main` is the PR's base, and whose PR's head changes, adds and deletes files.
-pub(crate) struct Fixture {
-    /// The repository the PR is in, which stands in for its Mirror.
-    pub(crate) mirror: PathBuf,
-    pub(crate) checkout: LookupCheckout,
-    /// The folder around both, which a test drops after the servers that work in it.
-    _root: TempPath,
-}
-
-impl Fixture {
-    /// The base holds `base`, and the PR's head writes each of `head`'s files, or deletes it where its text
-    /// is None. The checkout holds the base and the head's added files, as a move leaves it.
-    pub(crate) fn new(name: &str, base: &[(&str, &str)], head: &[(&str, Option<&str>)]) -> Self {
-        // The folder keeps the `..` in `temp_path`'s path, which the core reads past.
-        let root = temp_path(name);
-        let mirror = root.join("mirror");
-        fs::create_dir_all(&mirror).unwrap();
-        let _ = git(&mirror, &["init", "-q", "-b", "main"]);
-        let _ = git(&mirror, &["config", "core.autocrlf", "false"]);
-        for (path, text) in base {
-            write(&mirror, path, text);
-        }
-        let base_commit = commit(&mirror, "base");
-        let mut added = Vec::new();
-        for (path, text) in head {
-            match text {
-                Some(text) => {
-                    if !mirror.join(path).exists() {
-                        added.push(*path);
-                    }
-                    write(&mirror, path, text);
-                }
-                None => {
-                    let _ = git(&mirror, &["rm", "-q", path]);
-                }
-            }
-        }
-        let head_commit = commit(&mirror, "head");
-        let folder = root.join("lookup");
-        let folder_arg = folder.to_string_lossy().into_owned();
-        let at = [
-            "worktree",
-            "add",
-            "-q",
-            "--detach",
-            &folder_arg,
-            base_commit.as_str(),
-        ];
-        let _ = git(&mirror, &at);
-        if !added.is_empty() {
-            let mut args = vec!["checkout", head_commit.as_str(), "--"];
-            args.extend(added);
-            let _ = git(&folder, &args);
-        }
-        Self {
-            mirror,
-            checkout: LookupCheckout {
-                folder,
-                at: LookupAt {
-                    base: base_commit,
-                    head: head_commit,
-                },
-            },
-            _root: root,
-        }
-    }
-}
-
-fn write(folder: &Path, path: &str, text: &str) {
-    let file = folder.join(path);
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(&file, text).unwrap();
-    let _ = git(folder, &["add", path]);
-}
-
-fn commit(folder: &Path, message: &str) -> CommitSha {
-    let _ = git(folder, &["commit", "-q", "--allow-empty", "-m", message]);
-    let commit = git(folder, &["rev-parse", "HEAD"]);
-    CommitSha::parse(commit.trim()).unwrap()
 }
 
 /// A fake clangd, which threads of the test play over in-memory pipes: it answers each lookup with the

@@ -336,15 +336,19 @@ impl LanguageServer {
             Err(cause) => return Err(not_started(&cause, &events)),
         };
         let version = (info.and_then(|info| info.version)).and_then(|text| version_in(&text));
-        let names: Vec<String> = (changed.iter())
-            .flat_map(|path| {
-                [&at.head, &at.base].map(|commit| format!("{}:{path}", commit.as_str()))
+        // git can't read a file whose path has a line break, so the server isn't told of it.
+        let readable: Vec<(&String, [String; 2])> = (changed.iter())
+            .filter_map(|path| {
+                let name = |commit| diff::object_name(commit, path);
+                Some((path, [name(&at.head)?, name(&at.base)?]))
             })
             .collect();
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        let names: Vec<&str> = (readable.iter())
+            .flat_map(|(_, names)| names.iter().map(String::as_str))
+            .collect();
         let mut texts = diff::blobs(&folder, &names).into_iter();
         let mut open = Vec::new();
-        for path in changed {
+        for (path, _) in readable {
             // A file the PR deletes has no text at the head, and the checkout holds its base.
             let (Some(Some(head)), base) = (texts.next(), texts.next().flatten()) else {
                 continue;

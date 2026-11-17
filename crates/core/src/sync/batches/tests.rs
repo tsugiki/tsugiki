@@ -1,7 +1,7 @@
 use crate::github::Unreachable;
 use crate::sync::Syncs;
 use crate::sync::testing::{
-    FEW, Harness, RATE_LIMIT, cpython, fetched, found, nothing, plain, run_to_the_end,
+    FEW, Harness, RATE_LIMIT, cpython, fetched, nothing, plain, run_to_the_end, search_page,
 };
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -11,9 +11,9 @@ fn a_pr_two_searches_found_is_fetched_once() {
     let harness = Harness::new(
         "twice",
         vec![
-            found(&["a"], None, RATE_LIMIT),
-            found(&["a"], None, RATE_LIMIT),
-            found(&["a", "b"], None, RATE_LIMIT),
+            search_page(&["a"], None, RATE_LIMIT),
+            search_page(&["a"], None, RATE_LIMIT),
+            search_page(&["a", "b"], None, RATE_LIMIT),
             nothing(RATE_LIMIT),
             fetched(&[1, 2], RATE_LIMIT),
         ],
@@ -35,7 +35,7 @@ fn a_retry_at_half_size_leaves_the_rest_for_the_next_batch() {
     let harness = Harness::new(
         "half",
         vec![
-            found(&ids, None, RATE_LIMIT),
+            search_page(&ids, None, RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
@@ -62,7 +62,7 @@ fn a_fetch_below_the_floor_holds_the_next_step_back() {
     let harness = Harness::new(
         "floor-fetch",
         vec![
-            found(&["a"], None, RATE_LIMIT),
+            search_page(&["a"], None, RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
@@ -74,7 +74,7 @@ fn a_fetch_below_the_floor_holds_the_next_step_back() {
     let before = Instant::now();
 
     for _ in 0..7 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
 
     let ready = syncs.ready_at().unwrap();
@@ -90,7 +90,7 @@ fn a_sync_asks_for_pages_of_50_and_batches_of_25() {
     let harness = Harness::new(
         "sizes",
         vec![
-            found(&names, None, RATE_LIMIT),
+            search_page(&names, None, RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),

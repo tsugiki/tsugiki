@@ -1,5 +1,5 @@
 use super::*;
-use crate::definitions::testing::Fixture;
+use crate::testing::Fixture;
 
 const PATCHLEVEL: &str = "#define PY_MAJOR_VERSION        3\n#define PY_MINOR_VERSION        14\n";
 

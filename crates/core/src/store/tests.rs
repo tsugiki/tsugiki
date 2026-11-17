@@ -174,7 +174,7 @@ fn full_scans(connection: &Connection, sql: &str) -> Vec<String> {
 /// Each statement the reads a screen waits on run, as SQLite traces them. One row in each table makes a
 /// query inside a loop over rows run too. A query behind a condition these rows don't meet stays unseen.
 fn view_statements(connection: &mut Connection) -> Vec<String> {
-    let cpython = RepositoryName::parse("python/cpython").unwrap();
+    let cpython = crate::testing::cpython();
     let viewer = Login::new("octocat");
     let saved_at = OffsetDateTime::UNIX_EPOCH;
     let pull_request = PullRequestFacts {

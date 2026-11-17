@@ -6,7 +6,6 @@ use tsugiki_test_git::git;
 use super::*;
 use crate::diff::{Diff, PrAt, Start, read};
 use crate::facts::CommitSha;
-use crate::repository::RepositoryName;
 use crate::testing::TempPath;
 
 #[test]
@@ -74,7 +73,7 @@ impl Repo {
 
 fn pr(number: u32, head: &CommitSha) -> PrAt {
     PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: crate::testing::cpython(),
         number,
         head: head.clone(),
     }
@@ -526,20 +525,6 @@ fn the_thread_parses_ahead_between_chunks_and_ends_with_the_last_highlighter() {
     worker.run(&incoming);
 
     assert_eq!(shelved(&shelf, &diff, &ALL), ALL);
-}
-
-#[test]
-fn git_s_batch_gives_each_blob_s_text_and_nothing_for_the_rest() {
-    let output = b"1111 blob 3\nab\n\n\
-        2222:Lib/x.py missing\n\
-        3333 tree 4\n\0\0\0\0\n\
-        4444:Lib/spaced name.py missing\n\
-        5555 blob 20\ncut short";
-
-    let blobs = parse_batch(output);
-
-    let ab = Some("ab\n".to_owned());
-    assert_eq!(blobs, [ab, None, None, None]);
 }
 
 #[test]

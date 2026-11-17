@@ -28,7 +28,7 @@ fn anything_else_is_refused() {
 
 #[test]
 fn an_item_has_its_page_on_github() {
-    let cpython = RepositoryName::parse("python/cpython").unwrap();
+    let cpython = crate::testing::cpython();
     let page = |item| WebAddress::of_item(&cpython, item);
 
     assert_eq!(

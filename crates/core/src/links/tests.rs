@@ -1,10 +1,6 @@
 use super::*;
 use crate::facts::pull_requests::{OffDefault, PrState};
-use time::OffsetDateTime;
-
-fn cpython() -> RepositorySettings {
-    RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap())
-}
+use crate::testing::{cpython_settings, pr_facts, sha};
 
 fn gcmon() -> RepositorySettings {
     RepositorySettings {
@@ -16,23 +12,8 @@ fn gcmon() -> RepositorySettings {
 
 fn titled(title: &str) -> PullRequestFacts {
     PullRequestFacts {
-        number: 9000,
         title: title.to_owned(),
-        state: PrState::Open,
-        is_draft: false,
-        author: None,
-        target_branch: "main".to_owned(),
-        ci: None,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: None,
-        off_default: None,
+        ..pr_facts(9000)
     }
 }
 
@@ -49,7 +30,7 @@ fn in_description(text: &str) -> Vec<u32> {
         off_default: Some(OffDefault::described(text)),
         ..titled("Fix it")
     };
-    numbers(&facts, &cpython())
+    numbers(&facts, &cpython_settings())
 }
 
 #[test]
@@ -63,7 +44,7 @@ fn closing_references_count_under_every_convention() {
         closing_issues: vec![7, 8],
         ..titled("Fix it")
     };
-    assert_eq!(numbers(&facts, &cpython()), [7, 8]);
+    assert_eq!(numbers(&facts, &cpython_settings()), [7, 8]);
     assert_eq!(numbers(&facts, &gcmon()), [7, 8]);
 }
 
@@ -77,16 +58,12 @@ fn every_signal_adds_up_and_a_number_counts_once() {
         off_default: Some(OffDefault::described("Fixes #2\nCloses #3")),
         ..titled("gh-1: Fix it")
     };
-    assert_eq!(numbers(&facts, &cpython()), [1, 2, 3]);
+    assert_eq!(numbers(&facts, &cpython_settings()), [1, 2, 3]);
 }
 
 const MERGE: &str = "0123456789abcdef0123456789abcdef01234567";
 const MERGE_START: &str = "0123456";
 const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
-
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text).unwrap()
-}
 
 fn bot() -> Login {
     Login::new("miss-islington")
@@ -276,12 +253,12 @@ fn a_backport_names_what_its_title_and_its_live_keywords_name() {
         off_default: Some(OffDefault::described(description)),
         ..titled("[3.14] gh-1: Fix it (GH-9)")
     };
-    assert_eq!(numbers(&facts, &cpython()), [1, 3]);
+    assert_eq!(numbers(&facts, &cpython_settings()), [1, 3]);
 }
 
 #[test]
 fn a_description_counts_only_where_github_ignores_its_keywords() {
-    assert_eq!(numbers(&titled("Fix it"), &cpython()), [0_u32; 0]);
+    assert_eq!(numbers(&titled("Fix it"), &cpython_settings()), [0_u32; 0]);
     assert_eq!(in_description("Fixes #5"), [5]);
 }
 

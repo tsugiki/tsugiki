@@ -1,27 +1,13 @@
-use time::OffsetDateTime;
-
-use super::{HeadInMirror, PrHead, PrState, PullRequestFacts};
+use super::{HeadInMirror, PrHead, PullRequestFacts};
 use crate::facts::CommitSha;
+use crate::testing::{pr_facts, sha};
 
 fn pr_7(head: Option<&str>) -> PullRequestFacts {
     PullRequestFacts {
-        number: 7,
         title: "gh-7: Fix it".to_owned(),
-        state: PrState::Open,
-        is_draft: false,
-        author: None,
         target_branch: "3.14".to_owned(),
-        ci: None,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: head.map(|sha| CommitSha::parse(sha).unwrap()),
-        off_default: None,
+        head: head.map(sha),
+        ..pr_facts(7)
     }
 }
 

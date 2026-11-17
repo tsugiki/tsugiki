@@ -1,24 +1,20 @@
-use super::testing::{Canned, Scripted, answered, dated, signed_in_as, token};
+use super::testing::{Canned, Scripted, answered, dated, github, reply_ok, signed_in_as};
 use super::*;
 use std::path::Path;
 use time::format_description::well_known::Rfc3339;
-
-fn client(transport: impl Transport + 'static) -> GitHub {
-    GitHub::new(Box::new(transport), token())
-}
 
 fn limited_until(resets_at: Option<u32>) -> ErrorKind {
     ErrorKind::RateLimited { resets_at }
 }
 
 fn error_of(transport: Canned) -> crate::error::Error {
-    client(transport).viewer().unwrap_err()
+    github(transport).viewer().unwrap_err()
 }
 
 #[test]
 fn github_says_who_the_user_is() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let viewer = client(replay::Replayer::new(fixtures)).viewer().unwrap();
+    let viewer = github(replay::Replayer::new(fixtures)).viewer().unwrap();
     assert_eq!(viewer.login, Login::new("octocat"));
 }
 
@@ -149,7 +145,7 @@ impl Transport for Asked {
 #[test]
 fn checking_a_repository_reads_a_recorded_answer() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let found = client(replay::Replayer::new(fixtures))
+    let found = github(replay::Replayer::new(fixtures))
         .check_repository(&name("python/cpython"), the_day())
         .unwrap();
     assert_eq!(
@@ -170,7 +166,7 @@ fn checking_a_repository_reads_a_recorded_answer() {
 #[test]
 fn a_check_asks_about_the_last_30_days_and_keeps_the_name_out_of_the_query() {
     let (asked, seen) = std::sync::mpsc::channel();
-    drop(client(Asked(asked)).check_repository(&name("a-b/c.d"), the_day()));
+    drop(github(Asked(asked)).check_repository(&name("a-b/c.d"), the_day()));
     assert_eq!(
         seen.recv().unwrap(),
         json!({
@@ -188,7 +184,7 @@ fn a_check_gives_the_name_as_github_spells_it() {
     let body = r#"{"data":{"repository":{"nameWithOwner":"Some-Maintainer/GCMon",
             "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
             "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
-    let found = client(answered(200, body))
+    let found = github(answered(200, body))
         .check_repository(&name("some-maintainer/gcmon"), the_day())
         .unwrap();
     assert_eq!(found.name.to_string(), "Some-Maintainer/GCMon");
@@ -225,18 +221,13 @@ impl Transport for Renamed {
             "updated": {"issueCount": found},
             "closed": {"issueCount": found},
         }});
-        Ok(Reply {
-            status: 200,
-            reset: None,
-            date: None,
-            body: body.to_string(),
-        })
+        reply_ok(&body.to_string())
     }
 }
 
 #[test]
 fn a_renamed_repository_is_counted_under_its_new_name() {
-    let found = client(Renamed)
+    let found = github(Renamed)
         .check_repository(&name("mitsuhiko/flask"), the_day())
         .unwrap();
     assert_eq!(found.name, name("pallets/flask"));
@@ -255,7 +246,7 @@ fn a_repository_github_doesnt_have_says_which_and_why_it_might_be_hidden() {
     let body = r#"{"data":{"repository":null,"updated":{"issueCount":0},"closed":{"issueCount":0}},
             "errors":[{"type":"NOT_FOUND","path":["repository"],
             "message":"Could not resolve to a Repository with the name 'python/no-such'."}]}"#;
-    let error = client(answered(200, body))
+    let error = github(answered(200, body))
         .check_repository(&name("python/no-such"), the_day())
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::NotFound);
@@ -267,7 +258,7 @@ fn a_repository_github_doesnt_have_says_which_and_why_it_might_be_hidden() {
 
 #[test]
 fn a_check_that_fails_for_another_reason_says_that_reason() {
-    let error = client(Canned(Err(Unreachable::Offline)))
+    let error = github(Canned(Err(Unreachable::Offline)))
         .check_repository(&name("a/b"), the_day())
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Offline);
@@ -306,7 +297,7 @@ fn githubs_clock_goes_by_the_last_reply_that_has_a_date() {
         dated(signed_in_as("reviewer"), ahead),
         signed_in_as("reviewer"),
     ]);
-    let github = client(script);
+    let github = github(script);
     let before = github.clock().now();
 
     drop(github.viewer().unwrap());
@@ -326,7 +317,7 @@ fn a_reply_github_didnt_send_leaves_its_clock() {
         date: Some(ahead),
         body: "Blocked by your company's proxy".to_owned(),
     };
-    let github = client(Canned(Ok(proxy)));
+    let github = github(Canned(Ok(proxy)));
 
     drop(github.viewer().unwrap_err());
 
@@ -362,7 +353,7 @@ fn the_hours_points_end_at_its_reset_by_githubs_clock_not_the_computers() {
     ];
     for (date, reset, spent) in cases {
         let (script, _) = Scripted::new(vec![dated(viewer_resetting(1, 1, &reset), date)]);
-        let github = client(script);
+        let github = github(script);
 
         drop(github.viewer().unwrap());
 
@@ -378,7 +369,7 @@ fn the_points_of_each_answer_add_up() {
         viewer_costing(1, 1),
         viewer_costing(2, 3),
     ]);
-    let github = client(script);
+    let github = github(script);
 
     drop(github.viewer().unwrap());
     let before = github.hour_points();
@@ -397,7 +388,7 @@ fn the_points_of_each_answer_add_up() {
 fn a_first_answer_into_a_spent_hour_says_since_when_tsugiki_counted() {
     let at = OffsetDateTime::now_utc() - Duration::minutes(3);
     let (script, _) = Scripted::new(vec![dated(viewer_costing(1, 3350), at)]);
-    let github = client(script);
+    let github = github(script);
 
     drop(github.viewer().unwrap());
 
@@ -409,7 +400,7 @@ fn a_first_answer_into_a_spent_hour_says_since_when_tsugiki_counted() {
 fn a_query_that_failed_still_counts_its_points() {
     let body = r#"{"data":{"viewer":null,"rateLimit":{"cost":1,"limit":5000,"used":7,"remaining":4993,
         "resetAt":"2999-01-01T00:00:00Z"}},"errors":[{"message":"Something went wrong"}]}"#;
-    let github = client(answered(200, body));
+    let github = github(answered(200, body));
 
     assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::QueryRefused);
     assert_eq!(github.hour_points().unwrap().spent, 1);
@@ -418,7 +409,7 @@ fn a_query_that_failed_still_counts_its_points() {
 #[test]
 fn points_that_dont_parse_make_the_answer_unreadable() {
     let body = r#"{"data":{"viewer":{"login":"reviewer"},"rateLimit":{"remaining":4993}}}"#;
-    let github = client(answered(200, body));
+    let github = github(answered(200, body));
 
     assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::Internal);
     assert_eq!(github.hour_points(), None);

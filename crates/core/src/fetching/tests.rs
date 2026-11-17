@@ -3,10 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use super::*;
 use crate::facts::CommitSha;
 use crate::mirror::HeardRequests;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::testing::cpython;
 
 fn head(number: u32) -> PrHead {
     PrHead {

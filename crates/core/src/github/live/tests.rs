@@ -18,6 +18,24 @@ fn a_failed_git_says_its_reason_rather_than_the_hint_after_it() {
     assert_eq!(gist(""), "");
 }
 
+#[test]
+fn git_s_batch_gives_each_blob_s_bytes_and_nothing_for_the_rest() {
+    let output = b"1111 blob 3\nab\n\n\
+        2222:Lib/x.py missing\n\
+        3333 tree 4\n\0\0\0\0\n\
+        4444:Lib/spaced name.py missing\n\
+        5555 blob 20\ncut short";
+
+    let blobs = parse_batch(output);
+
+    assert_eq!(blobs, [Some(b"ab\n".to_vec()), None, None, None]);
+}
+
+#[test]
+fn reading_no_blob_asks_git_for_nothing() {
+    assert!(read_blobs(Path::new("no-folder"), &[]).unwrap().is_empty());
+}
+
 /// A helper can leave git's tree while git runs: its parent ends first, as here, or it starts while
 /// `taskkill /T` reads the tree (#208). On Windows, a process left running in the folder keeps it there. On
 /// macOS, a process that starts while the kill runs can outlive it (#309), so the alias goes on starting

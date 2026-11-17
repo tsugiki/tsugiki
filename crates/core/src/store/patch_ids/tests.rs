@@ -4,23 +4,11 @@ use super::*;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::patch_ids::PatchId;
 use crate::facts::pull_request_content::{PullRequestContent, Review};
-use crate::facts::pull_requests::{PrState, ReviewState};
+use crate::facts::pull_requests::ReviewState;
 use crate::login::Login;
 use crate::store::Store;
-use crate::store::testing::temp_database;
-use crate::testing::TempPath;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn me() -> Login {
-    Login::new("octocat")
-}
-
-fn sha(digit: char) -> CommitSha {
-    CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
-}
+use crate::store::testing::OpenStore;
+use crate::testing::{cpython, me, pr_facts, sha_of};
 
 fn file(path: &str, digit: char) -> FilePatch {
     let id = PatchId::parse(&digit.to_string().repeat(40)).unwrap();
@@ -42,23 +30,9 @@ fn of(commit: &CommitSha, target_branch: &str) -> PatchesOf {
 /// A colleague's open PR into main at `head`.
 fn pull_request(number: u32, head: &CommitSha) -> PullRequestFacts {
     PullRequestFacts {
-        number,
-        title: format!("PR {number}"),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(Login::new("some-author")),
-        target_branch: "main".to_owned(),
-        ci: None,
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
         head: Some(head.clone()),
-        off_default: None,
+        ..pr_facts(number)
     }
 }
 
@@ -87,66 +61,58 @@ fn reviewed_at(commit: &CommitSha) -> PullRequestContent {
     }
 }
 
-/// The folder of a database, and a store of it with the user signed in, and PR 1 reviewed at commit 1 and
-/// now at commit 2. The folder comes first, so a pattern that binds both drops it last.
-fn store(name: &str) -> (TempPath, Store) {
-    let (path, folder) = temp_database(name);
-    let store = Store::open(&path).unwrap();
-    store.remember_login(&me()).unwrap();
-    store
-        .save_pull_requests(&cpython(), vec![pull_request(1, &sha('2'))])
+/// A database with the user signed in, and PR 1 reviewed at commit 1 and now at commit 2.
+fn seeded(name: &str) -> OpenStore {
+    let db = OpenStore::new(name);
+    db.store.remember_login(&me()).unwrap();
+    db.store
+        .save_pull_requests(&cpython(), vec![pull_request(1, &sha_of('2'))])
         .unwrap();
-    store
-        .save_pull_request_content(&cpython(), 1, reviewed_at(&sha('1')))
+    db.store
+        .save_pull_request_content(&cpython(), 1, reviewed_at(&sha_of('1')))
         .unwrap();
-    (folder, store)
-}
-
-/// Closes the database, then drops its folder.
-fn finish(store: Store, folder: TempPath) {
-    store.close();
-    drop(folder);
+    db
 }
 
 #[test]
 fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read() {
-    let (folder, store) = store("patch-ids-both");
-    let unread = store.work_facts(&cpython()).unwrap().reviews;
+    let db = seeded("patch-ids-both");
+    let unread = db.store.work_facts(&cpython()).unwrap().reviews;
     let reviewed = vec![file("Lib/ast.py", '1'), file("Python/clinic.h", 'f')];
     let head = vec![file("Lib/ast.py", '2')];
-    store
+    db.store
         .save_patch_ids(
             &cpython(),
             vec![
                 CommitPatches {
-                    of: of(&sha('1'), "main"),
+                    of: of(&sha_of('1'), "main"),
                     files: reviewed.clone(),
                 },
                 CommitPatches {
-                    of: of(&sha('2'), "main"),
+                    of: of(&sha_of('2'), "main"),
                     files: head.clone(),
                 },
             ],
         )
         .unwrap();
 
-    let read = store.work_facts(&cpython()).unwrap().reviews;
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython()).unwrap().reviews;
+    db.close();
 
     assert_eq!(
         unread,
         ReviewFacts {
-            reviewed: BTreeMap::from([(1, sha('1'))]),
+            reviewed: BTreeMap::from([(1, sha_of('1'))]),
             ..ReviewFacts::default()
         }
     );
     assert_eq!(
         read,
         ReviewFacts {
-            reviewed: BTreeMap::from([(1, sha('1'))]),
+            reviewed: BTreeMap::from([(1, sha_of('1'))]),
             patches: BTreeMap::from([
-                (of(&sha('1'), "main"), reviewed),
-                (of(&sha('2'), "main"), head),
+                (of(&sha_of('1'), "main"), reviewed),
+                (of(&sha_of('2'), "main"), head),
             ]),
             ..ReviewFacts::default()
         }
@@ -155,55 +121,55 @@ fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read(
 
 #[test]
 fn a_commit_with_nothing_to_diff_is_held_with_no_files() {
-    let (folder, store) = store("patch-ids-empty");
+    let db = seeded("patch-ids-empty");
     let empty = CommitPatches {
-        of: of(&sha('2'), "main"),
+        of: of(&sha_of('2'), "main"),
         files: vec![],
     };
-    store.save_patch_ids(&cpython(), vec![empty]).unwrap();
+    db.store.save_patch_ids(&cpython(), vec![empty]).unwrap();
 
-    let read = store.work_facts(&cpython()).unwrap().reviews.patches;
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython()).unwrap().reviews.patches;
+    db.close();
 
-    assert_eq!(read, BTreeMap::from([(of(&sha('2'), "main"), vec![])]));
+    assert_eq!(read, BTreeMap::from([(of(&sha_of('2'), "main"), vec![])]));
 }
 
 #[test]
 fn reading_a_commit_again_replaces_what_was_held() {
-    let (folder, store) = store("patch-ids-again");
+    let db = seeded("patch-ids-again");
     let first = CommitPatches {
-        of: of(&sha('2'), "main"),
+        of: of(&sha_of('2'), "main"),
         files: vec![file("Lib/ast.py", '1'), file("Lib/os.py", '3')],
     };
     let again = CommitPatches {
         files: vec![file("Lib/ast.py", '2')],
         ..first.clone()
     };
-    store.save_patch_ids(&cpython(), vec![first]).unwrap();
-    store.save_patch_ids(&cpython(), vec![again]).unwrap();
+    db.store.save_patch_ids(&cpython(), vec![first]).unwrap();
+    db.store.save_patch_ids(&cpython(), vec![again]).unwrap();
 
-    let read = store.work_facts(&cpython()).unwrap().reviews.patches;
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython()).unwrap().reviews.patches;
+    db.close();
 
     assert_eq!(
         read,
-        BTreeMap::from([(of(&sha('2'), "main"), vec![file("Lib/ast.py", '2')])])
+        BTreeMap::from([(of(&sha_of('2'), "main"), vec![file("Lib/ast.py", '2')])])
     );
 }
 
 #[test]
 fn patch_ids_against_another_branch_or_of_a_commit_no_check_compares_stay_out() {
-    let (folder, store) = store("patch-ids-other");
-    let elsewhere = [of(&sha('2'), "3.14"), of(&sha('3'), "main")].map(|of| CommitPatches {
+    let db = seeded("patch-ids-other");
+    let elsewhere = [of(&sha_of('2'), "3.14"), of(&sha_of('3'), "main")].map(|of| CommitPatches {
         of,
         files: vec![file("Lib/ast.py", '1')],
     });
-    store
+    db.store
         .save_patch_ids(&cpython(), elsewhere.to_vec())
         .unwrap();
 
-    let read = store.work_facts(&cpython()).unwrap().reviews.patches;
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython()).unwrap().reviews.patches;
+    db.close();
 
     assert_eq!(read, BTreeMap::new());
 }
@@ -212,8 +178,8 @@ fn patch_ids_against_another_branch_or_of_a_commit_no_check_compares_stay_out() 
 fn a_save_of_unchecked_commits_or_last_checks_that_fails_says_so() {
     let store = Store::stopped();
     let last = LastCheck {
-        reviewed: sha('1'),
-        head: sha('2'),
+        reviewed: sha_of('1'),
+        head: sha_of('2'),
     };
 
     let unchecked = store.save_unchecked(&cpython(), vec![]);
@@ -225,14 +191,14 @@ fn a_save_of_unchecked_commits_or_last_checks_that_fails_says_so() {
 
 fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
     UncheckedCommit {
-        of: of(&sha(commit), "main"),
+        of: of(&sha_of(commit), "main"),
         reason,
     }
 }
 
 #[test]
 fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
-    let (folder, store) = store("patch-ids-unchecked");
+    let db = seeded("patch-ids-unchecked");
     let old_git = CantCheck::OldGit {
         version: "git version 2.38.1".to_owned(),
         needed: "2.39".to_owned(),
@@ -241,27 +207,27 @@ fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
         unchecked('1', CantCheck::Refused),
         unchecked('2', CantCheck::Cloning),
     ];
-    store.save_unchecked(&cpython(), before).unwrap();
-    let first = store.work_facts(&cpython()).unwrap().reviews.unchecked;
+    db.store.save_unchecked(&cpython(), before).unwrap();
+    let first = db.store.work_facts(&cpython()).unwrap().reviews.unchecked;
     let now = vec![unchecked('2', old_git.clone())];
-    store.save_unchecked(&cpython(), now).unwrap();
+    db.store.save_unchecked(&cpython(), now).unwrap();
 
-    let then = store.work_facts(&cpython()).unwrap().reviews.unchecked;
-    finish(store, folder);
+    let then = db.store.work_facts(&cpython()).unwrap().reviews.unchecked;
+    db.close();
 
     assert_eq!(
         first,
         BTreeMap::from([
-            (of(&sha('1'), "main"), CantCheck::Refused),
-            (of(&sha('2'), "main"), CantCheck::Cloning),
+            (of(&sha_of('1'), "main"), CantCheck::Refused),
+            (of(&sha_of('2'), "main"), CantCheck::Cloning),
         ])
     );
-    assert_eq!(then, BTreeMap::from([(of(&sha('2'), "main"), old_git)]));
+    assert_eq!(then, BTreeMap::from([(of(&sha_of('2'), "main"), old_git)]));
 }
 
 #[test]
 fn each_reason_comes_back_as_it_was_kept() {
-    let (folder, store) = store("patch-ids-reasons");
+    let db = seeded("patch-ids-reasons");
     let reasons = [
         CantCheck::Broken,
         CantCheck::NoGit,
@@ -272,39 +238,40 @@ fn each_reason_comes_back_as_it_was_kept() {
     ];
     let mut read = vec![];
     for reason in reasons.clone() {
-        store
+        db.store
             .save_unchecked(&cpython(), vec![unchecked('2', reason)])
             .unwrap();
-        let facts = store.work_facts(&cpython()).unwrap();
+        let facts = db.store.work_facts(&cpython()).unwrap();
         read.extend(facts.reviews.unchecked.into_values());
     }
-    finish(store, folder);
+    db.close();
 
     assert_eq!(read, reasons);
 }
 
 #[test]
 fn a_new_run_forgets_why_the_worker_couldnt_read_patch_ids() {
-    let (folder, store) = store("patch-ids-forget");
-    store
+    let db = seeded("patch-ids-forget");
+    db.store
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::Cloning)])
         .unwrap();
 
-    store.forget_unchecked().unwrap();
-    let read = store.work_facts(&cpython()).unwrap().reviews.unchecked;
-    finish(store, folder);
+    db.store.forget_unchecked().unwrap();
+    let read = db.store.work_facts(&cpython()).unwrap().reviews.unchecked;
+    db.close();
 
     assert_eq!(read, BTreeMap::new());
 }
 
 #[test]
 fn a_reason_the_store_doesnt_know_fails_the_read() {
-    let (folder, store) = store("patch-ids-unknown-reason");
-    store
+    let db = seeded("patch-ids-unknown-reason");
+    db.store
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::NoGit)])
         .unwrap();
     // Only a file from a newer Tsugiki, or one changed by hand, says this, which our functions refuse.
-    let changed = store
+    let changed = db
+        .store
         .call(|connection| {
             connection.execute(
                 "UPDATE unchecked_commits SET git_version = 'git version 2.0'",
@@ -314,63 +281,63 @@ fn a_reason_the_store_doesnt_know_fails_the_read() {
         .unwrap();
     assert_eq!(changed, Ok(1));
 
-    let read = store.work_facts(&cpython());
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython());
+    db.close();
 
     assert!(read.is_err(), "{read:?}");
 }
 
 #[test]
 fn the_last_check_of_a_pr_brings_the_patch_ids_of_the_head_it_compared() {
-    let (folder, store) = store("patch-ids-last-check");
+    let db = seeded("patch-ids-last-check");
     let earlier = CommitPatches {
-        of: of(&sha('3'), "main"),
+        of: of(&sha_of('3'), "main"),
         files: vec![file("Lib/ast.py", '3')],
     };
-    store.save_patch_ids(&cpython(), vec![earlier]).unwrap();
+    db.store.save_patch_ids(&cpython(), vec![earlier]).unwrap();
     let first = LastCheck {
-        reviewed: sha('1'),
-        head: sha('4'),
+        reviewed: sha_of('1'),
+        head: sha_of('4'),
     };
     let last = LastCheck {
-        reviewed: sha('1'),
-        head: sha('3'),
+        reviewed: sha_of('1'),
+        head: sha_of('3'),
     };
-    store
+    db.store
         .save_last_checks(&cpython(), vec![(1, first)])
         .unwrap();
-    store
+    db.store
         .save_last_checks(&cpython(), vec![(1, last.clone())])
         .unwrap();
 
-    let read = store.work_facts(&cpython()).unwrap().reviews;
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython()).unwrap().reviews;
+    db.close();
 
     assert_eq!(read.last_checks, BTreeMap::from([(1, last)]));
     assert_eq!(
         read.patches,
-        BTreeMap::from([(of(&sha('3'), "main"), vec![file("Lib/ast.py", '3')])])
+        BTreeMap::from([(of(&sha_of('3'), "main"), vec![file("Lib/ast.py", '3')])])
     );
 }
 
 #[test]
 fn the_last_check_of_another_review_brings_no_patch_ids() {
-    let (folder, store) = store("patch-ids-last-other");
+    let db = seeded("patch-ids-last-other");
     let earlier = CommitPatches {
-        of: of(&sha('3'), "main"),
+        of: of(&sha_of('3'), "main"),
         files: vec![file("Lib/ast.py", '3')],
     };
-    store.save_patch_ids(&cpython(), vec![earlier]).unwrap();
+    db.store.save_patch_ids(&cpython(), vec![earlier]).unwrap();
     let other = LastCheck {
-        reviewed: sha('9'),
-        head: sha('3'),
+        reviewed: sha_of('9'),
+        head: sha_of('3'),
     };
-    store
+    db.store
         .save_last_checks(&cpython(), vec![(1, other)])
         .unwrap();
 
-    let read = store.work_facts(&cpython()).unwrap().reviews.patches;
-    finish(store, folder);
+    let read = db.store.work_facts(&cpython()).unwrap().reviews.patches;
+    db.close();
 
     assert_eq!(read, BTreeMap::new());
 }

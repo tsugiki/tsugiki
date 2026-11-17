@@ -1,6 +1,6 @@
 use super::*;
 use crate::filters::{Filter, OnWorkbench};
-use crate::github::testing::reply_ok;
+use crate::github::testing::{filter_page, replied, reply_ok};
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository_settings::RepositorySettings;
 use crate::store::Store;
@@ -54,21 +54,12 @@ fn pr_hit(number: u32, updated_at: &str) -> Value {
     })
 }
 
-fn filter_page(total: u32, nodes: &[Value], next: Option<&str>) -> Result<Reply, Unreachable> {
-    let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
-    let nodes = json!(nodes);
-    reply_ok(&format!(
-        r#"{{"data":{{"search":{{"issueCount":{total},"pageInfo":{info},"nodes":{nodes}}},{RATE_LIMIT}}}}}"#
-    ))
-}
-
 fn all_of(nodes: &[Value]) -> Result<Reply, Unreachable> {
-    let total = nodes.iter().fold(0, |total, _| total + 1);
-    filter_page(total, nodes, None)
+    filter_page(nodes.len(), nodes, None, RATE_LIMIT)
 }
 
 fn found_by(harness: &Harness, query: &str) -> Vec<u32> {
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
+    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
     facts
         .filters
         .get(&filter_query(query))
@@ -77,7 +68,7 @@ fn found_by(harness: &Harness, query: &str) -> Vec<u32> {
 }
 
 fn filter_problem(harness: &Harness, query: &str) -> Option<String> {
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
+    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
     facts
         .filters
         .get(&filter_query(query))
@@ -88,8 +79,8 @@ fn filter_problem(harness: &Harness, query: &str) -> Option<String> {
 #[test]
 fn a_filter_walk_recovers_from_a_failure_at_each_point() {
     let mut posts = searches_finding(&[]);
-    posts.push(filter_page(2, &[issue_hit(1)], Some("more")));
-    posts.push(filter_page(2, &[issue_hit(2)], None));
+    posts.push(filter_page(2, &[issue_hit(1)], Some("more"), RATE_LIMIT));
+    posts.push(filter_page(2, &[issue_hit(2)], None, RATE_LIMIT));
     posts.push(all_of(&[pr_hit(10, "2026-11-04T10:00:00Z")]));
     posts.push(reply_ok(
         r#"{"errors":[{"message":"That search is too long"}]}"#,
@@ -141,7 +132,7 @@ fn a_save_that_failed_goes_again_with_no_new_search() {
 
     // Four searches and a move.
     for _ in 0..5 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     let failed = syncs.step(&harness.github, &broken).unwrap_err();
     assert_eq!(failed.problem.kind, ErrorKind::Internal);
@@ -188,8 +179,8 @@ fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
 #[test]
 fn a_filters_search_says_the_repository_and_follows_its_pages() {
     let mut replies = searches_finding(&[]);
-    replies.push(filter_page(2, &[issue_hit(1)], Some("more")));
-    replies.push(filter_page(2, &[issue_hit(2)], None));
+    replies.push(filter_page(2, &[issue_hit(1)], Some("more"), RATE_LIMIT));
+    replies.push(filter_page(2, &[issue_hit(2)], None, RATE_LIMIT));
     replies.push(issues(&[1, 2], RATE_LIMIT));
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-pages", replies);
@@ -309,8 +300,8 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
     // All three trees are owed, Issue 1's among them.
     let mut owed = Value::Null;
     while syncs.ready_at().is_some() {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
-        if let Some(place) = harness.store.first_sync_place(&cpython()).unwrap() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+        if let Some(place) = harness.db.store.first_sync_place(&cpython()).unwrap() {
             let place: Value = serde_json::from_str(place.as_str()).unwrap();
             let issues = &place["place"]["Loading"]["urgent_issues"];
             if owed.is_null() && !issues.is_null() {
@@ -384,7 +375,7 @@ fn a_closed_pr_that_changed_is_fetched_again_as_it_may_have_reopened() {
     syncs.add(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
+    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
     assert_eq!(
         facts.pull_requests[0].state,
         crate::facts::pull_requests::PrState::Open
@@ -525,12 +516,7 @@ fn a_filter_github_wont_answer_tells_the_window() {
 
 #[test]
 fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
-    let outage = Ok(Reply {
-        status: 503,
-        reset: None,
-        date: None,
-        body: String::new(),
-    });
+    let outage = replied(503, "");
     // With no network, the search gets a second try at half the size.
     let offline = vec![Err(Unreachable::Offline), Err(Unreachable::Offline)];
     let cases = [
@@ -549,9 +535,9 @@ fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
 
         // Four searches and a move.
         for _ in 0..5 {
-            drop(syncs.step(&harness.github, &harness.store).unwrap());
+            drop(syncs.step(&harness.github, &harness.db.store).unwrap());
         }
-        let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
+        let failed = syncs.step(&harness.github, &harness.db.store).unwrap_err();
         assert_eq!(filter_problem(&harness, "a"), None, "{name}");
         drop(run_to_the_end(&mut syncs, &harness));
 
@@ -565,12 +551,7 @@ fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
 #[test]
 fn a_filter_search_below_the_floor_holds_the_next_step_back() {
     let mut replies = searches_finding(&[]);
-    let page = |next: Option<&str>| {
-        let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
-        reply_ok(&format!(
-            r#"{{"data":{{"search":{{"issueCount":0,"pageInfo":{info},"nodes":[]}},{FEW}}}}}"#
-        ))
-    };
+    let page = |next: Option<&str>| filter_page(0, &[], next, FEW);
     replies.push(page(Some("more")));
     replies.push(page(None));
     let harness = Harness::new("filter-floor", replies);
@@ -580,10 +561,10 @@ fn a_filter_search_below_the_floor_holds_the_next_step_back() {
 
     // Four searches and a move, then the first page.
     for _ in 0..6 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     assert!(syncs.ready_at().unwrap() > now + Duration::from_secs(60));
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     assert!(syncs.ready_at().unwrap() > now + Duration::from_secs(60));
     harness.finish();
 }
@@ -633,8 +614,9 @@ impl ByCreated {
             .crowded_day
             .filter(|day| within(day))
             .map_or(0, |_| 1500);
-        let total = u32::try_from(nodes.len()).unwrap() + crowd;
-        filter_page(total.max(u32::from(range.is_none()) * 1001), &nodes, None).unwrap()
+        let total = nodes.len() + crowd;
+        let total = total.max(usize::from(range.is_none()) * 1001);
+        filter_page(total, &nodes, None, RATE_LIMIT).unwrap()
     }
 }
 
@@ -684,6 +666,7 @@ fn a_narrowed_search_github_cuts_off_removes_nothing_and_counts_as_a_change() {
     };
     let search = filter_query("a");
     harness
+        .db
         .store
         .save_filter_results(&cpython(), &search, held)
         .unwrap();
@@ -696,7 +679,7 @@ fn a_narrowed_search_github_cuts_off_removes_nothing_and_counts_as_a_change() {
     let repository = cpython();
     let link = Link {
         github: &harness.github,
-        store: &harness.store,
+        store: &harness.db.store,
         repository: &repository,
         filters: &[],
         window_since: None,

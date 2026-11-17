@@ -4,8 +4,9 @@ use super::*;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::testing::cpython_settings;
 use crate::workbench::testing::{
-    at, cpython, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
+    at, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
 };
 
 #[test]
@@ -85,7 +86,7 @@ fn nothing_is_the_users_before_anyone_signs_in() {
             issues: vec![issue(1)],
             filters: BTreeMap::new(),
         },
-        &cpython(),
+        &cpython_settings(),
         &WorkbenchView::Whole,
     );
     assert_eq!(found.items, []);

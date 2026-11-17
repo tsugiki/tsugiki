@@ -1,23 +1,16 @@
-use super::super::testing::temp_database;
+use super::super::testing::{OpenStore, temp_database};
 use super::super::*;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::login::Login;
+use crate::testing::{cpython, issue_facts};
 use time::OffsetDateTime;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
 
 fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        number,
-        title: format!("Issue {number}"),
         author: Some(Login::new("some-author")),
-        assignees: vec![],
-        labels: vec![],
         updated_at: OffsetDateTime::from_unix_timestamp(7).unwrap(),
-        state: Some(IssueState::Open),
+        ..issue_facts(number)
     }
 }
 
@@ -27,16 +20,12 @@ fn saved(
     repository: &RepositoryName,
     saves: Vec<(RepositoryName, Vec<IssueFacts>)>,
 ) -> Vec<IssueFacts> {
-    let (path, _folder) = temp_database(name);
-    let store = Store::open(&path).unwrap();
-    let (to_open, reader) = reader();
-    let open = to_open.open(&path).unwrap();
+    let db = OpenStore::new(name);
     for (repository, issues) in saves {
-        store.save_issues(&repository, issues).unwrap();
+        db.store.save_issues(&repository, issues).unwrap();
     }
-    let read = reader.work_facts(repository).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(repository).unwrap();
+    db.close();
     read.issues
 }
 

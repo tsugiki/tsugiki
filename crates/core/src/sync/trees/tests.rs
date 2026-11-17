@@ -125,7 +125,7 @@ fn a_tree_read_below_the_floor_holds_the_next_step_back() {
         .try_iter()
         .any(|(name, _)| name == "FetchIssueReferences")
     {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
 
     let ready = syncs.ready_at().unwrap();

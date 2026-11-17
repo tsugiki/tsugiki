@@ -3,8 +3,9 @@ use crate::error::ErrorKind;
 use crate::facts::pull_requests::{PrState, ReviewState};
 use crate::github::Unreachable;
 use crate::github::replay::Replayer;
-use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, page_info, replied, reply_ok};
 use crate::github::{ConditionalReply, Reply, Transport};
+use crate::testing::{cpython, moment};
 use crate::token::Token;
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
@@ -13,16 +14,8 @@ const START: ListPlace = ListPlace::Next(None);
 const NEWER: &str = "2026-11-04T10:30:00Z";
 const OLDER: &str = "2026-11-04T09:00:00Z";
 
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn github(script: Scripted) -> GitHub {
-    GitHub::new(Box::new(script), token())
-}
-
 fn since() -> OffsetDateTime {
-    OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap()
+    moment("2026-11-04T10:00:00Z")
 }
 
 fn filter(text: &str) -> FilterQuery {
@@ -48,23 +41,19 @@ fn issue(number: u32) -> Value {
 }
 
 fn list(nodes: &[Value], next: Option<&str>) -> Value {
-    json!({
-        "pageInfo": { "hasNextPage": next.is_some(), "endCursor": next },
-        "nodes": nodes,
-    })
+    json!({ "pageInfo": page_info(next), "nodes": nodes })
 }
 
-/// An answer with these lists, and these searches as fields next to them.
-fn polled(issues: &Value, prs: &Value, searches: &str) -> Result<Reply, Unreachable> {
-    let repository = json!({
+/// An answer with these lists, and the fields of `searches` next to them.
+fn polled(issues: &Value, prs: &Value, searches: Value) -> Result<Reply, Unreachable> {
+    let mut data = searches;
+    data["repository"] = json!({
         "openIssues": { "totalCount": 7 },
         "openPrs": { "totalCount": 5 },
         "issues": issues,
         "pullRequests": prs,
     });
-    reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{searches}{RATE_LIMIT}}}}}"#
-    ))
+    answer(data, RATE_LIMIT)
 }
 
 fn poll_of<'a>(
@@ -84,12 +73,9 @@ fn poll_of<'a>(
 #[test]
 fn a_poll_asks_for_each_list_and_narrows_each_filter_to_the_same_time() {
     let filters = [filter("is:open OR label:bug"), filter("author:@me")];
-    let searches = format!(
-        r#""f0":{0},"f1":{0},"#,
-        json!({ "issueCount": 0, "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": [] })
-    );
-    let (script, asked) =
-        Scripted::new(vec![polled(&list(&[], None), &list(&[], None), &searches)]);
+    let empty = json!({ "issueCount": 0, "pageInfo": page_info(None), "nodes": [] });
+    let searches = json!({ "f0": empty, "f1": empty });
+    let (script, asked) = Scripted::new(vec![polled(&list(&[], None), &list(&[], None), searches)]);
 
     let answer = github(script)
         .poll_repository(&cpython(), &poll_of(&START, &START, &filters))
@@ -132,18 +118,15 @@ fn a_poll_reads_what_changed() {
         "updatedAt": NEWER,
         "repository": { "nameWithOwner": "python/cpython" },
     });
-    let searches = format!(
-        r#""f0":{},"#,
-        json!({
-            "issueCount": 1,
-            "pageInfo": { "hasNextPage": true, "endCursor": "more" },
-            "nodes": [hit],
-        })
-    );
+    let searches = json!({ "f0": {
+        "issueCount": 1,
+        "pageInfo": page_info(Some("more")),
+        "nodes": [hit],
+    } });
     let (script, _asked) = Scripted::new(vec![polled(
         &list(&[issue(1), Value::Null], None),
         &list(&[pr(2, NEWER), Value::Null], None),
-        &searches,
+        searches,
     )]);
 
     let answer = github(script)
@@ -165,7 +148,7 @@ fn a_list_with_more_pages_says_where_to_carry_on() {
     let (script, _asked) = Scripted::new(vec![polled(
         &list(&[issue(1)], Some("issues")),
         &list(&[pr(2, NEWER)], Some("prs")),
-        "",
+        json!({}),
     )]);
 
     let answer = github(script)
@@ -187,7 +170,7 @@ fn the_first_pr_older_than_the_poll_ends_the_list() {
     let (script, _asked) = Scripted::new(vec![polled(
         &list(&[], None),
         &list(&[pr(2, NEWER), pr(3, OLDER)], Some("more")),
-        "",
+        json!({}),
     )]);
 
     let answer = github(script)
@@ -205,7 +188,7 @@ fn a_list_already_read_asks_for_nothing_and_stays_finished() {
     let (script, asked) = Scripted::new(vec![polled(
         &list(&[], Some("ignored")),
         &list(&[], None),
-        "",
+        json!({}),
     )]);
 
     let answer = github(script)
@@ -260,10 +243,10 @@ fn listing(answer: Result<ConditionalReply, Unreachable>, tag: Option<&Etag>) ->
         answer,
         asked: mpsc::channel().0,
     };
-    GitHub::new(Box::new(lists), token()).check_list(&cpython(), tag)
+    github(lists).check_list(&cpython(), tag)
 }
 
-fn replied(status: u16, etag: Option<&str>) -> Result<ConditionalReply, Unreachable> {
+fn checked(status: u16, etag: Option<&str>) -> Result<ConditionalReply, Unreachable> {
     Ok(ConditionalReply {
         date: None,
         status,
@@ -275,12 +258,12 @@ fn replied(status: u16, etag: Option<&str>) -> Result<ConditionalReply, Unreacha
 fn a_list_check_sends_the_tag_it_was_given() {
     let (sent, asked) = mpsc::channel();
     let lists = Lists {
-        answer: replied(304, None),
+        answer: checked(304, None),
         asked: sent,
     };
     let tag = Etag::new("W/\"abc\"");
 
-    let check = GitHub::new(Box::new(lists), token()).check_list(&cpython(), Some(&tag));
+    let check = github(lists).check_list(&cpython(), Some(&tag));
 
     assert_eq!(check, ListCheck::Same);
     assert_eq!(
@@ -295,10 +278,10 @@ fn a_list_check_sends_the_tag_it_was_given() {
 #[test]
 fn a_list_check_says_nothing_about_graphql() {
     let lists = Lists {
-        answer: replied(304, None),
+        answer: checked(304, None),
         asked: mpsc::channel().0,
     };
-    let github = GitHub::new(Box::new(lists), token());
+    let github = github(lists);
 
     assert_eq!(github.check_list(&cpython(), None), ListCheck::Same);
     assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::Offline);
@@ -306,14 +289,14 @@ fn a_list_check_says_nothing_about_graphql() {
 
 #[test]
 fn a_list_that_moved_gives_its_new_tag() {
-    let check = listing(replied(200, Some("\"new\"")), None);
+    let check = listing(checked(200, Some("\"new\"")), None);
     assert_eq!(check, ListCheck::Moved(Some(Etag::new("\"new\""))));
 }
 
 #[test]
 fn a_list_check_that_fails_counts_as_moved() {
-    assert_eq!(listing(replied(200, None), None), ListCheck::Moved(None));
-    assert_eq!(listing(replied(500, None), None), ListCheck::Moved(None));
+    assert_eq!(listing(checked(200, None), None), ListCheck::Moved(None));
+    assert_eq!(listing(checked(500, None), None), ListCheck::Moved(None));
     assert_eq!(
         listing(Err(Unreachable::Offline), None),
         ListCheck::Moved(None)
@@ -330,9 +313,7 @@ fn a_transport_with_no_rest_counts_as_unreachable() {
 }
 
 fn probe_answer(fields: &Value) -> Result<Reply, Unreachable> {
-    reply_ok(&format!(
-        r#"{{"data":{{"repository":{fields},{RATE_LIMIT}}}}}"#
-    ))
+    answer(json!({ "repository": fields }), RATE_LIMIT)
 }
 
 fn probed(number: u32) -> Value {
@@ -372,12 +353,7 @@ fn a_probe_reads_ci_and_reviews_and_skips_a_pr_that_has_gone() {
 
 #[test]
 fn a_probe_asks_for_half_after_a_bad_gateway() {
-    let bad_gateway = Ok(Reply {
-        status: 502,
-        reset: None,
-        date: None,
-        body: String::new(),
-    });
+    let bad_gateway = replied(502, "");
     let (script, _asked) =
         Scripted::new(vec![bad_gateway, probe_answer(&json!({ "p1": probed(1) }))]);
 
@@ -449,7 +425,7 @@ fn recorded_query(operation: &str) -> String {
 #[test]
 fn the_recorded_poll_reads_as_a_poll() {
     let filters = [filter("a"), filter("b")];
-    let github = GitHub::new(Box::new(Replayer::new(fixtures())), token());
+    let github = github(Replayer::new(fixtures()));
 
     let answer = github
         .poll_repository(&cpython(), &poll_of(&START, &START, &filters))
@@ -468,7 +444,7 @@ fn the_recorded_probe_reads_as_a_probe() {
         .skip(1)
         .filter_map(|field| field.split_once(':')?.0.parse().ok())
         .collect();
-    let github = GitHub::new(Box::new(Replayer::new(fixtures())), token());
+    let github = github(Replayer::new(fixtures()));
 
     let batch = github
         .probe_pull_requests(&cpython(), &numbers, numbers.len())
@@ -490,7 +466,7 @@ fn a_list_checks_date_sets_githubs_clock_and_a_proxys_doesnt() {
             answer,
             asked: mpsc::channel().0,
         };
-        let github = GitHub::new(Box::new(lists), token());
+        let github = github(lists);
         drop(github.check_list(&cpython(), None));
         github.clock().now()
     };

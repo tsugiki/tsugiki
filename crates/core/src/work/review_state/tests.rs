@@ -2,24 +2,21 @@
 
 use std::collections::BTreeMap;
 
+use crate::facts::WorkFacts;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{CantCheck, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts};
 use crate::facts::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
-use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
+use crate::testing::{cpython_settings, sha_of};
 use crate::work::{Causes, Why, YourReview, checks_to_keep, mirror_work};
 use crate::workbench::testing::{
-    BOT, at, backport, bots_backport, cpython, issue, me, outline, own, reviewed_workbench,
-    rows_of, someone, stranger, view_of,
+    BOT, at, backport, bots_backport, issue, me, outline, own, reviewed_workbench, rows_of,
+    someone, stranger, view_of,
 };
 use crate::workbench::{Workbench, WorkbenchItem, WorkbenchView};
-
-fn sha(digit: char) -> CommitSha {
-    CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
-}
 
 fn file(path: &str, verbatim: char, loose: char) -> FilePatch {
     let id = |digit: char| PatchId::parse(&digit.to_string().repeat(40)).unwrap();
@@ -34,7 +31,7 @@ fn file(path: &str, verbatim: char, loose: char) -> FilePatch {
 /// A colleague's PR 1 at commit 2, which the user reviewed.
 fn reviewed_pr() -> PullRequestFacts {
     PullRequestFacts {
-        head: Some(sha('2')),
+        head: Some(sha_of('2')),
         latest_reviews: vec![LatestReview {
             author: me(),
             state: ReviewState::Approved,
@@ -46,12 +43,12 @@ fn reviewed_pr() -> PullRequestFacts {
 /// The user's Review of PR 1 at commit 1, and the patch-ids read of each side.
 fn reviewed_at_1(reviewed: Option<Vec<FilePatch>>, head: Option<Vec<FilePatch>>) -> ReviewFacts {
     let of = |digit: char| PatchesOf {
-        commit: sha(digit),
+        commit: sha_of(digit),
         target_branch: "main".to_owned(),
     };
     let sides = [(of('1'), reviewed), (of('2'), head)];
     ReviewFacts {
-        reviewed: BTreeMap::from([(1, sha('1'))]),
+        reviewed: BTreeMap::from([(1, sha_of('1'))]),
         patches: sides
             .into_iter()
             .filter_map(|(of, files)| Some((of, files?)))
@@ -105,7 +102,7 @@ fn a_review_whose_commit_tsugiki_hasnt_read_yet_is_reviewed() {
 #[test]
 fn a_head_equal_to_the_reviewed_commit_is_reviewed_with_no_check() {
     let at_head = PullRequestFacts {
-        head: Some(sha('1')),
+        head: Some(sha_of('1')),
         ..reviewed_pr()
     };
 
@@ -149,8 +146,8 @@ fn a_moved_head_with_other_changes_is_a_stale_review_naming_the_files() {
     assert_eq!(
         state_of(reviewed_pr(), reviewed_at_1(reviewed, head)),
         YourReview::StaleReview {
-            reviewed: sha('1'),
-            head: sha('2'),
+            reviewed: sha_of('1'),
+            head: sha_of('2'),
             files: vec![
                 ChangedFile {
                     path: "Lib/ast.py".to_owned(),
@@ -169,8 +166,8 @@ fn a_moved_head_with_other_changes_is_a_stale_review_naming_the_files() {
 fn last_checked(mut reviews: ReviewFacts, reviewed: char, head: Vec<FilePatch>) -> ReviewFacts {
     drop(reviews.patches.insert(of('3', "main"), head));
     let last = LastCheck {
-        reviewed: sha(reviewed),
-        head: sha('3'),
+        reviewed: sha_of(reviewed),
+        head: sha_of('3'),
     };
     drop(reviews.last_checks.insert(1, last));
     reviews
@@ -186,8 +183,8 @@ fn a_pending_check_keeps_the_last_verdict() {
         state_of(reviewed_pr(), reviews),
         // The last check read commit 3, while the head, commit 2, waits for its check.
         YourReview::StaleReview {
-            reviewed: sha('1'),
-            head: sha('3'),
+            reviewed: sha_of('1'),
+            head: sha_of('3'),
             files: vec![ChangedFile {
                 path: "Lib/ast.py".to_owned(),
                 whitespace_only: true,
@@ -229,7 +226,7 @@ fn a_check_that_cant_run_on_either_side_is_a_stale_review_with_the_reason() {
             assert_eq!(
                 state_of(reviewed_pr(), reviews),
                 YourReview::CantCheck {
-                    reviewed: sha('1'),
+                    reviewed: sha_of('1'),
                     reason: reason.clone()
                 },
                 "commit {side}"
@@ -252,7 +249,7 @@ fn a_check_that_cant_run_outranks_the_last_verdict() {
     assert_eq!(
         state_of(reviewed_pr(), reviews),
         YourReview::CantCheck {
-            reviewed: sha('1'),
+            reviewed: sha_of('1'),
             reason: CantCheck::Cloning
         }
     );
@@ -292,14 +289,14 @@ fn facts(pull_requests: Vec<PullRequestFacts>, reviews: ReviewFacts) -> WorkFact
 
 fn of(digit: char, target_branch: &str) -> PatchesOf {
     PatchesOf {
-        commit: sha(digit),
+        commit: sha_of(digit),
         target_branch: target_branch.to_owned(),
     }
 }
 
 /// The commits the check asks the mirror to read for the user's work in `facts`.
 fn to_read(facts: WorkFacts) -> Vec<PatchesOf> {
-    mirror_work(&facts, &cpython()).1
+    mirror_work(&facts, &cpython_settings()).1
 }
 
 #[test]
@@ -307,12 +304,12 @@ fn a_check_reads_both_sides_of_each_open_pr_whose_head_moved_on_from_the_review(
     let backport = PullRequestFacts {
         number: 3,
         target_branch: "3.14".to_owned(),
-        head: Some(sha('4')),
+        head: Some(sha_of('4')),
         ..reviewed_pr()
     };
     let at_head = PullRequestFacts {
         number: 5,
-        head: Some(sha('5')),
+        head: Some(sha_of('5')),
         ..reviewed_pr()
     };
     // A merged or closed PR the user's work doesn't reach shows on no screen.
@@ -324,7 +321,7 @@ fn a_check_reads_both_sides_of_each_open_pr_whose_head_moved_on_from_the_review(
     let closed = PullRequestFacts {
         number: 9,
         state: PrState::Closed,
-        head: Some(sha('9')),
+        head: Some(sha_of('9')),
         ..reviewed_pr()
     };
     let unreviewed = PullRequestFacts {
@@ -333,16 +330,16 @@ fn a_check_reads_both_sides_of_each_open_pr_whose_head_moved_on_from_the_review(
     };
     let own_pr = own(PullRequestFacts {
         number: 8,
-        head: Some(sha('8')),
+        head: Some(sha_of('8')),
         ..reviewed_pr()
     });
     let mut reviews = reviewed_at_1(None, None);
     reviews.reviewed.extend([
-        (3, sha('1')),
-        (5, sha('5')),
-        (6, sha('6')),
-        (8, sha('7')),
-        (9, sha('1')),
+        (3, sha_of('1')),
+        (5, sha_of('5')),
+        (6, sha_of('6')),
+        (8, sha_of('7')),
+        (9, sha_of('1')),
     ]);
     let pull_requests = vec![
         reviewed_pr(),
@@ -385,14 +382,16 @@ fn a_check_keeps_the_commits_it_compared_once_both_sides_are_read() {
     };
     let pending = PullRequestFacts {
         number: 5,
-        head: Some(sha('4')),
+        head: Some(sha_of('4')),
         ..reviewed_pr()
     };
     let mut reviews = reviewed_at_1(read(), read());
-    reviews.reviewed.extend([(3, sha('1')), (5, sha('1'))]);
+    reviews
+        .reviewed
+        .extend([(3, sha_of('1')), (5, sha_of('1'))]);
     let last = LastCheck {
-        reviewed: sha('1'),
-        head: sha('2'),
+        reviewed: sha_of('1'),
+        head: sha_of('2'),
     };
     drop(reviews.last_checks.insert(3, last.clone()));
     let pull_requests = vec![reviewed_pr(), kept, pending];
@@ -425,7 +424,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
         ..reviewed_pr()
     };
     let frozen = PullRequestFacts {
-        head: Some(sha('3')),
+        head: Some(sha_of('3')),
         ..merged(5)
     };
     // PR 6's Review request keeps Issue 10, and the merged PRs in its tree, on the Workbench.
@@ -436,11 +435,13 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
     };
     let unreached = PullRequestFacts {
         state: PrState::Closed,
-        head: Some(sha('4')),
+        head: Some(sha_of('4')),
         ..merged(7)
     };
     let mut reviews = reviewed_at_1(Some(vec![file("Lib/ast.py", '1', 'a')]), None);
-    reviews.reviewed.extend([(5, sha('1')), (7, sha('1'))]);
+    reviews
+        .reviewed
+        .extend([(5, sha_of('1')), (7, sha_of('1'))]);
     drop(reviews.patches.insert(of('3', "main"), vec![]));
     let pull_requests = vec![
         in_issue_10(merged(1)),
@@ -453,7 +454,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
         ..facts(pull_requests, reviews)
     };
 
-    let (heads, patches) = mirror_work(&facts, &cpython());
+    let (heads, patches) = mirror_work(&facts, &cpython_settings());
 
     let fetched: Vec<u32> = heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [1, 5]);
@@ -464,7 +465,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
 /// The bot's Backport `number` of PR 1, at commit 9 and last updated before PR 1.
 fn bot_backport_of_1(number: u32) -> PullRequestFacts {
     PullRequestFacts {
-        head: Some(sha('9')),
+        head: Some(sha_of('9')),
         updated_at: at(0),
         ..bots_backport(number, "[3.14] gh-1: Fix it (GH-1)")
     }
@@ -505,8 +506,8 @@ fn stale_at_2() -> ReviewFacts {
 /// commit too.
 fn ast_changed() -> YourReview {
     YourReview::StaleReview {
-        reviewed: sha('1'),
-        head: sha('2'),
+        reviewed: sha_of('1'),
+        head: sha_of('2'),
         files: vec![ChangedFile {
             path: "Lib/ast.py".to_owned(),
             whitespace_only: false,
@@ -555,7 +556,7 @@ fn a_stale_origin_pr_with_three_bot_backports_needs_attention_once() {
     // The Backports were updated before PR 1, so a Stale review of theirs would start earlier.
     assert_eq!(attention.since, at(1));
     let facts = facts(origin_and_bot_backports(), stale_at_2());
-    let causes = Causes::of(&facts, cpython().conventions);
+    let causes = Causes::of(&facts, cpython_settings().conventions);
     let waiting: Vec<u32> = (1..=4)
         .filter(|&number| causes.needs_attention(number))
         .collect();
@@ -567,7 +568,7 @@ fn a_bot_backport_with_a_commit_by_a_person_gets_its_own_review_state() {
     let bot = Some(Login::new(BOT));
     let manual = PullRequestFacts {
         author: bot.clone(),
-        head: Some(sha('9')),
+        head: Some(sha_of('9')),
         ..backport(2, "[3.14] gh-1: Fix it (GH-1)", vec![bot, Some(someone())])
     };
     let reviewed = PullRequestFacts {
@@ -624,7 +625,7 @@ fn a_review_request_on_a_bot_backport_needs_attention_whatever_its_origin_prs_st
 
     for reviews in [reviewed_at_1(same(), same()), stale_at_2()] {
         let facts = facts(vec![reviewed_pr(), asked.clone()], reviews);
-        let causes = Causes::of(&facts, cpython().conventions);
+        let causes = Causes::of(&facts, cpython_settings().conventions);
 
         assert!(causes.needs_attention(2));
     }
@@ -648,7 +649,7 @@ fn reviewed_at(number: u32, head: char, issue: u32) -> PullRequestFacts {
     PullRequestFacts {
         number,
         title: format!("gh-{issue}: Fix it"),
-        head: Some(sha(head)),
+        head: Some(sha_of(head)),
         ..reviewed_pr()
     }
 }
@@ -684,7 +685,7 @@ fn the_stale_reviews_view_lists_the_open_prs_with_a_stale_review_in_their_issues
     let mut reviews = stale_at_2();
     reviews
         .reviewed
-        .extend([2, 3, 4, 6, 8].map(|number| (number, sha('1'))));
+        .extend([2, 3, 4, 6, 8].map(|number| (number, sha_of('1'))));
     drop(
         reviews
             .unchecked
@@ -742,7 +743,7 @@ fn a_pr_leaves_the_stale_reviews_view_once_it_merges_or_turns_reviewed() {
         ..reviewed_pr()
     };
     let mut reviewed_again = stale_at_2();
-    drop(reviewed_again.reviewed.insert(1, sha('2')));
+    drop(reviewed_again.reviewed.insert(1, sha_of('2')));
 
     let stale = stale_view(vec![reviewed_pr()], vec![], stale_at_2());
     let after_merge = stale_view(vec![merged], vec![], stale_at_2());
@@ -758,11 +759,13 @@ fn a_pr_leaves_the_stale_reviews_view_once_it_merges_or_turns_reviewed() {
 #[test]
 fn a_check_leaves_out_a_bot_backport_that_shares_its_origin_prs_state() {
     let manual = PullRequestFacts {
-        head: Some(sha('8')),
+        head: Some(sha_of('8')),
         ..backport(3, "[3.14] gh-1: Fix it (GH-1)", vec![Some(someone())])
     };
     let mut reviews = reviewed_at_1(None, None);
-    reviews.reviewed.extend([(2, sha('7')), (3, sha('7'))]);
+    reviews
+        .reviewed
+        .extend([(2, sha_of('7')), (3, sha_of('7'))]);
     let pull_requests = vec![reviewed_pr(), bot_backport_of_1(2), manual];
 
     assert_eq!(

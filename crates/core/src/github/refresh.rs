@@ -85,7 +85,7 @@ impl ListPlace {
 
     /// Where this list stands after an answer that had this `page`.
     pub(super) fn after_answer(&self, page: PageInfo) -> Self {
-        match (self, page.end_cursor.filter(|_| page.has_next_page)) {
+        match (self, page.next()) {
             (Self::Next(_), Some(cursor)) => Self::Next(Some(cursor)),
             (Self::Next(_) | Self::Finished, None) | (Self::Finished, Some(_)) => Self::Finished,
         }
@@ -166,6 +166,13 @@ pub struct ProbedBatch {
 pub(super) struct PageInfo {
     has_next_page: bool,
     end_cursor: Option<String>,
+}
+
+impl PageInfo {
+    /// The cursor of the next page, unless this page is the last.
+    pub(super) fn next(self) -> Option<String> {
+        self.end_cursor.filter(|_| self.has_next_page)
+    }
 }
 
 /// A page of a list GitHub can leave items out of.

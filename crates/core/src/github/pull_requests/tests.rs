@@ -3,34 +3,20 @@ use crate::error::ErrorKind;
 use crate::facts::labels::Label;
 use crate::github::Reply;
 use crate::github::Unreachable;
-use crate::github::testing::{RATE_LIMIT, Scripted, rate_limit, reply_ok, token};
+use crate::github::testing::{
+    RATE_LIMIT, Scripted, answer, fetched_nodes, github, not_found, page_info, pull_request_answer,
+    replied, reply_ok, search_page,
+};
+use crate::testing::{cpython, moment, sha};
 use serde_json::Value;
-use time::format_description::well_known::Rfc3339;
 
 const MINE: PrSearch = PrSearch {
     operation: "SearchMine",
     qualifiers: "is:pr author:@me",
 };
 
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
 fn page(after: Option<&str>) -> PageRequest<'_> {
     PageRequest { size: 50, after }
-}
-
-fn github(script: Scripted) -> GitHub {
-    GitHub::new(Box::new(script), token())
-}
-
-fn search_body(ids: &[&str], next: Option<&str>) -> String {
-    let nodes: Vec<_> = ids.iter().map(|id| json!({ "id": id })).collect();
-    let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
-    format!(
-        r#"{{"data":{{"search":{{"pageInfo":{info},"nodes":{}}},{RATE_LIMIT}}}}}"#,
-        json!(nodes)
-    )
 }
 
 fn ids(names: &[&str]) -> Vec<NodeId> {
@@ -95,7 +81,7 @@ fn by_user(login: &str) -> Value {
 
 /// The facts Tsugiki keeps of `pr` when it comes back from a fetch.
 fn read_back(pr: &Value) -> PullRequestFacts {
-    let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
+    let (script, _asked) = Scripted::new(vec![fetched_nodes(&[pr.clone()], RATE_LIMIT)]);
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
         .unwrap();
@@ -108,10 +94,6 @@ fn off_default_with(body: &str, total: u32, commits: Vec<Value>) -> OffDefault {
     pr["body"] = json!(body);
     pr["commits"] = json!({ "totalCount": total, "nodes": commits });
     read_back(&pr).off_default.unwrap()
-}
-
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text).unwrap()
 }
 
 #[test]
@@ -208,11 +190,7 @@ fn only_a_merged_pr_has_a_merge_commit() {
 
 #[test]
 fn an_origin_fetched_by_number_comes_back_with_its_facts() {
-    let body = format!(
-        r#"{{"data":{{"repository":{{"pullRequest":{}}},{RATE_LIMIT}}}}}"#,
-        pr_json()
-    );
-    let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
+    let (script, asked) = Scripted::new(vec![pull_request_answer(pr_json(), RATE_LIMIT)]);
 
     let fetched = github(script)
         .fetch_origin_pull_request(&cpython(), 140_124)
@@ -230,11 +208,11 @@ fn an_origin_fetched_by_number_comes_back_with_its_facts() {
 
 #[test]
 fn an_origin_number_that_names_no_pr_comes_back_empty() {
-    let body = format!(
-        r#"{{"data":{{"repository":{{"pullRequest":null}},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND",
-                "message":"gone","path":["repository","pullRequest"]}}]}}"#
+    let gone = not_found(
+        json!({ "repository": { "pullRequest": null } }),
+        json!(["repository", "pullRequest"]),
     );
-    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
+    let (script, _asked) = Scripted::new(vec![gone]);
 
     let fetched = github(script)
         .fetch_origin_pull_request(&cpython(), 9)
@@ -245,7 +223,7 @@ fn an_origin_number_that_names_no_pr_comes_back_empty() {
 
 #[test]
 fn a_tree_fetch_has_its_own_recording() {
-    let (script, asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([])))]);
+    let (script, asked) = Scripted::new(vec![fetched_nodes(&[], RATE_LIMIT)]);
     drop(
         github(script)
             .fetch_pull_requests(PrFetch::Tree, &ids(&["a"]), 25)
@@ -255,22 +233,13 @@ fn a_tree_fetch_has_its_own_recording() {
     assert!(fetch_by_ids_query(PrFetch::Tree).starts_with("query FetchTreePullRequests("));
 }
 
-fn fetch_body(nodes: &serde_json::Value) -> String {
-    format!(r#"{{"data":{{"nodes":{nodes},{RATE_LIMIT}}}}}"#)
-}
-
 fn bad_gateway() -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status: 502,
-        reset: None,
-        date: None,
-        body: "Bad Gateway".to_owned(),
-    })
+    replied(502, "Bad Gateway")
 }
 
 #[test]
 fn a_search_says_what_it_found_and_where_the_next_page_starts() {
-    let (script, asked) = Scripted::new(vec![reply_ok(&search_body(&["a", "b"], Some("c1")))]);
+    let (script, asked) = Scripted::new(vec![search_page(&["a", "b"], Some("c1"), RATE_LIMIT)]);
 
     let page = github(script)
         .search_pull_requests(&MINE, &cpython(), page(Some("c0")))
@@ -292,8 +261,9 @@ fn a_search_says_what_it_found_and_where_the_next_page_starts() {
 
 #[test]
 fn a_last_page_has_no_next_page_even_with_a_cursor() {
-    let body = search_body(&[], None).replace(r#""endCursor":null"#, r#""endCursor":"end""#);
-    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
+    let info = json!({ "hasNextPage": false, "endCursor": "end" });
+    let last = answer(json!({ "search": { "pageInfo": info, "nodes": [] } }), RATE_LIMIT);
+    let (script, _asked) = Scripted::new(vec![last]);
 
     let page = github(script)
         .search_pull_requests(&MINE, &cpython(), page(None))
@@ -327,7 +297,7 @@ fn a_search_opts_into_advanced_search_under_its_own_name() {
 
 #[test]
 fn a_fetched_pr_is_read_into_its_facts() {
-    let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr_json()])))]);
+    let (script, _asked) = Scripted::new(vec![fetched_nodes(&[pr_json()], RATE_LIMIT)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
@@ -345,7 +315,7 @@ fn a_fetched_pr_is_read_into_its_facts() {
             author: Some(Login::new("some-author")),
             target_branch: "main".to_owned(),
             ci: Some(CiState::Failure),
-            updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
+            updated_at: moment("2026-11-04T10:00:00Z"),
             review_requests: vec![Login::new("octocat")],
             latest_reviews: vec![LatestReview {
                 author: Login::new("some-assignee"),
@@ -367,7 +337,7 @@ fn kept_description(branch: &str, default_branch: Value) -> Option<String> {
     let mut pr = pr_json();
     pr["baseRefName"] = json!(branch);
     pr["repository"]["defaultBranchRef"] = default_branch;
-    let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
+    let (script, _asked) = Scripted::new(vec![fetched_nodes(&[pr], RATE_LIMIT)]);
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
         .unwrap();
@@ -393,7 +363,7 @@ fn a_pr_with_no_checks_and_no_author_says_so() {
     let mut pr = pr_json();
     pr["author"] = json!(null);
     pr["lastCommit"] = json!({ "nodes": [{ "commit": { "statusCheckRollup": null } }] });
-    let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([pr])))]);
+    let (script, _asked) = Scripted::new(vec![fetched_nodes(&[pr], RATE_LIMIT)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
@@ -460,7 +430,7 @@ fn a_null_in_a_pull_requests_lists_is_left_out() {
         "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
         "commits": { "totalCount": 0, "nodes": [] },
     });
-    let (script, _asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([node])))]);
+    let (script, _asked) = Scripted::new(vec![fetched_nodes(&[node], RATE_LIMIT)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
@@ -475,14 +445,8 @@ fn a_null_in_a_pull_requests_lists_is_left_out() {
 
 #[test]
 fn a_null_in_a_search_is_left_out() {
-    let body = json!({ "data": {
-        "search": {
-            "pageInfo": { "hasNextPage": false, "endCursor": null },
-            "nodes": [null, { "id": "a" }],
-        },
-        "rateLimit": rate_limit(),
-    }});
-    let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
+    let search = json!({ "pageInfo": page_info(None), "nodes": [null, { "id": "a" }] });
+    let (script, _asked) = Scripted::new(vec![answer(json!({ "search": search }), RATE_LIMIT)]);
 
     let page = github(script)
         .search_pull_requests(&MINE, &cpython(), page(None))
@@ -493,7 +457,7 @@ fn a_null_in_a_search_is_left_out() {
 
 #[test]
 fn a_fetch_asks_for_one_batch_at_a_time() {
-    let (script, asked) = Scripted::new(vec![reply_ok(&fetch_body(&json!([])))]);
+    let (script, asked) = Scripted::new(vec![fetched_nodes(&[], RATE_LIMIT)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &thirty_ids(), 25)
@@ -509,7 +473,7 @@ fn a_fetch_asks_for_one_batch_at_a_time() {
 fn after_a_502_a_fetch_asks_once_more_at_half_the_size() {
     let (script, asked) = Scripted::new(vec![
         bad_gateway(),
-        reply_ok(&fetch_body(&json!([pr_json()]))),
+        fetched_nodes(&[pr_json()], RATE_LIMIT),
     ]);
 
     let batch = github(script)
@@ -526,7 +490,7 @@ fn after_a_502_a_fetch_asks_once_more_at_half_the_size() {
 fn with_no_answer_a_search_asks_once_more_at_half_the_size() {
     let (script, asked) = Scripted::new(vec![
         Err(Unreachable::Offline),
-        reply_ok(&search_body(&["a"], None)),
+        search_page(&["a"], None, RATE_LIMIT),
     ]);
 
     let page = github(script)
@@ -551,12 +515,7 @@ fn a_second_failure_is_the_answer() {
 
 #[test]
 fn a_refused_token_isnt_retried() {
-    let (script, asked) = Scripted::new(vec![Ok(Reply {
-        status: 401,
-        reset: None,
-        date: None,
-        body: String::new(),
-    })]);
+    let (script, asked) = Scripted::new(vec![replied(401, "")]);
 
     let refused = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
@@ -570,10 +529,7 @@ fn a_refused_token_isnt_retried() {
 #[test]
 fn a_recorded_pr_carries_the_commit_its_branch_is_at() {
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let github = GitHub::new(
-        Box::new(crate::github::replay::Replayer::new(fixtures)),
-        token(),
-    );
+    let github = github(crate::github::replay::Replayer::new(fixtures));
 
     let batch = github
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)

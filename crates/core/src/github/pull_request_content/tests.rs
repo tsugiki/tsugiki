@@ -2,23 +2,15 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use serde_json::{Value, json};
-use time::format_description::well_known::Rfc3339;
 
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::issue_content::HiddenReason;
 use crate::facts::pull_request_content::CodeRow;
 use crate::github::replay::Replayer;
-use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, github, pr_content, pull_request_answer};
 use crate::login::Login;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn moment(text: &str) -> OffsetDateTime {
-    OffsetDateTime::parse(text, &Rfc3339).unwrap()
-}
+use crate::testing::{cpython, moment};
 
 /// A Review as GitHub answers with it.
 fn review(id: &str, state: &str, at: &str, body_html: &str) -> Value {
@@ -83,19 +75,14 @@ fn read_comment(words: &str) -> ThreadComment {
 
 /// Tsugiki's read of a PR with these comments, Reviews and threads.
 fn read(comments: Value, reviews: (u32, Value), threads: Value) -> PullRequestContent {
-    let pr = json!({
-        "bodyHTML": "<p>Fixes it</p>",
-        "createdAt": "2026-11-01T09:00:00Z",
+    let pr = pr_content(&json!({
         "comments": { "totalCount": comments.as_array().unwrap().len(), "nodes": comments },
         "reviews": { "totalCount": reviews.0, "nodes": reviews.1 },
         "reviewThreads": { "nodes": threads },
         "headRefOid": "0123abcdef0123abcdef0123abcdef0123abcdef",
-    });
-    let body =
-        json!({ "data": { "repository": { "pullRequest": pr }, "rateLimit": rate_limit() } })
-            .to_string();
-    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
-    GitHub::new(Box::new(script), token())
+    }));
+    let (script, _asked) = Scripted::new(vec![pull_request_answer(pr, RATE_LIMIT)]);
+    github(script)
         .pull_request_content(&cpython(), 7)
         .unwrap()
         .content
@@ -433,11 +420,8 @@ fn the_first_words_are_cut_to_fit_a_line() {
 
 #[test]
 fn a_pr_github_doesnt_have_is_not_found() {
-    let body =
-        json!({ "data": { "repository": { "pullRequest": null }, "rateLimit": rate_limit() } })
-            .to_string();
-    let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
-    let github = GitHub::new(Box::new(script), token());
+    let (script, asked) = Scripted::new(vec![pull_request_answer(Value::Null, RATE_LIMIT)]);
+    let github = github(script);
 
     let problem = github.pull_request_content(&cpython(), 7).unwrap_err();
 
@@ -471,7 +455,7 @@ fn a_conversation_asks_for_pages_that_cost_about_a_point() {
 #[test]
 fn a_recorded_pr_reads_as_its_reviews_and_their_threads() {
     let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
-    let github = GitHub::new(Box::new(Replayer::new(recordings)), token());
+    let github = github(Replayer::new(recordings));
 
     let content = github
         .pull_request_content(&cpython(), 152_326)

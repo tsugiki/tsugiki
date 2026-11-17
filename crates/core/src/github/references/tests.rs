@@ -1,11 +1,8 @@
 use super::*;
 use crate::error::ErrorKind;
-use crate::github::testing::{RATE_LIMIT, Scripted, rate_limit, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, rate_limit, reply_ok};
+use crate::testing::cpython;
 use serde_json::{Value, json};
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
 
 fn pr_event(number: u32, repository: &str) -> Value {
     json!({ "source": {
@@ -38,11 +35,9 @@ fn a_read_by_number_answers_each_issue_and_passes_over_a_pr() {
         "i8": { "__typename": "PullRequest" },
         "i9": null,
     });
-    let reply = reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{RATE_LIMIT}}}}}"#
-    ));
+    let reply = answer(json!({ "repository": repository }), RATE_LIMIT);
     let (script, asked) = Scripted::new(vec![reply]);
-    let github = GitHub::new(Box::new(script), token());
+    let github = github(script);
 
     let found = github
         .fetch_issue_references(&cpython(), &[7, 8, 9, 10], 3)
@@ -90,7 +85,7 @@ fn a_source_github_wont_show_costs_only_its_own_event() {
             }],
         });
         let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
-        let github = GitHub::new(Box::new(script), token());
+        let github = github(script);
 
         let found = github.fetch_issue_references(&cpython(), &[7], 1).unwrap();
 
@@ -110,7 +105,7 @@ fn another_refusal_inside_a_read_stops_it() {
         }],
     });
     let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
-    let github = GitHub::new(Box::new(script), token());
+    let github = github(script);
 
     let refused = github.fetch_issue_references(&cpython(), &[7], 1);
 

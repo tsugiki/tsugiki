@@ -1,16 +1,9 @@
 use super::*;
-use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
-use crate::github::{Reply, Transport, Unreachable};
+use crate::github::testing::{RATE_LIMIT, Scripted, filter_page, github, replied};
+use crate::github::{Reply, Unreachable};
+use crate::testing::cpython;
 use serde_json::Value;
 use time::Month;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn github(transport: impl Transport + 'static) -> GitHub {
-    GitHub::new(Box::new(transport), token())
-}
 
 fn query() -> FilterQuery {
     "is:open OR label:bug".to_owned().try_into().unwrap()
@@ -37,10 +30,7 @@ fn first_page<'a>(query: &'a FilterQuery, created: Option<CreatedRange>) -> Filt
 }
 
 fn page_of(nodes: &Value, next: Option<&str>) -> Result<Reply, Unreachable> {
-    let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
-    reply_ok(&format!(
-        r#"{{"data":{{"search":{{"issueCount":3214,"pageInfo":{info},"nodes":{nodes}}},{RATE_LIMIT}}}}}"#
-    ))
+    filter_page(3214, nodes.as_array().unwrap(), next, RATE_LIMIT)
 }
 
 fn issue(number: u32, repository: &str) -> Value {
@@ -129,12 +119,7 @@ fn an_item_of_another_repository_is_left_out() {
 
 #[test]
 fn a_page_github_cant_answer_is_asked_for_at_half_size() {
-    let bad_gateway = Ok(Reply {
-        status: 502,
-        reset: None,
-        date: None,
-        body: "Bad Gateway".to_owned(),
-    });
+    let bad_gateway = replied(502, "Bad Gateway");
     let (script, asked) = Scripted::new(vec![bad_gateway, page_of(&json!([]), None)]);
 
     let query = query();

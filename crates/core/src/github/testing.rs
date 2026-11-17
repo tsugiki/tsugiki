@@ -8,8 +8,18 @@ pub(crate) const RATE_LIMIT: &str = r#""rateLimit":{"cost":1,"limit":5000,"used"
 
 /// [`RATE_LIMIT`] as a value, for an answer built with `json!`.
 pub(crate) fn rate_limit() -> Value {
-    let data: Value = serde_json::from_str(&format!("{{{RATE_LIMIT}}}")).unwrap();
+    points(RATE_LIMIT)
+}
+
+/// The value of `rate`, a points field such as [`RATE_LIMIT`].
+fn points(rate: &str) -> Value {
+    let data: Value = serde_json::from_str(&format!("{{{rate}}}")).unwrap();
     data["rateLimit"].clone()
+}
+
+/// A client of GitHub that sends each request through `transport`.
+pub(crate) fn github(transport: impl Transport + 'static) -> GitHub {
+    GitHub::new(Box::new(transport), token())
 }
 
 /// Answers every request the same way: the small builder ADR 0009 allows for rare cases.
@@ -22,12 +32,7 @@ impl Transport for Canned {
 }
 
 pub(crate) fn answered(status: u16, body: &str) -> Canned {
-    Canned(Ok(Reply {
-        status,
-        reset: None,
-        date: None,
-        body: body.to_owned(),
-    }))
+    Canned(replied(status, body))
 }
 
 /// Answers from a list, in order, and records each operation and its variables for the test.
@@ -59,13 +64,125 @@ impl Transport for Scripted {
     }
 }
 
-pub(crate) fn reply_ok(body: &str) -> Result<Reply, Unreachable> {
+/// GitHub's reply with `status` and `body`, and no time or reset.
+pub(crate) fn replied(status: u16, body: &str) -> Result<Reply, Unreachable> {
     Ok(Reply {
-        status: 200,
+        status,
         reset: None,
         date: None,
         body: body.to_owned(),
     })
+}
+
+pub(crate) fn reply_ok(body: &str) -> Result<Reply, Unreachable> {
+    replied(200, body)
+}
+
+/// GitHub's answer whose data holds the fields of `data`, a JSON object, and `rate`, a points field such as
+/// [`RATE_LIMIT`].
+pub(crate) fn answer(data: Value, rate: &str) -> Result<Reply, Unreachable> {
+    reply_ok(&with_points(data, rate).to_string())
+}
+
+/// GitHub's answer whose data holds the fields of `data` and [`RATE_LIMIT`], and that says the thing at
+/// `path` in it doesn't exist, as GitHub says of a number that names nothing.
+pub(crate) fn not_found(data: Value, path: Value) -> Result<Reply, Unreachable> {
+    let mut body = with_points(data, RATE_LIMIT);
+    body["errors"] = json!([{ "type": "NOT_FOUND", "message": "gone", "path": path }]);
+    reply_ok(&body.to_string())
+}
+
+fn with_points(mut data: Value, rate: &str) -> Value {
+    data["rateLimit"] = points(rate);
+    json!({ "data": data })
+}
+
+/// The `pageInfo` of a page whose next page starts at the cursor `next`, or of the last page.
+pub(crate) fn page_info(next: Option<&str>) -> Value {
+    json!({ "hasNextPage": next.is_some(), "endCursor": next })
+}
+
+/// A page of the search for the user's work, which found the PRs `ids`.
+pub(crate) fn search_page(ids: &[&str], next: Option<&str>, rate: &str) -> Result<Reply, Unreachable> {
+    let nodes: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
+    answer(
+        json!({ "search": { "pageInfo": page_info(next), "nodes": nodes } }),
+        rate,
+    )
+}
+
+/// A page of a Filter's search, which found `nodes` of `total` items.
+pub(crate) fn filter_page(
+    total: u32,
+    nodes: &[Value],
+    next: Option<&str>,
+    rate: &str,
+) -> Result<Reply, Unreachable> {
+    let search = json!({ "issueCount": total, "pageInfo": page_info(next), "nodes": nodes });
+    answer(json!({ "search": search }), rate)
+}
+
+/// GitHub's answer to a fetch of `nodes` by their ids.
+pub(crate) fn fetched_nodes(nodes: &[Value], rate: &str) -> Result<Reply, Unreachable> {
+    answer(json!({ "nodes": nodes }), rate)
+}
+
+/// PR `number` of `python/cpython` as a fetch answers with it, with `changes` on top.
+pub(crate) fn pr_node(number: u32, changes: &Value) -> Value {
+    let node = json!({
+        "number": number,
+        "title": format!("gh-1: Fix it {number}"),
+        "state": "OPEN",
+        "isDraft": false,
+        "updatedAt": "2026-11-04T10:00:00Z",
+        "baseRefName": "main",
+        "body": "",
+        "repository": {
+            "nameWithOwner": "python/cpython",
+            "defaultBranchRef": { "name": "main" },
+        },
+        "closingIssuesReferences": { "nodes": [] },
+        "author": { "login": "octocat" },
+        "assignees": { "nodes": [] },
+        "labels": { "nodes": [] },
+        "reviewRequests": { "nodes": [] },
+        "latestReviews": { "nodes": [] },
+        "lastCommit": { "nodes": [] },
+        "mergeCommit": null,
+        "baseRefOid": "0123456789abcdef0123456789abcdef01234567",
+        "headRefOid": "89abcdef0123456789abcdef0123456789abcdef",
+        "commits": { "totalCount": 0, "nodes": [] },
+        "timelineItems": { "nodes": [] },
+    });
+    changed(node, changes)
+}
+
+/// A PR's Conversation as `FetchPullRequestContent` answers with it, a body and nothing else, with `changes`
+/// on top.
+pub(crate) fn pr_content(changes: &Value) -> Value {
+    let pull_request = json!({
+        "bodyHTML": "<p>Fixes the crash</p>",
+        "createdAt": "2026-11-01T09:00:00Z",
+        "comments": { "totalCount": 0, "nodes": [] },
+        "reviews": { "totalCount": 0, "nodes": [] },
+        "reviewThreads": { "nodes": [] },
+        "headRefOid": "0123abc",
+    });
+    changed(pull_request, changes)
+}
+
+/// GitHub's answer to a question about one PR, such as `FetchPullRequestContent`, with the PR
+/// `pull_request`.
+pub(crate) fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unreachable> {
+    answer(json!({ "repository": { "pullRequest": pull_request } }), rate)
+}
+
+/// `node` with each field of `changes` set on it.
+fn changed(mut node: Value, changes: &Value) -> Value {
+    for (name, value) in changes.as_object().unwrap() {
+        node[name] = value.clone();
+    }
+    node
 }
 
 /// `reply`, which GitHub dated `date`.

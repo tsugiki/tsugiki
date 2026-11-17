@@ -22,8 +22,8 @@
     syncedWords,
     syncingWords,
   } from "./synced";
+  import { minuteClock } from "./clock.svelte";
 
-  const MINUTE = 60_000;
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
   let {
@@ -73,15 +73,7 @@
   const releasePage = new LinkOpener();
 
   // "Synced 2 min ago" has to move on by itself between syncs.
-  let now = $state(new Date());
-  $effect(() => {
-    const ticking = setInterval(() => {
-      now = new Date();
-    }, MINUTE);
-    return () => {
-      clearInterval(ticking);
-    };
-  });
+  const now = minuteClock();
 
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
   const points = $derived(visible ? hourPoints : null);

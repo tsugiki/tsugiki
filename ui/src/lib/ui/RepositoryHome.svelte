@@ -66,8 +66,8 @@
     summary,
     treeCount,
   } from "./workbench-row";
+  import { minuteClock } from "./clock.svelte";
 
-  const MINUTE = 60_000;
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
@@ -105,15 +105,7 @@
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
-  let now = $state(new Date());
-  $effect(() => {
-    const ticking = setInterval(() => {
-      now = new Date();
-    }, MINUTE);
-    return () => {
-      clearInterval(ticking);
-    };
-  });
+  const now = minuteClock();
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(

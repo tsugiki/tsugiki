@@ -16,6 +16,7 @@ import {
   type YourReview,
 } from "$lib/state/workbench.svelte";
 import { counted } from "$lib/state/counted";
+import { elapsed } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -81,17 +82,12 @@ export const offersMarkSeen = (seen: Seen) => seen.state !== "seen";
 /** The reasons an item Needs attention, the newest first. */
 export const preview = (attention: Attention) => attention.why.map(saying).join(" · ");
 
-const MINUTE = 60_000;
-const MINUTES_IN_HOUR = 60;
-const MINUTES_IN_DAY = 24 * MINUTES_IN_HOUR;
+const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 
-/** The time since `updatedAt`. A clock behind GitHub's gives a time in the future, which reads as now. */
+/** The time since `updatedAt`: "just now", "3m ago", "5h ago" or "2d ago". */
 export function ago(updatedAt: string, now: Date): string {
-  const minutes = Math.floor((now.getTime() - new Date(updatedAt).getTime()) / MINUTE);
-  if (minutes < 1) return "just now";
-  if (minutes < MINUTES_IN_HOUR) return `${String(minutes)}m ago`;
-  if (minutes < MINUTES_IN_DAY) return `${String(Math.floor(minutes / MINUTES_IN_HOUR))}h ago`;
-  return `${String(Math.floor(minutes / MINUTES_IN_DAY))}d ago`;
+  const time = elapsed(updatedAt, now);
+  return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
 }
 
 /** How many comments an Issue, a PR or a review thread has. */

@@ -22,9 +22,9 @@ or `npm run`, and CI calls the same npm scripts.
 | `doc-lines.ts`        | `doc-width.ts`, `prose-check.ts`        | Picks out the lines of a file that hold prose                                        |
 | `prose-check.ts`      | `just prose-check`                      | Lists prose to reread against /stop-slop; never fails                                |
 | `prose.ts`            | `prose-check.ts`                        | The rules behind `just prose-check`                                                  |
-| `rust-gates.ts`       | `just rust-gates`, `check`, `preflight` | Runs the Rust gates, or skips them on a branch that changes only `ui/` and docs      |
-| `changes.ts`          | CI                                      | Tells CI's `changes` job whether a PR changes only docs, or only `ui/` and docs      |
-| `scope.ts`            | `rust-gates.ts`, `changes.ts`           | Which paths count as docs or as `ui/`, so CI and `just check` agree                  |
+| `rust-gates.ts`       | `just rust-gates`, `check`, `preflight` | Runs each Rust gate whose CI job the branch reaches, and skips the rest              |
+| `changes.ts`          | CI                                      | Tells CI's `changes` job which jobs a push needs since the PR's last run that passed |
+| `scope.ts`            | `rust-gates.ts`, `changes.ts`           | Which jobs read each path, so CI and `just check` agree                              |
 | `rust-coverage.ts`    | `just rust-coverage`                    | Rust's coverage gate: runs the tests and fails below 100%                            |
 | `coverage-gaps.ts`    | `rust-coverage.ts`                      | Finds the lines and functions the Rust coverage gate fell short on                   |
 | `test-servers.ts`     | `just test-servers`, the Rust tests     | Fetches ty and finds rust-analyzer, and runs the Rust tests with their paths set     |

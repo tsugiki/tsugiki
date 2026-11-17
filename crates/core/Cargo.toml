@@ -53,12 +53,22 @@ windows.workspace = true
 [target.'cfg(not(windows))'.dependencies]
 libc.workspace = true
 
+[features]
+# Makes `testing`, `github::testing` and `releases::testing`, the helpers and fakes of the core's tests,
+# reachable from other crates' tests. Only `[dev-dependencies]` turn it on, so no release build has it.
+testing = ["tsugiki-token/testing"]
+
 [dev-dependencies]
 divan.workspace = true
 insta.workspace = true
 tsugiki-lsp = { workspace = true, features = ["testing"] }
 tsugiki-test-git.workspace = true
 tsugiki-token = { workspace = true, features = ["testing"] }
+
+# It writes the recordings where `testing::recordings` says the tests read them.
+[[example]]
+name = "record"
+required-features = ["testing"]
 
 [[bench]]
 name = "about"

@@ -278,8 +278,7 @@ fn a_last_page_has_no_next_page_even_with_a_cursor() {
 #[test]
 fn the_recordings_hold_the_queries_the_client_sends() {
     let recorded = |operation: &str| -> String {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("tests/fixtures/github/{operation}.json"));
+        let path = crate::testing::recordings().join(format!("{operation}.json"));
         let text = std::fs::read_to_string(path).unwrap();
         let recording: serde_json::Value = serde_json::from_str(&text).unwrap();
         recording["query"].as_str().unwrap().to_owned()
@@ -529,7 +528,7 @@ fn a_refused_token_isnt_retried() {
 
 #[test]
 fn a_recorded_pr_carries_the_commit_its_branch_is_at() {
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let fixtures = crate::testing::recordings();
     let github = github(crate::github::replay::Replayer::new(fixtures));
 
     let batch = github

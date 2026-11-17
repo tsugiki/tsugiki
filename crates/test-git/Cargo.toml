@@ -1,6 +1,6 @@
 [package]
 name = "tsugiki-test-git"
-description = "Git repositories built with the real git, and folders under .temp, for Tsugiki's tests"
+description = "The test helpers Tsugiki's crates share that use no crate's types, such as git repositories built with the real git"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

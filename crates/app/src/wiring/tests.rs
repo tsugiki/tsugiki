@@ -13,50 +13,39 @@ use tsugiki_core::facts::pull_request_content::{
     Anchor, DiffHunk, Opening, PullRequestContent, Resolution, Review, Side, Subject, Submission,
     ThreadComment, ThreadId, ThreadLine,
 };
-use tsugiki_core::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
+use tsugiki_core::facts::pull_requests::{PullRequestFacts, ReviewState};
 use tsugiki_core::github::replay::Replayer;
+use tsugiki_core::github::testing::{Canned, RATE_LIMIT, answer, page_info, signed_in_gh};
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
 use tsugiki_core::mirror_source::MirrorSource;
+use tsugiki_core::releases::testing::{offline, release};
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::SettingsFiles;
-use tsugiki_core::token::{GhOutput, Token};
+use tsugiki_core::testing::pr_facts;
+use tsugiki_core::token::Token;
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_test_git::{TempPath, git, mirror_with_branch, ty, within};
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
 
-fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
-    Ok(GhOutput {
-        success: true,
-        stdout: "gho_example".to_owned(),
-    })
+/// GitHub reached through `transport`, with gh signed in.
+fn access(transport: impl Transport + 'static) -> GitHubAccess {
+    GitHubAccess {
+        transport: Box::new(transport),
+        run_gh: signed_in_gh,
+    }
 }
 
 /// Real GitHub's answers, recorded for the core's fixtures.
 fn recordings() -> GitHubAccess {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/fixtures/github");
-    GitHubAccess {
-        transport: Box::new(Replayer::new(dir)),
-        run_gh: signed_in_gh,
-    }
-}
-
-struct NoNetwork;
-
-impl Transport for NoNetwork {
-    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-        Err(Unreachable::Offline)
-    }
+    access(Replayer::new(tsugiki_core::testing::recordings()))
 }
 
 fn no_network() -> GitHubAccess {
-    GitHubAccess {
-        transport: Box::new(NoNetwork),
-        run_gh: signed_in_gh,
-    }
+    access(Canned(Err(Unreachable::Offline)))
 }
 
 /// Says when a request arrives, then holds it until the test lets go. A regression then shows up as
@@ -72,23 +61,6 @@ impl Transport for StuckGitHub {
         self.released.recv_timeout(PLENTY).unwrap_or(());
         Err(Unreachable::Offline)
     }
-}
-
-fn releases_offline() -> Result<tsugiki_token::Reply, tsugiki_token::Unreachable> {
-    Err(tsugiki_token::Unreachable::Offline(
-        "no network in tests".to_owned(),
-    ))
-}
-
-/// GitHub Releases with `tag` as the latest release.
-fn latest_release(tag: &str) -> Result<tsugiki_token::Reply, tsugiki_token::Unreachable> {
-    Ok(tsugiki_token::Reply {
-        status: 200,
-        body: json!({ "tag_name": tag }).to_string(),
-        date: None,
-        ratelimit_reset: None,
-        etag: None,
-    })
 }
 
 /// The app as `startup.rs` wires it, on Tauri's mock runtime with a webview to send commands from. It
@@ -137,7 +109,7 @@ impl Wired {
     ) -> Self {
         let outside = Outside {
             github,
-            releases: Box::new(|_| releases_offline()),
+            releases: Box::new(|_| offline()),
             remotes,
             pick,
         };
@@ -345,7 +317,7 @@ fn a_newer_version_reaches_the_window_as_an_event_and_through_its_command() {
     let (folders, _root) = temp_folders("wired-new-version");
     let outside = Outside {
         github: no_network(),
-        releases: Box::new(|_| latest_release("v999.0.0")),
+        releases: Box::new(|_| release("v999.0.0")),
         remotes: Remotes::under("no-remotes/".to_owned()),
         pick: Arc::new(|_| None),
     };
@@ -383,7 +355,7 @@ fn assert_releases_hear_nothing(name: &str, settings: &str) {
         github: no_network(),
         releases: Box::new(move |_| {
             asking.send(()).unwrap_or(());
-            latest_release("v999.0.0")
+            release("v999.0.0")
         }),
         remotes: Remotes::under("no-remotes/".to_owned()),
         pick: Arc::new(|_| None),
@@ -648,11 +620,7 @@ fn an_add_and_a_read_dont_wait_for_github() {
     let (folders, _root) = temp_folders("wired-stuck");
     let (arrived, request_arrived) = channel();
     let (release, released) = channel();
-    let access = GitHubAccess {
-        transport: Box::new(StuckGitHub { arrived, released }),
-        run_gh: signed_in_gh,
-    };
-    let wired = Wired::start(Ok(folders), access);
+    let wired = Wired::start(Ok(folders), access(StuckGitHub { arrived, released }));
     request_arrived.recv_timeout(PLENTY).unwrap();
 
     let started = Instant::now();
@@ -909,11 +877,26 @@ fn issue_over(workbench: &Value, number: u64) -> &Value {
 
 /// Waits for a `changed` event that names item `number`.
 fn wait_for_change_to(changes: &Receiver<Value>, number: &Value) {
-    while !changes.recv_timeout(PLENTY).unwrap()["items"]
-        .as_array()
-        .unwrap()
-        .contains(number)
-    {}
+    let _changed = heard_until(changes, |change| {
+        change["items"].as_array().unwrap().contains(number)
+    });
+}
+
+/// The first of what `events` hears that `wanted` accepts, past the ones before it.
+fn heard_until<T>(events: &Receiver<T>, mut wanted: impl FnMut(&T) -> bool) -> T {
+    loop {
+        let heard = events.recv_timeout(PLENTY).unwrap();
+        if wanted(&heard) {
+            return heard;
+        }
+    }
+}
+
+/// What `events` hears up to the first null, which ends a run of announcements.
+fn heard_until_null(events: &Receiver<Value>) -> Vec<Value> {
+    std::iter::repeat_with(|| events.recv_timeout(PLENTY).unwrap())
+        .take_while(|heard| !heard.is_null())
+        .collect()
 }
 
 #[test]
@@ -1299,8 +1282,7 @@ struct Refreshing {
 impl Transport for Refreshing {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         drop(self.asked.send(request.operation.to_owned()));
-        let rate = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
-        let page = |nodes: Value| json!({ "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": nodes });
+        let page = |nodes: Value| json!({ "pageInfo": page_info(None), "nodes": nodes });
         let data = match request.operation {
             "Viewer" => json!({ "viewer": { "login": "octocat" } }),
             "RefreshRepository" => json!({
@@ -1320,24 +1302,16 @@ impl Transport for Refreshing {
                     }])),
                     "pullRequests": page(json!([])),
                 },
-                "rateLimit": rate,
             }),
-            "FetchCrossReferences" => {
-                json!({ "repository": { "issue": null }, "rateLimit": rate })
-            }
-            _ => json!({ "repository": {}, "rateLimit": rate }),
+            "FetchCrossReferences" => json!({ "repository": { "issue": null } }),
+            _ => json!({ "repository": {} }),
         };
-        Ok(Reply {
-            status: 200,
-            reset: None,
-            date: None,
-            body: json!({ "data": data }).to_string(),
-        })
+        answer(data, RATE_LIMIT)
     }
 }
 
 fn wait_for(asked: &Receiver<String>, operation: &str) {
-    while asked.recv_timeout(PLENTY).unwrap() != operation {}
+    let _asked = heard_until(asked, |asked| asked == operation);
 }
 
 /// The first thing the first item of a Workbench says about itself.
@@ -1357,11 +1331,7 @@ fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
     let number = first_issue(&workbench)["number"].as_u64().unwrap();
 
     let (asked, questions) = channel();
-    let access = GitHubAccess {
-        transport: Box::new(Refreshing { number, asked }),
-        run_gh: signed_in_gh,
-    };
-    let reopened = Wired::start(Ok(folders), access);
+    let reopened = Wired::start(Ok(folders), access(Refreshing { number, asked }));
     let shown = reopened.last_syncs.recv_timeout(PLENTY).unwrap();
     let changed = reopened.workbenches.recv_timeout(PLENTY).unwrap();
     let after = reopened.ask("workbench", the_whole_workbench()).unwrap();
@@ -1389,21 +1359,17 @@ fn an_add_syncs_what_waits_on_the_user_and_the_status_bar_hears_each_part() {
     let _ = wired.ask("add_repository", add_cpython()).unwrap();
     let workbench = workbench_after_sync(&wired);
 
-    let mut parts = Vec::new();
-    let ended = loop {
-        let heard = wired.activities.recv_timeout(PLENTY).unwrap();
-        if heard.is_null() {
-            break heard;
-        }
-        parts.push(heard["open"]["part"].as_str().unwrap().to_owned());
-    };
+    // The activity ends with a null.
+    let heard = heard_until_null(&wired.activities);
+    let mut parts: Vec<&str> = (heard.iter())
+        .map(|heard| heard["open"]["part"].as_str().unwrap())
+        .collect();
     parts.dedup();
     let asked = wired.ask("sync_activity", json!({})).unwrap();
     drop(wired.stop());
 
     assert_is_the_recorded_work(&workbench);
     assert_eq!(parts, ["refresh", "your_work", "trees", "window"]);
-    assert_eq!(ended, Value::Null);
     assert_eq!(asked, Value::Null);
 }
 
@@ -1424,14 +1390,8 @@ struct SignedIn;
 
 impl Transport for SignedIn {
     fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-        let rate = json!({ "cost": 1, "limit": 5000, "used": 10, "remaining": 4990, "resetAt": "2999-01-01T00:00:00Z" });
-        Ok(Reply {
-            status: 200,
-            reset: None,
-            date: None,
-            body: json!({ "data": { "viewer": { "login": "octocat" }, "rateLimit": rate } })
-                .to_string(),
-        })
+        let rate = r#""rateLimit":{"cost":1,"limit":5000,"used":10,"remaining":4990,"resetAt":"2999-01-01T00:00:00Z"}"#;
+        answer(json!({ "viewer": { "login": "octocat" } }), rate)
     }
 }
 
@@ -1442,11 +1402,7 @@ fn the_hour_points_reach_the_window_once_github_has_answered() {
     let before = unanswered.ask("hour_points", json!({})).unwrap();
     drop(unanswered.stop());
 
-    let signed_in = GitHubAccess {
-        transport: Box::new(SignedIn),
-        run_gh: signed_in_gh,
-    };
-    let wired = Wired::start(Ok(folders), signed_in);
+    let wired = Wired::start(Ok(folders), access(SignedIn));
     let heard = wired.points.recv_timeout(PLENTY).unwrap();
     let asked = wired.ask("hour_points", json!({})).unwrap();
     drop(wired.stop());
@@ -1490,16 +1446,7 @@ fn remotes(root: &Path, names: &[&str]) -> Remotes {
 /// The Repositories each clone announced, in turn, as the webview heard them.
 fn clones(wired: &Wired, count: usize) -> Vec<Vec<Value>> {
     (0..count)
-        .map(|_| {
-            let mut clone = Vec::new();
-            loop {
-                let heard = wired.clonings.recv_timeout(PLENTY).unwrap();
-                if heard.is_null() {
-                    break clone;
-                }
-                clone.push(heard);
-            }
-        })
+        .map(|_| heard_until_null(&wired.clonings))
         .collect()
 }
 
@@ -1806,23 +1753,10 @@ fn a_sync_fetches_the_heads_of_the_users_prs_into_the_mirror() {
 /// PR #1 of cpython, someone else's, at `commit`, which no sync step reads.
 fn someone_elses_pr_1(folders: &Folders, commit: &str) {
     let pr = PullRequestFacts {
-        number: 1,
         title: "gh-1: Fix it".to_owned(),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(Login::new("some-author")),
-        target_branch: "main".to_owned(),
-        ci: None,
-        updated_at: time::OffsetDateTime::UNIX_EPOCH,
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
         head: CommitSha::parse(commit),
-        off_default: None,
+        ..pr_facts(1)
     };
     let name = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
     let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
@@ -2133,13 +2067,11 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
     let not_a_repository = search("cpython", base, "x", "literal");
     let not_a_commit = search(CPYTHON, &json!("main"), "x", "literal");
     let asked = search(CPYTHON, base, "FIFTEEN", "literal").unwrap();
-    let found = loop {
-        let _changed = changes.recv_timeout(PLENTY).unwrap();
-        let state = wired.ask("text_search_state", json!({})).unwrap();
-        if state["state"] == "results" && state["end"] != "running" {
-            break state;
-        }
-    };
+    let mut found = Value::Null;
+    let _changed = heard_until(&changes, |_| {
+        found = wired.ask("text_search_state", json!({})).unwrap();
+        found["state"] == "results" && found["end"] != "running"
+    });
     // A query that has ended has nothing to cancel, and its results stay.
     let cancelled = wired.ask("text_search_cancel", json!({ "id": asked["id"] }));
     let _changed = changes.recv_timeout(PLENTY).unwrap();
@@ -2162,17 +2094,15 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
 
 /// The first row the window hears for `server` that `wanted` accepts.
 fn server_row(wired: &Wired, server: &str, wanted: impl Fn(&Value) -> bool) -> Value {
-    loop {
-        let rows = wired.servers.recv_timeout(PLENTY).unwrap();
+    let row = |rows: &Value| {
         let row = rows
             .as_array()
             .unwrap()
             .iter()
             .find(|row| row["server"] == server);
-        if let Some(row) = row.filter(|row| wanted(row)) {
-            return row.clone();
-        }
-    }
+        row.filter(|row| wanted(row)).cloned()
+    };
+    row(&heard_until(&wired.servers, |rows| row(rows).is_some())).unwrap()
 }
 
 /// What Open log opens for ty in cpython, without a program to show it; and the answers to Open log for

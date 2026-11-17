@@ -6,7 +6,6 @@ use crate::github::{Reply, Unreachable};
 use crate::login::Login;
 use crate::testing::{cpython, moment};
 use serde_json::Value;
-use std::path::Path;
 
 /// GitHub's answer whose `repository` holds the fields of `repository`.
 fn in_repository(repository: &Value) -> Result<Reply, Unreachable> {
@@ -311,7 +310,7 @@ fn the_query_names_each_number_and_opens_with_its_operation() {
 
 #[test]
 fn the_recording_holds_the_query_the_client_sends() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github/FetchIssues.json");
+    let path = crate::testing::recordings().join("FetchIssues.json");
     let recording: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let recorded = recording["query"].as_str().unwrap();
     let numbers: Vec<u32> = recorded

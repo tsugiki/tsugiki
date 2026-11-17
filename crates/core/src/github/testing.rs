@@ -1,13 +1,24 @@
+//! The fake GitHub that the core's tests talk to, and the answers they give it. Other crates' tests reach
+//! it through the core's `testing` feature.
+
+#![expect(clippy::unwrap_used, reason = "a failed setup step ends the test")]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "setting a field of a JSON object never panics"
+)]
+
+use tsugiki_token::testing::gh_prints;
+
 use super::*;
 use crate::token::GhOutput;
 
 /// The points field of an answer's data: one point of 1,000 spent, with plenty left, so nothing pauses, in an
 /// hour that hasn't reset.
-pub(crate) const RATE_LIMIT: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
+pub const RATE_LIMIT: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":1000,"remaining":4000,
     "resetAt":"2999-01-01T00:00:00Z"}"#;
 
 /// [`RATE_LIMIT`] as a value, for an answer built with `json!`.
-pub(crate) fn rate_limit() -> Value {
+pub fn rate_limit() -> Value {
     points(RATE_LIMIT)
 }
 
@@ -18,12 +29,12 @@ fn points(rate: &str) -> Value {
 }
 
 /// A client of GitHub that sends each request through `transport`.
-pub(crate) fn github(transport: impl Transport + 'static) -> GitHub {
+pub fn github(transport: impl Transport + 'static) -> GitHub {
     GitHub::new(Box::new(transport), token())
 }
 
 /// Answers every request the same way: the small builder ADR 0009 allows for rare cases.
-pub(crate) struct Canned(pub(crate) Result<Reply, Unreachable>);
+pub struct Canned(pub Result<Reply, Unreachable>);
 
 impl Transport for Canned {
     fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
@@ -31,18 +42,18 @@ impl Transport for Canned {
     }
 }
 
-pub(crate) fn answered(status: u16, body: &str) -> Canned {
+pub fn answered(status: u16, body: &str) -> Canned {
     Canned(replied(status, body))
 }
 
 /// Answers from a list, in order, and records each operation and its variables for the test.
-pub(crate) struct Scripted {
+pub struct Scripted {
     replies: std::cell::RefCell<std::collections::VecDeque<Result<Reply, Unreachable>>>,
     asked: std::sync::mpsc::Sender<(String, Value)>,
 }
 
 impl Scripted {
-    pub(crate) fn new(
+    pub fn new(
         replies: Vec<Result<Reply, Unreachable>>,
     ) -> (Self, std::sync::mpsc::Receiver<(String, Value)>) {
         let (asked, seen) = std::sync::mpsc::channel();
@@ -65,7 +76,7 @@ impl Transport for Scripted {
 }
 
 /// GitHub's reply with `status` and `body`, and no time or reset.
-pub(crate) fn replied(status: u16, body: &str) -> Result<Reply, Unreachable> {
+pub fn replied(status: u16, body: &str) -> Result<Reply, Unreachable> {
     Ok(Reply {
         status,
         reset: None,
@@ -74,19 +85,19 @@ pub(crate) fn replied(status: u16, body: &str) -> Result<Reply, Unreachable> {
     })
 }
 
-pub(crate) fn reply_ok(body: &str) -> Result<Reply, Unreachable> {
+pub fn reply_ok(body: &str) -> Result<Reply, Unreachable> {
     replied(200, body)
 }
 
 /// GitHub's answer whose data holds the fields of `data`, a JSON object, and `rate`, a points field such as
 /// [`RATE_LIMIT`].
-pub(crate) fn answer(data: Value, rate: &str) -> Result<Reply, Unreachable> {
+pub fn answer(data: Value, rate: &str) -> Result<Reply, Unreachable> {
     reply_ok(&with_points(data, rate).to_string())
 }
 
 /// GitHub's answer whose data holds the fields of `data` and [`RATE_LIMIT`], and that says the thing at
 /// `path` in it doesn't exist, as GitHub says of a number that names nothing.
-pub(crate) fn not_found(data: Value, path: Value) -> Result<Reply, Unreachable> {
+pub fn not_found(data: Value, path: Value) -> Result<Reply, Unreachable> {
     let mut body = with_points(data, RATE_LIMIT);
     body["errors"] = json!([{ "type": "NOT_FOUND", "message": "gone", "path": path }]);
     reply_ok(&body.to_string())
@@ -98,16 +109,12 @@ fn with_points(mut data: Value, rate: &str) -> Value {
 }
 
 /// The `pageInfo` of a page whose next page starts at the cursor `next`, or of the last page.
-pub(crate) fn page_info(next: Option<&str>) -> Value {
+pub fn page_info(next: Option<&str>) -> Value {
     json!({ "hasNextPage": next.is_some(), "endCursor": next })
 }
 
 /// A page of the search for the user's work, which found the PRs `ids`.
-pub(crate) fn search_page(
-    ids: &[&str],
-    next: Option<&str>,
-    rate: &str,
-) -> Result<Reply, Unreachable> {
+pub fn search_page(ids: &[&str], next: Option<&str>, rate: &str) -> Result<Reply, Unreachable> {
     let nodes: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
     answer(
         json!({ "search": { "pageInfo": page_info(next), "nodes": nodes } }),
@@ -116,7 +123,7 @@ pub(crate) fn search_page(
 }
 
 /// A page of a Filter's search, which found `nodes` of `total` items.
-pub(crate) fn filter_page(
+pub fn filter_page(
     total: usize,
     nodes: &[Value],
     next: Option<&str>,
@@ -127,12 +134,12 @@ pub(crate) fn filter_page(
 }
 
 /// GitHub's answer to a fetch of `nodes` by their ids.
-pub(crate) fn fetched_nodes(nodes: &[Value], rate: &str) -> Result<Reply, Unreachable> {
+pub fn fetched_nodes(nodes: &[Value], rate: &str) -> Result<Reply, Unreachable> {
     answer(json!({ "nodes": nodes }), rate)
 }
 
 /// PR `number` of `python/cpython` as a fetch answers with it, with `changes` on top.
-pub(crate) fn pr_node(number: u32, changes: &Value) -> Value {
+pub fn pr_node(number: u32, changes: &Value) -> Value {
     let node = json!({
         "number": number,
         "title": format!("gh-1: Fix it {number}"),
@@ -163,7 +170,7 @@ pub(crate) fn pr_node(number: u32, changes: &Value) -> Value {
 
 /// A PR's Conversation as `FetchPullRequestContent` answers with it, a body and nothing else, with `changes`
 /// on top.
-pub(crate) fn pr_content(changes: &Value) -> Value {
+pub fn pr_content(changes: &Value) -> Value {
     let pull_request = json!({
         "bodyHTML": "<p>Fixes the crash</p>",
         "createdAt": "2026-11-01T09:00:00Z",
@@ -177,7 +184,7 @@ pub(crate) fn pr_content(changes: &Value) -> Value {
 
 /// GitHub's answer to a question about one PR, such as `FetchPullRequestContent`, with the PR
 /// `pull_request`.
-pub(crate) fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unreachable> {
+pub fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unreachable> {
     answer(
         json!({ "repository": { "pullRequest": pull_request } }),
         rate,
@@ -193,7 +200,7 @@ fn changed(mut node: Value, changes: &Value) -> Value {
 }
 
 /// `reply`, which GitHub dated `date`.
-pub(crate) fn dated(
+pub fn dated(
     reply: Result<Reply, Unreachable>,
     date: OffsetDateTime,
 ) -> Result<Reply, Unreachable> {
@@ -204,17 +211,15 @@ pub(crate) fn dated(
 }
 
 /// GitHub's answer that `login` is signed in.
-pub(crate) fn signed_in_as(login: &str) -> Result<Reply, Unreachable> {
+pub fn signed_in_as(login: &str) -> Result<Reply, Unreachable> {
     reply_ok(&format!(r#"{{"data":{{"viewer":{{"login":"{login}"}}}}}}"#))
 }
 
-pub(crate) fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
-    Ok(GhOutput {
-        success: true,
-        stdout: "gho_example".to_owned(),
-    })
+/// gh, signed in.
+pub fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
+    gh_prints("gho_example")
 }
 
-pub(crate) fn token() -> Token {
+pub fn token() -> Token {
     crate::token::read_token(signed_in_gh).unwrap()
 }

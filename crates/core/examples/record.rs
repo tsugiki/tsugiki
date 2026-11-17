@@ -10,7 +10,6 @@
 )]
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use time::{Duration, OffsetDateTime};
 use tsugiki_core::error::Error;
@@ -48,7 +47,7 @@ const ONLY_PAGE: PageRequest<'static> = PageRequest {
 };
 
 fn main() {
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let fixtures = tsugiki_core::testing::recordings();
     let token = read_token(run_gh).expect("read gh's token");
     let scout = GitHub::new(
         Box::new(Https::new()),

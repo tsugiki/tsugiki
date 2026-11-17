@@ -1,6 +1,5 @@
 use super::testing::{Canned, Scripted, answered, dated, github, reply_ok, signed_in_as};
 use super::*;
-use std::path::Path;
 use time::format_description::well_known::Rfc3339;
 
 fn limited_until(resets_at: Option<u32>) -> ErrorKind {
@@ -13,7 +12,7 @@ fn error_of(transport: Canned) -> crate::error::Error {
 
 #[test]
 fn github_says_who_the_user_is() {
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let fixtures = crate::testing::recordings();
     let viewer = github(replay::Replayer::new(fixtures)).viewer().unwrap();
     assert_eq!(viewer.login, Login::new("octocat"));
 }
@@ -144,7 +143,7 @@ impl Transport for Asked {
 
 #[test]
 fn checking_a_repository_reads_a_recorded_answer() {
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let fixtures = crate::testing::recordings();
     let found = github(replay::Replayer::new(fixtures))
         .check_repository(&name("python/cpython"), the_day())
         .unwrap();

@@ -1,34 +1,11 @@
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, channel};
 
+use super::testing::{answered, offline, release};
 use super::*;
 
 /// Longer than any of these tests should wait on a working thread.
 const PLENTY: Duration = Duration::from_secs(60);
-
-fn release(tag: &str) -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status: 200,
-        body: format!(r#"{{"tag_name": "{tag}", "draft": false, "prerelease": false}}"#),
-        date: None,
-        ratelimit_reset: None,
-        etag: None,
-    })
-}
-
-fn answered(status: u16, body: &str) -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status,
-        body: body.to_owned(),
-        date: None,
-        ratelimit_reset: None,
-        etag: None,
-    })
-}
-
-fn offline() -> Result<Reply, Unreachable> {
-    Err(Unreachable::Offline("no network".to_owned()))
-}
 
 fn ask_once(answer: Result<Reply, Unreachable>) -> Result<Version, String> {
     let mut answer = Some(answer);

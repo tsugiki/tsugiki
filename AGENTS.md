@@ -80,8 +80,13 @@ scan of the source can tell the two by path. `crates/app/tests/rules.rs` fails o
 `#[cfg(test)] mod name { ... }`.
 
 Before you write a test helper, grep for one that does the job. A Rust helper lives in the `testing.rs` of the
-module or crate it serves, or in `crates/test-git` when the tests of several crates need it and it uses no
-crate's types. A helper that a second test file needs moves there.
+module or crate it serves. When the tests of several crates need it, it goes in `crates/test-git` if it uses
+no crate's types, and otherwise in a public `testing` module of the crate whose types it uses:
+`tsugiki_core::testing`, `tsugiki_core::github::testing`, `tsugiki_core::releases::testing`,
+`tsugiki_lsp::testing` or `tsugiki_token::testing`. Such a module compiles under
+`cfg(any(test, feature = "testing"))`, and the crates that use it turn on `testing` in `[dev-dependencies]`,
+so no release build has it. It can't use `crates/test-git`, which only tests may depend on, so what needs that
+stays behind `cfg(test)` inside it. A helper that a second test file needs moves there.
 
 The UI's shared test helpers live in `ui/src/lib/testing/`, which only tests may import. `setup.ts` fills
 jsdom's gaps, such as `ResizeObserver`, for every test file. `fixtures.ts` builds what the core answers, such

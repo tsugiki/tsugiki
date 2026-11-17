@@ -3,6 +3,7 @@
 
 use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
 use tsugiki_core::definitions::{self, Definitions, ServerName};
@@ -10,7 +11,7 @@ use tsugiki_core::diff::{Diffs, Highlighter};
 use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
-use tsugiki_core::latest;
+use tsugiki_core::latest::{self, LatestWriter};
 use tsugiki_core::mirror::{Announce, MirrorRequests, Mirrors, Remotes};
 use tsugiki_core::releases::{AskPublic, ReleaseCheck};
 use tsugiki_core::search::TextSearch;
@@ -68,39 +69,45 @@ impl Core {
     }
 }
 
-/// The board the session announces app-wide status on. It keeps the newest of each in a `latest` copy for its
-/// command, then sends the event, and tells the mirrors of each status, which they follow.
+/// A piece of state the window both asks for and hears of: a command reads its newest value, and an event
+/// says it changed.
+struct WindowState<T, R: Runtime> {
+    latest: LatestWriter<T>,
+    app: AppHandle<R>,
+}
+
+impl<T: Clone + Send + 'static, R: Runtime> WindowState<T, R> {
+    /// State that starts as `first`, whose reader `app` manages for the command. `what` names it in the
+    /// failure when something else already manages a reader of its type.
+    fn manage(app: &AppHandle<R>, first: T, what: &str) -> Self {
+        let (latest, reader) = latest::channel(first);
+        assert!(app.manage(reader), "only this manages {what}");
+        Self {
+            latest,
+            app: app.clone(),
+        }
+    }
+
+    /// Sets the state to `value`, then sends `event`. A window that starts listening too late for the event
+    /// asks the command once it has loaded, so the value has to be there first.
+    fn set(&mut self, value: &T, event: impl Event + Serialize + Clone) {
+        self.latest.set(value);
+        log_if_unsent(event.emit(&self.app));
+    }
+}
+
+/// The board the session announces app-wide status on. It keeps the newest of each for its command, then
+/// sends the event, and tells the mirrors of each status, which they follow.
 fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> StatusBoard {
-    let (mut latest_status, status_reader) = latest::channel(Status::default());
-    assert!(app.manage(status_reader), "only this manages the status");
-    let (mut latest_sync, last_sync_reader) = latest::channel(None);
-    assert!(
-        app.manage(last_sync_reader),
-        "only this manages the last sync"
-    );
-    let (mut latest_activity, activity_reader) = latest::channel(None);
-    assert!(
-        app.manage(activity_reader),
-        "only this manages the sync activity"
-    );
-    let (mut latest_points, points_reader) = latest::channel(None);
-    assert!(
-        app.manage(points_reader),
-        "only this manages the hour's points"
-    );
-    let status_handle = app.clone();
+    let mut status_state = WindowState::manage(app, Status::default(), "the status");
+    let mut sync_state = WindowState::manage(app, None, "the last sync");
+    let mut activity_state = WindowState::manage(app, None, "the sync activity");
+    let mut points_state = WindowState::manage(app, None, "the hour's points");
     let changes_handle = app.clone();
     let failed_reads_handle = app.clone();
-    let last_sync_handle = app.clone();
-    let activity_handle = app.clone();
-    let points_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
         following.follow(status);
-        // Before the event: a window that starts listening too late for it then asks `status()`, and has to
-        // get this status.
-        latest_status.set(status);
-        // A window still loading asks `status()` when it is done, so it doesn't need this event.
-        log_if_unsent(StatusChanged(status.clone()).emit(&status_handle));
+        status_state.set(status, StatusChanged(status.clone()));
     }))
     .with_changes(Box::new(move |change| {
         log_if_unsent(Changed(change.clone()).emit(&changes_handle));
@@ -110,21 +117,15 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
         log_if_unsent(ReadFailed(failed.clone()).emit(&failed_reads_handle));
     }))
     .with_last_syncs(Box::new(move |last_sync| {
-        // Before the event, for the reason the status gives above.
-        latest_sync.set(&Some(last_sync.clone()));
-        log_if_unsent(LastSyncChanged(last_sync.clone()).emit(&last_sync_handle));
+        sync_state.set(&Some(last_sync.clone()), LastSyncChanged(last_sync.clone()));
     }))
     .with_sync_activity(Box::new(move |activity| {
-        // Before the event, for the reason the status gives above.
         let activity = activity.cloned();
-        latest_activity.set(&activity);
-        log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
+        activity_state.set(&activity, SyncActivityChanged(activity.clone()));
     }))
     .with_hour_points(Box::new(move |points| {
-        // Before the event, for the reason the status gives above.
         let points = points.copied();
-        latest_points.set(&points);
-        log_if_unsent(HourPointsChanged(points).emit(&points_handle));
+        points_state.set(&points, HourPointsChanged(points));
     }))
 }
 
@@ -258,63 +259,35 @@ fn turn_to_start_theme<R: Runtime>(app: &AppHandle<R>, settings: &SettingsOwner)
 
 /// Starts the check for a new version with `ask`. Without it Tsugiki sends Releases nothing, and the command
 /// answers that no version is out. Each version the check finds is set for the command that asks before it
-/// goes out as an event, for the reason `connect_core` gives for the status.
+/// goes out as an event, as [`WindowState`] sets each.
 fn check_releases<R: Runtime>(app: &AppHandle<R>, ask: Option<AskPublic>) -> Option<ReleaseCheck> {
-    let (mut latest_version, version_reader) = latest::channel(None);
-    assert!(
-        app.manage(version_reader),
-        "only this manages the new version"
-    );
-    let handle = app.clone();
+    let mut version_state = WindowState::manage(app, None, "the new version");
     ask.map(|ask| {
         ReleaseCheck::start(
             ask,
             RELEASE_CHECK,
             Box::new(move |new| {
-                latest_version.set(&Some(new.clone()));
-                log_if_unsent(NewVersionFound(new.clone()).emit(&handle));
+                version_state.set(&Some(new.clone()), NewVersionFound(new.clone()));
             }),
         )
     })
 }
 
 /// Tells the window what the mirrors' one writer says. Each change is set for the commands that ask before it
-/// goes out as an event, for the reason `connect_core` gives for the status.
+/// goes out as an event, as [`WindowState`] sets each.
 fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
-    let (mut latest_cloning, cloning_reader) = latest::channel(None);
-    assert!(app.manage(cloning_reader), "only this manages the clone");
-    let (mut latest_problem, problem_reader) = latest::channel(None);
-    assert!(
-        app.manage(problem_reader),
-        "only this manages the mirror's problem"
-    );
-    let (mut latest_question, question_reader) = latest::channel(None);
-    assert!(
-        app.manage(question_reader),
-        "only this manages the mirror's question"
-    );
-    let (mut latest_states, states_reader) = latest::channel(Vec::new());
-    assert!(
-        app.manage(states_reader),
-        "only this manages the mirrors' states"
-    );
-    let (mut latest_held, held_reader) = latest::channel(MirrorsHeld(false));
-    assert!(
-        app.manage(held_reader),
-        "only this manages whether the mirrors' worker holds back git"
-    );
-    let cloning_handle = app.clone();
-    let states_handle = app.clone();
-    let problem_handle = app.clone();
-    let question_handle = app.clone();
+    let mut cloning_state = WindowState::manage(app, None, "the clone");
+    let mut problem_state = WindowState::manage(app, None, "the mirror's problem");
+    let mut question_state = WindowState::manage(app, None, "the mirror's question");
+    let mut states_state = WindowState::manage(app, Vec::new(), "the mirrors' states");
+    let held_what = "whether the mirrors' worker holds back git";
+    let mut held_state = WindowState::manage(app, MirrorsHeld(false), held_what);
     let heads_handle = app.clone();
     let failed_handle = app.clone();
-    let held_handle = app.clone();
     Announce {
         cloning: Box::new(move |cloning| {
             let cloning = cloning.cloned();
-            latest_cloning.set(&cloning);
-            log_if_unsent(CloningChanged(cloning).emit(&cloning_handle));
+            cloning_state.set(&cloning, CloningChanged(cloning.clone()));
         }),
         fetched: Box::new(move |repository, numbers| {
             let change = Change {
@@ -335,22 +308,18 @@ fn mirror_announcements<R: Runtime>(app: &AppHandle<R>) -> Announce {
         }),
         problem: Box::new(move |problem| {
             let problem = problem.cloned();
-            latest_problem.set(&problem);
-            log_if_unsent(MirrorProblemChanged(problem).emit(&problem_handle));
+            problem_state.set(&problem, MirrorProblemChanged(problem.clone()));
         }),
         question: Box::new(move |repository| {
             let repository = repository.cloned();
-            latest_question.set(&repository);
-            log_if_unsent(MirrorQuestionChanged(repository).emit(&question_handle));
+            question_state.set(&repository, MirrorQuestionChanged(repository.clone()));
         }),
         states: Box::new(move |states| {
             let states = states.to_vec();
-            latest_states.set(&states);
-            log_if_unsent(MirrorStatesChanged(states).emit(&states_handle));
+            states_state.set(&states, MirrorStatesChanged(states.clone()));
         }),
         held: Box::new(move |held| {
-            latest_held.set(&MirrorsHeld(held));
-            log_if_unsent(MirrorsHeldChanged(held).emit(&held_handle));
+            held_state.set(&MirrorsHeld(held), MirrorsHeldChanged(held));
         }),
     }
 }

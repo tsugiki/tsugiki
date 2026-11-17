@@ -28,7 +28,9 @@ use crate::status::testing::{
 use crate::status::{Change, FailedRead, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
-use crate::testing::{TempPath, cpython, cpython_settings, hours_ago, me, pr_facts};
+use crate::testing::{
+    TempPath, cpython, cpython_settings, hours_ago, me, one_folder, pr_facts, recordings,
+};
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
@@ -92,12 +94,7 @@ fn octocat() -> Status {
 fn temp_folders(name: &str) -> (Folders, TempPath) {
     let folder = crate::testing::temp_path(&format!("session-{name}"));
     fs::create_dir_all(&folder).unwrap();
-    let folders = Folders {
-        data: folder.to_path_buf(),
-        settings: folder.to_path_buf(),
-        logs: folder.to_path_buf(),
-    };
-    (folders, folder)
+    (one_folder(&folder), folder)
 }
 
 #[test]
@@ -412,9 +409,8 @@ fn mark_unseen_flags_the_item_from_now() {
 
 #[test]
 fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
-    let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
     let access = GitHubAccess {
-        transport: Box::new(Replayer::new(recordings)),
+        transport: Box::new(Replayer::new(recordings())),
         run_gh: signed_in_gh,
     };
     let (folders, _folder) = temp_folders("open-pr");
@@ -854,9 +850,8 @@ fn inbox_of(workbench: &Workbench) -> String {
 
 #[test]
 fn the_recorded_cpython_work_reads_as_an_inbox() {
-    let recordings = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
     let access = GitHubAccess {
-        transport: Box::new(Replayer::new(recordings)),
+        transport: Box::new(Replayer::new(recordings())),
         run_gh: signed_in_gh,
     };
     let (folders, _folder) = temp_folders("recorded-inbox");

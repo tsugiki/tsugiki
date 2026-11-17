@@ -8,8 +8,9 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::workbench::WorkbenchView;
+use crate::testing::cpython_settings;
 use crate::workbench::testing::{
-    backport, bots_backport, cpython, fixing, issue, me, mine, rows_of, someone, stranger, view_of,
+    backport, bots_backport, fixing, issue, me, mine, rows_of, someone, stranger, view_of,
 };
 
 fn facts(pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) -> WorkFacts {
@@ -43,7 +44,7 @@ fn a_pr_in_a_reached_issues_tree_is_reached_open_merged_or_closed() {
         colleagues(14, 2, PrState::Open),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![issue(1), issue(2)]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![issue(1), issue(2)]), &cpython_settings());
 
     // The user's PR 10 puts Issue 1 on the Workbench. Nothing puts Issue 2 there.
     assert_eq!(reached, BTreeSet::from([1, 10, 11, 12, 13]));
@@ -73,7 +74,7 @@ fn a_backport_of_a_reached_pr_is_reached_and_so_is_the_origin_pr_of_a_reached_ba
         bots_backport(41, "[3.14] Tidy up more (GH-40)"),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings());
 
     // The user's PR 20 reaches its Backport 21. The Review request on Backport 31 reaches its Origin PR 30,
     // and through it Backport 32.
@@ -88,7 +89,7 @@ fn an_issue_that_a_backport_of_the_users_pr_fixes_is_reached_with_its_tree() {
         colleagues(30, 5, PrState::Open),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![issue(5)]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![issue(5)]), &cpython_settings());
 
     // The list draws PR 20 with its Backport under Issue 5, beside PR 30.
     assert_eq!(reached, BTreeSet::from([5, 20, 21, 30]));
@@ -110,7 +111,7 @@ fn a_backport_of_a_backport_brings_no_family_of_its_own() {
         asked,
     ];
 
-    let reached = reach(&facts(pull_requests, vec![]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings());
 
     // A tree stays two levels deep, so Backport 42 stands on its own, as the list draws it.
     assert_eq!(reached, BTreeSet::from([42]));
@@ -158,7 +159,7 @@ fn reach_holds_every_pr_the_whole_workbench_shows() {
         .map(|row| row.number)
         .collect();
 
-    let reached = reach(&facts(pull_requests, issues), &cpython());
+    let reached = reach(&facts(pull_requests, issues), &cpython_settings());
 
     assert_eq!(rows, BTreeSet::from([10, 11, 20, 21, 30, 60, 61, 62, 63]));
     assert!(rows.is_subset(&reached), "{rows:?} in {reached:?}");
@@ -166,7 +167,7 @@ fn reach_holds_every_pr_the_whole_workbench_shows() {
 
 #[test]
 fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
-    let repository = cpython();
+    let repository = cpython_settings();
     let found = |numbers: &[u32]| FilterResults {
         numbers: numbers.iter().copied().collect(),
         problem: None,
@@ -192,7 +193,7 @@ fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
 
 #[test]
 fn a_filter_switched_on_reaches_its_find_and_one_switched_off_reaches_nothing() {
-    let repository = cpython();
+    let repository = cpython_settings();
     let [on, off] = [&repository.filters[0], &repository.filters[1]];
     assert_eq!(
         [on.on_workbench, off.on_workbench],
@@ -224,5 +225,5 @@ fn nothing_is_reached_before_anyone_signs_in() {
         ..facts(vec![fixing(10, 1)], vec![issue(1)])
     };
 
-    assert_eq!(reach(&facts, &cpython()), BTreeSet::new());
+    assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::new());
 }

@@ -14,7 +14,7 @@ use crate::workbench::testing::{
 };
 
 fn view(world: &ViewWorld, number: u32) -> Option<PrView> {
-    PrView::read(&world.reader, &world.settings(), number).unwrap()
+    PrView::read(&world.db.reader, &world.settings(), number).unwrap()
 }
 
 #[test]
@@ -166,6 +166,7 @@ fn a_pr_shows_its_reviews_oldest_first_with_their_threads_as_last_read() {
     };
     world.has(vec![standalone], vec![]);
     world
+        .db
         .store
         .save_pull_request_content(&world.settings().name, 9, reviewed())
         .unwrap();
@@ -188,6 +189,7 @@ fn the_window_gets_githubs_number_for_each_comment_and_review() {
         vec![],
     );
     world
+        .db
         .store
         .save_pull_request_content(&world.settings().name, 9, reviewed())
         .unwrap();
@@ -219,6 +221,7 @@ fn each_read_of_a_pr_replaces_its_reviews() {
     );
     let name = world.settings().name;
     world
+        .db
         .store
         .save_pull_request_content(&name, 9, reviewed())
         .unwrap();
@@ -227,6 +230,7 @@ fn each_read_of_a_pr_replaces_its_reviews() {
     again.earlier_reviews = 0;
 
     world
+        .db
         .store
         .save_pull_request_content(&name, 9, again.clone())
         .unwrap();
@@ -247,6 +251,7 @@ fn a_pr_read_before_tsugiki_read_reviews_has_none_until_the_next_read() {
     );
     let conversation = reviewed().conversation;
     world
+        .db
         .store
         .save_issue_content(&world.settings().name, 9, conversation.clone())
         .unwrap();

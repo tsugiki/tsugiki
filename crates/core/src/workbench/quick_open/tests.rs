@@ -1,7 +1,8 @@
 use super::*;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::PullRequestFacts;
-use crate::workbench::testing::{ViewWorld, at, cpython, fixing, issue, stranger};
+use crate::testing::cpython;
+use crate::workbench::testing::{ViewWorld, at, fixing, issue, stranger};
 
 /// An Issue titled `title`, updated at `seconds`.
 fn titled_issue(number: u32, title: &str, seconds: i64) -> IssueFacts {
@@ -36,7 +37,7 @@ fn numbers_found(
     let found = typed
         .iter()
         .map(|typed| {
-            let found = find(&world.reader, &cpython().name, typed).unwrap();
+            let found = find(&world.db.reader, &cpython(), typed).unwrap();
             (
                 found.named.map(|item| item.number),
                 found.others.iter().map(|item| item.number).collect(),
@@ -172,8 +173,8 @@ fn it_tells_an_issue_from_a_pr_with_its_state() {
     };
     world.has(vec![draft], vec![titled_issue(8, "It broke", 1)]);
 
-    let found = find(&world.reader, &cpython().name, "8").unwrap();
-    let words = find(&world.reader, &cpython().name, "it").unwrap();
+    let found = find(&world.db.reader, &cpython(), "8").unwrap();
+    let words = find(&world.db.reader, &cpython(), "it").unwrap();
     world.finish();
 
     assert_eq!(

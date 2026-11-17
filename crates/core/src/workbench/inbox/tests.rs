@@ -3,6 +3,8 @@ use time::Duration;
 use super::*;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::store::testing::OpenStore;
+use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, stranger};
 use crate::workbench::{TreeEntry, WorkbenchItem};
 
@@ -56,7 +58,7 @@ fn outline(inbox: &Inbox) -> Vec<(&'static str, u32, Vec<u32>)> {
 }
 
 fn read(world: &ViewWorld, page: InboxPage) -> Inbox {
-    Inbox::read(&world.reader, &world.settings(), page, now()).unwrap()
+    Inbox::read(&world.db.reader, &world.settings(), page, now()).unwrap()
 }
 
 fn in_state(state: PrState, facts: PullRequestFacts) -> PullRequestFacts {
@@ -163,7 +165,7 @@ fn a_change_of_conventions_regroups_the_prs_with_no_sync() {
     };
 
     let under_cpython = read(&world, InboxPage::Latest);
-    let under_github = Inbox::read(&world.reader, &github, InboxPage::Latest, now()).unwrap();
+    let under_github = Inbox::read(&world.db.reader, &github, InboxPage::Latest, now()).unwrap();
     world.finish();
 
     assert_eq!(outline(&under_cpython), [("issue", 1, vec![10, 11])]);
@@ -515,7 +517,7 @@ fn an_item_updated_in_the_second_the_first_page_starts_is_on_it_alone() {
     let within_a_second = now() + Duration::milliseconds(500);
 
     let latest = Inbox::read(
-        &world.reader,
+        &world.db.reader,
         &world.settings(),
         InboxPage::Latest,
         within_a_second,
@@ -580,27 +582,16 @@ fn rows_carry_what_the_workbench_rows_carry() {
 
 #[test]
 fn nothing_is_listed_before_anyone_signs_in() {
-    let folder = crate::testing::temp_path("inbox-no-viewer");
-    std::fs::create_dir_all(&folder).unwrap();
-    let path = folder.join("tsugiki.db");
-    let store = crate::store::Store::open(&path).unwrap();
-    let name = crate::workbench::testing::cpython().name;
-    store.save_issues(&name, vec![issue_at(1, ago(1))]).unwrap();
+    let db = OpenStore::new("inbox-no-viewer");
+    let store = &db.store;
+    store.save_issues(&cpython(), vec![issue_at(1, ago(1))]).unwrap();
     store
-        .save_pull_requests(&name, vec![fixing(10, 1)])
+        .save_pull_requests(&cpython(), vec![fixing(10, 1)])
         .unwrap();
-    let (to_open, reader) = crate::store::reader();
-    let open = to_open.open(&path).unwrap();
 
-    let read = Inbox::read(
-        &reader,
-        &crate::workbench::testing::cpython(),
-        InboxPage::Latest,
-        now(),
-    );
+    let read = Inbox::read(&db.reader, &cpython_settings(), InboxPage::Latest, now());
 
-    open.close();
-    store.close();
+    db.close();
     let read = read.unwrap();
     assert_eq!(outline(&read), []);
     assert_eq!(read.older, None);

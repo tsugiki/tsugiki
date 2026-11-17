@@ -11,8 +11,9 @@ use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
 use crate::work::{Causes, Why, YourReview, checks_to_keep, mirror_work};
+use crate::testing::cpython_settings;
 use crate::workbench::testing::{
-    BOT, at, backport, bots_backport, cpython, issue, me, outline, own, reviewed_workbench,
+    BOT, at, backport, bots_backport, issue, me, outline, own, reviewed_workbench,
     rows_of, someone, stranger, view_of,
 };
 use crate::workbench::{Workbench, WorkbenchItem, WorkbenchView};
@@ -299,7 +300,7 @@ fn of(digit: char, target_branch: &str) -> PatchesOf {
 
 /// The commits the check asks the mirror to read for the user's work in `facts`.
 fn to_read(facts: WorkFacts) -> Vec<PatchesOf> {
-    mirror_work(&facts, &cpython()).1
+    mirror_work(&facts, &cpython_settings()).1
 }
 
 #[test]
@@ -453,7 +454,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
         ..facts(pull_requests, reviews)
     };
 
-    let (heads, patches) = mirror_work(&facts, &cpython());
+    let (heads, patches) = mirror_work(&facts, &cpython_settings());
 
     let fetched: Vec<u32> = heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [1, 5]);
@@ -555,7 +556,7 @@ fn a_stale_origin_pr_with_three_bot_backports_needs_attention_once() {
     // The Backports were updated before PR 1, so a Stale review of theirs would start earlier.
     assert_eq!(attention.since, at(1));
     let facts = facts(origin_and_bot_backports(), stale_at_2());
-    let causes = Causes::of(&facts, cpython().conventions);
+    let causes = Causes::of(&facts, cpython_settings().conventions);
     let waiting: Vec<u32> = (1..=4)
         .filter(|&number| causes.needs_attention(number))
         .collect();
@@ -624,7 +625,7 @@ fn a_review_request_on_a_bot_backport_needs_attention_whatever_its_origin_prs_st
 
     for reviews in [reviewed_at_1(same(), same()), stale_at_2()] {
         let facts = facts(vec![reviewed_pr(), asked.clone()], reviews);
-        let causes = Causes::of(&facts, cpython().conventions);
+        let causes = Causes::of(&facts, cpython_settings().conventions);
 
         assert!(causes.needs_attention(2));
     }

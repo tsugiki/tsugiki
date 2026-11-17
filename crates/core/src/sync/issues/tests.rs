@@ -29,7 +29,7 @@ fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
         asked[4..],
         ["FetchPullRequests", "FetchIssues", "FetchIssueReferences",]
     );
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
+    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
     let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
     assert_eq!(stored, [1, 2]);
     assert_eq!(changed, [cpython(), cpython()]);
@@ -84,7 +84,7 @@ fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
 
     // Four searches, two moves, the PRs, two moves and the first batch of Issues.
     for _ in 0..10 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     let ready = syncs.ready_at().unwrap();
     assert!(ready > before + Duration::from_secs(3000), "{ready:?}");
@@ -92,7 +92,7 @@ fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
     drop(run_to_the_end(&mut syncs, &harness));
     assert_eq!(syncs.ready_at(), None);
 
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
+    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
     assert_eq!(facts.issues.len(), 2);
     harness.finish();
 }

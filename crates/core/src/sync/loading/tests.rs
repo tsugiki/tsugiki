@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
 
-use crate::github::testing::{dated, signed_in_as};
+use crate::github::testing::{dated, pull_request_answer, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
 use crate::repository::{FoundRepository, RepositoryCounts};
@@ -11,7 +11,7 @@ use crate::store::FirstSyncPlace;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
     FEW, Harness, LARGE, RATE_LIMIT, comment_by, counted, counted_as, cpython, cross_references,
-    empty_window_page, fetched_nodes, hours_ago, issue_references, issue_references_with_more,
+    empty_window_page, fetched_nodes, hours_ago_text, issue_references, issue_references_with_more,
     issues, plain, pr_node, run_to_the_end, searches_finding, window_issue,
     window_issue_referencing, window_page, window_pr,
 };
@@ -50,7 +50,7 @@ fn syncing() -> Syncs {
 
 fn run_steps(syncs: &mut Syncs, harness: &Harness, steps: usize) {
     for _ in 0..steps {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
 }
 
@@ -61,7 +61,7 @@ fn run_until_asked(syncs: &mut Syncs, harness: &Harness, operation: &str) -> Vec
         .iter()
         .any(|(name, _): &(String, Value)| name == operation)
     {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
         asked.extend(harness.asked.try_iter());
     }
     asked
@@ -114,7 +114,7 @@ fn the_users_own_trees_load_before_the_window() {
 
 #[test]
 fn a_page_and_a_batch_take_turns() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
@@ -149,7 +149,7 @@ fn a_page_and_a_batch_take_turns() {
 
 #[test]
 fn a_pr_many_lists_bring_is_fetched_once() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue_with_an_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(&[merged(5)], RATE_LIMIT));
@@ -179,7 +179,7 @@ fn a_pr_many_lists_bring_is_fetched_once() {
 
 #[test]
 fn the_list_of_prs_brings_what_no_issue_reached() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
     replies.push(window_page(&[window_pr(30, &at)], None, RATE_LIMIT));
@@ -204,7 +204,7 @@ fn issue_with_a_pr_older_than_the_window() -> Value {
 }
 
 fn reference(number: u32) -> Value {
-    window_issue_referencing(0, &hours_ago(1), &[number])["references"]["nodes"][0].clone()
+    window_issue_referencing(0, &hours_ago_text(1), &[number])["references"]["nodes"][0].clone()
 }
 
 fn older_reference(number: u32) -> Value {
@@ -294,7 +294,7 @@ fn opening_the_users_own_issue_doesnt_read_its_tree_again() {
 
 #[test]
 fn opening_an_issue_puts_its_prs_next_and_takes_them_from_the_queue() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     // Twenty-six PRs: more than a batch holds, so 45 waits for the second one unless it's opened.
     let waiting: Vec<u32> = (20..45).collect();
@@ -329,7 +329,7 @@ fn opening_an_issue_puts_its_prs_next_and_takes_them_from_the_queue() {
 
 /// Issue `number` on a page of the window, with references older than the page holds.
 fn window_issue_with_more(number: u32, older: &str) -> Value {
-    let mut issue = window_issue_referencing(number, &hours_ago(1), &[]);
+    let mut issue = window_issue_referencing(number, &hours_ago_text(1), &[]);
     issue["references"]["pageInfo"] = json!({ "hasPreviousPage": true, "startCursor": older });
     issue
 }
@@ -347,7 +347,7 @@ fn long_reads(asked: &[(String, Value)]) -> Vec<(Value, Value)> {
 fn a_view_that_asks_again_doesnt_read_its_issue_again() {
     let mut replies = up_to_the_queue();
     replies.push(window_page(
-        &[window_issue(11, &hours_ago(1))],
+        &[window_issue(11, &hours_ago_text(1))],
         None,
         RATE_LIMIT,
     ));
@@ -377,7 +377,7 @@ fn a_view_that_asks_again_doesnt_read_its_issue_again() {
 
 #[test]
 fn an_opened_issues_older_references_go_before_the_queue() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
@@ -436,7 +436,7 @@ fn a_page_doesnt_read_the_older_references_of_the_users_own_issue_again() {
 
 #[test]
 fn an_opened_issues_batch_fills_up_from_the_queue() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[8, 20])],
@@ -468,7 +468,7 @@ fn an_opened_issues_batch_fills_up_from_the_queue() {
 
 #[test]
 fn an_urgent_origin_waiting_in_the_queue_leaves_it() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let waiting: Vec<u32> = (20..45).collect();
     let mut replies = up_to_the_queue();
     replies.push(window_page(
@@ -478,7 +478,7 @@ fn an_urgent_origin_waiting_in_the_queue_leaves_it() {
     ));
     replies.push(issue_references(&[(11, &[45])], RATE_LIMIT));
     replies.push(fetched_nodes(&[backport(45, 20)], RATE_LIMIT));
-    replies.push(crate::sync::testing::origin_answer(&merged(20), RATE_LIMIT));
+    replies.push(pull_request_answer(merged(20), RATE_LIMIT));
     let harness = Harness::with_window("queue-origin-waiting", replies);
     let mut syncs = syncing();
     drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
@@ -498,15 +498,12 @@ fn an_urgent_origin_waiting_in_the_queue_leaves_it() {
 
 #[test]
 fn an_origin_that_names_no_pr_is_asked_for_once() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
     replies.push(window_page(&[window_pr(9, &at)], None, RATE_LIMIT));
     replies.push(fetched_nodes(&[backport(9, 7)], RATE_LIMIT));
-    replies.push(crate::sync::testing::origin_answer(
-        &Value::Null,
-        RATE_LIMIT,
-    ));
+    replies.push(pull_request_answer(Value::Null, RATE_LIMIT));
     let harness = Harness::with_window("queue-no-origin", replies);
     let mut syncs = syncing();
 
@@ -518,7 +515,7 @@ fn an_origin_that_names_no_pr_is_asked_for_once() {
 
 #[test]
 fn a_frozen_origin_still_brings_the_issue_it_names() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let on_old_issue = pr_node(
         8,
         &json!({
@@ -573,7 +570,7 @@ fn opening_an_issue_of_another_repository_changes_nothing() {
 
 #[test]
 fn a_pr_on_an_issue_outside_the_window_brings_that_issue() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let fresh_on_old = pr_node(30, &json!({ "title": "gh-900: Fix it", "updatedAt": at }));
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
@@ -586,6 +583,7 @@ fn a_pr_on_an_issue_outside_the_window_brings_that_issue() {
     drop(run_to_the_end(&mut syncs, &harness));
 
     let held: Vec<u32> = harness
+        .db
         .store
         .issues(&cpython())
         .unwrap()
@@ -598,7 +596,7 @@ fn a_pr_on_an_issue_outside_the_window_brings_that_issue() {
 
 #[test]
 fn an_issue_a_later_page_brings_isnt_asked_for_again() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let names_later = pr_node(20, &json!({ "title": "gh-11: Fix it" }));
     let mut replies = up_to_the_queue();
     replies.push(window_page(
@@ -639,7 +637,7 @@ fn an_urgent_backport_gets_its_origin_before_the_window() {
     let mut replies = up_to_the_queue_with_an_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(&[backport(5, 8)], RATE_LIMIT));
-    replies.push(crate::sync::testing::origin_answer(&merged(8), RATE_LIMIT));
+    replies.push(pull_request_answer(merged(8), RATE_LIMIT));
     replies.push(empty_window_page());
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-urgent-origin", replies);
@@ -655,7 +653,7 @@ fn an_urgent_backport_gets_its_origin_before_the_window() {
 
 #[test]
 fn another_backports_origin_waits_for_the_lists_and_often_needs_no_query() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[5])],
@@ -669,7 +667,7 @@ fn another_backports_origin_waits_for_the_lists_and_often_needs_no_query() {
         RATE_LIMIT,
     ));
     replies.push(fetched_nodes(&[merged(8), backport(9, 7)], RATE_LIMIT));
-    replies.push(crate::sync::testing::origin_answer(&merged(7), RATE_LIMIT));
+    replies.push(pull_request_answer(merged(7), RATE_LIMIT));
     let harness = Harness::with_window("queue-late-origin", replies);
     let mut syncs = syncing();
 
@@ -711,7 +709,7 @@ fn a_frozen_pr_listed_at(
     replies.push(empty_window_page());
     replies.extend(searches_finding(&[]));
     replies.push(window_page(
-        &[window_issue_referencing(10, &hours_ago(1), &[5])],
+        &[window_issue_referencing(10, &hours_ago_text(1), &[5])],
         None,
         RATE_LIMIT,
     ));
@@ -730,13 +728,13 @@ fn a_frozen_pr_listed_at(
 
 #[test]
 fn a_frozen_pr_that_hasnt_moved_isnt_fetched_again() {
-    let asked = a_frozen_pr_listed_at("queue-frozen", &hours_ago(9000), Vec::new());
+    let asked = a_frozen_pr_listed_at("queue-frozen", &hours_ago_text(9000), Vec::new());
     assert_eq!(fetched_ids(&asked), [json!(["id5"])]);
 }
 
 #[test]
 fn a_frozen_pr_that_moved_is_fetched_again() {
-    let moved = hours_ago(1);
+    let moved = hours_ago_text(1);
     let then = vec![fetched_nodes(&[merged(5)], RATE_LIMIT)];
     let asked = a_frozen_pr_listed_at("queue-frozen-moved", &moved, then);
     assert_eq!(fetched_ids(&asked), [json!(["id5"]), json!(["id5"])]);
@@ -744,7 +742,7 @@ fn a_frozen_pr_that_moved_is_fetched_again() {
 
 #[test]
 fn the_status_bar_hears_how_far_the_queue_has_got() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut page = window_page(
         &[window_issue_referencing(10, &at, &[20, 21])],
         Some("more"),
@@ -792,7 +790,7 @@ fn the_status_bar_says_trees_while_the_users_own_come_first() {
 
 #[test]
 fn quitting_resumes_the_queue_without_fetching_a_pr_twice() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
@@ -854,7 +852,7 @@ fn a_pr_older_than_the_window_ends_its_list_and_stays_out() {
     replies.push(empty_window_page());
     replies.push(window_page(
         &[
-            window_pr(21, &hours_ago(2)),
+            window_pr(21, &hours_ago_text(2)),
             window_pr(22, "2020-01-01T10:00:00Z"),
         ],
         Some("older"),
@@ -874,11 +872,11 @@ fn a_pr_older_than_the_window_ends_its_list_and_stays_out() {
 fn asked_after_coming_back(name: &str, change: impl Fn(&Harness)) -> Vec<String> {
     let harness = Harness::with_window(name, searches_finding(&[]));
     let mut quitting = syncing();
-    drop(quitting.step(&harness.github, &harness.store).unwrap());
+    drop(quitting.step(&harness.github, &harness.db.store).unwrap());
     change(&harness);
 
     let mut back = syncing();
-    drop(back.step(&harness.github, &harness.store).unwrap());
+    drop(back.step(&harness.github, &harness.db.store).unwrap());
 
     let operations = harness.operations();
     harness.finish();
@@ -897,7 +895,7 @@ fn a_place_goes_on_when_nothing_has_changed() {
 fn signing_in_as_someone_else_starts_the_sync_over() {
     let asked = asked_after_coming_back("window-account", |harness| {
         let other = Login::new("another-account");
-        harness.store.remember_login(&other).unwrap();
+        harness.db.store.remember_login(&other).unwrap();
     });
     assert_eq!(asked, STARTED_OVER);
 }
@@ -905,11 +903,12 @@ fn signing_in_as_someone_else_starts_the_sync_over() {
 #[test]
 fn a_place_from_another_version_starts_the_sync_over() {
     let asked = asked_after_coming_back("window-version", |harness| {
-        let place = harness.store.first_sync_place(&cpython()).unwrap().unwrap();
+        let place = harness.db.store.first_sync_place(&cpython()).unwrap().unwrap();
         let version = env!("CARGO_PKG_VERSION");
         let older = place.as_str().replace(version, "0.0.0-older");
         assert_ne!(older, place.as_str());
         harness
+            .db
             .store
             .save_first_sync_place(&cpython(), FirstSyncPlace::new(older))
             .unwrap();
@@ -921,11 +920,11 @@ fn a_place_from_another_version_starts_the_sync_over() {
 fn editing_the_filters_starts_the_sync_over() {
     let harness = Harness::with_window("window-filters", searches_finding(&[]));
     let mut quitting = syncing();
-    drop(quitting.step(&harness.github, &harness.store).unwrap());
+    drop(quitting.step(&harness.github, &harness.db.store).unwrap());
 
     let mut back = Syncs::default();
     back.add(RepositorySettings::new(cpython()));
-    drop(back.step(&harness.github, &harness.store).unwrap());
+    drop(back.step(&harness.github, &harness.db.store).unwrap());
 
     assert_eq!(harness.operations(), STARTED_OVER);
     harness.finish();
@@ -933,7 +932,7 @@ fn editing_the_filters_starts_the_sync_over() {
 
 #[test]
 fn the_window_tells_a_screen_of_each_page_that_saved_something() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut replies = up_to_the_queue();
     replies.push(window_page(
         &[window_issue(1, &at)],
@@ -949,7 +948,7 @@ fn the_window_tells_a_screen_of_each_page_that_saved_something() {
     let mut told = Vec::new();
     while syncs.ready_at().is_some() {
         if let Some(Progress::Changed(change)) =
-            syncs.step(&harness.github, &harness.store).unwrap()
+            syncs.step(&harness.github, &harness.db.store).unwrap()
         {
             told.push(change.items);
         }
@@ -963,7 +962,7 @@ fn the_window_tells_a_screen_of_each_page_that_saved_something() {
 fn a_window_page_below_the_floor_holds_the_next_step_back() {
     let mut replies = up_to_the_queue();
     replies.push(window_page(
-        &[window_issue(1, &hours_ago(1))],
+        &[window_issue(1, &hours_ago_text(1))],
         Some("more"),
         FEW,
     ));
@@ -994,7 +993,7 @@ fn a_first_sync_taken_up_again_keeps_when_it_started() {
     let mut first = UserWorkSync::new(&settings);
     drop(
         first
-            .step(&harness.github, &harness.store, &settings)
+            .step(&harness.github, &harness.db.store, &settings)
             .unwrap(),
     );
     drop(harness.github.viewer().unwrap());
@@ -1002,7 +1001,7 @@ fn a_first_sync_taken_up_again_keeps_when_it_started() {
     let mut taken_up = UserWorkSync::new(&settings);
     drop(
         taken_up
-            .step(&harness.github, &harness.store, &settings)
+            .step(&harness.github, &harness.db.store, &settings)
             .unwrap(),
     );
 
@@ -1022,6 +1021,7 @@ fn a_finished_sync_has_no_place_to_come_back_to() {
     run_steps(&mut syncs, &harness, 1);
     assert!(
         harness
+            .db
             .store
             .first_sync_place(&cpython())
             .unwrap()
@@ -1030,7 +1030,7 @@ fn a_finished_sync_has_no_place_to_come_back_to() {
 
     drop(run_to_the_end(&mut syncs, &harness));
 
-    assert_eq!(harness.store.first_sync_place(&cpython()).unwrap(), None);
+    assert_eq!(harness.db.store.first_sync_place(&cpython()).unwrap(), None);
     harness.finish();
 }
 
@@ -1041,6 +1041,7 @@ fn a_place_it_cant_read_starts_the_sync_over() {
     replies.push(empty_window_page());
     let harness = Harness::with_window("window-unreadable", replies);
     harness
+        .db
         .store
         .save_first_sync_place(&cpython(), FirstSyncPlace::new("{\"from\":0}".to_owned()))
         .unwrap();
@@ -1050,13 +1051,13 @@ fn a_place_it_cant_read_starts_the_sync_over() {
 
     let operations = harness.operations();
     assert_eq!(operations[0], "SearchReviewRequests");
-    assert!(harness.store.sync_state(&cpython()).unwrap().is_some());
+    assert!(harness.db.store.sync_state(&cpython()).unwrap().is_some());
     harness.finish();
 }
 
 #[test]
 fn the_queue_keeps_what_happened_on_its_items() {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let mut issue = window_issue_referencing(1, &at, &[2]);
     issue["timelineItems"] = json!({ "nodes": [comment_by("issue-author", &at)] });
     let mut pr = merged(2);
@@ -1071,7 +1072,7 @@ fn the_queue_keeps_what_happened_on_its_items() {
     drop(run_to_the_end(&mut syncs, &harness));
 
     let who = |number: u32| -> Vec<String> {
-        let events = harness.store.activity(&cpython(), number).unwrap();
+        let events = harness.db.store.activity(&cpython(), number).unwrap();
         events
             .iter()
             .map(|event| event.who.as_str().to_owned())
@@ -1086,7 +1087,7 @@ fn the_queue_keeps_what_happened_on_its_items() {
 fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
     let mut replies = up_to_the_queue();
     replies.push(window_page(
-        &[window_issue(1, &hours_ago(1))],
+        &[window_issue(1, &hours_ago_text(1))],
         None,
         RATE_LIMIT,
     ));
@@ -1099,17 +1100,17 @@ fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
         crate::sync::Phase::Resumable(crate::sync::Resumable::Loading(_))
     ) {
         drop(
-            sync.step(&harness.github, &harness.store, &settings)
+            sync.step(&harness.github, &harness.db.store, &settings)
                 .unwrap(),
         );
     }
     // The count goes before the page.
     drop(
-        sync.step(&harness.github, &harness.store, &settings)
+        sync.step(&harness.github, &harness.db.store, &settings)
             .unwrap(),
     );
     // Reading the frozen PRs and this page's save land, but saving its place doesn't.
-    let (saves_once, _calls) = harness.store.failing_at_call(Some(2));
+    let (saves_once, _calls) = harness.db.store.failing_at_call(Some(2));
 
     let failed = sync.step(&harness.github, &saves_once, &settings);
     let again = sync.step(&harness.github, &saves_once, &settings).unwrap();
@@ -1131,7 +1132,7 @@ fn open_pr(number: u32) -> Value {
 /// A small Repository: Issue 10 open and Issue 11 closed inside the window, Issue 12 open since long ago,
 /// PR 20 open inside the window and PR 21 open since long ago.
 fn small_repository() -> (RepositoryCounts, Vec<Result<Reply, Unreachable>>) {
-    let at = hours_ago(1);
+    let at = hours_ago_text(1);
     let counts = RepositoryCounts {
         open_issues: 2,
         open_prs: 2,
@@ -1180,6 +1181,7 @@ fn a_small_repository_loads_what_the_add_dialog_counted() {
         counts,
     });
     let mut issues: Vec<u32> = harness
+        .db
         .store
         .issues(&cpython())
         .unwrap()

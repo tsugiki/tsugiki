@@ -181,12 +181,12 @@ fn run(
         }
         steps += 1;
     }
-    let state = harness.store.sync_state(&settings.name).unwrap();
+    let state = harness.db.store.sync_state(&settings.name).unwrap();
     let ended = Ended {
         // A retried save notices its events and CI results a little later, which nothing compares.
         facts: WorkFacts {
             activity: ActivityFacts::default(),
-            ..harness.reader.work_facts(&settings.name).unwrap()
+            ..harness.db.reader.work_facts(&settings.name).unwrap()
         },
         check: state.as_ref().map(|state| state.check.clone()),
         refresh_under_way: state.map(|state| state.refresh_under_way),
@@ -238,7 +238,7 @@ impl Failing<'_> {
         let harness = Harness::answering(&name, Box::new(transport));
         (self.scenario.prepare)(&harness);
 
-        let (flaky, _calls) = harness.store.failing_at_call(lost);
+        let (flaky, _calls) = harness.db.store.failing_at_call(lost);
         let failed = run(&self.scenario.settings, &harness, &flaky, quit_before);
         flaky.close();
 
@@ -292,7 +292,7 @@ fn run_clean(scenario: &Scenario) -> Clean {
     };
     let harness = Harness::answering(scenario.name, Box::new(transport));
     (scenario.prepare)(&harness);
-    let (counted, calls) = harness.store.failing_at_call(None);
+    let (counted, calls) = harness.db.store.failing_at_call(None);
     let clean = run(&scenario.settings, &harness, &counted, None);
     counted.close();
     harness.finish();

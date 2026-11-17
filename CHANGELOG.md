@@ -7,6 +7,57 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.3 (2026-11-17)
+
+The Inbox takes the place of All issues, with each open Issue's PRs under it. Each Filter chooses whether
+its items go on the Workbench, and the status bar shows the GraphQL points left this hour.
+
+### Added
+
+- The Inbox, under the Workbench in the Sidebar, lists every open Issue with its PRs under it, folded as on
+  the Workbench, and each Standalone PR on a row of its own, the latest update first. An Issue's tree
+  holds its merged and closed PRs too. The list opens on the last two days and reads older items as it
+  scrolls to its end. "View: Inbox" in the command palette opens it, and All issues is gone.
+- A Filter's view has an "On the Workbench" checkbox beside its name, which saves at once as
+  `on_workbench = true` under the Filter in `settings.toml`. Only the items of a Filter switched on go on
+  the Workbench, and Tsugiki fetches heads and reads Conversations ahead for those alone. A Filter switched
+  off still lists what its search finds in its own view, and the Sidebar counts those items.
+- The status bar shows the GraphQL points left this hour and when they reset: "1,240 points left · resets
+  14:32". Its tooltip says how many of the points used this hour Tsugiki spent, and how many went to other
+  tools that use the same token.
+
+### Changed
+
+- Filters written before 0.3.3 start switched off, so their items leave the Workbench. To put a Filter's
+  items back, tick "On the Workbench" in its view. A new Repository gets "Mine" switched on and "Involved"
+  switched off, and no longer gets "Open Issues" and "Open PRs", since the Inbox lists every open item.
+- The Workbench and the other views show one list. By attention puts what Needs attention first, then
+  every other item by last update. The folded quiet section and "Show Quiet Items" are gone: Mark Seen
+  leaves an Issue in the list, below what still waits, and moves the cursor to the row after it.
+- The Issue view counts the Origin PRs by state in a row above the tree, `Open 1 · Draft 1 · Merged 2 ·
+  Closed 0 · Bold: Needs attention 1`, in place of the heading's count and the legend under the tree. A
+  draft counts as Draft. Before, the heading counted it as open.
+- The Files tab's header switches between All files and One file with two segments, and the segment of
+  the mode on show takes the selected fill. Before, one toggle read "One file at a time" in either mode.
+- The window's title names the build, as in "python/cpython · Tsugiki 0.3.3 (6143447)", in place of a line
+  on the main screen.
+- The list pane starts with the view's name and its order. The Sidebar's top names the Repository, and the
+  Repository picker's last row opens Add repository.
+
+### Fixed
+
+- The Issue list scrolls the Detail pane's row back on screen when a change moves it off, as any update
+  does under By last update. Before, another item took its place under the pointer, and a click opened
+  that item.
+- Conventions or Filters edited by hand in `settings.toml` reach the Repository's lists and syncs when
+  Settings opens. Before, the edit showed only once the Repository opened again.
+
+### Database
+
+0.3.3 moves the database forward and leaves a copy of the old one beside it, as `tsugiki.db.v26.bak`. 0.3.2
+won't open the new file: to go back, put the copy in its place. Tsugiki doesn't sync the cache again. On its
+first start it works out the links of each stored PR once.
+
 ## Version 0.3.2 (2026-11-16)
 
 Each key belongs to a named action, which `[keys]` in `settings.toml` can remap, and Settings › Keyboard,

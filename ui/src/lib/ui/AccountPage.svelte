@@ -68,17 +68,6 @@
 {/if}
 
 <style>
-  h3 {
-    margin: 16px 0 8px;
-    padding-bottom: 4px;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  h3:first-child {
-    margin-top: 4px;
-  }
-
   /* A label column and a value column, as the prototype's Account page lays them out. */
   dl {
     display: grid;

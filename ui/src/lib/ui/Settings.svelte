@@ -111,7 +111,7 @@
     </nav>
     <section aria-label={title}>
       {#if "repository" in dialog.shown}
-        <h3 class="repository mono">{dialog.shown.repository}</h3>
+        <h3 class="mono">{dialog.shown.repository}</h3>
         <p class="empty">Nothing to set here yet.</p>
       {:else if dialog.shown.page === "General"}
         <GeneralPage {dialog} />
@@ -210,11 +210,16 @@
     overflow: auto;
   }
 
-  h3.repository {
-    margin: 4px 0 8px;
+  /* A heading over a group of settings, on each page and over a Repository's. */
+  section :global(h3) {
+    margin: 16px 0 8px;
     padding-bottom: 4px;
     font-size: 13px;
     border-bottom: 1px solid var(--border);
+  }
+
+  section :global(h3:first-child) {
+    margin-top: 4px;
   }
 
   .empty {

@@ -174,7 +174,12 @@ fn serve(
         let document = message["params"]["textDocument"]["uri"].clone();
         let document = serde_json::from_value::<Uri>(document).ok();
         let result = match method {
-            "exit" => return,
+            // A real server's output ends with its process. The test still holds a sender of the fake's, so
+            // the client would wait out its patience for the end, 5 seconds, then kill the fake.
+            "exit" => {
+                let _gone = replies.send(None);
+                return;
+            }
             "initialized" if initialize == Initialize::AnswerThenLeave => {
                 let _gone = replies.send(None);
                 return;

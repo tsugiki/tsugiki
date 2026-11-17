@@ -1,11 +1,11 @@
 # The benchmarks under CodSpeed's simulation mode (ADR 0017). CodSpeed's own check on the PR
 # fails on a regression. This job needs only Linux, so tsugiki-core must build there.
 #
-# On a PR, the Rust benchmarks run only when the PR changes what CI's Rust checks read (scripts/scope.ts). The
-# PR counts against its base, not since its last run: CodSpeed fills a benchmark a run skips with the base's
-# figure, so a skipped benchmark the PR changed would hide its regression. The UI benchmarks always run. They
-# take a minute, and the ruleset requires CodSpeed's own check, which CodSpeed reports only for a run that
-# sent it results.
+# On a PR, tsugiki-core's benchmarks run only when the PR changes what they read (scope.ts's
+# `needsRustBenchmarks`). The PR counts against its base, not since its last run: CodSpeed fills a benchmark a
+# run skips with the base's figure (https://codspeed.io/docs/features/partial-runs), so a skipped benchmark
+# the PR changed would hide its regression. The UI benchmarks always run. They take a minute, and the ruleset
+# requires CodSpeed's own check, which CodSpeed's docs don't promise for a run with no benchmarks.
 name: Benchmarks
 
 on:
@@ -41,35 +41,36 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      # Every job on a push to main or a run by hand, which keeps the baseline whole.
-      - name: Find what the PR changes against its base
+      # Writes `rust=true` or `rust=false`. A push to main or a run by hand runs them all, which keeps the
+      # baseline whole.
+      - name: Find whether tsugiki-core's benchmarks run
         id: scope
         env:
-          MODE: ${{ github.event_name == 'pull_request' && '--base' || '--every' }}
+          MODE: ${{ github.event_name == 'pull_request' && '--benchmarks' || '--all-benchmarks' }}
         run: node scripts/changes.ts "$MODE"
       - name: Install the Rust toolchain from rust-toolchain.toml
-        if: ${{ contains(fromJSON(steps.scope.outputs.jobs), 'rust') }}
+        if: ${{ steps.scope.outputs.rust == 'true' }}
         run: rustup toolchain install
       # install-action has no checksummed manifest for this tool, so it's pinned here instead.
       - name: Install cargo-codspeed 6.0.0
-        if: ${{ contains(fromJSON(steps.scope.outputs.jobs), 'rust') }}
+        if: ${{ steps.scope.outputs.rust == 'true' }}
         run: |
           curl -fsSL -o cargo-codspeed https://github.com/CodSpeedHQ/codspeed-rust/releases/download/v6.0.0/cargo-codspeed-x86_64-unknown-linux-musl
           echo "99b4ada4e00a0b4e153f5fe50f70844898cbd6f77274cbe29e44bf671e5f85d8  cargo-codspeed" | sha256sum --check
           install -m 755 cargo-codspeed ~/.cargo/bin/cargo-codspeed
           rm cargo-codspeed
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        if: ${{ contains(fromJSON(steps.scope.outputs.jobs), 'rust') }}
+        if: ${{ steps.scope.outputs.rust == 'true' }}
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: cargo codspeed build -p tsugiki-core
-        if: ${{ contains(fromJSON(steps.scope.outputs.jobs), 'rust') }}
+        if: ${{ steps.scope.outputs.rust == 'true' }}
+      # The command itself, not a variable it reads, so it doesn't depend on what CodSpeed's runner passes on.
       - uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
-        env:
-          RUST_BENCHMARKS: ${{ contains(fromJSON(steps.scope.outputs.jobs), 'rust') }}
         with:
           mode: simulation
           run: >-
-            if [ "$RUST_BENCHMARKS" = true ]; then cargo codspeed run -p tsugiki-core; fi &&
-            npm run bench -w ui
+            ${{ steps.scope.outputs.rust == 'true'
+            && 'cargo codspeed run -p tsugiki-core && npm run bench -w ui'
+            || 'npm run bench -w ui' }}

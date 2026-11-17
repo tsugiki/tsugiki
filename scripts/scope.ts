@@ -49,6 +49,7 @@ const READ_BY_NO_JOB = new Set([
   "codecov.yml",
   ".github/dependabot.yml",
   ".github/workflows/advisories.yml",
+  // The benchmarks' own rule reads it (`needsRustBenchmarks`).
   ".github/workflows/bench.yml",
   ".github/workflows/release.yml",
 ]);
@@ -130,14 +131,43 @@ export function jobs(paths: readonly string[], cargoDiff: () => string): Job[] {
   if (paths.length === 0) {
     return [...EVERY_JOB];
   }
-  // A new version moves each workspace crate's line in Cargo.lock, so a Cargo.toml change without one isn't
-  // the workspace's version.
-  const both = paths.includes("Cargo.toml") && paths.includes("Cargo.lock");
-  if (both && paths.every((path) => RELEASE_FILES.has(path)) && isVersionBump(cargoDiff())) {
+  if (onlySetsVersion(paths, cargoDiff)) {
     return ["dependencies"];
   }
   const needed = new Set(paths.flatMap(jobsOf));
   return EVERY_JOB.filter((job) => needed.has(job));
+}
+
+/** Whether `paths` are a release PR's, which only sets the version. `cargoDiff` runs only if they can be. */
+function onlySetsVersion(paths: readonly string[], cargoDiff: () => string): boolean {
+  // A new version moves each workspace crate's line in Cargo.lock, so a Cargo.toml change without one isn't
+  // the workspace's version.
+  const both = paths.includes("Cargo.toml") && paths.includes("Cargo.lock");
+  return both && paths.every((path) => RELEASE_FILES.has(path)) && isVersionBump(cargoDiff());
+}
+
+/**
+ * Files outside `crates/core/` that the Rust benchmarks read: the workspace's Cargo files and toolchain, and
+ * the workflow that builds and runs them. tsugiki-core has no path dependency, and its benchmarks build their
+ * database in code.
+ */
+const READ_BY_RUST_BENCHMARKS = new Set([
+  "Cargo.toml",
+  "Cargo.lock",
+  "rust-toolchain.toml",
+  ".github/workflows/bench.yml",
+]);
+
+/**
+ * Whether a PR that changes `paths` against its base needs tsugiki-core's benchmarks. With no path to read,
+ * nothing is ruled out. A release PR that only sets the version doesn't: it changes no code they measure.
+ */
+export function needsRustBenchmarks(paths: readonly string[], cargoDiff: () => string): boolean {
+  if (paths.length === 0) {
+    return true;
+  }
+  const read = paths.some((path) => path.startsWith("crates/core/") || READ_BY_RUST_BENCHMARKS.has(path));
+  return read && !onlySetsVersion(paths, cargoDiff);
 }
 
 /** The commits a CI run on a PR tested: the PR's head, and the base it was merged with. */

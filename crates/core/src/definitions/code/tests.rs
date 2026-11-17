@@ -3,9 +3,9 @@ use std::sync::Barrier;
 use std::thread;
 
 use super::*;
-use crate::definitions::testing::Fixture;
 use crate::facts::CommitSha;
 use crate::highlight::Highlight;
+use crate::testing::Fixture;
 use crate::testing::temp_path;
 
 fn fixture(name: &str) -> Fixture {

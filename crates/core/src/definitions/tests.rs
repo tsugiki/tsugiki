@@ -7,10 +7,10 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::server::Ready;
-use super::testing::{FakeClangd, Fixture, Initialize, Notified, ty};
+use super::testing::{FakeClangd, Initialize, Notified, ty};
 use super::*;
 use crate::diff::FileChange;
-use crate::testing::cpython;
+use crate::testing::{Fixture, cpython};
 
 const PATCHLEVEL: &str = "#define PY_MAJOR_VERSION        3\n#define PY_MINOR_VERSION        14\n";
 
@@ -320,7 +320,7 @@ fn a_name_on_a_removed_line_is_found_at_the_base_and_the_next_lookup_is_at_the_h
 }
 
 #[test]
-fn a_builtin_is_found_outside_the_cpython() {
+fn a_builtin_is_found_outside_the_repository() {
     let fixture = cpython_pr("definitions-outside");
     let mut owner = opened(&fixture);
 

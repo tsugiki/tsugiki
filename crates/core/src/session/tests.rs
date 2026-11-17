@@ -13,8 +13,8 @@ use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
-    Canned, RATE_LIMIT, Scripted, answer, answered, dated, fetched_nodes, github, pr_content,
-    pr_node, pull_request_answer, reply_ok, search_page, signed_in_as, signed_in_gh,
+    Canned, RATE_LIMIT, Scripted, answer, answered, dated, fetched_nodes, github, page_info,
+    pr_content, pr_node, pull_request_answer, reply_ok, search_page, signed_in_as, signed_in_gh,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -28,7 +28,7 @@ use crate::status::testing::{
 use crate::status::{Change, FailedRead, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
-use crate::testing::{TempPath, cpython, cpython_settings, hours_ago, pr_facts};
+use crate::testing::{TempPath, cpython, cpython_settings, hours_ago, me, pr_facts};
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
@@ -1225,7 +1225,7 @@ fn board_hearing_settings() -> (StatusBoard, mpsc::Receiver<Change>) {
 fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesnt() {
     let (folders, _folder) = temp_folders("settings-announced");
     let store = Store::open(&folders.database()).unwrap();
-    store.remember_login(&Login::new("octocat")).unwrap();
+    store.remember_login(&me()).unwrap();
     store.close();
     let (board, changes) = board_hearing_settings();
     let (mirrors, _heard) = HeardRequests::new();
@@ -1321,7 +1321,7 @@ fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirro
 fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let (folders, _folder) = temp_folders("switched-session");
     let store = Store::open(&folders.database()).unwrap();
-    store.remember_login(&Login::new("octocat")).unwrap();
+    store.remember_login(&me()).unwrap();
     let stored = vec![stored_pr(8, "some-author", "4567def")];
     store.save_pull_requests(&gcmon(), stored).unwrap();
     let found = FilterResults {
@@ -1435,7 +1435,7 @@ fn keeping_patches(
 ) -> (Vec<Change>, ReviewFacts) {
     let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
-    store.remember_login(&Login::new("octocat")).unwrap();
+    store.remember_login(&me()).unwrap();
     let stored = vec![
         stored_pr(7, "octocat", "89abcde"),
         stored_pr(8, "some-author", "4567def"),
@@ -1880,17 +1880,17 @@ struct QuietRepository {
 impl Transport for QuietRepository {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         drop(self.asked.send(request.operation.to_owned()));
-        let body = match request.operation {
-            "Viewer" => r#"{"data":{"viewer":{"login":"octocat"}}}"#.to_owned(),
-            _ => format!(
-                r#"{{"data":{{"repository":{{
-                        "openIssues":{{"totalCount":900}},"openPrs":{{"totalCount":0}},
-                        "issues":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}},
-                        "pullRequests":{{"pageInfo":{{"hasNextPage":false,"endCursor":null}},"nodes":[]}}
-                    }},{RATE_LIMIT}}}}}"#
-            ),
-        };
-        reply_ok(&body)
+        if request.operation == "Viewer" {
+            return reply_ok(r#"{"data":{"viewer":{"login":"octocat"}}}"#);
+        }
+        let none = json!({ "pageInfo": page_info(None), "nodes": [] });
+        let repository = json!({
+            "openIssues": { "totalCount": 900 },
+            "openPrs": { "totalCount": 0 },
+            "issues": none,
+            "pullRequests": none,
+        });
+        answer(json!({ "repository": repository }), RATE_LIMIT)
     }
 }
 

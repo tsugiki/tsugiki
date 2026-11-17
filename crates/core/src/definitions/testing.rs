@@ -1,5 +1,5 @@
 //! The servers the tests start, and a fake server for what a real one does only at moments a test can't
-//! pick. The Repository with a PR that they work in is [`Fixture`].
+//! pick. The Repository with a PR that they work in is [`crate::testing::Fixture`].
 
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
@@ -41,8 +41,6 @@ pub(crate) fn clangd() -> PathBuf {
     );
     path
 }
-
-pub(crate) use crate::testing::Fixture;
 
 /// A fake clangd, which threads of the test play over in-memory pipes: it answers each lookup with the
 /// locations it was given, and reports its index's progress when the test says. The real clangd indexes a

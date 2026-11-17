@@ -22,7 +22,7 @@ use crate::sync::testing::{
     no_cross_references, pr_node,
 };
 use crate::sync::{Progress, Syncs};
-use crate::testing::{me, moment};
+use crate::testing::{issue_facts, me, moment};
 use crate::token::Token;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -72,13 +72,8 @@ fn synced(harness: &Harness, check: ChangeCheck) {
 
 fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
     let issue = IssueFacts {
-        number,
-        title: format!("Issue {number}"),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
         updated_at: moment(updated_at),
-        state: Some(IssueState::Open),
+        ..issue_facts(number)
     };
     harness
         .db
@@ -428,13 +423,9 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
 /// Saves Issue `number` with no state, as the migration that added states left the Issues saved before it.
 fn holding_issue_with_no_state(harness: &Harness, number: u32) {
     let issue = IssueFacts {
-        number,
-        title: format!("Issue {number}"),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
         updated_at: moment(LONG_BEFORE),
         state: None,
+        ..issue_facts(number)
     };
     harness
         .db
@@ -627,13 +618,9 @@ fn a_refresh_keeps_the_labels_an_issue_gained_and_drops_those_it_lost() {
     ];
     let harness = after_a_sync("issue-relabelled", replies);
     let held = IssueFacts {
-        number: 1,
-        title: "Issue 1".to_owned(),
-        author: None,
-        assignees: vec![],
         labels: labels(&["pending", "type-bug"]),
         updated_at: moment(LONG_BEFORE),
-        state: Some(IssueState::Open),
+        ..issue_facts(1)
     };
     harness
         .db
@@ -692,13 +679,9 @@ fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
         vec![polled(&issues_list, &list(&[], None), &[])],
     );
     let same = IssueFacts {
-        number: 2,
         title: "Issue 2 now".to_owned(),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
         updated_at: moment(LONG_BEFORE),
-        state: Some(IssueState::Open),
+        ..issue_facts(2)
     };
     harness
         .db

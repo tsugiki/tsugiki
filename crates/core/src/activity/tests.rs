@@ -598,7 +598,7 @@ fn someone_elses_comment_on_an_issue_is_new_activity() {
 #[test]
 fn last_seen_never_moves_back() {
     let world = World::new("activity-clock");
-    let later = hours_ago(1).replace_nanosecond(0).unwrap();
+    let later = hours_ago(1);
     world.marked_seen(ISSUE, later);
     world.marked_seen(ISSUE, hours_ago(5));
 
@@ -609,7 +609,7 @@ fn last_seen_never_moves_back() {
 #[test]
 fn a_later_answer_listing_the_same_events_keeps_one_of_each() {
     let world = World::new("activity-same-events");
-    let at = hours_ago(1).replace_nanosecond(0).unwrap();
+    let at = hours_ago(1);
     let comment = event(ActivityKind::Comment, &colleague(), at);
     world.happened(ISSUE, vec![comment.clone()]);
     world.happened(ISSUE, vec![comment.clone()]);
@@ -624,7 +624,7 @@ fn a_later_answer_listing_the_same_events_keeps_one_of_each() {
 #[test]
 fn each_kind_of_event_reads_back_as_it_was_saved() {
     let world = World::new("activity-round-trip");
-    let at = hours_ago(1).replace_nanosecond(0).unwrap();
+    let at = hours_ago(1);
     let failed = ActivityKind::BackportFailed {
         target: "3.14".to_owned(),
     };

@@ -163,7 +163,8 @@ fn a_narrowed_search_keeps_what_didnt_change_and_says_what_moved() {
         .unwrap();
 
     // 1 stopped matching, 2 still matches, 3 didn't change, 4 and 5 joined.
-    let moved = db.store
+    let moved = db
+        .store
         .merge_filter_results(&cpython(), &query("a"), narrowed(&[1, 2, 4, 9], &[2, 4, 5]))
         .unwrap();
     let read = db.reader.work_facts(&cpython()).unwrap().filters;
@@ -184,7 +185,8 @@ fn a_narrowed_search_keeps_a_problem_it_has_nothing_to_say_about() {
         .save_filter_results(&cpython(), &query("kept"), cut_off_before)
         .unwrap();
 
-    let quiet = db.store
+    let quiet = db
+        .store
         .merge_filter_results(&cpython(), &query("kept"), narrowed(&[], &[]))
         .unwrap();
     // A search GitHub cut off may have missed 1, so 1 stays.
@@ -196,7 +198,8 @@ fn a_narrowed_search_keeps_a_problem_it_has_nothing_to_say_about() {
         cut_off: true,
         ..narrowed(&[1], &[2])
     };
-    let joined = db.store
+    let joined = db
+        .store
         .merge_filter_results(&cpython(), &query("new"), cut_off)
         .unwrap();
     let read = db.reader.work_facts(&cpython()).unwrap().filters;
@@ -221,7 +224,8 @@ fn a_stored_search_tsugiki_cant_understand_is_a_read_error() {
     db.store
         .save_filter_results(&cpython(), &query("a"), found(&[1]))
         .unwrap();
-    let _ = db.store
+    let _ = db
+        .store
         .call(|connection| connection.execute("UPDATE filter_matches SET number = 'one'", []))
         .unwrap()
         .unwrap();

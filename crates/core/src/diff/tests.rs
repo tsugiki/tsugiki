@@ -1,109 +1,12 @@
 use std::fmt::Write as _;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tsugiki_test_git::git;
 
+use super::testing::{Mirrored, OLD_NEWS};
 use super::*;
-use crate::testing::TempPath;
-
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text.trim()).unwrap()
-}
-
-fn numbered(lines: std::ops::RangeInclusive<u32>) -> String {
-    lines.map(|n| format!("line {n}\n")).collect()
-}
-
-/// Python that sets `x1` to 1, and so on.
-fn assigned(lines: std::ops::RangeInclusive<u32>) -> String {
-    lines.map(|n| format!("x{n} = {n}\n")).collect()
-}
-
-/// A mirror with a branch `main`, and a PR branch `pr` started from main's first commit. main has moved on
-/// since, in a file the PR doesn't touch.
-pub(crate) struct Mirrored {
-    pub(crate) mirror: PathBuf,
-    pub(crate) head: CommitSha,
-    root: TempPath,
-}
-
-/// A NEWS entry main has before the PR starts, which a PR can delete.
-const OLD_NEWS: &str = "Misc/NEWS.d/next/Library/2026-01-01-00-00-00.gh-issue-2.Old.rst";
-
-impl Mirrored {
-    pub(crate) fn new(name: &str) -> Self {
-        Self::with(name, |_| {})
-    }
-
-    /// The same, with what `more` adds to the PR's commit in the folder it gets.
-    fn with(name: &str, more: impl FnOnce(&Path)) -> Self {
-        let root = crate::testing::temp_path(&format!("diff-{name}"));
-        let work = root.join("work");
-        for folder in ["Lib", "Modules", "Doc", "Tools"] {
-            fs::create_dir_all(work.join(folder)).unwrap();
-        }
-        let _ = git(&work, &["init", "-q", "-b", "main"]);
-        // The PR sets run.sh's mode in the index only, which macOS's git would then see as a change on disk.
-        let _ = git(&work, &["config", "core.fileMode", "false"]);
-        fs::write(work.join("Lib/ast.py"), assigned(1..=10)).unwrap();
-        fs::write(work.join("Modules/old.c"), "int x;\n").unwrap();
-        fs::write(work.join("Doc/notes.txt"), numbered(1..=20)).unwrap();
-        fs::write(work.join("logo.png"), b"\x89PNG\0\x01").unwrap();
-        fs::write(work.join("Tools/run.sh"), "echo hi\n").unwrap();
-        fs::create_dir_all(work.join("Misc/NEWS.d/next/Library")).unwrap();
-        fs::write(work.join(OLD_NEWS), "Old news.\n").unwrap();
-        let _ = git(&work, &["add", "."]);
-        let _ = git(&work, &["commit", "-qm", "One"]);
-
-        let _ = git(&work, &["switch", "-qc", "pr"]);
-        let ast = assigned(1..=10).replace("x5 = 5\n", "x5 = 'five'\n") + "x11 = 11";
-        fs::write(work.join("Lib/ast.py"), ast).unwrap();
-        let _ = git(&work, &["rm", "-q", "Modules/old.c"]);
-        let _ = git(&work, &["mv", "Doc/notes.txt", "Doc/news.txt"]);
-        let news = numbered(1..=20).replace("line 20\n", "line twenty\n");
-        fs::write(work.join("Doc/news.txt"), news).unwrap();
-        fs::write(work.join("logo.png"), b"\x89PNG\0\x02").unwrap();
-        fs::write(work.join("Lib/spaced name ü.py"), "pass\n").unwrap();
-        more(&work);
-        let _ = git(&work, &["add", "."]);
-        let _ = git(&work, &["update-index", "--chmod=+x", "Tools/run.sh"]);
-        let _ = git(&work, &["commit", "-qm", "The PR"]);
-
-        let _ = git(&work, &["switch", "-q", "main"]);
-        fs::write(work.join("README.rst"), "Moved on\n").unwrap();
-        // Only main's newest commit marks files generated, so a diff reads them from there.
-        let attributes = "[attr]generated linguist-generated=true\nLib/ast.py generated\n\
-                          *.png linguist-generated\nDoc/** -linguist-generated\n";
-        fs::write(work.join(".gitattributes"), attributes).unwrap();
-        let _ = git(&work, &["add", "README.rst", ".gitattributes"]);
-        let _ = git(&work, &["commit", "-qm", "Two"]);
-
-        let mirror = root.join("mirror.git");
-        let _ = git(
-            &root,
-            &[
-                "clone",
-                "-q",
-                "--bare",
-                &work.to_string_lossy(),
-                &mirror.to_string_lossy(),
-            ],
-        );
-        let head = sha(&git(&mirror, &["rev-parse", "refs/heads/pr"]));
-        Self { mirror, head, root }
-    }
-
-    /// Its diff, read from where it was made.
-    pub(crate) fn diff(&self) -> Diff {
-        self.read().diff
-    }
-
-    /// Its diff and the merge base it starts from.
-    pub(crate) fn read(&self) -> MirrorDiff {
-        read(&self.mirror, "main", &Start::TargetBranch, &self.head).unwrap()
-    }
-}
+use crate::testing::{cpython, sha_of};
 
 /// The rows as a reviewer reads them: old and new line numbers, a marker, and the text.
 fn drawn(diff: &Diff) -> String {
@@ -151,7 +54,7 @@ fn a_prs_diff_runs_from_the_merge_base_to_its_head_file_by_file() {
 #[test]
 fn a_mirror_holds_a_diff_only_with_both_the_head_and_the_target_branch() {
     let mirrored = Mirrored::new("held");
-    let elsewhere = sha(&"1".repeat(40));
+    let elsewhere = sha_of('1');
 
     assert_eq!(held(&mirrored.mirror, "main", &mirrored.head), Held::Both);
     assert_eq!(
@@ -197,12 +100,12 @@ fn the_diff_on_show_answers_each_chunk_and_another_head_is_read_again() {
     let mirrored = Mirrored::new("on-show");
     let diffs = Diffs::default();
     let pr = PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: cpython(),
         number: 7,
         head: mirrored.head.clone(),
     };
     let moved = PrAt {
-        head: sha(&"2".repeat(40)),
+        head: sha_of('2'),
         ..pr.clone()
     };
     let other_pr = PrAt {
@@ -238,7 +141,7 @@ fn a_diff_against_another_branch_or_from_another_base_is_read_again() {
     let mirrored = Mirrored::new("retargeted");
     let diffs = Diffs::default();
     let pr = PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: cpython(),
         number: 7,
         head: mirrored.head.clone(),
     };
@@ -298,7 +201,7 @@ fn a_diff_from_a_base_reads_from_that_base_whatever_the_branch_says() {
 #[test]
 fn a_base_the_mirror_lacks_cant_be_read() {
     let mirrored = Mirrored::new("no-base");
-    let elsewhere = sha(&"2".repeat(40));
+    let elsewhere = sha_of('2');
 
     let problem = read(
         &mirrored.mirror,
@@ -314,13 +217,13 @@ fn a_base_the_mirror_lacks_cant_be_read() {
 fn a_read_that_ends_after_a_later_one_leaves_the_later_on_show() {
     let diffs = Diffs::default();
     let pr = |number| PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: cpython(),
         number,
-        head: sha(&"1".repeat(40)),
+        head: sha_of('1'),
     };
     let empty = || {
         Ok(MirrorDiff {
-            base: sha(&"0".repeat(40)),
+            base: sha_of('0'),
             diff: Diff::parse("", "")?,
             news: Vec::new(),
         })
@@ -442,7 +345,7 @@ fn each_row_is_highlighted_from_its_version_and_a_removed_line_from_the_merge_ba
 
     let mirrored = Mirrored::new("spans");
     let pr = PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: cpython(),
         number: 7,
         head: mirrored.head.clone(),
     };

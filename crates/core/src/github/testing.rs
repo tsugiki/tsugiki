@@ -103,7 +103,11 @@ pub(crate) fn page_info(next: Option<&str>) -> Value {
 }
 
 /// A page of the search for the user's work, which found the PRs `ids`.
-pub(crate) fn search_page(ids: &[&str], next: Option<&str>, rate: &str) -> Result<Reply, Unreachable> {
+pub(crate) fn search_page(
+    ids: &[&str],
+    next: Option<&str>,
+    rate: &str,
+) -> Result<Reply, Unreachable> {
     let nodes: Vec<Value> = ids.iter().map(|id| json!({ "id": id })).collect();
     answer(
         json!({ "search": { "pageInfo": page_info(next), "nodes": nodes } }),
@@ -113,7 +117,7 @@ pub(crate) fn search_page(ids: &[&str], next: Option<&str>, rate: &str) -> Resul
 
 /// A page of a Filter's search, which found `nodes` of `total` items.
 pub(crate) fn filter_page(
-    total: u32,
+    total: usize,
     nodes: &[Value],
     next: Option<&str>,
     rate: &str,
@@ -174,7 +178,10 @@ pub(crate) fn pr_content(changes: &Value) -> Value {
 /// GitHub's answer to a question about one PR, such as `FetchPullRequestContent`, with the PR
 /// `pull_request`.
 pub(crate) fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unreachable> {
-    answer(json!({ "repository": { "pullRequest": pull_request } }), rate)
+    answer(
+        json!({ "repository": { "pullRequest": pull_request } }),
+        rate,
+    )
 }
 
 /// `node` with each field of `changes` set on it.

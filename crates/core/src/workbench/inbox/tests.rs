@@ -584,7 +584,9 @@ fn rows_carry_what_the_workbench_rows_carry() {
 fn nothing_is_listed_before_anyone_signs_in() {
     let db = OpenStore::new("inbox-no-viewer");
     let store = &db.store;
-    store.save_issues(&cpython(), vec![issue_at(1, ago(1))]).unwrap();
+    store
+        .save_issues(&cpython(), vec![issue_at(1, ago(1))])
+        .unwrap();
     store
         .save_pull_requests(&cpython(), vec![fixing(10, 1)])
         .unwrap();

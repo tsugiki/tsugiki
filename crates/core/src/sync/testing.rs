@@ -330,14 +330,16 @@ pub(super) fn issue_references_with_more(
         "number": number,
         "timelineItems": reference_timeline(prs, Some(older)),
     });
-    answer(json!({ "repository": { format!("i{number}"): field } }), rate)
+    answer(
+        json!({ "repository": { format!("i{number}"): field } }),
+        rate,
+    )
 }
 
 /// An answer to a read of Issues by number, none of which has a cross-reference.
 pub(super) fn no_issue_references(rate: &str) -> Result<Reply, Unreachable> {
     issue_references(&[], rate)
 }
-
 
 /// PR `number`, a merged PR that fixes Issue 1.
 pub(super) fn merged_node(number: u32) -> Value {

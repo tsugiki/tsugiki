@@ -201,7 +201,10 @@ fn parse_batch(mut output: &[u8]) -> Vec<Option<Vec<u8>>> {
         let header = String::from_utf8_lossy(output.get(..end).unwrap_or_default());
         output = output.get(end.saturating_add(1)..).unwrap_or_default();
         let found = match header.split(' ').collect::<Vec<_>>().as_slice() {
-            [_, kind, size] => size.parse::<usize>().ok().map(|size| (*kind == "blob", size)),
+            [_, kind, size] => size
+                .parse::<usize>()
+                .ok()
+                .map(|size| (*kind == "blob", size)),
             _ => None,
         };
         let Some((blob, size)) = found else {

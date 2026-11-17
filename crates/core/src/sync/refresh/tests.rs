@@ -8,8 +8,8 @@ use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
 use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{
-    answer, dated, filter_page, page_info, pr_content, pull_request_answer, replied, reply_ok,
-    signed_in_as,
+    answer, dated, filter_page, github, page_info, pr_content, pull_request_answer, replied,
+    reply_ok, signed_in_as,
 };
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
@@ -22,7 +22,7 @@ use crate::sync::testing::{
     no_cross_references, pr_node,
 };
 use crate::sync::{Progress, Syncs};
-use crate::testing::moment;
+use crate::testing::{me, moment};
 use crate::token::Token;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -50,10 +50,6 @@ fn filtering(queries: &[&str]) -> RepositorySettings {
 
 fn query(text: &str) -> FilterQuery {
     text.to_owned().try_into().unwrap()
-}
-
-fn me() -> Login {
-    Login::new("octocat")
 }
 
 /// A harness whose Repository finished a sync at `LAST_SYNC`, and whose user is `octocat`.
@@ -84,14 +80,18 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
         updated_at: moment(updated_at),
         state: Some(IssueState::Open),
     };
-    harness.db.store.save_issues(&cpython(), vec![issue]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![issue])
+        .unwrap();
 }
 
 /// PR `number` as a fetch would read it from `node`.
 fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
     let script = fetched_nodes(std::slice::from_ref(node), RATE_LIMIT);
     let (script, _asked) = crate::github::testing::Scripted::new(vec![script]);
-    let github = crate::github::GitHub::new(Box::new(script), crate::github::testing::token());
+    let github = github(script);
     let id: NodeId = serde_json::from_value(json!("id")).unwrap();
     let batch = github
         .fetch_pull_requests(PrFetch::Work, &[id], 25)
@@ -168,7 +168,7 @@ fn search(nodes: &[Value], next: Option<&str>) -> Value {
 
 /// GitHub's answer to a Filter's search on its own, which found `nodes`.
 fn searched(nodes: &[Value], next: Option<&str>) -> Result<Reply, Unreachable> {
-    filter_page(u32::try_from(nodes.len()).unwrap(), nodes, next, RATE_LIMIT)
+    filter_page(nodes.len(), nodes, next, RATE_LIMIT)
 }
 
 fn issue_hit(number: u32) -> Value {
@@ -436,7 +436,11 @@ fn holding_issue_with_no_state(harness: &Harness, number: u32) {
         updated_at: moment(LONG_BEFORE),
         state: None,
     };
-    harness.db.store.save_issues(&cpython(), vec![issue]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![issue])
+        .unwrap();
 }
 
 #[test]
@@ -631,7 +635,11 @@ fn a_refresh_keeps_the_labels_an_issue_gained_and_drops_those_it_lost() {
         updated_at: moment(LONG_BEFORE),
         state: Some(IssueState::Open),
     };
-    harness.db.store.save_issues(&cpython(), vec![held]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![held])
+        .unwrap();
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
@@ -660,7 +668,11 @@ fn a_refresh_keeps_the_labels_a_pr_gained_and_drops_those_it_lost() {
     ];
     let harness = after_a_sync("pr-relabelled", replies);
     let held = read_pr(&relabelled(&["awaiting review", "skip news"], LONG_BEFORE));
-    harness.db.store.save_pull_requests(&cpython(), held).unwrap();
+    harness
+        .db
+        .store
+        .save_pull_requests(&cpython(), held)
+        .unwrap();
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
@@ -688,7 +700,11 @@ fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
         updated_at: moment(LONG_BEFORE),
         state: Some(IssueState::Open),
     };
-    harness.db.store.save_issues(&cpython(), vec![same]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![same])
+        .unwrap();
     let mut syncs = refreshing(filtering(&[]));
 
     let changes = run(&mut syncs, &harness);
@@ -1666,10 +1682,7 @@ fn a_search_edited_away_loses_its_results_at_the_refresh() {
 
 #[test]
 fn a_filter_github_refused_last_time_searches_whole_and_clears_its_problem() {
-    let replies = vec![
-        quiet_poll(),
-        searched(&[], None),
-    ];
+    let replies = vec![quiet_poll(), searched(&[], None)];
     let harness = after_a_sync("filter-refused-before", replies);
     stored_filter(&harness, "a", &[1]);
     harness
@@ -1796,7 +1809,13 @@ fn small_poll() -> Result<Reply, Unreachable> {
 }
 
 fn check_after_a_refresh(harness: &Harness) -> ChangeCheck {
-    harness.db.store.sync_state(&cpython()).unwrap().unwrap().check
+    harness
+        .db
+        .store
+        .sync_state(&cpython())
+        .unwrap()
+        .unwrap()
+        .check
 }
 
 #[test]

@@ -55,8 +55,7 @@ fn pr_hit(number: u32, updated_at: &str) -> Value {
 }
 
 fn all_of(nodes: &[Value]) -> Result<Reply, Unreachable> {
-    let total = nodes.iter().fold(0, |total, _| total + 1);
-    filter_page(total, nodes, None, RATE_LIMIT)
+    filter_page(nodes.len(), nodes, None, RATE_LIMIT)
 }
 
 fn found_by(harness: &Harness, query: &str) -> Vec<u32> {
@@ -615,8 +614,8 @@ impl ByCreated {
             .crowded_day
             .filter(|day| within(day))
             .map_or(0, |_| 1500);
-        let total = u32::try_from(nodes.len()).unwrap() + crowd;
-        let total = total.max(u32::from(range.is_none()) * 1001);
+        let total = nodes.len() + crowd;
+        let total = total.max(usize::from(range.is_none()) * 1001);
         filter_page(total, &nodes, None, RATE_LIMIT).unwrap()
     }
 }

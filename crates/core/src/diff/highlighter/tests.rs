@@ -6,7 +6,6 @@ use tsugiki_test_git::git;
 use super::*;
 use crate::diff::{Diff, PrAt, Start, read};
 use crate::facts::CommitSha;
-use crate::repository::RepositoryName;
 use crate::testing::TempPath;
 
 #[test]
@@ -74,7 +73,7 @@ impl Repo {
 
 fn pr(number: u32, head: &CommitSha) -> PrAt {
     PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: crate::testing::cpython(),
         number,
         head: head.clone(),
     }

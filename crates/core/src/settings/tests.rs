@@ -3,9 +3,8 @@ use crate::conventions::Conventions;
 use crate::filters::{Filter, OnWorkbench};
 use crate::mirror_source::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
-use crate::testing::TempPath;
+use crate::testing::{TempPath, cpython, moment};
 use crate::theme::{ThemeChoice, ThemeInForce, ThemeKind, ThemeName, ThemePick};
-use time::format_description::well_known::Rfc3339;
 
 fn hidden() -> Settings {
     Settings {
@@ -34,10 +33,6 @@ const WHENEVER: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
 
 fn repository(text: &str) -> RepositoryName {
     RepositoryName::parse(text).unwrap()
-}
-
-fn at(text: &str) -> OffsetDateTime {
-    OffsetDateTime::parse(text, &Rfc3339).unwrap()
 }
 
 /// Adds each of `names` through the settings' own write, the first at `first`, each later one an hour after
@@ -1348,7 +1343,7 @@ fn a_blank_filter_query_is_a_problem_with_the_file_and_the_last_values_stay() {
 #[test]
 fn a_repositorys_settings_come_from_the_list_whatever_the_case_of_its_name() {
     let chosen = RepositorySettings {
-        name: RepositoryName::parse("python/cpython").unwrap(),
+        name: cpython(),
         conventions: Conventions::Github,
         filters: Vec::new(),
     };
@@ -1450,7 +1445,7 @@ fn a_check_github_refuses_says_why() {
 
 #[test]
 fn a_repository_the_user_hasnt_added_gets_new_settings() {
-    let name = RepositoryName::parse("python/cpython").unwrap();
+    let name = cpython();
     assert_eq!(
         Settings::default().repository(name.clone()),
         RepositorySettings::new(name)
@@ -2803,7 +2798,7 @@ fn adding_puts_the_repository_first_in_recent_with_the_time() {
     add_all(
         &mut files,
         &["a/first", "a/second", "A/First"],
-        at("2026-11-10T09:00:00.5+03:00"),
+        moment("2026-11-10T09:00:00.5+03:00"),
     );
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let settings = fs::read_to_string(folders.settings_file()).unwrap();
@@ -2915,7 +2910,7 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
     let home = files.home();
     let problems = files.loaded().problems.clone();
 
-    add_all(&mut files, &["a/second"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/second"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -2950,7 +2945,7 @@ fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() 
     let mut files = SettingsFiles::load(folders.clone());
     let reopened = files.home();
 
-    add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/new"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -2978,7 +2973,7 @@ fn adding_the_last_repository_from_0_2_0_again_leaves_one_entry_for_it() {
     fs::write(folders.machine_file(), "last_repository = \"a/old\"\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    add_all(&mut files, &["a/Old"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/Old"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert!(
@@ -3048,7 +3043,7 @@ fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
     let mut files = SettingsFiles::load(folders.clone());
     let reopened = files.home();
 
-    add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/new"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -3077,7 +3072,7 @@ fn a_recent_written_as_tables_keeps_its_entries() {
     let mut files = SettingsFiles::load(folders.clone());
     let reopened = files.home();
 
-    add_all(&mut files, &["a/three"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/three"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -3109,7 +3104,7 @@ fn a_repository_added_again_keeps_the_comment_on_its_entry() {
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    add_all(&mut files, &["a/two"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/two"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert!(
@@ -3220,12 +3215,15 @@ fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
     add_all(
         &mut files,
         &["a/first", "a/second"],
-        at("2026-11-10T07:00:00Z"),
+        moment("2026-11-10T07:00:00Z"),
     );
     let settings = fs::read_to_string(folders.settings_file()).unwrap();
 
     let home = files
-        .open_repository(&repository("A/First"), at("2026-11-10T09:00:00.5+01:00"))
+        .open_repository(
+            &repository("A/First"),
+            moment("2026-11-10T09:00:00.5+01:00"),
+        )
         .unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();

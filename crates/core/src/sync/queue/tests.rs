@@ -55,7 +55,10 @@ fn a_failed_step_keeps_its_place_and_runs_again() {
     );
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
-    assert_eq!(syncs.step(&harness.github, &harness.db.store).unwrap(), None);
+    assert_eq!(
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
+        None
+    );
 
     let failed = syncs.step(&harness.github, &harness.db.store).unwrap_err();
     drop(syncs.step(&harness.github, &harness.db.store).unwrap());
@@ -83,7 +86,10 @@ fn nothing_queued_means_nothing_to_do() {
     let mut syncs = Syncs::default();
 
     assert_eq!(syncs.ready_at(), None);
-    assert_eq!(syncs.step(&harness.github, &harness.db.store).unwrap(), None);
+    assert_eq!(
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
+        None
+    );
     assert_eq!(harness.operations(), [""; 0]);
     harness.finish();
 }
@@ -1134,7 +1140,11 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
         updated_at: OffsetDateTime::UNIX_EPOCH,
         state: None,
     };
-    harness.db.store.save_issues(&cpython(), vec![issue]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![issue])
+        .unwrap();
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     while !matches!(
@@ -1142,7 +1152,10 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
         Some(Progress::Finished(_))
     ) {}
     // The fill's first step asks the store which Issues to fetch.
-    assert_eq!(syncs.step(&harness.github, &harness.db.store).unwrap(), None);
+    assert_eq!(
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
+        None
+    );
 
     let failure = syncs.step(&harness.github, &harness.db.store).unwrap_err();
     syncs.after_failure(&failure, soon(), GitHubClock::default());

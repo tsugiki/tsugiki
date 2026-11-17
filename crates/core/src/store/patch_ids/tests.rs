@@ -270,7 +270,8 @@ fn a_reason_the_store_doesnt_know_fails_the_read() {
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::NoGit)])
         .unwrap();
     // Only a file from a newer Tsugiki, or one changed by hand, says this, which our functions refuse.
-    let changed = db.store
+    let changed = db
+        .store
         .call(|connection| {
             connection.execute(
                 "UPDATE unchecked_commits SET git_version = 'git version 2.0'",

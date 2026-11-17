@@ -2,8 +2,8 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 use super::*;
-use crate::testing::{Fixture, cpython};
 use crate::mirror::{HeardRequests, LookupCheckout};
+use crate::testing::{Fixture, cpython};
 
 fn query(text: &str) -> Query {
     Query {
@@ -152,9 +152,7 @@ fn a_second_query_cancels_the_first() {
 #[test]
 fn a_query_with_no_checkout_says_so() {
     let (search, heard, _) = started();
-    let id = search
-        .search(cpython(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     asked(&heard).send(None).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }
@@ -163,9 +161,7 @@ fn a_query_with_no_checkout_says_so() {
 fn a_query_searches_none_of_a_checkout_at_another_diff() {
     let fixture = pr("search-owner-elsewhere");
     let (search, heard, _) = started();
-    let id = search
-        .search(cpython(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     // The checkout went to another diff, the fixture's, while the query waited.
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
@@ -178,9 +174,7 @@ fn queries_on_older_and_newer_diffs_move_no_checkout_whatever_order_their_thread
         let (search, heard, _) = started();
         // A query on the diff before, then one on the diff the PR now shows, whose threads hear where the
         // checkout is in the order the loop gives.
-        let _older = search
-            .search(cpython(), ends(1), &query("spam"))
-            .unwrap();
+        let _older = search.search(cpython(), ends(1), &query("spam")).unwrap();
         let older_reply = asked(&heard);
         let newer = search_in(&search, &fixture, "eggs");
         let newer_reply = asked(&heard);
@@ -299,9 +293,7 @@ fn a_search_past_the_most_matches_stops_and_says_so() {
 #[test]
 fn a_worker_that_stops_without_an_answer_leaves_no_checkout() {
     let (search, heard, _) = started();
-    let id = search
-        .search(cpython(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     drop(asked(&heard));
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }

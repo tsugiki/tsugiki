@@ -1,9 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
-use crate::github::testing::{
-    RATE_LIMIT, Scripted, answer, github, not_found, replied, reply_ok,
-};
+use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, not_found, replied, reply_ok};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
 use crate::testing::{cpython, moment};
@@ -252,7 +250,8 @@ fn an_issue_whose_author_has_gone_has_no_author() {
 
 #[test]
 fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
-    let repository = json!({ "i1": issue_json(1), "i2": { "__typename": "PullRequest" }, "i3": null });
+    let repository =
+        json!({ "i1": issue_json(1), "i2": { "__typename": "PullRequest" }, "i3": null });
     let gone = not_found(
         json!({ "repository": repository }),
         json!(["repository", "i3"]),

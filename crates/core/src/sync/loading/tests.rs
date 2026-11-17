@@ -903,7 +903,12 @@ fn signing_in_as_someone_else_starts_the_sync_over() {
 #[test]
 fn a_place_from_another_version_starts_the_sync_over() {
     let asked = asked_after_coming_back("window-version", |harness| {
-        let place = harness.db.store.first_sync_place(&cpython()).unwrap().unwrap();
+        let place = harness
+            .db
+            .store
+            .first_sync_place(&cpython())
+            .unwrap()
+            .unwrap();
         let version = env!("CARGO_PKG_VERSION");
         let older = place.as_str().replace(version, "0.0.0-older");
         assert_ne!(older, place.as_str());

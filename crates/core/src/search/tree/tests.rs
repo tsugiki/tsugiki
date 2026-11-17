@@ -2,8 +2,8 @@ use std::fs;
 
 use super::*;
 use crate::facts::CommitSha;
-use crate::testing::Fixture;
 use crate::search::{Case, Cut, MatchRange, Query, Syntax, Words};
+use crate::testing::Fixture;
 
 fn query(text: &str) -> Query {
     Query {

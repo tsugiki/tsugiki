@@ -81,7 +81,11 @@ fn a_first_sync_recovers_from_a_failure_at_each_point() {
             RATE_LIMIT,
         ),
         fetched_nodes(&[merged_node(22)], RATE_LIMIT),
-        window_page(&[window_pr(23, &hours_ago_text(2))], Some("older"), RATE_LIMIT),
+        window_page(
+            &[window_pr(23, &hours_ago_text(2))],
+            Some("older"),
+            RATE_LIMIT,
+        ),
         fetched_nodes(&[merged_node(23)], RATE_LIMIT),
         window_page(&[window_pr(21, &hours_ago_text(3))], None, RATE_LIMIT),
     ];

@@ -7,8 +7,8 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::workbench::WorkbenchView;
 use crate::testing::cpython_settings;
+use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
     backport, bots_backport, fixing, issue, me, mine, rows_of, someone, stranger, view_of,
 };
@@ -44,7 +44,10 @@ fn a_pr_in_a_reached_issues_tree_is_reached_open_merged_or_closed() {
         colleagues(14, 2, PrState::Open),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![issue(1), issue(2)]), &cpython_settings());
+    let reached = reach(
+        &facts(pull_requests, vec![issue(1), issue(2)]),
+        &cpython_settings(),
+    );
 
     // The user's PR 10 puts Issue 1 on the Workbench. Nothing puts Issue 2 there.
     assert_eq!(reached, BTreeSet::from([1, 10, 11, 12, 13]));

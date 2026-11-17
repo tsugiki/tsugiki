@@ -1,6 +1,6 @@
 use super::*;
 use crate::facts::pull_requests::{OffDefault, PrState};
-use crate::testing::{cpython_settings, pr_facts};
+use crate::testing::{cpython_settings, pr_facts, sha};
 
 fn gcmon() -> RepositorySettings {
     RepositorySettings {
@@ -64,10 +64,6 @@ fn every_signal_adds_up_and_a_number_counts_once() {
 const MERGE: &str = "0123456789abcdef0123456789abcdef01234567";
 const MERGE_START: &str = "0123456";
 const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
-
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text).unwrap()
-}
 
 fn bot() -> Login {
     Login::new("miss-islington")

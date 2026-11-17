@@ -75,8 +75,7 @@ fn a_poll_asks_for_each_list_and_narrows_each_filter_to_the_same_time() {
     let filters = [filter("is:open OR label:bug"), filter("author:@me")];
     let empty = json!({ "issueCount": 0, "pageInfo": page_info(None), "nodes": [] });
     let searches = json!({ "f0": empty, "f1": empty });
-    let (script, asked) =
-        Scripted::new(vec![polled(&list(&[], None), &list(&[], None), searches)]);
+    let (script, asked) = Scripted::new(vec![polled(&list(&[], None), &list(&[], None), searches)]);
 
     let answer = github(script)
         .poll_repository(&cpython(), &poll_of(&START, &START, &filters))

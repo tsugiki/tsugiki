@@ -4,11 +4,12 @@ use super::*;
 use crate::store::Store;
 use crate::store::migrate::MIGRATIONS;
 use crate::store::testing::temp_database;
+use crate::testing::cpython;
 
 #[test]
 fn a_file_from_before_new_activity_counts_from_its_last_sync() {
     let (path, _folder) = temp_database("activity-migrates");
-    let repository = RepositoryName::parse("python/cpython").unwrap();
+    let repository = cpython();
     let synced = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
     crate::store::open_with(&path, MIGRATIONS.split_at(9).0)
         .unwrap()
@@ -37,7 +38,7 @@ fn a_file_from_before_new_activity_counts_from_its_last_sync() {
 #[test]
 fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
     let (path, _folder) = temp_database("activity-marked-unseen");
-    let repository = RepositoryName::parse("python/cpython").unwrap();
+    let repository = cpython();
     let flagged = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
     store.mark_unseen(&repository, 7, flagged).unwrap();
@@ -62,7 +63,7 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
 #[test]
 fn a_kind_from_a_later_version_is_left_alone() {
     let (path, _folder) = temp_database("activity-later-kind");
-    let repository = RepositoryName::parse("python/cpython").unwrap();
+    let repository = cpython();
     let store = Store::open(&path).unwrap();
     // This version has no way to write a kind it doesn't know.
     let raw = Connection::open(&path).unwrap();

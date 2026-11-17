@@ -614,7 +614,10 @@ fn a_later_answer_listing_the_same_events_keeps_one_of_each() {
     world.happened(ISSUE, vec![comment.clone()]);
     world.happened(ISSUE, vec![comment.clone()]);
 
-    assert_eq!(world.db.store.activity(&cpython(), ISSUE).unwrap(), [comment]);
+    assert_eq!(
+        world.db.store.activity(&cpython(), ISSUE).unwrap(),
+        [comment]
+    );
     world.finish();
 }
 

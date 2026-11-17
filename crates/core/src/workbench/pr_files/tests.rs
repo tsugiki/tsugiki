@@ -4,7 +4,7 @@ use tsugiki_test_git::git;
 
 use super::*;
 use crate::diff::MirrorDiff;
-use crate::diff::tests::Mirrored;
+use crate::diff::testing::Mirrored;
 use crate::facts::pull_request_content::{Side, Subject, ThreadCommentId};
 use crate::facts::pull_requests::PrHead;
 use crate::workbench::testing::{ViewWorld, mine};

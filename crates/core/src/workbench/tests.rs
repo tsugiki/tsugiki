@@ -4,10 +4,10 @@ use super::*;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::testing::cpython_settings;
 use crate::workbench::testing::{
     at, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
 };
-use crate::testing::cpython_settings;
 
 #[test]
 fn an_issue_with_no_pr_of_the_users_isnt_listed() {

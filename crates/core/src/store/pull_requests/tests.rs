@@ -141,7 +141,9 @@ fn saving_a_backport_again_replaces_its_commits() {
         ..first.clone()
     };
 
-    db.store.save_pull_requests(&cpython(), vec![first]).unwrap();
+    db.store
+        .save_pull_requests(&cpython(), vec![first])
+        .unwrap();
     db.store
         .save_pull_requests(&cpython(), vec![again.clone()])
         .unwrap();
@@ -307,7 +309,7 @@ fn a_merged_or_closed_pr_keeps_its_review_requests_and_a_read_skips_them() {
         .unwrap();
 
     let read = db.reader.work_facts(&cpython()).unwrap();
-    let stored = count(&db.store,"SELECT count(*) AS found FROM review_requests");
+    let stored = count(&db.store, "SELECT count(*) AS found FROM review_requests");
     db.close();
 
     let requests: Vec<(u32, usize)> = read
@@ -542,7 +544,8 @@ fn a_row_tsugiki_cant_understand_is_a_read_error() {
     db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
-    let _ = db.store
+    let _ = db
+        .store
         .call(|connection| connection.execute("UPDATE pull_requests SET ci = 'SOMETHING NEW'", []))
         .unwrap()
         .unwrap();
@@ -567,7 +570,8 @@ fn a_save_that_fails_says_so_and_keeps_nothing_of_the_batch() {
         .unwrap()
         .unwrap();
 
-    let refused = db.store
+    let refused = db
+        .store
         .save_pull_requests(&cpython(), vec![at(1, facts(1)), at(1, facts(2))])
         .unwrap_err();
     let found = numbers(&db.reader, &cpython());

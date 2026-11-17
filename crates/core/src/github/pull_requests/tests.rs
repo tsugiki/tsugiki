@@ -81,7 +81,7 @@ fn by_user(login: &str) -> Value {
 
 /// The facts Tsugiki keeps of `pr` when it comes back from a fetch.
 fn read_back(pr: &Value) -> PullRequestFacts {
-    let (script, _asked) = Scripted::new(vec![fetched_nodes(&[pr.clone()], RATE_LIMIT)]);
+    let (script, _asked) = Scripted::new(vec![fetched_nodes(std::slice::from_ref(pr), RATE_LIMIT)]);
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["a"]), 25)
         .unwrap();
@@ -262,7 +262,10 @@ fn a_search_says_what_it_found_and_where_the_next_page_starts() {
 #[test]
 fn a_last_page_has_no_next_page_even_with_a_cursor() {
     let info = json!({ "hasNextPage": false, "endCursor": "end" });
-    let last = answer(json!({ "search": { "pageInfo": info, "nodes": [] } }), RATE_LIMIT);
+    let last = answer(
+        json!({ "search": { "pageInfo": info, "nodes": [] } }),
+        RATE_LIMIT,
+    );
     let (script, _asked) = Scripted::new(vec![last]);
 
     let page = github(script)
@@ -471,10 +474,8 @@ fn a_fetch_asks_for_one_batch_at_a_time() {
 
 #[test]
 fn after_a_502_a_fetch_asks_once_more_at_half_the_size() {
-    let (script, asked) = Scripted::new(vec![
-        bad_gateway(),
-        fetched_nodes(&[pr_json()], RATE_LIMIT),
-    ]);
+    let (script, asked) =
+        Scripted::new(vec![bad_gateway(), fetched_nodes(&[pr_json()], RATE_LIMIT)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &thirty_ids(), 25)

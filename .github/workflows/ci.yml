@@ -21,9 +21,9 @@ jobs:
   # Decides which checks run. It compares the PR's merge commit with its base, and a rename counts as both
   # of its paths. `docs-only` skips every check but doc-width and pre-commit. `ui-only`, when each path is
   # docs or under `ui/`, skips the Rust ones. `release-only`, when the PR changes only CHANGELOG.md and the
-  # version lines of Cargo.toml and Cargo.lock, skips every build and test but the dependency checks and
-  # release-check. scripts/scope.ts holds the rule, which `just check` applies too. A push to main sets none
-  # of them, so it runs every check.
+  # version lines of Cargo.toml and Cargo.lock, runs only doc-width, pre-commit, deny, machete and
+  # release-check, and `just release` waits for main's run, which runs the rest. scripts/scope.ts holds the
+  # rule, which `just check` applies too. A push to main sets none of them, so it runs every check.
   changes:
     name: changes
     runs-on: ubuntu-latest

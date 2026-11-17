@@ -28,11 +28,22 @@ function branchScope(): Scope {
       ...git("diff", "--no-renames", "--name-only", "--merge-base", "origin/main"),
       ...git("ls-files", "--others", "--exclude-standard"),
     ];
-    const cargoDiff = execFileSync(
-      "git",
-      ["diff", "-U0", "--merge-base", "origin/main", "--", "Cargo.toml", "Cargo.lock"],
-      { encoding: "utf8" },
-    );
+    const cargoDiff = (): string =>
+      execFileSync(
+        "git",
+        [
+          "diff",
+          "-U0",
+          "--no-color",
+          "--no-ext-diff",
+          "--merge-base",
+          "origin/main",
+          "--",
+          "Cargo.toml",
+          "Cargo.lock",
+        ],
+        { encoding: "utf8" },
+      );
     return scope(changed, cargoDiff);
   } catch {
     return "all";

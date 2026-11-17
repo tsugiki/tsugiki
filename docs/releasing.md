@@ -35,10 +35,11 @@ above, and run `cargo check`. If `just ship --release` can't push or open the PR
 ## 2. Tag it
 
 Once the PR has merged, run `just release` on main; an agent asks the user first, since the tag starts the
-workflow. It fetches, then refuses unless the tree is clean and main matches `origin/main`. It takes the
-version from `Cargo.toml`, so the tag can't disagree with the downloads, and refuses when `vX.Y.Z` exists in
-this clone or on GitHub, or when `just release-check` fails. Then it tags HEAD, pushes the tag and prints
-the link to the release run.
+workflow. It fetches, then refuses unless the tree is clean, main matches `origin/main`, and CI passed on
+main's commit: the release PR skipped the tests, so that run is the first to test the new version. It takes
+the version from `Cargo.toml`, so the tag can't disagree with the downloads, and refuses when `vX.Y.Z`
+exists in this clone or on GitHub, or when `just release-check` fails. Then it tags HEAD, pushes the tag and
+prints the link to the release run.
 
 By hand, it does this:
 

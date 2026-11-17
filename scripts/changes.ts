@@ -15,8 +15,11 @@ if (base === undefined || head === undefined || output === undefined) {
 const changed = paths(
   execFileSync("git", ["diff", "--no-renames", "--name-only", base, head], { encoding: "utf8" }),
 );
-const cargoDiff = execFileSync("git", ["diff", "-U0", base, head, "--", "Cargo.toml", "Cargo.lock"], {
-  encoding: "utf8",
-});
+const cargoDiff = (): string =>
+  execFileSync(
+    "git",
+    ["diff", "-U0", "--no-color", "--no-ext-diff", base, head, "--", "Cargo.toml", "Cargo.lock"],
+    { encoding: "utf8" },
+  );
 console.log(changed.join("\n"));
 appendFileSync(output, outputs(scope(changed, cargoDiff)));

@@ -42,8 +42,11 @@ export function paths(listed: string): string[] {
 /** The files a release PR changes when it only sets the version (docs/releasing.md). */
 const RELEASE_FILES = new Set(["CHANGELOG.md", "Cargo.toml", "Cargo.lock"]);
 
-/** A file's name in a diff's header, such as `--- a/Cargo.toml`, which isn't a changed line. */
-const DIFF_HEADER = /^(?:---|\+\+\+) (?:a\/|b\/|\/dev\/null)/;
+/**
+ * A file's name in a diff's header, such as `--- a/Cargo.toml`, whatever prefix git's settings give it. No
+ * line of Cargo.toml or Cargo.lock starts with `--` or `++`.
+ */
+const DIFF_HEADER = /^(?:---|\+\+\+)/;
 const VERSION_LINE = /^version = "[^"]+"$/;
 
 /**
@@ -52,8 +55,8 @@ const VERSION_LINE = /^version = "[^"]+"$/;
  * `version = "<new>"`. A dependency's bump changes its `checksum` line too, and names other versions.
  */
 export function isVersionBump(diff: string): boolean {
-  const before = new Set<string>();
-  const after = new Set<string>();
+  let from: string | undefined;
+  let to: string | undefined;
   let removed = 0;
   let added = 0;
   for (const line of diff.split(/\r?\n/)) {
@@ -61,23 +64,24 @@ export function isVersionBump(diff: string): boolean {
     const version = line.slice(1);
     if (!VERSION_LINE.test(version)) return false;
     if (line.startsWith("-")) {
-      before.add(version);
+      from ??= version;
+      if (version !== from) return false;
       removed += 1;
     } else {
-      after.add(version);
+      to ??= version;
+      if (version !== to) return false;
       added += 1;
     }
   }
-  const moves = before.size === 1 && after.size === 1 && !after.has([...before].join(""));
-  return removed > 0 && removed === added && moves;
+  return removed > 0 && removed === added && from !== to;
 }
 
 /**
- * The scope of a change to `paths`. With no path to read, nothing is ruled out. `cargoDiff` is what
+ * The scope of a change to `paths`. With no path to read, nothing is ruled out. `cargoDiff` gives what
  * `git diff -U0` prints for `Cargo.toml` and `Cargo.lock`, which tells a release PR that only sets the
- * version from one that changes a dependency.
+ * version from one that changes a dependency. It runs only when the paths could be such a PR.
  */
-export function scope(paths: readonly string[], cargoDiff = ""): Scope {
+export function scope(paths: readonly string[], cargoDiff: () => string): Scope {
   if (paths.length === 0) {
     return "all";
   }
@@ -87,8 +91,11 @@ export function scope(paths: readonly string[], cargoDiff = ""): Scope {
   if (paths.every(isUi)) {
     return "ui";
   }
-  const setsVersion = paths.includes("Cargo.toml") && paths.every((path) => RELEASE_FILES.has(path));
-  return setsVersion && isVersionBump(cargoDiff) ? "release" : "all";
+  // A new version moves each workspace crate's line in Cargo.lock, so a Cargo.toml change without one isn't
+  // the workspace's version.
+  const both = paths.includes("Cargo.toml") && paths.includes("Cargo.lock");
+  const setsVersion = both && paths.every((path) => RELEASE_FILES.has(path));
+  return setsVersion && isVersionBump(cargoDiff()) ? "release" : "all";
 }
 
 /**

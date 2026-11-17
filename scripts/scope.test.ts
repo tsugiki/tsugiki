@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 
 import { isVersionBump, outputs, paths, scope } from "./scope.ts";
 
+/** The Cargo diff of a change that can't be a release PR, which `scope` mustn't read. */
+function unread(): string {
+  throw new Error("scope read the Cargo diff of a change that can't set the version");
+}
+
 /** Each file under `folder` whose name ends with `.rs`. */
 function rustFiles(folder: string): string[] {
   return readdirSync(folder, { recursive: true, encoding: "utf8" })
@@ -20,7 +25,7 @@ describe("scope", () => {
     [["ui/src/App.svelte", "docs/build-order.md", "ui/README.md"], "ui"],
     [["ui/vite.config.ts", "ui/e2e/layout.test.ts"], "ui"],
   ])("reads %j as %s", (paths, expected) => {
-    expect(scope(paths)).toBe(expected);
+    expect(scope(paths, unread)).toBe(expected);
   });
 
   it.each([
@@ -35,11 +40,11 @@ describe("scope", () => {
     [["docs/schema.md"]],
     [["ui/src/App.svelte", "docs/schema.md"]],
   ])("runs everything for %j", (given) => {
-    expect(scope(given)).toBe("all");
+    expect(scope(given, unread)).toBe("all");
   });
 
   it("runs everything when it can't see a path", () => {
-    expect(scope([])).toBe("all");
+    expect(scope([], unread)).toBe("all");
   });
 
   // A Rust file that names a path under ui/ or docs/ may read it, and then a change to that file needs the
@@ -55,7 +60,7 @@ describe("scope", () => {
     named.delete("ui/src/App.svelte");
     expect(named.has("docs/devel/keyboard.md") && named.has("ui/src/lib/data/keymap.ts")).toBe(true);
     for (const path of named) {
-      expect(scope([path ?? ""]), path).toBe("all");
+      expect(scope([path ?? ""], unread), path).toBe("all");
     }
   });
 });
@@ -72,7 +77,7 @@ describe("a release PR", () => {
   it.each([[["CHANGELOG.md", "Cargo.lock", "Cargo.toml"]], [["Cargo.lock", "Cargo.toml"]]])(
     "that only sets the version in %j skips the builds and tests",
     (given) => {
-      expect(scope(given, SETS_VERSION)).toBe("release");
+      expect(scope(given, () => SETS_VERSION)).toBe("release");
     },
   );
 
@@ -83,20 +88,21 @@ describe("a release PR", () => {
     ["no change of version", bump("Cargo.toml", "0.3.3", "0.3.3")],
     ["nothing it can read", ""],
   ])("runs everything for %s", (_, cargoDiff) => {
-    expect(scope(["CHANGELOG.md", "Cargo.lock", "Cargo.toml"], cargoDiff)).toBe("all");
+    expect(scope(["CHANGELOG.md", "Cargo.lock", "Cargo.toml"], () => cargoDiff)).toBe("all");
   });
 
   it.each([
     [["Cargo.lock"]],
+    [["CHANGELOG.md", "Cargo.toml"]],
     [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "crates/core/src/lib.rs"]],
     [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", ".github/workflows/release.yml"]],
     [["Cargo.toml", "ui/src/App.svelte"]],
-  ])("runs everything when it also changes %j", (given) => {
-    expect(scope(given, SETS_VERSION)).toBe("all");
+  ])("runs everything when it changes %j", (given) => {
+    expect(scope(given, unread)).toBe("all");
   });
 
   it("reads the notes alone as docs", () => {
-    expect(scope(["CHANGELOG.md"], "")).toBe("docs");
+    expect(scope(["CHANGELOG.md"], unread)).toBe("docs");
   });
 });
 
@@ -105,10 +111,16 @@ describe("isVersionBump", () => {
     expect(isVersionBump(SETS_VERSION.replaceAll("\n", "\r\n"))).toBe(true);
   });
 
-  it("refuses two versions moving at once", () => {
-    expect(isVersionBump(bump("Cargo.toml", "0.3.2", "0.3.3") + bump("Cargo.lock", "0.3.1", "0.3.3"))).toBe(
-      false,
-    );
+  it("reads the headers of any prefix git's settings give", () => {
+    const mnemonic = SETS_VERSION.replaceAll("--- a/", "--- c/").replaceAll("+++ b/", "+++ w/");
+    expect(isVersionBump(mnemonic)).toBe(true);
+  });
+
+  it.each([
+    ["from", bump("Cargo.toml", "0.3.2", "0.3.3") + bump("Cargo.lock", "0.3.1", "0.3.3")],
+    ["to", bump("Cargo.toml", "0.3.2", "0.3.3") + bump("Cargo.lock", "0.3.2", "0.3.4")],
+  ])("refuses two versions to move %s", (_, diff) => {
+    expect(isVersionBump(diff)).toBe(false);
   });
 });
 

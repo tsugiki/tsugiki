@@ -1,17 +1,15 @@
 // The CI jobs a change needs, from the paths it touches. CI's `changes` job and `just rust-gates` both ask
 // this module, so the two agree on which paths count.
 
-/** A CI job, or a part of the macOS job, that runs only when a change reaches what it reads. */
-export type Job = "rust" | "dependencies" | "rust-coverage" | "ui" | "playwright" | "macos-rust" | "macos-ui";
-
-/** The jobs that read the Rust code: rustfmt and Clippy, cargo-deny and cargo-machete, and the tests. */
-const RUST_JOBS: readonly Job[] = ["rust", "dependencies", "rust-coverage", "macos-rust"];
-
-/** The jobs that read the window's code: ESLint, Prettier, svelte-check, Vitest and Playwright. */
-const UI_JOBS: readonly Job[] = ["ui", "playwright", "macos-ui"];
+/**
+ * What a CI job reads, which decides when it runs. `rust` is rustfmt, Clippy and the Rust tests with their
+ * coverage gate, on Windows and macOS. `dependencies` is cargo-deny and cargo-machete. `ui` is ESLint,
+ * Prettier, svelte-check, token-deps, Vitest and Playwright, on Windows and macOS.
+ */
+export type Job = "rust" | "dependencies" | "ui";
 
 /** Every job, in the order CI lists them. A change to anything no rule below claims runs them all. */
-export const EVERY_JOB: readonly Job[] = [...RUST_JOBS, ...UI_JOBS];
+export const EVERY_JOB: readonly Job[] = ["rust", "dependencies", "ui"];
 
 /** Files outside `crates/` that a Rust check reads, so a change to one runs the Rust jobs. */
 const READ_BY_RUST = new Set([
@@ -42,6 +40,20 @@ const READ_BY_UI = new Set([
 const RUST_ROOT = new Set(["Cargo.toml", "Cargo.lock", "clippy.toml", "deny.toml", "rust-toolchain.toml"]);
 
 /**
+ * Files that only the jobs that always run read, or no CI job at all: pre-commit's hooks and their typos
+ * list, Codecov's settings, and the other workflows.
+ */
+const READ_BY_NO_JOB = new Set([
+  ".pre-commit-config.yaml",
+  "_typos.toml",
+  "codecov.yml",
+  ".github/dependabot.yml",
+  ".github/workflows/advisories.yml",
+  ".github/workflows/bench.yml",
+  ".github/workflows/release.yml",
+]);
+
+/**
  * Docs, which only doc-width and pre-commit read. Markdown under `crates/` is Rust's: the highlighter's tests
  * read a sample there.
  */
@@ -56,14 +68,19 @@ function jobsOf(path: string): readonly Job[] {
   const rust = READ_BY_RUST.has(path) || RUST_ROOT.has(path) || path.startsWith("crates/");
   const ui = READ_BY_UI.has(path) || (path.startsWith("ui/") && !isDocs(path));
   if (rust || ui) {
-    return [...(rust ? RUST_JOBS : []), ...(ui ? UI_JOBS : [])];
+    return [...(rust ? (["rust", "dependencies"] as const) : []), ...(ui ? (["ui"] as const) : [])];
   }
-  return isDocs(path) ? [] : EVERY_JOB;
+  return isDocs(path) || READ_BY_NO_JOB.has(path) ? [] : EVERY_JOB;
 }
 
 /** The paths in what `git diff --name-only` printed, one a line. */
 export function paths(listed: string): string[] {
   return listed.split(/\r?\n/).filter((path) => path !== "");
+}
+
+/** git's arguments for the diff of the two Cargo files between `revisions` that `isVersionBump` reads. */
+export function cargoDiffArgs(...revisions: string[]): string[] {
+  return ["diff", "-U0", "--no-color", "--no-ext-diff", ...revisions, "--", "Cargo.toml", "Cargo.lock"];
 }
 
 /** The files a release PR changes when it only sets the version (docs/releasing.md). */
@@ -143,6 +160,51 @@ export function readTested(text: string): Tested | undefined {
   return typeof head === "string" && COMMIT.test(head) && typeof base === "string" && COMMIT.test(base)
     ? { head, base }
     : undefined;
+}
+
+/** The git calls `sincePassed` makes, which tests replace. Each throws when git fails. */
+export interface TreeGit {
+  /** The tree git gets from merging `head` into `base` again, as the CI run that tested them did. */
+  mergeTree(base: string, head: string): string;
+  /** The paths that differ between `tree` and the checkout. */
+  changedSince(tree: string): string[];
+  /** What `git diff -U0` prints for the two Cargo files between `tree` and the checkout. */
+  cargoDiffSince(tree: string): string;
+}
+
+/**
+ * The jobs whose inputs changed between the tree a PR's last passed run tested and the checkout, with a line
+ * for the log that says why. `jobs` is `undefined` when that tree can't be had, and then the whole PR counts:
+ * `lastTested` is that run's `tested.json`, or `undefined` when no run passed or it left none.
+ */
+export function sincePassed(lastTested: string | undefined, git: TreeGit): { jobs?: Job[]; note: string } {
+  if (lastTested === undefined) {
+    return { note: "No run on this PR has passed yet, or it left no tested.json, so the whole PR counts." };
+  }
+  const tested = readTested(lastTested);
+  if (tested === undefined) {
+    return { note: "The last passed run's tested.json doesn't name two commits, so the whole PR counts." };
+  }
+  let tree: string;
+  try {
+    tree = git.mergeTree(tested.base, tested.head);
+  } catch {
+    return { note: `git can't merge ${tested.head} into ${tested.base} again, so the whole PR counts.` };
+  }
+  let changed: string[];
+  try {
+    changed = git.changedSince(tree);
+  } catch {
+    return { note: `git can't diff the tree ${tree} with the checkout, so the whole PR counts.` };
+  }
+  const testedAt = `The last passed run tested ${tested.head} on ${tested.base}, the tree ${tree}`;
+  if (changed.length === 0) {
+    return { jobs: [], note: `${testedAt}, and nothing changed since.` };
+  }
+  return {
+    jobs: jobs(changed, () => git.cargoDiffSince(tree)),
+    note: `${testedAt}. Since then: ${changed.join(", ")}.`,
+  };
 }
 
 /**

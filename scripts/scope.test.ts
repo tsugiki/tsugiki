@@ -3,15 +3,27 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { EVERY_JOB, isVersionBump, type Job, jobs, narrowed, outputs, paths, readTested } from "./scope.ts";
+import {
+  cargoDiffArgs,
+  EVERY_JOB,
+  isVersionBump,
+  type Job,
+  jobs,
+  narrowed,
+  outputs,
+  paths,
+  readTested,
+  sincePassed,
+  type TreeGit,
+} from "./scope.ts";
 
 /** The Cargo diff of a change that can't be a release PR, which `jobs` mustn't read. */
 function unread(): string {
   throw new Error("jobs read the Cargo diff of a change that can't set the version");
 }
 
-const RUST: Job[] = ["rust", "dependencies", "rust-coverage", "macos-rust"];
-const UI: Job[] = ["ui", "playwright", "macos-ui"];
+const RUST: Job[] = ["rust", "dependencies"];
+const UI: Job[] = ["ui"];
 
 /** Each file under `folder` whose name ends with one of `endings`. */
 function filesEnding(folder: string, ...endings: string[]): string[] {
@@ -25,6 +37,11 @@ describe("jobs", () => {
     [["docs/scope.md"], []],
     [["README.md", "ui/NOTES.md", "docs/adr/0009.txt"], []],
     [["README.md", "docs/adr/0009.txt", "CHANGELOG.md"], []],
+    [["codecov.yml", ".pre-commit-config.yaml", "_typos.toml", ".github/dependabot.yml"], []],
+    [
+      [".github/workflows/release.yml", ".github/workflows/bench.yml", ".github/workflows/advisories.yml"],
+      [],
+    ],
     [["ui/src/App.svelte"], UI],
     [["ui/src/App.svelte", "docs/build-order.md", "ui/README.md"], UI],
     [["ui/vite.config.ts", "ui/e2e/layout.test.ts"], UI],
@@ -125,7 +142,8 @@ describe("a release PR", () => {
       ["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "ui/src/App.svelte"],
       [...RUST, ...UI],
     ],
-    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", ".github/workflows/release.yml"], EVERY_JOB],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", ".github/workflows/release.yml"], RUST],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "scripts/release-check.ts"], EVERY_JOB],
   ])("reads %j as more than a version", (given, expected) => {
     expect(jobs(given, unread)).toEqual(expected);
   });
@@ -169,9 +187,71 @@ describe("readTested", () => {
   });
 });
 
+/** A git whose merges, diffs and failures a test sets. */
+function fakeGit(changed: string[] | Error, merge: string | Error = "tree", cargoDiff = ""): TreeGit {
+  return {
+    mergeTree: () => {
+      if (merge instanceof Error) throw merge;
+      return merge;
+    },
+    changedSince: () => {
+      if (changed instanceof Error) throw changed;
+      return changed;
+    },
+    cargoDiffSince: () => cargoDiff,
+  };
+}
+
+const LAST_TESTED = JSON.stringify({ head: HEAD, base: BASE });
+
+describe("sincePassed", () => {
+  it("gives the jobs the change since the passed run's tree needs, and the paths that led there", () => {
+    const since = sincePassed(LAST_TESTED, fakeGit(["ui/src/App.svelte"]));
+    expect(since.jobs).toEqual(UI);
+    expect(since.note).toContain("Since then: ui/src/App.svelte.");
+  });
+
+  it("gives no job when nothing changed since the passed run's tree", () => {
+    expect(sincePassed(LAST_TESTED, fakeGit([])).jobs).toEqual([]);
+  });
+
+  it("reads the Cargo diff since that tree for a change that only sets the version", () => {
+    expect(
+      sincePassed(LAST_TESTED, fakeGit(["Cargo.lock", "Cargo.toml"], "tree", SETS_VERSION)).jobs,
+    ).toEqual(["dependencies"]);
+  });
+
+  it.each([
+    ["no run passed", undefined, fakeGit([]), "No run"],
+    ["its tested.json can't be read", "{}", fakeGit([]), "doesn't name two commits"],
+    ["git can't merge its commits", LAST_TESTED, fakeGit([], new Error("conflict")), "can't merge"],
+    ["git can't diff its tree", LAST_TESTED, fakeGit(new Error("bad tree")), "can't diff"],
+  ])("counts the whole PR when %s", (_, lastTested, git, words) => {
+    const since = sincePassed(lastTested, git);
+    expect(since.jobs).toBeUndefined();
+    expect(since.note).toContain(words);
+  });
+});
+
+describe("cargoDiffArgs", () => {
+  it("diffs the two Cargo files between the revisions without colour or an external tool", () => {
+    expect(cargoDiffArgs("a", "HEAD")).toEqual([
+      "diff",
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "a",
+      "HEAD",
+      "--",
+      "Cargo.toml",
+      "Cargo.lock",
+    ]);
+  });
+});
+
 describe("narrowed", () => {
   it("keeps the jobs whose inputs changed since the run that passed", () => {
-    expect(narrowed([...RUST, ...UI], ["ui", "playwright", "macos-ui"])).toEqual(UI);
+    expect(narrowed([...RUST, ...UI], ["ui"])).toEqual(UI);
   });
 
   it("keeps none for a change since that run that touched only docs", () => {
@@ -195,7 +275,7 @@ describe("paths", () => {
 
 describe("outputs", () => {
   it("writes the jobs as a JSON list", () => {
-    expect(outputs(["rust", "macos-rust"])).toBe('jobs=["rust","macos-rust"]\n');
+    expect(outputs(["rust", "dependencies"])).toBe('jobs=["rust","dependencies"]\n');
   });
 
   it("writes an empty list for a change that needs none", () => {

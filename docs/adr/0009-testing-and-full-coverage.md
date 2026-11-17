@@ -59,13 +59,15 @@ release. Coverage is held at 100%, and CI fails below it.
 
 ## Consequences
 
-- On every push to main and every PR that changes more than docs, on Windows: rustfmt, clippy with warnings
-  as errors, ESLint, Prettier, `svelte-check`, Vitest, Playwright on Chromium and WebKit, and both coverage
-  gates. Rust's gate runs every Rust test, the stale-bindings check among them. CI skips them on a PR that
-  changes only Markdown files or `docs/`, and still reports `CI passed`. A PR that changes only `ui/` and
-  docs skips the Rust checks on every OS below, and Codecov keeps main's Rust figure for it.
-  `ui/package.json` and the generated bindings don't count as `ui/`, because Rust tests read them.
-- On those same pushes and PRs, on macOS: what can differ there, which is clippy, Vitest, Playwright on
+- On every push to main, on Windows: rustfmt, clippy with warnings as errors, ESLint, Prettier,
+  `svelte-check`, Vitest, Playwright on Chromium and WebKit, and both coverage gates. Rust's gate runs every
+  Rust test, the stale-bindings check among them. A push to a PR runs the Rust checks when it reaches what
+  they read, and the UI checks when it reaches what those read (`scripts/scope.ts`), on every OS below, and
+  still reports `CI passed`. A change to docs alone runs neither, and a change to the scripts or the
+  workflow runs both. A push counts from the tree the PR's last passed run tested, so a fix to the UI after
+  a passed run skips the Rust checks. Codecov carries the last figure forward for a side a run skips.
+  `ui/package.json` and the generated bindings count for both sides, because Rust tests read them.
+- On those same pushes, on macOS: what can differ there, which is clippy, Vitest, Playwright on
   WebKit, and both coverage gates. Rust's gate runs the tests, so `cargo test` has no job of its own there.
   The others read the source or generate the same output on any OS. These are steps of one job, which needs
   one runner. GitHub cancels a macOS job that waits too long for a runner, after 20 minutes on the run we

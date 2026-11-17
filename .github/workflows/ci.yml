@@ -32,11 +32,11 @@ jobs:
     outputs:
       jobs: ${{ steps.jobs.outputs.jobs }}
     steps:
-      # The whole history, so git can merge the last run's head and base again, whatever they were. A push to
-      # main doesn't need it, and fetching it there costs a few seconds.
+      # On a PR, the whole history, so git can merge the last run's head and base again, whatever they
+      # were. `'0'` is a string, which an expression counts as true, where the number 0 would pick the 1.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -198,7 +198,7 @@ jobs:
   rust-coverage:
     name: rust-coverage (windows-latest)
     needs: [changes]
-    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust-coverage') }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -261,7 +261,7 @@ jobs:
   playwright:
     name: Playwright ${{ matrix.browser }} (windows-latest)
     needs: [changes]
-    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'playwright') }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -292,18 +292,18 @@ jobs:
 
   # What can differ on macOS, as steps of one job so a run needs one macOS runner. A failed check doesn't stop
   # the checks after it. As on Windows, Rust's coverage gate runs the tests and the bindings check. The Rust
-  # steps run when `jobs` lists `macos-rust`, and the UI ones when it lists `macos-ui`.
+  # steps run when `jobs` lists `rust`, and the UI ones when it lists `ui`.
   macos:
     name: checks (macos-latest)
     needs: [changes]
     if: >-
-      ${{ contains(fromJSON(needs.changes.outputs.jobs), 'macos-rust') ||
-      contains(fromJSON(needs.changes.outputs.jobs), 'macos-ui') }}
+      ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') ||
+      contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
     runs-on: macos-latest
     timeout-minutes: 60
     env:
-      RUST_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'macos-rust') }}
-      UI_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'macos-ui') }}
+      RUST_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') }}
+      UI_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -383,8 +383,8 @@ jobs:
       - macos
     runs-on: ubuntu-latest
     steps:
-      # A job may skip only when `changes` left it out of `jobs`. The macOS job counts as listed when either
-      # of its parts is, and the jobs with no `if:` always count as listed.
+      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS job reads both, and
+      # the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets a line.
       - name: Every job succeeded, or skipped because the change doesn't reach what it reads
         env:
           JOBS: ${{ needs.changes.outputs.jobs }}
@@ -395,10 +395,14 @@ jobs:
           results=$(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<< "$NEEDS")
           while read -r job result; do
             case "$job" in
-              macos) listed=$(jq -r 'any(.[]; . == "macos-rust" or . == "macos-ui")' <<< "$JOBS") ;;
-              changes | doc-width | pre-commit | release-check) listed=true ;;
-              *) listed=$(jq -r --arg job "$job" 'index($job) != null' <<< "$JOBS") ;;
+              changes | doc-width | pre-commit | release-check) reads='"always"' ;;
+              rust | rust-coverage) reads='"rust"' ;;
+              dependencies) reads='"dependencies"' ;;
+              ui | playwright) reads='"ui"' ;;
+              macos) reads='"rust", "ui"' ;;
+              *) echo "CI passed doesn't know what $job reads"; exit 1 ;;
             esac
+            listed=$(jq -r "[\"always\"] + . | any(.[]; IN($reads))" <<< "$JOBS")
             case "$result $listed" in
               "success "* | "skipped false") ;;
               *) echo "$job ended with: $result"; exit 1 ;;

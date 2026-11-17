@@ -6,7 +6,7 @@
 // named as arguments run in place of those four, as `just preflight` names Clippy and `rust-coverage`.
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { EVERY_JOB, type Job, jobs, paths } from "./scope.ts";
+import { cargoDiffArgs, EVERY_JOB, type Job, jobs, paths } from "./scope.ts";
 
 const named = process.argv.slice(2);
 const GATES = named.length > 0 ? named : ["clippy", "rust-coverage", "deny", "machete"];
@@ -14,7 +14,7 @@ const GATES = named.length > 0 ? named : ["clippy", "rust-coverage", "deny", "ma
 /** CI's job for each gate. A gate it doesn't name always runs. */
 const JOB_OF: Record<string, Job> = {
   clippy: "rust",
-  "rust-coverage": "rust-coverage",
+  "rust-coverage": "rust",
   deny: "dependencies",
   machete: "dependencies",
 };
@@ -33,19 +33,7 @@ function branchJobs(): readonly Job[] {
       ...paths(git("diff", "--no-renames", "--name-only", "--merge-base", "origin/main")),
       ...paths(git("ls-files", "--others", "--exclude-standard")),
     ];
-    const cargoDiff = (): string =>
-      git(
-        "diff",
-        "-U0",
-        "--no-color",
-        "--no-ext-diff",
-        "--merge-base",
-        "origin/main",
-        "--",
-        "Cargo.toml",
-        "Cargo.lock",
-      );
-    return jobs(changed, cargoDiff);
+    return jobs(changed, () => git(...cargoDiffArgs("--merge-base", "origin/main")));
   } catch {
     return EVERY_JOB;
   }

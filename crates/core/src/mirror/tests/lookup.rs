@@ -137,7 +137,7 @@ fn end_move(starts: &Receiver<FakeStart>, folder: &Path) -> (Vec<String>, String
 }
 
 #[test]
-fn the_checkout_is_made_at_a_prs_base_with_its_added_files_and_the_next_pr_moves_it() {
+fn the_checkout_holds_a_prs_base_and_added_files_moves_on_and_goes_with_the_repository() {
     let place = Place::new("lookup-moves");
     let hello = named("octo-org/hello");
     place.remote(&hello);
@@ -161,6 +161,12 @@ fn the_checkout_is_made_at_a_prs_base_with_its_added_files_and_the_next_pr_moves
     let second = place.look_up(&mirrors, &hello, at_two.clone());
     let second_commit = checked_out(&second.folder);
     mirrors.stop_cleanly(PLENTY);
+    let added = fs::read_to_string(second.folder.join("Lib/new module.py")).unwrap();
+    let readme = fs::read_to_string(second.folder.join("README.rst")).unwrap();
+    let news_gone = !second.folder.join("NEWS").exists();
+    let note = worktree_note(&second.folder);
+    let repository = place.folders.repository(&hello).canonicalize().unwrap();
+    fs::remove_dir_all(&repository).unwrap();
 
     assert_eq!(first.folder, place.folders.lookup(&hello));
     assert_eq!(first.at, at_one);
@@ -168,14 +174,19 @@ fn the_checkout_is_made_at_a_prs_base_with_its_added_files_and_the_next_pr_moves
     assert_eq!(first_news, "PR 1\n");
     assert_eq!(second.at, at_two);
     assert_eq!(second_commit, second_base.as_str());
-    assert!(
-        !second.folder.join("NEWS").exists(),
-        "the next move removes a PR's added files"
-    );
-    let added = fs::read_to_string(second.folder.join("Lib/new module.py")).unwrap();
+    assert!(news_gone, "the next move removes a PR's added files");
     assert_eq!(added, "PR 2\n");
-    let readme = fs::read_to_string(second.folder.join("README.rst")).unwrap();
     assert_eq!(readme, "Second\n");
+    // git notes the worktree in the mirror, which is in the Repository's folder too.
+    assert!(note.starts_with(&repository) && !note.exists(), "{note:?}");
+    assert!(!second.folder.exists());
+}
+
+/// Where git notes the worktree at `folder`, as the `.git` file in it names.
+fn worktree_note(folder: &Path) -> PathBuf {
+    let note = fs::read_to_string(folder.join(".git")).unwrap();
+    let note = Path::new(note.trim().strip_prefix("gitdir: ").unwrap());
+    note.canonicalize().unwrap()
 }
 
 #[test]
@@ -225,33 +236,6 @@ fn with_no_network_the_checkout_moves_to_a_base_the_mirror_holds() {
     assert_eq!(checkout.at, at);
     assert_eq!(checked_out(&checkout.folder), base.as_str());
     assert!(checkout.folder.join("NEWS").is_file());
-}
-
-#[test]
-fn removing_the_repositorys_folder_removes_the_checkout_and_gits_note_of_it() {
-    let place = Place::new("lookup-removed");
-    let hello = named("octo-org/hello");
-    place.remote(&hello);
-    let base = place.main(&hello);
-    let one = place.pull_request_adding(&hello, 1, "NEWS");
-    let mirrors = place.mirror_with(&hello, &[(1, &one)]);
-    let at = LookupAt { base, head: one };
-    let checkout = place.look_up(&mirrors, &hello, at);
-    mirrors.stop_cleanly(PLENTY);
-    let note = fs::read_to_string(checkout.folder.join(".git")).unwrap();
-    let note = Path::new(note.trim().strip_prefix("gitdir: ").unwrap());
-    let note = note.canonicalize().unwrap();
-    let repository = place.folders.repository(&hello).canonicalize().unwrap();
-
-    fs::remove_dir_all(&repository).unwrap();
-
-    // git notes the worktree in the mirror, which is in the Repository's folder too.
-    assert!(
-        note.starts_with(&repository),
-        "{note:?} is outside {repository:?}"
-    );
-    assert!(!note.exists());
-    assert!(!checkout.folder.exists());
 }
 
 #[test]

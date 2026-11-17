@@ -10,13 +10,29 @@ impl Place {
     /// Tsugiki clones from.
     fn user_clone(&self, name: &RepositoryName) -> PathBuf {
         self.remote(name);
-        let folder = self.remotes.with_file_name(format!("user-{}", name.name()));
-        let url = self.clone_source().url(name);
+        let (folder, url) = self.user_folder(name);
         let _ = git(
             &self.remotes,
             &["clone", "-q", &url, &folder.to_string_lossy()],
         );
         folder
+    }
+
+    /// A clone of `name` as the fake git sees one a user keeps, whose `origin` is the URL Tsugiki clones
+    /// from.
+    fn fake_clone(&self, name: &RepositoryName) -> PathBuf {
+        let (folder, url) = self.user_folder(name);
+        let git_folder = folder.join(".git");
+        fs::create_dir_all(&git_folder).unwrap();
+        let config = format!("[remote \"origin\"]\n\turl = {url}\n");
+        fs::write(git_folder.join("config"), config).unwrap();
+        folder
+    }
+
+    /// Where the user keeps their clone of `name`, outside Tsugiki's folders, and the URL of its `origin`.
+    fn user_folder(&self, name: &RepositoryName) -> (PathBuf, String) {
+        let folder = self.remotes.with_file_name(format!("user-{}", name.name()));
+        (folder, self.clone_source().url(name))
     }
 
     fn prefixes(&self) -> Vec<String> {
@@ -189,7 +205,7 @@ fn requests_check_a_clone_as_the_worker_will() {
 fn a_mirror_that_borrows_clones_with_the_lenders_objects_and_keeps_none_of_its_links() {
     let place = Place::new("borrow-args");
     let hello = named("octo-org/hello");
-    let folder = place.user_clone(&hello);
+    let folder = place.fake_clone(&hello);
     let (_versions, answers) = channel();
     let (mirrors, starts) = place.start_faked_from(
         place.clone_source(),

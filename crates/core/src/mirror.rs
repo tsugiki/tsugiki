@@ -17,7 +17,7 @@ use specta::Type;
 
 use crate::error::Error;
 use crate::facts::CommitSha;
-use crate::facts::patch_ids::PatchesOf;
+use crate::facts::patch_ids::{FilePatch, PatchesOf};
 use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::folders::Folders;
 use crate::github::{GitHub, Transport, live};
@@ -770,6 +770,8 @@ trait Git: Send {
     fn start(&self, args: &[&OsStr], input: &[u8]) -> io::Result<Started>;
     /// Runs a git that only reads a mirror, so it ends at once, and gives its output.
     fn read(&self, args: &[&OsStr]) -> io::Result<String>;
+    /// Reads the patch-ids of each file `of` changes in `mirror`, with the several gits that takes.
+    fn read_patch_ids(&self, mirror: &Path, of: &PatchesOf) -> io::Result<Vec<FilePatch>>;
 }
 
 /// A git the worker started.
@@ -801,6 +803,10 @@ impl Git for LiveGit {
 
     fn read(&self, args: &[&OsStr]) -> io::Result<String> {
         live::read_git(args)
+    }
+
+    fn read_patch_ids(&self, mirror: &Path, of: &PatchesOf) -> io::Result<Vec<FilePatch>> {
+        crate::diff::read_patch_ids(mirror, &of.target_branch, &of.commit)
     }
 }
 

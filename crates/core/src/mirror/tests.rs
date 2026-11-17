@@ -11,6 +11,7 @@ use tsugiki_test_git::{git, within};
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::CommitSha;
+use crate::facts::patch_ids::PatchId;
 use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::status::Status;
@@ -213,10 +214,7 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
         named("octo-org/second"),
         named("octo-org/open"),
     ];
-    for name in [&first, &second, &open] {
-        place.remote(name);
-    }
-    let (mirrors, announced) = place.start();
+    let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
     requests.clone_mirror(first.clone(), download());
@@ -226,7 +224,12 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
     requests.clone_mirror(open.clone(), download());
     requests.clone_mirror_next(open.clone(), download());
     let order: Vec<RepositoryName> = (0..3)
-        .map(|_| one_clone(&announced).remove(0).repository)
+        .map(|_| {
+            let clone = starts.recv_timeout(PLENTY).unwrap();
+            let cloned = clone.cloned();
+            clone.fail();
+            cloned
+        })
         .collect();
     mirrors.stop_cleanly(PLENTY);
 
@@ -271,34 +274,47 @@ fn a_clone_under_way_goes_on_to_its_end_and_the_one_asked_for_next_starts_after_
 fn a_repository_whose_mirror_is_there_isnt_cloned_again() {
     let place = Place::new("cloned");
     let [cloned, next] = [named("octo-org/cloned"), named("octo-org/next")];
-    place.remote(&next);
-    fs::create_dir_all(place.folders.mirror(&cloned)).unwrap();
-    let (mirrors, announced) = place.start();
+    place.mirrored(&cloned);
+    let (mirrors, starts) = place.start_faked();
 
     mirrors.requests().clone_mirror(cloned, download());
     mirrors
         .requests()
         .clone_mirror_next(next.clone(), download());
-    let clone = one_clone(&announced);
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    let repository = clone.cloned();
+    clone.fail();
+    mirrors.wait_idle();
+    let another = starts.try_recv().is_ok();
     mirrors.stop_cleanly(PLENTY);
 
-    assert!(clone.iter().all(|cloning| cloning.repository == next));
+    assert_eq!(repository, next);
+    assert!(!another, "another clone started");
 }
 
 #[test]
 fn a_failed_clone_leaves_no_folder_and_the_next_one_goes_on() {
     let place = Place::new("fails");
     let [missing, next] = [named("octo-org/missing"), named("octo-org/next")];
-    place.remote(&next);
-    let (mirrors, announced) = place.start();
+    let (mirrors, starts) = place.start_faked();
 
     mirrors.requests().clone_mirror(missing.clone(), download());
     mirrors.requests().clone_mirror(next.clone(), download());
-    let failed = one_clone(&announced);
-    let _ = one_clone(&announced);
+    // git fails after it has written part of the clone.
+    let failed = starts.recv_timeout(PLENTY).unwrap();
+    let written = PathBuf::from(failed.args.last().unwrap());
+    fs::create_dir_all(written.join("objects")).unwrap();
+    fs::write(written.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    let failed_clone = failed.cloned();
+    failed.fail();
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    let cloned = clone.cloned();
+    fs::create_dir_all(clone.args.last().unwrap()).unwrap();
+    clone.succeed();
     mirrors.stop_cleanly(PLENTY);
 
-    assert!(failed.iter().all(|cloning| cloning.repository == missing));
+    assert_eq!(failed_clone, missing);
+    assert_eq!(cloned, next);
     let partial = place.folders.repository(&missing).join(PARTIAL);
     assert!(!partial.exists());
     assert!(!place.folders.mirror(&missing).exists());
@@ -419,6 +435,34 @@ struct FakeGit {
     refs: Receiver<String>,
     /// The answer to each `git --version`, or nothing for a git that isn't there.
     versions: Receiver<Option<String>>,
+    /// Hears each read of a commit's patch-ids. Once the test stops listening, each read fails.
+    patch_reads: Sender<FakePatchRead>,
+}
+
+/// One read of a commit's patch-ids by the fake git, which waits for the test to answer it.
+struct FakePatchRead {
+    of: PatchesOf,
+    answer: Sender<io::Result<Vec<FilePatch>>>,
+}
+
+impl FakePatchRead {
+    /// Gives the commit a change to each file of `paths`.
+    fn give(self, paths: &[&str]) {
+        let id = |text: &str| PatchId::parse(&text.repeat(40)).unwrap();
+        let files = paths.iter().map(|path| FilePatch {
+            path: (*path).to_owned(),
+            verbatim: id("a"),
+            loose: id("b"),
+            generated: false,
+        });
+        self.answer.send(Ok(files.collect())).unwrap();
+    }
+
+    /// Fails the read, as git does in a mirror that lacks the commit.
+    fn fail(self) {
+        let lacks = format!("fatal: bad object {}", self.of.commit.as_str());
+        self.answer.send(Err(io::Error::other(lacks))).unwrap();
+    }
 }
 
 /// One start of the fake git.
@@ -621,16 +665,58 @@ impl Git for FakeGit {
                 Err(_none) => Ok("git version 2.43.0.windows.1".to_owned()),
             };
         }
-        // A look at a clone the user has, or for the reviewed commits a mirror has, goes to the real git,
-        // which reads it as the worker would.
-        let looks = ["rev-parse", "config", "rev-list"].map(OsStr::new);
-        if args.get(2).is_some_and(|command| looks.contains(command)) {
-            return live::read_git(args);
+        match args {
+            [_, mirror, command, shas @ ..] if *command == "rev-list" => {
+                return fake_rev_list(Path::new(mirror), shas);
+            }
+            // Each clone a user keeps has its objects in `.git`, as far as the fake can tell.
+            [_, _, command, ..] if *command == "rev-parse" => return Ok(".git\n".to_owned()),
+            [_, folder, command, ..] if *command == "config" => {
+                return fake_remote_urls(Path::new(folder));
+            }
+            _ => {}
         }
         self.refs
             .try_recv()
             .map_err(|_none| io::Error::other("the test gave no refs"))
     }
+
+    fn read_patch_ids(&self, _mirror: &Path, of: &PatchesOf) -> io::Result<Vec<FilePatch>> {
+        let (answer, answered) = channel();
+        let read = FakePatchRead {
+            of: of.clone(),
+            answer,
+        };
+        if self.patch_reads.send(read).is_err() {
+            return Err(io::Error::other("the test reads no patch-ids"));
+        }
+        answered.recv().map_err(io::Error::other)?
+    }
+}
+
+/// Where the fake git keeps `commit` in `mirror`: a file where git keeps a loose object.
+fn fake_object(mirror: &Path, commit: &CommitSha) -> PathBuf {
+    let (folder, file) = commit.as_str().split_at(2);
+    mirror.join("objects").join(folder).join(file)
+}
+
+/// The commits of `args` that `mirror` holds, as `rev-list --no-walk --ignore-missing` lists them. git
+/// can't look in a mirror that isn't a folder.
+fn fake_rev_list(mirror: &Path, args: &[&OsStr]) -> io::Result<String> {
+    if !mirror.is_dir() {
+        let words = format!("fatal: cannot change to '{}'", mirror.display());
+        return Err(io::Error::other(words));
+    }
+    let commits = args.iter().filter_map(|arg| CommitSha::parse(arg.to_str()?));
+    let held = commits.filter(|commit| fake_object(mirror, commit).exists());
+    Ok(held.map(|commit| format!("{}\n", commit.as_str())).collect())
+}
+
+/// The URL of each remote of a clone `fake_clone` made, as `config --get-regexp` lists them.
+fn fake_remote_urls(folder: &Path) -> io::Result<String> {
+    let config = fs::read_to_string(folder.join(".git").join("config"))?;
+    let urls = config.lines().filter_map(|line| line.trim().strip_prefix("url = "));
+    Ok(urls.map(|url| format!("remote.origin.url {url}\n")).collect())
 }
 
 impl Mirrors {
@@ -723,25 +809,54 @@ impl Place {
         announce: Announce,
         versions: Receiver<Option<String>>,
     ) -> (Mirrors, Receiver<FakeStart>) {
+        let (mirrors, starts, reads) = self.faked(remotes, announce, versions);
+        // Nobody hears the reads of patch-ids, so each fails.
+        drop(reads);
+        (mirrors, starts)
+    }
+
+    /// The worker with the fake git, each start of it, and each read of a commit's patch-ids, which waits
+    /// for the test to answer it. A head that is behind waits longer than a test.
+    fn start_faked_reading(&self) -> (Mirrors, Receiver<FakeStart>, Receiver<FakePatchRead>) {
+        let (_versions, answers) = channel();
+        let announce = Announce::cloning_only(Box::new(|_| {}));
+        self.faked(self.clone_source().patient(PLENTY), announce, answers)
+    }
+
+    fn faked(
+        &self,
+        remotes: Remotes,
+        announce: Announce,
+        versions: Receiver<Option<String>>,
+    ) -> (Mirrors, Receiver<FakeStart>, Receiver<FakePatchRead>) {
         let (starting, starts) = channel();
         let (landed, refs) = channel();
+        let (patch_reads, reads) = channel();
         let mirrors = Mirrors::with_git(
             Box::new(FakeGit {
                 starts: starting,
                 landed,
                 refs,
                 versions,
+                patch_reads,
             }),
             Ok(self.folders.clone()),
             remotes,
             announce,
         );
-        (mirrors, starts)
+        (mirrors, starts, reads)
     }
 
     /// A mirror that is already there, as far as the worker can tell.
     fn mirrored(&self, repository: &RepositoryName) {
         fs::create_dir_all(self.folders.mirror(repository)).unwrap();
+    }
+
+    /// A mirror that is already there and holds `commit`, as far as the fake git can tell.
+    fn mirrored_holding(&self, repository: &RepositoryName, commit: &CommitSha) {
+        let object = fake_object(&self.folders.mirror(repository), commit);
+        fs::create_dir_all(object.parent().unwrap()).unwrap();
+        fs::write(object, "").unwrap();
     }
 }
 

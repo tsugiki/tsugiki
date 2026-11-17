@@ -9,7 +9,6 @@ use std::collections::BTreeSet;
 use std::mem;
 
 use super::{CHECK_GIT, MirrorProblem, Worker};
-use crate::diff::read_patch_ids;
 use crate::facts::patch_ids::{CantCheck, CommitPatches, PatchesOf, UncheckedCommit};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
@@ -94,7 +93,7 @@ impl Worker {
             return false;
         };
         let patches = &mut known.patches;
-        match read_patch_ids(&mirror, &of.target_branch, &of.commit) {
+        match self.git.read_patch_ids(&mirror, &of) {
             Ok(files) => {
                 patches.handing.push(CommitPatches { of, files });
             }

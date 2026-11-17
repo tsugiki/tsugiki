@@ -149,7 +149,7 @@ describe("pinned tools", () => {
       expect(
         tools.map((line) => line.trim()),
         job,
-      ).toEqual(["tool: ${{ env.CARGO_LLVM_COV }}"]);
+      ).toEqual(["tool: ${{ env.LLVM_COV_TOOL }}"]);
     }
   });
 });

@@ -7,7 +7,7 @@ use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
-    Harness, LOTS, cpython, cross_references, fetched, fetched_nodes, found,
+    Harness, RATE_LIMIT, cpython, cross_references, fetched, fetched_nodes, found,
     issue_references_with_more, issues, merged_node, nothing, plain, pr_node, run_to_the_end,
     searches_finding, soon, up_to_the_first_issue,
 };
@@ -47,10 +47,10 @@ fn a_failed_step_keeps_its_place_and_runs_again() {
     let harness = Harness::new(
         "failure",
         vec![
-            found(&["a"], Some("next"), LOTS),
+            found(&["a"], Some("next"), RATE_LIMIT),
             Err(Unreachable::Offline),
             Err(Unreachable::Offline),
-            found(&["b"], None, LOTS),
+            found(&["b"], None, RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
@@ -92,7 +92,12 @@ fn nothing_queued_means_nothing_to_do() {
 fn a_repository_already_queued_isnt_queued_twice() {
     let harness = Harness::new(
         "dedupe",
-        vec![nothing(LOTS), nothing(LOTS), nothing(LOTS), nothing(LOTS)],
+        vec![
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+        ],
     );
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -108,12 +113,15 @@ fn a_repository_already_queued_isnt_queued_twice() {
 fn a_sync_pauses_only_below_the_floor() {
     let reset_at = OffsetDateTime::UNIX_EPOCH;
     let at_the_floor = RateLimit {
+        cost: 1,
+        limit: 5000,
+        used: 5000 - RATE_LIMIT_FLOOR,
         remaining: RATE_LIMIT_FLOOR,
         reset_at,
     };
     let below = RateLimit {
         remaining: RATE_LIMIT_FLOOR - 1,
-        reset_at,
+        ..at_the_floor
     };
     assert_eq!(pause_until(at_the_floor), None);
     assert_eq!(pause_until(below), Some(reset_at));
@@ -151,7 +159,9 @@ fn repositories_asked(harness: &Harness) -> Vec<String> {
 fn repositories_take_turns_and_the_open_one_has_every_other_step() {
     let harness = Harness::new(
         "turns",
-        std::iter::repeat_with(|| nothing(LOTS)).take(6).collect(),
+        std::iter::repeat_with(|| nothing(RATE_LIMIT))
+            .take(6)
+            .collect(),
     );
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -181,9 +191,9 @@ fn a_sync_carries_on_from_its_place_between_turns() {
     let harness = Harness::new(
         "between-turns",
         vec![
-            found(&["a"], Some("next"), LOTS),
-            nothing(LOTS),
-            found(&[], None, LOTS),
+            found(&["a"], Some("next"), RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            found(&[], None, RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
@@ -215,7 +225,7 @@ fn a_sync_carries_on_from_its_place_between_turns() {
 #[test]
 fn a_refresh_of_the_open_repository_takes_the_next_turn_beside_another_sync() {
     let mut replies = searches_finding(&[]);
-    replies.push(nothing(LOTS));
+    replies.push(nothing(RATE_LIMIT));
     // The test asks only who is asked, so GitHub turns the refresh down.
     replies.push(refused());
     let harness = Harness::new("refresh-next", replies);
@@ -239,7 +249,10 @@ fn a_refresh_of_the_open_repository_takes_the_next_turn_beside_another_sync() {
 
 #[test]
 fn a_failure_of_one_repository_holds_back_only_that_one() {
-    let harness = Harness::new("held-alone", vec![refused(), nothing(LOTS), nothing(LOTS)]);
+    let harness = Harness::new(
+        "held-alone",
+        vec![refused(), nothing(RATE_LIMIT), nothing(RATE_LIMIT)],
+    );
     let mut syncs = Syncs::default();
     syncs.add(plain(peps()));
     syncs.add(plain(cpython()));
@@ -310,7 +323,9 @@ fn with_the_open_repository_idle_the_activity_only_names_the_others() {
 fn the_others_turns_dont_change_the_names_in_the_activity() {
     let harness = Harness::new(
         "names-stay",
-        std::iter::repeat_with(|| nothing(LOTS)).take(4).collect(),
+        std::iter::repeat_with(|| nothing(RATE_LIMIT))
+            .take(4)
+            .collect(),
     );
     let mut syncs = Syncs::default();
     syncs.add(plain(devguide()));
@@ -329,7 +344,7 @@ fn the_others_turns_dont_change_the_names_in_the_activity() {
 
 #[test]
 fn another_repositorys_failure_names_it() {
-    let harness = Harness::new("names-failure", vec![nothing(LOTS), refused()]);
+    let harness = Harness::new("names-failure", vec![nothing(RATE_LIMIT), refused()]);
     let mut syncs = Syncs::default();
     syncs.add(plain(peps()));
     syncs.add(plain(cpython()));
@@ -528,9 +543,9 @@ fn only_the_open_repository_says_its_sync_finished() {
 #[test]
 fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
     let mut replies = up_to_the_first_issue();
-    replies.push(issue_references_with_more(1, &[3], "older", LOTS));
-    replies.push(cross_references(&[2], None, LOTS));
-    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], LOTS));
+    replies.push(issue_references_with_more(1, &[3], "older", RATE_LIMIT));
+    replies.push(cross_references(&[2], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], RATE_LIMIT));
     let harness = Harness::new("gave-way-listed", replies);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
@@ -594,7 +609,7 @@ fn an_outage_shorter_than_the_tries_doesnt_end_a_sync() {
 
 #[test]
 fn a_step_that_works_starts_the_count_again() {
-    let harness = Harness::new("recovers", vec![nothing(LOTS)]);
+    let harness = Harness::new("recovers", vec![nothing(RATE_LIMIT)]);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     for _ in 0..TRIES - 1 {
@@ -726,11 +741,11 @@ fn a_save_that_fails_is_the_steps_failure() {
     let harness = Harness::new(
         "save-fails",
         vec![
-            found(&["a"], None, LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            fetched(&[1], LOTS),
+            found(&["a"], None, RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            fetched(&[1], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
@@ -778,7 +793,7 @@ mod activity {
         replies.push(window_page(
             &[window_issue(1, &hours_ago(1))],
             Some("more"),
-            LOTS,
+            RATE_LIMIT,
         ));
         replies.push(empty_window_page());
         replies.push(empty_window_page());
@@ -857,10 +872,10 @@ fn opening_an_issue_after_a_first_sync_reads_its_whole_tree_once() {
     let (mut syncs, harness) = after_a_first_sync(
         "tree-open",
         vec![
-            cross_references(&[20], Some("older"), LOTS),
-            cross_references(&[21], None, LOTS),
-            fetched_nodes(&[merged_node(20), merged_node(21)], LOTS),
-            issues(&[1], LOTS),
+            cross_references(&[20], Some("older"), RATE_LIMIT),
+            cross_references(&[21], None, RATE_LIMIT),
+            fetched_nodes(&[merged_node(20), merged_node(21)], RATE_LIMIT),
+            issues(&[1], RATE_LIMIT),
         ],
     );
     let last_sync = harness.store.sync_state(&cpython()).unwrap();
@@ -893,7 +908,7 @@ fn opening_an_issue_after_a_first_sync_reads_its_whole_tree_once() {
 #[test]
 fn a_click_on_refresh_waits_behind_a_tree_and_still_runs() {
     let (mut syncs, harness) =
-        after_a_first_sync("tree-click", vec![cross_references(&[], None, LOTS)]);
+        after_a_first_sync("tree-click", vec![cross_references(&[], None, RATE_LIMIT)]);
 
     syncs.open_issue(&cpython(), 7);
     syncs.refresh_now();
@@ -1019,12 +1034,12 @@ fn a_tree_brings_only_the_issues_its_prs_name_that_tsugiki_lacks() {
     let (mut syncs, harness) = after_a_first_sync(
         "tree-named",
         vec![
-            cross_references(&[20, 21], None, LOTS),
+            cross_references(&[20, 21], None, RATE_LIMIT),
             fetched_nodes(
                 &[named(20, "gh-5: Fix it"), named(21, "gh-7: Fix it")],
-                LOTS,
+                RATE_LIMIT,
             ),
-            issues(&[5], LOTS),
+            issues(&[5], RATE_LIMIT),
         ],
     );
     harness
@@ -1055,8 +1070,11 @@ fn a_tree_whose_prs_name_issues_tsugiki_has_asks_for_no_more() {
     let (mut syncs, harness) = after_a_first_sync(
         "tree-named-held",
         vec![
-            cross_references(&[20], None, LOTS),
-            fetched_nodes(&[pr_node(20, &json!({ "title": "gh-7: Fix it" }))], LOTS),
+            cross_references(&[20], None, RATE_LIMIT),
+            fetched_nodes(
+                &[pr_node(20, &json!({ "title": "gh-7: Fix it" }))],
+                RATE_LIMIT,
+            ),
         ],
     );
     harness
@@ -1098,11 +1116,11 @@ fn a_tree_that_keeps_failing_gives_way_to_the_sync_behind_it() {
 #[test]
 fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched(&[1], LOTS));
+    replies.push(fetched(&[1], RATE_LIMIT));
     replies.extend([
         Err(Unreachable::Offline),
         Err(Unreachable::Offline),
-        issues(&[7], LOTS),
+        issues(&[7], RATE_LIMIT),
     ]);
     let harness = Harness::new("fill-offline", replies);
     let issue = IssueFacts {

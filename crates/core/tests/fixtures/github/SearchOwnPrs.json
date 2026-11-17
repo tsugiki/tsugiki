@@ -2,8 +2,11 @@
   "body": {
     "data": {
       "rateLimit": {
+        "cost": 1,
+        "limit": 5000,
         "remaining": 4996,
-        "resetAt": "2026-11-08T07:56:19Z"
+        "resetAt": "2026-11-08T07:56:19Z",
+        "used": 4
       },
       "search": {
         "nodes": [
@@ -24,7 +27,7 @@
       }
     }
   },
-  "query": "query SearchOwnPrs($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } rateLimit { remaining resetAt } }",
+  "query": "query SearchOwnPrs($query: String!, $first: Int!, $after: String) { search(query: $query, type: ISSUE_ADVANCED, first: $first, after: $after) { pageInfo { hasNextPage endCursor } nodes { ... on PullRequest { id } } } rateLimit { cost limit used remaining resetAt } }",
   "reset": 1794124579,
   "status": 200
 }

@@ -1,12 +1,19 @@
 {
   "body": {
     "data": {
+      "rateLimit": {
+        "cost": 1,
+        "limit": 5000,
+        "remaining": 4990,
+        "resetAt": "2026-11-08T07:55:34Z",
+        "used": 10
+      },
       "viewer": {
         "login": "octocat"
       }
     }
   },
-  "query": "query Viewer { viewer { login } }",
+  "query": "query Viewer { viewer { login } rateLimit { cost limit used remaining resetAt } }",
   "reset": 1794124579,
   "status": 200
 }

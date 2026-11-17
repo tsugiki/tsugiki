@@ -9,6 +9,7 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use super::{Progress, Syncs};
+pub(super) use crate::github::testing::RATE_LIMIT;
 use crate::github::testing::{Scripted, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryCounts, RepositoryName};
@@ -18,9 +19,8 @@ use crate::store::{OpenReader, Store, StoreReader};
 use crate::testing::TempPath;
 use crate::token::Token;
 
-pub(super) const LOTS: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
-
-pub(super) const FEW: &str = r#""rateLimit":{"remaining":10,"resetAt":"2999-01-01T00:00:00Z"}"#;
+pub(super) const FEW: &str = r#""rateLimit":{"cost":1,"limit":5000,"used":4990,"remaining":10,
+    "resetAt":"2999-01-01T00:00:00Z"}"#;
 
 pub(super) fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -152,7 +152,7 @@ impl Transport for Counted {
 
 /// A page of a first sync's window with nothing on it.
 pub(super) fn empty_window_page() -> Result<Reply, Unreachable> {
-    window_page(&[], None, LOTS)
+    window_page(&[], None, RATE_LIMIT)
 }
 
 /// The time `hours` ago as GitHub writes it, for an item inside a window that moves with the clock.
@@ -472,18 +472,18 @@ pub(super) fn merged_node(number: u32) -> Value {
 /// The replies that bring the user's one PR, #1, and its one Issue, #1.
 pub(super) fn up_to_the_first_issue() -> Vec<Result<Reply, Unreachable>> {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[pr_node(1, &json!({}))], LOTS));
-    replies.push(issues(&[1], LOTS));
+    replies.push(fetched_nodes(&[pr_node(1, &json!({}))], RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
     replies
 }
 
 /// The replies up to and including the search that finds `ids`.
 pub(super) fn searches_finding(ids: &[&str]) -> Vec<Result<Reply, Unreachable>> {
     vec![
-        found(ids, None, LOTS),
-        nothing(LOTS),
-        nothing(LOTS),
-        nothing(LOTS),
+        found(ids, None, RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        nothing(RATE_LIMIT),
+        nothing(RATE_LIMIT),
     ]
 }
 

@@ -4,6 +4,13 @@
       "closed": {
         "issueCount": 2613
       },
+      "rateLimit": {
+        "cost": 1,
+        "limit": 5000,
+        "remaining": 4990,
+        "resetAt": "2026-11-08T07:55:34Z",
+        "used": 10
+      },
       "repository": {
         "diskUsage": 912867,
         "issues": {
@@ -19,7 +26,7 @@
       }
     }
   },
-  "query": "query CheckRepository($owner: String!, $name: String!, $updated: String!, $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner diskUsage issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }",
+  "query": "query CheckRepository($owner: String!, $name: String!, $updated: String!, $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner diskUsage issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } rateLimit { cost limit used remaining resetAt } }",
   "reset": 1794124534,
   "status": 200
 }

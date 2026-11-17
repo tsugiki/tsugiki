@@ -483,3 +483,71 @@ describe("StatusBar's chord", () => {
     expect(screen.queryByText("Ctrl+K")).toBeNull();
   });
 });
+
+describe("StatusBar's points", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const hourPoints = {
+    limit: 5000,
+    used: 3760,
+    remaining: 1240,
+    resets_at: "2026-11-17T14:32:00Z",
+    spent: 3610,
+    since: null,
+  };
+  const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const words = `1,240 points left · resets ${time(hourPoints.resets_at)}`;
+  const tip =
+    "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using your token spent the rest.";
+  const shown = () => screen.getByText(words);
+  const read = () => screen.getByText(`${words} · ${tip}`);
+  const part = (): HTMLElement => {
+    const parent = shown().parentElement;
+    if (parent === null) throw new Error("the points' words sit in no part");
+    return parent;
+  };
+
+  it("shows nothing before GitHub's first answer says", () => {
+    render(StatusBar, { status: online });
+    expect(screen.queryByText(/points left/)).toBeNull();
+  });
+
+  it("shows the points left and the reset on the right, outside the live region", () => {
+    render(StatusBar, { status: online, hourPoints });
+    expect(shown()).toBeTruthy();
+    expect(bar().contains(part())).toBe(false);
+    expect(part().parentElement).toBe(bar().parentElement);
+  });
+
+  it("says in its tooltip what Tsugiki spent and what other tools did", () => {
+    render(StatusBar, { status: online, hourPoints });
+    expect(shown().title).toBe(tip);
+  });
+
+  it("gives a screen reader the words and the tooltip once, from a copy of their own", () => {
+    render(StatusBar, { status: online, hourPoints });
+    expect(read().parentElement).toBe(part());
+    expect(shown().getAttribute("aria-hidden")).toBe("true");
+    expect(part().title).toBe("");
+    expect([...part().querySelectorAll("[title]")]).toEqual([shown()]);
+  });
+
+  it("goes when the core says the hour has reset", async () => {
+    const { rerender } = render(StatusBar, { status: online, hourPoints });
+    await rerender({ status: online, hourPoints: null });
+    expect(screen.queryByText(/points left/)).toBeNull();
+  });
+
+  it("updates with each answer", async () => {
+    const { rerender } = render(StatusBar, { status: online, hourPoints });
+    await rerender({
+      status: online,
+      hourPoints: { ...hourPoints, used: 3770, remaining: 1230, spent: 3620 },
+    });
+    expect(screen.getByText(/^1,230 points left · resets [^·]*$/)).toBeTruthy();
+  });
+
+  it("goes with the bar", () => {
+    render(StatusBar, { status: online, hourPoints, visible: false });
+    expect(screen.queryByText(/points left/)).toBeNull();
+  });
+});

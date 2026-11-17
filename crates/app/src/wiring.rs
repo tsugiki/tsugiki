@@ -11,7 +11,7 @@ use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::latest;
-use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
+use tsugiki_core::mirror::{Announce, MirrorRequests, Mirrors, Remotes};
 use tsugiki_core::releases::{AskPublic, ReleaseCheck};
 use tsugiki_core::search::TextSearch;
 use tsugiki_core::session::{Connections, Intervals, Session};
@@ -21,9 +21,10 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 use crate::first_frame;
 use crate::{
     Changed, CloningChanged, DiffWork, FailedHeads, HeadsFetchFailed, HeadsFetched,
-    LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
-    MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
-    ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged, TextSearchChanged,
+    HourPointsChanged, LanguageServersChanged, LastSyncChanged, MirrorProblemChanged,
+    MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound,
+    PickPath, Picker, ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
+    TextSearchChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -67,14 +68,9 @@ impl Core {
     }
 }
 
-/// Reads the settings, starts the session and the mirrors, and gives the commands what they ask. Events need
-/// `mount_events` to have run on `app`.
-pub(crate) fn connect_core<R: Runtime>(
-    app: &AppHandle<R>,
-    folders: Result<Folders, Error>,
-    outside: Outside,
-    refresh: Duration,
-) -> Core {
+/// The board the session announces app-wide status on. It keeps the newest of each in a `latest` copy for its
+/// command, then sends the event, and tells the mirrors of each status, which they follow.
+fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> StatusBoard {
     let (mut latest_status, status_reader) = latest::channel(Status::default());
     assert!(app.manage(status_reader), "only this manages the status");
     let (mut latest_sync, last_sync_reader) = latest::channel(None);
@@ -87,30 +83,18 @@ pub(crate) fn connect_core<R: Runtime>(
         app.manage(activity_reader),
         "only this manages the sync activity"
     );
+    let (mut latest_points, points_reader) = latest::channel(None);
     assert!(
-        app.manage(Picker(outside.pick)),
-        "only this manages the picker"
+        app.manage(points_reader),
+        "only this manages the hour's points"
     );
-    // Two small files, read before the page loads so `settings` and `home` can always answer. A
-    // `settings_path` on a slow drive would delay the page. Without folders the defaults apply, and the
-    // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
-    let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
-    turn_to_start_theme(app, &settings);
-    // Settings Tsugiki can't read fall back to the defaults, which check, though the file may turn the check
-    // off. So only settings read without a problem start it.
-    let check_releases_on = {
-        let loaded = &settings.view().loaded;
-        folders.is_ok() && loaded.problems.is_empty() && loaded.settings.releases.check
-    };
     let status_handle = app.clone();
     let changes_handle = app.clone();
     let failed_reads_handle = app.clone();
     let last_sync_handle = app.clone();
     let activity_handle = app.clone();
-    let announce = mirror_announcements(app);
-    let mirrors = Mirrors::start(folders.clone(), outside.remotes, announce);
-    let following = mirrors.requests();
-    let board = StatusBoard::new(Box::new(move |status| {
+    let points_handle = app.clone();
+    StatusBoard::new(Box::new(move |status| {
         following.follow(status);
         // Before the event: a window that starts listening too late for it then asks `status()`, and has to
         // get this status.
@@ -135,7 +119,41 @@ pub(crate) fn connect_core<R: Runtime>(
         let activity = activity.cloned();
         latest_activity.set(&activity);
         log_if_unsent(SyncActivityChanged(activity).emit(&activity_handle));
-    }));
+    }))
+    .with_hour_points(Box::new(move |points| {
+        // Before the event, for the reason the status gives above.
+        let points = points.copied();
+        latest_points.set(&points);
+        log_if_unsent(HourPointsChanged(points).emit(&points_handle));
+    }))
+}
+
+/// Reads the settings, starts the session and the mirrors, and gives the commands what they ask. Events need
+/// `mount_events` to have run on `app`.
+pub(crate) fn connect_core<R: Runtime>(
+    app: &AppHandle<R>,
+    folders: Result<Folders, Error>,
+    outside: Outside,
+    refresh: Duration,
+) -> Core {
+    assert!(
+        app.manage(Picker(outside.pick)),
+        "only this manages the picker"
+    );
+    // Two small files, read before the page loads so `settings` and `home` can always answer. A
+    // `settings_path` on a slow drive would delay the page. Without folders the defaults apply, and the
+    // session shows why. A thread of their own owns the files from here, so saving doesn't wait on GitHub.
+    let settings = SettingsOwner::start(folders.clone().map(SettingsFiles::load));
+    turn_to_start_theme(app, &settings);
+    // Settings Tsugiki can't read fall back to the defaults, which check, though the file may turn the check
+    // off. So only settings read without a problem start it.
+    let check_releases_on = {
+        let loaded = &settings.view().loaded;
+        folders.is_ok() && loaded.problems.is_empty() && loaded.settings.releases.check
+    };
+    let announce = mirror_announcements(app);
+    let mirrors = Mirrors::start(folders.clone(), outside.remotes, announce);
+    let board = status_board(app, mirrors.requests());
     let intervals = Intervals {
         status: refresh,
         repository: REPOSITORY_REFRESH,

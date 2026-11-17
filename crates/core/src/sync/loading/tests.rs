@@ -10,7 +10,7 @@ use crate::status::SyncPart;
 use crate::store::FirstSyncPlace;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
-    FEW, Harness, LARGE, LOTS, comment_by, counted, counted_as, cpython, cross_references,
+    FEW, Harness, LARGE, RATE_LIMIT, comment_by, counted, counted_as, cpython, cross_references,
     empty_window_page, fetched_nodes, hours_ago, issue_references, issue_references_with_more,
     issues, plain, pr_node, run_to_the_end, searches_finding, window_issue,
     window_issue_referencing, window_page, window_pr,
@@ -25,8 +25,8 @@ fn up_to_the_queue() -> Vec<Result<Reply, Unreachable>> {
 /// The replies that bring the user's PR #1 and its Issue #1, up to the queue.
 fn up_to_the_queue_with_an_issue() -> Vec<Result<Reply, Unreachable>> {
     let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[pr_node(1, &json!({}))], LOTS));
-    replies.push(issues(&[1], LOTS));
+    replies.push(fetched_nodes(&[pr_node(1, &json!({}))], RATE_LIMIT));
+    replies.push(issues(&[1], RATE_LIMIT));
     replies
 }
 
@@ -88,8 +88,8 @@ fn queue_operations(harness: &Harness) -> Vec<String> {
 #[test]
 fn the_users_own_trees_load_before_the_window() {
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references(&[(1, &[5])], LOTS));
-    replies.push(fetched_nodes(&[merged(5)], LOTS));
+    replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged(5)], RATE_LIMIT));
     replies.push(empty_window_page());
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-own-first", replies);
@@ -119,15 +119,15 @@ fn a_page_and_a_batch_take_turns() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(20)], LOTS));
+    replies.push(fetched_nodes(&[merged(20)], RATE_LIMIT));
     replies.push(window_page(
         &[window_issue_referencing(11, &at, &[21])],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(21)], LOTS));
+    replies.push(fetched_nodes(&[merged(21)], RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-turns", replies);
     let mut syncs = syncing();
@@ -151,21 +151,21 @@ fn a_page_and_a_batch_take_turns() {
 fn a_pr_many_lists_bring_is_fetched_once() {
     let at = hours_ago(1);
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references(&[(1, &[5])], LOTS));
-    replies.push(fetched_nodes(&[merged(5)], LOTS));
+    replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged(5)], RATE_LIMIT));
     replies.push(window_page(
         &[
             window_issue_referencing(10, &at, &[5, 20]),
             window_issue_referencing(11, &at, &[20]),
         ],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(20)], LOTS));
+    replies.push(fetched_nodes(&[merged(20)], RATE_LIMIT));
     replies.push(window_page(
         &[window_pr(1, &at), window_pr(5, &at), window_pr(20, &at)],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
     let harness = Harness::with_window("queue-once", replies);
     let mut syncs = syncing();
@@ -182,10 +182,10 @@ fn the_list_of_prs_brings_what_no_issue_reached() {
     let at = hours_ago(1);
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
-    replies.push(window_page(&[window_pr(30, &at)], None, LOTS));
+    replies.push(window_page(&[window_pr(30, &at)], None, RATE_LIMIT));
     replies.push(fetched_nodes(
         &[pr_node(30, &json!({ "title": "A change with no Issue" }))],
-        LOTS,
+        RATE_LIMIT,
     ));
     let harness = Harness::with_window("queue-standalone", replies);
     let mut syncs = syncing();
@@ -219,9 +219,9 @@ fn a_page_queues_only_the_prs_inside_the_window() {
     replies.push(window_page(
         &[issue_with_a_pr_older_than_the_window()],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(20)], LOTS));
+    replies.push(fetched_nodes(&[merged(20)], RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-older-waits", replies);
     let mut syncs = syncing();
@@ -240,12 +240,20 @@ fn opening_an_issue_brings_its_older_prs_and_older_references() {
     replies.push(window_page(
         &[issue_with_a_pr_older_than_the_window()],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issue_references_with_more(10, &[20, 21], "older", LOTS));
-    replies.push(cross_references(&[22], Some("oldest"), LOTS));
-    replies.push(cross_references(&[], None, LOTS));
-    replies.push(fetched_nodes(&[merged(20), merged(21), merged(22)], LOTS));
+    replies.push(issue_references_with_more(
+        10,
+        &[20, 21],
+        "older",
+        RATE_LIMIT,
+    ));
+    replies.push(cross_references(&[22], Some("oldest"), RATE_LIMIT));
+    replies.push(cross_references(&[], None, RATE_LIMIT));
+    replies.push(fetched_nodes(
+        &[merged(20), merged(21), merged(22)],
+        RATE_LIMIT,
+    ));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-older-opened", replies);
     let mut syncs = syncing();
@@ -266,7 +274,7 @@ fn opening_an_issue_brings_its_older_prs_and_older_references() {
 #[test]
 fn opening_the_users_own_issue_doesnt_read_its_tree_again() {
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references(&[(1, &[])], LOTS));
+    replies.push(issue_references(&[(1, &[])], RATE_LIMIT));
     replies.push(empty_window_page());
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-open-own", replies);
@@ -292,11 +300,11 @@ fn opening_an_issue_puts_its_prs_next_and_takes_them_from_the_queue() {
     let waiting: Vec<u32> = (20..45).collect();
     let mut page = vec![window_issue_referencing(10, &at, &waiting)];
     page.push(window_issue_referencing(11, &at, &[45]));
-    replies.push(window_page(&page, None, LOTS));
-    replies.push(issue_references(&[(11, &[45])], LOTS));
-    replies.push(fetched_nodes(&[merged(45), merged(44)], LOTS));
+    replies.push(window_page(&page, None, RATE_LIMIT));
+    replies.push(issue_references(&[(11, &[45])], RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged(45), merged(44)], RATE_LIMIT));
     replies.push(empty_window_page());
-    replies.push(fetched_nodes(&[merged(20)], LOTS));
+    replies.push(fetched_nodes(&[merged(20)], RATE_LIMIT));
     let harness = Harness::with_window("queue-open", replies);
     let mut syncs = syncing();
     let before_it_opened = run_until_asked(&mut syncs, &harness, "WindowIssues");
@@ -338,8 +346,12 @@ fn long_reads(asked: &[(String, Value)]) -> Vec<(Value, Value)> {
 #[test]
 fn a_view_that_asks_again_doesnt_read_its_issue_again() {
     let mut replies = up_to_the_queue();
-    replies.push(window_page(&[window_issue(11, &hours_ago(1))], None, LOTS));
-    replies.push(issue_references(&[(11, &[])], LOTS));
+    replies.push(window_page(
+        &[window_issue(11, &hours_ago(1))],
+        None,
+        RATE_LIMIT,
+    ));
+    replies.push(issue_references(&[(11, &[])], RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-open-twice", replies);
     let mut syncs = syncing();
@@ -370,11 +382,11 @@ fn an_opened_issues_older_references_go_before_the_queue() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issue_references_with_more(11, &[], "older-11", LOTS));
-    replies.push(cross_references(&[], None, LOTS));
-    replies.push(fetched_nodes(&[merged(20)], LOTS));
+    replies.push(issue_references_with_more(11, &[], "older-11", RATE_LIMIT));
+    replies.push(cross_references(&[], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged(20)], RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-long-urgent", replies);
     let mut syncs = syncing();
@@ -404,12 +416,12 @@ fn an_opened_issues_older_references_go_before_the_queue() {
 #[test]
 fn a_page_doesnt_read_the_older_references_of_the_users_own_issue_again() {
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references_with_more(1, &[], "older", LOTS));
-    replies.push(cross_references(&[], None, LOTS));
+    replies.push(issue_references_with_more(1, &[], "older", RATE_LIMIT));
+    replies.push(cross_references(&[], None, RATE_LIMIT));
     replies.push(window_page(
         &[window_issue_with_more(1, "older")],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-long-own", replies);
@@ -429,12 +441,12 @@ fn an_opened_issues_batch_fills_up_from_the_queue() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[8, 20])],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issue_references(&[(11, &[45])], LOTS));
+    replies.push(issue_references(&[(11, &[45])], RATE_LIMIT));
     replies.push(fetched_nodes(
         &[backport(45, 8), merged(8), merged(20)],
-        LOTS,
+        RATE_LIMIT,
     ));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-open-origin", replies);
@@ -462,11 +474,11 @@ fn an_urgent_origin_waiting_in_the_queue_leaves_it() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &waiting)],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(issue_references(&[(11, &[45])], LOTS));
-    replies.push(fetched_nodes(&[backport(45, 20)], LOTS));
-    replies.push(crate::sync::testing::origin_answer(&merged(20), LOTS));
+    replies.push(issue_references(&[(11, &[45])], RATE_LIMIT));
+    replies.push(fetched_nodes(&[backport(45, 20)], RATE_LIMIT));
+    replies.push(crate::sync::testing::origin_answer(&merged(20), RATE_LIMIT));
     let harness = Harness::with_window("queue-origin-waiting", replies);
     let mut syncs = syncing();
     drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
@@ -489,9 +501,12 @@ fn an_origin_that_names_no_pr_is_asked_for_once() {
     let at = hours_ago(1);
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
-    replies.push(window_page(&[window_pr(9, &at)], None, LOTS));
-    replies.push(fetched_nodes(&[backport(9, 7)], LOTS));
-    replies.push(crate::sync::testing::origin_answer(&Value::Null, LOTS));
+    replies.push(window_page(&[window_pr(9, &at)], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[backport(9, 7)], RATE_LIMIT));
+    replies.push(crate::sync::testing::origin_answer(
+        &Value::Null,
+        RATE_LIMIT,
+    ));
     let harness = Harness::with_window("queue-no-origin", replies);
     let mut syncs = syncing();
 
@@ -514,14 +529,14 @@ fn a_frozen_origin_still_brings_the_issue_it_names() {
     );
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
-    replies.push(window_page(&[window_pr(8, &at)], None, LOTS));
-    replies.push(fetched_nodes(&[on_old_issue], LOTS));
-    replies.push(issues(&[900], LOTS));
+    replies.push(window_page(&[window_pr(8, &at)], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[on_old_issue], RATE_LIMIT));
+    replies.push(issues(&[900], RATE_LIMIT));
     replies.extend(searches_finding(&[]));
     replies.push(empty_window_page());
-    replies.push(window_page(&[window_pr(9, &at)], None, LOTS));
-    replies.push(fetched_nodes(&[backport(9, 8)], LOTS));
-    replies.push(issues(&[900], LOTS));
+    replies.push(window_page(&[window_pr(9, &at)], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[backport(9, 8)], RATE_LIMIT));
+    replies.push(issues(&[900], RATE_LIMIT));
     let harness = Harness::with_window("queue-frozen-origin", replies);
     let mut syncs = syncing();
     drop(run_to_the_end(&mut syncs, &harness));
@@ -562,9 +577,9 @@ fn a_pr_on_an_issue_outside_the_window_brings_that_issue() {
     let fresh_on_old = pr_node(30, &json!({ "title": "gh-900: Fix it", "updatedAt": at }));
     let mut replies = up_to_the_queue();
     replies.push(empty_window_page());
-    replies.push(window_page(&[window_pr(30, &at)], None, LOTS));
-    replies.push(fetched_nodes(&[fresh_on_old], LOTS));
-    replies.push(issues(&[900], LOTS));
+    replies.push(window_page(&[window_pr(30, &at)], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[fresh_on_old], RATE_LIMIT));
+    replies.push(issues(&[900], RATE_LIMIT));
     let harness = Harness::with_window("queue-old-issue", replies);
     let mut syncs = syncing();
 
@@ -589,10 +604,10 @@ fn an_issue_a_later_page_brings_isnt_asked_for_again() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[names_later], LOTS));
-    replies.push(window_page(&[window_issue(11, &at)], None, LOTS));
+    replies.push(fetched_nodes(&[names_later], RATE_LIMIT));
+    replies.push(window_page(&[window_issue(11, &at)], None, RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-later-issue", replies);
     let mut syncs = syncing();
@@ -622,9 +637,9 @@ fn backport(number: u32, origin: u32) -> Value {
 #[test]
 fn an_urgent_backport_gets_its_origin_before_the_window() {
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references(&[(1, &[5])], LOTS));
-    replies.push(fetched_nodes(&[backport(5, 8)], LOTS));
-    replies.push(crate::sync::testing::origin_answer(&merged(8), LOTS));
+    replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
+    replies.push(fetched_nodes(&[backport(5, 8)], RATE_LIMIT));
+    replies.push(crate::sync::testing::origin_answer(&merged(8), RATE_LIMIT));
     replies.push(empty_window_page());
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-urgent-origin", replies);
@@ -645,16 +660,16 @@ fn another_backports_origin_waits_for_the_lists_and_often_needs_no_query() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[5])],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[backport(5, 8)], LOTS));
+    replies.push(fetched_nodes(&[backport(5, 8)], RATE_LIMIT));
     replies.push(window_page(
         &[window_pr(8, &at), window_pr(9, &at)],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(8), backport(9, 7)], LOTS));
-    replies.push(crate::sync::testing::origin_answer(&merged(7), LOTS));
+    replies.push(fetched_nodes(&[merged(8), backport(9, 7)], RATE_LIMIT));
+    replies.push(crate::sync::testing::origin_answer(&merged(7), RATE_LIMIT));
     let harness = Harness::with_window("queue-late-origin", replies);
     let mut syncs = syncing();
 
@@ -679,7 +694,7 @@ fn a_frozen_pr_listed_at(
 ) -> Vec<(String, Value)> {
     let at = "2026-11-04T10:00:00Z";
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references(&[(1, &[5])], LOTS));
+    replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(
         &[pr_node(
             5,
@@ -690,7 +705,7 @@ fn a_frozen_pr_listed_at(
                 "mergeCommit": { "oid": "a".repeat(40) },
             }),
         )],
-        LOTS,
+        RATE_LIMIT,
     ));
     replies.push(empty_window_page());
     replies.push(empty_window_page());
@@ -698,9 +713,9 @@ fn a_frozen_pr_listed_at(
     replies.push(window_page(
         &[window_issue_referencing(10, &hours_ago(1), &[5])],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(window_page(&[window_pr(5, listed_at)], None, LOTS));
+    replies.push(window_page(&[window_pr(5, listed_at)], None, RATE_LIMIT));
     replies.extend(then);
     let harness = Harness::with_window(name, replies);
     let mut syncs = syncing();
@@ -722,7 +737,7 @@ fn a_frozen_pr_that_hasnt_moved_isnt_fetched_again() {
 #[test]
 fn a_frozen_pr_that_moved_is_fetched_again() {
     let moved = hours_ago(1);
-    let then = vec![fetched_nodes(&[merged(5)], LOTS)];
+    let then = vec![fetched_nodes(&[merged(5)], RATE_LIMIT)];
     let asked = a_frozen_pr_listed_at("queue-frozen-moved", &moved, then);
     assert_eq!(fetched_ids(&asked), [json!(["id5"]), json!(["id5"])]);
 }
@@ -733,7 +748,7 @@ fn the_status_bar_hears_how_far_the_queue_has_got() {
     let mut page = window_page(
         &[window_issue_referencing(10, &at, &[20, 21])],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     );
     if let Ok(reply) = &mut page {
         reply.body = reply
@@ -758,7 +773,7 @@ fn the_status_bar_hears_how_far_the_queue_has_got() {
 #[test]
 fn the_status_bar_says_trees_while_the_users_own_come_first() {
     let mut replies = up_to_the_queue_with_an_issue();
-    replies.push(issue_references(&[(1, &[5])], LOTS));
+    replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     let harness = Harness::with_window("queue-part", replies);
     let mut syncs = syncing();
 
@@ -782,15 +797,15 @@ fn quitting_resumes_the_queue_without_fetching_a_pr_twice() {
     replies.push(window_page(
         &[window_issue_referencing(10, &at, &[20])],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(20)], LOTS));
+    replies.push(fetched_nodes(&[merged(20)], RATE_LIMIT));
     replies.push(window_page(
         &[window_issue_referencing(11, &at, &[20, 21])],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(21)], LOTS));
+    replies.push(fetched_nodes(&[merged(21)], RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("queue-quit", replies);
     let mut quitting = syncing();
@@ -843,9 +858,9 @@ fn a_pr_older_than_the_window_ends_its_list_and_stays_out() {
             window_pr(22, "2020-01-01T10:00:00Z"),
         ],
         Some("older"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[merged(21)], LOTS));
+    replies.push(fetched_nodes(&[merged(21)], RATE_LIMIT));
     let harness = Harness::with_window("queue-older", replies);
     let mut syncs = syncing();
 
@@ -920,10 +935,14 @@ fn editing_the_filters_starts_the_sync_over() {
 fn the_window_tells_a_screen_of_each_page_that_saved_something() {
     let at = hours_ago(1);
     let mut replies = up_to_the_queue();
-    replies.push(window_page(&[window_issue(1, &at)], Some("more"), LOTS));
-    replies.push(window_page(&[window_issue(3, &at)], None, LOTS));
-    replies.push(window_page(&[window_pr(2, &at)], None, LOTS));
-    replies.push(fetched_nodes(&[merged(2)], LOTS));
+    replies.push(window_page(
+        &[window_issue(1, &at)],
+        Some("more"),
+        RATE_LIMIT,
+    ));
+    replies.push(window_page(&[window_issue(3, &at)], None, RATE_LIMIT));
+    replies.push(window_page(&[window_pr(2, &at)], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged(2)], RATE_LIMIT));
     let harness = Harness::with_window("window-news", replies);
     let mut syncs = syncing();
 
@@ -1043,8 +1062,8 @@ fn the_queue_keeps_what_happened_on_its_items() {
     let mut pr = merged(2);
     pr["timelineItems"] = json!({ "nodes": [comment_by("some-author", &at)] });
     let mut replies = up_to_the_queue();
-    replies.push(window_page(&[issue], None, LOTS));
-    replies.push(fetched_nodes(&[pr], LOTS));
+    replies.push(window_page(&[issue], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[pr], RATE_LIMIT));
     replies.push(empty_window_page());
     let harness = Harness::with_window("window-activity", replies);
     let mut syncs = syncing();
@@ -1066,7 +1085,11 @@ fn the_queue_keeps_what_happened_on_its_items() {
 #[test]
 fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
     let mut replies = up_to_the_queue();
-    replies.push(window_page(&[window_issue(1, &hours_ago(1))], None, LOTS));
+    replies.push(window_page(
+        &[window_issue(1, &hours_ago(1))],
+        None,
+        RATE_LIMIT,
+    ));
     let harness = Harness::with_window("window-unsaved", replies);
     let settings = plain(cpython());
     let mut sync = UserWorkSync::new(&settings);
@@ -1121,26 +1144,26 @@ fn small_repository() -> (RepositoryCounts, Vec<Result<Reply, Unreachable>>) {
     replies.push(window_page(
         &[window_issue(10, &at), window_issue(11, &at)],
         None,
-        LOTS,
+        RATE_LIMIT,
     ));
     replies.push(window_page(
         &[window_pr(20, &at), window_pr(29, LONG_AGO)],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[open_pr(20)], LOTS));
+    replies.push(fetched_nodes(&[open_pr(20)], RATE_LIMIT));
     // Oldest first, so each list of older open items ends at the first item the window has.
     replies.push(window_page(
         &[window_issue(12, LONG_AGO), window_issue(10, &at)],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
     replies.push(window_page(
         &[window_pr(21, LONG_AGO), window_pr(20, &at)],
         Some("more"),
-        LOTS,
+        RATE_LIMIT,
     ));
-    replies.push(fetched_nodes(&[open_pr(21)], LOTS));
+    replies.push(fetched_nodes(&[open_pr(21)], RATE_LIMIT));
     (counts, replies)
 }
 

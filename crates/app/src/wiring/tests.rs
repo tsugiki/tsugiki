@@ -101,6 +101,7 @@ struct Wired {
     failed_reads: Receiver<Value>,
     last_syncs: Receiver<Value>,
     activities: Receiver<Value>,
+    points: Receiver<Value>,
     clonings: Receiver<Value>,
     problems: Receiver<Value>,
     questions: Receiver<Value>,
@@ -155,6 +156,7 @@ impl Wired {
         let failed_reads = hear(&app, "read-failed");
         let last_syncs = hear(&app, "last-sync-changed");
         let activities = hear(&app, "sync-activity-changed");
+        let points = hear(&app, "hour-points-changed");
         let clonings = hear(&app, "cloning-changed");
         let problems = hear(&app, "mirror-problem-changed");
         let questions = hear(&app, "mirror-question-changed");
@@ -177,6 +179,7 @@ impl Wired {
             failed_reads,
             last_syncs,
             activities,
+            points,
             clonings,
             problems,
             questions,
@@ -1296,7 +1299,7 @@ struct Refreshing {
 impl Transport for Refreshing {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         drop(self.asked.send(request.operation.to_owned()));
-        let rate = json!({ "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
+        let rate = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
         let page = |nodes: Value| json!({ "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": nodes });
         let data = match request.operation {
             "Viewer" => json!({ "viewer": { "login": "octocat" } }),
@@ -1414,6 +1417,48 @@ fn a_window_that_loads_before_the_core_knows_hears_no_last_sync() {
 
     assert_eq!(asked.unwrap(), Value::Null);
     assert_eq!(clicked.unwrap(), Value::Null);
+}
+
+/// Answers who is signed in, which cost 1 of the 10 points spent this hour. The recordings' hours have reset.
+struct SignedIn;
+
+impl Transport for SignedIn {
+    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
+        let rate = json!({ "cost": 1, "limit": 5000, "used": 10, "remaining": 4990, "resetAt": "2999-01-01T00:00:00Z" });
+        Ok(Reply {
+            status: 200,
+            reset: None,
+            date: None,
+            body: json!({ "data": { "viewer": { "login": "octocat" }, "rateLimit": rate } })
+                .to_string(),
+        })
+    }
+}
+
+#[test]
+fn the_hour_points_reach_the_window_once_github_has_answered() {
+    let (folders, _root) = temp_folders("wired-points");
+    let unanswered = Wired::start(Ok(folders.clone()), no_network());
+    let before = unanswered.ask("hour_points", json!({})).unwrap();
+    drop(unanswered.stop());
+
+    let signed_in = GitHubAccess {
+        transport: Box::new(SignedIn),
+        run_gh: signed_in_gh,
+    };
+    let wired = Wired::start(Ok(folders), signed_in);
+    let heard = wired.points.recv_timeout(PLENTY).unwrap();
+    let asked = wired.ask("hour_points", json!({})).unwrap();
+    drop(wired.stop());
+
+    assert_eq!(before, Value::Null);
+    // The answer to who is signed in, whose point is the first Tsugiki counts.
+    assert_eq!(
+        (heard["spent"].as_u64(), heard["used"].as_u64()),
+        (Some(1), Some(10))
+    );
+    assert!(heard["since"].is_string(), "{heard}");
+    assert_eq!(asked, heard);
 }
 
 #[test]

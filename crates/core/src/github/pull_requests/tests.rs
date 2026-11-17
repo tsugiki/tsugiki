@@ -3,11 +3,9 @@ use crate::error::ErrorKind;
 use crate::facts::labels::Label;
 use crate::github::Reply;
 use crate::github::Unreachable;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, rate_limit, reply_ok, token};
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
-
-const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
 const MINE: PrSearch = PrSearch {
     operation: "SearchMine",
@@ -30,7 +28,7 @@ fn search_body(ids: &[&str], next: Option<&str>) -> String {
     let nodes: Vec<_> = ids.iter().map(|id| json!({ "id": id })).collect();
     let info = json!({ "hasNextPage": next.is_some(), "endCursor": next });
     format!(
-        r#"{{"data":{{"search":{{"pageInfo":{info},"nodes":{}}},{RATE}}}}}"#,
+        r#"{{"data":{{"search":{{"pageInfo":{info},"nodes":{}}},{RATE_LIMIT}}}}}"#,
         json!(nodes)
     )
 }
@@ -211,7 +209,7 @@ fn only_a_merged_pr_has_a_merge_commit() {
 #[test]
 fn an_origin_fetched_by_number_comes_back_with_its_facts() {
     let body = format!(
-        r#"{{"data":{{"repository":{{"pullRequest":{}}},{RATE}}}}}"#,
+        r#"{{"data":{{"repository":{{"pullRequest":{}}},{RATE_LIMIT}}}}}"#,
         pr_json()
     );
     let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
@@ -233,7 +231,7 @@ fn an_origin_fetched_by_number_comes_back_with_its_facts() {
 #[test]
 fn an_origin_number_that_names_no_pr_comes_back_empty() {
     let body = format!(
-        r#"{{"data":{{"repository":{{"pullRequest":null}},{RATE}}},"errors":[{{"type":"NOT_FOUND",
+        r#"{{"data":{{"repository":{{"pullRequest":null}},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND",
                 "message":"gone","path":["repository","pullRequest"]}}]}}"#
     );
     let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
@@ -258,7 +256,7 @@ fn a_tree_fetch_has_its_own_recording() {
 }
 
 fn fetch_body(nodes: &serde_json::Value) -> String {
-    format!(r#"{{"data":{{"nodes":{nodes},{RATE}}}}}"#)
+    format!(r#"{{"data":{{"nodes":{nodes},{RATE_LIMIT}}}}}"#)
 }
 
 fn bad_gateway() -> Result<Reply, Unreachable> {
@@ -410,9 +408,11 @@ fn a_pr_with_no_checks_and_no_author_says_so() {
 #[test]
 fn a_batch_keeps_the_rest_when_github_no_longer_knows_an_id() {
     // The shape real GitHub sends for an ID it can't resolve.
-    let body = r#"{"data":{"nodes":[null],"rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}},
-            "errors":[{"type":"NOT_FOUND","path":["nodes",0],"message":"Could not resolve to a node"}]}"#;
-    let (script, _asked) = Scripted::new(vec![reply_ok(body)]);
+    let body = format!(
+        r#"{{"data":{{"nodes":[null],{RATE_LIMIT}}},
+            "errors":[{{"type":"NOT_FOUND","path":["nodes",0],"message":"Could not resolve to a node"}}]}}"#
+    );
+    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
 
     let batch = github(script)
         .fetch_pull_requests(PrFetch::Work, &ids(&["gone"]), 25)
@@ -480,7 +480,7 @@ fn a_null_in_a_search_is_left_out() {
             "pageInfo": { "hasNextPage": false, "endCursor": null },
             "nodes": [null, { "id": "a" }],
         },
-        "rateLimit": { "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" },
+        "rateLimit": rate_limit(),
     }});
     let (script, _asked) = Scripted::new(vec![reply_ok(&body.to_string())]);
 

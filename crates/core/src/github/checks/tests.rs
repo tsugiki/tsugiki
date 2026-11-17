@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 
 use super::*;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -24,7 +24,7 @@ fn status(context: &str, state: &str) -> Value {
 /// A `GitHub` that gives one `answer`.
 fn answering(data: &Value) -> GitHub {
     let mut data = data.clone();
-    data["rateLimit"] = json!({ "remaining": 4000, "resetAt": "2026-11-04T12:00:00Z" });
+    data["rateLimit"] = rate_limit();
     let reply = reply_ok(&json!({ "data": data }).to_string());
     let (script, _asked) = Scripted::new(vec![reply]);
     GitHub::new(Box::new(script), token())

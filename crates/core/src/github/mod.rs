@@ -9,6 +9,7 @@ pub mod issue_content;
 pub mod issues;
 pub mod labels;
 pub mod live;
+pub mod points;
 pub mod pull_request_content;
 pub mod pull_requests;
 pub mod record;
@@ -27,6 +28,8 @@ use time::{Date, Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
+use crate::github::points::HourPoints;
+use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
 use crate::repository::{FoundRepository, RepositoryCounts, RepositoryName, WINDOW_DAYS};
 use crate::token::{RunGh, Token};
@@ -119,17 +122,30 @@ pub struct Viewer {
     pub login: Login,
 }
 
-const VIEWER: Request<'static> = Request {
-    operation: "Viewer",
-    query: Cow::Borrowed("query Viewer { viewer { login } }"),
-    variables: Value::Null,
-};
+/// The fields of `rateLimit` each query asks for, which `RateLimit` reads. An answer whose points don't parse
+/// fails, so a query that missed a field would fail each time.
+const RATE_LIMIT_FIELDS: &str = "rateLimit { cost limit used remaining resetAt }";
 
-const CHECK_REPOSITORY: &str = "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
-                                $closed: String!) { repository(owner: $owner, name: $name) { nameWithOwner diskUsage \
-                                issues(states: OPEN) { totalCount } pullRequests(states: OPEN) { totalCount } } \
-                                updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) { issueCount } \
-                                closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) { issueCount } }";
+/// The question of who is signed in. The status refresh asks it once a minute, and each query costs at least
+/// a point, so it asks what its points were too.
+fn viewer_request() -> Request<'static> {
+    Request {
+        operation: "Viewer",
+        query: format!("query Viewer {{ viewer {{ login }} {RATE_LIMIT_FIELDS} }}").into(),
+        variables: Value::Null,
+    }
+}
+
+fn check_repository_query() -> String {
+    format!(
+        "query CheckRepository($owner: String!, $name: String!, $updated: String!, \
+         $closed: String!) {{ repository(owner: $owner, name: $name) {{ nameWithOwner diskUsage \
+         issues(states: OPEN) {{ totalCount }} pullRequests(states: OPEN) {{ totalCount }} }} \
+         updated: search(query: $updated, type: ISSUE_ADVANCED, first: 0) {{ issueCount }} \
+         closed: search(query: $closed, type: ISSUE_ADVANCED, first: 0) {{ issueCount }} \
+         {RATE_LIMIT_FIELDS} }}"
+    )
+}
 
 const REPOSITORY_SIZE: &str = "query RepositorySize($owner: String!, $name: String!) { \
                                repository(owner: $owner, name: $name) { diskUsage } }";
@@ -141,6 +157,9 @@ pub struct GitHub {
     /// GitHub's time, as its last dated reply told it. It lives in memory only, because a saved time is
     /// already in GitHub's time.
     clock: Cell<GitHubClock>,
+    /// The hour's points, summed from every answer that reported them, whichever job asked. Nothing until
+    /// the first such answer.
+    points: Cell<Option<HourPoints>>,
 }
 
 impl GitHub {
@@ -149,12 +168,46 @@ impl GitHub {
             transport,
             token,
             clock: Cell::new(GitHubClock::default()),
+            points: Cell::new(None),
         }
     }
 
     /// GitHub's clock, as its replies so far tell it.
     pub fn clock(&self) -> GitHubClock {
         self.clock.get()
+    }
+
+    /// The hour's points as this run's answers count them. Nothing before the first answer that said, and
+    /// nothing once the hour has reset by GitHub's clock, until an answer of the next hour says.
+    pub fn hour_points(&self) -> Option<HourPoints> {
+        self.shown_hour().map(|(points, _)| points)
+    }
+
+    /// The time left until the hour's points reset by GitHub's clock, while there are any to show.
+    pub fn hour_left(&self) -> Option<std::time::Duration> {
+        self.shown_hour()
+            .and_then(|(_, left)| std::time::Duration::try_from(left).ok())
+    }
+
+    /// The hour's points and the time left until they reset, by one reading of GitHub's clock, so the points
+    /// and the time left agree.
+    fn shown_hour(&self) -> Option<(HourPoints, Duration)> {
+        let points = self.points.get()?;
+        let left = points.resets_at - self.clock.get().now();
+        left.is_positive().then_some((points, left))
+    }
+
+    /// Adds the points of an answer to the hour's.
+    fn count(&self, answer: RateLimit) {
+        let now = self.clock.get().now();
+        if let Some(points) = HourPoints::after(self.points.get(), answer, now) {
+            self.points.set(Some(points));
+        }
+    }
+
+    /// Turns `reply` into its data, and counts the points it cost.
+    fn answer<D: DeserializeOwned>(&self, reply: &Reply) -> Result<D, Error> {
+        read(reply, |answer| self.count(answer))
     }
 
     /// Sends `request`, and sets GitHub's clock by the reply's `Date`.
@@ -205,7 +258,7 @@ impl GitHub {
         struct Data {
             viewer: Viewer,
         }
-        let data: Data = self.query(&VIEWER)?;
+        let data: Data = self.query(&viewer_request())?;
         Ok(data.viewer)
     }
 
@@ -261,7 +314,7 @@ impl GitHub {
         let since = today.saturating_sub(Duration::days(i64::from(WINDOW_DAYS)));
         let request = Request {
             operation: "CheckRepository",
-            query: CHECK_REPOSITORY.into(),
+            query: check_repository_query().into(),
             variables: json!({
                 "owner": name.owner(),
                 "name": name.name(),
@@ -297,7 +350,7 @@ impl GitHub {
 
     fn query<D: DeserializeOwned>(&self, request: &Request<'_>) -> Result<D, Error> {
         let reply = self.post(request)?;
-        read(&reply)
+        self.answer(&reply)
     }
 }
 
@@ -307,8 +360,9 @@ const BAD_GATEWAY: u16 = 502;
 const RATE_LIMITED: &str =
     "GitHub's rate limit has been reached. Tsugiki can read again after it resets.";
 
-/// Turns an answer into its data, or into the error the UI can act on (ADR 0008).
-fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
+/// Turns an answer into its data, or into the error the UI can act on (ADR 0008). An answer whose data
+/// reports its points hands them to `count` first, even when the query failed, since GitHub charged for it.
+fn read<D: DeserializeOwned>(reply: &Reply, count: impl FnOnce(RateLimit)) -> Result<D, Error> {
     #[derive(Deserialize)]
     struct Envelope {
         data: Option<Value>,
@@ -367,6 +421,16 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
     };
     // The data is read after the errors: a field that failed comes back null, which `D` may not allow.
     let envelope: Envelope = serde_json::from_str(&reply.body).map_err(unreadable)?;
+    let points = envelope
+        .data
+        .as_ref()
+        .and_then(|data| data.get("rateLimit"))
+        .filter(|points| !points.is_null())
+        .map(RateLimit::deserialize)
+        .transpose();
+    if let Ok(Some(points)) = points {
+        count(points);
+    }
     // `nodes(ids:)` answers null for an ID GitHub no longer knows, and adds this error. `issues.rs` gets the
     // same for a number nothing has, one level inside `repository`. The others are still good.
     let gone_node = |error: &&GraphqlError| {
@@ -396,6 +460,9 @@ fn read<D: DeserializeOwned>(reply: &Reply) -> Result<D, Error> {
                 &format!("GitHub said: {}", error.message),
             ),
         });
+    }
+    if let Err(cause) = points {
+        return Err(unreadable(cause));
     }
     let data = envelope
         .data

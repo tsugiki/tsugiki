@@ -107,6 +107,18 @@ kbd {
   outline: 1px solid transparent;
 }
 
+/* Text only a screen reader reads: out of sight and out of the layout, but still in the accessibility tree,
+   as `display: none` isn't. */
+.for-screen-readers {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* A section's heading, in the Sidebar or the rail. */
 .small-heading {
   font-size: 11px;

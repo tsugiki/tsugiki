@@ -102,10 +102,14 @@ export function questionWords(repository: string): string {
   return `${repository}'s mirror waits for your answer`;
 }
 
+/** The time of day `at` names, by the window's clock in the system's format: "14:32", or "02:32 PM" on a
+ * 12-hour clock. */
+export function clockTime(at: string): string {
+  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 /** The wait for GitHub's points, while there is one. */
 export function pausedWords(activity: SyncActivity | null): string | null {
   if (activity?.paused_until === null || activity === null) return null;
-  const until = new Date(activity.paused_until);
-  const time = until.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `Sync paused until ${time}: GitHub's rate limit is low`;
+  return `Sync paused until ${clockTime(activity.paused_until)}: GitHub's rate limit is low`;
 }

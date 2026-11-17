@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::pull_requests::{Nodes, RateLimit};
-use super::{GitHub, Request};
+use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::Error;
 use crate::repository::RepositoryName;
 
@@ -148,7 +148,7 @@ fn failed_checks_query(numbers: &[u32]) -> String {
         .collect();
     format!(
         "query {FETCH_FAILED_CHECKS}($owner: String!, $name: String!) {{ \
-         repository(owner: $owner, name: $name) {{ {} }} rateLimit {{ remaining resetAt }} }}",
+         repository(owner: $owner, name: $name) {{ {} }} {RATE_LIMIT_FIELDS} }}",
         fields.join(" ")
     )
 }

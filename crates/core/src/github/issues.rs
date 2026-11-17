@@ -13,7 +13,7 @@ use super::activity::{IssueTimelineWire, issue_activity};
 use super::labels::{LabelWire, label_names};
 use super::pull_requests::{Nodes, PageRequest, Person, RateLimit};
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
-use super::{GitHub, Request};
+use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
 use crate::facts::issues::{IssueFacts, IssueState, ListedPr};
@@ -116,7 +116,7 @@ pub(super) fn query_by_number(operation: &str, numbers: &[u32], fields: &str) ->
         .collect();
     format!(
         "query {operation}($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) \
-         {{ {} }} rateLimit {{ remaining resetAt }} }}",
+         {{ {} }} {RATE_LIMIT_FIELDS} }}",
         asked.join(" ")
     )
 }
@@ -159,7 +159,7 @@ fn fetch_cross_references_query() -> String {
         "query FetchCrossReferences($owner: String!, $name: String!, $number: Int!, $last: Int!, \
          $before: String) {{ repository(owner: $owner, name: $name) {{ issue(number: $number) {{ \
          timelineItems(last: $last, before: $before, itemTypes: [CROSS_REFERENCED_EVENT]) {{ \
-         {REFERENCE_FIELDS} }} }} }} rateLimit {{ remaining resetAt }} }}"
+         {REFERENCE_FIELDS} }} }} }} {RATE_LIMIT_FIELDS} }}"
     )
 }
 

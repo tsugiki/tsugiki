@@ -1,9 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
-use crate::github::testing::{Scripted, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, rate_limit, reply_ok, token};
 use serde_json::{Value, json};
-
-const RATE: &str = r#""rateLimit":{"remaining":4000,"resetAt":"2026-11-04T12:00:00Z"}"#;
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -41,7 +39,7 @@ fn a_read_by_number_answers_each_issue_and_passes_over_a_pr() {
         "i9": null,
     });
     let reply = reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{RATE}}}}}"#
+        r#"{{"data":{{"repository":{repository},{RATE_LIMIT}}}}}"#
     ));
     let (script, asked) = Scripted::new(vec![reply]);
     let github = GitHub::new(Box::new(script), token());
@@ -83,7 +81,7 @@ fn a_source_github_wont_show_costs_only_its_own_event() {
                     "number": 7,
                     "timelineItems": timeline(&[Value::Null, pr_event(3, "python/cpython")], None),
                 } },
-                "rateLimit": { "remaining": 4000, "resetAt": "2026-11-04T23:00:00Z" },
+                "rateLimit": rate_limit(),
             },
             "errors": [{
                 "type": kind,

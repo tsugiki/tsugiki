@@ -2,6 +2,7 @@
   import { openLink } from "$lib/state/browser";
   import type {
     Cloning,
+    HourPoints,
     LastSync,
     MirrorProblem,
     NewVersion,
@@ -10,6 +11,7 @@
     SyncActivity,
   } from "$lib/state/status.svelte";
   import { currentOs, keyLabel } from "./keys";
+  import { pointsTip, pointsWords } from "./points";
   import {
     cloningWords,
     elsewhereWords,
@@ -31,6 +33,7 @@
     problems = [],
     lastSync = null,
     syncActivity = null,
+    hourPoints = null,
     cloning = null,
     mirrorStates = [],
     mirrorProblem = null,
@@ -47,6 +50,8 @@
     problems?: string[];
     lastSync?: LastSync | null;
     syncActivity?: SyncActivity | null;
+    /** The hour's GitHub points, which the bar shows once GitHub's first answer has said. */
+    hourPoints?: HourPoints | null;
     cloning?: Cloning | null;
     /** The state of each Repository's mirror, which says when a clone waits for the network. */
     mirrorStates?: RepositoryMirror[];
@@ -84,6 +89,8 @@
     };
   });
 
+  // The core ends the hour at its reset by GitHub's clock, so the part goes then.
+  const points = $derived(visible ? hourPoints : null);
   const offline = $derived(status?.state === "offline" || status?.state === "offline_as");
   // Hiding the bar can't hide these: nothing else would tell the user.
   const showStatus = $derived(visible || offline || status?.state === "problem" || Boolean(error));
@@ -171,6 +178,17 @@
   {#if lastSync !== null && showStatus}
     <button class:offline onclick={onrefresh}>{syncWords}</button>
   {/if}
+  <!-- Outside the live region too, as it changes with each answer from GitHub. A screen reader can't reach a
+       tooltip, so it reads the words and the tooltip from a copy of its own, once. -->
+  {#if points !== null}
+    {@const words = pointsWords(points)}
+    {@const tip = pointsTip(points)}
+    <span class="points" class:offline
+      ><span aria-hidden="true" title={tip}>{words}</span><span class="for-screen-readers"
+        >{`${words} · ${tip}`}</span
+      ></span
+    >
+  {/if}
   {#if chord !== null && visible}
     <kbd class:offline>{keyLabel(chord, currentOs())}</kbd>
   {/if}
@@ -194,6 +212,7 @@
   }
 
   button,
+  .points,
   kbd {
     flex: none;
     align-self: flex-end;

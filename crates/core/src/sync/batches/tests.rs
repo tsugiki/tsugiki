@@ -1,7 +1,7 @@
 use crate::github::Unreachable;
 use crate::sync::Syncs;
 use crate::sync::testing::{
-    FEW, Harness, LOTS, cpython, fetched, found, nothing, plain, run_to_the_end,
+    FEW, Harness, RATE_LIMIT, cpython, fetched, found, nothing, plain, run_to_the_end,
 };
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -11,11 +11,11 @@ fn a_pr_two_searches_found_is_fetched_once() {
     let harness = Harness::new(
         "twice",
         vec![
-            found(&["a"], None, LOTS),
-            found(&["a"], None, LOTS),
-            found(&["a", "b"], None, LOTS),
-            nothing(LOTS),
-            fetched(&[1, 2], LOTS),
+            found(&["a"], None, RATE_LIMIT),
+            found(&["a"], None, RATE_LIMIT),
+            found(&["a", "b"], None, RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            fetched(&[1, 2], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
@@ -35,13 +35,13 @@ fn a_retry_at_half_size_leaves_the_rest_for_the_next_batch() {
     let harness = Harness::new(
         "half",
         vec![
-            found(&ids, None, LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
+            found(&ids, None, RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
             Err(Unreachable::Offline),
-            fetched(&[1, 2], LOTS),
-            fetched(&[3, 4], LOTS),
+            fetched(&[1, 2], RATE_LIMIT),
+            fetched(&[3, 4], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
@@ -62,10 +62,10 @@ fn a_fetch_below_the_floor_holds_the_next_step_back() {
     let harness = Harness::new(
         "floor-fetch",
         vec![
-            found(&["a"], None, LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
+            found(&["a"], None, RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
             fetched(&[1], FEW),
         ],
     );
@@ -90,12 +90,12 @@ fn a_sync_asks_for_pages_of_50_and_batches_of_25() {
     let harness = Harness::new(
         "sizes",
         vec![
-            found(&names, None, LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            nothing(LOTS),
-            fetched(&[1], LOTS),
-            fetched(&[2], LOTS),
+            found(&names, None, RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            nothing(RATE_LIMIT),
+            fetched(&[1], RATE_LIMIT),
+            fetched(&[2], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();

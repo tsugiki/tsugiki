@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "eslint/**/*.test.ts", "../scripts/**/*.test.ts"],
+    setupFiles: ["src/lib/testing/setup.ts"],
     // TypeScript's coverage gate (ADR 0009). `npm run coverage -w ui` turns it on.
     coverage: {
       provider: "v8",
@@ -22,6 +23,9 @@ export default defineConfig({
         "src/lib/data/bindings.ts",
         // coverage: benchmarks run under CodSpeed, not as tests.
         "src/**/*.bench.ts",
+        // coverage: the helpers and fixtures the tests share, which the tests run; a test of its own would
+        // test the tests, and a helper whose last caller goes would fail the gate in a file no one touched.
+        "src/lib/testing/**",
         // coverage: a command line around cargo, with its logic in the files it calls.
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",

@@ -72,6 +72,16 @@ tester.run("layers/imports", layers.rules.imports, {
       options: [{ src: SRC, extraPackages: ["vitest"] }],
       code: `import { expect } from "vitest"; import { about } from "./about.svelte";`,
     },
+    {
+      filename: at("lib/ui/Row.test.ts"),
+      options: [{ src: SRC, extraLayers: ["testing"] }],
+      code: `import { keydown } from "$lib/testing/helpers"; import { ok } from "../testing/fixtures";`,
+    },
+    {
+      filename: at("lib/testing/helpers.ts"),
+      options,
+      code: `import { vi } from "vitest"; import { within } from "@testing-library/svelte"; import { events } from "$lib/data/bindings"; import type { Peek } from "$lib/state/peek"; import { ok } from "./fixtures";`,
+    },
   ],
   invalid: [
     {
@@ -79,6 +89,18 @@ tester.run("layers/imports", layers.rules.imports, {
       options,
       code: `import type { About } from "$lib/data/bindings";`,
       errors: [{ message: "ui must not import data ($lib/data/bindings)" }],
+    },
+    {
+      filename: at("lib/state/about.svelte.ts"),
+      options,
+      code: `import { ok } from "$lib/testing/fixtures";`,
+      errors: [{ message: "state must not import testing ($lib/testing/fixtures)" }],
+    },
+    {
+      filename: at("lib/testing/helpers.ts"),
+      options,
+      code: `import Row from "$lib/ui/Row.svelte";`,
+      errors: [{ message: "testing must not import ui ($lib/ui/Row.svelte)" }],
     },
     {
       filename: at("lib/ui/About.ts"),
@@ -131,7 +153,7 @@ tester.run("layers/imports", layers.rules.imports, {
       filename: at("lib/constructor/x.ts"),
       options,
       code: `export const x = 1;`,
-      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes)" }],
+      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes, testing)" }],
     },
     {
       // The real config declares the browser's globals, and they resolve differently from undeclared names.
@@ -145,7 +167,7 @@ tester.run("layers/imports", layers.rules.imports, {
       filename: at("lib"),
       options,
       code: `export const x = 1;`,
-      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes)" }],
+      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes, testing)" }],
     },
     {
       filename: at("lib/ui/About.ts"),
@@ -157,7 +179,7 @@ tester.run("layers/imports", layers.rules.imports, {
       filename: at("lib/helpers.ts"),
       options,
       code: `export const x = 1;`,
-      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes)" }],
+      errors: [{ message: "not in a known layer (core, data, state, platform, ui, routes, testing)" }],
     },
   ],
 });

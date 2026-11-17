@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home } from "./fixtures.ts";
 import { mockCore } from "./mock-core.ts";
 
 const about = {
@@ -18,15 +20,8 @@ test("the window's title names the build, and the screen doesn't", async ({ page
 test("the window's title names the open Repository before the build", async ({ page }) => {
   await mockCore(page, {
     about,
-    home: {
-      screen: "repository",
-      repository: { name: "python/cpython", conventions: "cpython", filters: [] },
-      others: [],
-    },
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    home,
+    workbench: workbenchPage([]),
   });
   await page.goto("/");
   await expect(page).toHaveTitle("python/cpython · Tsugiki 1.2.3 (abc1234)");

@@ -1,15 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
 import { type Action, remapKeys } from "$lib/state/keymap.svelte";
-import type { Crumb, Peek } from "$lib/state/peek";
+import type { Crumb } from "$lib/state/peek";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
+import { hitIn, looking, showing } from "$lib/testing/state";
 import { ChordAction } from "./chord.svelte";
 import DefinitionPeek from "./DefinitionPeek.svelte";
-
-/** A hit of a lookup, as the core gives it. */
-type Hit = ConstructorParameters<typeof HitCode>[1];
 
 vi.mock("$lib/data/bindings", () => ({
   commands: {
@@ -18,31 +16,9 @@ vi.mock("$lib/data/bindings", () => ({
   },
 }));
 
-beforeEach(() => {
-  // jsdom lays nothing out, so the code's bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-});
-
 afterEach(() => {
   vi.useRealTimers();
-  vi.unstubAllGlobals();
   vi.restoreAllMocks();
-});
-
-const peekWith = (lookup: Peek["lookup"]): Peek => ({
-  at: { kind: "row", row: 2 },
-  layout: "inline",
-  symbol: "eggs",
-  side: "head",
-  commit: "abcdef123",
-  lookup,
 });
 
 /** The handler that goes back to a crumb, for the tests that don't. */
@@ -50,7 +26,7 @@ const following = { oncrumb: () => {} };
 
 it("counts the seconds a lookup waits for ty's answer, and stops once it answers", async () => {
   vi.useFakeTimers({ now: 10_000 });
-  const asking = peekWith({ state: "looking", waiting: { step: "asking", server: "ty" }, since: 10_000 });
+  const asking = looking({ state: "looking", waiting: { step: "asking", server: "ty" }, since: 10_000 });
   const shown = render(DefinitionPeek, {
     peek: asking,
     onclose: () => {},
@@ -64,7 +40,7 @@ it("counts the seconds a lookup waits for ty's answer, and stops once it answers
   await vi.advanceTimersByTimeAsync(3000);
   expect(body()).toBe("Asking ty for the definition of eggs… 3 s");
 
-  await shown.rerender({ peek: peekWith({ state: "answered", answer: { state: "found", hits: [] } }) });
+  await shown.rerender({ peek: looking({ state: "answered", answer: { state: "found", hits: [] } }) });
   await tick();
   expect(body()).toBe("No definition of eggs");
   expect(vi.getTimerCount()).toBe(0);
@@ -72,7 +48,7 @@ it("counts the seconds a lookup waits for ty's answer, and stops once it answers
 
 it("asks for the server's row in Settings › Advanced from a line that says to set it up", async () => {
   render(DefinitionPeek, {
-    peek: peekWith({ state: "answered", answer: { state: "not_set_up", server: "ty" } }),
+    peek: looking({ state: "answered", answer: { state: "not_set_up", server: "ty" } }),
     onclose: () => {},
     onhit: () => {},
     onopen: () => {},
@@ -86,7 +62,7 @@ it("asks for the server's row in Settings › Advanced from a line that says to 
 
 it("offers no link to Settings from a line that says it found nothing", () => {
   render(DefinitionPeek, {
-    peek: peekWith({ state: "answered", answer: { state: "found", hits: [] } }),
+    peek: looking({ state: "answered", answer: { state: "found", hits: [] } }),
     onclose: () => {},
     onhit: () => {},
     onopen: () => {},
@@ -97,7 +73,7 @@ it("offers no link to Settings from a line that says it found nothing", () => {
 
 it("counts no seconds while ty starts, as the words say none", () => {
   vi.useFakeTimers({ now: 10_000 });
-  const starting = peekWith({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 10_000 });
+  const starting = looking({ state: "looking", waiting: { step: "starting", server: "ty" }, since: 10_000 });
 
   render(DefinitionPeek, {
     peek: starting,
@@ -112,7 +88,7 @@ it("counts no seconds while ty starts, as the words say none", () => {
 });
 
 it("shows a line under the header while clangd indexes, and takes it away once it has built its index", async () => {
-  const answered = peekWith({ state: "answered", answer: { state: "found", hits: [] } });
+  const answered = looking({ state: "answered", answer: { state: "found", hits: [] } });
   const files = { done: 120, total: 452 };
   const indexing = { ...answered, indexing: { state: "building", server: "clangd", files } } as const;
   const line = "clangd is indexing (120 of 452 files): this may be a declaration";
@@ -131,24 +107,6 @@ it("shows a line under the header while clangd indexes, and takes it away once i
   expect(screen.queryByText(line)).toBeNull();
   expect(screen.getByText("No definition of eggs")).toBeDefined();
 });
-
-/** A hit in `path` at line `line` of the PR's head. */
-const hitIn = (path: string, line: number): Hit => ({
-  place: { kind: "repository", path, side: "head", commit: "fedcba987" },
-  line,
-  column: 4,
-  text: `    def area${String(line)}(self):`,
-});
-
-/** A peek with `hits` that shows the code of the one at `index`. */
-const showing = (hits: Hit[], index: number): Peek => {
-  const hit = hits[index];
-  if (hit === undefined) throw new Error("no such hit");
-  return {
-    ...peekWith({ state: "answered", answer: { state: "found", hits } }),
-    code: new HitCode("python/cpython", hit, index),
-  };
-};
 
 const hits = [hitIn("Lib/a.py", 3), hitIn("Lib/b.py", 9), hitIn("Lib/c.py", 12)];
 
@@ -326,12 +284,12 @@ it("names Go to Definition's key on Open as [keys] gives it, or only Enter while
 it("names the peeks it followed from in a breadcrumb, and brings back the one a click on its crumb names", async () => {
   const oncrumb = vi.fn();
   const crumb = (symbol: string): Crumb => ({
-    ...peekWith({ state: "looking" }),
+    ...looking({ state: "looking" }),
     symbol,
     lookup: { state: "answered", answer: { state: "found", hits } },
     code: new HitCode("python/cpython", hitIn("Lib/a.py", 3), 0),
   });
-  const peek = { ...peekWith({ state: "looking" }), trail: [crumb("PyObject_Call"), crumb("_Py_Make")] };
+  const peek = { ...looking({ state: "looking" }), trail: [crumb("PyObject_Call"), crumb("_Py_Make")] };
   const props = { onclose: () => {}, onhit: () => {}, onopen: () => {}, oncrumb };
   render(DefinitionPeek, { peek, ...props });
 

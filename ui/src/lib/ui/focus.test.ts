@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { keydown } from "$lib/testing/helpers";
 import { focusBesideRail, keepFocusIn, keepOnScreen } from "./focus";
 
 /** A dialog in the page, with `inside` as its HTML, that keeps the focus in. */
@@ -13,9 +14,7 @@ function dialogOf(inside: string) {
 
 /** Presses `key` on what has the focus, and says whether the browser may act on it. */
 const press = (key: string, shiftKey = false) =>
-  (document.activeElement ?? document.body).dispatchEvent(
-    new KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true }),
-  );
+  (document.activeElement ?? document.body).dispatchEvent(keydown({ key, shiftKey }));
 
 afterEach(() => {
   document.body.innerHTML = "";

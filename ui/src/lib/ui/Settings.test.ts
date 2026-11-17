@@ -10,6 +10,7 @@ import {
   type Settings as Values,
 } from "$lib/state/settings.svelte";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
+import { ok, refused } from "$lib/testing/fixtures";
 import Settings from "./Settings.svelte";
 
 const core = vi.hoisted(() => ({
@@ -102,8 +103,6 @@ const ROWS: ServerRow[] = [
   },
   { server: "rust-analyzer", status: { state: "not_set_up" }, version: null, tested: ["1.99.1"] },
 ];
-const ok = <T>(data: T) => ({ status: "ok", data }) as const;
-const refused = (message: string) => ({ status: "error", error: { kind: "internal", message } }) as const;
 
 /** A theme of side `kind` named `name`, with one token. */
 const themeView = (name: string, kind: "light" | "dark"): ThemeView => ({

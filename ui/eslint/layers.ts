@@ -6,6 +6,8 @@
 //   platform  what the desktop shell does (open a URL): Tauri only
 //   ui        components and presentation: state, core, platform, svelte, highlight.js; never data
 //   routes    the entry point: ui, state (to pick the start-up Repository) and SvelteKit
+//   testing   the helpers the tests share: data, state, core, Vitest and Testing Library; no layer imports
+//             it, as only the tests may (eslint.config.ts hands them it in `extraLayers`)
 //
 // A layer is a folder of src/lib, or src/routes. Files elsewhere in src are not checked.
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -19,6 +21,10 @@ const ALLOWED: Record<string, { layers: string[]; packages: string[] }> = {
   platform: { layers: ["platform"], packages: ["@tauri-apps"] },
   ui: { layers: ["ui", "state", "core", "platform"], packages: ["svelte", "highlight.js"] },
   routes: { layers: ["routes", "ui", "state"], packages: ["svelte", "$app"] },
+  testing: {
+    layers: ["testing", "data", "state", "core"],
+    packages: ["vitest", "@testing-library/svelte"],
+  },
 };
 // Core must run anywhere (a worker, tests, the Rust port's reference): no browser globals or runes.
 const CORE_BANNED = new Set([
@@ -42,7 +48,7 @@ const CORE_BANNED = new Set([
   "$props",
 ]);
 
-type Options = { src: string; extraPackages?: string[] };
+type Options = { src: string; extraPackages?: string[]; extraLayers?: string[] };
 
 const layerOf = (src: string, file: string) => {
   const parts = relative(src, file).split(sep);
@@ -59,6 +65,7 @@ const imports: Rule.RuleModule = {
         properties: {
           src: { type: "string" },
           extraPackages: { type: "array", items: { type: "string" } },
+          extraLayers: { type: "array", items: { type: "string" } },
         },
         required: ["src"],
         additionalProperties: false,
@@ -72,7 +79,7 @@ const imports: Rule.RuleModule = {
     },
   },
   create(context) {
-    const { src, extraPackages = [] } = context.options[0] as Options;
+    const { src, extraPackages = [], extraLayers = [] } = context.options[0] as Options;
     const file = context.filename;
     const top = relative(src, file).split(sep)[0];
     if (top !== "lib" && top !== "routes") return {};
@@ -86,6 +93,7 @@ const imports: Rule.RuleModule = {
       };
     }
     const packages = [...rule.packages, ...extraPackages];
+    const reachable = [...rule.layers, ...extraLayers];
 
     const check = (source: ESTree.Expression | null | undefined) => {
       if (!source) return;
@@ -103,7 +111,7 @@ const imports: Rule.RuleModule = {
           ? join(src, "lib", spec.slice(5))
           : resolve(dirname(file), spec);
         const to = layerOf(src, target);
-        if (!rule.layers.includes(to)) context.report({ node, messageId: "layer", data: { from, to, spec } });
+        if (!reachable.includes(to)) context.report({ node, messageId: "layer", data: { from, to, spec } });
       } else if (!packages.some((p) => spec === p || spec.startsWith(`${p}/`))) {
         context.report({ node, messageId: "package", data: { from, spec } });
       }

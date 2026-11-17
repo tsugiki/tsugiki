@@ -1,141 +1,69 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type {
   DiffThread_Serialize as DiffThread,
-  Filter_Serialize as Filter,
-  ListedItem_Serialize as ListedItem,
   PrView_Serialize as PrView,
-  WorkbenchRow_Serialize as WorkbenchRow,
 } from "../src/lib/data/bindings.ts";
+import { diffFile, done, ok, readyFiles, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { dragEdge, home, issue, issueView, prView } from "./fixtures.ts";
 import { changeAnswer, mockCore, noServers } from "./mock-core.ts";
 import { appearance, themes } from "./themes.ts";
 
-const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-
-const row: WorkbenchRow = {
-  number: 10,
-  title: "gh-7: Fix it",
-  author: "pr-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [10], up_to: null }, state: "seen" },
-};
-
-const issue: ListedItem = {
-  kind: "issue",
-  number: 7,
-  title: "Issue 7",
-  state: "OPEN",
-  people: ["issue-author"],
-  updated_at: "2026-11-04T10:00:00Z",
-  pull_requests: [{ ...row, kind: "pr", backports: [] }],
-  seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
-  attention: null,
-};
-
-const view: PrView = {
-  ...row,
-  content: {
-    body_html: "<p>The fix</p>",
-    comments: [],
-    earlier_comments: 0,
-    opened_at: null,
-    reviews: [
-      {
-        id: 1,
-        author: "some-reviewer",
-        state: "APPROVED",
-        commit: "0123abcdef",
-        submitted_at: "2026-11-04T10:00:00Z",
-        body_html: "",
-        hidden: null,
-        threads: [],
-      },
-    ],
-    earlier_reviews: 0,
+/** PR #10, approved at the head its diff reads from. */
+const view = prView([
+  {
+    id: 1,
+    author: "some-reviewer",
+    state: "APPROVED",
+    commit: "0123abcdef",
+    submitted_at: "2026-11-04T10:00:00Z",
+    body_html: "",
+    hidden: null,
+    threads: [],
   },
-  shares_review_of: null,
-};
+]);
 
-const done = { status: "ok", data: null } as const;
+/** The commits PR #10's diff goes between. */
+const heads = { head: "0123abcdef", base: "fedcba3210" };
 
 test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc goes back", async ({
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await mockCore(page, {
-    themes: { status: "ok", data: themes },
-    home: { screen: "repository", repository, others: [] as string[] },
-    workbench: {
-      status: "ok",
-      data: { items: [issue], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    themes: ok(themes),
+    home,
+    workbench: workbenchPage([issue]),
     openIssue: done,
     fetchIssue: done,
-    issue: {
-      status: "ok",
-      data: {
-        ...issue,
-        merged: [],
-        merged_count: 0,
-        author: "issue-author",
-        assignees: [],
-        labels: [],
-        content: null,
-        needs_attention: [],
-      },
-    },
+    issue: ok(issueView),
     openPullRequest: done,
     fetchPullRequest: done,
-    pullRequest: { status: "ok", data: view },
-    pullRequestFiles: {
-      status: "ok",
-      data: {
-        state: "ready",
-        head: "0123abcdef",
-        base: "fedcba3210",
+    pullRequest: ok(view),
+    pullRequestFiles: ok(
+      readyFiles(3, {
+        ...heads,
         files: [
-          {
-            path: "NEWS",
-            old_path: null,
-            change: { kind: "lines", added: 1, removed: 0 },
-            row: 0,
+          diffFile("NEWS", 0, {
             // A line this long elsewhere in the PR still leaves the halves side by side in view.
             columns: 400,
-            generated: false,
-            gaps: [],
-            rest: null,
             pairs: [{ row: 2, removed: 0, added: 1 }],
-          },
+          }),
         ],
-        rows: 3,
-        news: [],
-        threads: { kind: "shown", threads: [] },
-      },
-    },
-    pullRequestRows: {
-      status: "ok",
-      data: [
-        { kind: "file", path: "NEWS", old_path: null, change: { kind: "lines", added: 1, removed: 0 } },
-        { kind: "hunk", text: "@@ -0,0 +1 @@" },
-        { kind: "added", new: 1, text: "The fix" },
+      }),
+    ),
+    pullRequestRows: ok([
+      { kind: "file", path: "NEWS", old_path: null, change: { kind: "lines", added: 1, removed: 0 } },
+      { kind: "hunk", text: "@@ -0,0 +1 @@" },
+      { kind: "added", new: 1, text: "The fix" },
+    ]),
+    pullRequestSpans: ok([
+      [],
+      [],
+      [
+        { start: 0, end: 3, highlight: "heading" },
+        { start: 4, end: 7, highlight: "keyword" },
       ],
-    },
-    pullRequestSpans: {
-      status: "ok",
-      data: [
-        [],
-        [],
-        [
-          { start: 0, end: 3, highlight: "heading" },
-          { start: 4, end: 7, highlight: "keyword" },
-        ],
-      ],
-    },
+    ]),
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
@@ -233,51 +161,25 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     },
   };
   await mockCore(page, {
-    themes: { status: "ok", data: themes },
-    home: { screen: "repository", repository, others: [] as string[] },
-    workbench: {
-      status: "ok",
-      data: { items: [issue], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    themes: ok(themes),
+    home,
+    workbench: workbenchPage([issue]),
     openIssue: done,
     fetchIssue: done,
-    issue: {
-      status: "ok",
-      data: {
-        ...issue,
-        merged: [],
-        merged_count: 0,
-        author: "issue-author",
-        assignees: [],
-        labels: [],
-        content: null,
-        needs_attention: [],
-      },
-    },
+    issue: ok(issueView),
     openPullRequest: done,
     fetchPullRequest: done,
-    pullRequest: { status: "ok", data: reviewed },
-    pullRequestFiles: {
-      status: "ok",
-      data: {
-        state: "ready",
-        head: "0123abcdef",
-        base: "fedcba3210",
+    pullRequest: ok(reviewed),
+    pullRequestFiles: ok(
+      readyFiles(4, {
+        ...heads,
         files: [
-          {
-            path: "NEWS",
-            old_path: null,
+          diffFile("NEWS", 0, {
             change: { kind: "lines", added: 2, removed: 0 },
-            row: 0,
             columns: 9,
-            generated: false,
-            gaps: [],
-            rest: null,
             pairs: [{ row: 2, removed: 0, added: 2 }],
-          },
+          }),
         ],
-        rows: 4,
-        news: [],
         threads: {
           kind: "shown",
           threads: [
@@ -299,18 +201,15 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
             },
           ],
         },
-      },
-    },
-    pullRequestRows: {
-      status: "ok",
-      data: [
-        { kind: "file", path: "NEWS", old_path: null, change: { kind: "lines", added: 2, removed: 0 } },
-        { kind: "hunk", text: "@@ -0,0 +1,2 @@" },
-        { kind: "added", new: 1, text: "The fix" },
-        { kind: "added", new: 2, text: "And more" },
-      ],
-    },
-    pullRequestSpans: { status: "ok", data: [[], [], [], []] },
+      }),
+    ),
+    pullRequestRows: ok([
+      { kind: "file", path: "NEWS", old_path: null, change: { kind: "lines", added: 2, removed: 0 } },
+      { kind: "hunk", text: "@@ -0,0 +1,2 @@" },
+      { kind: "added", new: 1, text: "The fix" },
+      { kind: "added", new: 2, text: "And more" },
+    ]),
+    pullRequestSpans: ok([[], [], [], []]),
   });
   await page.goto("/");
   await page.getByRole("button", { name: "PRs of #7" }).click();
@@ -400,12 +299,8 @@ test("the Files button, Ctrl+K F and × open and close the rail, its left edge s
   await expect(rail).toBeVisible();
   await expect(button).toHaveAttribute("aria-pressed", "true");
   const opened = await width();
-  const edge = (await pane.getByRole("separator", { name: "Rail width" }).boundingBox()) ?? { x: 0, y: 0 };
   // A drag to the left widens the rail.
-  await page.mouse.move(edge.x + 8, edge.y + 20);
-  await page.mouse.down();
-  await page.mouse.move(edge.x + 8 - 100, edge.y + 20, { steps: 4 });
-  await page.mouse.up();
+  await dragEdge(pane.getByRole("separator", { name: "Rail width" }), -100);
   const dragged = await width();
   // It stays open, at its width, on the Files tab, the PR's and not the rail's.
   await pane.locator("#pr-tab-files").click();
@@ -436,10 +331,7 @@ test("Ctrl+F searches the diff, marks the match it moves to, and Escape gives th
   page,
 }) => {
   const pane = await threaded(page, { kind: "row", row: 2 }, "Say what it fixes.");
-  await changeAnswer(page, "pullRequestFind", {
-    status: "ok",
-    data: { matches: [{ row: 3, start: 4, end: 8 }], more: false },
-  });
+  await changeAnswer(page, "pullRequestFind", ok({ matches: [{ row: 3, start: 4, end: 8 }], more: false }));
   await pane.getByRole("tab", { name: "Files" }).click();
   await expect(pane.getByRole("region", { name: "Diff" })).toContainText("And more");
 
@@ -465,7 +357,7 @@ test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at it
     cut: "neither" as const,
     ranges: [{ start, end }],
   });
-  await changeAnswer(page, "textSearch", { status: "ok", data: { kind: "running", id: 1 } });
+  await changeAnswer(page, "textSearch", ok({ kind: "running", id: 1 }));
   await changeAnswer(page, "textSearchState", {
     state: "results",
     id: 1,
@@ -476,12 +368,13 @@ test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at it
     matches: 2,
     end: "done",
   });
-  await changeAnswer(page, "pullRequestRow", { status: "ok", data: { kind: "row", row: 3 } });
-  await changeAnswer(page, "definitionCode", {
-    status: "ok",
-    data: { count: 12, lines: Array.from({ length: 12 }, (_, at) => (at === 11 ? "# more to come" : "")) },
-  });
-  await changeAnswer(page, "definitionSpans", { status: "ok", data: Array.from({ length: 12 }, () => []) });
+  await changeAnswer(page, "pullRequestRow", ok({ kind: "row", row: 3 }));
+  await changeAnswer(
+    page,
+    "definitionCode",
+    ok({ count: 12, lines: Array.from({ length: 12 }, (_, at) => (at === 11 ? "# more to come" : "")) }),
+  );
+  await changeAnswer(page, "definitionSpans", ok(Array.from({ length: 12 }, () => [])));
 
   await page.keyboard.press("ControlOrMeta+Shift+f");
   const rail = pane.getByRole("complementary", { name: "Rail" });
@@ -526,17 +419,12 @@ test("Ctrl+Shift+F searches the PR's code from the rail, and a match opens at it
 
 /** A new file at `path` whose header is row `row`, adding `added` lines, which together are taller than the
  * window. */
-const diffFile = (path: string, row: number, added: number) => ({
-  path,
-  old_path: null,
-  change: { kind: "lines", added, removed: 0 } as const,
-  row,
-  columns: 20,
-  generated: false,
-  gaps: [],
-  rest: null,
-  pairs: [{ row: row + 2, removed: 0, added }],
-});
+const newFile = (path: string, row: number, added: number) =>
+  diffFile(path, row, {
+    change: { kind: "lines", added, removed: 0 },
+    columns: 20,
+    pairs: [{ row: row + 2, removed: 0, added }],
+  });
 
 /** The rows of that file, its first line saying `first`. */
 const fileRows = (path: string, added: number, first: string) => [
@@ -576,22 +464,15 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
       language_servers: noServers,
       problems: [],
     },
-    home: { screen: "repository", repository, others: [] as string[] },
-    workbench: {
-      status: "ok",
-      data: { items: [issue], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    home,
+    workbench: workbenchPage([issue]),
     openPullRequest: done,
     fetchPullRequest: done,
-    pullRequest: { status: "ok", data: view },
-    pullRequestFiles: {
-      status: "ok",
-      data: {
-        state: "ready",
-        head: "0123abcdef",
-        base: "fedcba3210",
-        files: [diffFile("Lib/ast.py", 0, 98), diffFile(news, 100, 40)],
-        rows: 142,
+    pullRequest: ok(view),
+    pullRequestFiles: ok(
+      readyFiles(142, {
+        ...heads,
+        files: [newFile("Lib/ast.py", 0, 98), newFile(news, 100, 40)],
         news: [
           {
             path: news,
@@ -600,13 +481,12 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
             blocks: [{ kind: "paragraph", pieces: [{ kind: "text", text: "Fixed the parser." }] }],
           },
         ],
-        threads: { kind: "shown", threads: [] },
-      },
-    },
-    pullRequestRows: {
-      status: "ok",
-      data: [...fileRows("Lib/ast.py", 98, "import ast"), ...fileRows(news, 40, "Fixed the parser.")],
-    },
+      }),
+    ),
+    pullRequestRows: ok([
+      ...fileRows("Lib/ast.py", 98, "import ast"),
+      ...fileRows(news, 40, "Fixed the parser."),
+    ]),
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
@@ -685,31 +565,19 @@ test("a stale PR says what changed since the Review over both tabs, and Review c
     },
   };
   await mockCore(page, {
-    themes: { status: "ok", data: themes },
-    home: { screen: "repository", repository, others: [] as string[] },
-    workbench: {
-      status: "ok",
-      data: { items: [issue], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    themes: ok(themes),
+    home,
+    workbench: workbenchPage([issue]),
     openPullRequest: done,
     fetchPullRequest: done,
-    pullRequest: { status: "ok", data: stale },
-    pullRequestFiles: {
-      status: "ok",
-      data: {
-        state: "ready",
-        head: "0123abcdef",
-        base: "fedcba3210",
-        files: paths.map((path, at) => diffFile(path, starts[at] ?? 0, sizes[at] ?? 0)),
-        rows: sizes.reduce((sum, size) => sum + size + 2, 0),
-        news: [],
-        threads: { kind: "shown", threads: [] },
-      },
-    },
-    pullRequestRows: {
-      status: "ok",
-      data: paths.flatMap((path, at) => fileRows(path, sizes[at] ?? 0, `first of ${path}`)),
-    },
+    pullRequest: ok(stale),
+    pullRequestFiles: ok(
+      readyFiles(
+        sizes.reduce((sum, size) => sum + size + 2, 0),
+        { ...heads, files: paths.map((path, at) => newFile(path, starts[at] ?? 0, sizes[at] ?? 0)) },
+      ),
+    ),
+    pullRequestRows: ok(paths.flatMap((path, at) => fileRows(path, sizes[at] ?? 0, `first of ${path}`))),
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();

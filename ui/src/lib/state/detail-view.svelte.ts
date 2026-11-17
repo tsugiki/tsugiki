@@ -2,6 +2,7 @@
 // Repository changed (ADR 0008), and read from GitHub about once a minute while it's on screen (ADR 0015).
 // An Issue view stays hidden while a PR from its tree is on show, and asks nobody anything until it shows.
 import { events, type ReadFailure } from "$lib/data/bindings";
+import { ask, problemIn } from "./answer";
 import { hud } from "./hud.svelte";
 
 export type { ReadFailure };
@@ -124,22 +125,14 @@ export class DetailState<View extends { content: unknown }> {
   #fetch = () => this.#say(this.#commands.fetch(this.#repository, this.number));
 
   async #say(asked: ReturnType<DetailCommands<View>["open"]>) {
-    const answer = await asked.catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
-    if (answer.status === "error") this.error = answer.error.message;
+    const problem = await problemIn(asked);
+    if (problem !== undefined) this.error = problem;
   }
 
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
-    const answer = await hud
-      .timed(() => this.#commands.read(this.#repository, this.number))
-      .catch((e: unknown) => ({
-        status: "error" as const,
-        error: { message: String(e) },
-      }));
+    const answer = await ask(hud.timed(() => this.#commands.read(this.#repository, this.number)));
     // A newer question reads newer facts, so this drops an older answer that arrives late.
     if (question !== this.#lastQuestion) return;
     if (answer.status === "ok") {

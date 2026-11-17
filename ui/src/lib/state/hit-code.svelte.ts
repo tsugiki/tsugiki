@@ -6,6 +6,7 @@
 
 import { SvelteMap } from "svelte/reactivity";
 import { commands, type CodeFile, type DefinitionCode, type Hit, type Span } from "$lib/data/bindings";
+import { ask } from "./answer";
 import { wordAt, type Picked } from "./pick";
 import { waitForSpans } from "./spans-wait";
 
@@ -112,10 +113,7 @@ export class HitCode {
     const code = { repository: this.#repository, file: this.#file, start, end: start + CODE_CHUNK };
     const spans = readSpans(code);
     const waited = waitForSpans(spans);
-    const read = await commands.definitionCode(code).catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
+    const read = await ask(commands.definitionCode(code));
     if (read.status === "error") {
       // A file that showed no line says why. One that did keeps its lines, and the next scroll asks again.
       if (this.count === undefined) this.problem = read.error.message;

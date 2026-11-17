@@ -1,7 +1,7 @@
 // Picking the clone a mirror borrows objects from (#172). The core opens the folder picker and checks the
 // folder with git, which only reads it.
 import { commands, type CloneRefusal, type MirrorCost, type MirrorSource } from "$lib/data/bindings";
-import { ask } from "./answer";
+import { ask, problemIn } from "./answer";
 
 export type { CloneRefusal, MirrorCost, MirrorSource };
 
@@ -38,7 +38,5 @@ export async function mirrorCost(repository: string): Promise<MirrorCost | null>
 }
 
 /** Saves where `repository`'s mirror gets its objects, and says what went wrong if it couldn't. */
-export async function chooseMirrorSource(repository: string, source: MirrorSource) {
-  const answer = await ask(commands.chooseMirrorSource(repository, source));
-  return answer.status === "ok" ? undefined : answer.error.message;
-}
+export const chooseMirrorSource = (repository: string, source: MirrorSource) =>
+  problemIn(commands.chooseMirrorSource(repository, source));

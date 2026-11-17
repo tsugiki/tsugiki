@@ -16,6 +16,7 @@ import {
   type SearchId,
   type SearchState,
 } from "$lib/data/bindings";
+import { ask } from "./answer";
 import { type DiffEnds, diffKey } from "./diff-ends";
 import type { PrFilesState } from "./pr-files.svelte";
 
@@ -305,7 +306,7 @@ export class TextSearchState {
       this.#cancel(before);
       return;
     }
-    const answer = await commands.textSearch({ repository: this.#repository, ...ends, query }).catch(problem);
+    const answer = await ask(commands.textSearch({ repository: this.#repository, ...ends, query }));
     const running = answer.status === "ok" && answer.data.kind === "running" ? answer.data.id : undefined;
     if (asked !== this.#asked) {
       this.#cancel(running);
@@ -328,7 +329,7 @@ export class TextSearchState {
 
   /** Asks the core to cancel query `id`, if there is one, which it does only while that query runs. */
   #cancel(id: SearchId | undefined) {
-    if (id !== undefined) void commands.textSearchCancel(id).catch(problem);
+    if (id !== undefined) void commands.textSearchCancel(id).catch(() => undefined);
   }
 
   /** Listens to the core's word that what it found may have changed, once. False when Tsugiki can't hear
@@ -404,9 +405,6 @@ const keyOf = (diff: SearchDiff): string => (diff.kind === "ready" ? diffKey(dif
 
 /** The line's number of a line's row, or nothing for a file's. */
 const lineOf = (row: SearchRow): number | undefined => (row.kind === "line" ? row.hit.line : undefined);
-
-/** A command's failure as the generated bindings type it. */
-const problem = (e: unknown) => ({ status: "error" as const, error: { message: String(e) } });
 
 /** What a query found so far, or in all, in `files` files. */
 function resultsLine(files: number, matches: number, end: End): string {

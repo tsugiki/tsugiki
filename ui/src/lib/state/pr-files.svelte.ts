@@ -60,6 +60,7 @@ import { type DiffEnds, diffKey } from "./diff-ends";
 import { FilePages, samePage, type FilesMode, type Page } from "./file-pages";
 import { diffShows, FileView, inRepository, type RepositoryHit, type ViewLine } from "./file-view.svelte";
 import { HitCode, type CodePick } from "./hit-code.svelte";
+import { type Answer as CommandAnswer, ask } from "./answer";
 import { hud, type Jump, type JumpTimer } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
 import {
@@ -830,10 +831,7 @@ export class PrFilesState {
     const { head, base } = view;
     const search = { repository: this.#repository, number: this.#number, head, base, query };
     // The search's own problem shows in its box, and leaves the tab's error to the diff.
-    const answer = await commands.pullRequestFind(search).catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
+    const answer = await ask(commands.pullRequestFind(search));
     // A newer query, or a closed search, drops an older answer that arrives late.
     if (asked !== this.#lastSearch) return;
     if (answer.status === "error") {
@@ -1370,10 +1368,7 @@ export class PrFilesState {
       this.#heard(lookup, news);
     };
     // The core cancels the lookup running, if one is.
-    const answer = await commands.definitions(lookedUp, waiting, index).catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
+    const answer = await ask(commands.definitions(lookedUp, waiting, index));
     if (lookup !== this.#lookups) return undefined;
     if (answer.status === "error") {
       return { peek: { ...peek, lookup: { state: "failed", problem: answer.error.message } }, lookup, view };
@@ -1749,13 +1744,8 @@ export class PrFilesState {
   }
 
   /** What a command answered, or undefined after saying why it failed. */
-  async #safely<T>(
-    ask: () => Promise<{ status: "ok"; data: T } | { status: "error"; error: { message: string } }>,
-  ): Promise<T | undefined> {
-    const answer = await ask().catch((e: unknown) => ({
-      status: "error" as const,
-      error: { message: String(e) },
-    }));
+  async #safely<T>(asking: () => Promise<CommandAnswer<T>>): Promise<T | undefined> {
+    const answer = await ask(asking());
     if (answer.status === "error") {
       this.error = answer.error.message;
       return undefined;

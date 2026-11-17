@@ -14,7 +14,7 @@
   import { ROW, type Peek } from "$lib/state/peek";
   import { currentOs, goesToDefinition } from "./keys";
   import { wordPicker } from "./picking";
-  import { pieces } from "./spans";
+  import CodePieces from "./CodePieces.svelte";
 
   let {
     code,
@@ -208,7 +208,7 @@
       {#each drawn as at (at)}
         {@const text = code.line(at)}
         <!-- prettier-ignore -->
-        <div class={["line", at === mark.line && "landed"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}>{#each pieces(text ?? "", code.spans(at) ?? [], [], code.pick?.line === at ? code.pick : undefined) as piece, index (index)}{#if piece.caret}<span class="caret"></span>{/if}{#if piece.highlight || piece.picked}<span class={[piece.highlight && `hl-${piece.highlight}`, piece.picked && "picked"]}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
+        <div class={["row", "line", at === mark.line && "landed"]} style:top={`${String(topOf(at))}px`}><span class="number">{at}</span><span class="text" data-code-line={at}><CodePieces text={text ?? ""} spans={code.spans(at) ?? []} picked={code.pick?.line === at ? code.pick : undefined} /></span></div>
       {/each}
       {#if inset !== undefined}
         <div class="inset" data-inset={id}>{@render inset.box(under * ROW, inset.peek, extra)}</div>
@@ -249,34 +249,5 @@
     position: absolute;
     left: 0;
     right: 0;
-    display: flex;
-    height: 20px;
-    line-height: 20px;
-    white-space: pre;
-    tab-size: 8;
-  }
-
-  .number {
-    flex: none;
-    width: 48px;
-    padding-right: 8px;
-    box-sizing: border-box;
-    text-align: right;
-    color: var(--fg-muted);
-    user-select: none;
-  }
-
-  /* The word the user picked, as the diff draws it, with a caret that takes no room. */
-  .text :global(.picked) {
-    background: color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-
-  .caret {
-    display: inline-block;
-    width: 0;
-    height: 14px;
-    margin-right: -1px;
-    border-left: 1px solid currentColor;
-    vertical-align: -3px;
   }
 </style>

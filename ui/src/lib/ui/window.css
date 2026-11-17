@@ -45,6 +45,40 @@ samp,
   background: color-mix(in srgb, var(--find-current) 50%, transparent);
 }
 
+/* A row of code: a line's number, then its text, which keeps its spaces and tabs. The diff's rows, a
+   thread's code and the Definition peek's and the file view's lines draw so. */
+.code-lines .row {
+  display: flex;
+  height: 20px;
+  line-height: 20px;
+  white-space: pre;
+  tab-size: 8;
+}
+
+.code-lines .number {
+  flex: none;
+  width: 48px;
+  padding-right: 8px;
+  box-sizing: border-box;
+  text-align: right;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+/* The word the user picked, on a tint of the accent, with a caret that takes no room. */
+.code-lines .text .picked {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.code-lines .caret {
+  display: inline-block;
+  width: 0;
+  height: 14px;
+  margin-right: -1px;
+  border-left: 1px solid currentColor;
+  vertical-align: -3px;
+}
+
 /* Prose inside something in the code font, such as a review thread in the diff. */
 .sans {
   font-family: var(--sans);

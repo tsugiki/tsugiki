@@ -26,11 +26,7 @@ impl World {
         std::fs::create_dir_all(&data).unwrap();
         Self {
             view,
-            folders: Folders {
-                data: data.to_path_buf(),
-                settings: data.to_path_buf(),
-                logs: data.to_path_buf(),
-            },
+            folders: crate::testing::one_folder(&data),
             diffs: Diffs::default(),
             highlighter: Highlighter::start(),
             _data: data,

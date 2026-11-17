@@ -3,7 +3,8 @@ use crate::github::RestPath;
 use crate::github::replay::Replayer;
 use crate::github::testing::Canned;
 use crate::testing::TempPath;
-use crate::token::{GhOutput, read_token};
+use crate::token::read_token;
+use tsugiki_token::testing::gh_prints;
 
 const REQUEST: Request<'static> = Request {
     operation: "Op",
@@ -12,13 +13,7 @@ const REQUEST: Request<'static> = Request {
 };
 
 fn token() -> Token {
-    read_token(|_| {
-        Ok(GhOutput {
-            success: true,
-            stdout: "secret-token-value".to_owned(),
-        })
-    })
-    .unwrap()
+    read_token(|_| gh_prints("secret-token-value")).unwrap()
 }
 
 fn temp_dir(name: &str) -> TempPath {

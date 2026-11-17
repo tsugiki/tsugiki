@@ -6,19 +6,29 @@ import { type GitHubItem, openLink, openOnGitHub } from "./browser";
 export class LinkOpener {
   /** What kept the browser from opening the last page asked for, if anything did. */
   problem = $state<string>();
+  /** Counts the pages asked for and the forgets, so an answer that a newer one followed goes unheard. */
+  #asked = 0;
 
   /** Opens `repository`'s Issue or PR `item` on GitHub. */
-  async openOnGitHub(repository: string, item: GitHubItem) {
-    this.problem = await openOnGitHub(repository, item);
+  openOnGitHub(repository: string, item: GitHubItem) {
+    return this.#hear(openOnGitHub(repository, item));
   }
 
   /** Opens `address`, a link from a description, a comment or the window's own words. */
-  async openLink(address: string) {
-    this.problem = await openLink(address);
+  openLink(address: string) {
+    return this.#hear(openLink(address));
   }
 
-  /** Forgets the last problem, as when what met it has gone. */
+  /** Forgets the last problem, and any answer still on its way, as when what met it has gone. */
   forget() {
+    this.#asked += 1;
     this.problem = undefined;
+  }
+
+  async #hear(opening: Promise<string | undefined>) {
+    this.#asked += 1;
+    const asked = this.#asked;
+    const problem = await opening;
+    if (asked === this.#asked) this.problem = problem;
   }
 }

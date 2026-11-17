@@ -24,3 +24,22 @@ it("keeps what kept the browser from the last page, until the next opens or it f
   expect([failed, opened, links.problem]).toEqual(["Error: no browser", undefined, undefined]);
   expect(openOnGitHub).toHaveBeenCalledWith("python/cpython", { kind: "issue", number: 7 });
 });
+
+it("drops an answer that a newer page, or a forget, came after", async () => {
+  const links = new LinkOpener();
+  let failLate: (problem: string) => void = () => {};
+  const late = new Promise<string>((resolve) => (failLate = resolve));
+  vi.mocked(openLink).mockReturnValueOnce(late).mockResolvedValueOnce(undefined);
+
+  const first = links.openLink("https://example.com/a");
+  await links.openLink("https://example.com/b");
+  failLate("Error: no browser");
+  await first;
+  const afterNewer = links.problem;
+  vi.mocked(openOnGitHub).mockReturnValueOnce(late);
+  const forgotten = links.openOnGitHub("python/cpython", { kind: "issue", number: 7 });
+  links.forget();
+  await forgotten;
+
+  expect([afterNewer, links.problem]).toEqual([undefined, undefined]);
+});

@@ -1,6 +1,7 @@
 // The time since something happened, in the one unit the window words it in.
 
-const MINUTE_MS = 60_000;
+/** A minute, in milliseconds. */
+export const MINUTE_MS = 60_000;
 const MINUTES_IN_HOUR = 60;
 const MINUTES_IN_DAY = 24 * MINUTES_IN_HOUR;
 

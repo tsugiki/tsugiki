@@ -1,7 +1,6 @@
 // A clock that moves words such as "3m ago" on by themselves.
 import { SvelteDate } from "svelte/reactivity";
-
-const MINUTE_MS = 60_000;
+import { MINUTE_MS } from "./time";
 
 /** The time now, set again each minute while the component that calls this as it starts is on screen, so
  * words such as "3m ago" move on between syncs. */

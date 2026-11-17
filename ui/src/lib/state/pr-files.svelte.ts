@@ -1745,7 +1745,7 @@ export class PrFilesState {
 
   /** What a command answered, or undefined after saying why it failed. */
   async #safely<T>(asking: () => Promise<CommandAnswer<T>>): Promise<T | undefined> {
-    const answer = await ask(asking());
+    const answer = await ask(asking);
     if (answer.status === "error") {
       this.error = answer.error.message;
       return undefined;

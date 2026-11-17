@@ -198,8 +198,8 @@ enum Turn {
     Fetch(Fetched),
     /// The Mirror worker read patch-ids, or found commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
-    /// The hour's points reset, so the window stops showing the old hour's count.
-    HourEnded,
+    /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
+    CheckHour,
     SyncStep,
     Stop,
 }
@@ -232,8 +232,8 @@ impl Refreshes {
     fn next_turn(&self, github: &GitHub, syncs: &mut Syncs, due: Due) -> Turn {
         let next_refresh = due.status.min(due.repository);
         loop {
-            let hour_end = hour_end(github);
-            let wake = [syncs.ready_at(), hour_end]
+            let hour_check = hour_check(github);
+            let wake = [syncs.ready_at(), hour_check]
                 .into_iter()
                 .flatten()
                 .fold(next_refresh, Ord::min);
@@ -277,9 +277,9 @@ impl Refreshes {
                     return Turn::RefreshRepository;
                 }
                 Err(RecvTimeoutError::Timeout)
-                    if hour_end.is_some_and(|end| Instant::now() >= end) =>
+                    if hour_check.is_some_and(|at| Instant::now() >= at) =>
                 {
-                    return Turn::HourEnded;
+                    return Turn::CheckHour;
                 }
                 Err(RecvTimeoutError::Timeout) => return Turn::SyncStep,
             }
@@ -287,12 +287,17 @@ impl Refreshes {
     }
 }
 
-/// The instant the hour's points reset by GitHub's clock, while the window shows them. The hour's count then
-/// ends, and the next hour's waits for GitHub's next answer.
-fn hour_end(github: &GitHub) -> Option<Instant> {
-    let points = github.hour_points()?;
-    let left = points.resets_at - github.clock().now();
-    Some(Instant::now() + Duration::try_from(left).unwrap_or(Duration::ZERO))
+/// The longest the session waits before it reads GitHub's clock again while the window shows the hour's
+/// points. A Mac's `Instant` stops while it sleeps and the wall clock doesn't, so a wait for the reset alone
+/// could leave the old hour's count up long after it.
+const HOUR_CHECK: Duration = Duration::from_secs(60);
+
+/// The instant to see whether the hour's points have reset by GitHub's clock, while the window shows them:
+/// at the reset, or [`HOUR_CHECK`] from now if that's sooner. The hour's count then ends, and the next
+/// hour's waits for GitHub's next answer.
+fn hour_check(github: &GitHub) -> Option<Instant> {
+    let left = github.hour_left()?;
+    Some(Instant::now() + left.min(HOUR_CHECK))
 }
 
 /// The database a session opens when it starts.
@@ -379,7 +384,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::Mark(marked) => mark(board, store, marked),
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
-            Turn::HourEnded => {}
+            Turn::CheckHour => {}
             Turn::Fetch(fetched) => {
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);

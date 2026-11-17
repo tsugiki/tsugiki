@@ -1049,6 +1049,23 @@ fn the_window_stops_showing_the_hours_points_at_its_reset_by_githubs_clock() {
     assert_eq!((shown, reset), (Some(1), None));
 }
 
+#[test]
+fn a_reset_far_off_is_looked_at_again_within_a_minute_as_a_sleeping_mac_stops_its_instant() {
+    let viewer = reply_ok(&format!(
+        r#"{{"data":{{"viewer":{{"login":"octocat"}},{RATE_LIMIT}}}}}"#
+    ));
+    let github = GitHub::new(
+        Box::new(Scripted::new(vec![viewer]).0),
+        crate::github::testing::token(),
+    );
+    assert_eq!(hour_check(&github), None, "no points, nothing to look at");
+
+    drop(github.viewer().unwrap());
+
+    let at = hour_check(&github).unwrap();
+    assert!(at <= Instant::now() + HOUR_CHECK);
+}
+
 /// A PR of `author` in `gcmon`, stored with its branch at `head`.
 fn stored_pr(number: u32, author: &str, head: &str) -> PullRequestFacts {
     PullRequestFacts {

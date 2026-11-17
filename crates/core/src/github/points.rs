@@ -35,24 +35,40 @@ pub struct HourPoints {
 
 impl HourPoints {
     /// The count after an answer that reported `answer` at `now`, GitHub's time. `last` is the count before
-    /// it, nothing before the run's first answer. An answer from a new hour starts the sum again.
-    pub(crate) fn after(last: Option<Self>, answer: RateLimit, now: OffsetDateTime) -> Self {
-        let (spent, since) = match last {
-            Some(last) if answer.reset_at <= last.resets_at + SAME_HOUR => {
-                (last.spent.saturating_add(answer.cost), last.since)
-            }
+    /// it, nothing before the run's first answer. An answer from a new hour starts the sum again. An answer
+    /// whose hour has already reset by `now` belongs to a count that is over, so it gives nothing.
+    pub(crate) fn after(
+        last: Option<Self>,
+        answer: RateLimit,
+        now: OffsetDateTime,
+    ) -> Option<Self> {
+        let same_hour = last.filter(|last| answer.reset_at <= last.resets_at + SAME_HOUR);
+        if answer.reset_at <= now || same_hour.is_some_and(|last| last.resets_at <= now) {
+            return None;
+        }
+        let (spent, since, resets_at) = match (last, same_hour) {
+            // An answer that says the hour resets a little earlier doesn't move the reset back.
+            (_, Some(last)) => (
+                last.spent.saturating_add(answer.cost),
+                last.since,
+                last.resets_at.max(answer.reset_at),
+            ),
             // Tsugiki was counting when the hour began, so whatever came before its answer was not its own.
-            Some(_) => (answer.cost, None),
-            None => (answer.cost, (answer.used > answer.cost).then_some(now)),
+            (Some(_), None) => (answer.cost, None, answer.reset_at),
+            (None, None) => (
+                answer.cost,
+                (answer.used > answer.cost).then_some(now),
+                answer.reset_at,
+            ),
         };
-        Self {
+        Some(Self {
             limit: answer.limit,
             used: answer.used,
             remaining: answer.remaining,
-            resets_at: answer.reset_at,
+            resets_at,
             spent,
             since,
-        }
+        })
     }
 }
 

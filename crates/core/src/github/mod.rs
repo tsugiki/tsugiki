@@ -180,15 +180,29 @@ impl GitHub {
     /// The hour's points as this run's answers count them. Nothing before the first answer that said, and
     /// nothing once the hour has reset by GitHub's clock, until an answer of the next hour says.
     pub fn hour_points(&self) -> Option<HourPoints> {
-        let now = self.clock.get().now();
-        self.points.get().filter(|points| now < points.resets_at)
+        self.shown_hour().map(|(points, _)| points)
+    }
+
+    /// The time left until the hour's points reset by GitHub's clock, while there are any to show.
+    pub fn hour_left(&self) -> Option<std::time::Duration> {
+        self.shown_hour()
+            .and_then(|(_, left)| std::time::Duration::try_from(left).ok())
+    }
+
+    /// The hour's points and the time left until they reset, by one reading of GitHub's clock, so the points
+    /// and the time left agree.
+    fn shown_hour(&self) -> Option<(HourPoints, Duration)> {
+        let points = self.points.get()?;
+        let left = points.resets_at - self.clock.get().now();
+        left.is_positive().then_some((points, left))
     }
 
     /// Adds the points of an answer to the hour's.
     fn count(&self, answer: RateLimit) {
         let now = self.clock.get().now();
-        self.points
-            .set(Some(HourPoints::after(self.points.get(), answer, now)));
+        if let Some(points) = HourPoints::after(self.points.get(), answer, now) {
+            self.points.set(Some(points));
+        }
     }
 
     /// Turns `reply` into its data, and counts the points it cost.

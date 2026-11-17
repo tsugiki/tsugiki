@@ -63,7 +63,7 @@ fn a_read_of_numbers_no_recording_holds_finds_none() {
         let recorded = numbered(&[7, 8, 9], "number");
         let name = format!("other-{operation}");
         let reply = replayed(&name, operation, &recorded, numbered(&[120], "number")).unwrap();
-        assert_eq!(reply.body, no_issues());
+        assert_eq!(reply.body, NO_ISSUES);
     }
 }
 

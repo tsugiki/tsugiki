@@ -58,9 +58,7 @@ impl Fixture {
                     }
                     write(&mirror, path, bytes);
                 }
-                None => {
-                    let _ = git(&mirror, &["rm", "-q", path]);
-                }
+                None => fs::remove_file(mirror.join(path)).unwrap(),
             }
         }
         let head_commit = commit(&mirror, "head");
@@ -94,11 +92,12 @@ impl Fixture {
     }
 }
 
+/// Writes the file for the next commit, which stages it with the rest: a `git add` here would start one git
+/// for each file.
 fn write(folder: &Path, path: &str, bytes: &[u8]) {
     let file = folder.join(path);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(&file, bytes).unwrap();
-    let _ = git(folder, &["add", path]);
 }
 
 fn commit(folder: &Path, message: &str) -> CommitSha {

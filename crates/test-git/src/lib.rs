@@ -15,12 +15,16 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 use std::{env, fs, io, iter, thread};
 
-/// The author of each commit a test makes, so a commit needs no git config on the machine.
-const AUTHOR: [&str; 4] = [
+/// The config of each git a test runs. The author lets a commit need no git config on the machine. Without
+/// `maintenance.auto=false`, each commit would start a `git maintenance run --auto`, about 500 processes in
+/// a run of the core's tests, for repositories too small to need it.
+const CONFIG: [&str; 6] = [
     "-c",
     "user.name=Contributor",
     "-c",
     "user.email=contributor@example.com",
+    "-c",
+    "maintenance.auto=false",
 ];
 
 /// What points git at another repository than the one in the folder it runs in. A hook or an alias that
@@ -34,7 +38,7 @@ pub fn git(dir: &Path, args: &[&str]) -> String {
         let _ = command.env_remove(name);
     }
     let output = command
-        .args(AUTHOR)
+        .args(CONFIG)
         .args(args)
         .current_dir(dir)
         .output()

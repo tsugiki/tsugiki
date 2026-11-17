@@ -13,8 +13,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   searchable list like VS Code's, this dialog, and editing the config files as text.
 - The dialog opens on General, or on Advanced from the Definition peek. As it opens it reads both files
   again, so a hand edit made since start-up shows in it and takes effect on the window, the theme included.
-  The controls wait until then; if the files can't be read, they stay off and the dialog says why. Each
-  change shows on the window at once: clearing Show the status bar hides the status bar behind the dialog.
+  The controls wait until then; if the files can't be read, they stay off and the dialog says why. A
+  Repository's new Conventions or Filters from the edit reach its lists at once, and its syncs. Each change
+  shows on the window at once: clearing Show the status bar hides the status bar behind the dialog.
   Apply saves the tables the dialog changed over what the file says then, so a hand edit to another table
   made while the dialog was open stays, and closes; with nothing changed the button reads OK and closes
   without saving. Cancel, Esc, ✕ or a press outside the dialog puts every change back. While Apply saves,

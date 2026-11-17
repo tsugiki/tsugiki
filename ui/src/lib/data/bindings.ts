@@ -147,8 +147,8 @@ export const commands = {
 	addRepository: (repository: NewRepository) => typedError<Home_Serialize, Error_Serialize>(__TAURI_INVOKE("add_repository", { repository })),
 	/**
 	 *  Puts the Filters of a Repository that search a query on the Workbench, or takes them off it, in
-	 *  `settings.toml` (#819), and hands the session the settings, so Reach follows them. The window then asks
-	 *  for the Workbench again. This waits on a small file and never on GitHub or git.
+	 *  `settings.toml` (#819), and the settings owner hands the session the settings, so Reach follows them.
+	 *  The window then asks for the Workbench again. This waits on a small file and never on GitHub or git.
 	 */
 	putFilterOnWorkbench: (change: FilterSwitch) => typedError<null, Error_Serialize>(__TAURI_INVOKE("put_filter_on_workbench", { change })),
 	/**
@@ -175,7 +175,8 @@ export const commands = {
 	saveTheme: (pick: ThemePick) => typedError<null, Error_Serialize>(__TAURI_INVOKE("save_theme", { pick })),
 	/**
 	 *  Reads both settings files again as the Settings dialog opens, so a hand edit made since start-up shows in
-	 *  it and takes effect (ADR 0014). This waits on small files.
+	 *  it and takes effect (ADR 0014). The settings owner hands the session each Repository's settings the edit
+	 *  changed, as it does after every change. This waits on small files.
 	 */
 	rereadSettings: () => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("reread_settings")),
 	/**
@@ -1256,14 +1257,34 @@ export type InboxPage_Deserialize =
 /**  The items updated in the last two days, or the first older batch when none were. */
 { kind: "latest" } | 
 /**  The next older batch: the items that come after `after` in the Inbox's order. */
-{ kind: "older"; after: InboxCursor_Deserialize };
+{ kind: "older"; after: InboxCursor_Deserialize } | 
+/**
+ *  Every item from the first down to `until`, where the pages the window shows end, as one page: those
+ *  pages read again after a change, at the cost of what they hold (#822).
+ */
+{ kind: "through"; until: InboxCursor_Deserialize } | 
+/**
+ *  Every item the cache holds, as one page: the pages the window shows read again once they reached
+ *  the end.
+ */
+{ kind: "all" };
 
 /**  The page of the Inbox the window asks for. */
 export type InboxPage_Serialize = 
 /**  The items updated in the last two days, or the first older batch when none were. */
 { kind: "latest" } | 
 /**  The next older batch: the items that come after `after` in the Inbox's order. */
-{ kind: "older"; after: InboxCursor_Serialize };
+{ kind: "older"; after: InboxCursor_Serialize } | 
+/**
+ *  Every item from the first down to `until`, where the pages the window shows end, as one page: those
+ *  pages read again after a change, at the cost of what they hold (#822).
+ */
+{ kind: "through"; until: InboxCursor_Serialize } | 
+/**
+ *  Every item the cache holds, as one page: the pages the window shows read again once they reached
+ *  the end.
+ */
+{ kind: "all" };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
 export type Inbox_Deserialize = {

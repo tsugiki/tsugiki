@@ -148,6 +148,10 @@ pub struct Syncs {
     /// The settings of each Repository opened since launch, as the session last heard them: the one copy
     /// every sync reads them from.
     settings: Vec<RepositorySettings>,
+    /// The settings the settings owner last handed over of each Repository, which it hands over in the
+    /// order it saves them. Opening a Repository takes these over the copy the command that opened it read,
+    /// which a save handed over meanwhile can have outdated.
+    owned: Vec<RepositorySettings>,
     /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because a view on
     /// screen asks about once a minute.
     opened: BTreeSet<u32>,
@@ -166,9 +170,12 @@ pub struct Syncs {
 
 impl Syncs {
     /// Opens `repository` and gives its sync the next step, carrying on from where it got if one is already
-    /// queued. Its settings replace those the syncs held of it.
+    /// queued. Its settings replace those the syncs held of it, unless the settings owner handed over its
+    /// own: those are as new as any, and the copy here can be older.
     pub fn add(&mut self, repository: RepositorySettings) {
         let name = repository.name.clone();
+        let owned = (self.owned.iter()).find(|owned| owned.name.is_same(&name));
+        let repository = owned.cloned().unwrap_or(repository);
         if !self.is_open(&name) {
             self.opened.clear();
             self.trees.clear();
@@ -187,18 +194,29 @@ impl Syncs {
         self.open_went_last = false;
     }
 
-    /// Takes `repository`'s settings in place of those its syncs read, if it was opened since launch, and
-    /// answers with those. Which Repository is open stays, and nothing new is queued. A sync of it that is
-    /// reading ahead works out again which PRs it owes a read, as the new settings can reach others.
+    /// Takes the settings the settings owner handed over, `repository`'s, in place of those its syncs read,
+    /// if it was opened since launch and they differ, and answers with those. Which Repository is open
+    /// stays, and nothing new is queued. A sync of it that is reading ahead works out again which PRs it
+    /// owes a read, as the new settings can reach others.
     pub fn replace_settings(
         &mut self,
         repository: RepositorySettings,
     ) -> Option<RepositorySettings> {
-        if let Some(queued) = self.queued_mut(&repository.name) {
+        let name = repository.name.clone();
+        let owned = (self.owned.iter_mut()).find(|owned| owned.name.is_same(&name));
+        match owned {
+            Some(owned) => owned.clone_from(&repository),
+            None => self.owned.push(repository.clone()),
+        }
+        let held = (self.settings.iter_mut()).find(|held| held.name.is_same(&name))?;
+        if *held == repository {
+            return None;
+        }
+        let before = mem::replace(held, repository);
+        if let Some(queued) = self.queued_mut(&name) {
             queued.sync.reach_changed();
         }
-        let held = (self.settings.iter_mut()).find(|held| held.name.is_same(&repository.name))?;
-        Some(mem::replace(held, repository))
+        Some(before)
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A

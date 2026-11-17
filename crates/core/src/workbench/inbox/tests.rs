@@ -395,6 +395,94 @@ fn a_page_that_takes_the_last_items_says_nothing_is_older() {
     assert_eq!(first.older, None);
 }
 
+/// The numbers of the items `inbox` lists, in its order.
+fn numbers(inbox: &Inbox) -> Vec<u32> {
+    (outline(inbox).into_iter())
+        .map(|(_, number, _)| number)
+        .collect()
+}
+
+#[test]
+fn pages_read_again_through_where_they_ended_are_one_page_that_ends_there_too() {
+    let world = ViewWorld::new("inbox-through");
+    let count = OLDER_BATCH * 2 + 10;
+    let issues = (1..=count).map(|number| issue_at(number, ago(100 + i64::from(number))));
+    let recent = [issue_at(1001, ago(1)), issue_at(1002, ago(2))];
+    world.has(vec![], recent.into_iter().chain(issues).collect());
+
+    let first = read(&world, InboxPage::Latest);
+    let second = read(
+        &world,
+        InboxPage::Older {
+            after: first.older.unwrap(),
+        },
+    );
+    let through_first = read(
+        &world,
+        InboxPage::Through {
+            until: first.older.unwrap(),
+        },
+    );
+    let through_second = read(
+        &world,
+        InboxPage::Through {
+            until: second.older.unwrap(),
+        },
+    );
+    let all = read(&world, InboxPage::All);
+    world.finish();
+
+    assert_eq!(numbers(&through_first), numbers(&first));
+    assert_eq!(
+        through_first.older, first.older,
+        "the first page's start stays where it was, though the clock moved on"
+    );
+    let shown: Vec<u32> = numbers(&first)
+        .into_iter()
+        .chain(numbers(&second))
+        .collect();
+    assert_eq!(numbers(&through_second), shown);
+    assert_eq!(through_second.older, second.older);
+    let every: Vec<u32> = [1001, 1002].into_iter().chain(1..=count).collect();
+    assert_eq!(numbers(&all), every);
+    assert_eq!(all.older, None);
+}
+
+#[test]
+fn a_page_through_the_last_items_says_nothing_is_older() {
+    let world = ViewWorld::new("inbox-through-last");
+    world.has(vec![], vec![issue_at(1, ago(1)), issue_at(2, ago(100))]);
+
+    let through = read(
+        &world,
+        InboxPage::Through {
+            until: InboxCursor::at(ago(100)),
+        },
+    );
+    world.finish();
+
+    assert_eq!(numbers(&through), [1, 2]);
+    assert_eq!(through.older, None);
+}
+
+#[test]
+fn a_page_through_a_place_no_item_reaches_any_more_holds_the_next_batch() {
+    let world = ViewWorld::new("inbox-through-gone");
+    // The items above where the pages on show ended have all closed.
+    world.has(vec![], vec![issue_at(1, ago(100)), issue_at(2, ago(101))]);
+
+    let through = read(
+        &world,
+        InboxPage::Through {
+            until: InboxCursor::at(ago(50)),
+        },
+    );
+    world.finish();
+
+    assert_eq!(numbers(&through), [1, 2]);
+    assert_eq!(through.older, None);
+}
+
 #[test]
 fn the_first_page_says_nothing_is_older_when_only_its_issues_are() {
     let world = ViewWorld::new("inbox-named-older");
@@ -527,6 +615,12 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
     .unwrap();
     let latest: InboxPage =
         serde_json::from_value(serde_json::json!({ "kind": "latest" })).unwrap();
+    let through: InboxPage = serde_json::from_value(serde_json::json!({
+        "kind": "through",
+        "until": { "updated_at": "1970-04-11T00:00:00Z", "number": 7 },
+    }))
+    .unwrap();
+    let all: InboxPage = serde_json::from_value(serde_json::json!({ "kind": "all" })).unwrap();
     let inbox = Inbox {
         items: vec![],
         older: Some(InboxCursor::at(now())),
@@ -540,6 +634,8 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
     };
     assert_eq!(asked, InboxPage::Older { after });
     assert_eq!(latest, InboxPage::Latest);
+    assert_eq!(through, InboxPage::Through { until: after });
+    assert_eq!(all, InboxPage::All);
     assert_eq!(
         sent["older"],
         serde_json::json!({ "updated_at": "1970-04-11T00:00:00Z", "number": 0 })

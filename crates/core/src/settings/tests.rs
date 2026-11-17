@@ -1259,6 +1259,59 @@ fn the_owner_saves_a_switch_and_answers_with_what_the_files_say() {
 }
 
 #[test]
+fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwise_in_save_order() {
+    let (files, folders, _root) = settings_saying(
+        "owner-tells-session",
+        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n",
+    );
+    let owner = SettingsOwner::start(Ok(files));
+    let (sent, incoming) = mpsc::channel();
+    owner.tell_session(Box::new(move |settings: RepositorySettings, by| {
+        let switch = settings.filters[0].on_workbench;
+        sent.send((settings.name.to_string(), settings.conventions, switch, by))
+            .unwrap();
+    }));
+
+    drop(owner.save_panes(PaneLayout::default()).unwrap());
+    drop(
+        owner
+            .put_on_workbench(repository("a/b"), query("label:bug"), OnWorkbench::On)
+            .unwrap(),
+    );
+    let file = fs::read_to_string(folders.settings_file()).unwrap();
+    let edited = file.replace(
+        "name = \"a/b\"\n",
+        "name = \"a/b\"\nconventions = \"cpython\"\n",
+    );
+    fs::write(folders.settings_file(), &edited).unwrap();
+    // A change that saves nothing of the Repository takes the hand edit in, and the reread after finds
+    // nothing new.
+    drop(owner.save_panes(PaneLayout::default()).unwrap());
+    drop(owner.reread().unwrap());
+    drop(owner);
+
+    let told: Vec<_> = incoming.try_iter().collect();
+    assert_ne!(edited, file, "{file}");
+    assert_eq!(
+        told,
+        [
+            (
+                "a/b".to_owned(),
+                Conventions::Github,
+                OnWorkbench::On,
+                SavedBy::Window
+            ),
+            (
+                "a/b".to_owned(),
+                Conventions::Cpython,
+                OnWorkbench::On,
+                SavedBy::HandEdit
+            ),
+        ]
+    );
+}
+
+#[test]
 fn a_repository_can_say_it_wants_no_filters() {
     let read = the_repository_in(
         "empty-filters",

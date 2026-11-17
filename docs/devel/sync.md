@@ -23,8 +23,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   count nothing: those whose answer doesn't say its cost, such as a 502, a timeout or an answer with no data,
   those whose answer comes from an hour that has already reset, and the size the Mirror worker asks before a
   clone, on a connection of its own. Whatever they cost, the status bar puts down to other tools.
-- Older items come on demand: opening one fetches it and keeps it, a search in All issues also runs on GitHub,
-  and All issues ends with "Load 30 more days".
+- Older items come on demand: opening one fetches it and keeps it, a search in the **Inbox** also runs on
+  GitHub, and the Inbox ends with "Load 30 more days" once it has listed all the cache holds.
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own
   state ([ADR 0010](../adr/0010-one-sqlite-database-and-per-repository-mirrors.md)). **Export database**
   (Settings › Advanced, and the command palette) writes a consistent copy of it anywhere, such as a synced

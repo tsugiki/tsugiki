@@ -1,5 +1,5 @@
-// One Repository's Workbench and its Filters: asked for when the window opens it, when the user selects a
-// line of the Sidebar, and each time the core says its facts changed (ADR 0008).
+// One Repository's Workbench and its Filters, and its Inbox (#822): asked for when the window opens it, when
+// the user selects a line of the Sidebar, and each time the core says its facts changed (ADR 0008).
 import {
   commands,
   events,
@@ -9,6 +9,8 @@ import {
   type CantCheck,
   type CiState,
   type FilterLine_Serialize,
+  type InboxCursor_Serialize,
+  type InboxPage_Deserialize,
   type IssueItem_Serialize,
   type IssueState,
   type ListedItem_Serialize,
@@ -29,6 +31,8 @@ import { hud } from "./hud.svelte";
 export type Attention = Attention_Serialize;
 export type BackportRow = BackportRow_Serialize;
 export type FilterLine = FilterLine_Serialize;
+/** Where an item stands in the Inbox's order, as the core gives it. */
+export type InboxCursor = InboxCursor_Serialize;
 export type IssueItem = IssueItem_Serialize;
 export type ListedItem = ListedItem_Serialize;
 /** An item's part in Mark Seen and Mark Unseen, as the core drew it. */
@@ -47,6 +51,16 @@ export type {
   Why,
   YourReview,
 };
+
+/** A line of the Sidebar whose items the list shows: a view of the Workbench, or the Inbox (#822). */
+export type SidebarView = WorkbenchView | { kind: "inbox" };
+
+/** `items` with each item of `more` that `items` doesn't list already. A sync can save between two pages
+ * before its change reaches the window, which puts an item on both, and the list keys its items by number. */
+function joined(items: ListedItem[], more: ListedItem[]): ListedItem[] {
+  const listed = new Set(items.map((item) => item.number));
+  return [...items, ...more.filter((item) => !listed.has(item.number))];
+}
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };
@@ -70,7 +84,7 @@ const answered = <T>(asking: Promise<T>) =>
 type Line = { stop: Stop; title: string };
 
 /** The key of view `view`, which keeps its own unfolded Issues. */
-const keyOf = (view: WorkbenchView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
+const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
 
 /** The item of `items` whose own line `stop` is, as against a PR or Backport in its tree. Only that line
  * carries the item's attention. */
@@ -114,8 +128,10 @@ export class WorkbenchState {
   reviewRequests = $state(0);
   staleReviews = $state(0);
   filters = $state<FilterLine[]>([]);
-  selected = $state<WorkbenchView>({ kind: "whole" });
+  selected = $state<SidebarView>({ kind: "whole" });
   error = $state<string>();
+  /** The reason the Inbox's last older page couldn't be read, until one is. */
+  olderError = $state<string>();
   /** The reason the last change to a Filter's "On the Workbench" didn't save, if it didn't. */
   switchProblem = $state<string>();
   /** A change to a Filter's "On the Workbench" is saving. */
@@ -128,7 +144,15 @@ export class WorkbenchState {
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The view whose items the list shows: `selected` once its answer has arrived. */
-  #shown = $state<WorkbenchView>({ kind: "whole" });
+  #shown = $state<SidebarView>({ kind: "whole" });
+  /** Where the Inbox's pages the list read last end: the next older page's start, or null once they hold all
+   * the cache does. Only the Inbox's reads write it, one at a time, and it counts only while the list shows
+   * the Inbox. */
+  #reach = $state<InboxCursor | null>();
+  /** The Inbox's reads, each chained after the one asked before it. */
+  #reading: Promise<void> = Promise.resolve();
+  /** Whether the Inbox's next older page is asked for and not yet read, so it is asked for once. */
+  #olderAsked = false;
   /** The list's order as the window holds it now, and the order the items on show were asked in. */
   #order: () => ListOrder;
   #shownOrder: ListOrder | undefined;
@@ -157,7 +181,10 @@ export class WorkbenchState {
       // items it names.
       const stopListening = await events.changed.listen(({ payload }) => {
         if (payload.repository !== this.#repository) return;
-        void this.#ask();
+        // Nothing waits on this question, so a page hook that throws while it goes on show says so here.
+        this.#ask().catch((e: unknown) => {
+          this.error = String(e);
+        });
       });
       if (this.#stopped) {
         stopListening();
@@ -172,9 +199,58 @@ export class WorkbenchState {
     await this.#ask();
   }
 
-  async select(view: WorkbenchView) {
+  async select(view: SidebarView) {
     this.selected = view;
     await this.#ask();
+  }
+
+  /** The view whose items the list shows: `selected` once its answer has arrived. */
+  get shown(): SidebarView {
+    return this.#shown;
+  }
+
+  /** Where the Inbox's pages on show end, while the list shows them. */
+  get #inboxReach(): InboxCursor | null | undefined {
+    return this.#shown.kind === "inbox" ? this.#reach : undefined;
+  }
+
+  /** Whether the list shows the Inbox and the cache holds older items than its pages on show. */
+  get olderToRead(): boolean {
+    return this.#inboxReach != null;
+  }
+
+  /** Reads the Inbox's next older page onto the end of the list, once the reads of the Inbox asked before
+   * it are done, so it starts where the last of them ended. A call while it waits or reads does nothing. */
+  async readOlder() {
+    if (this.#olderAsked || !this.olderToRead) return;
+    this.#olderAsked = true;
+    await this.#inOrder(async () => {
+      const after = this.#inboxReach;
+      if (after != null) {
+        const answer = await this.#inboxPage({ kind: "older", after });
+        // Another view's answer can land meanwhile, as it doesn't read the Inbox.
+        const items = this.items;
+        if (!this.#stopped && this.#shown.kind === "inbox" && items !== undefined) {
+          if (answer.status === "ok") {
+            this.items = joined(items, answer.data.items);
+            this.#reach = answer.data.older;
+            this.olderError = undefined;
+          } else {
+            this.olderError = answer.error.message;
+          }
+        }
+      }
+      this.#olderAsked = false;
+    });
+  }
+
+  /** Runs `read` once each read of the Inbox asked before it is done. One read at a time then reads the
+   * Inbox, from where the one before it left the list, and only they write `#reach`. A read that throws, as
+   * a page's hook can while its answer goes on show, rejects for its caller alone, and the next read runs. */
+  #inOrder(read: () => Promise<void>): Promise<void> {
+    const run = this.#reading.then(read);
+    this.#reading = run.catch(() => {});
+    return run;
   }
 
   /** Asks for the view on show again once the list's order has changed. Its lines then moved for the order
@@ -188,6 +264,7 @@ export class WorkbenchState {
   get title(): string {
     const selected = this.selected;
     if (selected.kind === "whole") return "Workbench";
+    if (selected.kind === "inbox") return "Inbox";
     if (selected.kind === "review_requests") return "Review requests";
     if (selected.kind === "stale_reviews") return "Stale reviews";
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
@@ -400,31 +477,80 @@ export class WorkbenchState {
     return this.#allLines().map((line) => line.stop);
   }
 
+  /** Whether question `question` is still the last, for a Repository the window still shows. A newer
+   * question reads newer facts, so an older answer that arrives late is dropped. */
+  #current(question: number) {
+    return question === this.#lastQuestion && !this.#stopped;
+  }
+
+  /** Asks for the view `selected` names. A question about the Inbox reads it, so it waits its turn among
+   * the Inbox's reads. */
   async #ask() {
     this.#lastQuestion += 1;
     const question = this.#lastQuestion;
     const view = this.selected;
     const order = this.#order();
-    const answer = await answered(hud.timed(() => commands.workbench(this.#repository, view)));
-    // A newer question reads newer facts, so this drops an older answer that arrives late. A stopped state
-    // belongs to a Repository the window has left.
-    if (question !== this.#lastQuestion || this.#stopped) return;
+    if (view.kind === "inbox") {
+      await this.#inOrder(() => this.#answer(question, view, order));
+    } else {
+      await this.#answer(question, view, order);
+    }
+  }
+
+  /**
+   * Asks question `question`, for `view` in `order`, and puts what it answers on show while it is still the
+   * last. For the Inbox, the Sidebar's counts and Filters come from the Workbench, and the list from one page
+   * of the Inbox that reaches as far down as the pages on show did: the first page while the list shows
+   * another view. A question that a newer one followed while it waited its turn asks nothing.
+   */
+  async #answer(question: number, view: SidebarView, order: ListOrder) {
+    if (!this.#current(question)) return;
+    const inbox = view.kind === "inbox";
+    const [answer, list] = await Promise.all([
+      answered(hud.timed(() => commands.workbench(this.#repository, inbox ? { kind: "whole" } : view))),
+      inbox ? this.#inboxPage(this.#againPage()) : undefined,
+    ]);
+    if (!this.#current(question)) return;
     if (answer.status === "ok") {
-      const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
-      const before = same ? this.items : undefined;
-      const changed = before ? this.#changing() : undefined;
-      this.items = answer.data.items;
-      this.#shown = view;
-      this.#shownOrder = order;
-      this.#placeCursor(answer.data.items, before);
-      changed?.();
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.staleReviews = answer.data.stale_reviews;
       this.filters = answer.data.filters;
-      this.error = undefined;
-    } else {
-      this.error = answer.error.message;
     }
+    const listed = list ?? answer;
+    if (listed.status === "ok") {
+      this.#show(view, order, listed.data.items, list?.status === "ok" ? list.data.older : null);
+      this.olderError = undefined;
+    }
+    const failed = [answer, listed].find((one) => one.status === "error");
+    this.error = failed?.error.message;
+  }
+
+  /** Puts `items` on show, the answer for `view` in `order`, with the cursor placed on them. For the Inbox,
+   * `reach` says where its pages among them end. The page's hooks run first and last, so one that throws
+   * leaves the items and where they end as they were, or both as answered. */
+  #show(view: SidebarView, order: ListOrder, items: ListedItem[], reach: InboxCursor | null) {
+    const same = keyOf(view) === this.#viewKey() && order === this.#shownOrder;
+    const before = same ? this.items : undefined;
+    const changed = before ? this.#changing() : undefined;
+    this.items = items;
+    this.#reach = reach;
+    this.#shown = view;
+    this.#shownOrder = order;
+    this.#placeCursor(items, before);
+    changed?.();
+  }
+
+  /** The page of the Inbox that reads its pages on show again, as one: through where they end, all of them
+   * once they hold all the cache does, or the first while the list shows another view. */
+  #againPage(): InboxPage_Deserialize {
+    const reach = this.#inboxReach;
+    if (reach === undefined) return { kind: "latest" };
+    return reach === null ? { kind: "all" } : { kind: "through", until: reach };
+  }
+
+  /** Reads page `page` of the Inbox, timed as a view query. */
+  #inboxPage(page: InboxPage_Deserialize) {
+    return answered(hud.timed(() => commands.inbox(this.#repository, page)));
   }
 }

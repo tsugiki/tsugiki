@@ -29,7 +29,7 @@ use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::repository::RepositoryName;
-use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings};
+use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings, SavedBy};
 use crate::theme::{
     GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
 };
@@ -1325,9 +1325,15 @@ pub struct SettingsOwner {
     commands: LatestReader<Vec<CommandId>>,
 }
 
+/// Where the owner's thread hands each Repository's settings a change saves otherwise: the session's queue,
+/// which `fetching`, above this module, owns.
+pub type SettingsSink = Box<dyn FnMut(RepositorySettings, SavedBy) + Send>;
+
 /// What the owner's thread is asked.
 enum Request {
     Change(Change),
+    /// Hand each Repository's settings that a change saves otherwise to the session from now on.
+    Session(SettingsSink),
     /// The palette ran `command`. The answer is the list saved, as no one needs the view after a run.
     Command {
         command: CommandId,
@@ -1399,9 +1405,18 @@ impl SettingsOwner {
                     published.clone_from(commands);
                 }
             };
+            // The session told of each change, with each Repository's settings as it was last told them.
+            let mut session: Option<(SettingsSink, Vec<RepositorySettings>)> = None;
             for request in incoming {
                 let change = match request {
                     Request::Change(change) => change,
+                    Request::Session(sink) => {
+                        let told = (files.as_ref().ok())
+                            .map(|files| files.view().loaded.settings.repositories)
+                            .unwrap_or_default();
+                        session = Some((sink, told));
+                        continue;
+                    }
                     Request::Command { command, reply } => {
                         let saved = match &mut files {
                             Ok(files) => files.remember_command(&command),
@@ -1413,6 +1428,18 @@ impl SettingsOwner {
                         answer(&reply, saved);
                         continue;
                     }
+                };
+                // Only the Sidebar's switch saves a Repository's settings from the window. Every other change
+                // reloads the files, and so takes in a hand edit to them.
+                let by = match change {
+                    Change::OnWorkbench { .. } => SavedBy::Window,
+                    Change::Add { .. }
+                    | Change::MirrorSource { .. }
+                    | Change::Panes { .. }
+                    | Change::Theme { .. }
+                    | Change::Open { .. }
+                    | Change::Reread { .. }
+                    | Change::Apply { .. } => SavedBy::HandEdit,
                 };
                 let (saved, reply) = match (&mut files, change) {
                     (
@@ -1488,6 +1515,11 @@ impl SettingsOwner {
                     writer.set(saved);
                     // Each change reads `machine.toml` again, which may hold a hand edit to the list.
                     publish_if_changed(&files.recent_commands());
+                    // Before the answer too, so the session hears of the change before whatever the one who
+                    // asked sends it next, and from this thread alone, in the order the changes saved.
+                    if let Some((sink, told)) = &mut session {
+                        tell_session(sink, told, &saved.loaded.settings.repositories, by);
+                    }
                 }
                 answer(&reply, saved);
             }
@@ -1508,6 +1540,14 @@ impl SettingsOwner {
     /// last read or saved them. This never waits on a file.
     pub fn recent_commands(&self) -> Vec<CommandId> {
         self.commands.get()
+    }
+
+    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with what
+    /// saved them: from the owner's thread, before it answers, in the order the changes saved. So no copy a
+    /// command read earlier can reach the session after a newer one, and a hand edit reaches it whichever
+    /// change reloaded the files first (#822).
+    pub fn tell_session(&self, session: SettingsSink) {
+        let _sent = self.requests.send(Request::Session(session));
     }
 
     /// A copy of what the settings say, for a thread that reads them later.
@@ -1633,6 +1673,22 @@ impl SettingsOwner {
             .and_then(|()| answer.recv().ok())
             .unwrap_or_else(|| Err(Error::new(ErrorKind::Internal, STOPPED_SAVING)))
     }
+}
+
+/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, and keeps them as
+/// told.
+fn tell_session(
+    session: &mut SettingsSink,
+    told: &mut Vec<RepositorySettings>,
+    repositories: &[RepositorySettings],
+    by: SavedBy,
+) {
+    for repository in repositories {
+        if !told.contains(repository) {
+            session(repository.clone(), by);
+        }
+    }
+    repositories.clone_into(told);
 }
 
 /// Hands `saved` to whoever asked the owner's thread.

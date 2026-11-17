@@ -21,6 +21,15 @@ const DOWNLOAD_KB_PER_SECOND: u64 = 4_350;
 const BORROW_KB_PER_SECOND: u64 = 25_000;
 const KB_PER_MB: u64 = 1024;
 
+/// What changed a Repository's settings, which says whether the window asks for its views again itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SavedBy {
+    /// The window, as a Filter's switch in the Sidebar, which asks again once the save is done.
+    Window,
+    /// A hand edit of the files, which a reload took in. The window hears of it from the session (#822).
+    HandEdit,
+}
+
 /// A Repository the user added, as `settings.toml` holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(from = "RepositoryInFile")]

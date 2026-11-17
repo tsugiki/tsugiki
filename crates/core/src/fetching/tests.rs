@@ -113,7 +113,8 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.fetch_issue(cpython(), 7);
     fetching.fetch_pull_request(cpython(), 8);
     fetching.refresh();
-    fetching.settings_changed(RepositorySettings::new(cpython()));
+    fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::HandEdit);
+    fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::Window);
     fetching.mark_unseen(cpython(), 9);
     fetching.stop_session();
 
@@ -123,7 +124,10 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             SessionMessage::Fetch(Fetched::Issue(item)) => format!("Issue #{}", item.number),
             SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
             SessionMessage::Refresh => "refresh".to_owned(),
-            SessionMessage::SettingsChanged(settings) => format!("settings of {}", settings.name),
+            SessionMessage::SettingsChanged(settings, SavedBy::HandEdit) => {
+                format!("settings of {}", settings.name)
+            }
+            SessionMessage::SettingsChanged(_, SavedBy::Window) => "switch".to_owned(),
             SessionMessage::Mark(Marked::Unseen { item, .. }) => format!("unseen #{}", item.number),
             SessionMessage::Stop => "stop".to_owned(),
             SessionMessage::Check { .. }
@@ -139,6 +143,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             "PR #8",
             "refresh",
             "settings of python/cpython",
+            "switch",
             "unseen #9",
             "stop"
         ]

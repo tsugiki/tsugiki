@@ -1,4 +1,5 @@
 use super::*;
+use crate::conventions::Conventions;
 use crate::facts::CommitSha;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::filters::FilterResults;
@@ -18,7 +19,7 @@ use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
 use crate::mirror::HeardRequests;
 use crate::repository::{RepositoryName, RepositorySize};
-use crate::repository_settings::RepositorySettings;
+use crate::repository_settings::{RepositorySettings, SavedBy};
 use crate::settings::ListOrder;
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
@@ -1225,8 +1226,8 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     let off = heard.asked();
 
     assert_eq!(unheld, None);
-    assert_eq!(switched_on, Some(()));
-    assert_eq!(switched_off, Some(()));
+    assert_eq!(switched_on, Some(bugs_switched(OnWorkbench::Off)));
+    assert_eq!(switched_off, Some(bugs_switched(OnWorkbench::On)));
     assert_eq!(held, Some(bugs_switched(OnWorkbench::On)));
     assert!(
         on.iter().any(|line| line.contains("#8 at 4567def")),
@@ -1240,7 +1241,14 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
 
 /// Switches the Bugs Filter on, which finds PR 8, with the store losing call `lost`, if any. Answers with
 /// what the switch said, what the Mirror heard, how many calls the store had, and the reads it owes after.
-fn switch_bugs_on_losing(lost: Option<usize>) -> (Option<()>, Vec<String>, usize, BTreeSet<u32>) {
+fn switch_bugs_on_losing(
+    lost: Option<usize>,
+) -> (
+    Option<RepositorySettings>,
+    Vec<String>,
+    usize,
+    BTreeSet<u32>,
+) {
     let store = store_remembering("octocat");
     let stored = vec![stored_pr(8, "some-author", "4567def")];
     store.save_pull_requests(&gcmon(), stored).unwrap();
@@ -1269,6 +1277,98 @@ fn switch_bugs_on_losing(lost: Option<usize>) -> (Option<()>, Vec<String>, usize
     (switched, heard.asked(), calls.try_iter().count(), owed)
 }
 
+/// A board that hands each change it announces that names no item to the receiver beside it.
+fn board_hearing_settings() -> (StatusBoard, mpsc::Receiver<Change>) {
+    let (sent, changes) = mpsc::channel();
+    let board = quiet_board().with_changes(Box::new(move |change: &Change| {
+        if change.items.is_empty() {
+            sent.send(change.clone()).unwrap();
+        }
+    }));
+    (board, changes)
+}
+
+#[test]
+fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesnt() {
+    let (folders, _folder) = temp_folders("settings-announced");
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&Login::new("octocat")).unwrap();
+    store.close();
+    let (board, changes) = board_hearing_settings();
+    let (mirrors, _heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+    };
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+    // GitHub's Conventions are those every Repository but CPython starts with.
+    let regrouped = RepositorySettings {
+        conventions: Conventions::Cpython,
+        ..bugs_switched(OnWorkbench::On)
+    };
+    let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
+
+    let asked = session.fetching();
+    asked.sync(bugs_switched(OnWorkbench::Off));
+    asked.settings_changed(elsewhere, SavedBy::HandEdit);
+    asked.settings_changed(bugs_switched(OnWorkbench::Off), SavedBy::HandEdit);
+    asked.settings_changed(bugs_switched(OnWorkbench::On), SavedBy::Window);
+    asked.settings_changed(regrouped, SavedBy::HandEdit);
+    session.stop(PLENTY);
+
+    // Nothing for a Repository not opened since launch, or for settings the syncs hold already.
+    assert_eq!(
+        changes.try_iter().collect::<Vec<_>>(),
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
+    );
+}
+
+#[test]
+fn a_hand_edit_to_the_settings_tells_the_window_with_no_token() {
+    let (folders, _folder) = temp_folders("settings-no-token");
+    let (board, changes) = board_hearing_settings();
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let asked = session.fetching();
+    asked.settings_changed(bugs_switched(OnWorkbench::On), SavedBy::Window);
+    asked.settings_changed(bugs_switched(OnWorkbench::Off), SavedBy::HandEdit);
+    session.stop(PLENTY);
+
+    assert_eq!(
+        changes.try_iter().collect::<Vec<_>>(),
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
+    );
+}
+
+#[test]
+fn opening_a_repository_keeps_the_settings_the_owner_handed_over_since_the_command_read_its_own() {
+    let mut syncs = Syncs::default();
+    let edited = RepositorySettings {
+        conventions: Conventions::Cpython,
+        ..bugs_switched(OnWorkbench::Off)
+    };
+
+    assert_eq!(syncs.replace_settings(edited.clone()), None);
+    syncs.add(bugs_switched(OnWorkbench::Off));
+    let opened = syncs.settings(&gcmon()).cloned();
+    let unchanged = syncs.replace_settings(edited.clone());
+    syncs.add(bugs_switched(OnWorkbench::Off));
+
+    assert_eq!(opened, Some(edited.clone()));
+    assert_eq!(unchanged, None);
+    assert_eq!(syncs.settings(&gcmon()), Some(&edited));
+}
+
 #[test]
 fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirror_its_heads() {
     let (_, _, calls, owed) = switch_bugs_on_losing(None);
@@ -1276,7 +1376,7 @@ fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirro
 
     let (switched, asked, _, owed) = switch_bugs_on_losing(Some(calls - 1));
 
-    assert_eq!(switched, Some(()));
+    assert_eq!(switched, Some(bugs_switched(OnWorkbench::Off)));
     assert!(
         asked.iter().any(|line| line.contains("#8 at 4567def")),
         "{asked:?}"
@@ -1309,7 +1409,7 @@ fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     session.fetching().sync(bugs_switched(OnWorkbench::Off));
     session
         .fetching()
-        .settings_changed(bugs_switched(OnWorkbench::On));
+        .settings_changed(bugs_switched(OnWorkbench::On), SavedBy::Window);
     let handed = heard.asked_through("wants heads #8", PLENTY);
     session.stop(PLENTY);
 

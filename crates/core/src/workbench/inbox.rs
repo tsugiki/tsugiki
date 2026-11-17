@@ -83,6 +83,12 @@ pub enum InboxPage {
     Latest,
     /// The next older batch: the items that come after `after` in the Inbox's order.
     Older { after: InboxCursor },
+    /// Every item from the first down to `until`, where the pages the window shows end, as one page: those
+    /// pages read again after a change, at the cost of what they hold (#822).
+    Through { until: InboxCursor },
+    /// Every item the cache holds, as one page: the pages the window shows read again once they reached
+    /// the end.
+    All,
 }
 
 /// A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in.
@@ -188,6 +194,8 @@ fn read_page(
             }
         }
         InboxPage::Older { after } => walk.older(after)?,
+        InboxPage::Through { until } => walk.through(Some(until))?,
+        InboxPage::All => walk.through(None)?,
     };
     let places = (chosen.members.iter())
         .map(|(place, _)| (place.number, *place))
@@ -254,6 +262,33 @@ impl<'s, 't> Walk<'s, 't> {
         Ok(Chosen {
             members,
             older: older.flatten(),
+        })
+    }
+
+    /// Every item from the first down to `until` and `until` itself, and `until` again as where the next
+    /// batch starts, if any item is left after it. Without `until`, every item, and none left. Each next
+    /// batch starts where it started before, so pages read through `until` again fit the next one. With
+    /// none left down to `until`, the next batch after it, so the window never gets an empty page with more
+    /// to come.
+    fn through(&mut self, until: Option<InboxCursor>) -> Result<Chosen, Error> {
+        let since = until.map_or(OffsetDateTime::UNIX_EPOCH, |until| until.updated_at);
+        let mut members = self.step(Updates::Since(since))?.found;
+        // A step places each Issue its trees show under, and one whose latest update is below `until`
+        // belongs on a later page.
+        members.retain(|(place, _)| until.is_none_or(|until| *place >= until));
+        let Some(until) = until else {
+            return Ok(Chosen {
+                members,
+                older: None,
+            });
+        };
+        if members.is_empty() {
+            return self.older(until);
+        }
+        let left = !self.below(until, 1)?.is_empty();
+        Ok(Chosen {
+            members,
+            older: left.then_some(until),
         })
     }
 

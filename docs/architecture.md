@@ -110,7 +110,9 @@ Tauri's managed state.
    ends, where text search looks for it.
 5. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
    the window as the `changed` event, and each open screen that shows one of those items calls its command
-   again.
+   again. The settings owner's thread hands the session each Repository's settings a change saves
+   otherwise, in the order it saves them. Those a hand edit changed, as new Conventions or Filters, announce
+   a `Change` that names no item, and the Repository's lists read their items again.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
 problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter

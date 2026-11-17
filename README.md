@@ -112,7 +112,7 @@ The [Issues](https://github.com/tsugiki/tsugiki/issues) hold the work in flight,
   checkout, Open in editor, and reading offline.
 - Writing: comments, line comments in a Pending review, replies, resolving threads, `suggestion` blocks and
   submitting a review; Local marks; a token of your own in the keychain.
-- Workbench breadth: All issues, Pinned issues, Archive and Mute, the Built-in views, Stacked PRs, Dependency
+- Workbench breadth: the Inbox, Pinned issues, Archive and Mute, the Built-in views, Stacked PRs, Dependency
   updates, the Peek, Alerts, a Windows installer and a `.dmg` for Intel Macs.
 - Settings: the Settings dialog, remapping keys, the whole command palette, the Home page with several
   Repositories, editing Conventions, exporting the database, zoom and the macOS menu.

@@ -28,7 +28,10 @@ and then their colors follow ([#158](https://github.com/tsugiki/tsugiki/issues/1
   and the TypeScript logic's, written with Vitest (the list model, the keymap, palette ranking). They run on a
   database scaled to CPython's size, built from the recorded fixtures ([ADR
   0009](0009-testing-and-full-coverage.md)). A regression past CodSpeed's threshold fails a required check,
-  unless it is acknowledged in CodSpeed. CodSpeed is free for open-source projects.
+  unless it is acknowledged in CodSpeed. CodSpeed is free for open-source projects. `tsugiki-core`'s
+  benchmarks run on a PR that changes `crates/core/`, the workspace's Cargo files or toolchain, or
+  `bench.yml`, and on each push to main. CodSpeed fills those a PR skips with its base's figures, so the
+  report still covers every benchmark. A release PR that only sets the version skips them.
 - **Also on every PR**, a test runs each view query's statements through SQLite's `EXPLAIN QUERY PLAN` and
   fails on a full scan of a large table, such as Issues, PRs or comments. This catches a missing index
   directly, even before the data is large enough for the benchmark to show it.
@@ -79,7 +82,8 @@ and then their colors follow ([#158](https://github.com/tsugiki/tsugiki/issues/1
 
 ## Consequences
 
-- The benchmark job is the one PR check that runs our code on Linux. That is safe because `tsugiki-core`
+- The benchmark job is the one check that runs our code on Linux, on each push to main and each PR that
+  reaches `tsugiki-core`. That is safe because `tsugiki-core`
   doesn't depend on the OS, and [ADR 0009](0009-testing-and-full-coverage.md)'s reason for testing on Windows
   and macOS was the webviews, which this job doesn't touch.
 - Benchmarks are code like any other: each core view model and hot path gets one, and the coverage rules apply

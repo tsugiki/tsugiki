@@ -3,50 +3,87 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { outputs, paths, scope } from "./scope.ts";
+import {
+  cargoDiffArgs,
+  EVERY_JOB,
+  isVersionBump,
+  type Job,
+  jobs,
+  narrowed,
+  needsRustBenchmarks,
+  outputs,
+  paths,
+  readTested,
+  sincePassed,
+  type TreeGit,
+} from "./scope.ts";
 
-/** Each file under `folder` whose name ends with `.rs`. */
-function rustFiles(folder: string): string[] {
+/** The Cargo diff of a change that can't be a release PR, which `jobs` mustn't read. */
+function unread(): string {
+  throw new Error("jobs read the Cargo diff of a change that can't set the version");
+}
+
+const RUST: Job[] = ["rust", "dependencies"];
+const UI: Job[] = ["ui"];
+
+/** Each file under `folder` whose name ends with one of `endings`. */
+function filesEnding(folder: string, ...endings: string[]): string[] {
   return readdirSync(folder, { recursive: true, encoding: "utf8" })
-    .filter((name) => name.endsWith(".rs"))
+    .filter((name) => endings.some((ending) => name.endsWith(ending)))
     .map((name) => join(folder, name));
 }
 
-describe("scope", () => {
+describe("jobs", () => {
   it.each([
-    [["docs/scope.md"], "docs"],
-    [["README.md", "ui/NOTES.md", "docs/adr/0009.txt"], "docs"],
-    [["ui/src/App.svelte"], "ui"],
-    [["ui/src/App.svelte", "docs/build-order.md", "ui/README.md"], "ui"],
-    [["ui/vite.config.ts", "ui/e2e/layout.test.ts"], "ui"],
-  ])("reads %j as %s", (paths, expected) => {
-    expect(scope(paths)).toBe(expected);
+    [["docs/scope.md"], []],
+    [["README.md", "ui/NOTES.md", "docs/adr/0009.txt"], []],
+    [["README.md", "docs/adr/0009.txt", "CHANGELOG.md"], []],
+    [["codecov.yml", ".pre-commit-config.yaml", "_typos.toml", ".github/dependabot.yml"], []],
+    [
+      [".github/workflows/release.yml", ".github/workflows/bench.yml", ".github/workflows/advisories.yml"],
+      [],
+    ],
+    [["ui/src/App.svelte"], UI],
+    [["ui/src/App.svelte", "docs/build-order.md", "ui/README.md"], UI],
+    [["ui/vite.config.ts", "ui/e2e/layout.test.ts"], UI],
+    [["crates/core/src/lib.rs"], RUST],
+    [["crates/core/src/lib.rs", "docs/devel/sync.md"], RUST],
+    [["crates/core/src/highlight/samples/markdown.md"], RUST],
+    [["Cargo.lock"], RUST],
+    [["rust-toolchain.toml", "clippy.toml", "deny.toml"], RUST],
+    [["docs/schema.md"], RUST],
+    [["ui/src/lib/data/bindings.ts"], [...RUST, ...UI]],
+    [["ui/package.json"], [...RUST, ...UI]],
+    [["crates/app/tauri.conf.json"], [...RUST, ...UI]],
+    [["crates/token/Cargo.toml"], [...RUST, ...UI]],
+    [
+      ["crates/core/src/lib.rs", "ui/src/App.svelte"],
+      [...RUST, ...UI],
+    ],
+  ])("gives %j the jobs %j", (given, expected) => {
+    expect(jobs(given, unread)).toEqual(expected);
   });
 
   it.each([
-    [["ui/src/App.svelte", "ui/src/lib/data/bindings.ts"]],
-    [["ui/package.json"]],
     [["ui/src/App.svelte", "package-lock.json"]],
     [["ui/src/App.svelte", ".github/workflows/ci.yml"]],
     [["scripts/scope.ts"]],
-    [["crates/core/src/lib.rs"]],
+    [["justfile"]],
     [["uix/a.ts"]],
-    [["crates/core/src/highlight/samples/markdown.md"]],
-    [["docs/schema.md"]],
-    [["ui/src/App.svelte", "docs/schema.md"]],
+    [["prototype/src/App.svelte"]],
   ])("runs everything for %j", (given) => {
-    expect(scope(given)).toBe("all");
+    expect(jobs(given, unread)).toEqual(EVERY_JOB);
   });
 
   it("runs everything when it can't see a path", () => {
-    expect(scope([])).toBe("all");
+    expect(jobs([], unread)).toEqual(EVERY_JOB);
   });
 
   // A Rust file that names a path under ui/ or docs/ may read it, and then a change to that file needs the
-  // Rust checks. The highlighter's test names one only to pick its language.
-  it("runs everything for each file under ui/ or docs/ that the Rust code names", () => {
+  // Rust jobs. The highlighter's test names one only to pick its language.
+  it("runs the Rust jobs for each file under ui/ or docs/ that the Rust code names", () => {
     const named = new Set(
-      rustFiles("../crates").flatMap((file) =>
+      filesEnding("../crates", ".rs").flatMap((file) =>
         [...readFileSync(file, "utf8").matchAll(/"(?:\.\.\/)*((?:ui\/[^"]+)|(?:docs\/[\w./-]+))"/g)].map(
           (match) => match[1],
         ),
@@ -55,8 +92,215 @@ describe("scope", () => {
     named.delete("ui/src/App.svelte");
     expect(named.has("docs/devel/keyboard.md") && named.has("ui/src/lib/data/keymap.ts")).toBe(true);
     for (const path of named) {
-      expect(scope([path ?? ""]), path).toBe("all");
+      expect(jobs([path ?? ""], unread), path).toEqual(expect.arrayContaining(RUST));
     }
+  });
+
+  // A UI file that reads a file under crates/ needs the UI jobs to run when that file changes.
+  it("runs the UI jobs for each file under crates/ that the UI code reads", () => {
+    const read = new Set(
+      [...filesEnding("src", ".ts", ".svelte"), ...filesEnding("e2e", ".ts")].flatMap((file) =>
+        [...readFileSync(file, "utf8").matchAll(/"\.\.\/(crates\/[\w./-]+)"/g)].map((match) => match[1]),
+      ),
+    );
+    expect(read.has("crates/app/tauri.conf.json")).toBe(true);
+    for (const path of read) {
+      expect(jobs([path ?? ""], unread), path).toEqual(expect.arrayContaining(UI));
+    }
+  });
+});
+
+/** A `git diff -U0` of `file` that moves its version line, `times` over, as in each crate of Cargo.lock. */
+function bump(file: string, from: string, to: string, times = 1): string {
+  const hunk = `@@ -6 +6 @@\n-version = "${from}"\n+version = "${to}"\n`;
+  return `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n${hunk.repeat(times)}`;
+}
+
+const SETS_VERSION = bump("Cargo.lock", "0.3.2", "0.3.3", 6) + bump("Cargo.toml", "0.3.2", "0.3.3");
+
+describe("a release PR", () => {
+  it.each([[["CHANGELOG.md", "Cargo.lock", "Cargo.toml"]], [["Cargo.lock", "Cargo.toml"]]])(
+    "that only sets the version in %j runs only cargo-deny and cargo-machete",
+    (given) => {
+      expect(jobs(given, () => SETS_VERSION)).toEqual(["dependencies"]);
+    },
+  );
+
+  it.each([
+    ["a dependency's bump", `${SETS_VERSION}@@ -900,2 +900,2 @@\n-version = "1.0.1"\n+version = "1.0.2"\n`],
+    ["a new checksum", `${SETS_VERSION}@@ -901 +901 @@\n-checksum = "aa"\n+checksum = "bb"\n`],
+    ["a line it only adds", `${SETS_VERSION}@@ -0,0 +1 @@\n+version = "0.3.3"\n`],
+    ["no change of version", bump("Cargo.toml", "0.3.3", "0.3.3")],
+    ["nothing it can read", ""],
+  ])("runs the Rust jobs for %s", (_, cargoDiff) => {
+    expect(jobs(["CHANGELOG.md", "Cargo.lock", "Cargo.toml"], () => cargoDiff)).toEqual(RUST);
+  });
+
+  it.each([
+    [["CHANGELOG.md", "Cargo.toml"], RUST],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "crates/core/src/lib.rs"], RUST],
+    [
+      ["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "ui/src/App.svelte"],
+      [...RUST, ...UI],
+    ],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", ".github/workflows/release.yml"], RUST],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "scripts/release-check.ts"], EVERY_JOB],
+  ])("reads %j as more than a version", (given, expected) => {
+    expect(jobs(given, unread)).toEqual(expected);
+  });
+});
+
+describe("isVersionBump", () => {
+  it("reads a diff with Windows line ends", () => {
+    expect(isVersionBump(SETS_VERSION.replaceAll("\n", "\r\n"))).toBe(true);
+  });
+
+  it("reads the headers of any prefix git's settings give", () => {
+    const mnemonic = SETS_VERSION.replaceAll("--- a/", "--- c/").replaceAll("+++ b/", "+++ w/");
+    expect(isVersionBump(mnemonic)).toBe(true);
+  });
+
+  it.each([
+    ["from", bump("Cargo.toml", "0.3.2", "0.3.3") + bump("Cargo.lock", "0.3.1", "0.3.3")],
+    ["to", bump("Cargo.toml", "0.3.2", "0.3.3") + bump("Cargo.lock", "0.3.2", "0.3.4")],
+  ])("refuses two versions to move %s", (_, diff) => {
+    expect(isVersionBump(diff)).toBe(false);
+  });
+});
+
+const HEAD = "a".repeat(40);
+const BASE = "b".repeat(40);
+
+describe("readTested", () => {
+  it("reads a run's head and base", () => {
+    expect(readTested(JSON.stringify({ head: HEAD, base: BASE }))).toEqual({ head: HEAD, base: BASE });
+  });
+
+  it.each([
+    ["not json"],
+    ["null"],
+    ["7"],
+    [JSON.stringify({ head: HEAD })],
+    [JSON.stringify({ head: "main", base: BASE })],
+    [JSON.stringify({ head: HEAD, base: 7 })],
+  ])("refuses %s", (text) => {
+    expect(readTested(text)).toBeUndefined();
+  });
+});
+
+/** A git whose merges, diffs and failures a test sets. */
+function fakeGit(changed: string[] | Error, merge: string | Error = "tree", cargoDiff = ""): TreeGit {
+  return {
+    mergeTree: () => {
+      if (merge instanceof Error) throw merge;
+      return merge;
+    },
+    changedSince: () => {
+      if (changed instanceof Error) throw changed;
+      return changed;
+    },
+    cargoDiffSince: () => cargoDiff,
+  };
+}
+
+const LAST_TESTED = JSON.stringify({ head: HEAD, base: BASE });
+
+describe("needsRustBenchmarks", () => {
+  it.each([
+    [["crates/core/src/store.rs"]],
+    [["crates/core/benches/store.rs", "ui/src/App.svelte"]],
+    [["Cargo.lock"]],
+    [["rust-toolchain.toml"]],
+    [[".github/workflows/bench.yml"]],
+    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "crates/core/src/lib.rs"]],
+  ])("runs them for %j", (given) => {
+    expect(needsRustBenchmarks(given, () => SETS_VERSION)).toBe(true);
+  });
+
+  it.each([
+    [["ui/src/App.svelte"]],
+    [["docs/scope.md", "README.md"]],
+    [["crates/app/src/lib.rs", "crates/token/Cargo.toml"]],
+    [["docs/schema.md", "clippy.toml", "deny.toml"]],
+    [["scripts/scope.ts", ".github/workflows/ci.yml"]],
+  ])("skips them for %j", (given) => {
+    expect(needsRustBenchmarks(given, unread)).toBe(false);
+  });
+
+  it("skips them for a release PR that only sets the version", () => {
+    expect(needsRustBenchmarks(["CHANGELOG.md", "Cargo.lock", "Cargo.toml"], () => SETS_VERSION)).toBe(false);
+  });
+
+  it("runs them for a release PR that changes a dependency", () => {
+    const dependency = bump("Cargo.lock", "1.0.0", "1.0.1");
+    expect(needsRustBenchmarks(["Cargo.lock", "Cargo.toml"], () => dependency + SETS_VERSION)).toBe(true);
+  });
+
+  it("runs them when it can't see a path", () => {
+    expect(needsRustBenchmarks([], unread)).toBe(true);
+  });
+});
+
+describe("sincePassed", () => {
+  it("gives the jobs the change since the passed run's tree needs, and the paths that led there", () => {
+    const since = sincePassed(LAST_TESTED, fakeGit(["ui/src/App.svelte"]));
+    expect(since.jobs).toEqual(UI);
+    expect(since.note).toContain("Since then: ui/src/App.svelte.");
+  });
+
+  it("gives no job when nothing changed since the passed run's tree", () => {
+    expect(sincePassed(LAST_TESTED, fakeGit([])).jobs).toEqual([]);
+  });
+
+  it("reads the Cargo diff since that tree for a change that only sets the version", () => {
+    expect(
+      sincePassed(LAST_TESTED, fakeGit(["Cargo.lock", "Cargo.toml"], "tree", SETS_VERSION)).jobs,
+    ).toEqual(["dependencies"]);
+  });
+
+  it.each([
+    ["no run passed", undefined, fakeGit([]), "No run"],
+    ["its tested.json can't be read", "{}", fakeGit([]), "doesn't name two commits"],
+    ["git can't merge its commits", LAST_TESTED, fakeGit([], new Error("conflict")), "can't merge"],
+    ["git can't diff its tree", LAST_TESTED, fakeGit(new Error("bad tree")), "can't diff"],
+  ])("counts the whole PR when %s", (_, lastTested, git, words) => {
+    const since = sincePassed(lastTested, git);
+    expect(since.jobs).toBeUndefined();
+    expect(since.note).toContain(words);
+  });
+});
+
+describe("cargoDiffArgs", () => {
+  it("diffs the two Cargo files between the revisions without colour or an external tool", () => {
+    expect(cargoDiffArgs("a", "HEAD")).toEqual([
+      "diff",
+      "-U0",
+      "--no-color",
+      "--no-ext-diff",
+      "a",
+      "HEAD",
+      "--",
+      "Cargo.toml",
+      "Cargo.lock",
+    ]);
+  });
+});
+
+describe("narrowed", () => {
+  it("keeps the jobs whose inputs changed since the run that passed", () => {
+    expect(narrowed([...RUST, ...UI], ["ui"])).toEqual(UI);
+  });
+
+  it("keeps none for a change since that run that touched only docs", () => {
+    expect(narrowed(EVERY_JOB, [])).toEqual([]);
+  });
+
+  it("keeps every job the PR needs when no run passed", () => {
+    expect(narrowed(["dependencies"], undefined)).toEqual(["dependencies"]);
+  });
+
+  it("never adds a job the PR doesn't need against its base", () => {
+    expect(narrowed(["ui"], EVERY_JOB)).toEqual(["ui"]);
   });
 });
 
@@ -67,11 +311,11 @@ describe("paths", () => {
 });
 
 describe("outputs", () => {
-  it.each([
-    ["docs", "docs-only=true\nui-only=true\n"],
-    ["ui", "docs-only=false\nui-only=true\n"],
-    ["all", "docs-only=false\nui-only=false\n"],
-  ] as const)("gives CI's outputs for %s", (given, expected) => {
-    expect(outputs(given)).toBe(expected);
+  it("writes the jobs as a JSON list", () => {
+    expect(outputs(["rust", "dependencies"])).toBe('jobs=["rust","dependencies"]\n');
+  });
+
+  it("writes an empty list for a change that needs none", () => {
+    expect(outputs([])).toBe("jobs=[]\n");
   });
 });

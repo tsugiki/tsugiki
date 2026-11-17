@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type Tree,
   isoDate,
+  mainCi,
   prepareRefusal,
   releaseVersion,
   shipRefusal,
@@ -140,7 +141,7 @@ describe("tagRefusal", () => {
   const nowhere = { here: false, onGitHub: false };
 
   it("lets a new tag go on a clean, current main", () => {
-    expect(tagRefusal(CURRENT, "v0.2.4", nowhere)).toBeUndefined();
+    expect(tagRefusal(CURRENT, "v0.2.4", nowhere, "passed")).toBeUndefined();
   });
 
   it.each([
@@ -150,6 +151,31 @@ describe("tagRefusal", () => {
     [CURRENT, { here: true, onGitHub: false }, "this clone"],
     [CURRENT, { here: false, onGitHub: true }, "GitHub"],
   ])("refuses %j with %j", (tree, existing, words) => {
-    expect(tagRefusal(tree, "v0.2.4", existing)).toContain(words);
+    expect(tagRefusal(tree, "v0.2.4", existing, "passed")).toContain(words);
+  });
+
+  it.each([
+    ["running", "still running"],
+    ["failed", "failed"],
+    ["missing", "hasn't run"],
+  ] as const)("refuses a main whose CI is %s", (ci, words) => {
+    expect(tagRefusal(CURRENT, "v0.2.4", nowhere, ci)).toContain(words);
+  });
+});
+
+describe("mainCi", () => {
+  it.each([
+    ['[{"status":"completed","conclusion":"success"}]', "passed"],
+    [
+      '[{"status":"completed","conclusion":"failure"},{"status":"completed","conclusion":"success"}]',
+      "failed",
+    ],
+    ['[{"status":"completed","conclusion":"cancelled"}]', "failed"],
+    ['[{"status":"in_progress","conclusion":""}]', "running"],
+    ["[]", "missing"],
+    ["{}", "missing"],
+    ["not json", "missing"],
+  ] as const)("reads %s as %s", (listed, expected) => {
+    expect(mainCi(listed)).toBe(expected);
   });
 });

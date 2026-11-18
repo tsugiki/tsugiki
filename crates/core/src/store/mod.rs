@@ -142,28 +142,37 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Owes a read of the Conversation of each PR of `heads` at its head, for the next refresh of
-    /// `repository` to read ahead, unless the store holds one read at that head. A PR whose head Tsugiki
-    /// doesn't know is owed one. A Filter switched on puts PRs in Reach that no change on GitHub would owe a
-    /// read (#819).
-    pub fn owe_read_ahead_at(
+    /// Owes a read of the Conversation of each of `numbers`, PRs of `repository`, until a read of it saves or
+    /// a sync finishes.
+    pub fn owe_read_ahead(
         &self,
         repository: &RepositoryName,
-        heads: Vec<(u32, Option<CommitSha>)>,
+        numbers: Vec<u32>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            sync_state::owe_read_ahead_at(connection, &repository, &heads)
+            sync_state::owe_read_ahead(connection, &repository, &numbers)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The PRs of `repository` whose Conversations a refresh owes a read. Saving a PR's Conversation clears
-    /// its debt, and saving a finished sync clears them all.
+    /// The PRs of `repository` whose Conversations the store owes a read. Saving a PR's Conversation pays
+    /// its debt, and saving a finished sync pays them all.
     pub fn read_ahead_owed(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
         let read =
             self.call(move |connection| sync_state::read_ahead_owed(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The head each of `repository`'s held Conversations was read at, of those read with one.
+    pub fn conversation_heads(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<BTreeMap<u32, CommitSha>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| pull_request_content::read_heads(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 

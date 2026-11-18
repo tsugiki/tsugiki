@@ -1214,20 +1214,15 @@ fn a_sync_whose_settings_went_missing_says_it_is_tsugikis_mistake_and_asks_githu
 }
 
 #[test]
-fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it_tried() {
+fn new_settings_leave_a_read_ahead_under_way_with_what_it_tried() {
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     let ahead = Ahead {
-        left: Some(BTreeSet::from([3, 4])),
         tried: BTreeSet::from([2]),
     };
     syncs.queue[0].sync.phase = Phase::ReadingAhead(ahead);
 
     let same = syncs.replace_settings(plain(cpython()));
-    let kept = matches!(
-        &syncs.queue[0].sync.phase,
-        Phase::ReadingAhead(ahead) if ahead.left.is_some()
-    );
     let regrouped = RepositorySettings {
         conventions: Conventions::Github,
         ..plain(cpython())
@@ -1235,13 +1230,9 @@ fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it
     let replaced = syncs.replace_settings(regrouped);
 
     assert_eq!(same, None);
-    assert!(
-        kept,
-        "settings the syncs hold already leave the read ahead be"
-    );
     assert_eq!(replaced, Some(plain(cpython())));
     assert!(matches!(
         &syncs.queue[0].sync.phase,
-        Phase::ReadingAhead(ahead) if ahead.left.is_none() && ahead.tried == BTreeSet::from([2])
+        Phase::ReadingAhead(ahead) if ahead.tried == BTreeSet::from([2])
     ));
 }

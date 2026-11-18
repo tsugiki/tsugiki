@@ -7,7 +7,7 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::testing::cpython_settings;
+use crate::testing::{cpython_settings, sha};
 use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
     backport, bots_backport, fixing, issue, me, mine, rows_of, someone, stranger, view_of,
@@ -194,28 +194,43 @@ fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
     assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
 }
 
+/// `facts`, in which the first of `repository`'s Filters, which is on, finds `on`, and the second, which is
+/// off, finds `off`.
+fn found_by_two_filters(
+    repository: &RepositorySettings,
+    (on, off): (&[u32], &[u32]),
+    facts: WorkFacts,
+) -> WorkFacts {
+    let [first, second] = [&repository.filters[0], &repository.filters[1]];
+    assert_eq!(
+        [first.on_workbench, second.on_workbench],
+        [OnWorkbench::On, OnWorkbench::Off]
+    );
+    let found = |numbers: &[u32]| FilterResults {
+        numbers: numbers.iter().copied().collect(),
+        problem: None,
+    };
+    WorkFacts {
+        filters: BTreeMap::from([
+            (first.query.clone(), found(on)),
+            (second.query.clone(), found(off)),
+        ]),
+        ..facts
+    }
+}
+
 #[test]
 fn a_filter_switched_on_reaches_its_find_and_one_switched_off_reaches_nothing() {
     let repository = cpython_settings();
-    let [on, off] = [&repository.filters[0], &repository.filters[1]];
-    assert_eq!(
-        [on.on_workbench, off.on_workbench],
-        [OnWorkbench::On, OnWorkbench::Off]
+    let pull_requests = vec![
+        colleagues(11, 2, PrState::Open),
+        colleagues(12, 3, PrState::Open),
+    ];
+    let facts = found_by_two_filters(
+        &repository,
+        (&[2], &[3]),
+        facts(pull_requests, vec![issue(2), issue(3)]),
     );
-    let found = |number: u32| FilterResults {
-        numbers: BTreeSet::from([number]),
-        problem: None,
-    };
-    let facts = WorkFacts {
-        filters: BTreeMap::from([(on.query.clone(), found(2)), (off.query.clone(), found(3))]),
-        ..facts(
-            vec![
-                colleagues(11, 2, PrState::Open),
-                colleagues(12, 3, PrState::Open),
-            ],
-            vec![issue(2), issue(3)],
-        )
-    };
 
     // Issue 3 and its PR 12 stay out: Tsugiki fetches no head and reads ahead no Conversation for them.
     assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
@@ -229,4 +244,64 @@ fn nothing_is_reached_before_anyone_signs_in() {
     };
 
     assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::new());
+}
+
+#[test]
+fn the_conversations_worth_reading_ahead_are_the_owed_ones_in_reach() {
+    let pull_requests = vec![
+        mine(10),
+        PullRequestFacts {
+            number: 20,
+            ..stranger()
+        },
+        mine(30),
+    ];
+    let owed = BTreeSet::from([10, 20]);
+
+    let to_read = conversations_to_read(&facts(pull_requests, vec![]), &owed, &cpython_settings());
+
+    // A stranger's PR waits until the user opens it, and nothing owes a read of PR 30.
+    assert_eq!(to_read, BTreeSet::from([10]));
+}
+
+#[test]
+fn a_filter_switched_on_owes_the_conversations_it_reaches_unless_read_at_their_heads() {
+    let before = cpython_settings();
+    let mut now = before.clone();
+    now.filters[1].on_workbench = OnWorkbench::On;
+    let strangers = |number: u32, head: Option<&str>| PullRequestFacts {
+        number,
+        head: head.map(sha),
+        ..stranger()
+    };
+    let pull_requests = vec![
+        strangers(11, Some("1111111")),
+        strangers(12, Some("2222222")),
+        strangers(13, None),
+        strangers(14, Some("4444444")),
+        strangers(15, Some("5555555")),
+        strangers(20, Some("2020202")),
+    ];
+    let facts = found_by_two_filters(
+        &before,
+        (&[11], &[12, 13, 14, 15]),
+        facts(pull_requests, vec![]),
+    );
+    let read_at = BTreeMap::from([(14, sha("4444444")), (15, sha("0555555"))]);
+
+    let (on, owed_on) = switched(&facts, &read_at, &now, &before);
+    let (off, owed_off) = switched(&facts, &read_at, &before, &now);
+    let owed = BTreeSet::from([11, 12, 13, 15, 20]);
+    let to_read_on = conversations_to_read(&facts, &owed, &now);
+    let to_read_off = conversations_to_read(&facts, &owed, &before);
+
+    // PR 14's Conversation was read at its head, PR 15's at an older one, and PR 13's head is unknown.
+    assert_eq!(owed_on, [12, 13, 15]);
+    let fetched: Vec<u32> = on.heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [11, 12, 14, 15]);
+    assert_eq!(owed_off, Vec::<u32>::new());
+    assert_eq!(off, MirrorWork::of(&facts, &before));
+    // PR 20 is owed a read, but out of Reach either way.
+    assert_eq!(to_read_on, BTreeSet::from([11, 12, 13, 15]));
+    assert_eq!(to_read_off, BTreeSet::from([11]));
 }

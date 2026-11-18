@@ -1,5 +1,6 @@
 use super::*;
 use crate::error::ErrorKind;
+use crate::facts::CommitSha;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::store::Store;
@@ -120,37 +121,34 @@ fn no_conversation() -> PullRequestContent {
 }
 
 #[test]
-fn a_pr_is_owed_a_read_at_its_head_unless_its_conversation_was_read_there() {
+fn the_store_says_what_it_owes_and_the_head_each_conversation_was_read_at() {
     let (path, _root) = temp_database("owed-at-head");
     let store = Store::open(&path).unwrap();
-    let head = |text: &str| CommitSha::parse(text);
     let read_at = |text: &str| PullRequestContent {
-        head: head(text),
+        head: CommitSha::parse(text),
         ..no_conversation()
     };
     store
         .save_pull_request_content(&cpython(), 2, read_at("0123abc"))
         .unwrap();
     store
-        .save_pull_request_content(&cpython(), 3, read_at("0123abc"))
+        .save_pull_request_content(&cpython(), 3, read_at("89abcde"))
         .unwrap();
     store
         .save_pull_request_content(&cpython(), 4, no_conversation())
         .unwrap();
 
-    let heads = vec![
-        (1, head("4567def")),
-        (2, head("0123abc")),
-        (3, head("89abcde")),
-        (4, head("0123abc")),
-        (5, None),
-    ];
-    store.owe_read_ahead_at(&cpython(), heads.clone()).unwrap();
-    store.owe_read_ahead_at(&cpython(), heads).unwrap();
+    store.owe_read_ahead(&cpython(), vec![1, 3]).unwrap();
+    store.owe_read_ahead(&cpython(), vec![3, 5]).unwrap();
     let owed = store.read_ahead_owed(&cpython()).unwrap();
+    let heads = store.conversation_heads(&cpython()).unwrap();
     store.close();
 
-    assert_eq!(owed, BTreeSet::from([1, 3, 4, 5]));
+    assert_eq!(owed, BTreeSet::from([1, 3, 5]));
+    let read_at: Vec<(u32, &str)> = (heads.iter())
+        .map(|(number, head)| (*number, head.as_str()))
+        .collect();
+    assert_eq!(read_at, [(2, "0123abc"), (3, "89abcde")]);
 }
 
 #[test]

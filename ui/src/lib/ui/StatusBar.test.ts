@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openLink } from "$lib/state/browser";
+import { HOUR_POINTS } from "$lib/testing/fixtures";
 import StatusBar from "./StatusBar.svelte";
 
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
@@ -486,14 +487,7 @@ describe("StatusBar's chord", () => {
 
 describe("StatusBar's points", () => {
   const online = { state: "online", login: "octocat" } as const;
-  const hourPoints = {
-    limit: 5000,
-    used: 3760,
-    remaining: 1240,
-    resets_at: "2026-11-17T14:32:00Z",
-    spent: 3610,
-    since: null,
-  };
+  const hourPoints = HOUR_POINTS;
   const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const words = `1,240 points left · resets ${time(hourPoints.resets_at)}`;
   const tip =

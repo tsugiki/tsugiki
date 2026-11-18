@@ -1,6 +1,6 @@
 use crate::sync::Syncs;
 use crate::sync::testing::{
-    FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issue_references,
+    FEW, Harness, RATE_LIMIT, a_tree_over_two_pages, cpython, fetched_nodes, issue_references,
     issue_references_with_more, issues, merged_node, plain, pr_node, run_to_the_end,
     searches_finding, up_to_the_first_issue,
 };
@@ -33,11 +33,7 @@ fn a_sync_reads_each_shown_issues_cross_references_and_fetches_the_prs_they_list
 
 #[test]
 fn a_sync_follows_an_issues_cross_references_page_by_page() {
-    let mut replies = up_to_the_first_issue();
-    replies.push(issue_references_with_more(1, &[3], "older", RATE_LIMIT));
-    replies.push(cross_references(&[2], None, RATE_LIMIT));
-    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], RATE_LIMIT));
-    let harness = Harness::new("tree-pages", replies);
+    let harness = Harness::new("tree-pages", a_tree_over_two_pages());
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
 

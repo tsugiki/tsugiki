@@ -38,6 +38,22 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   attention: null,
 };
 
+/** The user's own draft PR #157178 into 3.14, a Standalone PR with failed CI and nothing waiting. */
+export const own: Extract<ListedItem, { kind: "standalone_pr" }> = {
+  attention: null,
+  kind: "standalone_pr",
+  ...workbenchRow(157178, {
+    title: "GH-156425: Clear GC frame on early return",
+    author: "octocat",
+    is_draft: true,
+    target_branch: "3.14",
+    ci: "FAILURE",
+    updated_at: "2026-11-04T09:00:00Z",
+    reasons: ["own_pr"],
+  }),
+  backports: [],
+};
+
 /** What `issue` answers for Issue #7 before Tsugiki has read it from GitHub. */
 export const issueView: IssueView = {
   ...issue,

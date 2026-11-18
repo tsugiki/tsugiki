@@ -10,7 +10,7 @@ import {
   type Settings as Values,
 } from "$lib/state/settings.svelte";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
-import { ok, refused } from "$lib/testing/fixtures";
+import { defaultSettings, NO_SERVERS, ok, refused } from "$lib/testing/fixtures";
 import Settings from "./Settings.svelte";
 
 const core = vi.hoisted(() => ({
@@ -53,26 +53,14 @@ const online = { state: "online", login: "octocat" } as const;
 
 /** The defaults, with `change` made to them. */
 const settingsWith = (change: (settings: Values) => void = () => {}): Values => {
-  const settings: Values = {
-    status_bar: { visible: true },
-    releases: { check: true },
-    appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-    diff: { files: "all", peek: "inline" },
-    keys: {},
+  const settings: Values = defaultSettings({
     repositories: [
       { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
       { name: "python/cpython", conventions: "cpython", filters: [] },
     ],
-  };
+  });
   change(settings);
   return settings;
-};
-/** What `machine.toml` says of the language servers when it says nothing. */
-const NO_SERVERS: LanguageServerSettings = {
-  ty: null,
-  "rust-analyzer": null,
-  clangd: null,
-  idle_minutes: 30,
 };
 const loaded = (
   settings: Values,

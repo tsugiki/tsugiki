@@ -25,6 +25,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use tsugiki_test_git::without_visibility;
+
 /// A top-level module of `crates/core/src`, the modules it may use, and why.
 #[derive(Clone, Copy)]
 struct Layer {
@@ -441,16 +443,6 @@ fn is_test(path: &str) -> bool {
 
 fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
-}
-
-/// `item` without the `pub` or `pub(...)` in front of it.
-fn without_visibility(item: &str) -> &str {
-    let item = match item.strip_prefix("pub") {
-        Some(after) if after.starts_with('(') => after.split_once(')').map_or("", |(_, rest)| rest),
-        Some(after) => after,
-        None => item,
-    };
-    item.trim_start()
 }
 
 /// The modules `lib.rs` declares, apart from its test modules.

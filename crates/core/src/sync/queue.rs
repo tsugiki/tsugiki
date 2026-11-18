@@ -659,10 +659,11 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         filters: &[],
         window_since: None,
     };
-    let (touched, pause_until) = fetch_issue_batch(&link, numbers)?;
+    let saved = fetch_issue_batch(&link, numbers)?;
+    drop(numbers.drain(..saved.asked_for));
     Ok(Stepped {
-        touched: (!touched.is_empty()).then_some(touched),
-        pause_until,
+        touched: (!saved.touched.is_empty()).then_some(saved.touched),
+        pause_until: saved.pause_until,
     })
 }
 

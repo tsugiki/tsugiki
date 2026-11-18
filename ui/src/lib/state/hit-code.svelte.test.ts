@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { DefinitionCode, Hit } from "$lib/data/bindings";
-import { ok } from "$lib/testing/fixtures";
+import { fileLines, ok } from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import { CODE_CHUNK, HitCode } from "./hit-code.svelte";
 import { SPANS_WAIT } from "./spans-wait";
@@ -15,14 +15,7 @@ vi.mock("$lib/data/bindings", () => ({
 }));
 
 /** A file of `count` lines, each its own number. */
-function answerFrom(count: number) {
-  core.definitionCode.mockImplementation((code) => {
-    const lines = [];
-    for (let line = code.start; line < Math.min(code.end, count + 1); line++)
-      lines.push(`line ${String(line)}`);
-    return Promise.resolve(ok({ count, lines }));
-  });
-}
+const answerFrom = (count: number) => core.definitionCode.mockImplementation(fileLines(count));
 
 const atBase: Hit = {
   place: { kind: "repository", path: "Objects/unicodeobject.c", side: "base", commit: "abc" },

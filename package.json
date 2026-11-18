@@ -12,6 +12,7 @@
     "bindings": "node scripts/bindings.ts",
     "check": "npm run svelte-check && npm run clippy",
     "doc-width": "node scripts/doc-width.ts",
+    "dupes": "node scripts/dupes.ts",
     "prose-check": "node scripts/prose-check.ts",
     "lint": "npm run eslint && npm run prettier && npm run rustfmt && npm run token-deps && npm run pre-commit",
     "fmt": "npm run fmt -w ui && prettier --write scripts .github eslint.config.ts codecov.yml && cargo fmt --all",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
-    "@types/node": "26.6.6"
+    "@types/node": "26.6.6",
+    "jscpd": "5.4.2"
   }
 }

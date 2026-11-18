@@ -65,6 +65,15 @@ samp,
   user-select: none;
 }
 
+/* A line the diff adds or removes, in the diff and in an Outdated thread's code. */
+.code-lines .added {
+  background: color-mix(in srgb, var(--add) 18%, transparent);
+}
+
+.code-lines .removed {
+  background: color-mix(in srgb, var(--del) 18%, transparent);
+}
+
 /* The word the user picked, on a tint of the accent, with a caret that takes no room. */
 .code-lines .text .picked {
   background: color-mix(in srgb, var(--accent) 25%, transparent);
@@ -77,6 +86,24 @@ samp,
   margin-right: -1px;
   border-left: 1px solid currentColor;
   vertical-align: -3px;
+}
+
+/* A tab, the one on show underlined in the accent colour: the PR's tabs and the rail's look alike. Each row
+   of tabs sets their padding. */
+[role="tab"] {
+  all: unset;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 2px solid transparent;
+}
+
+[role="tab"][aria-selected="true"] {
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+[role="tab"]:focus-visible {
+  outline: 1px solid var(--focus-border);
 }
 
 /* Prose inside something in the code font, such as a review thread in the diff. */

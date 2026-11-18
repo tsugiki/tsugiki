@@ -1,7 +1,9 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
-use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, not_found, replied, reply_ok};
+use crate::github::testing::{
+    RATE_LIMIT, Scripted, answer, github, issue_node, not_found, replied, reply_ok,
+};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
 use crate::testing::{cpython, moment};
@@ -10,21 +12,6 @@ use serde_json::Value;
 /// GitHub's answer whose `repository` holds the fields of `repository`.
 fn in_repository(repository: &Value) -> Result<Reply, Unreachable> {
     answer(json!({ "repository": repository }), RATE_LIMIT)
-}
-
-fn issue_json(number: u32) -> Value {
-    json!({
-        "__typename": "Issue",
-        "number": number,
-        "title": format!("Issue {number}"),
-        "updatedAt": "2026-11-04T10:00:00Z",
-        "state": "OPEN",
-        "stateReason": null,
-        "assignees": { "nodes": [] },
-        "labels": { "nodes": [] },
-        "timelineItems": { "nodes": [] },
-        "author": { "login": "some-author" },
-    })
 }
 
 fn event(source: &Value) -> Value {
@@ -140,7 +127,7 @@ fn a_page_of_cross_references_github_cant_answer_is_asked_for_at_half_size() {
 
 #[test]
 fn a_fetched_issue_is_read_into_its_facts() {
-    let reply = in_repository(&json!({ "i7": issue_json(7) }));
+    let reply = in_repository(&json!({ "i7": issue_node(7) }));
     let (script, asked) = Scripted::new(vec![reply]);
 
     let fetched = github(script).fetch_issues(&cpython(), &[7], 25).unwrap();
@@ -167,12 +154,12 @@ fn a_fetched_issue_is_read_into_its_facts() {
 #[test]
 fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
     let closed = |number: u32, reason: Value| {
-        let mut issue = issue_json(number);
+        let mut issue = issue_node(number);
         issue["state"] = json!("CLOSED");
         issue["stateReason"] = reason;
         issue
     };
-    let mut reopened = issue_json(6);
+    let mut reopened = issue_node(6);
     reopened["stateReason"] = json!("REOPENED");
     let mut repository = json!({ "i6": reopened });
     for (number, reason) in [
@@ -211,7 +198,7 @@ fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
 
 #[test]
 fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
-    let mut issue = issue_json(7);
+    let mut issue = issue_node(7);
     issue["labels"] = json!({ "nodes": [
         { "name": "type-bug" },
         null,
@@ -219,7 +206,7 @@ fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
         { "name": "3.14" },
         { "name": "interpreter-core" },
     ] });
-    let mut unlabelled = issue_json(8);
+    let mut unlabelled = issue_node(8);
     unlabelled["labels"] = Value::Null;
     let repository = json!({ "i7": issue, "i8": unlabelled });
     let (script, _asked) = Scripted::new(vec![in_repository(&repository)]);
@@ -238,7 +225,7 @@ fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
 
 #[test]
 fn an_issue_whose_author_has_gone_has_no_author() {
-    let mut issue = issue_json(7);
+    let mut issue = issue_node(7);
     issue["author"] = Value::Null;
     let (script, _asked) = Scripted::new(vec![in_repository(&json!({ "i7": issue }))]);
 
@@ -250,7 +237,7 @@ fn an_issue_whose_author_has_gone_has_no_author() {
 #[test]
 fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
     let repository =
-        json!({ "i1": issue_json(1), "i2": { "__typename": "PullRequest" }, "i3": null });
+        json!({ "i1": issue_node(1), "i2": { "__typename": "PullRequest" }, "i3": null });
     let gone = not_found(
         json!({ "repository": repository }),
         json!(["repository", "i3"]),
@@ -283,7 +270,7 @@ fn a_repository_that_has_gone_is_still_an_error() {
 fn a_batch_asks_for_its_size_and_a_retry_for_half() {
     let replies = vec![
         Err(Unreachable::Offline),
-        in_repository(&json!({ "i1": issue_json(1) })),
+        in_repository(&json!({ "i1": issue_node(1) })),
     ];
     let (script, _asked) = Scripted::new(replies);
 

@@ -4,7 +4,7 @@
 
 use std::fs;
 
-use tsugiki_test_git::{repo_root, rust_sources};
+use tsugiki_test_git::{repo_root, rust_sources, without_visibility};
 
 #[expect(
     clippy::expect_used,
@@ -224,12 +224,7 @@ fn needs_test(condition: &str) -> bool {
 
 /// Whether `item` opens a module whose body follows in braces, after any `pub` or `pub(...)`.
 fn opens_inline_module(item: &str) -> bool {
-    let item = match item.strip_prefix("pub") {
-        Some(after) if after.starts_with('(') => after.split_once(')').map_or("", |(_, rest)| rest),
-        Some(after) => after,
-        None => item,
-    };
-    let Some(after) = item.trim_start().strip_prefix("mod ") else {
+    let Some(after) = without_visibility(item).strip_prefix("mod ") else {
         return false;
     };
     let name = after.trim_start();

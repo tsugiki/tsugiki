@@ -410,21 +410,9 @@
     }
   }
 
+  /* window.css draws the tabs. */
   [role="tab"] {
-    all: unset;
-    cursor: pointer;
     padding: 6px 12px;
-    font-size: 12px;
-    border-bottom: 2px solid transparent;
-  }
-
-  [role="tab"][aria-selected="true"] {
-    font-weight: 600;
-    border-bottom-color: var(--accent);
-  }
-
-  [role="tab"]:focus-visible {
-    outline: 1px solid var(--focus-border);
   }
 
   /* One line under the tabs, on either tab, while the user's Review is a Stale review. */

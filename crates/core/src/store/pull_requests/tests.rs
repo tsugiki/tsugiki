@@ -1,4 +1,4 @@
-use super::super::testing::{OpenStore, temp_database};
+use super::super::testing::{OpenStore, database_before, temp_database};
 use super::super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
@@ -222,23 +222,13 @@ fn saving_a_pr_again_replaces_what_was_known() {
 
 #[test]
 fn a_pr_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
-    let (path, _folder) = temp_database("pr-before-labels");
-    let before = MIGRATIONS
-        .iter()
-        .position(|step| step.sql == super::LABELS)
-        .unwrap();
-    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
-    // A store of that age can't run today's save, which writes labels, so SQL stands in for it.
-    let inserted = Connection::open(&path)
-        .unwrap()
-        .execute(
-            "INSERT INTO pull_requests (repository, number, title, state, is_draft, author, target_branch,
-                                        ci, updated_at)
-             VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', NULL, 1)",
-            [],
-        )
-        .unwrap();
-    assert_eq!(inserted, 1);
+    let (path, _folder) = database_before(
+        "pr-before-labels",
+        super::LABELS,
+        "INSERT INTO pull_requests (repository, number, title, state, is_draft, author, target_branch, ci,
+                                    updated_at)
+         VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', NULL, 1)",
+    );
 
     let store = Store::open(&path).unwrap();
     let read = store.pull_requests(&cpython()).unwrap();

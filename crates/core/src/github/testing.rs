@@ -168,6 +168,22 @@ pub fn pr_node(number: u32, changes: &Value) -> Value {
     changed(node, changes)
 }
 
+/// Open issue `number`, with no labels, assignees or events, as a fetch of issues answers with it.
+pub fn issue_node(number: u32) -> Value {
+    json!({
+        "__typename": "Issue",
+        "number": number,
+        "title": format!("Issue {number}"),
+        "updatedAt": "2026-11-04T10:00:00Z",
+        "state": "OPEN",
+        "stateReason": null,
+        "assignees": { "nodes": [] },
+        "labels": { "nodes": [] },
+        "timelineItems": { "nodes": [] },
+        "author": { "login": "some-author" },
+    })
+}
+
 /// A PR's Conversation as `FetchPullRequestContent` answers with it, a body and nothing else, with `changes`
 /// on top.
 pub fn pr_content(changes: &Value) -> Value {

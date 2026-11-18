@@ -207,6 +207,27 @@ jobs:
             exit 1
           fi
 
+  # jscpd compares the Rust under crates/ with itself, and the UI and the scripts with themselves, so a change
+  # to either runs it. It takes a second, so one job runs both scans.
+  dupes:
+    name: dupes
+    needs: [changes]
+    if: >-
+      ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') ||
+      contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run dupes
+
   # Codecov carries the last Rust figure forward on a run that skips this job (codecov.yml).
   rust-coverage:
     name: rust-coverage (windows-latest)
@@ -390,14 +411,16 @@ jobs:
       - rust
       - dependencies
       - release-check
+      - dupes
       - rust-coverage
       - ui
       - playwright
       - macos
     runs-on: ubuntu-latest
     steps:
-      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS job reads both, and
-      # the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets a line.
+      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS and dupes jobs read
+      # both, and the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets
+      # a line.
       - name: Every job succeeded, or skipped because the change doesn't reach what it reads
         env:
           JOBS: ${{ needs.changes.outputs.jobs }}
@@ -412,7 +435,7 @@ jobs:
               rust | rust-coverage) reads='"rust"' ;;
               dependencies) reads='"dependencies"' ;;
               ui | playwright) reads='"ui"' ;;
-              macos) reads='"rust", "ui"' ;;
+              macos | dupes) reads='"rust", "ui"' ;;
               *) echo "CI passed doesn't know what $job reads"; exit 1 ;;
             esac
             listed=$(jq -r "[\"always\"] + . | any(.[]; IN($reads))" <<< "$JOBS")

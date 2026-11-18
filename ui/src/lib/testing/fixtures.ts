@@ -3,7 +3,15 @@
 // They build the `_Serialize` shapes, which fill every field and so fit the `_Deserialize` ones too.
 import type {
   DiffFile_Serialize as DiffFile,
+  DiffThread_Serialize as DiffThread,
+  HourPoints_Serialize as HourPoints,
+  LanguageServerSettings_Serialize as LanguageServerSettings,
+  LoadedSettings_Serialize as LoadedSettings,
   PrFiles_Serialize as PrFiles,
+  RepositoryCheck_Serialize as RepositoryCheck,
+  Settings_Serialize as Settings,
+  Themes,
+  ThemeView,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../data/bindings";
 
@@ -105,3 +113,109 @@ export const readyFiles = (rows: number, more: Partial<Omit<ReadyFiles, "state">
   threads: { kind: "shown", threads: [] },
   ...more,
 });
+
+/** Review thread `id` under row `at` of the diff, or at `at` when it isn't a number, with `comments` comments
+ * by some-reviewer. */
+export const diffThread = (
+  id: string,
+  at: number | DiffThread["at"],
+  resolution: "open" | "resolved" = "open",
+  comments = 1,
+): DiffThread => ({
+  id,
+  at: typeof at === "number" ? { kind: "row", row: at } : at,
+  resolution,
+  comments: Array.from({ length: comments }, () => ({
+    id: null,
+    author: "some-reviewer",
+    created_at: "2026-11-04T10:00:00Z",
+    body_html: "<p>Why?</p>",
+    hidden: null,
+    submission: "submitted",
+  })),
+  later_comments: 0,
+});
+
+/** The core's answer to a search of the diff, which found `matches`, each a row and where in it the text
+ * starts and ends. */
+export const foundText = (matches: [number, number, number][], more = false) =>
+  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
+
+/** The core's read of lines `start` to `end`, the end left out, of a file of `count` lines, line N of which
+ * reads `line N`, as it reads a hit's file. */
+export const fileLines =
+  (count: number) =>
+  ({ start, end }: { start: number; end: number }) => {
+    const lines = [];
+    for (let line = start; line < Math.min(end, count + 1); line++) lines.push(`line ${String(line)}`);
+    return Promise.resolve(ok({ count, lines }));
+  };
+
+/** `machine.toml`'s language servers when it names none. */
+export const NO_SERVERS: LanguageServerSettings = {
+  ty: null,
+  "rust-analyzer": null,
+  clangd: null,
+  idle_minutes: 30,
+};
+
+/** The settings of a `settings.toml` that sets nothing, with `more` instead. */
+export const defaultSettings = (more: Partial<Settings> = {}): Settings => ({
+  status_bar: { visible: true },
+  releases: { check: true },
+  appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
+  diff: { files: "all", peek: "inline" },
+  keys: {},
+  repositories: [],
+  ...more,
+});
+
+/** The settings the core read: the defaults with `more` instead, no language server and no problem. */
+export const loadedSettings = (more: Partial<Settings> = {}): LoadedSettings => ({
+  settings: defaultSettings(more),
+  language_servers: NO_SERVERS,
+  problems: [],
+});
+
+/** The core's check of a small Repository named `name`, as Add Repository shows it. */
+export const repositoryCheck = (name = "some-maintainer/gcmon"): RepositoryCheck => ({
+  repository: { name, conventions: "github", filters: [] },
+  open_issues: 10,
+  open_prs: 3,
+  size: "small",
+  window_days: 30,
+  first_sync_items: 48,
+  first_sync_seconds: 5,
+  first_sync_points: 12,
+  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
+});
+
+/** A theme named `name` with no tokens. */
+export const themeView = (name: string, kind: "light" | "dark"): ThemeView => ({ name, kind, tokens: [] });
+
+/** VS Code's and Gruvbox's themes of each side, with VS Code Light Modern and `dark` chosen and the system
+ * deciding the side. */
+export const builtInThemes = (dark: string): Themes => ({
+  theme: { kind: "system" },
+  light: {
+    chosen: "VS Code Light Modern",
+    all: [themeView("VS Code Light Modern", "light"), themeView("Gruvbox Light Hard", "light")],
+    failed: [],
+  },
+  dark: {
+    chosen: dark,
+    all: [themeView("VS Code Dark Modern", "dark"), themeView("Gruvbox Dark Hard", "dark")],
+    failed: [],
+  },
+  problems: [],
+});
+
+/** The token's points this hour, of which Tsugiki spent 3,610 and other tools 150. */
+export const HOUR_POINTS: HourPoints = {
+  limit: 5000,
+  used: 3760,
+  remaining: 1240,
+  resets_at: "2026-11-17T14:32:00Z",
+  spent: 3610,
+  since: null,
+};

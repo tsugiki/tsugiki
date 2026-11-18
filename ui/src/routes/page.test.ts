@@ -4,7 +4,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { About } from "$lib/state/about.svelte";
 import { actionOn, remapKeys } from "$lib/state/keymap.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
-import { diffFile, done, ok, readyFiles, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import {
+  diffFile,
+  done,
+  loadedSettings,
+  ok,
+  readyFiles,
+  workbenchPage,
+  workbenchRow,
+} from "$lib/testing/fixtures";
 import Page from "./+page.svelte";
 
 const core = vi.hoisted(() => ({
@@ -46,18 +54,7 @@ const core = vi.hoisted(() => ({
 }));
 
 /** What `settings.toml` says unless a test says otherwise: the defaults. */
-const SETTINGS = {
-  settings: {
-    status_bar: { visible: true },
-    releases: { check: true },
-    appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-    diff: { files: "all", peek: "inline" },
-    keys: {},
-    repositories: [],
-  },
-  language_servers: { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 },
-  problems: [] as string[],
-};
+const SETTINGS = loadedSettings();
 
 /** The themes the core sends unless a test says otherwise. */
 const THEMES = {

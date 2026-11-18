@@ -12,7 +12,7 @@ use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_
 use crate::sync::testing::{
     FEW, Harness, LARGE, RATE_LIMIT, comment_by, counted, counted_as, cpython, cross_references,
     empty_window_page, fetched_nodes, hours_ago_text, issue_references, issue_references_with_more,
-    issues, plain, pr_node, run_to_the_end, searches_finding, window_issue,
+    issues, plain, pr_node, run_to_the_end, searches_finding, up_to_the_first_issue, window_issue,
     window_issue_referencing, window_page, window_pr,
 };
 use crate::sync::{Progress, Step, Syncs, UserWorkSync};
@@ -20,14 +20,6 @@ use crate::sync::{Progress, Step, Syncs, UserWorkSync};
 /// The replies up to the queue, for a user with no work.
 fn up_to_the_queue() -> Vec<Result<Reply, Unreachable>> {
     searches_finding(&[])
-}
-
-/// The replies that bring the user's PR #1 and its Issue #1, up to the queue.
-fn up_to_the_queue_with_an_issue() -> Vec<Result<Reply, Unreachable>> {
-    let mut replies = searches_finding(&["a"]);
-    replies.push(fetched_nodes(&[pr_node(1, &json!({}))], RATE_LIMIT));
-    replies.push(issues(&[1], RATE_LIMIT));
-    replies
 }
 
 /// PR `number`, merged, naming no Issue.
@@ -87,7 +79,7 @@ fn queue_operations(harness: &Harness) -> Vec<String> {
 
 #[test]
 fn the_users_own_trees_load_before_the_window() {
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(&[merged(5)], RATE_LIMIT));
     replies.push(empty_window_page());
@@ -150,7 +142,7 @@ fn a_page_and_a_batch_take_turns() {
 #[test]
 fn a_pr_many_lists_bring_is_fetched_once() {
     let at = hours_ago_text(1);
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(&[merged(5)], RATE_LIMIT));
     replies.push(window_page(
@@ -273,7 +265,7 @@ fn opening_an_issue_brings_its_older_prs_and_older_references() {
 
 #[test]
 fn opening_the_users_own_issue_doesnt_read_its_tree_again() {
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references(&[(1, &[])], RATE_LIMIT));
     replies.push(empty_window_page());
     replies.push(empty_window_page());
@@ -415,7 +407,7 @@ fn an_opened_issues_older_references_go_before_the_queue() {
 
 #[test]
 fn a_page_doesnt_read_the_older_references_of_the_users_own_issue_again() {
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references_with_more(1, &[], "older", RATE_LIMIT));
     replies.push(cross_references(&[], None, RATE_LIMIT));
     replies.push(window_page(
@@ -634,7 +626,7 @@ fn backport(number: u32, origin: u32) -> Value {
 
 #[test]
 fn an_urgent_backport_gets_its_origin_before_the_window() {
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(&[backport(5, 8)], RATE_LIMIT));
     replies.push(pull_request_answer(merged(8), RATE_LIMIT));
@@ -691,7 +683,7 @@ fn a_frozen_pr_listed_at(
     then: Vec<Result<Reply, Unreachable>>,
 ) -> Vec<(String, Value)> {
     let at = "2026-11-04T10:00:00Z";
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     replies.push(fetched_nodes(
         &[pr_node(
@@ -770,7 +762,7 @@ fn the_status_bar_hears_how_far_the_queue_has_got() {
 
 #[test]
 fn the_status_bar_says_trees_while_the_users_own_come_first() {
-    let mut replies = up_to_the_queue_with_an_issue();
+    let mut replies = up_to_the_first_issue();
     replies.push(issue_references(&[(1, &[5])], RATE_LIMIT));
     let harness = Harness::with_window("queue-part", replies);
     let mut syncs = syncing();
@@ -1076,15 +1068,8 @@ fn the_queue_keeps_what_happened_on_its_items() {
 
     drop(run_to_the_end(&mut syncs, &harness));
 
-    let who = |number: u32| -> Vec<String> {
-        let events = harness.db.store.activity(&cpython(), number).unwrap();
-        events
-            .iter()
-            .map(|event| event.who.as_str().to_owned())
-            .collect()
-    };
-    assert_eq!(who(1), ["issue-author"]);
-    assert_eq!(who(2), ["some-author"]);
+    assert_eq!(harness.activity_by(1), ["issue-author"]);
+    assert_eq!(harness.activity_by(2), ["some-author"]);
     harness.finish();
 }
 

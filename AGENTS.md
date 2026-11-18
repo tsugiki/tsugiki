@@ -102,6 +102,9 @@ copies only where they change for different reasons, and say why in the PR. Two 
 such as a workflow and a script, get a test that fails when they disagree. A comment that names the other
 copy goes stale.
 
+`just dupes` fails when two files hold the same block of code, from about five lines up. A repeat that stays
+goes in `ALLOWED` in `scripts/copies.ts`, with why. Repeats inside one file pass.
+
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can

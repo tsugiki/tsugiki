@@ -1,22 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { done, ok } from "../src/lib/testing/fixtures.ts";
-import { emitFromCore, mockCore, noServers } from "./mock-core.ts";
-import { appearance } from "./themes.ts";
+import { done, loadedSettings, ok } from "../src/lib/testing/fixtures.ts";
+import { emitFromCore, mockCore } from "./mock-core.ts";
 
 const online = { state: "online", login: "octocat" } as const;
 const offline = { state: "offline" } as const;
-const releases = { check: true };
-const diff = { files: "all", peek: "inline" } as const;
-const defaults = {
-  settings: { status_bar: { visible: true }, releases, appearance, diff, keys: {}, repositories: [] },
-  language_servers: noServers,
-  problems: [],
-};
-const hidden = {
-  settings: { status_bar: { visible: false }, releases, appearance, diff, keys: {}, repositories: [] },
-  language_servers: noServers,
-  problems: [],
-};
+const defaults = loadedSettings();
+const hidden = loadedSettings({ status_bar: { visible: false } });
 
 test("the status bar shows who is signed in", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: online });

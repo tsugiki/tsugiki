@@ -1,26 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
-import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
-import { workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
-import { home } from "./fixtures.ts";
+import { workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home, own } from "./fixtures.ts";
 import { mockCore } from "./mock-core.ts";
 
 // A dialog gives the focus back as it closes, and the browser then acts on the press that closed it. jsdom
 // has nothing that acts on a press, so only a browser shows the focus staying where it went back to.
-
-const own: ListedItem = {
-  attention: null,
-  kind: "standalone_pr",
-  ...workbenchRow(157178, {
-    title: "GH-156425: Clear GC frame on early return",
-    author: "octocat",
-    is_draft: true,
-    target_branch: "3.14",
-    ci: "FAILURE",
-    updated_at: "2026-11-04T09:00:00Z",
-    reasons: ["own_pr"],
-  }),
-  backports: [],
-};
 
 /** Opens the app on a Repository with one row. */
 async function openApp(page: Page): Promise<void> {

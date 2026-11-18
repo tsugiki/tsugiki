@@ -5,8 +5,7 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings};
-use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, stranger};
-use crate::workbench::{TreeEntry, WorkbenchItem};
+use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
 
 /// A moment well after the epoch, so two days before it is too.
 fn now() -> OffsetDateTime {
@@ -40,21 +39,7 @@ fn pr_at(number: u32, issue: Option<u32>, updated_at: OffsetDateTime) -> PullReq
 
 /// Each item as its kind and number, with the PRs it shows after it.
 fn outline(inbox: &Inbox) -> Vec<(&'static str, u32, Vec<u32>)> {
-    (inbox.items.iter())
-        .map(|listed| match &listed.item {
-            WorkbenchItem::Issue(issue) => {
-                let rows = issue.pull_requests.iter().flat_map(TreeEntry::rows);
-                ("issue", issue.number, rows.map(|row| row.number).collect())
-            }
-            WorkbenchItem::StandalonePr(tree) => {
-                let beneath = tree.backports.iter().map(|below| below.row.number);
-                ("standalone", tree.row.number, beneath.collect())
-            }
-            WorkbenchItem::StandaloneBackport(backport) => {
-                ("standalone backport", backport.row.number, vec![])
-            }
-        })
-        .collect()
+    outline_of(&inbox.items)
 }
 
 fn read(world: &ViewWorld, page: InboxPage) -> Inbox {

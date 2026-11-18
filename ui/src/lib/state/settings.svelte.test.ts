@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
+import { loadedSettings, NO_SERVERS } from "$lib/testing/fixtures";
 import { actionOn } from "./keymap.svelte";
 import { type LoadedSettings, SettingsState } from "./settings.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { settings: vi.fn() } }));
-
-/** What `machine.toml` says of the language servers when it says nothing. */
-const NO_SERVERS = { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 };
 
 describe("SettingsState", () => {
   beforeEach(() => {
@@ -81,18 +79,7 @@ describe("SettingsState", () => {
   });
 
   /** What the core read, with the status bar `visible` or not. */
-  const read = (visible: boolean): LoadedSettings => ({
-    settings: {
-      status_bar: { visible },
-      releases: { check: true },
-      appearance: { theme: "system", light_theme: "VS Code Light Modern", dark_theme: "VS Code Dark Modern" },
-      diff: { files: "all", peek: "inline" },
-      keys: {},
-      repositories: [],
-    },
-    language_servers: NO_SERVERS,
-    problems: [],
-  });
+  const read = (visible: boolean): LoadedSettings => loadedSettings({ status_bar: { visible } });
 
   it("leaves settings taken after a load asked, such as the Settings dialog's", async () => {
     const answer = Promise.withResolvers<LoadedSettings>();

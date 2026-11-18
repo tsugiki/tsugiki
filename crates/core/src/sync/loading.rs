@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use super::issues::fetch_issue_batch;
+use super::origins::save_origin;
 use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
 use crate::facts::issues::ListedPr;
@@ -453,16 +455,11 @@ fn fetch_named_issues(
     loading: &mut Loading,
     numbers: &[u32],
 ) -> Result<Step, Error> {
-    let batch = link
-        .github
-        .fetch_issues(link.repository, numbers, FETCH_BATCH)?;
-    let touched = batch.issues.iter().map(|issue| issue.number).collect();
-    link.store
-        .save_fetched_issues(link.repository, batch.issues, batch.activity)?;
+    let saved = fetch_issue_batch(link, numbers)?;
     loading
         .issues_seen
-        .extend(numbers.iter().take(batch.asked_for).copied());
-    Ok(Step::saved_if_any(touched, pause_until(batch.rate_limit)))
+        .extend(numbers.iter().take(saved.asked_for).copied());
+    Ok(Step::saved_if_any(saved.touched, saved.pause_until))
 }
 
 fn read_issue_page(
@@ -566,30 +563,11 @@ fn load_origin(
     number: u32,
     fetched: &mut BTreeSet<u32>,
 ) -> Result<Step, Error> {
-    let answer = link
-        .github
-        .fetch_origin_pull_request(link.repository, number)?;
-    let pause_until = pause_until(answer.rate_limit);
-    let step = if let Some((pull_request, activity)) = answer.pull_request {
-        let named = possible_numbers(&pull_request, link.repository);
-        link.store.save_fetched_pull_requests(
-            link.repository,
-            vec![pull_request],
-            vec![activity],
-        )?;
-        loading.leads.named.extend(named);
-        Step::Saved {
-            touched: vec![number],
-            pause_until,
-        }
-    } else {
-        Step::Searched { pause_until }
-    };
+    let step = save_origin(link, &mut loading.leads, number)?;
     loading
         .urgent_leads
         .origins
         .retain(|origin| *origin != number);
-    loading.leads.origins.retain(|origin| *origin != number);
     loading.queue.retain(|pr| pr.number != number);
     fetched.extend([number]);
     Ok(step)

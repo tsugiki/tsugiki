@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use time::OffsetDateTime;
 
-use super::{IssueItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView};
+use super::{
+    IssueItem, ListedItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView,
+};
 use crate::facts::WorkFacts;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
@@ -100,10 +102,14 @@ pub(crate) fn reviewed_workbench(
     Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole)
 }
 
-/// Each item as its kind and number, with an Issue's PRs after it.
+/// Each item of `workbench` as its kind and number, with the PRs it shows after it.
 pub(crate) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
-    workbench
-        .items
+    outline_of(&workbench.items)
+}
+
+/// Each of `items` as its kind and number, with the PRs it shows after it.
+pub(crate) fn outline_of(items: &[ListedItem]) -> Vec<(&'static str, u32, Vec<u32>)> {
+    items
         .iter()
         .map(|listed| match &listed.item {
             WorkbenchItem::Issue(issue) => {

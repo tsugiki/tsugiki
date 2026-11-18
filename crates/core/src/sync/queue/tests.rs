@@ -7,9 +7,9 @@ use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
-    Harness, RATE_LIMIT, cpython, cross_references, fetched, fetched_nodes,
-    issue_references_with_more, issues, merged_node, nothing, plain, pr_node, run_to_the_end,
-    search_page, searches_finding, soon, up_to_the_first_issue,
+    Harness, RATE_LIMIT, a_tree_over_two_pages, cpython, cross_references, fetched, fetched_nodes,
+    issues, merged_node, nothing, plain, pr_node, run_to_the_end, search_page, searches_finding,
+    soon,
 };
 use crate::sync::{Ahead, Phase, RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
@@ -548,11 +548,7 @@ fn only_the_open_repository_says_its_sync_finished() {
 
 #[test]
 fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
-    let mut replies = up_to_the_first_issue();
-    replies.push(issue_references_with_more(1, &[3], "older", RATE_LIMIT));
-    replies.push(cross_references(&[2], None, RATE_LIMIT));
-    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], RATE_LIMIT));
-    let harness = Harness::new("gave-way-listed", replies);
+    let harness = Harness::new("gave-way-listed", a_tree_over_two_pages());
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
     let mut before_it_gave_way = Vec::new();

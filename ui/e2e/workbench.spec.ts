@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
 import { done, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
-import { grabEdge, home, repository } from "./fixtures.ts";
+import { grabEdge, home, own, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
@@ -41,21 +41,6 @@ const review: ListedItem = {
     mark: { numbers: [112564, 160662, 160700], up_to: null },
     state: "seen",
   },
-};
-
-const own: ListedItem = {
-  attention: null,
-  kind: "standalone_pr",
-  ...workbenchRow(157178, {
-    title: "GH-156425: Clear GC frame on early return",
-    author: "octocat",
-    is_draft: true,
-    target_branch: "3.14",
-    ci: "FAILURE",
-    updated_at: "2026-11-04T09:00:00Z",
-    reasons: ["own_pr"],
-  }),
-  backports: [],
 };
 
 test("the Workbench lists what waits on the user", async ({ page }) => {

@@ -108,7 +108,7 @@ goes in `ALLOWED` in `scripts/copies.ts`, with why. Repeats inside one file pass
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can
-check these six, so check them yourself when you write or review Rust:
+check these, so check them yourself when you write or review Rust:
 
 - **Make invalid states unrepresentable.** Put each field on the enum variant it belongs to. Otherwise each
   reader has to remember which combinations can't happen, and the compiler can't help them.
@@ -128,8 +128,9 @@ check these six, so check them yourself when you write or review Rust:
 
 ## Writing prose
 
-Check docs, commit messages, issues and PRs with `/stop-slop` before you publish them. Run `just prose-check`
-first: it lists lines worth rereading from what the branch adds, or from a draft you name, and never fails.
+Route each statement to the file that owns it, as `docs/agents/prose.md` says, then check docs, commit
+messages, issues and PRs with `/stop-slop` before you publish them. Run `just prose-check` first: it lists
+lines worth rereading from what the branch adds, or from a draft you name, and never fails.
 
 Wrap the docs you write at 110 columns: Markdown files, comments and docstrings. Leave tables unwrapped.
 `just doc-width` fails on a line past that, and `just check` runs it.

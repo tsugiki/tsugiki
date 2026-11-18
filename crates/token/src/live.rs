@@ -1,5 +1,6 @@
 //! The only code in Tsugiki that reaches the network or runs `gh`. Tests replace both (ADR 0009), so this
-//! file is left out of the coverage gate, and the release checks exercise it against GitHub.
+//! file is left out of the coverage gate. No automated check reaches GitHub through it: the smoke test runs
+//! the real `gh`, but its proxy never lets TLS start. `npm run record` does reach GitHub through it.
 
 #![expect(
     clippy::disallowed_types,

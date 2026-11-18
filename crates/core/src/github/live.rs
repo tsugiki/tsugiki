@@ -1,6 +1,6 @@
 //! What touches the outside world: the real `git`, and GitHub through `tsugiki-token`, the crate that holds
 //! the network and `gh` (ADR 0019). Tests replace the network (ADR 0009), so this file is left out of the
-//! coverage gate, and the release checks exercise it against GitHub. Tests run the real `git` through it.
+//! coverage gate. Tests run the real `git` through it.
 
 #![expect(
     clippy::disallowed_types,

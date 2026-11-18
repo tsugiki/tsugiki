@@ -30,6 +30,8 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
   attention: waiting
     ? { since: "2026-11-04T10:00:00Z", why: [{ kind: "comment", by: "some-reviewer" }] }
     : null,
+  key: { kind: "issue", number },
+  archived: false,
 });
 
 const listing = (waiting: boolean) => workbenchPage([issue(7, waiting), issue(8, false)]);
@@ -44,6 +46,7 @@ const view = (bodyHtml: string): IssueView => ({
   assignees: ["some-assignee"],
   labels: ["type-bug"],
   needs_attention: [10],
+  archived: false,
   seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
   pull_requests: [
     {

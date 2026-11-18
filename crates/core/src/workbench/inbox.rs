@@ -30,7 +30,6 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::{Duration, OffsetDateTime};
 
-use super::attention::attention_of;
 use super::backports::plant;
 use super::links::placed;
 use super::{ListedItem, candidates};
@@ -112,41 +111,56 @@ impl Inbox {
     }
 
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
-    /// the database and never on a sync (ADR 0018).
+    /// the database and never on a sync (ADR 0018). A page whose items are all Archived gives way to the next
+    /// older one, so the window never gets an empty page with more to come.
     pub fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         page: InboxPage,
         now: OffsetDateTime,
     ) -> Result<Self, Error> {
-        let conventions = repository.conventions;
-        let job = move |snapshot: &Snapshot<'_>| read_page(snapshot, conventions, page, now);
-        let Some(read) = reader.read_snapshot(&repository.name, job)? else {
-            return Ok(Self {
-                items: Vec::new(),
-                older: None,
-            });
+        let settings = repository.clone();
+        // One snapshot holds the pages it walks, so they fit together as the pages of one read do.
+        let job = move |snapshot: &Snapshot<'_>| {
+            let mut page = page;
+            loop {
+                let Some(read) = read_page(snapshot, settings.conventions, page, now)? else {
+                    return Ok(Self {
+                        items: Vec::new(),
+                        older: None,
+                    });
+                };
+                let inbox = Self::listed(read, &settings);
+                match (inbox.items.is_empty(), inbox.older) {
+                    (true, Some(after)) => page = InboxPage::Older { after },
+                    (false, _) | (true, None) => return Ok(inbox),
+                }
+            }
         };
-        let causes = Causes::of(&read.facts, conventions);
+        reader.read_snapshot(&repository.name, job)
+    }
+
+    /// The page `read` holds, Archived items left out.
+    fn listed(read: PageRead, repository: &RepositorySettings) -> Self {
+        let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
             (read.facts, &read.links),
             repository,
             &BTreeSet::new(),
             &causes,
         );
+        // Archive takes an item out until it comes back (#490).
         let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .map(|item| ListedItem {
-                attention: attention_of(&causes, &item),
-                item,
-            })
+            .map(|item| ListedItem::of(&causes, item))
+            .filter(|listed| !listed.archived)
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);
         items.sort_by_key(|listed| Reverse(place_of(listed).copied()));
-        Ok(Self {
+        Self {
             items,
             older: read.older,
-        })
+        }
     }
 }
 

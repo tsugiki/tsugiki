@@ -3,12 +3,15 @@ use std::collections::BTreeSet;
 use time::OffsetDateTime;
 
 use super::*;
+use crate::facts::activity::ItemKey;
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::{Comment, CommentId, IssueComment};
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
+use crate::store::Archiving;
+use crate::testing::cpython;
 use crate::work::YourReview;
 use crate::workbench::WorkbenchRow;
 use crate::workbench::testing::{
@@ -154,6 +157,33 @@ fn view(world: &ViewWorld, number: u32) -> Option<IssueView> {
 
 fn pr_row(view: &IssueView) -> &WorkbenchRow {
     view.issue.pull_requests[0].rows()[0]
+}
+
+#[test]
+fn the_view_says_whether_the_issue_is_archived() {
+    let world = ViewWorld::new("issue-view-archived");
+    world.has(vec![fixing(10, 1)], vec![issue(1)]);
+    let before = view(&world, 1).unwrap();
+    let key = ItemKey::Issue { number: 1 };
+    let numbers = before.issue.seen.mark.numbers.clone();
+    let archiving = Archiving {
+        key,
+        numbers,
+        up_to: None,
+    };
+    let now = OffsetDateTime::now_utc();
+    world.db.store.archive(&cpython(), archiving, now).unwrap();
+
+    let archived = view(&world, 1).unwrap();
+    world.db.store.unarchive(&cpython(), key).unwrap();
+    let after = view(&world, 1).unwrap();
+    world.finish();
+
+    assert_eq!(before.issue.seen.mark.numbers, [1, 10]);
+    assert_eq!(
+        (before.archived, archived.archived, after.archived),
+        (false, true, false)
+    );
 }
 
 #[test]

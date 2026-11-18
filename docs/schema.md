@@ -271,6 +271,12 @@ erDiagram
         INTEGER number PK
         INTEGER at
     }
+    archived {
+        TEXT repository PK
+        TEXT kind PK
+        INTEGER number PK
+        INTEGER at
+    }
     first_syncs {
         TEXT repository PK
         INTEGER started_at

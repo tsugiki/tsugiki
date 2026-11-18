@@ -22,6 +22,7 @@ const view = (title: string): IssueView => ({
   assignees: [],
   labels: [],
   needs_attention: [],
+  archived: false,
   content: null,
   seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
 });

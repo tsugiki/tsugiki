@@ -27,6 +27,7 @@ use tsugiki_core::definitions::{
 use tsugiki_core::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::CommitSha;
+use tsugiki_core::facts::activity::ItemKey;
 use tsugiki_core::fetching::Fetching;
 use tsugiki_core::filters::{FilterQuery, OnWorkbench};
 use tsugiki_core::folders::Folders;
@@ -308,6 +309,28 @@ fn mark_seen(repository: &str, mark: SeenMark, requests: State<'_, Fetching>) ->
 #[specta::specta]
 fn mark_unseen(repository: &str, number: u32, requests: State<'_, Fetching>) -> Result<(), Error> {
     requests.mark_unseen(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
+/// once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn archive(
+    repository: &str,
+    item: ItemKey,
+    mark: SeenMark,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.archive(RepositoryName::parse(repository)?, item, mark);
+    Ok(())
+}
+
+/// Unarchives the item `item` names, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn unarchive(repository: &str, item: ItemKey, requests: State<'_, Fetching>) -> Result<(), Error> {
+    requests.unarchive(RepositoryName::parse(repository)?, item);
     Ok(())
 }
 
@@ -1079,6 +1102,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             fetch_pull_request,
             mark_seen,
             mark_unseen,
+            archive,
+            unarchive,
             settings,
             slow_commands::themes,
             slow_commands::preview_themes,

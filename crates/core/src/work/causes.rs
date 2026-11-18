@@ -13,7 +13,7 @@ use super::review_state::{SharedReviews, YourReview, your_reviews};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
-use crate::facts::activity::{Activity, ActivityFacts, ActivityKind};
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemKey};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
@@ -95,6 +95,10 @@ pub(crate) struct Causes {
     marked_unseen: BTreeSet<u32>,
     /// Where the user's Review of each PR stands. A PR missing here is Unreviewed.
     reviews: BTreeMap<u32, YourReview>,
+    /// The items the user archived, each with the moment Archive marked it seen up to.
+    archived: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The moment the user last acknowledged each Issue and PR.
+    acknowledged: BTreeMap<u32, OffsetDateTime>,
 }
 
 impl Causes {
@@ -140,7 +144,23 @@ impl Causes {
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
+            archived: facts.activity.archived.clone(),
+            acknowledged: facts.activity.acknowledged.clone(),
         }
+    }
+
+    /// Whether the item `key` names, whose tree holds `numbers`, is Archived (#490). The user archived it,
+    /// and it stays put away until something in its tree Needs attention again. It then comes back, and
+    /// stays back once the user marks it seen past the moment of the archive, as Mark Seen moves the moment
+    /// they acknowledged it on.
+    pub(crate) fn is_archived(&self, key: ItemKey, numbers: &[u32]) -> bool {
+        let Some(archived) = self.archived.get(&key) else {
+            return false;
+        };
+        numbers.iter().all(|number| {
+            let acknowledged = self.acknowledged.get(number);
+            !self.needs_attention(*number) && acknowledged.is_none_or(|at| at <= archived)
+        })
     }
 
     /// Where the user's Review of PR `number` stands.

@@ -21,7 +21,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
 use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
-    self, ConversationSaved, HeadKept, OpenReader, ReaderToOpen, Store, StoreReader,
+    self, Archiving, ConversationSaved, HeadKept, OpenReader, ReaderToOpen, Store, StoreReader,
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
@@ -689,6 +689,29 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
         } => {
             let saved = store.mark_unseen(&repository, number, at);
             let items = vec![number];
+            (saved, Change { repository, items })
+        }
+        Marked::Archived {
+            repository,
+            key,
+            mark: SeenMark { numbers, up_to },
+            at,
+        } => {
+            let change = Change {
+                repository,
+                items: numbers.clone(),
+            };
+            let archiving = Archiving {
+                key,
+                numbers,
+                up_to,
+            };
+            let saved = store.archive(&change.repository, archiving, at);
+            (saved, change)
+        }
+        Marked::Unarchived { repository, key } => {
+            let saved = store.unarchive(&repository, key);
+            let items = vec![key.number()];
             (saved, Change { repository, items })
         }
     };

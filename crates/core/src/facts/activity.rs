@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::login::Login;
@@ -43,6 +45,25 @@ pub struct ItemActivity {
     pub events: Vec<Activity>,
 }
 
+/// Names a Workbench item in the user's own state that hides it: Archived, and Muted (#492). Issues and PRs
+/// share their numbers in a Repository, and a Standalone PR and a Standalone Backport are both PRs.
+/// Dependency updates join it as a kind of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ItemKey {
+    Issue { number: u32 },
+    PullRequest { number: u32 },
+}
+
+impl ItemKey {
+    /// The number of the Issue or PR that heads the item.
+    pub fn number(self) -> u32 {
+        match self {
+            Self::Issue { number } | Self::PullRequest { number } => number,
+        }
+    }
+}
+
 /// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
 /// list costs no query for each item.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -56,6 +77,9 @@ pub struct ActivityFacts {
     pub acknowledged: BTreeMap<u32, OffsetDateTime>,
     /// The moment the user marked each item unseen, for the items still flagged.
     pub marked_unseen: BTreeMap<u32, OffsetDateTime>,
+    /// The items the user archived, each with the moment Archive marked it seen up to. Whether each is still
+    /// Archived or has come back, `workbench` judges (#490).
+    pub archived: BTreeMap<ItemKey, OffsetDateTime>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.

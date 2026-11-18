@@ -1,5 +1,9 @@
 //! Each rule of Needs attention as a scenario in the glossary's words, read the way the window reads it.
 
+mod archive;
+
+use std::collections::BTreeMap;
+
 use time::{Duration, OffsetDateTime};
 
 use super::Attention;
@@ -57,6 +61,14 @@ fn reviewed_by_me(number: u32) -> PullRequestFacts {
     }
 }
 
+/// Own PR `number`, its CI still running.
+fn own_ci_pending(number: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        ci: Some(CiState::Pending),
+        ..own(number)
+    }
+}
+
 fn requested(number: u32) -> PullRequestFacts {
     PullRequestFacts {
         review_requests: vec![me()],
@@ -97,6 +109,14 @@ fn comment(who: &Login, at: OffsetDateTime) -> Activity {
 impl World {
     fn has_issues(&self, issues: Vec<IssueFacts>) {
         self.db.store.save_issues(&cpython(), issues).unwrap();
+    }
+
+    /// A sync that finds `pull_request`'s CI failed.
+    fn ci_fails(&self, pull_request: PullRequestFacts) {
+        self.has(vec![PullRequestFacts {
+            ci: Some(CiState::Failure),
+            ..pull_request
+        }]);
     }
 
     fn marked_unseen(&self, number: u32, at: OffsetDateTime) {
@@ -368,17 +388,11 @@ fn mark_seen_takes_failed_ci_on_an_own_pr_out_of_needs_attention_and_keeps_the_r
 #[test]
 fn ci_that_fails_after_mark_seen_needs_attention() {
     let world = World::new("attention-own-ci-after");
-    let pending = PullRequestFacts {
-        ci: Some(CiState::Pending),
-        ..own(1)
-    };
+    let pending = own_ci_pending(1);
     world.has(vec![pending.clone()]);
     world.mark_seen(world.seen(1));
 
-    world.has(vec![PullRequestFacts {
-        ci: Some(CiState::Failure),
-        ..pending
-    }]);
+    world.ci_fails(pending);
 
     assert_eq!(world.why(1), [Why::CiFailed { checks: vec![] }]);
     world.finish();

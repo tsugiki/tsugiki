@@ -86,6 +86,13 @@ export const commands = {
 	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
 	/**  Mark Unseen on item `number`, and returns at once. */
 	markUnseen: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number })),
+	/**
+	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
+	 *  once, and the `changed` event follows.
+	 */
+	archive: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, item, mark })),
+	/**  Unarchives the item `item` names, and returns at once. */
+	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -1495,6 +1502,8 @@ export type IssueView_Deserialize = {
 	content?: IssueContent_Deserialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
 	needs_attention: number[],
+	/**  Whether the Issue is Archived, so its button offers Unarchive (#490). */
+	archived: boolean,
 } & IssueItem_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
@@ -1516,7 +1525,16 @@ export type IssueView_Serialize = {
 	content: IssueContent_Serialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
 	needs_attention: number[],
+	/**  Whether the Issue is Archived, so its button offers Unarchive (#490). */
+	archived: boolean,
 } & IssueItem_Serialize;
+
+/**
+ *  Names a Workbench item in the user's own state that hides it: Archived, and Muted (#492). Issues and PRs
+ *  share their numbers in a Repository, and a Standalone PR and a Standalone Backport are both PRs.
+ *  Dependency updates join it as a kind of their own.
+ */
+export type ItemKey = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
 
 /**
  *  The jumps in a PR's diff while recording: each scroll that showed rows the window didn't hold, until
@@ -1655,11 +1673,25 @@ export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Deserialize = {
 	attention?: Attention_Deserialize | null,
+	/**  The key Archive, and later Mute, keep the item under. */
+	key: ItemKey,
+	/**
+	 *  Whether the item is Archived, which only the Review requests view and the Filters show, for a PR
+	 *  whose Review request stood at the archive (#490).
+	 */
+	archived: boolean,
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Serialize = {
 	attention: Attention_Serialize | null,
+	/**  The key Archive, and later Mute, keep the item under. */
+	key: ItemKey,
+	/**
+	 *  Whether the item is Archived, which only the Review requests view and the Filters show, for a PR
+	 *  whose Review request stood at the archive (#490).
+	 */
+	archived: boolean,
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */

@@ -75,7 +75,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
 - A Pinned issue stays until the user unpins it.
 - Hiding, all kept in Tsugiki only:
-  - **Archive** puts an item away until something new needs attention there.
+  - **Archive** puts an item away until something new needs attention there: an Issue, a Standalone PR or
+    a Standalone Backport. It marks the item seen as Mark Seen does, across an Issue's whole tree, so a
+    comment from before it brings nothing back. The item leaves the Workbench, the Filters, the Inbox and
+    the Built-in views, and their counts, apart from a PR whose Review request stood at the archive: the
+    Review requests view and each Filter that matches it list it, marked Archived and not needing attention,
+    until the request ends. A Review request, failed CI or a comment that needs attention after the archive
+    brings the item back, no longer Archived, and Mark Seen then leaves it back; New activity that doesn't
+    need attention, as on an Issue the user only follows, leaves it put away, and so does Mark Seen on an
+    item the window shows Archived. Mark Unseen unarchives it.
+    Tsugiki keeps it per Repository under a key that names the item, its kind and number, which Mute is to
+    share.
   - **Mute** hides an item until the user unmutes it.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened

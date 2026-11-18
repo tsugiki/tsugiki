@@ -1,8 +1,10 @@
 use time::Duration;
 
 use super::*;
+use crate::facts::activity::ItemKey;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::store::Archiving;
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
@@ -266,6 +268,36 @@ fn the_first_page_holds_the_last_two_days_and_the_next_the_older_batch() {
         ]
     );
     assert_eq!(older.older, None);
+}
+
+#[test]
+fn archive_takes_an_item_out_and_a_page_of_archived_items_gives_way_to_the_next() {
+    let world = ViewWorld::new("inbox-archived");
+    world.has(
+        vec![pr_at(20, None, ago(1)), pr_at(21, None, ago(50))],
+        vec![issue_at(1, ago(2)), issue_at(2, ago(60))],
+    );
+    let archive = |key, number| {
+        let archiving = Archiving {
+            key,
+            numbers: vec![number],
+            up_to: Some(ago(0)),
+        };
+        world
+            .db
+            .store
+            .archive(&cpython(), archiving, now())
+            .unwrap();
+    };
+    archive(ItemKey::PullRequest { number: 20 }, 20);
+    archive(ItemKey::Issue { number: 1 }, 1);
+    archive(ItemKey::Issue { number: 2 }, 2);
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
+    assert_eq!(latest.older, None);
 }
 
 #[test]

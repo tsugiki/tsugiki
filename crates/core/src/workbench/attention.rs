@@ -75,15 +75,20 @@ pub(super) fn attention_of(causes: &Causes, item: &WorkbenchItem) -> Option<Atte
 impl WorkbenchItem {
     /// The numbers of what this item shows.
     pub(super) fn numbers(&self) -> Vec<u32> {
-        let issue = match self {
-            Self::Issue(IssueItem { number, .. }) => Some(*number),
-            Self::StandalonePr(_) | Self::StandaloneBackport(_) => None,
-        };
-        let rows = self.rows();
-        issue
-            .into_iter()
-            .chain(rows.iter().map(|row| row.number))
-            .collect()
+        match self {
+            Self::Issue(issue) => issue.numbers(),
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) => {
+                self.rows().iter().map(|row| row.number).collect()
+            }
+        }
+    }
+}
+
+impl IssueItem {
+    /// The Issue's number, then the number of each PR its tree holds.
+    pub(super) fn numbers(&self) -> Vec<u32> {
+        let rows = self.rows().into_iter().map(|row| row.number);
+        std::iter::once(self.number).chain(rows).collect()
     }
 }
 

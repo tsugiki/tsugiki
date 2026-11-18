@@ -18,7 +18,9 @@ pub(crate) fn named(message: SessionMessage) -> String {
         SessionMessage::Stop => "stop".to_owned(),
         SessionMessage::Check { .. }
         | SessionMessage::Sync { .. }
-        | SessionMessage::Mark(Marked::Seen { .. })
+        | SessionMessage::Mark(
+            Marked::Seen { .. } | Marked::Archived { .. } | Marked::Unarchived { .. },
+        )
         | SessionMessage::Patched(..) => "other".to_owned(),
     }
 }

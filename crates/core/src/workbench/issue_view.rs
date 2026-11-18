@@ -8,6 +8,7 @@ use specta::Type;
 use super::filters::FilterFacts;
 use super::{IssueItem, TreeEntry, WorkbenchItem, candidates_of};
 use crate::error::Error;
+use crate::facts::activity::ItemKey;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
@@ -38,6 +39,8 @@ pub struct IssueView {
     pub content: Option<IssueContent>,
     /// The PRs and Backports in its tree that Need attention, each by itself (#597).
     pub needs_attention: BTreeSet<u32>,
+    /// Whether the Issue is Archived, so its button offers Unarchive (#490).
+    pub archived: bool,
 }
 
 impl IssueView {
@@ -73,9 +76,8 @@ impl IssueView {
                 | WorkbenchItem::StandaloneBackport(_) => None,
             });
         Ok(found.map(|mut issue| {
-            let needs_attention = issue
-                .rows()
-                .into_iter()
+            let archived = causes.is_archived(ItemKey::Issue { number }, &issue.numbers());
+            let needs_attention = (issue.rows().into_iter())
                 .map(|row| row.number)
                 .filter(|&pr| causes.needs_attention(pr))
                 .collect();
@@ -94,6 +96,7 @@ impl IssueView {
                 labels,
                 content,
                 needs_attention,
+                archived,
             }
         }))
     }

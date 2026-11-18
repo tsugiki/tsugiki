@@ -20,6 +20,8 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
+pub use activity::Archiving;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -36,7 +38,7 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
-use crate::facts::activity::{ActivityFacts, ItemActivity};
+use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
@@ -514,6 +516,28 @@ impl Store {
         let repository = repository.clone();
         let saved = self
             .call(move |connection| activity::mark_unseen(connection, &repository, number, at))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Archive on `archiving`'s item: Mark Seen on its numbers, and the item kept as archived from their
+    /// `up_to`, or from `now` without one, as `activity::archive` says.
+    pub fn archive(
+        &self,
+        repository: &RepositoryName,
+        archiving: Archiving,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self
+            .call(move |connection| activity::archive(connection, &repository, &archiving, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unarchives the item `key` names.
+    pub fn unarchive(&self, repository: &RepositoryName, key: ItemKey) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::unarchive(connection, &repository, key))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

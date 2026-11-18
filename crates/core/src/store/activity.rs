@@ -4,13 +4,13 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{OptionalExtension, Row, named_params};
+use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::{Items, UnixTime};
 use super::failed_checks;
-use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity};
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity, ItemKey};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -62,6 +62,21 @@ pub(super) const MARKED_UNSEEN: &str = "
 /// move Last seen alone. Null until the user marks the item seen, so what stood before this column still
 /// Needs attention.
 pub(super) const ACKNOWLEDGED: &str = "ALTER TABLE last_seen ADD COLUMN acknowledged_at INTEGER;";
+
+/// The items the user archived (#490), each under the key that names it, with the moment Archive marked it
+/// seen up to. Like Last seen, it is the user's own state, kept in Tsugiki only.
+pub(super) const ARCHIVED: &str = "
+    CREATE TABLE archived (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        kind TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (repository, kind, number)
+    ) WITHOUT ROWID;
+";
+
+const ISSUE: &str = "issue";
+const PULL_REQUEST: &str = "pull_request";
 
 const COMMIT: &str = "commit";
 const COMMENT: &str = "comment";
@@ -177,6 +192,17 @@ pub(super) fn mark_seen(
     up_to: Option<OffsetDateTime>,
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
+    mark_seen_in(&transaction, repository, numbers, up_to)?;
+    transaction.commit()
+}
+
+/// Mark Seen on `numbers`, as `mark_seen` says, in a transaction of the caller's.
+fn mark_seen_in(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    numbers: &[u32],
+    up_to: Option<OffsetDateTime>,
+) -> rusqlite::Result<()> {
     for number in numbers {
         let item = named_params! { ":repository": repository, ":number": number };
         let _cleared = transaction.execute(
@@ -198,27 +224,135 @@ pub(super) fn mark_seen(
             )?;
         }
     }
-    transaction.commit()
+    Ok(())
 }
 
-/// Flags item `number` Marked unseen from `at`. Marking it again starts the flag afresh.
+/// Flags item `number` Marked unseen from `at`, and unarchives it. Marking it again starts the flag afresh.
 pub(super) fn mark_unseen(
-    connection: &Connection,
+    connection: &mut Connection,
     repository: &RepositoryName,
     number: u32,
     at: OffsetDateTime,
 ) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let _flagged = transaction.execute(
+        "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
+         ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
+        named_params! {
+            ":repository": repository,
+            ":number": number,
+            ":at": at.unix_timestamp(),
+        },
+    )?;
+    let _unarchived = transaction.execute(
+        "DELETE FROM archived WHERE repository = :repository AND number = :number",
+        named_params! { ":repository": repository, ":number": number },
+    )?;
+    transaction.commit()
+}
+
+/// `key` as its two columns.
+fn key_columns(key: ItemKey) -> (&'static str, u32) {
+    match key {
+        ItemKey::Issue { number } => (ISSUE, number),
+        ItemKey::PullRequest { number } => (PULL_REQUEST, number),
+    }
+}
+
+/// What Archive writes: the item `key` names, and Mark Seen on `numbers`, the item and its tree, up to
+/// `up_to` as the window drew it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Archiving {
+    pub key: ItemKey,
+    pub numbers: Vec<u32>,
+    pub up_to: Option<OffsetDateTime>,
+}
+
+/// Archive on `archiving`'s item: Mark Seen on its numbers, and the item kept as archived from `up_to`, or
+/// from `now` when the window drew no sync, or from a later moment one of its numbers was acknowledged at.
+/// Archiving it again never moves that moment back.
+pub(super) fn archive(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    archiving: &Archiving,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let Archiving {
+        key,
+        numbers,
+        up_to,
+    } = archiving;
+    let transaction = connection.transaction()?;
+    mark_seen_in(&transaction, repository, numbers, *up_to)?;
+    // A number acknowledged later than `up_to`, as by Mark Seen on another Issue its PR fixes, would
+    // otherwise read as acknowledged after the archive, and so as come back.
+    let mut at = up_to.unwrap_or(now).unix_timestamp();
+    for number in numbers {
+        let acknowledged: Option<i64> = transaction
+            .query_row(
+                "SELECT acknowledged_at FROM last_seen WHERE repository = :repository AND number = :number",
+                named_params! { ":repository": repository, ":number": number },
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        at = at.max(acknowledged.unwrap_or(at));
+    }
+    let (kind, number) = key_columns(*key);
+    let _archived = transaction.execute(
+        "INSERT INTO archived (repository, kind, number, at) VALUES (:repository, :kind, :number, :at)
+         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at)",
+        named_params! {
+            ":repository": repository,
+            ":kind": kind,
+            ":number": number,
+            ":at": at,
+        },
+    )?;
+    transaction.commit()
+}
+
+/// Unarchives the item `key` names, and leaves its Last seen as it is.
+pub(super) fn unarchive(
+    connection: &Connection,
+    repository: &RepositoryName,
+    key: ItemKey,
+) -> rusqlite::Result<()> {
+    let (kind, number) = key_columns(key);
     connection
         .execute(
-            "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
-             ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
-            named_params! {
-                ":repository": repository,
-                ":number": number,
-                ":at": at.unix_timestamp(),
-            },
+            "DELETE FROM archived WHERE repository = :repository AND kind = :kind AND number = :number",
+            named_params! { ":repository": repository, ":kind": kind, ":number": number },
         )
         .map(drop)
+}
+
+/// The archived items of `items`, each with the moment it was archived from.
+fn archived(
+    connection: &Connection,
+    repository: &RepositoryName,
+    items: Items<'_>,
+) -> rusqlite::Result<BTreeMap<ItemKey, OffsetDateTime>> {
+    let condition = items.condition("number");
+    let query =
+        format!("SELECT kind, number, at FROM archived WHERE repository = :repository {condition}");
+    let mut statement = connection.prepare(&query)?;
+    let asked = items.with(vec![(":repository", repository)]);
+    let mut rows = statement.query(asked.as_slice())?;
+    let mut found = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get("kind")?;
+        let number: u32 = row.get("number")?;
+        let key = match kind.as_str() {
+            ISSUE => ItemKey::Issue { number },
+            PULL_REQUEST => ItemKey::PullRequest { number },
+            // A later version's kind, such as Dependency updates, means nothing to this one.
+            _ => continue,
+        };
+        let UnixTime(at) = row.get("at")?;
+        let _replaced = found.insert(key, at);
+    }
+    Ok(found)
 }
 
 /// Remembers when this Repository's first sync began, once.
@@ -340,6 +474,7 @@ pub(super) fn read_facts_of(
         last_seen: moments(connection, &last_seen, repository, items)?,
         acknowledged: moments(connection, &acknowledged, repository, items)?,
         marked_unseen: moments(connection, &marked_unseen, repository, items)?,
+        archived: archived(connection, repository, items)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,
         failed_checks: failed_checks::read(connection, repository, items)?,

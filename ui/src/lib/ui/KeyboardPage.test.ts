@@ -44,7 +44,7 @@ it("lists every action with its key and where it works, in the table's order", (
   expect(rows().map(([action]) => action)).toEqual(keyTable().map((row) => row.title));
   expect(rowOf("Command Palette")).toEqual(["Command Palette", "Ctrl+Shift+P", "Anywhere"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "F7", "Diff"]);
-  expect(rowOf("Archive")).toEqual(["Archive", "E", "Issue list"]);
+  expect(rowOf("Mute")).toEqual(["Mute", "M", "Issue list"]);
   expect(rowOf("Send Comment")).toEqual(["Send Comment", "Ctrl+Enter", "Composer"]);
   expect(rowOf("Reset Layout")).toEqual(["Reset Layout", "No key", "Anywhere"]);
 });
@@ -58,7 +58,7 @@ it("leaves the rows whose action or key holds what the box holds, in any case", 
   render(KeyboardPage);
 
   await filter("archive");
-  expect(rows()).toEqual([["Archive", "E", "Issue list"]]);
+  expect(rows()).toEqual([["Archive", "E", "Anywhere"]]);
 
   await filter("  CTRL+K ");
   const chords = rows().map(([, key]) => key);
@@ -154,7 +154,7 @@ it("marks a remapped key a later remapped action took as lost to it", () => {
   remapKeys({ archive: "f7", mute: "f7" });
   render(KeyboardPage);
 
-  expect(rowOf("Archive")).toEqual(["Archive", "No key remapped F7 went to Mute", "Issue list"]);
+  expect(rowOf("Archive")).toEqual(["Archive", "No key remapped F7 went to Mute", "Anywhere"]);
   expect(rowOf("Mute")).toEqual(["Mute", "F7 remapped", "Issue list"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "No key F7 went to Mute", "Diff"]);
 });

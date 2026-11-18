@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
+use crate::facts::activity::ItemKey;
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, ReviewedCommit};
 use crate::mirror::{CloneRefusal, LookupAt, MirrorRequests};
@@ -53,7 +54,7 @@ impl Item {
     }
 }
 
-/// A mark the user made on an item: seen or unseen.
+/// A mark the user made on an item: seen or unseen, archived or not.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Marked {
     Seen {
@@ -62,6 +63,17 @@ pub(crate) enum Marked {
     },
     /// The flag starts at `at`.
     Unseen { item: Item, at: OffsetDateTime },
+    /// Archive on the item `key` names, with the Mark Seen the window drew for it, at `at`.
+    Archived {
+        repository: RepositoryName,
+        key: ItemKey,
+        mark: SeenMark,
+        at: OffsetDateTime,
+    },
+    Unarchived {
+        repository: RepositoryName,
+        key: ItemKey,
+    },
 }
 
 /// An Issue or a PR on screen, whose conversation the session reads from GitHub.
@@ -239,6 +251,24 @@ impl Fetching {
         let item = Item { repository, number };
         let at = OffsetDateTime::now_utc();
         self.to_session(SessionMessage::Mark(Marked::Unseen { item, at }));
+    }
+
+    /// Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away
+    /// until something new Needs attention there.
+    pub fn archive(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
+        let at = OffsetDateTime::now_utc();
+        let archived = Marked::Archived {
+            repository,
+            key,
+            mark,
+            at,
+        };
+        self.to_session(SessionMessage::Mark(archived));
+    }
+
+    /// Unarchives the item `key` names.
+    pub fn unarchive(&self, repository: RepositoryName, key: ItemKey) {
+        self.to_session(SessionMessage::Mark(Marked::Unarchived { repository, key }));
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an

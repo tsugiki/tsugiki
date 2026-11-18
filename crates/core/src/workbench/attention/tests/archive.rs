@@ -111,7 +111,8 @@ fn an_item_keys_by_its_kind_and_number() {
 fn archive_marks_the_item_seen_and_a_comment_from_before_it_doesnt_bring_it_back() {
     let world = World::new("archive-seen");
     world.has(vec![own(1)]);
-    world.happened(1, vec![comment(&colleague(), hours_ago(2))]);
+    let commented = hours_ago(2);
+    world.happened(1, vec![comment(&colleague(), commented)]);
     world.marked_unseen(1, hours_ago(1));
     assert!(world.workbench().items[0].attention.is_some());
 
@@ -120,7 +121,7 @@ fn archive_marks_the_item_seen_and_a_comment_from_before_it_doesnt_bring_it_back
     assert!(!world.on_workbench(1));
     let facts = world.db.reader.work_facts(&cpython()).unwrap().activity;
     assert_eq!(facts.marked_unseen, BTreeMap::new());
-    assert_eq!(facts.last_seen.get(&1), Some(&hours_ago(2)));
+    assert_eq!(facts.last_seen.get(&1), Some(&commented));
     world.finish();
 }
 

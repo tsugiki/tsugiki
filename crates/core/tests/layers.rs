@@ -312,8 +312,8 @@ const LAYERS: &[Layer] = &[
             "work",
         ],
         why: "Groups what `work` judges into the Workbench's items and builds the view models, which show \
-              what each module below works out. A read sends nothing: the command asks `fetching` for what \
-              it found missing.",
+              what each module below works out. A read sends nothing: the screen's call in `calls` asks \
+              `fetching` for what it found missing.",
     },
     Layer {
         module: "fetching",
@@ -373,6 +373,21 @@ const LAYERS: &[Layer] = &[
               sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
               which it builds on the requests `mirror` gives.",
     },
+    Layer {
+        module: "calls",
+        uses: &[
+            "definitions",
+            "error",
+            "facts",
+            "fetching",
+            "mirror",
+            "repository",
+            "workbench",
+        ],
+        why: "Answers each screen's call: it reads through a view model in `workbench`, queues through \
+              `fetching` what the read found missing, and holds the job in an answer that waits for its \
+              data. The diff on show opens its files on the language servers through `definitions`.",
+    },
 ];
 
 /// An edge that closes a cycle, so it may point down `LAYERS`.
@@ -413,7 +428,8 @@ const CORE: KeptOut = KeptOut {
     why: "the functional core keeps out of the shell",
 };
 
-/// A view model's `read` sends nothing (ADR 0022): the command asks for what the read found missing.
+/// A view model's `read` sends nothing (ADR 0022): the screen's call asks for what the read found missing
+/// (ADR 0023).
 const VIEW_MODELS: KeptOut = KeptOut {
     group: "the view models",
     modules: &["workbench"],

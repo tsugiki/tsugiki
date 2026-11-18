@@ -102,15 +102,20 @@ Tauri's managed state.
 
 1. A screen in `ui/src/lib/state/` calls a command, such as `workbench`, through the generated
    `ui/src/lib/data/bindings.ts`.
-2. The command, in `app/src/lib.rs` or `app/src/slow_commands.rs`, parses its arguments and calls a view
-   model's `read` in the core with the StoreReader, such as `Workbench::read`.
+2. The command, in `app/src/lib.rs` or `app/src/slow_commands.rs`, parses its arguments and makes one call
+   into the core: a view model's `read` with the StoreReader, such as `Workbench::read`, or, for a screen
+   whose read can find data missing, the screen's call in `core/src/calls.rs`, such as
+   `PullRequestWork::pr_files`.
 3. The view model, in `core/src/workbench/`, reads the stored facts in one transaction, has `work` judge
    them, and works out what the screen shows: **Needs attention**, Issue trees with their **Backports**,
    counts. Its `read` sends nothing.
-4. The command asks `fetching` for what the user's screen needs and the read found missing. The Files tab's
-   read says what the Mirror holds of the PR's head and which diff it shows, and its command sends the
-   demands: the PR opened, its head first when the Mirror lacks it, and the Lookup checkout to the diff's
-   ends, where text search looks for it.
+4. The screen's call works out what the read lacks, queues through `fetching` the job that brings it, and
+   answers. An answer that says its data is on the way holds that job
+   ([ADR 0023](adr/0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)).
+   The Files tab's read says what the Mirror lacks and which diff it shows. Its call queues the Mirror's
+   clone, the PR's head first when the Mirror lacks it, or a read of the PR's Conversation when Tsugiki knows
+   no head, and moves the Lookup checkout to the diff's ends, where text search looks for it. Opening a PR
+   reads its Conversation each time.
 5. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again. The settings owner's thread hands the session each Repository's settings a change saves
@@ -163,6 +168,7 @@ The big ones, in the order data passes through them:
 | `work.rs`, `work/` | The functional core: it takes `facts` and returns values. By Issue or PR number it judges what's on the **Workbench** in its own right (`reach.rs`), why it **Needs attention** (`causes.rs`) and each PR's review state (`review_state.rs`). By Repository it works out **Reach** from those and the links, and from Reach the heads the Mirror fetches, the commits it reads patch-ids of, and the checks the store keeps. `sync` and `session` use it, never `workbench`. |
 | `workbench/` | Groups what `work` judges into the Workbench's items, Issue trees with their PRs and **Backports**, and sums each item's Needs attention and its part in Mark Seen over its tree (`attention.rs`). Builds the view models: the Issue list, the Issue view, the PR view and its Files tab, quick open's search (`quick_open.rs`), and the **Inbox** a page at a time (`inbox.rs`), which walks the updates down from where the page starts and reads the trees of what it meets through the links the store keeps and the store's `Snapshot`, so a page costs the same on a cache of any age. A read sends nothing, and `layers.rs` keeps it from `mirror` and `fetching`. |
 | `fetching.rs` | The one entry point for requests for data: the user's demands and the rules' wants, handed to the session's GitHub queue or the Mirror worker's git queue ([ADR 0022](adr/0022-the-users-demands-and-the-rules-wants-go-through-one-handle-to-two-queues.md)). |
+| `calls.rs` | Each screen's call that can find data missing, as the Files tab's does: it reads through a view model, queues through `fetching` the job for what the read lacks, and answers. An answer that waits for data holds the job's `Queued`, which only `fetching` makes ([ADR 0023](adr/0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)). |
 | `patch_ids.rs` | Per-file patch-ids, and which files changed between the reviewed commit and the head, for the Stale review check. |
 | `mirror.rs`, `mirror/` | Cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). |
 | `mirror_source.rs` | Where each Repository's mirror gets its objects, which `settings` keeps and `mirror` clones by. |

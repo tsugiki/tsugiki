@@ -51,12 +51,15 @@ its queue the same way: the user's demands first, then the rules' wants, then ba
 - The writes to GitHub that #393 starts will go ahead of all three.
 
 A demand keeps its rank once GitHub names the head. When the user opens a PR before the session knows its
-head, the app tells the Mirror worker to await it. Once a sync step saves heads, the session hands them over
+head, the core tells the Mirror worker to await it. Once a sync step saves heads, the session hands them over
 too, and the worker puts the opened PR's head at the front of its queue, whether or not the PR is in Reach.
 A want that leaves out an opened PR doesn't drop its head, or the fetch once more that a head GitHub hadn't
 moved to yet gets.
 
 ## Reads send nothing
+
+[ADR 0023](0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)
+supersedes this section where it gives the command the demands: the screen's call in the core sends them.
 
 Reads keep their paths: the StoreReader
 ([ADR 0018](0018-the-window-reads-the-database-on-its-own-read-only-connection.md)), `latest` copies, and the

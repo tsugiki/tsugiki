@@ -525,6 +525,16 @@ impl HeardRequests {
         (requests, heard)
     }
 
+    /// The Repositories whose clones were asked for since the last call.
+    pub(crate) fn clones(&self) -> Vec<RepositoryName> {
+        self.take(|message| {
+            let Message::Clone(repository, ..) = message else {
+                return Err(message);
+            };
+            Ok(repository)
+        })
+    }
+
     /// The heads asked for first since the last call.
     pub(crate) fn firsts(&self) -> Vec<(RepositoryName, PrHead)> {
         self.take(|message| {

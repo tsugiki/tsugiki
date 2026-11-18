@@ -92,6 +92,11 @@ pub(crate) enum SessionMessage {
     Patched(RepositoryName, PatchReads),
 }
 
+/// A job the core queued, which brings the data an answer waits for. Only `Fetching` makes one, as it queues
+/// the job, so an answer that says its data is on the way can't be built while nothing brings it (ADR 0023).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Queued(());
+
 /// Keeps the per-file patch-ids read of commits in a Repository, and the commits that can't be read, as
 /// `Fetching::patch_ids_keeper` gives it.
 pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, PatchReads) + Send>;
@@ -227,9 +232,34 @@ impl Fetching {
     pub fn pull_request_opened(&self, repository: RepositoryName, number: u32, head: HeadInMirror) {
         match head {
             HeadInMirror::Unknown => self.mirrors.await_head(repository, number),
-            HeadInMirror::Missing(head) => self.mirrors.fetch_first(repository, head),
+            HeadInMirror::Missing(head) => {
+                let _fetch = self.fetch_head(repository, head);
+            }
             HeadInMirror::Held => self.mirrors.opened(repository, number),
         }
+    }
+
+    /// A screen waits for `repository`'s Mirror: its clone goes on, or takes its turn after the ones waiting.
+    /// A clone under way, waiting or failed stays as it is.
+    pub fn clone_shown(&self, repository: RepositoryName) -> Queued {
+        self.mirrors.clone_mirror(repository, None);
+        Queued(())
+    }
+
+    /// A screen waits for the head of PR `number`, which Tsugiki doesn't know: the session reads the PR's
+    /// Conversation, which names it. The Mirror worker keeps the PR's ref, and fetches the head first once a
+    /// sync step saves it, if that comes first.
+    pub fn find_head(&self, repository: RepositoryName, number: u32) -> Queued {
+        self.mirrors.await_head(repository.clone(), number);
+        self.fetch_pull_request(repository, number);
+        Queued(())
+    }
+
+    /// A screen waits for `head`, of a PR the user opened, which `repository`'s Mirror lacks. It goes ahead
+    /// of the heads the rules want, and the PR's ref stays until the next launch.
+    pub fn fetch_head(&self, repository: RepositoryName, head: PrHead) -> Queued {
+        self.mirrors.fetch_first(repository, head);
+        Queued(())
     }
 
     /// The Files tab shows the diff between the ends in `at`, so `repository`'s **Lookup checkout** moves
@@ -264,5 +294,7 @@ impl Fetching {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;

@@ -1,8 +1,6 @@
-use std::sync::mpsc::{self, Receiver};
-
+use super::testing::handle;
 use super::*;
 use crate::facts::CommitSha;
-use crate::mirror::HeardRequests;
 use crate::testing::cpython;
 
 fn head(number: u32) -> PrHead {
@@ -11,13 +9,6 @@ fn head(number: u32) -> PrHead {
         commit: CommitSha::parse(&format!("{number:040x}")).unwrap(),
         target_branch: "main".to_owned(),
     }
-}
-
-/// A handle, what reaches the session through it, and what reaches the Mirror worker.
-fn handle() -> (Fetching, Receiver<SessionMessage>, HeardRequests) {
-    let (messages, incoming) = mpsc::channel();
-    let (mirrors, heard) = HeardRequests::new();
-    (Fetching::new(messages, mirrors), incoming, heard)
 }
 
 #[test]

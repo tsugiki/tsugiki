@@ -116,6 +116,12 @@ const LAYERS: &[Layer] = &[
               clones by, so `settings` needn't use `mirror`.",
     },
     Layer {
+        module: "mirror_queue",
+        uses: &["repository"],
+        why: "Picks the Mirror worker's next job from what it holds queued in each Repository, so a test of \
+              the order needs no thread and no git.",
+    },
+    Layer {
         module: "web",
         uses: &["error", "repository"],
         why: "Checks an address before the browser opens it, and builds a Repository's addresses.",
@@ -242,6 +248,7 @@ const LAYERS: &[Layer] = &[
             "folders",
             "github",
             "latest",
+            "mirror_queue",
             "mirror_source",
             "patch_ids",
             "repository",
@@ -249,8 +256,9 @@ const LAYERS: &[Layer] = &[
             "token",
         ],
         why: "Clones and fetches PR heads into this build's folders with the token, and says how on the \
-              status board. It reads the patch-ids of the commits it keeps through `diff`. Its requests \
-              read a copy of the clones that wait for an answer.",
+              status board. It reads the patch-ids of the commits it keeps through `diff`, and runs the \
+              jobs in the order `mirror_queue` picks. Its requests read a copy of the clones that wait for \
+              an answer.",
     },
     Layer {
         module: "definitions",
@@ -386,7 +394,7 @@ struct Cycle {
 const CYCLES: &[Cycle] = &[];
 
 /// The functional core: these modules take facts and return values.
-const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "work"];
+const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "mirror_queue", "work"];
 
 /// The imperative shell, which the functional core may not use: the database, `github`'s client, the
 /// Mirrors, the values threads share, the requests for data, and the threads that sync.

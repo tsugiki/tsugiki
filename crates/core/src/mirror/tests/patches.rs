@@ -147,6 +147,32 @@ fn the_commits_of_one_hand_over_are_handed_over_together() {
 }
 
 #[test]
+fn a_clone_asked_for_during_the_reads_starts_once_they_end() {
+    let place = Place::new("patches-then-clone");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let faked = place.faked_hearing_patches();
+    let [first, second] = [1, 2].map(|number| head(number).commit);
+
+    let wanted = vec![on_main(&first), on_main(&second)];
+    faked.mirrors.requests().read_patch_ids(cpython, wanted);
+    let first_read = faked.next_read();
+    // It waits for the reads, and comes while the first runs, so no message follows the last.
+    faked
+        .mirrors
+        .requests()
+        .clone_mirror(named("octo-org/hello"), download());
+    first_read.give(&["NEWS"]);
+    faked.next_read().give(&["NEWS"]);
+    let clone = faked.starts.recv_timeout(PLENTY).unwrap();
+    let cloned = clone.cloned();
+    clone.fail();
+    faked.mirrors.stop_cleanly(PLENTY);
+
+    assert_eq!(cloned.to_string(), "octo-org/hello");
+}
+
+#[test]
 fn a_commit_asked_for_again_after_its_hand_over_is_read_again_as_its_save_may_have_failed() {
     let place = Place::new("patches-again");
     let cpython = named("python/cpython");

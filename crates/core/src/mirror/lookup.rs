@@ -14,6 +14,7 @@ use std::sync::mpsc::Sender;
 use super::upkeep::remove_if_there;
 use super::{Job, MirrorProblem, Run, Worker};
 use crate::facts::CommitSha;
+use crate::mirror_queue::Problem;
 use crate::repository::RepositoryName;
 
 /// The two ends of the PR on screen, as its diff has them.
@@ -48,6 +49,11 @@ impl Lookup {
     /// with the old mirror, so the next move makes it afresh.
     pub(super) fn forget(&mut self) {
         self.left = Left::Unknown;
+    }
+
+    /// Whether a move waits.
+    pub(super) fn waits(&self) -> bool {
+        self.wanted.is_some()
     }
 }
 
@@ -124,10 +130,10 @@ impl Worker {
         reply: Sender<Option<LookupCheckout>>,
     ) {
         let stuck = self.folders.is_err()
-            || matches!(
-                self.problem,
-                Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-            );
+            || self
+                .problem
+                .as_ref()
+                .is_some_and(MirrorProblem::leaves_no_git);
         let moving = self.moving(repository).is_some();
         self.change_heads(repository, |known| {
             let lookup = &mut known.lookup;
@@ -143,23 +149,23 @@ impl Worker {
         self.answer_readers(repository);
     }
 
-    /// Starts the next move a Lookup checkout waits for, in a Repository whose mirror is there, unless a git
-    /// is under way. Short of disk, it only moves a checkout that is there, as making one writes as many
-    /// files as the Repository has.
-    pub(super) fn start_lookup_move(&mut self) {
-        let (None, Ok(folders)) = (&self.job, &self.folders) else {
-            return;
-        };
-        let found = self.heads.iter_mut().find(|known| {
-            known.lookup.wanted.is_some() && folders.mirror(&known.repository).exists()
-        });
-        let Some((repository, Some(to), failed)) = found.map(|known| {
-            let lookup = &mut known.lookup;
-            let failed = matches!(lookup.left, Left::Failed(_));
-            (known.repository.clone(), lookup.wanted.take(), failed)
-        }) else {
-            return;
-        };
+    /// Starts the move `repository`'s Lookup checkout waits for. Short of disk, it only moves a checkout
+    /// that is there, as making one writes as many files as the Repository has.
+    pub(super) fn start_lookup_move(&mut self, repository: &RepositoryName) {
+        if let Some((trip, step)) = self.take_trip(repository) {
+            self.start_trip(trip, step);
+        }
+    }
+
+    /// Takes the move `repository`'s Lookup checkout waits for, with its first step: a reset of the
+    /// checkout, or a make afresh where it isn't there or its last move failed.
+    fn take_trip(&mut self, repository: &RepositoryName) -> Option<(Trip, Step)> {
+        let folders = self.folders.as_ref().ok()?;
+        let known = (self.heads.iter_mut()).find(|known| known.repository.is_same(repository))?;
+        let lookup = &mut known.lookup;
+        let to = lookup.wanted.take()?;
+        let failed = matches!(lookup.left, Left::Failed(_));
+        let repository = known.repository.clone();
         let trip = Trip {
             mirror: folders.mirror(&repository),
             folder: folders.lookup(&repository),
@@ -173,7 +179,14 @@ impl Worker {
         } else {
             Step::Make
         };
-        if step == Step::Make && matches!(self.problem, Some(MirrorProblem::DiskShort { .. })) {
+        Some((trip, step))
+    }
+
+    /// Starts `trip` at `step`.
+    fn start_trip(&mut self, trip: Trip, step: Step) {
+        let disk_short =
+            self.problem.as_ref().map(MirrorProblem::holds_back) == Some(Problem::DiskShort);
+        if step == Step::Make && disk_short {
             let Trip { repository, to, .. } = trip;
             log::warn!("Tsugiki doesn't make {repository}'s Lookup checkout, as the disk is short");
             self.moved(&repository, Left::Failed(to));

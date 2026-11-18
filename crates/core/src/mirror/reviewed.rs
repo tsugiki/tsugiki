@@ -59,6 +59,11 @@ impl Reviews {
             .get_or_insert_with(|| read_refused(repository, mirror))
     }
 
+    /// Whether a commit waits to be kept.
+    pub(super) fn waits(&self) -> bool {
+        !self.waiting.is_empty()
+    }
+
     /// Keeps each reviewed commit again, in a mirror cloned anew.
     pub(super) fn keep_again(&mut self) {
         let kept = mem::take(&mut self.kept);
@@ -142,30 +147,40 @@ impl Worker {
         self.change_heads(repository, |known| change(&mut known.reviews));
     }
 
-    /// Starts keeping the reviewed commits that wait in the first Repository whose mirror is there, while
-    /// the worker is going. Says whether it took any, as it may start no git, and the caller then looks for
-    /// the next thing to do.
-    pub(super) fn start_keeping_reviewed(&mut self) -> bool {
-        let Ok(folders) = self.folders.as_ref() else {
-            return false;
-        };
-        if self.pace != Pace::Going {
-            return false;
+    /// Starts keeping the reviewed commits that wait in `repository`. It takes them all, though it may
+    /// start no git.
+    pub(super) fn start_keeping_reviewed(&mut self, repository: &RepositoryName) {
+        if let Some((repository, mirror, waiting)) = self.take_reviewed(repository) {
+            self.keep_reviewed(repository, mirror, waiting);
         }
-        let found = self.heads.iter_mut().find(|known| {
-            !known.reviews.waiting.is_empty() && folders.mirror(&known.repository).exists()
-        });
-        let Some(known) = found else {
-            return false;
-        };
+    }
+
+    /// Takes the reviewed commits that wait in `repository`, apart from those GitHub refused to send, with
+    /// where its mirror is.
+    fn take_reviewed(
+        &mut self,
+        repository: &RepositoryName,
+    ) -> Option<(RepositoryName, PathBuf, BTreeMap<u32, CommitSha>)> {
+        let folders = self.folders.as_ref().ok()?;
+        let known = (self.heads.iter_mut()).find(|known| known.repository.is_same(repository))?;
         let repository = known.repository.clone();
         let mirror = folders.mirror(&repository);
         let reviews = &mut known.reviews;
         let mut waiting = mem::take(&mut reviews.waiting);
         let refused = reviews.refused(&repository, &mirror);
         waiting.retain(|_, commit| !refused.contains(commit));
+        Some((repository, mirror, waiting))
+    }
+
+    /// Points the refs of the commits of `waiting` that `mirror` has, and fetches the others.
+    fn keep_reviewed(
+        &mut self,
+        repository: RepositoryName,
+        mirror: PathBuf,
+        waiting: BTreeMap<u32, CommitSha>,
+    ) {
         if waiting.is_empty() {
-            return true;
+            return;
         }
         // Each comes back at the next hand-over.
         let present = match self.present(&mirror, &waiting) {
@@ -174,7 +189,7 @@ impl Worker {
                 log::warn!(
                     "Tsugiki can't read which reviewed commits {repository}'s mirror has: {cause}"
                 );
-                return true;
+                return;
             }
         };
         let (present, missing): (BTreeMap<_, _>, BTreeMap<_, _>) =
@@ -184,7 +199,6 @@ impl Worker {
         } else {
             self.start_step(repository, mirror, Step::Point { present, missing });
         }
-        true
     }
 
     /// The commits of `commits` that `mirror` has.

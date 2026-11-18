@@ -30,7 +30,7 @@ pub(crate) struct Mirrored {
 /// A NEWS entry main has before the PR starts, which a PR can delete.
 pub(super) const OLD_NEWS: &str = "Misc/NEWS.d/next/Library/2026-01-01-00-00-00.gh-issue-2.Old.rst";
 
-/// The mirror [`Mirrored::new`] copies, and its PR's head. About 15 gits build it, once in a test run.
+/// The mirror [`Mirrored::new`] copies, and its PR's head. Several gits build it, once in a test run.
 static BUILT: OnceLock<(Snapshot, CommitSha)> = OnceLock::new();
 
 impl Mirrored {

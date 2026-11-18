@@ -31,7 +31,7 @@ fn main() {
     divan::main();
 }
 
-/// The PRs a first sync of CPython held on 2026-11-05 (ADR 0015). The view queries' 50 ms budget is held to
+/// The PRs a first sync of CPython held (ADR 0015). The view queries' 50 ms budget is held to
 /// this size (ADR 0017).
 const FIRST_SYNC_PRS: u32 = 3_631;
 

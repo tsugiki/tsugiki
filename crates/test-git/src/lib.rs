@@ -30,8 +30,7 @@ pub fn committer() -> String {
 }
 
 /// The config of each git a test runs: the author, and `maintenance.auto=false`. Without it, each commit
-/// would start a `git maintenance run --auto`, about 500 processes in a run of the core's tests, for
-/// repositories too small to need it.
+/// would start a `git maintenance run --auto`, for repositories too small to need it.
 fn config() -> [String; 6] {
     [
         "-c".to_owned(),
@@ -467,7 +466,7 @@ fn remove_once(path: &Path) -> io::Result<()> {
 
 /// What a folder holds, read into memory: each folder in it, empty ones included, and each file with its
 /// bytes. A fixture that many tests share builds once with git, and each test writes its own copy from this
-/// without starting a git. On Windows a git costs about 30 ms to start.
+/// without starting a git, which is slow on Windows (ADR 0003).
 pub struct Snapshot {
     /// Paths relative to the folder read, each folder before what it holds.
     entries: Vec<(PathBuf, Entry)>,

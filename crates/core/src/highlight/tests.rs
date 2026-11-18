@@ -401,7 +401,7 @@ fn a_file_s_extension_is_what_follows_the_last_dot_of_a_name_with_more_before_it
     assert!(File::Name("Makefile").holds("Makefile"));
 }
 
-/// 13,000 lines of C, as the `highlight` bench has, whose tree takes 7.8 MB.
+/// 13,000 lines of C, as the `highlight` bench has.
 fn long_c() -> String {
     let function = |n: u32| {
         [

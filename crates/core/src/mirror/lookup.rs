@@ -12,8 +12,9 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
 use super::upkeep::remove_if_there;
-use super::{Job, MirrorProblem, Run, Worker, without_git};
+use super::{Job, MirrorProblem, Run, Worker};
 use crate::facts::CommitSha;
+use crate::mirror_queue::Problem;
 use crate::repository::RepositoryName;
 
 /// The two ends of the PR on screen, as its diff has them.
@@ -128,7 +129,11 @@ impl Worker {
         repository: &RepositoryName,
         reply: Sender<Option<LookupCheckout>>,
     ) {
-        let stuck = self.folders.is_err() || without_git(self.problem.as_ref());
+        let stuck = self.folders.is_err()
+            || self
+                .problem
+                .as_ref()
+                .is_some_and(MirrorProblem::leaves_no_git);
         let moving = self.moving(repository).is_some();
         self.change_heads(repository, |known| {
             let lookup = &mut known.lookup;
@@ -179,7 +184,9 @@ impl Worker {
 
     /// Starts `trip` at `step`.
     fn start_trip(&mut self, trip: Trip, step: Step) {
-        if step == Step::Make && matches!(self.problem, Some(MirrorProblem::DiskShort { .. })) {
+        let disk_short =
+            self.problem.as_ref().map(MirrorProblem::holds_back) == Some(Problem::DiskShort);
+        if step == Step::Make && disk_short {
             let Trip { repository, to, .. } = trip;
             log::warn!("Tsugiki doesn't make {repository}'s Lookup checkout, as the disk is short");
             self.moved(&repository, Left::Failed(to));

@@ -1459,6 +1459,33 @@ fn a_pr_opened_before_its_head_is_known_gets_its_head_ahead_of_the_want_once_it_
 }
 
 #[test]
+fn a_pr_whose_head_no_read_names_awaits_it_no_more() {
+    let place = Place::new("awaited-no-head");
+    let (cpython, hello) = (named("python/cpython"), named("octo-org/hello"));
+    place.mirrored(&cpython);
+    place.mirrored(&hello);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.await_head(cpython.clone(), 7);
+    requests.no_head(cpython.clone(), 7);
+    requests.fetch_heads(hello, vec![head(5)]);
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(7)]);
+    requests.heads_saved(cpython, vec![head(7)]);
+    first.succeed();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(next.refspecs(), [refspec(5)], "PR 7's head takes its turn");
+    next.succeed();
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(7)]);
+    wanted.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
 fn a_saved_head_of_a_pr_nobody_awaits_waits_for_the_want() {
     let place = Place::new("saved-unawaited");
     let cpython = named("python/cpython");

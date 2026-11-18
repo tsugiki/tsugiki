@@ -122,6 +122,30 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
 }
 
 #[test]
+fn a_conversation_says_when_the_commit_of_the_users_latest_review_moved() {
+    let world = World::new("reviewed-moved");
+    let reviewed = |commit| {
+        with_reviews(vec![review(
+            "octocat",
+            ReviewState::Approved,
+            Some(commit),
+            0,
+        )])
+    };
+    let moved = |content| {
+        (world.db.store)
+            .save_read_of_pull_request(&cpython(), 1, content)
+            .unwrap()
+            .reviewed_moved
+    };
+
+    assert!(moved(reviewed("aaaaaaa")), "the user's first Review");
+    assert!(!moved(reviewed("aaaaaaa")), "the same Review read again");
+    assert!(moved(reviewed("bbbbbbb")), "a Review of a newer commit");
+    world.finish();
+}
+
+#[test]
 fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_alone() {
     let world = World::new("conversation-head");
     let kept = PullRequestFacts {
@@ -134,10 +158,11 @@ fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_a
         store
             .save_read_of_pull_request(&cpython(), number, content)
             .unwrap()
+            .head
     };
-    let named = |number| PrHead {
+    let at = |number, commit| PrHead {
         number,
-        commit: sha("ccccccc"),
+        commit: sha(commit),
         target_branch: "main".to_owned(),
     };
     let unnamed = PullRequestContent {
@@ -145,8 +170,15 @@ fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_a
         ..with_reviews(vec![])
     };
 
-    assert_eq!(save(1, with_reviews(vec![])), HeadKept::Filled(named(1)));
-    assert_eq!(save(2, with_reviews(vec![])), HeadKept::Had(named(2)));
+    assert_eq!(
+        save(1, with_reviews(vec![])),
+        HeadKept::Filled(at(1, "ccccccc"))
+    );
+    assert_eq!(
+        save(2, with_reviews(vec![])),
+        HeadKept::Had(at(2, "aaaaaaa")),
+        "the head the facts keep, which the Files tab asks for"
+    );
     assert_eq!(save(3, unnamed), HeadKept::Unnamed);
     assert_eq!(save(4, with_reviews(vec![])), HeadKept::NoFacts);
 

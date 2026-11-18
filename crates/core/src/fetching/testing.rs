@@ -1,7 +1,6 @@
 use std::sync::mpsc::{self, Receiver};
 
-use super::{Fetched, Fetching, Item, Marked, SessionMessage};
-use crate::latest::{self, LatestWriter};
+use super::{Fetched, Fetching, Headless, Marked, SessionMessage};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::SavedBy;
 
@@ -30,21 +29,13 @@ pub(crate) fn handle() -> (Fetching, Receiver<SessionMessage>, HeardRequests) {
     (fetching, incoming, heard)
 }
 
-/// A handle as `handle` makes it, and the writer of the PRs whose Conversation, as the session read it,
-/// named no head.
-pub(crate) fn handle_with_headless() -> (
-    Fetching,
-    Receiver<SessionMessage>,
-    HeardRequests,
-    LatestWriter<Vec<Item>>,
-) {
+/// A handle as `handle` makes it, and the PRs whose Conversation, as the session read it, named no head,
+/// which the handle shares.
+pub(crate) fn handle_with_headless() -> (Fetching, Receiver<SessionMessage>, HeardRequests, Headless)
+{
     let (messages, incoming) = mpsc::channel();
     let (mirrors, heard) = HeardRequests::new();
-    let (headless, reader) = latest::channel(Vec::new());
-    (
-        Fetching::new(messages, mirrors, reader),
-        incoming,
-        heard,
-        headless,
-    )
+    let headless = Headless::default();
+    let fetching = Fetching::new(messages, mirrors, headless.clone());
+    (fetching, incoming, heard, headless)
 }

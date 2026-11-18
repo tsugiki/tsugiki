@@ -115,8 +115,9 @@ pub(super) fn save(
     repository: &RepositoryName,
     number: u32,
     content: &PullRequestContent,
-) -> rusqlite::Result<HeadKept> {
+) -> rusqlite::Result<ConversationSaved> {
     let transaction = connection.transaction()?;
+    let reviewed_before = reviewed_commit(&transaction, repository, number)?;
     issue_content::save_in(&transaction, repository, number, &content.conversation)?;
     let asked = named_params! { ":repository": repository, ":number": number };
     let _ = transaction.execute(
@@ -166,8 +167,20 @@ pub(super) fn save(
     }
     // A refresh that owed this read, and stops before it finishes, leaves the next one less to read.
     sync_state::forget_read_ahead_of(&transaction, repository, number)?;
+    let reviewed_moved = reviewed_commit(&transaction, repository, number)? != reviewed_before;
     transaction.commit()?;
-    Ok(kept)
+    Ok(ConversationSaved {
+        head: kept,
+        reviewed_moved,
+    })
+}
+
+/// What saving a PR's Conversation changed beside it: the head in the PR's facts, and whether the commit the
+/// user's latest Review of the PR covered moved, which the Mirror keeps for the Stale review check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSaved {
+    pub head: HeadKept,
+    pub reviewed_moved: bool,
 }
 
 /// What saving a PR's Conversation did to the head in the PR's facts.
@@ -177,10 +190,22 @@ pub enum HeadKept {
     Unnamed,
     /// The facts hold no PR of that number, so nothing there keeps the head.
     NoFacts,
-    /// The facts held a head already. `head` is the one the Conversation names.
+    /// The facts held a head already, which stays: the head the Files tab asks for.
     Had(PrHead),
     /// The facts had no head, and keep the one the Conversation names.
     Filled(PrHead),
+}
+
+/// The commit the user's latest Review of PR `number` covered, as `reviewed_commits` says.
+fn reviewed_commit(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<CommitSha>> {
+    let reviewed = reviewed_commits(transaction, repository)?;
+    Ok((reviewed.into_iter())
+        .find(|reviewed| reviewed.number == number)
+        .map(|reviewed| reviewed.commit))
 }
 
 /// A PR stored before Tsugiki kept heads has none, and the sync reads it again only once it changes, so it
@@ -197,27 +222,27 @@ fn keep_head(
          WHERE repository = :repository AND number = :number AND head IS NULL",
         asked,
     )? > 0;
-    let target_branch: Option<String> = transaction
+    let kept: Option<(Option<CommitSha>, String)> = transaction
         .query_row(
-            "SELECT target_branch FROM pull_requests WHERE repository = :repository AND number = :number",
+            "SELECT head, target_branch FROM pull_requests
+             WHERE repository = :repository AND number = :number",
             named_params! { ":repository": repository, ":number": number },
-            |row| row.get(0),
+            |row| Ok((row.get("head")?, row.get("target_branch")?)),
         )
         .optional()?;
-    Ok(match target_branch {
-        None => HeadKept::NoFacts,
-        Some(target_branch) => {
-            let head = PrHead {
-                number,
-                commit: commit.clone(),
-                target_branch,
-            };
-            if filled {
-                HeadKept::Filled(head)
-            } else {
-                HeadKept::Had(head)
-            }
-        }
+    // The update leaves no PR it finds without a head.
+    let Some((Some(commit), target_branch)) = kept else {
+        return Ok(HeadKept::NoFacts);
+    };
+    let head = PrHead {
+        number,
+        commit,
+        target_branch,
+    };
+    Ok(if filled {
+        HeadKept::Filled(head)
+    } else {
+        HeadKept::Had(head)
     })
 }
 

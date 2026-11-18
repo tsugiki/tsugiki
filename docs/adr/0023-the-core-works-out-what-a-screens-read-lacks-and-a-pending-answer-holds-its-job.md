@@ -29,11 +29,12 @@ arguments and makes the call.
   the head, and the store keeps that head in the PR's facts when they have none. Every reader of the facts
   then sees it: the Files tab, the Mirror's head wants, Reach, Stale review and patch-ids.
 - A job that brought nothing new ends the wait. When the session's read of a Conversation since launch
-  named no head, the Files tab says so, where queuing the read again would bring the same. A Conversation
-  an older Tsugiki saved kept no head, so its PR's tab reads the Conversation again.
-- A demand for a read already waiting or under way in the session's queue shares that read, whose outcome,
-  a failure too, answers both. A demand that comes after the read ends starts another. Opening a PR and its
-  Files tab's read then ask GitHub once between them.
+  named no head, the Files tab says so, where queuing the read again would bring the same, until a demand
+  asks for another read. A Conversation an older Tsugiki saved kept no head, so its PR's tab reads the
+  Conversation again.
+- A demand for a read already waiting in the session's queue, or under way until GitHub answers, shares
+  that read, whose outcome, a failure too, answers both. A demand that comes after GitHub answered starts
+  another. Opening a PR and its Files tab's read then ask GitHub once between them.
 - The Files tab queues the clone only of a Repository the settings list. Another has no mirror to wait for,
   and its read says so.
 
@@ -59,15 +60,17 @@ arguments and makes the call.
 - A test of a call checks the answer, and what reached a session and a Mirror worker that only listen.
 - Each read of a Files tab that waits for its Mirror queues the clone again. The Mirror worker leaves a clone
   under way, waiting or failed as it is.
-- The Mirror worker still awaits the head of a PR opened before Tsugiki knew it. The session hands it the
-  head each Conversation names, as it hands a sync step's, so the head keeps the demand's rank whichever
-  names it first. The session merges a read's demands before it hands the head over, so the worker hears
-  each await they sent before the head that answers it. Only a head the store filled sends the rules' wants
-  again.
-- A read that fails, or a Conversation that names no head, leaves the await in place until a sync step
-  names the head.
+- The Mirror worker still awaits the head of a PR opened before Tsugiki knew it. After each Conversation
+  the session hands it the head the PR's facts keep, the one the Files tab asks for, as it hands a sync
+  step's, so the head keeps the demand's rank whichever names it first. The session merges a read's
+  demands before it hands the head over, so the worker hears each await they sent before the head that
+  answers it. A head the store filled, or a Review of the user's that covers another commit, sends the
+  rules' wants again.
+- A Conversation that names no head, or a PR the facts don't hold, ends the await. A read that fails leaves
+  it in place until a sync step names the head.
 - The session's queue keeps the messages it took off the channel while merging, ahead of the channel, in
   the order they came.
-- `Fetching` reads the PRs whose Conversation named no head through a `latest` channel the session writes.
+- `Fetching` and the session share the PRs whose Conversation named no head in one list behind a lock. The
+  session adds a PR, and a demand for the PR's Conversation takes it off.
 - `crates/app` can still name `Fetching` and a view model's raw `read`, so nothing yet stops a command from
   sending a demand itself.

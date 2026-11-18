@@ -12,16 +12,17 @@ use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
-use crate::fetching::{Fetched, Fetching, Item, Marked, MirrorWant, SessionMessage};
+use crate::fetching::{Fetched, Fetching, Headless, Item, Marked, MirrorWant, SessionMessage};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
-use crate::latest::{self, LatestWriter};
 use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
 use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
-use crate::store::{self, HeadKept, OpenReader, ReaderToOpen, Store, StoreReader};
+use crate::store::{
+    self, ConversationSaved, HeadKept, OpenReader, ReaderToOpen, Store, StoreReader,
+};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched};
@@ -102,8 +103,8 @@ impl Session {
             mirrors,
         } = connections;
         let (messages, incoming) = mpsc::channel();
-        let (headless, headless_reader) = latest::channel(Vec::new());
-        let fetching = Fetching::new(messages, mirrors, headless_reader);
+        let headless = Headless::default();
+        let fetching = Fetching::new(messages, mirrors, headless.clone());
         fetching.hand_patch_ids_to_session();
         let (finishing, finished) = mpsc::channel::<()>();
         let (to_open, reader) = store::reader();
@@ -162,7 +163,8 @@ struct Refreshes {
     backlog: RefCell<VecDeque<SessionMessage>>,
     /// The handle the session hands the rules' wants to the Mirror worker through.
     fetching: Fetching,
-    headless: RefCell<Headless>,
+    /// The PRs whose Conversation named no head, which `fetching` shares.
+    headless: Headless,
 }
 
 /// When the next of each kind of question is due.
@@ -211,18 +213,14 @@ impl Refreshes {
         intervals: Intervals,
         incoming: Receiver<SessionMessage>,
         fetching: Fetching,
-        headless: LatestWriter<Vec<Item>>,
+        headless: Headless,
     ) -> Self {
-        let headless = Headless {
-            items: Vec::new(),
-            readers: headless,
-        };
         Self {
             intervals,
             incoming,
             backlog: RefCell::new(VecDeque::new()),
             fetching,
-            headless: RefCell::new(headless),
+            headless,
         }
     }
 
@@ -335,25 +333,6 @@ const HOUR_CHECK: Duration = Duration::from_secs(60);
 fn hour_check(github: &GitHub) -> Option<Instant> {
     let left = github.hour_left()?;
     Some(Instant::now() + left.min(HOUR_CHECK))
-}
-
-/// The PRs whose Conversation, as the session last read it since launch, named no head, which the session
-/// alone writes and `Fetching` reads. A Conversation an older Tsugiki saved kept no head, so only a read
-/// GitHub answered says the PR has none.
-struct Headless {
-    items: Vec<Item>,
-    readers: LatestWriter<Vec<Item>>,
-}
-
-impl Headless {
-    /// A read of PR `item`'s Conversation saved it, and did what `kept` says to its head.
-    fn read(&mut self, item: &Item, kept: &HeadKept) {
-        self.items.retain(|headless| !headless.is(item));
-        if matches!(kept, HeadKept::Unnamed) {
-            self.items.push(item.clone());
-        }
-        self.readers.set(&self.items);
-    }
 }
 
 /// The database a session opens when it starts.
@@ -522,8 +501,9 @@ fn hand_over_rules_wants(
     syncs: &Syncs,
     repository: &RepositoryName,
 ) -> Option<WorkFacts> {
+    let settings = syncs.settings(repository)?;
     let facts = store.work_facts(repository).ok()?;
-    let work = MirrorWork::of(&facts, syncs.settings(repository)?);
+    let work = MirrorWork::of(&facts, settings);
     let stated = Stated {
         repository,
         facts: &facts,
@@ -733,59 +713,82 @@ struct Reading<'a> {
     syncs: &'a Syncs,
 }
 
-/// Reads what an Issue or a PR says, keeps it, and tells the window, as `fetch_conversation` says. The
-/// demands for the same read that came while it waited or ran share what it brought, its failure too.
+/// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. The demands for the same
+/// read that came before GitHub answered share its answer, its failure too.
 ///
-/// A PR's Conversation names its head, and the Mirror worker hears it is saved, so a PR the user opened
-/// before Tsugiki knew its head gets it first. The demands are merged before that, so the worker hears of
-/// each await their screens sent before it hears the head. A head the store filled in the PR's facts
-/// changes what the rules want, so the worker hears their wants again first.
+/// GitHub numbers Issues and PRs from one sequence, so they share where they are kept. If the read fails,
+/// the view goes on showing what was last read, and the window hears why. An error returned here speaks
+/// for all of GitHub, so the status bar and the syncs need to hear it. Any other trouble is this one item's,
+/// and goes to the log.
 fn read_conversation(
     board: &mut StatusBoard,
     store: &Store,
     read: &Reading<'_>,
     fetched: &Fetched,
 ) -> Result<(), Error> {
-    let kept = fetch_conversation(board, store, read.github, fetched);
+    let answered = ask_github(board, read.github, fetched);
     read.queue.merge(fetched);
-    let Some(Kept { change, head }) = kept? else {
+    let Some(content) = answered? else {
         return Ok(());
     };
-    if let Some(head) = &head {
-        let fetching = &read.queue.fetching;
-        let repository = &change.repository;
-        match head {
-            HeadKept::Filled(saved) => {
-                let _wanted = hand_over_rules_wants(fetching, store, read.syncs, repository);
-                fetching.heads_saved(repository, vec![saved.clone()]);
-            }
-            HeadKept::Had(saved) => fetching.heads_saved(repository, vec![saved.clone()]),
-            HeadKept::Unnamed | HeadKept::NoFacts => {}
+    let item = fetched.item();
+    let change = match keep_conversation(board, store, item, content) {
+        None => return Ok(()),
+        Some(Kept::Issue(change)) => change,
+        Some(Kept::PullRequest(change, saved)) => {
+            hand_over_head(store, read, item, &saved);
+            change
         }
-        read.queue.headless.borrow_mut().read(fetched.item(), head);
-    }
+    };
     board.changed(&change);
     Ok(())
 }
 
-/// What a read of a conversation kept: the change the window hears, and for a PR what the save did to the
-/// head in its facts.
-#[derive(Debug, PartialEq, Eq)]
-struct Kept {
-    change: Change,
-    head: Option<HeadKept>,
+/// Tells the Mirror worker and the Files tab what keeping PR `item`'s Conversation did, as `saved` says.
+///
+/// The Conversation names the PR's head, and the worker hears the head the facts keep is saved, so a PR the
+/// user opened before Tsugiki knew its head gets it first. The demands were merged before this, so the
+/// worker hears each await their screens sent before the head that answers it. A Conversation that names
+/// no head, or a PR the facts don't hold, ends the await. A head the store filled, or a Review of the
+/// user's that covers another commit, changes what the rules want, so the worker hears their wants again
+/// first.
+fn hand_over_head(store: &Store, read: &Reading<'_>, item: &Item, saved: &ConversationSaved) {
+    let fetching = &read.queue.fetching;
+    let repository = &item.repository;
+    if matches!(saved.head, HeadKept::Filled(_)) || saved.reviewed_moved {
+        let _wanted = hand_over_rules_wants(fetching, store, read.syncs, repository);
+    }
+    match &saved.head {
+        HeadKept::Filled(head) | HeadKept::Had(head) => {
+            fetching.heads_saved(repository, vec![head.clone()]);
+            read.queue.headless.forget(item);
+        }
+        HeadKept::Unnamed => {
+            fetching.no_head(repository.clone(), item.number);
+            read.queue.headless.named_none(item);
+        }
+        HeadKept::NoFacts => {
+            fetching.no_head(repository.clone(), item.number);
+            read.queue.headless.forget(item);
+        }
+    }
 }
 
-/// Reads what an Issue or a PR says from GitHub, keeps it, and gives what it kept. GitHub numbers both
-/// from one sequence, so they share where they are kept. If this fails, the view goes on showing what was
-/// last read, and the window hears why. An error returned here speaks for all of GitHub, so the status bar
-/// and the syncs need to hear it. Any other trouble is this one item's, and goes to the log.
-fn fetch_conversation(
+/// What a read of a conversation kept: the change the window hears, and for a PR what keeping it did
+/// beside it.
+#[derive(Debug, PartialEq, Eq)]
+enum Kept {
+    Issue(Change),
+    PullRequest(Change, ConversationSaved),
+}
+
+/// What an Issue or a PR says, as GitHub answered `fetched`, or nothing when the read failed for this item
+/// alone, as `read_conversation` says.
+fn ask_github(
     board: &mut StatusBoard,
-    store: &Store,
     github: &GitHub,
     fetched: &Fetched,
-) -> Result<Option<Kept>, Error> {
+) -> Result<Option<Content>, Error> {
     let item = fetched.item();
     let (noun, read) = match fetched {
         Fetched::Issue(_) => {
@@ -819,26 +822,35 @@ fn fetch_conversation(
             return Ok(None);
         }
     };
+    Ok(Some(content))
+}
+
+/// Keeps `content`, what `item` says, and gives what that kept, or nothing when the store can't keep it,
+/// which the status bar shows.
+fn keep_conversation(
+    board: &mut StatusBoard,
+    store: &Store,
+    item: &Item,
+    content: Content,
+) -> Option<Kept> {
     let Item { repository, number } = item;
-    let saved = match content {
-        Content::Issue(content) => {
-            (store.save_issue_content(repository, *number, content)).map(|()| None)
-        }
-        Content::PullRequest(content) => {
-            (store.save_read_of_pull_request(repository, *number, content)).map(Some)
-        }
+    let change = Change {
+        repository: repository.clone(),
+        items: vec![*number],
     };
-    match saved {
-        Ok(head) => Ok(Some(Kept {
-            change: Change {
-                repository: repository.clone(),
-                items: vec![*number],
-            },
-            head,
-        })),
+    let kept = match content {
+        Content::Issue(content) => {
+            (store.save_issue_content(repository, *number, content)).map(|()| Kept::Issue(change))
+        }
+        Content::PullRequest(content) => (store
+            .save_read_of_pull_request(repository, *number, content))
+        .map(|saved| Kept::PullRequest(change, saved)),
+    };
+    match kept {
+        Ok(kept) => Some(kept),
         Err(problem) => {
             board.set(Status::Problem { problem });
-            Ok(None)
+            None
         }
     }
 }

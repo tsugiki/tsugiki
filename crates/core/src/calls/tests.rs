@@ -9,7 +9,7 @@ use crate::definitions::Sources;
 use crate::diff::testing::Mirrored;
 use crate::facts::pull_requests::PrHead;
 use crate::fetching::testing::handle_with_headless;
-use crate::fetching::{Fetched, Item, SessionMessage};
+use crate::fetching::{Fetched, Headless, Item, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::RepositorySettings;
@@ -17,13 +17,13 @@ use crate::settings::{LoadedSettings, Settings};
 use crate::workbench::pr_files::testing::World;
 
 /// PR 7's world, settings that list its Repository, and the queues and language servers its calls ask,
-/// which only listen, with the writers of what the settings say and of the PRs whose Conversation named no
+/// which only listen, with the writer of what the settings say and the PRs whose Conversation named no
 /// head.
 struct Calls {
     world: World,
     settings: LatestWriter<SettingsView>,
     view: LatestReader<SettingsView>,
-    headless: LatestWriter<Vec<Item>>,
+    headless: Headless,
     fetching: Fetching,
     session: Receiver<SessionMessage>,
     heard: HeardRequests,
@@ -258,7 +258,7 @@ fn the_files_tab_of_a_repository_the_settings_dont_list_queues_no_clone() {
 
 #[test]
 fn the_files_tab_of_a_pr_whose_conversation_named_no_head_asks_github_no_more() {
-    let mut calls = Calls::new("no-head-named");
+    let calls = Calls::new("no-head-named");
     let mirrored = Mirrored::new("calls-no-head-named");
     calls.world.mirrors(&mirrored);
     calls.world.has_pr(None, "main");
@@ -267,7 +267,7 @@ fn the_files_tab_of_a_pr_whose_conversation_named_no_head_asks_github_no_more() 
         repository: calls.world.repository(),
         number: 7,
     };
-    calls.headless.set(&vec![read_this_launch]);
+    calls.headless.named_none(&read_this_launch);
 
     let problem = calls
         .work()

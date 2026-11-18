@@ -299,13 +299,12 @@ fn unheard() -> Fetching {
 /// A handle that sends the session's messages through `messages` and the Mirror worker's to `mirrors`, and
 /// hears of no PR whose Conversation named no head.
 fn sending(messages: Sender<SessionMessage>, mirrors: MirrorRequests) -> Fetching {
-    Fetching::new(messages, mirrors, latest::channel(Vec::new()).1)
+    Fetching::new(messages, mirrors, Headless::default())
 }
 
 /// Refreshes whose queue is empty and whose handle reaches nothing, for the fields a test doesn't set.
 fn unheard_refreshes() -> Refreshes {
-    let headless = latest::channel(Vec::new()).0;
-    Refreshes::new(HOURLY, mpsc::channel().1, unheard(), headless)
+    Refreshes::new(HOURLY, mpsc::channel().1, unheard(), Headless::default())
 }
 
 #[test]
@@ -593,14 +592,12 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let access = replying(vec![signed_in(), issue_content_reply()]);
     let github = connect(&mut quiet_board(), &empty_store(), access).unwrap();
 
-    let saved = fetch_conversation(
-        &mut board,
-        &Store::stopped(),
-        &github,
-        &Fetched::Issue(issue_7()),
-    );
+    let content = ask_github(&mut board, &github, &Fetched::Issue(issue_7()))
+        .unwrap()
+        .unwrap();
+    let kept = keep_conversation(&mut board, &Store::stopped(), &issue_7(), content);
 
-    assert_eq!(saved, Ok(None), "nothing saved for the window to hear");
+    assert_eq!(kept, None, "nothing saved for the window to hear");
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
 }
 
@@ -795,16 +792,86 @@ fn a_conversation_that_names_no_head_says_so_until_a_read_names_one() {
         vec![unnamed, pr_content(&json!({}))],
     );
 
+    let _queued = one.demands.find_head(gcmon(), 7);
     one.read(&pr_7());
     let after_unnamed = one.demands.named_no_head(&gcmon(), 7);
     let other_pr = one.demands.named_no_head(&gcmon(), 8);
+    let unawaited = one.heard.asked();
     one.read(&pr_7());
 
     assert!(after_unnamed);
     assert!(!other_pr);
+    assert_eq!(
+        unawaited,
+        [
+            "some-maintainer/gcmon awaits #7",
+            "some-maintainer/gcmon awaits no head of #7"
+        ],
+        "no read will answer the await"
+    );
     assert!(!one.demands.named_no_head(&gcmon(), 7));
     assert_eq!(
         one.heard.asked().last().map(String::as_str),
+        Some("some-maintainer/gcmon saved heads #7 at 0123abc on main")
+    );
+    one.finish();
+}
+
+#[test]
+fn a_new_demand_for_a_conversation_that_named_no_head_waits_for_its_read() {
+    let unnamed = pr_content(&json!({ "headRefOid": "" }));
+    let one = OneRead::new("reopened-no-head", None, vec![unnamed]);
+    one.read(&pr_7());
+
+    one.demands.fetch_pull_request(gcmon(), 7);
+
+    assert!(!one.demands.named_no_head(&gcmon(), 7));
+    one.finish();
+}
+
+#[test]
+fn a_conversation_of_a_pr_whose_facts_hold_another_head_hands_over_the_facts_head() {
+    let one = OneRead::new(
+        "conversation-other-head",
+        Some("4567def"),
+        vec![pr_content(&json!({}))],
+    );
+
+    one.read(&pr_7());
+
+    assert_eq!(
+        one.heard.asked(),
+        ["some-maintainer/gcmon saved heads #7 at 4567def on main"],
+        "the head the Files tab asks for"
+    );
+    one.finish();
+}
+
+#[test]
+fn a_conversation_with_a_new_review_of_the_users_hands_over_the_rules_wants_again() {
+    let review = json!({
+        "id": "R1",
+        "author": { "login": "octocat" },
+        "state": "APPROVED",
+        "submittedAt": "2026-11-04T10:00:00Z",
+        "bodyHTML": "",
+        "isMinimized": false,
+        "minimizedReason": null,
+        "commit": { "oid": "0123abc" },
+    });
+    let reviewed = pr_content(&json!({ "reviews": { "totalCount": 1, "nodes": [review] } }));
+    let one = OneRead::new("conversation-reviewed", Some("0123abc"), vec![reviewed]);
+    one.store.remember_login(&Login::new("octocat")).unwrap();
+
+    one.read(&pr_7());
+
+    let handed = one.heard.asked();
+    assert!(
+        handed.contains(&"some-maintainer/gcmon wants reviewed #7 at 0123abc".to_owned()),
+        "{handed:?}"
+    );
+    assert_eq!(
+        handed.last().map(String::as_str),
         Some("some-maintainer/gcmon saved heads #7 at 0123abc on main")
     );
     one.finish();
@@ -2008,8 +2075,7 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
         }
     };
     let (mut board, heard) = heard_board(on_status, on_change);
-    let headless = latest::channel(Vec::new()).0;
-    let refreshes = Refreshes::new(HOURLY, incoming, fetching, headless);
+    let refreshes = Refreshes::new(HOURLY, incoming, fetching, Headless::default());
 
     watch(&mut board, &empty_store(), access, &refreshes);
 

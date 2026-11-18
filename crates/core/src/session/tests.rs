@@ -1313,6 +1313,16 @@ fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirro
 }
 
 #[test]
+fn a_switch_whose_facts_the_store_cant_read_hands_over_nothing_and_owes_nothing() {
+    let (switched, asked, _, owed) = switch_bugs_on_losing(Some(0));
+
+    // The settings change all the same, and the next step that saves hands the Mirror its heads.
+    assert_eq!(switched, Some(bugs_switched(OnWorkbench::Off)));
+    assert!(asked.iter().all(|line| !line.contains("#8")), "{asked:?}");
+    assert_eq!(owed, BTreeSet::new());
+}
+
+#[test]
 fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let (folders, _folder) = temp_folders("switched-session");
     let store = Store::open(&folders.database()).unwrap();

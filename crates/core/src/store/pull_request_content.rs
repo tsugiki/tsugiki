@@ -345,14 +345,14 @@ pub(super) fn read_heads(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, CommitSha>> {
-    let mut select = connection.prepare(
-        "SELECT number, head_sha FROM issue_content
-         WHERE repository = :repository AND head_sha IS NOT NULL",
-    )?;
+    let mut select = connection.prepare(SELECT_HEADS)?;
     let asked = named_params! { ":repository": repository };
     let heads = select.query_map(asked, |row| Ok((row.get("number")?, row.get("head_sha")?)))?;
     heads.collect()
 }
+
+const SELECT_HEADS: &str = "SELECT number, head_sha FROM issue_content
+                            WHERE repository = :repository AND head_sha IS NOT NULL";
 
 fn earlier_in(row: &Row<'_>) -> rusqlite::Result<(u32, Option<CommitSha>)> {
     Ok((row.get("earlier_reviews")?, row.get("head_sha")?))

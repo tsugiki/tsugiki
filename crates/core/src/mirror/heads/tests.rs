@@ -216,3 +216,42 @@ fn a_pr_back_in_reach_whose_ref_upkeep_pruned_meanwhile_is_fetched_again() {
 
     assert_eq!(numbers(prs.wanted(Instant::now())), [(1, sha_of('a'))]);
 }
+
+#[test]
+fn the_app_hears_nothing_of_the_rules_head_of_a_pr_the_user_opened_while_the_mirror_held_it() {
+    let mut prs = Prs::default();
+    prs.opened(5);
+    prs.hand_over(vec![at(5, 'a')]);
+    let batch = [at(5, 'a')];
+
+    let _ = fetched(&mut prs, &batch, &[at(5, '9')], NONE);
+    let noted = fetched(&mut prs, &batch, &[at(5, '9')], NONE);
+
+    assert_eq!(noted, Noted::default());
+}
+
+#[test]
+fn the_users_look_at_the_commit_the_worker_noted_fetches_it_again() {
+    let mut prs = Prs::default();
+    prs.hand_over(vec![at(5, 'a')]);
+    let _ = fetched(&mut prs, &[at(5, 'a')], &[at(5, 'a')], NONE);
+
+    prs.fetch_first(at(5, 'a'));
+
+    assert_eq!(numbers(prs.demanded(Instant::now())), [(5, sha_of('a'))]);
+}
+
+#[test]
+fn an_await_or_its_end_leaves_a_head_the_user_asked_for_or_one_the_mirror_holds() {
+    let mut prs = Prs::default();
+    prs.fetch_first(at(5, 'a'));
+    prs.opened(6);
+
+    prs.await_head(5);
+    prs.no_head(6);
+    prs.no_head(7);
+    let asked = prs.saved(vec![at(5, 'b'), at(6, 'c'), at(7, 'd')]);
+
+    assert!(!asked, "nothing awaited a head");
+    assert_eq!(numbers(prs.demanded(Instant::now())), [(5, sha_of('a'))]);
+}

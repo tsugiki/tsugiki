@@ -84,6 +84,9 @@ When a round finds an owner's data reaching another thread in a different order 
 because each caller forwards its copy after the owner answers, ask the builder to have the owner send it
 itself, from its own thread, in save order: in 0.3.3 that took a stale copy out of every path at once.
 
+When a ticket only moves code, and a round finds bugs that main has too, ask the builder to keep main's
+behaviour there and file a ticket for the bugs: in 0.3.4 each of #896's fixes to such a bug opened a new case.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
 that drive what it changed, as [builder.md](builder.md) says.

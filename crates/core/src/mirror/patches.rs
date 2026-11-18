@@ -7,8 +7,9 @@
 
 use std::collections::BTreeSet;
 use std::mem;
+use std::path::Path;
 
-use super::{CHECK_GIT, MirrorProblem, Worker};
+use super::{CHECK_GIT, Git, MirrorProblem, Worker};
 use crate::facts::patch_ids::{CantCheck, CommitPatches, PatchesOf, UncheckedCommit};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
@@ -28,6 +29,33 @@ pub(super) struct Patches {
 }
 
 impl Patches {
+    /// Whether a commit waits to be read.
+    pub(super) fn waits(&self) -> bool {
+        !self.waiting.is_empty()
+    }
+
+    /// Reads the patch-ids of the next commit that waits from `repository`'s `mirror`. Gives what was read
+    /// since the last hand-over, once nothing more waits.
+    fn read_next(
+        &mut self,
+        git: &dyn Git,
+        repository: &RepositoryName,
+        mirror: &Path,
+    ) -> Option<Vec<CommitPatches>> {
+        let of = self.waiting.pop_first()?;
+        match git.read_patch_ids(mirror, &of) {
+            Ok(files) => self.handing.push(CommitPatches { of, files }),
+            Err(cause) => {
+                let commit = of.commit.as_str();
+                log::info!(
+                    "Tsugiki can't read the patch-ids of {commit} in {repository}'s mirror yet: {cause}"
+                );
+                let _ = self.missing.insert(of);
+            }
+        }
+        (self.waiting.is_empty() && !self.handing.is_empty()).then(|| mem::take(&mut self.handing))
+    }
+
     /// Reads again the commits whose read failed.
     pub(super) fn read_missing_again(&mut self) {
         self.waiting.append(&mut self.missing);
@@ -59,57 +87,16 @@ impl Worker {
         }
     }
 
-    /// Whether a commit waits to be read in a Repository whose mirror is there, with somewhere to hand its
-    /// patch-ids and a git that can read them.
-    pub(super) fn patches_wait(&self) -> bool {
-        let Ok(folders) = &self.folders else {
-            return false;
-        };
-        let waiting = (self.heads.iter()).filter(|known| !known.patches.waiting.is_empty());
-        self.patched.is_some()
-            && self.old_for_check.is_none()
-            && waiting
-                .into_iter()
-                .any(|known| folders.mirror(&known.repository).exists())
-    }
-
-    /// Reads the patch-ids of one commit waiting in a Repository whose mirror is there, and hands over what
-    /// was read there once nothing more waits, so the loop takes its messages between reads. Says whether
-    /// it read one. It reads none until it has somewhere to hand them, nor with a git too old for them.
-    pub(super) fn read_waiting_patch(&mut self) -> bool {
-        let (Ok(folders), Some(patched)) = (&self.folders, &mut self.patched) else {
-            return false;
-        };
-        if self.old_for_check.is_some() {
-            return false;
-        }
-        let found = self.heads.iter_mut().find_map(|known| {
-            let mirror = folders.mirror(&known.repository);
-            let ready = !known.patches.waiting.is_empty() && mirror.exists();
-            let of = ready.then(|| known.patches.waiting.pop_first())??;
-            Some((known, mirror, of))
-        });
-        let Some((known, mirror, of)) = found else {
-            return false;
-        };
-        let patches = &mut known.patches;
-        match self.git.read_patch_ids(&mirror, &of) {
-            Ok(files) => {
-                patches.handing.push(CommitPatches { of, files });
-            }
-            Err(cause) => {
-                let (repository, commit) = (&known.repository, of.commit.as_str());
-                log::info!(
-                    "Tsugiki can't read the patch-ids of {commit} in {repository}'s mirror yet: {cause}"
-                );
-                let _ = patches.missing.insert(of);
-            }
-        }
-        if patches.waiting.is_empty() && !patches.handing.is_empty() {
-            let read = mem::take(&mut patches.handing);
+    /// Reads the patch-ids of one commit waiting in `repository`, and hands over what was read there once
+    /// nothing more waits, so the loop takes its messages between reads.
+    pub(super) fn read_waiting_patch(&mut self, repository: &RepositoryName) {
+        let found = (self.heads.iter_mut()).find(|known| known.repository.is_same(repository));
+        if let (Ok(folders), Some(patched), Some(known)) = (&self.folders, &mut self.patched, found)
+            && let mirror = folders.mirror(&known.repository)
+            && let Some(read) = (known.patches).read_next(&*self.git, &known.repository, &mirror)
+        {
             patched(&known.repository, PatchReads::Read(read));
         }
-        true
     }
 
     /// Tells the session which of the commits waiting to be read in each Repository the worker can't read

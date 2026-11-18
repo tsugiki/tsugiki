@@ -13,7 +13,7 @@ Write the trimmed version first, because review cuts a draft that defends itself
 | How an area behaves | its file in `docs/devel/` | ADRs and comments |
 | The order v1 is built in | `docs/build-order.md` | `docs/scope.md` |
 | Why the design has this shape | `docs/adr/` | `docs/devel/`, comments, PR text |
-| Where a module lives, which thread talks to which | `docs/architecture.md` | function names |
+| Where a module lives, which thread talks to which | `docs/architecture.md` | comments |
 | A cost measured on one machine: a build size, a time | `docs/build-costs.md`, or an ADR's budget | comments, and docs that aren't about measuring |
 | How to build, test and release | `CONTRIBUTING.md`, `docs/releasing.md`, the `justfile` | ADRs |
 | How an agent works here | `AGENTS.md` and `docs/agents/` | `CONTRIBUTING.md` |

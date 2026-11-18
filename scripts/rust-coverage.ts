@@ -14,8 +14,7 @@ const EXCLUDED = [
   // coverage: thin async commands. The report calls the block Tauri's macro writes unrun, and IPC tests
   // run it.
   "crates/app/src/slow_commands\\.rs$",
-  // coverage: the real network and the real gh, which tests replace (ADR 0019). The smoke test runs gh, but
-  // its proxy never answers, so no TLS connection starts.
+  // coverage: the real network and the real gh, which tests replace (ADR 0019).
   "crates/token/src/live\\.rs$",
   // coverage: the real git, which tests run, and the hand-off to the token crate's client, which they
   // replace.

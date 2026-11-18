@@ -40,8 +40,8 @@ release. Coverage is held at 100%, and CI fails below it.
 - TypeScript: 100% of lines, branches, functions and statements, measured by Vitest.
 - Excluded, in one config per language, each with a reason: the generated bindings, `crates/app`'s Tauri
   start-up code and `crates/webview-keys`, which the smoke tests cover instead, and the file holding the
-  real network and real `gh`, which tests replace. No check sends a request through it to GitHub: the smoke
-  test's proxy never answers. Any other exclusion carries a `// coverage: <reason>` comment that review sees.
+  token crate's real network and real `gh`, which tests replace and the release checks exercise. Any other
+  exclusion carries a `// coverage: <reason>` comment that review sees.
 - Codecov shows the same reports on each PR, with the uncovered lines. It only reports: its statuses are
   informational and a failed upload doesn't fail CI, so an outage there can't block a merge. The gates above
   decide.

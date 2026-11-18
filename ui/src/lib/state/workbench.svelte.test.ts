@@ -25,6 +25,8 @@ vi.mock("$lib/data/bindings", () => ({
     markUnseen: vi.fn(),
     archive: vi.fn(),
     unarchive: vi.fn(),
+    mute: vi.fn(),
+    unmute: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
   },
   events: { changed: { listen: vi.fn() } },
@@ -39,7 +41,7 @@ const seen = (...numbers: number[]): Seen => ({
 const item = (number: number): ListedItem => ({
   attention: null,
   key: { kind: "pull_request", number },
-  archived: false,
+  hidden: null,
   kind: "standalone_pr",
   ...workbenchRow(number, { title: `PR ${String(number)}`, author: "octocat", reasons: ["own_pr"] }),
   backports: [],
@@ -62,7 +64,7 @@ const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 const issueWith = (number: number, pr: number): ListedItem => ({
   attention: null,
   key: { kind: "issue", number },
-  archived: false,
+  hidden: null,
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
@@ -170,7 +172,7 @@ describe("WorkbenchState", () => {
     const tree: ListedItem = {
       attention: null,
       key: { kind: "issue", number: 10 },
-      archived: false,
+      hidden: null,
       kind: "issue",
       number: 10,
       title: "Issue 10",
@@ -191,7 +193,7 @@ describe("WorkbenchState", () => {
       backport: "manual",
       attention: null,
       key: { kind: "pull_request", number: 30 },
-      archived: false,
+      hidden: null,
     };
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([tree, standalone, lone], { count: 3 }));
     const state = new WorkbenchState("python/cpython");
@@ -225,7 +227,7 @@ describe("WorkbenchState", () => {
     const tree = (number: number): ListedItem => ({
       attention: null,
       key: { kind: "issue", number },
-      archived: false,
+      hidden: null,
       kind: "issue",
       number,
       title: `Issue ${String(number)}`,
@@ -348,7 +350,7 @@ describe("WorkbenchState", () => {
     const tree: ListedItem = {
       attention: null,
       key: { kind: "issue", number: 10 },
-      archived: false,
+      hidden: null,
       kind: "issue",
       number: 10,
       title: "Issue 10",
@@ -869,7 +871,7 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("archives the item that holds a line, with its tree's part in Mark Seen", async () => {
+  it("archives or mutes the item that holds a line, with its tree's part in Mark Seen", async () => {
     catchChanged();
     const standalone = {
       ...item(3),
@@ -877,18 +879,40 @@ describe("WorkbenchState", () => {
     };
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(1, 2), standalone]));
     const state = new WorkbenchState("python/cpython");
-    const archived = (number: number, kind: "issue" | "pull_request", issue?: number) =>
-      state.archivedBy({ number, kind, issue });
-    expect(archived(1, "issue"), "before the first answer").toBeUndefined();
-    expect(state.archivedHolding({ number: 1, kind: "issue", issue: undefined })).toBeUndefined();
+    const hiding = (number: number, kind: "issue" | "pull_request", issue?: number) =>
+      state.hidingBy({ number, kind, issue });
+    expect(hiding(1, "issue"), "before the first answer").toBeUndefined();
+    expect(state.hiddenHolding({ number: 1, kind: "issue", issue: undefined }, "archived")).toBeUndefined();
     await state.load();
 
-    expect(archived(2, "pull_request", 1)).toEqual({
+    expect(hiding(2, "pull_request", 1)).toEqual({
       key: { kind: "issue", number: 1 },
       mark: issueWith(1, 2).seen.mark,
     });
-    expect(archived(4, "pull_request")?.key).toEqual({ kind: "pull_request", number: 3 });
-    expect(archived(9, "issue")).toBeUndefined();
+    expect(hiding(4, "pull_request")?.key).toEqual({ kind: "pull_request", number: 3 });
+    expect(hiding(9, "issue")).toBeUndefined();
+    state.stop();
+  });
+
+  it("says which item holding a line the list draws Muted, and sends Mute and Unmute to the core", async () => {
+    catchChanged();
+    vi.mocked(commands.mute).mockResolvedValue(done);
+    vi.mocked(commands.unmute).mockResolvedValue(refused("no database"));
+    const muted: ListedItem = { ...issueWith(1, 2), hidden: "muted" };
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([muted, item(3)]));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const key = { kind: "issue" as const, number: 1 };
+
+    expect(state.hiddenHolding({ number: 2, kind: "pull_request", issue: 1 }, "muted")).toEqual(key);
+    expect(
+      state.hiddenHolding({ number: 3, kind: "pull_request", issue: undefined }, "muted"),
+    ).toBeUndefined();
+    expect(state.hiddenHolding({ number: 1, kind: "issue", issue: undefined }, "archived")).toBeUndefined();
+    expect(await state.mute({ key, mark: muted.seen.mark })).toBeUndefined();
+    expect(await state.unmute(key)).toBe("no database");
+    expect(commands.mute).toHaveBeenCalledWith("python/cpython", key, muted.seen.mark);
+    expect(commands.unmute).toHaveBeenCalledWith("python/cpython", key);
     state.stop();
   });
 
@@ -1133,7 +1157,7 @@ describe("WorkbenchState", () => {
     const issue = (attention: ListedItem["attention"]): ListedItem => ({
       attention,
       key: { kind: "issue", number: 5 },
-      archived: false,
+      hidden: null,
       kind: "issue",
       number: 5,
       title: "Issue 5",

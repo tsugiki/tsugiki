@@ -50,9 +50,9 @@ it("lists the Issue list's keys, and leaves out an action with no key and the co
   show(["issue_list"]);
   const all = screen.getAllByRole("term").map((term) => term.nextElementSibling?.textContent);
 
-  expect(keysOf("Issue list")).toEqual(["→ Unfold an Issue's PRs", "← Fold an Issue's PRs", "M Mute"]);
-  // It archives the Detail pane's item too, as Q marks it.
-  expect(keysOf("Anywhere")).toContain("E Archive");
+  expect(keysOf("Issue list")).toEqual(["→ Unfold an Issue's PRs", "← Fold an Issue's PRs"]);
+  // They archive and mute the Detail pane's item too, as Q marks it.
+  expect(keysOf("Anywhere")).toEqual(expect.arrayContaining(["E Archive", "M Mute"]));
   expect(all).not.toContain("Reset Layout");
   expect(all).not.toContain("Send Comment");
 });
@@ -71,7 +71,7 @@ it("shows a remapped key by its new binding, and an action it took the key from 
   remapKeys({ archive: "a", next_change: "ctrl+k n", mute: "f8" });
   show(["issue_list", "diff"]);
 
-  expect(keysOf("Issue list")).toContain("F8 Mute");
+  expect(keysOf("Anywhere")).toContain("F8 Mute");
   expect(keysOf("Anywhere")).toContain("A Archive");
   expect(keysOf("Diff")).toContain("Ctrl+K N Next Change");
   // Mute took F8 from Next Comment Thread, which has no key until #550 settles the clash.
@@ -81,7 +81,7 @@ it("shows a remapped key by its new binding, and an action it took the key from 
 it("shows a key two remapped actions share only by the one it runs", () => {
   remapKeys({ archive: "x", mute: "x" });
   show(["issue_list"]);
-  expect(keysOf("Issue list").filter((key) => key.startsWith("X "))).toEqual(["X Mute"]);
+  expect(keysOf("Anywhere").filter((key) => key.startsWith("X "))).toEqual(["X Mute"]);
 });
 
 it("keeps Tab inside, so the focus can't reach the page behind", async () => {

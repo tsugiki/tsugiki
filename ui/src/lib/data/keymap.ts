@@ -216,7 +216,7 @@ export const KEYMAP = [
     "action": "mute",
     "title": "Mute",
     "key": "m",
-    "context": "issue_list"
+    "context": "anywhere"
   },
   {
     "action": "mark_seen",

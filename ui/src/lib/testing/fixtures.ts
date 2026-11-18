@@ -71,7 +71,7 @@ export const workbenchRow = (
 });
 
 /** Issue `number` as a list holds it: open, with no PRs, seen, nothing that Needs attention, and not
- * Archived, with what `overrides` says instead. */
+ * hidden, with what `overrides` says instead. */
 export const listedIssue = (
   number: number,
   overrides: Omit<Partial<ListedItem & { kind: "issue" }>, "kind" | "number"> = {},
@@ -86,7 +86,7 @@ export const listedIssue = (
   seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
   attention: null,
   key: { kind: "issue", number },
-  archived: false,
+  hidden: null,
   ...overrides,
 });
 

@@ -39,6 +39,8 @@ const core = vi.hoisted(() => ({
   archive: vi.fn(),
   keepArchived: vi.fn(),
   unarchive: vi.fn(),
+  mute: vi.fn(),
+  unmute: vi.fn(),
   putFilterOnWorkbench: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
@@ -76,6 +78,8 @@ vi.mock("$lib/data/bindings", async () => {
       archive: core.archive,
       keepArchived: core.keepArchived,
       unarchive: core.unarchive,
+      mute: core.mute,
+      unmute: core.unmute,
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       openOnGithub: core.openOnGithub,
       pullRequestFiles: core.pullRequestFiles,
@@ -129,7 +133,7 @@ const issue = {
     state: "new_activity",
   },
   key: { kind: "issue", number: 112564 },
-  archived: false,
+  hidden: null,
 };
 
 const DEFAULT_LAYOUT = {
@@ -166,6 +170,8 @@ beforeEach(() => {
   core.archive.mockResolvedValue(done);
   core.keepArchived.mockResolvedValue(done);
   core.unarchive.mockResolvedValue(done);
+  core.mute.mockResolvedValue(done);
+  core.unmute.mockResolvedValue(done);
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -183,7 +189,7 @@ beforeEach(() => {
       needs_attention: [],
       content: null,
       seen: issue.seen,
-      archived: false,
+      hidden: null,
     },
   });
   core.workbench.mockResolvedValue(workbenchPage([]));
@@ -638,7 +644,7 @@ const standalone = {
   title: "Alone",
   backports: [],
   key: { kind: "pull_request", number: 5 },
-  archived: false,
+  hidden: null,
 };
 
 /** A window on two items: the Issue, which it unfolds, and a Standalone PR. */
@@ -2439,7 +2445,7 @@ it("archives the Issue on show from its button, which turns into Unarchive once 
   await fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
   expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
   const shown = await core.issue.mock.results[0]?.value;
-  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, archived: true } });
+  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "archived" } });
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   changed("python/cpython", issue.seen.mark.numbers);
   await fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
@@ -2450,7 +2456,7 @@ it("archives the Issue on show from its button, which turns into Unarchive once 
 });
 
 it("says a Review request's PR on the list is Archived", async () => {
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, archived: true }]));
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
 
   const item = await screen.findByRole("listitem");
@@ -2459,7 +2465,7 @@ it("says a Review request's PR on the list is Archived", async () => {
 });
 
 it("keeps an Archived item Archived on Mark Seen, from its row and from the Issue view's button", async () => {
-  const archived = { ...standalone, attention: null, archived: true };
+  const archived = { ...standalone, attention: null, hidden: "archived" };
   core.workbench.mockResolvedValue(workbenchPage([archived]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   const row = await screen.findByRole("button", { name: "#5 Alone" });
@@ -2475,7 +2481,7 @@ it("keeps an Archived item Archived on Mark Seen, from its row and from the Issu
   core.keepArchived.mockClear();
   cleanup();
   const shown = (await core.issue()) as { data: object };
-  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, archived: true } });
+  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "archived" } });
   const { issueRow } = await listing();
   await fireEvent.click(issueRow);
   await fireEvent.click(await screen.findByRole("button", { name: "Mark Seen" }));
@@ -2496,11 +2502,99 @@ it("says why an Archive failed", async () => {
   expect(await screen.findByText("Tsugiki couldn't mark this item: no database")).toBeTruthy();
 });
 
+it("mutes on M the item that holds the line under the cursor, and the cursor lands on the next row", async () => {
+  const changed = catchEveryListener();
+  const { treeRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+
+  await fireEvent.keyDown(treeRow, { key: "m" });
+  await fireEvent.keyDown(treeRow, { key: "m", repeat: true });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  const landed = await screen.findByRole("button", { name: "#5 Alone" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+});
+
+it("mutes on M with the list hidden the item of the PR on show", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+
+  await press("m");
+
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+});
+
+it("mutes the Issue on show from its button, the list follows, and the button turns into Unmute", async () => {
+  const changed = catchEveryListener();
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mute" }));
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  const shown = await core.issue.mock.results[0]?.value;
+  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "muted" } });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+  const unmute = await screen.findByRole("button", { name: "Unmute" });
+
+  const list = within(issueList() as HTMLElement);
+  expect(list.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Mark (Un)?[sS]een$/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
+  await fireEvent.click(unmute);
+  expect(core.unmute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
+});
+
+it("says a Muted row is Muted, where Q, Shift+Q and E do nothing and M unmutes it", async () => {
+  const muted = { ...standalone, attention: null, hidden: "muted" };
+  core.workbench.mockResolvedValue(workbenchPage([muted]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+
+  for (const key of [{ key: "q" }, { key: "Q", shiftKey: true }, { key: "e" }]) {
+    await fireEvent.keyDown(row, key);
+  }
+  await fireEvent.keyDown(row, { key: "m" });
+
+  expect(within(screen.getByRole("listitem")).getByText("Muted")).toBeTruthy();
+  expect(core.markSeen).not.toHaveBeenCalled();
+  expect(core.markUnseen).not.toHaveBeenCalled();
+  expect(core.archive).not.toHaveBeenCalled();
+  expect(core.mute).not.toHaveBeenCalled();
+  expect(core.unmute).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key);
+});
+
+it("offers no Mark Seen in the view of a PR whose item is Muted, as the view says, listed or not", async () => {
+  core.pullRequest.mockResolvedValue({ status: "ok", data: { ...row, content: null, hidden: "muted" } });
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  const view = await screen.findByRole("region", { name: "PR view" });
+  await within(view).findAllByText(/Fix UAF for gc debug print/);
+
+  await fireEvent.keyDown(view, { key: "q" });
+  await fireEvent.keyDown(view, { key: "Q", shiftKey: true });
+
+  expect(screen.queryByRole("button", { name: /^Mark (Un)?[sS]een$/ })).toBeNull();
+  expect(core.markSeen).not.toHaveBeenCalled();
+  expect(core.markUnseen).not.toHaveBeenCalled();
+});
+
 /** A window on the Archived view (#491), which holds the Issue, unfolded, and the Standalone PR, with the
  * cursor on the Issue. */
 const archivedView = async () => {
   const changed = catchEveryListener();
-  const items = [issue, standalone].map((item) => ({ ...item, attention: null, archived: true }));
+  const items = [issue, standalone].map((item) => ({ ...item, attention: null, hidden: "archived" }));
   core.workbench.mockResolvedValue(workbenchPage(items, { archived: 2 }));
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
@@ -2539,7 +2633,7 @@ it("unarchives on E in the Archived view the item that holds the line under the 
 
   await fireEvent.keyDown(issueRow, { key: "e" });
   core.workbench.mockResolvedValue(
-    workbenchPage([{ ...standalone, attention: null, archived: true }], { archived: 1 }),
+    workbenchPage([{ ...standalone, attention: null, hidden: "archived" }], { archived: 1 }),
   );
   changed("python/cpython", [112564]);
 
@@ -2558,7 +2652,7 @@ it("marks a line of the Archived view unseen on Shift+Q, which unarchives the it
 
   await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true });
   core.workbench.mockResolvedValue(
-    workbenchPage([{ ...standalone, attention: null, archived: true }], { archived: 1 }),
+    workbenchPage([{ ...standalone, attention: null, hidden: "archived" }], { archived: 1 }),
   );
   changed("python/cpython", [160662, 112564]);
 

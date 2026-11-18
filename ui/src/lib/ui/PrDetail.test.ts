@@ -73,6 +73,7 @@ const view: PrView = {
     earlier_reviews: 0,
   },
   shares_review_of: null,
+  hidden: null,
 };
 
 const NOW = new Date("2026-11-04T11:00:00Z");

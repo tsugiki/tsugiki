@@ -96,12 +96,15 @@ impl From<IssueWire> for (IssueFacts, ItemActivity) {
 }
 
 /// The fields of an Issue that `IssueWire` reads. The last comments and mentions are enough to say that
-/// someone posted, and whether the post named the user.
+/// someone posted, and whether the post named the user. An assignment's moment says whether it started after
+/// the user muted the Issue (#492).
 pub(super) const ISSUE_FIELDS: &str = "number title updatedAt state stateReason author { login } \
      assignees(first: 20) { nodes { login } } labels(first: 100) { nodes { name } } \
-     timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT]) { nodes { __typename \
+     timelineItems(last: 50, itemTypes: [ISSUE_COMMENT, MENTIONED_EVENT, ASSIGNED_EVENT]) { nodes { \
+     __typename \
      ... on IssueComment { createdAt author { __typename login } } \
-     ... on MentionedEvent { createdAt actor { __typename login } } } }";
+     ... on MentionedEvent { createdAt actor { __typename login } } \
+     ... on AssignedEvent { createdAt assignee { ... on User { login } ... on Bot { login } } } } }";
 
 /// One field for each of `numbers`, each asking `fields` of an Issue, because GraphQL has no way to look up a
 /// list of numbers and a `$` variable can't add a field. Only digits reach this text.

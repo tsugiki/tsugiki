@@ -140,7 +140,7 @@ impl Inbox {
         reader.read_snapshot(&repository.name, job)
     }
 
-    /// The page `read` holds, Archived items left out.
+    /// The page `read` holds, Archived and Muted items left out.
     fn listed(read: PageRead, repository: &RepositorySettings) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
@@ -149,10 +149,10 @@ impl Inbox {
             &BTreeSet::new(),
             &causes,
         );
-        // Archive takes an item out until it comes back (#490).
+        // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
         let mut items: Vec<ListedItem> = (grouped.into_iter())
             .map(|item| ListedItem::of(&causes, item))
-            .filter(|listed| !listed.archived)
+            .filter(|listed| listed.hidden.is_none())
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);

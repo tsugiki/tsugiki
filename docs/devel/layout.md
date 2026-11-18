@@ -68,8 +68,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     view keeps a PR whose Review request stood at the archive, says "Archived" beside its age. In the
     Archived view each item's row has Unarchive after its age, and `E` on any of its rows unarchives it too;
     either way the cursor moves on to the next row once the item leaves the list, while `E` with the focus in
-    the Detail pane still archives. "View: Archived" in the command palette opens the view. Any item can
-    be **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑
+    the Detail pane still archives. "View: Archived" in the command palette opens the view. `M` mutes the
+    item `E` would archive, and the cursor moves on as for `E`; on a Muted item it unmutes it, and `Q`,
+    `Shift+Q` and `E` do nothing. A row the list keeps while Muted says "Muted" beside its age. An item's
+    author can be **Muted** too. A footer under the list gives the legend and the list's keys (↑
     ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
 
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
@@ -95,14 +97,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
-      Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, then Mark Seen;
-      an Issue with no labels shows none. Each Origin PR's Backports are folded into one line that
-      gives their branches and states. A row between the "Origin PRs" heading and the tree counts the PRs by
-      state, as `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its
-      word, then its count, muted and without brackets, as on GitHub's tabs, with a muted dot between
-      entries. Each count matches its icon, so an open draft counts as Draft and not as Open, and the counts
-      take in the Backports and the folded merged PRs. All four states show on every Issue, so Open sits in
-      the same place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last,
+      Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, Mute, which mutes
+      it, then Mark Seen. A Muted Issue shows only Unmute. An Issue with no labels shows no chips. Each
+      Origin PR's Backports are folded into one line that gives their branches and states. A row between
+      the "Origin PRs" heading and the tree counts the PRs by state, as
+      `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its word, then
+      its count, muted and without brackets, as on GitHub's tabs, with a muted dot between entries. Each
+      count matches its icon, so an open draft counts as Draft and not as Open, and the counts take in the
+      Backports and the folded merged PRs. All four states show on every Issue, so Open sits in the same
+      place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last,
       after "Bold" in bold. A screen reader reads the row as a list named "PR counts", each entry its word
       and count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
       starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The

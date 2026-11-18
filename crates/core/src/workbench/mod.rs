@@ -36,7 +36,7 @@ use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
 use crate::work::{Causes, in_own_right};
-use attention::{attention_of, seen_of};
+use attention::{attention_of, seen_of, summed};
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
@@ -142,23 +142,57 @@ pub struct ListedItem {
     #[serde(flatten)]
     pub item: WorkbenchItem,
     pub attention: Option<Attention>,
-    /// The key Archive, and later Mute, keep the item under.
+    /// The key Archive and Mute keep the item under.
     pub key: ItemKey,
-    /// Whether the item is Archived, which only the Review requests view and the Filters show, for a PR
-    /// whose Review request stood at the archive (#490).
-    pub archived: bool,
+    /// Whether the user's state hides the item, which only some lists show, as `Hidden` says.
+    pub hidden: Option<Hidden>,
+}
+
+/// The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Hidden {
+    /// Only the Review requests view and the Filters show it, for a PR whose Review request stood at the
+    /// archive (#490), and the Archived view.
+    Archived,
+    /// Only the Filters show it, and the Review requests view for a PR, while a Review request or an
+    /// assignment to the user stands in its tree, and the Workbench while one that started after the mute
+    /// does (#492).
+    Muted,
+}
+
+impl Hidden {
+    /// The state that hides the item `key` names, whose tree holds `numbers`, as `causes` judge it, if any.
+    pub(crate) fn of(causes: &Causes, key: ItemKey, numbers: &[u32]) -> Option<Self> {
+        if causes.is_muted(key) {
+            Some(Self::Muted)
+        } else {
+            causes.is_archived(key, numbers).then_some(Self::Archived)
+        }
+    }
 }
 
 impl ListedItem {
-    /// `item` with what `causes` judge of its tree.
+    /// `item` with what `causes` judge of its tree. A Muted item Needs attention only for what
+    /// `Causes::fresh_asks` finds.
     fn of(causes: &Causes, item: WorkbenchItem) -> Self {
         let key = item.key();
+        let numbers = item.numbers();
+        let hidden = Hidden::of(causes, key, &numbers);
+        let attention = match hidden {
+            Some(Hidden::Muted) => summed(&causes.fresh_asks(key, &numbers)),
+            Some(Hidden::Archived) | None => attention_of(causes, &item),
+        };
         Self {
-            attention: attention_of(causes, &item),
-            archived: causes.is_archived(key, &item.numbers()),
+            attention,
+            hidden,
             key,
             item,
         }
+    }
+
+    fn is_archived(&self) -> bool {
+        self.hidden == Some(Hidden::Archived)
     }
 }
 
@@ -247,34 +281,55 @@ impl Workbench {
                 .map(|item| ListedItem::of(&causes, item))
                 .collect();
         let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
-        // An Archived item leaves every list and its count, apart from a PR whose Review request stood at
-        // the archive: the Review requests view and the Filters keep that, marked Archived (#490).
-        let unarchived: Vec<&ListedItem> =
-            (listed.iter()).filter(|listed| !listed.archived).collect();
+        let asked = causes.asked();
+        let unhidden: Vec<&ListedItem> = (listed.iter())
+            .filter(|listed| listed.hidden.is_none())
+            .collect();
+        // A hidden item leaves every list and its count, apart from these, each marked as hidden. The
+        // Review requests view and the Filters keep a PR whose Review request stood at the archive (#490).
+        // The Filters keep a Muted item while a Review request or an assignment to the user stands in its
+        // tree, and the Review requests view a Muted PR while its request stands (#492).
         let kept: Vec<&ListedItem> = (listed.iter())
-            .filter(|listed| !listed.archived || requested(listed))
+            .filter(|listed| match listed.hidden {
+                None => true,
+                Some(Hidden::Archived) => requested(listed),
+                Some(Hidden::Muted) => listed.item.is_reached_by(&asked),
+            })
+            .collect();
+        // The Workbench shows a Muted item while one that started after the mute stands, which is then all
+        // it Needs attention for.
+        let on_workbench: Vec<&ListedItem> = (listed.iter())
+            .filter(|listed| match listed.hidden {
+                None => true,
+                Some(Hidden::Archived) => false,
+                Some(Hidden::Muted) => listed.attention.is_some(),
+            })
             .collect();
         let lines = filters.lines(&kept);
         let count = count_of(
-            unarchived
+            on_workbench
                 .iter()
                 .filter(|listed| listed.attention.is_some()),
         );
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
-        let stale_reviews = prs_of(&unarchived, &causes.stale_reviews);
-        let put_away: Vec<&ListedItem> = (listed.iter()).filter(|listed| listed.archived).collect();
+        let stale_reviews = prs_of(&unhidden, &causes.stale_reviews);
+        let put_away: Vec<&ListedItem> = (listed.iter())
+            .filter(|listed| listed.is_archived())
+            .collect();
         let archived = count_of(put_away.iter());
         let shown_of = |from: &[&ListedItem]| {
             let shown = from.iter().filter(|listed| match selected {
                 Some(numbers) => listed.item.is_reached_by(numbers),
-                // The item is on the Workbench when anything in its tree is, in its own right.
-                None => listed.item.is_reached_by(&own_right),
+                // The item is on the Workbench when anything in its tree is, in its own right, or when it
+                // is a Muted item `on_workbench` holds.
+                None => listed.hidden.is_some() || listed.item.is_reached_by(&own_right),
             });
             by_attention(shown.map(|listed| (*listed).clone()).collect())
         };
         let items = match view {
             WorkbenchView::Filter { .. } | WorkbenchView::ReviewRequests => shown_of(&kept),
-            WorkbenchView::Whole | WorkbenchView::StaleReviews => shown_of(&unarchived),
+            WorkbenchView::Whole => shown_of(&on_workbench),
+            WorkbenchView::StaleReviews => shown_of(&unhidden),
             WorkbenchView::Archived => last_archived_first(&put_away, &causes),
         };
         Self {

@@ -33,6 +33,18 @@ fn a_pr_in_an_issues_tree_shows_its_row_before_tsugiki_has_read_its_conversation
 }
 
 #[test]
+fn a_pr_says_whether_the_item_that_holds_it_is_muted() {
+    let world = ViewWorld::new("pr-view-muted");
+    world.has(vec![fixing(5, 1)], vec![issue(1)]);
+    assert_eq!(view(&world, 5).unwrap().hidden, None);
+
+    let _key = world.mute_issue(1, vec![1, 5]);
+
+    assert_eq!(view(&world, 5).unwrap().hidden, Some(Hidden::Muted));
+    world.finish();
+}
+
+#[test]
 fn a_bot_backport_names_the_origin_pr_whose_review_state_it_shares() {
     let world = ViewWorld::new("pr-view-shared-review");
     let manual = backport(3, "[3.14] gh-1: Fix it (GH-1)", vec![Some(someone())]);

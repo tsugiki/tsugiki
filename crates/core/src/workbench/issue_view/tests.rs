@@ -182,9 +182,49 @@ fn the_view_says_whether_the_issue_is_archived() {
 
     assert_eq!(before.issue.seen.mark.numbers, [1, 10]);
     assert_eq!(
-        (before.archived, archived.archived, after.archived),
-        (false, true, false)
+        (before.hidden, archived.hidden, after.hidden),
+        (None, Some(Hidden::Archived), None)
     );
+}
+
+#[test]
+fn the_view_says_whether_the_issue_is_muted() {
+    let world = ViewWorld::new("issue-view-muted");
+    world.has(vec![fixing(10, 1)], vec![issue(1)]);
+
+    let key = mute(&world, 1);
+    let muted = view(&world, 1).unwrap();
+    world.db.store.unmute(&cpython(), key).unwrap();
+    let after = view(&world, 1).unwrap();
+    world.finish();
+
+    assert_eq!((muted.hidden, after.hidden), (Some(Hidden::Muted), None));
+}
+
+#[test]
+fn a_muted_issue_names_no_pr_for_a_review_request_that_stood_at_the_mute() {
+    let world = ViewWorld::new("issue-view-muted-attention");
+    let requested = PullRequestFacts {
+        author: Some(Login::new("some-author")),
+        review_requests: vec![Login::new("octocat")],
+        ..fixing(5, 1)
+    };
+    world.has(vec![requested], vec![issue(1)]);
+    assert_eq!(
+        view(&world, 1).unwrap().needs_attention,
+        BTreeSet::from([5])
+    );
+
+    let _key = mute(&world, 1);
+
+    assert_eq!(view(&world, 1).unwrap().needs_attention, BTreeSet::new());
+    world.finish();
+}
+
+/// Mute on Issue `number` as its view draws it now. Gives the item's key.
+fn mute(world: &ViewWorld, number: u32) -> ItemKey {
+    let numbers = view(world, number).unwrap().issue.seen.mark.numbers;
+    world.mute_issue(number, numbers)
 }
 
 #[test]

@@ -612,7 +612,7 @@ function listOnePr() {
   core.fetchPullRequest.mockResolvedValue(done);
   core.pullRequest.mockResolvedValue({
     status: "ok",
-    data: { ...pr, content: null, shares_review_of: null },
+    data: { ...pr, content: null, shares_review_of: null, hidden: null },
   });
   core.mirrorsHeld.mockResolvedValue(false);
   core.pullRequestFiles.mockResolvedValue(diff);
@@ -1026,7 +1026,7 @@ describe("every action in the palette", () => {
     await onRow();
     await ctrlShiftP();
     // The diff's actions wait for a Files tab, and the actions with nothing built behind them yet, such as
-    // Mute, for theirs. The palette's own keys open the box it is.
+    // Pin or Unpin, for theirs. The palette's own keys open the box it is.
     expect(rows()).toEqual([
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
@@ -1041,6 +1041,7 @@ describe("every action in the palette", () => {
       ["Switch Repository", "Ctrl+R"],
       ["Reset Layout", null],
       ["Archive", "E"],
+      ["Mute", "M"],
       ["Mark Seen", "Q"],
       ["Mark Unseen", "Shift+Q"],
       ["Open Settings", "Ctrl+,"],
@@ -1091,6 +1092,7 @@ describe("every action in the palette", () => {
       ["Switch Repository", "Ctrl+R"],
       ["Reset Layout", null],
       ["Archive", "E"],
+      ["Mute", "M"],
       ["Mark Seen", "Q"],
       ["Mark Unseen", "Shift+Q"],
       ["Open Settings", "Ctrl+,"],
@@ -1868,10 +1870,11 @@ describe("the key list", () => {
     expect(document.activeElement).toBe(list);
     expect(sections()).toEqual(["Issue list", "Anywhere"]);
     const issueList = within(screen.getByRole("region", { name: "Issue list" }));
-    expect(issueList.getByText("Mute").previousElementSibling?.textContent).toBe("M");
-    // Archive acts on the Detail pane's item too, as Q does.
+    expect(issueList.getByText("Unfold an Issue's PRs").previousElementSibling?.textContent).toBe("→");
+    // Archive and Mute act on the Detail pane's item too, as Q does.
     const anywhere = within(screen.getByRole("region", { name: "Anywhere" }));
     expect(anywhere.getByText("Archive").previousElementSibling?.textContent).toBe("E");
+    expect(anywhere.getByText("Mute").previousElementSibling?.textContent).toBe("M");
     // The list's keys stay under it.
     await fireEvent.keyDown(window, { key: "ArrowDown" });
 
@@ -1885,15 +1888,18 @@ describe("the key list", () => {
     const remapped = structuredClone(SETTINGS);
     remapped.settings.keys = { mute: "a" };
     core.settings.mockResolvedValue(remapped);
+    // Mute is listed while it has an item to act on.
+    core.workbench.mockResolvedValue(oneIssue);
     render(Page);
-    await screen.findByRole("button", { name: gcmon.name });
+    const row = await screen.findByRole("button", { name: "#7 It crashes" });
+    await fireEvent.keyDown(document.body, { key: "ArrowDown" });
     await vi.waitFor(() => {
       expect(actionOn("a")).toBe("mute");
     });
 
-    await question();
-    const issueList = within(screen.getByRole("region", { name: "Issue list" }));
-    expect(issueList.getByText("Mute").previousElementSibling?.textContent).toBe("A");
+    await question(row);
+    const anywhere = within(screen.getByRole("region", { name: "Anywhere" }));
+    expect(anywhere.getByText("Mute").previousElementSibling?.textContent).toBe("A");
   });
 
   /** The titles of the actions the list names. */

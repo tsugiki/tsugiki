@@ -101,6 +101,13 @@ export const commands = {
 	keepArchived: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, item, mark })),
 	/**  Unarchives the item `item` names, and returns at once. */
 	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
+	/**
+	 *  Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
+	 *  once, and the `changed` event follows.
+	 */
+	mute: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, item, mark })),
+	/**  Unmutes the item `item` names, and returns at once. */
+	unmute: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute", { repository, item })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -1116,6 +1123,20 @@ export type HeadsFetchFailed = FailedHeads;
 /**  Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again. */
 export type HeadsFetched = Change;
 
+/**  The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more. */
+export type Hidden = 
+/**
+ *  Only the Review requests view and the Filters show it, for a PR whose Review request stood at the
+ *  archive (#490), and the Archived view.
+ */
+"archived" | 
+/**
+ *  Only the Filters show it, and the Review requests view for a PR, while a Review request or an
+ *  assignment to the user stands in its tree, and the Workbench while one that started after the mute
+ *  does (#492).
+ */
+"muted";
+
 /**  The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it. */
 export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
 /**  GitHub gave a reason Tsugiki doesn't know, or none. */
@@ -1510,8 +1531,8 @@ export type IssueView_Deserialize = {
 	content?: IssueContent_Deserialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
 	needs_attention: number[],
-	/**  Whether the Issue is Archived, so its button offers Unarchive (#490). */
-	archived: boolean,
+	/**  Whether the Issue is Archived or Muted, so its buttons offer Unarchive (#490) or Unmute (#492). */
+	hidden?: Hidden | null,
 } & IssueItem_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
@@ -1533,8 +1554,8 @@ export type IssueView_Serialize = {
 	content: IssueContent_Serialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
 	needs_attention: number[],
-	/**  Whether the Issue is Archived, so its button offers Unarchive (#490). */
-	archived: boolean,
+	/**  Whether the Issue is Archived or Muted, so its buttons offer Unarchive (#490) or Unmute (#492). */
+	hidden: Hidden | null,
 } & IssueItem_Serialize;
 
 /**
@@ -1681,25 +1702,19 @@ export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Deserialize = {
 	attention?: Attention_Deserialize | null,
-	/**  The key Archive, and later Mute, keep the item under. */
+	/**  The key Archive and Mute keep the item under. */
 	key: ItemKey,
-	/**
-	 *  Whether the item is Archived, which only the Review requests view and the Filters show, for a PR
-	 *  whose Review request stood at the archive (#490).
-	 */
-	archived: boolean,
+	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
+	hidden?: Hidden | null,
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Serialize = {
 	attention: Attention_Serialize | null,
-	/**  The key Archive, and later Mute, keep the item under. */
+	/**  The key Archive and Mute keep the item under. */
 	key: ItemKey,
-	/**
-	 *  Whether the item is Archived, which only the Review requests view and the Filters show, for a PR
-	 *  whose Review request stood at the archive (#490).
-	 */
-	archived: boolean,
+	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
+	hidden: Hidden | null,
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
@@ -2370,6 +2385,11 @@ export type PrView_Deserialize = {
 	 *  PR's reviewed commit and files.
 	 */
 	shares_review_of?: number | null,
+	/**
+	 *  Whether the user's own state hides the item that holds the PR. On a Muted item the header offers no
+	 *  Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
+	 */
+	hidden?: Hidden | null,
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
@@ -2381,6 +2401,11 @@ export type PrView_Serialize = {
 	 *  PR's reviewed commit and files.
 	 */
 	shares_review_of: number | null,
+	/**
+	 *  Whether the user's own state hides the item that holds the PR. On a Muted item the header offers no
+	 *  Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
+	 */
+	hidden: Hidden | null,
 } & WorkbenchRow_Serialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */
@@ -3479,6 +3504,8 @@ export type WebAddress = string;
 
 /**  One reason an item Needs attention. */
 export type Why = { kind: "review_requested" } | 
+/**  The user was assigned to an Issue after they muted it (#492). */
+{ kind: "assigned" } | 
 /**  The PR's diff changed since the user's Review. The row names the files. */
 { kind: "stale_review" } | 
 /**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */

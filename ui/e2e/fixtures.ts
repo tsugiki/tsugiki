@@ -37,14 +37,14 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
   attention: null,
   key: { kind: "issue", number: 7 },
-  archived: false,
+  hidden: null,
 };
 
 /** The user's own draft PR #157178 into 3.14, a Standalone PR with failed CI and nothing waiting. */
 export const own: Extract<ListedItem, { kind: "standalone_pr" }> = {
   attention: null,
   key: { kind: "pull_request", number: 157178 },
-  archived: false,
+  hidden: null,
   kind: "standalone_pr",
   ...workbenchRow(157178, {
     title: "GH-156425: Clear GC frame on early return",
@@ -82,6 +82,7 @@ export const prView = (reviews: Review[] = []): PrView => ({
     earlier_reviews: 0,
   },
   shares_review_of: null,
+  hidden: null,
 });
 
 /** Runs palette command `title`, as the user picks it from the palette's commands. */

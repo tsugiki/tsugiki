@@ -189,6 +189,17 @@ fn a_mention_of_someone_on_an_issue_names_the_person_it_mentions() {
 }
 
 #[test]
+fn an_assignment_on_an_issue_names_the_person_assigned_unless_they_are_gone() {
+    let timeline = json!({ "nodes": [
+            { "__typename": "AssignedEvent", "createdAt": AT, "assignee": { "login": "issue-author" } },
+            { "__typename": "AssignedEvent", "createdAt": AT, "assignee": {} },
+            { "__typename": "AssignedEvent", "createdAt": AT, "assignee": null },
+        ] });
+    let read = issue_activity(3, serde_json::from_value(timeline).unwrap());
+    assert_eq!(read.events, one(ActivityKind::Assigned, "issue-author"));
+}
+
+#[test]
 fn a_review_request_and_an_assignment_on_a_pr_name_the_person_they_ask() {
     let asked = |kind: &str, field: &str| {
         json!({

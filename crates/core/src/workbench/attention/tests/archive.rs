@@ -2,37 +2,10 @@
 //! there, read the way the window reads it.
 
 use super::*;
-use crate::facts::activity::{ItemKey, PutAway};
-use crate::facts::filters::FilterResults;
-use crate::filters::FilterQuery;
+use crate::facts::activity::PutAway;
 use crate::store::Archiving;
 
-/// The starter Filters: "Mine", on the Workbench, and "Involved", off it.
-fn mine() -> FilterQuery {
-    cpython_settings().filters[0].query.clone()
-}
-
-fn involved() -> FilterQuery {
-    cpython_settings().filters[1].query.clone()
-}
-
 impl World {
-    /// The Filter that searches `query` found `numbers`.
-    fn found(&self, query: &FilterQuery, numbers: &[u32]) {
-        let results = FilterResults {
-            numbers: numbers.iter().copied().collect(),
-            problem: None,
-        };
-        (self.db.store)
-            .save_filter_results(&cpython(), query, results)
-            .unwrap();
-    }
-
-    /// Item `number` as `view` lists it.
-    fn listed_in(&self, view: &WorkbenchView, number: u32) -> ListedItem {
-        listed_at(&self.view(view), number)
-    }
-
     /// Archive on item `number`'s line of `view`, as the window drew it.
     fn archive_in(&self, view: &WorkbenchView, number: u32) {
         self.archive_at(view, number, OffsetDateTime::now_utc());
@@ -54,14 +27,7 @@ impl World {
     /// What Archive on item `number`'s line of `view` writes, as the window drew it, putting the item away as
     /// `put_away` says.
     fn archiving_in(&self, view: &WorkbenchView, number: u32, put_away: PutAway) -> Archiving {
-        let listed = self.listed_in(view, number);
-        let seen = match &listed.item {
-            WorkbenchItem::Issue(issue) => issue.seen.clone(),
-            WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
-            WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
-        };
-        let SeenMark { numbers, up_to } = seen.mark;
-        let key = listed.key;
+        let (key, SeenMark { numbers, up_to }) = self.drawn_in(view, number);
         Archiving {
             key,
             numbers,
@@ -73,17 +39,6 @@ impl World {
     fn archive(&self, number: u32) {
         self.archive_in(&WorkbenchView::Whole, number);
     }
-
-    /// The Sidebar's count beside the Filter that searches `query`.
-    fn count_of(&self, query: &FilterQuery) -> u32 {
-        let lines = self.workbench().filters;
-        let line = lines.iter().find(|line| line.query == *query).unwrap();
-        line.count
-    }
-}
-
-fn filter(query: FilterQuery) -> WorkbenchView {
-    WorkbenchView::Filter { query }
 }
 
 #[test]
@@ -128,18 +83,13 @@ fn an_item_keys_by_its_kind_and_number() {
 #[test]
 fn archive_marks_the_item_seen_and_a_comment_from_before_it_doesnt_bring_it_back() {
     let world = World::new("archive-seen");
-    world.has(vec![own(1)]);
-    let commented = hours_ago(2);
-    world.happened(1, vec![comment(&colleague(), commented)]);
-    world.marked_unseen(1, hours_ago(1));
+    let commented = world.has_a_flagged_comment();
     assert!(world.workbench().items[0].attention.is_some());
 
     world.archive(1);
 
     assert!(!world.on_workbench(1));
-    let facts = world.db.reader.work_facts(&cpython()).unwrap().activity;
-    assert_eq!(facts.marked_unseen, BTreeMap::new());
-    assert_eq!(facts.last_seen.get(&1), Some(&commented));
+    world.assert_seen_up_to(commented);
     world.finish();
 }
 
@@ -153,10 +103,10 @@ fn a_comment_that_needs_attention_after_the_archive_brings_the_item_back_for_goo
     let back = world.listed_in(&WorkbenchView::Whole, 1);
     world.mark_seen(world.seen(1));
 
-    assert!(!back.archived);
+    assert!(!back.is_archived());
     assert_eq!(world.why(1), []);
     assert!(
-        !world.listed_in(&WorkbenchView::Whole, 1).archived,
+        !world.listed_in(&WorkbenchView::Whole, 1).is_archived(),
         "Mark Seen leaves it unarchived"
     );
     world.finish();
@@ -178,10 +128,7 @@ fn new_activity_on_an_issue_the_user_only_follows_leaves_it_archived() {
 #[test]
 fn a_review_request_that_stood_at_the_archive_keeps_the_pr_in_review_requests_and_its_filter() {
     let world = World::new("archive-request-stands");
-    let pull_request = requested(1);
-    world.has(vec![pull_request.clone()]);
-    world.happened(1, vec![review_requested(hours_ago(5))]);
-    world.found(&involved(), &[1]);
+    let pull_request = world.has_a_requested_pr_involved_finds();
     let requests = WorkbenchView::ReviewRequests;
 
     world.archive_in(&requests, 1);
@@ -189,19 +136,13 @@ fn a_review_request_that_stood_at_the_archive_keeps_the_pr_in_review_requests_an
     assert!(!world.on_workbench(1));
     for view in [&requests, &filter(involved())] {
         let listed = world.listed_in(view, 1);
-        assert!(listed.archived, "marked Archived in {view:?}");
+        assert!(listed.is_archived(), "marked Archived in {view:?}");
         assert_eq!(listed.attention, None, "Archive acknowledged the request");
     }
     assert_eq!(world.workbench().review_requests, 1);
     assert_eq!(world.count_of(&involved()), 1);
 
-    world.has(vec![PullRequestFacts {
-        review_requests: vec![],
-        updated_at: hours_ago(4),
-        ..pull_request
-    }]);
-    assert!(!world.lists(&requests, 1));
-    assert!(!world.lists(&filter(involved()), 1));
+    world.request_ends(pull_request);
     assert_eq!(world.count_of(&involved()), 0);
     world.finish();
 }
@@ -216,7 +157,7 @@ fn a_review_request_after_the_archive_brings_the_pr_back() {
     world.happened(1, vec![review_requested(hours_ago(1))]);
 
     assert_eq!(world.why(1), [Why::ReviewRequested]);
-    assert!(!world.listed_in(&WorkbenchView::Whole, 1).archived);
+    assert!(!world.listed_in(&WorkbenchView::Whole, 1).is_archived());
     world.finish();
 }
 
@@ -293,7 +234,7 @@ fn the_archived_view_lists_the_archived_items_the_last_archived_first_and_counts
 
     assert_eq!(order, [1, 5, 2]);
     let read = world.view(&WorkbenchView::Archived);
-    assert!(read.items.iter().all(|listed| listed.archived));
+    assert!(read.items.iter().all(ListedItem::is_archived));
     assert_eq!(read.archived, 3, "an Issue with its PR counts once");
     assert_eq!(world.workbench().archived, 3);
     world.finish();
@@ -354,7 +295,7 @@ fn unarchive_puts_the_item_back_where_its_state_puts_it() {
 
     assert_eq!(archived_in_order(&world), [2]);
     assert!(world.on_workbench(1));
-    assert!(!world.listed_in(&WorkbenchView::Whole, 1).archived);
+    assert!(!world.listed_in(&WorkbenchView::Whole, 1).is_archived());
     world.finish();
 }
 

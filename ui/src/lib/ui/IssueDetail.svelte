@@ -19,6 +19,7 @@
     onopenpr,
     onmark,
     onarchive,
+    onmute,
     focusable = false,
     header,
   }: {
@@ -31,6 +32,8 @@
     /** Archive, or Unarchive on an Archived Issue, as the header's button offers for the view on show
      * (#490). */
     onarchive: (view: IssueView) => void;
+    /** Mute, or Unmute on a Muted Issue, as the header's button offers for the view on show (#492). */
+    onmute: (view: IssueView) => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -140,6 +143,7 @@
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
     {@const by = opened(view)}
+    {@const muted = view.hidden === "muted"}
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
@@ -163,11 +167,19 @@
             {/each}
           </ul>
         {/if}
-        <MarkButton seen={view.seen} {onmark}>
+        <!-- A Muted Issue offers Unmute and nothing else (#492). -->
+        <MarkButton seen={view.seen} {onmark} marks={!muted}>
+          {#if !muted}
+            <button
+              onclick={() => {
+                onarchive(view);
+              }}>{view.hidden === "archived" ? "Unarchive" : "Archive"}</button
+            >
+          {/if}
           <button
             onclick={() => {
-              onarchive(view);
-            }}>{view.archived ? "Unarchive" : "Archive"}</button
+              onmute(view);
+            }}>{muted ? "Unmute" : "Mute"}</button
           >
         </MarkButton>
       </div>

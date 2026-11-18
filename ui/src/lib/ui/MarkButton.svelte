@@ -1,19 +1,26 @@
 <!--
   The buttons in the Issue view's and the PR view's header (#622): "Mark Seen" while the item has New
   activity or is Marked unseen, and "Mark Unseen" otherwise, after the view's own buttons, such as the Issue
-  view's Archive (#490).
+  view's Archive (#490). A Muted item takes neither mark, so it shows only the view's own buttons (#492).
 -->
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { Seen } from "$lib/state/workbench.svelte";
   import { offersMarkSeen } from "./workbench-row";
 
-  let { seen, onmark, children }: { seen: Seen; onmark: () => void; children?: Snippet } = $props();
+  let {
+    seen,
+    onmark,
+    marks = true,
+    children,
+  }: { seen: Seen; onmark: () => void; marks?: boolean; children?: Snippet } = $props();
 </script>
 
 <p class="actions">
   {@render children?.()}
-  <button onclick={onmark}>{offersMarkSeen(seen) ? "Mark Seen" : "Mark Unseen"}</button>
+  {#if marks}
+    <button onclick={onmark}>{offersMarkSeen(seen) ? "Mark Seen" : "Mark Unseen"}</button>
+  {/if}
 </p>
 
 <style>

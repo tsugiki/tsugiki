@@ -48,6 +48,8 @@ function saying(why: Why): string {
   switch (why.kind) {
     case "review_requested":
       return "Review requested from you";
+    case "assigned":
+      return "Assigned to you";
     case "stale_review":
       return "Changed since your Review";
     case "ci_failed":

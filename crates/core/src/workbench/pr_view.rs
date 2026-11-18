@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
-use super::{WorkbenchRow, candidates_of};
+use super::{Hidden, WorkbenchRow, candidates_of};
 use crate::error::Error;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::repository_settings::RepositorySettings;
@@ -22,6 +22,9 @@ pub struct PrView {
     /// The Origin PR whose review state this Bot backport shares (ADR 0011), so its `your_review` names that
     /// PR's reviewed commit and files.
     pub shares_review_of: Option<u32>,
+    /// Whether the user's own state hides the item that holds the PR. On a Muted item the header offers no
+    /// Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
+    pub hidden: Option<Hidden>,
 }
 
 impl PrView {
@@ -36,18 +39,18 @@ impl PrView {
         let causes = Causes::of(&facts, repository.conventions);
         let shares_review_of =
             SharedReviews::of(&facts.pull_requests, repository.conventions).origin_of(number);
-        let row = candidates_of(facts, repository, &BTreeSet::new(), &causes)
+        let found = candidates_of(facts, repository, &BTreeSet::new(), &causes)
             .iter()
             .find_map(|item| {
-                item.rows()
-                    .into_iter()
-                    .find(|row| row.number == number)
-                    .cloned()
+                let row = item.rows().into_iter().find(|row| row.number == number)?;
+                let hidden = Hidden::of(&causes, item.key(), &item.numbers());
+                Some((row.clone(), hidden))
             });
-        Ok(row.map(|row| Self {
+        Ok(found.map(|(row, hidden)| Self {
             row,
             content,
             shares_review_of,
+            hidden,
         }))
     }
 }

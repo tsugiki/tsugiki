@@ -356,3 +356,88 @@ fn an_archived_kind_from_a_later_version_is_left_alone() {
 
     assert_eq!(read, BTreeMap::new());
 }
+
+#[test]
+fn a_muted_item_survives_a_restart_and_mute_marks_its_tree_seen() {
+    let (path, _folder) = temp_database("activity-muted");
+    let repository = cpython();
+    let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let later = drawn + Duration::hours(1);
+    let now = drawn + Duration::hours(2);
+    let store = Store::open(&path).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(7), drawn)
+        .unwrap();
+    // PR 8 also fixes another Issue, which the user marked seen up to a later sync.
+    store.mark_seen(&repository, vec![8], Some(later)).unwrap();
+    let issue = ItemKey::Issue { number: 7 };
+    let (key, numbers, up_to) = (issue, vec![7, 8], Some(drawn));
+    store
+        .mute(
+            &repository,
+            Muting {
+                key,
+                numbers,
+                up_to,
+            },
+            now,
+        )
+        .unwrap();
+    let standalone = ItemKey::PullRequest { number: 9 };
+    let (key, numbers, up_to) = (standalone, vec![9], None);
+    store
+        .mute(
+            &repository,
+            Muting {
+                key,
+                numbers,
+                up_to,
+            },
+            now,
+        )
+        .unwrap();
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+    let restarted = store.work_facts(&repository).unwrap().activity;
+    store.unmute(&repository, standalone).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    assert_eq!(
+        restarted.muted,
+        BTreeMap::from([(issue, later), (standalone, now)]),
+        "from the latest moment its tree was acknowledged, and with nothing drawn, from now"
+    );
+    assert_eq!(
+        restarted.last_seen,
+        BTreeMap::from([(7, drawn), (8, later)])
+    );
+    assert_eq!(restarted.marked_unseen, BTreeMap::new());
+    assert_eq!(after.muted, BTreeMap::from([(issue, later)]));
+    assert_eq!(
+        after.last_seen, restarted.last_seen,
+        "unmute leaves Last seen"
+    );
+}
+
+#[test]
+fn a_muted_kind_from_a_later_version_is_left_alone() {
+    let (path, _folder) = temp_database("activity-later-muted");
+    let repository = cpython();
+    Store::open(&path).unwrap().close();
+    // This version has no way to write a kind it doesn't know.
+    let raw = Connection::open(&path).unwrap();
+    let inserted = raw
+        .execute(
+            "INSERT INTO muted (repository, kind, number, at)
+                 VALUES (:repository, 'dependency_updates', 0, 0)",
+            named_params! { ":repository": repository },
+        )
+        .unwrap();
+    assert_eq!(inserted, 1);
+    let read = muted(&raw, &repository, Items::All).unwrap();
+    drop(raw);
+
+    assert_eq!(read, BTreeMap::new());
+}

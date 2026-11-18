@@ -84,17 +84,25 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     brings the item back, no longer Archived, and Mark Seen then leaves it back; New activity that doesn't
     need attention, as on an Issue the user only follows, leaves it put away, and so does Mark Seen on an
     item the window shows Archived. Mark Unseen unarchives it.
-    Tsugiki keeps it per Repository under a key that names the item, its kind and number, which Mute is to
-    share, with the moment the user put it away. The Archived view lists the items the last archived first:
+    Tsugiki keeps it per Repository under a key that names the item, its kind and number, which Mute
+    shares, with the moment the user put it away. The Archived view lists the items the last archived first:
     archiving an item again moves it to the top, and Mark Seen on it there leaves it in its place.
     Unarchive, or `E` on its row there, puts the item back wherever its state puts it. Mark Unseen on any of
     its rows there unarchives the item and flags that row's Issue or PR Marked unseen, so it comes back
     Needing attention.
-  - **Mute** hides an item until the user unmutes it.
+  - **Mute** hides an item until the user unmutes it: an Issue, a Standalone PR or a Standalone Backport.
+    It leaves the lists and counts an Archived item leaves, the Archived view too, whatever happens to it
+    later. Mute marks the item seen as Archive does and clears Marked unseen, and on a Muted item Mark Seen
+    and Mark Unseen do nothing. Only someone asking the user by name gets through. While a Review request
+    or an assignment to the user that stood at the mute stands, each Filter that matches the item lists it,
+    marked Muted and not needing attention, and so does the Review requests view for a PR. While one that
+    started after the mute stands, the Workbench lists the item too, marked Muted, Needing attention for that
+    alone, until the request or the assignment ends. An assignment's start is the newest the Issue's or PR's
+    timeline holds; one the timeline no longer holds counts as from before the mute. Tsugiki keeps Muted
+    items per Repository under Archive's key.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened
     still shows when another PR in it needs attention or a Filter matches it.
-  - A Review request or an assignment to the user always shows, even when Muted.
 
 ## Issue tree
 

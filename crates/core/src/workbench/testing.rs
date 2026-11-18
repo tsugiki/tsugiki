@@ -8,12 +8,13 @@ use super::{
     IssueItem, ListedItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView,
 };
 use crate::facts::WorkFacts;
-use crate::facts::activity::ActivityFacts;
+use crate::facts::activity::{ActivityFacts, ItemKey};
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{OffDefault, PullRequestFacts};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
+use crate::store::Muting;
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings, issue_facts, pr_facts};
 use crate::work::{WorkReason, reasons};
@@ -193,6 +194,19 @@ impl ViewWorld {
         let store = &self.db.store;
         store.save_pull_requests(&cpython(), pull_requests).unwrap();
         store.save_issues(&cpython(), issues).unwrap();
+    }
+
+    /// Mute on Issue `number`, whose tree holds `numbers`, from now.
+    pub(crate) fn mute_issue(&self, number: u32, numbers: Vec<u32>) -> ItemKey {
+        let key = ItemKey::Issue { number };
+        let muting = Muting {
+            key,
+            numbers,
+            up_to: None,
+        };
+        let now = OffsetDateTime::now_utc();
+        self.db.store.mute(&cpython(), muting, now).unwrap();
+        key
     }
 
     pub(crate) fn finish(self) {

@@ -31,6 +31,7 @@
     now,
     onback,
     onmark,
+    marks = true,
     focusable = false,
     header,
   }: {
@@ -42,6 +43,9 @@
     onback: (issue: number) => void;
     /** Mark Seen or Mark Unseen, whichever the header's button offers. */
     onmark: () => void;
+    /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
+     * (#492). */
+    marks?: boolean;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -188,7 +192,7 @@
       </button>
     </h2>
     <p class="byline"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
-    <MarkButton seen={view.seen} {onmark} />
+    <MarkButton seen={view.seen} {onmark} {marks} />
 
     <!-- The tabs, and at the right a button for each of the rail's tabs, which opens the rail beside them on
          that tab, or closes it there. -->

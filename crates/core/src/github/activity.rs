@@ -227,6 +227,11 @@ pub(super) enum IssueTimelineWire {
         created_at: OffsetDateTime,
         actor: Option<ActorWire>,
     },
+    AssignedEvent {
+        #[serde(with = "time::serde::rfc3339")]
+        created_at: OffsetDateTime,
+        assignee: Option<ReviewerWire>,
+    },
 }
 
 /// The activity in Issue `number`'s `timeline`.
@@ -235,13 +240,16 @@ pub(super) fn issue_activity(number: u32, timeline: Nodes<IssueTimelineWire>) ->
     let events = items.filter_map(|item| {
         let (kind, who, at) = match item {
             IssueTimelineWire::IssueComment { created_at, author } => {
-                (ActivityKind::Comment, author, created_at)
+                (ActivityKind::Comment, person(author)?, created_at)
             }
             IssueTimelineWire::MentionedEvent { created_at, actor } => {
-                (ActivityKind::Mentioned, actor, created_at)
+                (ActivityKind::Mentioned, person(actor)?, created_at)
             }
+            IssueTimelineWire::AssignedEvent {
+                created_at,
+                assignee,
+            } => (ActivityKind::Assigned, assignee?.login?, created_at),
         };
-        let who = person(who)?;
         Some(Activity { kind, who, at })
     });
     ItemActivity {

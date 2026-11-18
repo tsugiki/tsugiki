@@ -48,7 +48,7 @@ const view: IssueView = {
   assignees: [],
   labels: [],
   needs_attention: [],
-  archived: false,
+  hidden: null,
   pull_requests: [
     {
       kind: "pr",
@@ -96,11 +96,18 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 /** The commit the user's Review covered, and the head the check compared it with. */
 const REVIEWED = { reviewed: "1".repeat(40), head: "2".repeat(40) };
 
-const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn(), onarchive = vi.fn()) => {
+const shown = async (
+  answer: IssueView | null,
+  onopenpr = vi.fn(),
+  onmark = vi.fn(),
+  onarchive = vi.fn(),
+  onmute = vi.fn(),
+) => {
   core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr, onmark, onarchive });
+  const issue = state;
+  render(IssueDetail, { repository: "python/cpython", issue, now: NOW, onopenpr, onmark, onarchive, onmute });
   state.stop();
   return state;
 };
@@ -150,8 +157,24 @@ it("offers Archive beside Mark Seen, and Unarchive on an Archived Issue", async 
   await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
   expect(onarchive).toHaveBeenCalledExactlyOnceWith(view);
   cleanup();
-  await shown({ ...view, archived: true });
+  await shown({ ...view, hidden: "archived" });
   expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+});
+
+it("offers Mute beside Archive, and on a Muted Issue only Unmute", async () => {
+  const onmute = vi.fn();
+  const buttons = () => screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i });
+
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), onmute);
+  expect(buttons().map((button) => button.textContent)).toEqual(["Archive", "Mute", "Mark Unseen"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+  expect(onmute).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  const muted = { ...view, hidden: "muted" as const };
+  await shown(muted, vi.fn(), vi.fn(), vi.fn(), onmute);
+  expect(buttons().map((button) => button.textContent)).toEqual(["Unmute"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+  expect(onmute).toHaveBeenLastCalledWith(muted);
 });
 
 /** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
@@ -536,6 +559,7 @@ it("says why it can't show the Issue", async () => {
     onopenpr: vi.fn(),
     onmark: vi.fn(),
     onarchive: vi.fn(),
+    onmute: vi.fn(),
   });
   state.stop();
 

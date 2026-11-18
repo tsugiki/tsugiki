@@ -101,6 +101,8 @@ pub struct ActivityFacts {
     /// The items the user archived. Whether each is still Archived or has come back, `workbench` judges
     /// (#490).
     pub archived: BTreeMap<ItemKey, Archive>,
+    /// The items the user muted, each with the moment Mute marked it seen up to (#492).
+    pub muted: BTreeMap<ItemKey, OffsetDateTime>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.

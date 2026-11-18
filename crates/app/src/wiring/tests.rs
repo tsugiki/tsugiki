@@ -859,6 +859,28 @@ fn archive_keep_archived_unarchive_and_mark_unseen_tell_the_window() {
 }
 
 #[test]
+fn mute_and_unmute_tell_the_window() {
+    let (folders, _root) = temp_folders("wired-mute");
+    let wired = Wired::start(Ok(folders), no_network());
+    let item = json!({ "kind": "pull_request", "number": 9 });
+    let mark = json!({ "numbers": [9], "up_to": "2026-11-01T09:00:00Z" });
+
+    let mute = json!({ "repository": CPYTHON, "item": item, "mark": mark });
+    drop(wired.ask("mute", mute).unwrap());
+    let muted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(
+        wired
+            .ask("unmute", json!({ "repository": CPYTHON, "item": item }))
+            .unwrap(),
+    );
+    let unmuted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.stop());
+
+    assert_eq!(muted, json!({ "repository": CPYTHON, "items": [9] }));
+    assert_eq!(unmuted, muted);
+}
+
+#[test]
 fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
     let (folders, _root) = temp_folders("wired-bad-mark");
     let wired = Wired::start(Ok(folders), no_network());

@@ -16,9 +16,9 @@ import {
 } from "./workbench-row";
 
 /** The commit the user's Review covered. */
-/** What the list says of an item beside its facts: nothing Needs attention, and it isn't Archived. The key
+/** What the list says of an item beside its facts: nothing Needs attention, and it isn't hidden. The key
  * plays no part here. */
-const unmarked = { attention: null, key: { kind: "issue", number: 1 } as const, archived: false };
+const unmarked = { attention: null, key: { kind: "issue", number: 1 } as const, hidden: null };
 
 const REVIEWED = "1".repeat(40);
 /** The head the check compared it with. */
@@ -193,6 +193,7 @@ it("says an Issue has no PR yet, and gives a PR's facts", () => {
 
 it.each<[Why, string]>([
   [{ kind: "review_requested" }, "Review requested from you"],
+  [{ kind: "assigned" }, "Assigned to you"],
   [{ kind: "stale_review" }, "Changed since your Review"],
   [{ kind: "ci_failed", checks: [] }, "CI failed"],
   [{ kind: "ci_failed", checks: ["Tests / Ubuntu", "Docs"] }, "CI failed: Tests / Ubuntu, Docs"],

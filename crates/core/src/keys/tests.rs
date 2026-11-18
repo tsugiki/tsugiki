@@ -408,7 +408,10 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
         "Archive, the row under the cursor or the Detail pane's item, by focus",
         &[Action::Archive],
     ),
-    ("Mute the selected item", &[Action::Mute]),
+    (
+        "Mute, the row under the cursor or the Detail pane's item, by focus",
+        &[Action::Mute],
+    ),
     (
         "Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus",
         &[Action::MarkSeen, Action::MarkUnseen],

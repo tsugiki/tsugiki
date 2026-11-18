@@ -36,8 +36,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A colleague's Draft PR only Needs attention when it has a Review request. When it becomes ready for review,
   that counts as **New activity**.
 - A Bot backport's Stale review is counted once, on its Origin PR.
-- **Last seen** is recorded per PR and per Issue. Mark Seen moves it, and so will Archive, Mute, Unmute and a
-  write to GitHub. Opening an item, opening it on GitHub or handing a PR to a review tool doesn't. It never
+- **Last seen** is recorded per PR and per Issue. Mark Seen, Archive and Mute move it, and so will Unmute and
+  a write to GitHub. Opening an item, opening it on GitHub or handing a PR to a review tool doesn't. It never
   moves back.
 - **New activity** covers people's commits, comments and reviews, a failed Bot backport, and CI changes on an
   **Own PR** or on a PR the user holds a Review on. Other bot activity and label changes do not count.

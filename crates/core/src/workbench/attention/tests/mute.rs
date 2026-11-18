@@ -5,6 +5,7 @@ use super::*;
 use crate::facts::activity::PutAway;
 use crate::store::{Archiving, Muting};
 use crate::workbench::Hidden;
+use crate::workbench::testing::assigned_issue;
 
 impl World {
     /// Mute on item `number`'s line of `view`, as the window drew it.
@@ -35,15 +36,6 @@ fn assigned(at: OffsetDateTime) -> Activity {
         kind: ActivityKind::Assigned,
         who: me(),
         at,
-    }
-}
-
-/// Issue `number`, open and assigned to the user.
-fn assigned_issue(number: u32) -> IssueFacts {
-    IssueFacts {
-        assignees: vec![me()],
-        state: Some(crate::facts::issues::IssueState::Open),
-        ..issue(number)
     }
 }
 

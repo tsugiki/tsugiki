@@ -29,7 +29,8 @@ use crate::status::{Change, FailedRead, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
-    TempPath, cpython, cpython_settings, hours_ago, me, one_folder, pr_facts, recordings,
+    TempPath, cpython, cpython_settings, hours_ago, issue_facts, me, one_folder, pr_facts,
+    recordings,
 };
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
@@ -1724,16 +1725,7 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
     let (folders, _folder) = temp_folders("muted-session");
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&me()).unwrap();
-    let issue = IssueFacts {
-        number: 5,
-        title: "A bug".to_owned(),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
-        updated_at: OffsetDateTime::UNIX_EPOCH,
-        state: Some(IssueState::Open),
-    };
-    store.save_issues(&gcmon(), vec![issue]).unwrap();
+    store.save_issues(&gcmon(), vec![issue_facts(5)]).unwrap();
     let fixing_5 = |number: u32, author: &str, head: &str| PullRequestFacts {
         title: "gh-5: Fix it".to_owned(),
         ..stored_pr(number, author, head)

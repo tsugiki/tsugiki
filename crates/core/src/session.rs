@@ -27,7 +27,7 @@ use crate::store::{
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched, unmuted};
+use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -586,40 +586,49 @@ fn settings_changed(
 /// wanting their heads.
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
-/// are lost, as no later step works them out, and the log says so. One that can't say which heads its
-/// Conversations were read at owes a read of each PR the switch puts in Reach, which costs a request apiece
-/// and loses nothing. One that can't keep what it owes loses them too, and the log says so. The PR view reads
-/// a lost Conversation when it opens. Says whether it handed the Mirror worker anything.
+/// are lost, as no later step works them out, and the log says so. The PR view reads a lost Conversation
+/// when it opens. Says whether it handed the Mirror worker anything.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
     now: &RepositorySettings,
     before: &RepositorySettings,
 ) -> Option<()> {
-    let repository = &now.name;
-    let facts = (store.work_facts(repository))
-        .inspect_err(|problem| {
-            log::warn!(
-                "Tsugiki couldn't read what a Filter switched on in {repository} reaches: {}",
-                problem.message
-            );
-        })
-        .ok()?;
-    let read_at = store.conversation_heads(repository).unwrap_or_default();
-    let (work, owed) = switched(&facts, &read_at, now, before);
-    let stated = Stated {
-        repository,
+    let facts = facts_for_move(store, &now.name)?;
+    let from = |settings| ReachFrom {
         facts: &facts,
-        work,
+        settings,
     };
-    owe_what_moved(fetching, store, stated, owed);
+    follow_move(fetching, store, from(before), from(now));
     Some(())
 }
 
-/// Hands the Mirror worker what `stated` says, and has the store owe the reads ahead of `owed`, both after a
-/// move of Reach. A store that can't keep what it owes loses them, and the log says so.
-fn owe_what_moved(fetching: &Fetching, store: &Store, stated: Stated<'_>, owed: Vec<u32>) {
-    let repository = stated.repository;
+/// The stored facts of `repository`, which a move of Reach goes by. A store that can't read them says so in
+/// the log.
+fn facts_for_move(store: &Store, repository: &RepositoryName) -> Option<WorkFacts> {
+    (store.work_facts(repository))
+        .inspect_err(|problem| {
+            log::warn!(
+                "Tsugiki couldn't read what moved Reach in {repository}: {}",
+                problem.message
+            );
+        })
+        .ok()
+}
+
+/// Hands the Mirror worker its work after Reach moved from `before` to `now`, and has the store owe the
+/// reads ahead the move owes, as `moved` works them out. A store that can't say which heads its
+/// Conversations were read at owes a read of each PR the move puts in Reach, which costs a request apiece
+/// and loses nothing. One that can't keep what it owes loses them, and the log says so.
+fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: ReachFrom<'_>) {
+    let repository = &now.settings.name;
+    let read_at = store.conversation_heads(repository).unwrap_or_default();
+    let (work, owed) = moved(before, now, &read_at);
+    let stated = Stated {
+        repository,
+        facts: now.facts,
+        work,
+    };
     hand_over_wants(fetching, store, stated);
     if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
@@ -633,36 +642,28 @@ fn owe_what_moved(fetching: &Fetching, store: &Store, stated: Stated<'_>, owed: 
 /// before the store keeps the mark.
 enum ReachMove<'a> {
     /// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
-    /// Mirror worker stops wanting their heads.
-    Mute(&'a RepositoryName),
+    /// Mirror worker stops wanting their heads. `hand_over_rules_wants` leaves alone a Repository the session
+    /// hasn't opened.
+    Mute(RepositoryName),
     Unmute(Box<Unmuting<'a>>),
 }
 
-/// Unmute of the item `key` under `settings`.
+/// Unmute of an item under `settings`.
 struct Unmuting<'a> {
     settings: &'a RepositorySettings,
     /// The stored facts before the Unmute, which still hold the item Muted, if the store could read them.
-    before: Result<WorkFacts, Error>,
-    key: ItemKey,
+    before: Option<WorkFacts>,
 }
 
 impl<'a> ReachMove<'a> {
     /// The move `marked` makes, under the settings `syncs` hold: none for a mark other than Mute and Unmute.
     fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
         match marked {
-            Marked::Muted { repository, .. } => {
+            Marked::Muted { repository, .. } => Some(Self::Mute(repository.clone())),
+            Marked::Unmuted { repository, .. } => {
                 let settings = syncs.settings(repository)?;
-                Some(Self::Mute(&settings.name))
-            }
-            Marked::Unmuted { repository, key } => {
-                let settings = syncs.settings(repository)?;
-                let before = store.work_facts(repository);
-                let key = *key;
-                Some(Self::Unmute(Box::new(Unmuting {
-                    settings,
-                    before,
-                    key,
-                })))
+                let before = facts_for_move(store, repository);
+                Some(Self::Unmute(Box::new(Unmuting { settings, before })))
             }
             Marked::Seen { .. }
             | Marked::Unseen { .. }
@@ -676,7 +677,7 @@ impl<'a> ReachMove<'a> {
     fn follow(self, fetching: &Fetching, store: &Store, syncs: &Syncs) -> Option<()> {
         match self {
             Self::Mute(repository) => {
-                hand_over_rules_wants(fetching, store, syncs, repository).map(drop)
+                hand_over_rules_wants(fetching, store, syncs, &repository).map(drop)
             }
             Self::Unmute(unmuting) => follow_unmute(fetching, store, *unmuting),
         }
@@ -686,31 +687,15 @@ impl<'a> ReachMove<'a> {
 /// The user unmuted an item, whose tree is back in Reach. No change on GitHub would have the Mirror fetch
 /// its heads or a refresh read its Conversations ahead. So the Mirror worker hears the new Reach at once,
 /// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
-/// Facts the store couldn't read leave the heads to the next step that saves, and lose the reads. Says
-/// whether it handed the Mirror worker anything.
+/// Reach after the Unmute goes by the facts the store kept. Facts the store couldn't read, before or after,
+/// leave the heads to the next step that saves, and lose the reads. Says whether it handed the Mirror
+/// worker anything.
 fn follow_unmute(fetching: &Fetching, store: &Store, unmuting: Unmuting<'_>) -> Option<()> {
-    let Unmuting {
-        settings,
-        before,
-        key,
-    } = unmuting;
-    let repository = &settings.name;
-    let mut facts = before
-        .inspect_err(|problem| {
-            log::warn!(
-                "Tsugiki couldn't read what an Unmute in {repository} puts back in Reach: {}",
-                problem.message
-            );
-        })
-        .ok()?;
-    let read_at = store.conversation_heads(repository).unwrap_or_default();
-    let (work, owed) = unmuted(&mut facts, key, &read_at, settings);
-    let stated = Stated {
-        repository,
-        facts: &facts,
-        work,
-    };
-    owe_what_moved(fetching, store, stated, owed);
+    let Unmuting { settings, before } = unmuting;
+    let before = before?;
+    let now = facts_for_move(store, &settings.name)?;
+    let from = |facts| ReachFrom { facts, settings };
+    follow_move(fetching, store, from(&before), from(&now));
     Some(())
 }
 

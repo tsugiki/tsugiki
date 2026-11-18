@@ -47,6 +47,14 @@ pub(crate) fn issue(number: u32) -> IssueFacts {
     }
 }
 
+/// Issue `number`, open and assigned to the user.
+pub(crate) fn assigned_issue(number: u32) -> IssueFacts {
+    IssueFacts {
+        assignees: vec![me()],
+        ..issue(number)
+    }
+}
+
 /// The user's PR, whose title names no Issue.
 pub(crate) fn mine(number: u32) -> PullRequestFacts {
     PullRequestFacts {

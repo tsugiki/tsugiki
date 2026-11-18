@@ -48,6 +48,7 @@ const view: IssueView = {
   assignees: [],
   labels: [],
   needs_attention: [],
+  archived: false,
   pull_requests: [
     {
       kind: "pr",
@@ -95,11 +96,11 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 /** The commit the user's Review covered, and the head the check compared it with. */
 const REVIEWED = { reviewed: "1".repeat(40), head: "2".repeat(40) };
 
-const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn()) => {
+const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn(), onarchive = vi.fn()) => {
   core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr, onmark });
+  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr, onmark, onarchive });
   state.stop();
   return state;
 };
@@ -138,6 +139,19 @@ it("offers Mark Seen in its header while something is new or it is Marked unseen
   cleanup();
   await shown(seen("marked_unseen"));
   expect(screen.getByRole("button", { name: "Mark Seen" })).toBeTruthy();
+});
+
+it("offers Archive beside Mark Seen, and Unarchive on an Archived Issue", async () => {
+  const onarchive = vi.fn();
+
+  await shown(view, vi.fn(), vi.fn(), onarchive);
+  const buttons = screen.getAllByRole("button").map((button) => button.textContent);
+  expect(buttons).toEqual(expect.arrayContaining(["Archive", "Mark Unseen"]));
+  await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+  expect(onarchive).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  await shown({ ...view, archived: true });
+  expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
 });
 
 /** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
@@ -521,6 +535,7 @@ it("says why it can't show the Issue", async () => {
     now: NOW,
     onopenpr: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
   });
   state.stop();
 

@@ -60,9 +60,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     PR of a folded Issue some other way, such as with `Alt+←` or from the Issue view, unfolds the Issue.
     Each view keeps which Issues are unfolded while the Repository stays open. `Enter` or a click opens the
     item or PR under the cursor in the Detail pane. `Q` marks the row under the cursor seen and `Shift+Q`
-    marks it unseen; with the focus in the Detail pane, they act on its item. Any item can be **Archived**
-    or **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys
-    (↑ ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
+    marks it unseen; with the focus in the Detail pane, they act on its item. `E` archives the item that
+    holds the row under the cursor, and the cursor moves on to the next row once the item leaves the list;
+    with the focus in the Detail pane or the list hidden, it archives the Issue on show, or the item the PR
+    on show belongs to while the list holds it, and with nothing open it does nothing. `Q` on an Archived
+    item marks it seen and keeps it Archived. A row the list keeps while Archived, as the Review requests
+    view keeps a PR whose Review request stood at the archive, says "Archived" beside its age. Any item can
+    be **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑
+    ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
 
     `Ctrl+Alt+B`, or "Hide Issue List" in the command palette, hides the list with its footer and its edge,
     so the Detail pane gets its room. The same key, or "Show Issue List", brings it back at its width. In a
@@ -86,16 +91,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     - The Issue view shows the title, an author line, the Origin PRs, the description, and recent comments,
       with a box to comment. The author line says who opened the Issue and how long ago, with the date and
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
-      Issue's labels show as plain chips in name order, as GitHub lists them, beside the Mark Seen button; an
-      Issue with no labels shows none. Each Origin PR's Backports are folded into one line that gives their
-      branches and states. A row between the "Origin PRs" heading and the tree counts the PRs by state, as
-      `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its word, then
-      its count, muted and without brackets, as on GitHub's tabs, with a muted dot between entries. Each
-      count matches its icon, so an open draft counts as Draft and not as Open, and the counts take in the
-      Backports and the folded merged PRs. All four states show on every Issue, so Open sits in the same
-      place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last, after
-      "Bold" in bold. A screen reader reads the row as a list named "PR counts", each entry its word and
-      count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
+      Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
+      Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, then Mark Seen;
+      an Issue with no labels shows none. Each Origin PR's Backports are folded into one line that
+      gives their branches and states. A row between the "Origin PRs" heading and the tree counts the PRs by
+      state, as `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its
+      word, then its count, muted and without brackets, as on GitHub's tabs, with a muted dot between
+      entries. Each count matches its icon, so an open draft counts as Draft and not as Open, and the counts
+      take in the Backports and the folded merged PRs. All four states show on every Issue, so Open sits in
+      the same place; a state at 0 shows in muted colour. The count of PRs that Need attention comes last,
+      after "Bold" in bold. A screen reader reads the row as a list named "PR counts", each entry its word
+      and count, "Open, 1" or "Needs attention, 1", and skips the icons, the dots and "Bold". Each PR's line
       starts with its branch and ends with its author, and a PR that Needs attention shows in bold. The
       worklist's line for an Issue still says "2 open of 3 PRs", as it has no room for five counts.
     - The PR view shows Conversation and Files as tabs, and opens on Conversation. `Ctrl+PageDown` and

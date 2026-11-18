@@ -16,6 +16,10 @@ import {
 } from "./workbench-row";
 
 /** The commit the user's Review covered. */
+/** What the list says of an item beside its facts: nothing Needs attention, and it isn't Archived. The key
+ * plays no part here. */
+const unmarked = { attention: null, key: { kind: "issue", number: 1 } as const, archived: false };
+
 const REVIEWED = "1".repeat(40);
 /** The head the check compared it with. */
 const HEAD = "2".repeat(40);
@@ -159,7 +163,7 @@ it("counts each Backport and each PR in an Issue's tree", () => {
     ],
   };
   expect(treeCount(tree)).toBe("3 PRs");
-  expect(summary({ kind: "issue", ...tree, attention: null })).toBe("2 open of 3 PRs");
+  expect(summary({ kind: "issue", ...tree, ...unmarked })).toBe("2 open of 3 PRs");
 });
 
 it("counts one PR in the singular", () => {
@@ -171,20 +175,20 @@ it("starts an Issue with its number and title", () => {
 });
 
 it("names the people an Issue involves, or a PR's author", () => {
-  expect(peopleOf({ kind: "issue", ...issue, attention: null })).toBe("issue-author, some-author");
-  expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe("some-author");
-  expect(
-    peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", attention: null }),
-  ).toBe("deleted user");
+  expect(peopleOf({ kind: "issue", ...issue, ...unmarked })).toBe("issue-author, some-author");
+  expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe("some-author");
+  expect(peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", ...unmarked })).toBe(
+    "deleted user",
+  );
 });
 
 it("shows a dash for an Issue whose people have all gone", () => {
-  expect(peopleOf({ kind: "issue", ...issue, people: [], attention: null })).toBe("—");
+  expect(peopleOf({ kind: "issue", ...issue, people: [], ...unmarked })).toBe("—");
 });
 
 it("says an Issue has no PR yet, and gives a PR's facts", () => {
-  expect(summary({ kind: "issue", ...issue, pull_requests: [], attention: null })).toBe("No PR yet");
-  expect(summary({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe(details(row));
+  expect(summary({ kind: "issue", ...issue, pull_requests: [], ...unmarked })).toBe("No PR yet");
+  expect(summary({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe(details(row));
 });
 
 it.each<[Why, string]>([

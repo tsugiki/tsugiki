@@ -14,6 +14,8 @@ const reviewRow = workbenchRow(160662, {
 
 const review: ListedItem = {
   attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
+  key: { kind: "issue", number: 112564 },
+  archived: false,
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",

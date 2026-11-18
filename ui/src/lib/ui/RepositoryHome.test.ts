@@ -36,6 +36,8 @@ const core = vi.hoisted(() => ({
   fetchPullRequest: vi.fn(),
   markSeen: vi.fn(),
   markUnseen: vi.fn(),
+  archive: vi.fn(),
+  unarchive: vi.fn(),
   putFilterOnWorkbench: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
@@ -70,6 +72,8 @@ vi.mock("$lib/data/bindings", async () => {
       fetchPullRequest: core.fetchPullRequest,
       markSeen: core.markSeen,
       markUnseen: core.markUnseen,
+      archive: core.archive,
+      unarchive: core.unarchive,
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       openOnGithub: core.openOnGithub,
       pullRequestFiles: core.pullRequestFiles,
@@ -122,6 +126,8 @@ const issue = {
     mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z" },
     state: "new_activity",
   },
+  key: { kind: "issue", number: 112564 },
+  archived: false,
 };
 
 const DEFAULT_LAYOUT = {
@@ -155,6 +161,8 @@ beforeEach(() => {
   core.openOnGithub.mockResolvedValue(done);
   core.markSeen.mockResolvedValue(done);
   core.markUnseen.mockResolvedValue(done);
+  core.archive.mockResolvedValue(done);
+  core.unarchive.mockResolvedValue(done);
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -172,6 +180,7 @@ beforeEach(() => {
       needs_attention: [],
       content: null,
       seen: issue.seen,
+      archived: false,
     },
   });
   core.workbench.mockResolvedValue(workbenchPage([]));
@@ -619,7 +628,15 @@ it("lists a Backport with no Issue and no Origin PR by itself", async () => {
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
 });
 
-const standalone = { kind: "standalone_pr", ...row, number: 5, title: "Alone", backports: [] };
+const standalone = {
+  kind: "standalone_pr",
+  ...row,
+  number: 5,
+  title: "Alone",
+  backports: [],
+  key: { kind: "pull_request", number: 5 },
+  archived: false,
+};
 
 /** A window on two items: the Issue, which it unfolds, and a Standalone PR. */
 const listing = async (settings: { diffFiles?: FilesMode; diffPeek?: PeekLayout } = {}) => {
@@ -2348,6 +2365,131 @@ it("marks nothing on Q and Shift+Q with no line under the cursor, or with the li
 
   expect(core.markSeen).not.toHaveBeenCalled();
   expect(core.markUnseen).not.toHaveBeenCalled();
+});
+
+it("archives on E the item that holds the line under the cursor, and the cursor lands on the next row", async () => {
+  const changed = catchEveryListener();
+  const { treeRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+
+  await fireEvent.keyDown(treeRow, { key: "e" });
+  await fireEvent.keyDown(treeRow, { key: "e", repeat: true });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  const landed = await screen.findByRole("button", { name: "#5 Alone" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+  expect(document.activeElement).toBe(landed);
+});
+
+it("archives on E with the list hidden the item of the PR on show, and nothing once nothing is open", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+
+  await press("e");
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  core.archive.mockClear();
+  cleanup();
+  await listing();
+  await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+  await screen.findByText(/Nothing open/);
+  await press("e");
+
+  expect(core.archive).not.toHaveBeenCalled();
+});
+
+it("archives on E the Issue on show while the Detail pane holds the focus", async () => {
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await screen.findByRole("button", { name: "Archive" });
+
+  await fireEvent.keyDown(view, { key: "e" });
+
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+});
+
+it("archives nothing on E in the Detail pane before the Issue's view arrives", async () => {
+  core.issue.mockReturnValue(new Promise(() => {}));
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+
+  await fireEvent.keyDown(view, { key: "e" });
+
+  expect(core.archive).not.toHaveBeenCalled();
+});
+
+it("archives the Issue on show from its button, which turns into Unarchive once the Issue is archived", async () => {
+  const changed = catchEveryListener();
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  const shown = await core.issue.mock.results[0]?.value;
+  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, archived: true } });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+  await fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
+
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
+  const list = within(issueList() as HTMLElement);
+  expect(list.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
+});
+
+it("says a Review request's PR on the list is Archived", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, archived: true }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const item = await screen.findByRole("listitem");
+
+  expect(within(item).getByText("Archived")).toBeTruthy();
+});
+
+it("keeps an Archived item Archived on Mark Seen, from its row and from the Issue view's button", async () => {
+  const archived = { ...standalone, attention: null, archived: true };
+  core.workbench.mockResolvedValue(workbenchPage([archived]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+
+  await fireEvent.keyDown(row, { key: "q" });
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith(
+    "python/cpython",
+    standalone.key,
+    standalone.seen.mark,
+  );
+  core.archive.mockClear();
+  cleanup();
+  const shown = (await core.issue()) as { data: object };
+  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, archived: true } });
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await fireEvent.click(await screen.findByRole("button", { name: "Mark Seen" }));
+
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
+  expect(core.markSeen).not.toHaveBeenCalled();
+});
+
+it("says why an Archive failed", async () => {
+  core.archive.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
+  const { prRow } = await listing();
+  prRow.focus();
+  await fireEvent.keyDown(prRow, { key: "ArrowDown" });
+
+  await fireEvent.keyDown(prRow, { key: "e" });
+
+  expect(await screen.findByText("Tsugiki couldn't mark this item: no database")).toBeTruthy();
 });
 
 it("offers Mark Unseen in the header of an item with nothing new, and the button marks it unseen", async () => {

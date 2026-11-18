@@ -3,7 +3,7 @@
   import type { GitHubItem } from "$lib/state/browser";
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
-  import { IssueViewState } from "$lib/state/issue-view.svelte";
+  import { type IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     DETAIL_LEAST,
@@ -27,6 +27,8 @@
   import {
     sameStop,
     WorkbenchState,
+    type Archived,
+    type ItemKey,
     type BackportRow,
     type ListedItem,
     type Seen,
@@ -354,13 +356,25 @@
     if (focused?.isConnected === false) focusCursor();
   }
 
-  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. */
-  type Marked = { stop: Stop | undefined; number: number; seen: Seen };
+  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. With the
+   * key of the Archived item that holds it, if the window draws one, Mark Seen keeps that item Archived
+   * (#490). */
+  type Marked = { stop: Stop | undefined; number: number; seen: Seen; archived?: ItemKey | undefined };
 
   /** The item the Detail pane shows, once its view has arrived. */
   function detailMarked(): Marked | undefined {
     const view = detail?.view;
-    return view ? { stop: detailLine(), number: view.number, seen: view.seen } : undefined;
+    if (!view) return undefined;
+    const stop = detailLine();
+    // The Issue view knows whether its Issue is Archived, listed or not.
+    const issue = detail instanceof IssueViewState ? detail.view : undefined;
+    const archived = issue ? issueArchived(issue) : stop && workbench.archivedHolding(stop);
+    return { stop, number: view.number, seen: view.seen, archived };
+  }
+
+  /** The key of the Issue `view` shows, while it's Archived. */
+  function issueArchived(view: IssueView): ItemKey | undefined {
+    return view.archived ? { kind: "issue", number: view.number } : undefined;
   }
 
   /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
@@ -382,7 +396,9 @@
     if (forDetail(at)) return detailMarked();
     const stop = workbench.underCursor;
     const seen = stop && workbench.seenOf(stop);
-    return stop && seen ? { stop, number: stop.number, seen } : undefined;
+    return stop && seen
+      ? { stop, number: stop.number, seen, archived: workbench.archivedHolding(stop) }
+      : undefined;
   }
 
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
@@ -397,7 +413,7 @@
    * row lands on the row that came after it, whether the item moved or kept its place, and `cursorLanded`
    * runs. */
   async function markSeen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark));
+    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark, marked.archived));
   }
 
   /** Takes the focus to the row the cursor landed on when a row of the list holds the focus, or the page
@@ -456,6 +472,37 @@
     const marked = detailMarked();
     if (marked && offersMarkSeen(marked.seen)) void markSeen(marked);
     else void markUnseen(marked);
+  }
+
+  /** What Archive acts on in the Detail pane: the Issue on show, or the item that holds the PR on show,
+   * once its view has arrived. */
+  function detailArchived(): Archived | undefined {
+    if (detail instanceof IssueViewState) {
+      const view = detail.view;
+      return view ? { key: { kind: "issue", number: view.number }, mark: view.seen.mark } : undefined;
+    }
+    const line = detailLine();
+    return line && workbench.archivedBy(line);
+  }
+
+  /** What `E` archives for a press `at`: the Detail pane's item while it holds the focus or the list is
+   * hidden, as for `Q`, and otherwise the item that holds the line under the cursor. */
+  function keyArchived(at: KeyTarget): Archived | undefined {
+    if (forDetail(at)) return detailArchived();
+    const stop = workbench.underCursor;
+    return stop && workbench.archivedBy(stop);
+  }
+
+  /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
+  async function archive(archived: Archived) {
+    await sayMarkProblem((opened) => opened.archive(archived));
+  }
+
+  /** The Issue view's Archive button: Archive on the Issue `view` shows, or Unarchive on an Archived one. */
+  function archiveByButton(view: IssueView) {
+    const key = { kind: "issue" as const, number: view.number };
+    if (view.archived) void sayMarkProblem((opened) => opened.unarchive(key));
+    else void archive({ key, mark: view.seen.mark });
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -794,6 +841,15 @@
     },
     mark_seen: marking(markSeen),
     mark_unseen: marking(markUnseen),
+    archive: (at) => {
+      const archived = keyArchived(at);
+      return (
+        archived &&
+        ((held) => {
+          if (!held) void archive(archived);
+        })
+      );
+    },
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
@@ -1031,6 +1087,9 @@
         {#if item.kind === "issue" && item.pull_requests.length > 0}
           <small class="count">{treeCount(item)}</small>
         {/if}
+        {#if item.archived}
+          <small class="archived">Archived</small>
+        {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
       </span>
       <small class="facts"
@@ -1231,6 +1290,7 @@
         {now}
         focusable={panes.hidden("list")}
         onmark={markByButton}
+        onarchive={archiveByButton}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -1421,6 +1481,7 @@
 
   .count,
   .age,
+  .archived,
   .facts {
     font-size: 12px;
     color: var(--fg-muted);

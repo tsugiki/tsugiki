@@ -15,6 +15,8 @@ const issue = (number: number): ListedItem => {
   const pr = 100_000 + number;
   return {
     attention: null,
+    key: { kind: "issue", number },
+    archived: false,
     kind: "issue",
     number,
     title: `Issue ${String(number)}`,

@@ -23,6 +23,7 @@ vi.mock("$lib/data/bindings", () => ({
     inbox: vi.fn(),
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
+    archive: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
   },
   events: { changed: { listen: vi.fn() } },
@@ -36,6 +37,8 @@ const seen = (...numbers: number[]): Seen => ({
 
 const item = (number: number): ListedItem => ({
   attention: null,
+  key: { kind: "pull_request", number },
+  archived: false,
   kind: "standalone_pr",
   ...workbenchRow(number, { title: `PR ${String(number)}`, author: "octocat", reasons: ["own_pr"] }),
   backports: [],
@@ -57,6 +60,8 @@ const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 /** Issue `number` with one PR, `pr`, in its tree. */
 const issueWith = (number: number, pr: number): ListedItem => ({
   attention: null,
+  key: { kind: "issue", number },
+  archived: false,
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
@@ -163,6 +168,8 @@ describe("WorkbenchState", () => {
     catchChanged();
     const tree: ListedItem = {
       attention: null,
+      key: { kind: "issue", number: 10 },
+      archived: false,
       kind: "issue",
       number: 10,
       title: "Issue 10",
@@ -182,6 +189,8 @@ describe("WorkbenchState", () => {
       number: 30,
       backport: "manual",
       attention: null,
+      key: { kind: "pull_request", number: 30 },
+      archived: false,
     };
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([tree, standalone, lone], { count: 3 }));
     const state = new WorkbenchState("python/cpython");
@@ -214,6 +223,8 @@ describe("WorkbenchState", () => {
     catchChanged();
     const tree = (number: number): ListedItem => ({
       attention: null,
+      key: { kind: "issue", number },
+      archived: false,
       kind: "issue",
       number,
       title: `Issue ${String(number)}`,
@@ -335,6 +346,8 @@ describe("WorkbenchState", () => {
     state.moveCursor(1);
     const tree: ListedItem = {
       attention: null,
+      key: { kind: "issue", number: 10 },
+      archived: false,
       kind: "issue",
       number: 10,
       title: "Issue 10",
@@ -372,6 +385,39 @@ describe("WorkbenchState", () => {
     expect(state.underCursor).toBeUndefined();
     state.moveCursor(1);
     expect(state.cursor?.number).toBe(6);
+    state.stop();
+  });
+
+  it("lands the cursor after an archived item once the item leaves, and forgets an archive whose item left", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6, 7));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    const reload = async (...listed: number[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(answer(...listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(numbers(state)).toEqual(listed);
+      });
+    };
+
+    await state.archive({ key: item(5).key, mark: item(5).seen.mark });
+    await reload(5, 6);
+    expect(state.cursor?.number, "a sync's answer can come before the archive's").toBe(5);
+    await reload(6, 7);
+    expect(state.cursor?.number).toBe(6);
+
+    // Archived from the Detail pane, with the cursor elsewhere, then back on the list.
+    await state.archive({ key: item(7).key, mark: item(7).seen.mark });
+    await reload(6);
+    await reload(6, 7);
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(7);
+    await reload(6);
+
+    expect(state.underCursor, "it left for another reason, as a closed item does").toBeUndefined();
     state.stop();
   });
 
@@ -780,6 +826,29 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("archives the item that holds a line, with its tree's part in Mark Seen", async () => {
+    catchChanged();
+    const standalone = {
+      ...item(3),
+      backports: [{ ...row, number: 4, seen: seen(4), backport: "bot" as const }],
+    };
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(1, 2), standalone]));
+    const state = new WorkbenchState("python/cpython");
+    const archived = (number: number, kind: "issue" | "pull_request", issue?: number) =>
+      state.archivedBy({ number, kind, issue });
+    expect(archived(1, "issue"), "before the first answer").toBeUndefined();
+    expect(state.archivedHolding({ number: 1, kind: "issue", issue: undefined })).toBeUndefined();
+    await state.load();
+
+    expect(archived(2, "pull_request", 1)).toEqual({
+      key: { kind: "issue", number: 1 },
+      mark: issueWith(1, 2).seen.mark,
+    });
+    expect(archived(4, "pull_request")?.key).toEqual({ kind: "pull_request", number: 3 });
+    expect(archived(9, "issue")).toBeUndefined();
+    state.stop();
+  });
+
   it("sends Mark Seen and Mark Unseen to the core, and says what went wrong", async () => {
     vi.mocked(commands.markSeen).mockResolvedValue(done);
     vi.mocked(commands.markUnseen).mockResolvedValue(refused("no database"));
@@ -1020,6 +1089,8 @@ describe("WorkbenchState", () => {
     });
     const issue = (attention: ListedItem["attention"]): ListedItem => ({
       attention,
+      key: { kind: "issue", number: 5 },
+      archived: false,
       kind: "issue",
       number: 5,
       title: "Issue 5",

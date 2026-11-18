@@ -405,9 +405,10 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
     ("Switch Repository", &[Action::SwitchRepository]),
     ("Reset the layout", &[Action::ResetLayout]),
     (
-        "Archive / Mute the selected item",
-        &[Action::Archive, Action::Mute],
+        "Archive, the row under the cursor or the Detail pane's item, by focus",
+        &[Action::Archive],
     ),
+    ("Mute the selected item", &[Action::Mute]),
     (
         "Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus",
         &[Action::MarkSeen, Action::MarkUnseen],

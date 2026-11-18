@@ -87,6 +87,120 @@ fn a_last_seen_from_before_acknowledgements_acknowledges_nothing_until_mark_seen
 }
 
 #[test]
+fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
+    let (path, _folder) = temp_database("activity-archived");
+    let repository = cpython();
+    let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let now = drawn + Duration::hours(1);
+    let store = Store::open(&path).unwrap();
+    store.mark_unseen(&repository, 8, drawn).unwrap();
+    let issue = ItemKey::Issue { number: 7 };
+    let key = issue;
+    store
+        .archive(
+            &repository,
+            Archiving {
+                key,
+                numbers: vec![7, 8],
+                up_to: Some(drawn),
+            },
+            now,
+        )
+        .unwrap();
+    let standalone = ItemKey::PullRequest { number: 9 };
+    let key = standalone;
+    store
+        .archive(
+            &repository,
+            Archiving {
+                key,
+                numbers: vec![9],
+                up_to: None,
+            },
+            now,
+        )
+        .unwrap();
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+    let restarted = store.work_facts(&repository).unwrap().activity;
+    store.unarchive(&repository, standalone).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    assert_eq!(
+        restarted.archived,
+        BTreeMap::from([(issue, drawn), (standalone, now)]),
+        "with nothing drawn, it counts from now"
+    );
+    let both = BTreeMap::from([(7, drawn), (8, drawn)]);
+    assert_eq!(restarted.last_seen, both);
+    assert_eq!(restarted.acknowledged, both);
+    assert_eq!(restarted.marked_unseen, BTreeMap::new());
+    assert_eq!(after.archived, BTreeMap::from([(issue, drawn)]));
+    assert_eq!(after.last_seen, both, "unarchive leaves Last seen");
+}
+
+#[test]
+fn archive_counts_from_the_latest_moment_its_tree_was_acknowledged_and_never_moves_back() {
+    let (path, _folder) = temp_database("activity-archived-acknowledged");
+    let repository = cpython();
+    let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let later = drawn + Duration::hours(1);
+    let store = Store::open(&path).unwrap();
+    // PR 8 also fixes another Issue, which the user marked seen up to a later sync.
+    store.mark_seen(&repository, vec![8], Some(later)).unwrap();
+    let key = ItemKey::Issue { number: 7 };
+    let archiving = |numbers| Archiving {
+        key,
+        numbers,
+        up_to: Some(drawn),
+    };
+    store
+        .archive(&repository, archiving(vec![7, 8]), drawn)
+        .unwrap();
+    let first = store.work_facts(&repository).unwrap().activity.archived;
+    // A mark that covers part of the tree, drawn before the PR's later moment.
+    store
+        .archive(&repository, archiving(vec![7]), drawn)
+        .unwrap();
+    let again = store.work_facts(&repository).unwrap().activity.archived;
+
+    store.close();
+    assert_eq!(first, BTreeMap::from([(key, later)]));
+    assert_eq!(
+        again, first,
+        "archiving again from an older mark moves nothing back"
+    );
+}
+
+#[test]
+fn mark_unseen_unarchives_the_item() {
+    let (path, _folder) = temp_database("activity-unseen-unarchives");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    let key = ItemKey::Issue { number: 7 };
+    store
+        .archive(
+            &repository,
+            Archiving {
+                key,
+                numbers: vec![7],
+                up_to: Some(now),
+            },
+            now,
+        )
+        .unwrap();
+    store.mark_unseen(&repository, 7, now).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    assert_eq!(after.archived, BTreeMap::new());
+    assert_eq!(after.marked_unseen, BTreeMap::from([(7, now)]));
+}
+
+#[test]
 fn a_kind_from_a_later_version_is_left_alone() {
     let (path, _folder) = temp_database("activity-later-kind");
     let repository = cpython();
@@ -110,4 +224,25 @@ fn a_kind_from_a_later_version_is_left_alone() {
     store.close();
     assert_eq!(read, []);
     assert_eq!(listed, BTreeMap::new());
+}
+
+#[test]
+fn an_archived_kind_from_a_later_version_is_left_alone() {
+    let (path, _folder) = temp_database("activity-later-archived");
+    let repository = cpython();
+    Store::open(&path).unwrap().close();
+    // This version has no way to write a kind it doesn't know.
+    let raw = Connection::open(&path).unwrap();
+    let inserted = raw
+        .execute(
+            "INSERT INTO archived (repository, kind, number, at)
+                 VALUES (:repository, 'dependency_updates', 0, 0)",
+            named_params! { ":repository": repository },
+        )
+        .unwrap();
+    assert_eq!(inserted, 1);
+    let read = archived(&raw, &repository, Items::All).unwrap();
+    drop(raw);
+
+    assert_eq!(read, BTreeMap::new());
 }

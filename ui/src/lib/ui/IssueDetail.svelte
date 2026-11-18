@@ -18,6 +18,7 @@
     now,
     onopenpr,
     onmark,
+    onarchive,
     focusable = false,
     header,
   }: {
@@ -27,6 +28,9 @@
     onopenpr: (number: number) => void;
     /** Mark Seen or Mark Unseen, whichever the header's button offers. */
     onmark: () => void;
+    /** Archive, or Unarchive on an Archived Issue, as the header's button offers for the view on show
+     * (#490). */
+    onarchive: (view: IssueView) => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -159,7 +163,13 @@
             {/each}
           </ul>
         {/if}
-        <MarkButton seen={view.seen} {onmark} />
+        <MarkButton seen={view.seen} {onmark}>
+          <button
+            onclick={() => {
+              onarchive(view);
+            }}>{view.archived ? "Unarchive" : "Archive"}</button
+          >
+        </MarkButton>
       </div>
 
       {#snippet tree(entries: TreeEntry[], name: string)}

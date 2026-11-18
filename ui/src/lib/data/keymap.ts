@@ -210,7 +210,7 @@ export const KEYMAP = [
     "action": "archive",
     "title": "Archive",
     "key": "e",
-    "context": "issue_list"
+    "context": "anywhere"
   },
   {
     "action": "mute",

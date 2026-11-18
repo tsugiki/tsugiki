@@ -50,12 +50,9 @@ it("lists the Issue list's keys, and leaves out an action with no key and the co
   show(["issue_list"]);
   const all = screen.getAllByRole("term").map((term) => term.nextElementSibling?.textContent);
 
-  expect(keysOf("Issue list")).toEqual([
-    "→ Unfold an Issue's PRs",
-    "← Fold an Issue's PRs",
-    "E Archive",
-    "M Mute",
-  ]);
+  expect(keysOf("Issue list")).toEqual(["→ Unfold an Issue's PRs", "← Fold an Issue's PRs", "M Mute"]);
+  // It archives the Detail pane's item too, as Q marks it.
+  expect(keysOf("Anywhere")).toContain("E Archive");
   expect(all).not.toContain("Reset Layout");
   expect(all).not.toContain("Send Comment");
 });
@@ -74,7 +71,8 @@ it("shows a remapped key by its new binding, and an action it took the key from 
   remapKeys({ archive: "a", next_change: "ctrl+k n", mute: "f8" });
   show(["issue_list", "diff"]);
 
-  expect(keysOf("Issue list")).toEqual(expect.arrayContaining(["A Archive", "F8 Mute"]));
+  expect(keysOf("Issue list")).toContain("F8 Mute");
+  expect(keysOf("Anywhere")).toContain("A Archive");
   expect(keysOf("Diff")).toContain("Ctrl+K N Next Change");
   // Mute took F8 from Next Comment Thread, which has no key until #550 settles the clash.
   expect(keysOf("Diff").filter((key) => key.endsWith("Next Comment Thread"))).toEqual([]);

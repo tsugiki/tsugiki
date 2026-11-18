@@ -171,8 +171,10 @@ _Avoid_: No issue, orphan PR, unlinked PR
 **Archived**:
 A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until
 something new needs their attention there; then it comes back by itself. Like archiving a mail thread.
-Archiving marks the item seen and clears **Marked unseen**, so New activity after it brings the item back, and
-so does a Review request or a CI failure that starts after it. Mark Unseen on an Archived item unarchives it.
+Archiving marks the item seen and clears **Marked unseen**, so a reason to **Need attention** that starts
+after it brings the item back: New activity that Needs attention, a Review request or a CI failure. New
+activity that doesn't, as on an Issue the user only follows, leaves it archived. Mark Unseen on an Archived
+item unarchives it.
 Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 

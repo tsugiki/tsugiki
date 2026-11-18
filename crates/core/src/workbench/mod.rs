@@ -27,6 +27,7 @@ use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::facts::WorkFacts;
+use crate::facts::activity::ItemKey;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::PrLinks;
 use crate::filters::FilterQuery;
@@ -120,6 +121,19 @@ impl WorkbenchItem {
             Self::StandaloneBackport(backport) => vec![&backport.row],
         }
     }
+
+    /// The key the user's state that hides the item keeps it under.
+    pub(crate) fn key(&self) -> ItemKey {
+        match self {
+            Self::Issue(issue) => ItemKey::Issue {
+                number: issue.number,
+            },
+            Self::StandalonePr(PrTree { row, .. })
+            | Self::StandaloneBackport(BackportRow { row, .. }) => {
+                ItemKey::PullRequest { number: row.number }
+            }
+        }
+    }
 }
 
 /// A top-level entry of the list, with why it Needs attention, if it does.
@@ -128,6 +142,24 @@ pub struct ListedItem {
     #[serde(flatten)]
     pub item: WorkbenchItem,
     pub attention: Option<Attention>,
+    /// The key Archive, and later Mute, keep the item under.
+    pub key: ItemKey,
+    /// Whether the item is Archived, which only the Review requests view and the Filters show, for a PR
+    /// whose Review request stood at the archive (#490).
+    pub archived: bool,
+}
+
+impl ListedItem {
+    /// `item` with what `causes` judge of its tree.
+    fn of(causes: &Causes, item: WorkbenchItem) -> Self {
+        let key = item.key();
+        Self {
+            attention: attention_of(causes, &item),
+            archived: causes.is_archived(key, &item.numbers()),
+            key,
+            item,
+        }
+    }
 }
 
 /// The list the window asks for.
@@ -198,26 +230,35 @@ impl Workbench {
         let listed: Vec<ListedItem> =
             candidates_of(facts, repository, selected.unwrap_or(&matched), &causes)
                 .into_iter()
-                .map(|item| ListedItem {
-                    attention: attention_of(&causes, &item),
-                    item,
-                })
+                .map(|item| ListedItem::of(&causes, item))
                 .collect();
-        let lines = filters.lines(&listed);
-        let count = count_of(listed.iter().filter(|listed| listed.attention.is_some()));
-        let review_requests = count_of(
-            listed
+        let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
+        // An Archived item leaves every list and its count, apart from a PR whose Review request stood at
+        // the archive: the Review requests view and the Filters keep that, marked Archived (#490).
+        let unarchived: Vec<&ListedItem> =
+            (listed.iter()).filter(|listed| !listed.archived).collect();
+        let kept: Vec<&ListedItem> = (listed.iter())
+            .filter(|listed| !listed.archived || requested(listed))
+            .collect();
+        let lines = filters.lines(&kept);
+        let count = count_of(
+            unarchived
                 .iter()
-                .filter(|listed| listed.item.is_reached_by(&causes.review_requests)),
+                .filter(|listed| listed.attention.is_some()),
         );
-        let stale_reviews = prs_of(&listed, &causes.stale_reviews);
-        let shown = listed.iter().filter(|listed| match selected {
+        let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
+        let stale_reviews = prs_of(&unarchived, &causes.stale_reviews);
+        let from = match view {
+            WorkbenchView::Filter { .. } | WorkbenchView::ReviewRequests => &kept,
+            WorkbenchView::Whole | WorkbenchView::StaleReviews => &unarchived,
+        };
+        let shown = from.iter().filter(|listed| match selected {
             Some(numbers) => listed.item.is_reached_by(numbers),
             // The item is on the Workbench when anything in its tree is, in its own right.
             None => listed.item.is_reached_by(&own_right),
         });
         Self {
-            items: by_attention(shown.cloned().collect()),
+            items: by_attention(shown.map(|listed| (*listed).clone()).collect()),
             count,
             review_requests,
             stale_reviews,
@@ -227,7 +268,7 @@ impl Workbench {
 }
 
 /// The count of the PRs in `numbers` that `listed` shows. A PR that fixes two Issues counts once.
-fn prs_of(listed: &[ListedItem], numbers: &BTreeSet<u32>) -> u32 {
+fn prs_of(listed: &[&ListedItem], numbers: &BTreeSet<u32>) -> u32 {
     let rows = listed.iter().flat_map(|listed| listed.item.rows());
     let held: BTreeSet<u32> = (rows.map(|row| row.number))
         .filter(|number| numbers.contains(number))
@@ -250,7 +291,7 @@ fn by_attention(shown: Vec<ListedItem>) -> Vec<ListedItem> {
     waiting
 }
 
-fn count_of<'a>(items: impl Iterator<Item = &'a ListedItem>) -> u32 {
+fn count_of<T>(items: impl Iterator<Item = T>) -> u32 {
     u32::try_from(items.count()).unwrap_or(u32::MAX)
 }
 

@@ -7,6 +7,7 @@ import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import {
   diffFile,
   done,
+  listedIssue,
   loadedSettings,
   ok,
   readyFiles,
@@ -122,18 +123,7 @@ const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [
 /** The window open on gcmon, the only Repository. */
 const gcmonHome = { screen: "repository", repository: gcmon, others: [] } as const;
 /** The Workbench with one Issue, #7, on it. */
-const oneIssue = workbenchPage([
-  {
-    kind: "issue",
-    number: 7,
-    title: "It crashes",
-    state: "OPEN",
-    people: [],
-    updated_at: "2026-11-04T10:00:00Z",
-    pull_requests: [],
-    attention: null,
-  },
-]);
+const oneIssue = workbenchPage([listedIssue(7, { title: "It crashes" })]);
 
 /** A palette row's text without the key on its right, which describes the row and stays out of its name. */
 const rowText = (option: HTMLElement) => {
@@ -1036,7 +1026,7 @@ describe("every action in the palette", () => {
     await onRow();
     await ctrlShiftP();
     // The diff's actions wait for a Files tab, and the actions with nothing built behind them yet, such as
-    // Archive, for theirs. The palette's own keys open the box it is.
+    // Mute, for theirs. The palette's own keys open the box it is.
     expect(rows()).toEqual([
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
@@ -1050,6 +1040,9 @@ describe("every action in the palette", () => {
       ["Open on GitHub", "Ctrl+Shift+G"],
       ["Switch Repository", "Ctrl+R"],
       ["Reset Layout", null],
+      ["Archive", "E"],
+      ["Mark Seen", "Q"],
+      ["Mark Unseen", "Shift+Q"],
       ["Open Settings", "Ctrl+,"],
       ["Show performance HUD", "Ctrl+Shift+H"],
       ["List the View's Keys", "?"],
@@ -1096,6 +1089,7 @@ describe("every action in the palette", () => {
       ["Open on GitHub", "Ctrl+Shift+G"],
       ["Switch Repository", "Ctrl+R"],
       ["Reset Layout", null],
+      ["Archive", "E"],
       ["Mark Seen", "Q"],
       ["Mark Unseen", "Shift+Q"],
       ["Open Settings", "Ctrl+,"],
@@ -1872,8 +1866,10 @@ describe("the key list", () => {
     expect(document.activeElement).toBe(list);
     expect(sections()).toEqual(["Issue list", "Anywhere"]);
     const issueList = within(screen.getByRole("region", { name: "Issue list" }));
-    expect(issueList.getByText("Archive").previousElementSibling?.textContent).toBe("E");
     expect(issueList.getByText("Mute").previousElementSibling?.textContent).toBe("M");
+    // Archive acts on the Detail pane's item too, as Q does.
+    const anywhere = within(screen.getByRole("region", { name: "Anywhere" }));
+    expect(anywhere.getByText("Archive").previousElementSibling?.textContent).toBe("E");
     // The list's keys stay under it.
     await fireEvent.keyDown(window, { key: "ArrowDown" });
 
@@ -1885,17 +1881,17 @@ describe("the key list", () => {
   it("shows a key remapped in [keys] by its new binding", async () => {
     core.home.mockResolvedValue(gcmonHome);
     const remapped = structuredClone(SETTINGS);
-    remapped.settings.keys = { archive: "a" };
+    remapped.settings.keys = { mute: "a" };
     core.settings.mockResolvedValue(remapped);
     render(Page);
     await screen.findByRole("button", { name: gcmon.name });
     await vi.waitFor(() => {
-      expect(actionOn("a")).toBe("archive");
+      expect(actionOn("a")).toBe("mute");
     });
 
     await question();
     const issueList = within(screen.getByRole("region", { name: "Issue list" }));
-    expect(issueList.getByText("Archive").previousElementSibling?.textContent).toBe("A");
+    expect(issueList.getByText("Mute").previousElementSibling?.textContent).toBe("A");
   });
 
   /** The titles of the actions the list names. */

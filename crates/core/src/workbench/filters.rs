@@ -63,7 +63,7 @@ impl<'a> FilterFacts<'a> {
     }
 
     /// The Sidebar's line for each Filter, in the order the settings hold them.
-    pub(super) fn lines(&self, candidates: &[ListedItem]) -> Vec<FilterLine> {
+    pub(super) fn lines(&self, candidates: &[&ListedItem]) -> Vec<FilterLine> {
         let line = |filter: &Filter| {
             let results = self.results_of(&filter.query);
             let reached = candidates

@@ -6,6 +6,7 @@ import type {
   DiffThread_Serialize as DiffThread,
   HourPoints_Serialize as HourPoints,
   LanguageServerSettings_Serialize as LanguageServerSettings,
+  ListedItem_Serialize as ListedItem,
   LoadedSettings_Serialize as LoadedSettings,
   PrFiles_Serialize as PrFiles,
   RepositoryCheck_Serialize as RepositoryCheck,
@@ -58,6 +59,26 @@ export const workbenchRow = (
   reasons: [],
   your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
+  ...overrides,
+});
+
+/** Issue `number` as a list holds it: open, with no PRs, seen, nothing that Needs attention, and not
+ * Archived, with what `overrides` says instead. */
+export const listedIssue = (
+  number: number,
+  overrides: Omit<Partial<ListedItem & { kind: "issue" }>, "kind" | "number"> = {},
+): ListedItem & { kind: "issue" } => ({
+  kind: "issue",
+  number,
+  title: `Issue ${String(number)}`,
+  state: "OPEN",
+  people: [],
+  updated_at: "2026-11-04T10:00:00Z",
+  pull_requests: [],
+  seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
+  attention: null,
+  key: { kind: "issue", number },
+  archived: false,
   ...overrides,
 });
 

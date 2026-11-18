@@ -86,6 +86,7 @@ const TABLES: &[(&str, Diagram)] = &[
     ("filter_searches", Diagram::Filters),
     ("last_seen", Diagram::UserAndSync),
     ("marked_unseen", Diagram::UserAndSync),
+    ("archived", Diagram::UserAndSync),
     ("first_syncs", Diagram::UserAndSync),
     ("sync_state", Diagram::UserAndSync),
     ("first_sync_place", Diagram::UserAndSync),

@@ -13,6 +13,7 @@ import {
   type InboxPage_Deserialize,
   type IssueItem_Serialize,
   type IssueState,
+  type ItemKey,
   type ListedItem_Serialize,
   type ListOrder,
   type PrState,
@@ -46,6 +47,7 @@ export type {
   CantCheck,
   CiState,
   IssueState,
+  ItemKey,
   PrState,
   WorkbenchView,
   WorkReason,
@@ -62,6 +64,9 @@ function joined(items: ListedItem[], more: ListedItem[]): ListedItem[] {
   const listed = new Set(items.map((item) => item.number));
   return [...items, ...more.filter((item) => !listed.has(item.number))];
 }
+
+/** What Archive acts on: the key of an item, and its tree's part in Mark Seen as the window drew it. */
+export type Archived = { key: ItemKey; mark: SeenMark };
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };
@@ -134,6 +139,10 @@ export class WorkbenchState {
   #wanted = new SvelteMap<string, boolean>();
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
   cursor = $state<Stop>();
+  /** The numbers of the items the user archived whose answer hasn't placed the cursor yet. Only
+   * `#placeCursor` reads it, so it needn't be reactive. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #archived = new Set<number>();
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The view whose items the list shows: `selected` once its answer has arrived. */
@@ -320,14 +329,45 @@ export class WorkbenchState {
     return rows.find((row) => row.number === stop.number)?.seen;
   }
 
-  /** Mark Seen with `mark`, as the window drew it. Says what went wrong, if anything did. */
-  async markSeen(mark: SeenMark) {
-    return problemIn(commands.markSeen(this.#repository, mark));
+  /** Mark Seen with `mark`, as the window drew it. Of an item the window draws `archived`, it goes through
+   * Archive, which marks seen the same way and keeps the item Archived (#490). Says what went wrong, if
+   * anything did. */
+  async markSeen(mark: SeenMark, archived?: ItemKey) {
+    const marking = archived
+      ? commands.archive(this.#repository, archived, mark)
+      : commands.markSeen(this.#repository, mark);
+    return problemIn(marking);
+  }
+
+  /** The key of the item that holds line `stop`, while the list draws it Archived. */
+  archivedHolding(stop: Stop): ItemKey | undefined {
+    const item = this.#itemOf(stop, this.items ?? []);
+    return item?.archived ? item.key : undefined;
   }
 
   /** Mark Unseen on item `number`. Says what went wrong, if anything did. */
   async markUnseen(number: number) {
     return problemIn(commands.markUnseen(this.#repository, number));
+  }
+
+  /** What Archive on line `stop` acts on: the item that holds the line, with its tree's part in Mark Seen. */
+  archivedBy(stop: Stop): Archived | undefined {
+    const item = this.#itemOf(stop, this.items ?? []);
+    return item && { key: item.key, mark: item.seen.mark };
+  }
+
+  /** Archive on `archived`, as the window drew it (#490). Once the item leaves the list, a cursor on any of
+   * its lines lands on the item after it. Says what went wrong, if anything did. */
+  async archive({ key, mark }: Archived) {
+    this.#archived.add(key.number);
+    const problem = await problemIn(commands.archive(this.#repository, key, mark));
+    if (problem !== undefined) this.#archived.delete(key.number);
+    return problem;
+  }
+
+  /** Unarchives the item `key` names. Says what went wrong, if anything did. */
+  async unarchive(key: ItemKey) {
+    return problemIn(commands.unarchive(this.#repository, key));
   }
 
   /** The Sidebar's line of the Filter whose view is selected, while the settings hold it. */
@@ -394,17 +434,30 @@ export class WorkbenchState {
    *
    * When the line under the cursor, an item's own, Needed attention in `before`, and in `items` no longer
    * does or has left the list, the cursor lands on the first item after it in `before` that `items` still
-   * lists, or else on the last line, and `landed` runs. With nothing listed it stays where it was.
+   * lists, or else on the last line, and `landed` runs. So it does when the user archived the item that
+   * holds the cursor's line, on any of its lines, and no line of `items` names that line's Issue or PR any
+   * more (#490). With nothing listed it stays where it was.
    *
    * Otherwise the cursor stays on its line, which may have moved, and follows a PR that a change put under
    * an Issue, or took out from under one, unfolding the Issue over a PR under the cursor, as another view
    * may have it folded.
    */
   #placeCursor(items: ListedItem[], before: ListedItem[] | undefined) {
+    // An archive waits for the answer that takes its item off the list, as one that a sync asked for can
+    // land before the archive's own, with the item still listed. An item `items` doesn't list waits no more.
+    const archiving = [...this.#archived];
+    for (const number of archiving) {
+      if (!items.some((item) => item.number === number)) this.#archived.delete(number);
+    }
     const cursor = this.cursor;
     if (cursor === undefined) return;
-    const was = before && ownerOf(cursor, before);
-    if (before && was?.attention && !items.find((item) => item.number === was.number)?.attention) {
+    const owner = before && ownerOf(cursor, before);
+    const quiet = owner?.attention && !items.find((item) => item.number === owner.number)?.attention;
+    const was = before && this.#itemOf(cursor, before);
+    // The list holds `items` by now.
+    const named = this.#allStops().some((stop) => stop.number === cursor.number);
+    const archived = was && archiving.includes(was.number) && !named;
+    if (before && was && (quiet || archived)) {
       const after = before.slice(before.indexOf(was) + 1).map((item) => item.number);
       const target = after.find((number) => items.some((item) => item.number === number));
       const stops = this.#stops();

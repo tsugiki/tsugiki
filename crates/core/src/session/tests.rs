@@ -1,7 +1,7 @@
 use super::*;
 use crate::conventions::Conventions;
 use crate::facts::CommitSha;
-use crate::facts::activity::ActivityFacts;
+use crate::facts::activity::{ActivityFacts, ItemKey};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssueState};
@@ -403,6 +403,28 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
     assert_eq!(content, None);
     assert_eq!(activity.last_seen, BTreeMap::from([(7, drawn), (8, drawn)]));
     assert_eq!(activity.marked_unseen, BTreeMap::new());
+}
+
+#[test]
+fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
+    let access = replying(vec![signed_in()]);
+    let drawn = hours_ago(2);
+    let issue = ItemKey::Issue { number: 7 };
+    let standalone = ItemKey::PullRequest { number: 9 };
+
+    let (_, activity, _) = after_asking("archive", access, |asked| {
+        let mark = |numbers| SeenMark {
+            numbers,
+            up_to: Some(drawn),
+        };
+        asked.archive(gcmon(), issue, mark(vec![7, 8]));
+        asked.archive(gcmon(), standalone, mark(vec![9]));
+        asked.unarchive(gcmon(), standalone);
+    });
+
+    assert_eq!(activity.archived, BTreeMap::from([(issue, drawn)]));
+    let seen = BTreeMap::from([(7, drawn), (8, drawn), (9, drawn)]);
+    assert_eq!(activity.last_seen, seen);
 }
 
 #[test]

@@ -1,9 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
-import type {
-  IssueView_Serialize as IssueView,
-  ListedItem_Serialize as ListedItem,
-} from "../src/lib/data/bindings.ts";
-import { done, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import type { IssueView_Serialize as IssueView } from "../src/lib/data/bindings.ts";
+import { done, listedIssue, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
 import { home, repository } from "./fixtures.ts";
 import { changeAnswer, type CoreAnswers, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -106,17 +103,7 @@ test("the recording button stays put when a line about a long frame shows", asyn
 });
 
 test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => {
-  const listed: ListedItem & { kind: "issue" } = {
-    kind: "issue",
-    number: 7,
-    title: "Issue 7",
-    state: "OPEN",
-    people: ["issue-author"],
-    updated_at: "2026-11-04T10:00:00Z",
-    pull_requests: [],
-    seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
-    attention: null,
-  };
+  const listed = listedIssue(7, { people: ["issue-author"] });
   const unread: IssueView = {
     ...listed,
     merged: [],

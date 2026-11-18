@@ -211,15 +211,11 @@ impl Causes {
         }
     }
 
-    /// Each of `numbers` that `fresh_asks` counts, with its cause.
+    /// Each of `numbers` that `fresh_asks` counts, with its cause: none unless the user muted the item.
     fn fresh(&self, key: ItemKey, numbers: &[u32]) -> Vec<(u32, Cause)> {
-        let Some(muted) = self.muted.get(&key) else {
-            return Vec::new();
-        };
-        let asks = numbers
-            .iter()
-            .filter_map(|&number| Some((number, self.asks.get(&number)?)));
-        let fresh = asks.filter_map(|(number, ask)| {
+        let fresh = numbers.iter().filter_map(|&number| {
+            let muted = self.muted.get(&key)?;
+            let ask = self.asks.get(&number)?;
             let acknowledged = self
                 .acknowledged
                 .get(&number)

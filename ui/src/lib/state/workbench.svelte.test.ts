@@ -458,13 +458,25 @@ describe("WorkbenchState", () => {
   it("holds the counts of the Built-in views", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(
-      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2 }),
+      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2, archived: 6 }),
     );
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
     expect(state.reviewRequests).toBe(3);
     expect(state.staleReviews).toBe(2);
+    expect(state.archived).toBe(6);
+  });
+
+  it("names the Archived view", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([]));
+    const state = new WorkbenchState("python/cpython");
+
+    await state.select({ kind: "archived" });
+
+    expect(state.title).toBe("Archived");
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "archived" });
   });
 
   it("asks for a Filter the user selects, and for the whole Workbench again", async () => {

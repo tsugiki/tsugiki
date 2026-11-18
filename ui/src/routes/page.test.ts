@@ -1049,6 +1049,7 @@ describe("every action in the palette", () => {
       ["Sort by Last Update", null],
       ["View: Inbox", null],
       ["View: Stale Reviews", null],
+      ["View: Archived", null],
       ["View: Sidebar as Icons", null],
     ]);
   });
@@ -1098,6 +1099,7 @@ describe("every action in the palette", () => {
       ["Sort by Last Update", null],
       ["View: Inbox", null],
       ["View: Stale Reviews", null],
+      ["View: Archived", null],
       ["View: Sidebar as Icons", null],
     ]);
   });

@@ -144,7 +144,9 @@ impl Causes {
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
-            archived: facts.activity.archived.clone(),
+            archived: (facts.activity.archived.iter())
+                .map(|(key, archive)| (*key, archive.seen_up_to))
+                .collect(),
             acknowledged: facts.activity.acknowledged.clone(),
         }
     }

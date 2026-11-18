@@ -41,11 +41,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Every row in every Issue list has an Issue or PR icon coloured by state.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
-  many items its search found, as its view lists them. For the Built-in views, it is how many PRs they hold.
-  The Inbox has no count.
-- **Built-in views**: Stale reviews, New activity, Review requests, Archived (the Archived items, each with
-  Unarchive) and Muted (the Muted items with Unmute, then the Muted authors in this Repository and the items
-  they hide, with Unmute author).
+  many items its search found, as its view lists them. For Stale reviews, it is how many PRs the view holds,
+  and for Review requests and Archived, how many items. The Inbox has no count.
+- **Built-in views**: Stale reviews, New activity, Review requests, Archived (the Archived items, the last
+  archived first, each with Unarchive) and Muted (the Muted items with Unmute, then the Muted authors in this
+  Repository and the items they hide, with Unmute author).
 - Each Issue lists its **Matched PRs** first, followed by its other PRs that are open or that **Need
   attention**.
 - **Needs attention** means work waiting on the user:
@@ -85,7 +85,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     need attention, as on an Issue the user only follows, leaves it put away, and so does Mark Seen on an
     item the window shows Archived. Mark Unseen unarchives it.
     Tsugiki keeps it per Repository under a key that names the item, its kind and number, which Mute is to
-    share.
+    share, with the moment the user put it away. The Archived view lists the items the last archived first:
+    archiving an item again moves it to the top, and Mark Seen on it there leaves it in its place.
+    Unarchive, or `E` on its row there, puts the item back wherever its state puts it. Mark Unseen on any of
+    its rows there unarchives the item and flags that row's Issue or PR Marked unseen, so it comes back
+    Needing attention.
   - **Mute** hides an item until the user unmutes it.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened

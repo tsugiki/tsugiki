@@ -10,7 +10,9 @@ use time::OffsetDateTime;
 use super::Connection;
 use super::columns::{Items, UnixTime};
 use super::failed_checks;
-use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity, ItemKey};
+use crate::facts::activity::{
+    Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, PutAway,
+};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -73,6 +75,13 @@ pub(super) const ARCHIVED: &str = "
         at INTEGER NOT NULL,
         PRIMARY KEY (repository, kind, number)
     ) WITHOUT ROWID;
+";
+
+/// When the user put each archived item away, which orders the Archived view (#491). An item archived
+/// before this column goes by the moment Archive marked it seen up to.
+pub(super) const ARCHIVED_AT: &str = "
+    ALTER TABLE archived ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0;
+    UPDATE archived SET archived_at = at;
 ";
 
 const ISSUE: &str = "issue";
@@ -259,18 +268,20 @@ fn key_columns(key: ItemKey) -> (&'static str, u32) {
     }
 }
 
-/// What Archive writes: the item `key` names, and Mark Seen on `numbers`, the item and its tree, up to
-/// `up_to` as the window drew it.
+/// What Archive writes: the item `key` names, Mark Seen on `numbers`, the item and its tree, up to `up_to` as
+/// the window drew it, and when it puts the item away.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Archiving {
     pub key: ItemKey,
     pub numbers: Vec<u32>,
     pub up_to: Option<OffsetDateTime>,
+    pub put_away: PutAway,
 }
 
 /// Archive on `archiving`'s item: Mark Seen on its numbers, and the item kept as archived from `up_to`, or
 /// from `now` when the window drew no sync, or from a later moment one of its numbers was acknowledged at.
-/// Archiving it again never moves that moment back.
+/// Archiving it again never moves that moment back. The item is put away `now`, or, as `put_away` says, when
+/// it last was, if it was.
 pub(super) fn archive(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -281,6 +292,7 @@ pub(super) fn archive(
         key,
         numbers,
         up_to,
+        put_away,
     } = archiving;
     let transaction = connection.transaction()?;
     mark_seen_in(&transaction, repository, numbers, *up_to)?;
@@ -299,14 +311,19 @@ pub(super) fn archive(
         at = at.max(acknowledged.unwrap_or(at));
     }
     let (kind, number) = key_columns(*key);
+    let as_before = matches!(put_away, PutAway::AsBefore);
     let _archived = transaction.execute(
-        "INSERT INTO archived (repository, kind, number, at) VALUES (:repository, :kind, :number, :at)
-         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at)",
+        "INSERT INTO archived (repository, kind, number, at, archived_at)
+         VALUES (:repository, :kind, :number, :at, :now)
+         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at),
+             archived_at = IIF(:as_before, archived_at, excluded.archived_at)",
         named_params! {
             ":repository": repository,
             ":kind": kind,
             ":number": number,
             ":at": at,
+            ":now": now.unix_timestamp(),
+            ":as_before": as_before,
         },
     )?;
     transaction.commit()
@@ -327,15 +344,16 @@ pub(super) fn unarchive(
         .map(drop)
 }
 
-/// The archived items of `items`, each with the moment it was archived from.
+/// The archived items of `items`.
 fn archived(
     connection: &Connection,
     repository: &RepositoryName,
     items: Items<'_>,
-) -> rusqlite::Result<BTreeMap<ItemKey, OffsetDateTime>> {
+) -> rusqlite::Result<BTreeMap<ItemKey, Archive>> {
     let condition = items.condition("number");
-    let query =
-        format!("SELECT kind, number, at FROM archived WHERE repository = :repository {condition}");
+    let query = format!(
+        "SELECT kind, number, at, archived_at FROM archived WHERE repository = :repository {condition}"
+    );
     let mut statement = connection.prepare(&query)?;
     let asked = items.with(vec![(":repository", repository)]);
     let mut rows = statement.query(asked.as_slice())?;
@@ -349,8 +367,13 @@ fn archived(
             // A later version's kind, such as Dependency updates, means nothing to this one.
             _ => continue,
         };
-        let UnixTime(at) = row.get("at")?;
-        let _replaced = found.insert(key, at);
+        let UnixTime(seen_up_to) = row.get("at")?;
+        let UnixTime(archived_at) = row.get("archived_at")?;
+        let archive = Archive {
+            seen_up_to,
+            archived_at,
+        };
+        let _replaced = found.insert(key, archive);
     }
     Ok(found)
 }

@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
-use crate::facts::activity::ItemKey;
+use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, ReviewedCommit};
 use crate::mirror::{CloneRefusal, LookupAt, MirrorRequests};
@@ -63,17 +63,38 @@ pub(crate) enum Marked {
     },
     /// The flag starts at `at`.
     Unseen { item: Item, at: OffsetDateTime },
-    /// Archive on the item `key` names, with the Mark Seen the window drew for it, at `at`.
+    /// Archive on the item `key` names, with the Mark Seen the window drew for it, at `at`, putting the item
+    /// away as `put_away` says.
     Archived {
         repository: RepositoryName,
         key: ItemKey,
         mark: SeenMark,
+        put_away: PutAway,
         at: OffsetDateTime,
     },
     Unarchived {
         repository: RepositoryName,
         key: ItemKey,
     },
+}
+
+impl Marked {
+    /// Archive on the item `key` names now, with the Mark Seen the window drew for it in `mark`, putting the
+    /// item away as `put_away` says.
+    fn archived(
+        repository: RepositoryName,
+        key: ItemKey,
+        mark: SeenMark,
+        put_away: PutAway,
+    ) -> Self {
+        Self::Archived {
+            repository,
+            key,
+            mark,
+            put_away,
+            at: OffsetDateTime::now_utc(),
+        }
+    }
 }
 
 /// An Issue or a PR on screen, whose conversation the session reads from GitHub.
@@ -254,15 +275,16 @@ impl Fetching {
     }
 
     /// Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away
-    /// until something new Needs attention there.
+    /// now, until something new Needs attention there.
     pub fn archive(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
-        let at = OffsetDateTime::now_utc();
-        let archived = Marked::Archived {
-            repository,
-            key,
-            mark,
-            at,
-        };
+        let archived = Marked::archived(repository, key, mark, PutAway::Now);
+        self.to_session(SessionMessage::Mark(archived));
+    }
+
+    /// Mark Seen with `mark` on the item `key` names, which the window draws Archived: Archive that keeps
+    /// the item Archived in its place in the Archived view (#491).
+    pub fn keep_archived(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
+        let archived = Marked::archived(repository, key, mark, PutAway::AsBefore);
         self.to_session(SessionMessage::Mark(archived));
     }
 

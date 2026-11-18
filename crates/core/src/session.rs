@@ -695,6 +695,7 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
             repository,
             key,
             mark: SeenMark { numbers, up_to },
+            put_away,
             at,
         } => {
             let change = Change {
@@ -705,6 +706,7 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
                 key,
                 numbers,
                 up_to,
+                put_away,
             };
             let saved = store.archive(&change.repository, archiving, at);
             (saved, change)

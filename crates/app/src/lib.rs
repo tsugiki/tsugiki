@@ -326,6 +326,20 @@ fn archive(
     Ok(())
 }
 
+/// Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
+/// its place in the Archived view (#491). Returns at once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn keep_archived(
+    repository: &str,
+    item: ItemKey,
+    mark: SeenMark,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.keep_archived(RepositoryName::parse(repository)?, item, mark);
+    Ok(())
+}
+
 /// Unarchives the item `item` names, and returns at once.
 #[tauri::command]
 #[specta::specta]
@@ -1103,6 +1117,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_seen,
             mark_unseen,
             archive,
+            keep_archived,
             unarchive,
             settings,
             slow_commands::themes,

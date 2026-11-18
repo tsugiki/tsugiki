@@ -418,11 +418,17 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
             up_to: Some(drawn),
         };
         asked.archive(gcmon(), issue, mark(vec![7, 8]));
+        asked.keep_archived(gcmon(), issue, mark(vec![7]));
         asked.archive(gcmon(), standalone, mark(vec![9]));
         asked.unarchive(gcmon(), standalone);
     });
 
-    assert_eq!(activity.archived, BTreeMap::from([(issue, drawn)]));
+    let archived = activity.archived.iter();
+    let seen_up_to = archived.map(|(key, archive)| (*key, archive.seen_up_to));
+    assert_eq!(
+        BTreeMap::from_iter(seen_up_to),
+        BTreeMap::from([(issue, drawn)])
+    );
     let seen = BTreeMap::from([(7, drawn), (8, drawn), (9, drawn)]);
     assert_eq!(activity.last_seen, seen);
 }

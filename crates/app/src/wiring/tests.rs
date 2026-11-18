@@ -825,15 +825,17 @@ fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window(
 }
 
 #[test]
-fn archive_and_unarchive_tell_the_window() {
+fn archive_keep_archived_and_unarchive_tell_the_window() {
     let (folders, _root) = temp_folders("wired-archive");
     let wired = Wired::start(Ok(folders), no_network());
     let item = json!({ "kind": "issue", "number": 7 });
     let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z" });
 
     let archive = json!({ "repository": CPYTHON, "item": item, "mark": mark });
-    drop(wired.ask("archive", archive).unwrap());
+    drop(wired.ask("archive", archive.clone()).unwrap());
     let archived = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.ask("keep_archived", archive).unwrap());
+    let kept = wired.workbenches.recv_timeout(PLENTY).unwrap();
     let unarchive = json!({ "repository": CPYTHON, "item": item });
     drop(wired.ask("unarchive", unarchive).unwrap());
     let unarchived = wired.workbenches.recv_timeout(PLENTY).unwrap();
@@ -845,6 +847,7 @@ fn archive_and_unarchive_tell_the_window() {
     drop(wired.stop());
 
     assert_eq!(archived, json!({ "repository": CPYTHON, "items": [7, 8] }));
+    assert_eq!(kept, archived);
     assert_eq!(unarchived, json!({ "repository": CPYTHON, "items": [7] }));
     assert!(refused.is_err(), "a kind this version doesn't know");
 }

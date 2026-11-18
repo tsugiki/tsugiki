@@ -264,6 +264,7 @@ erDiagram
         TEXT repository PK
         INTEGER number PK
         INTEGER at
+        INTEGER acknowledged_at "nullable"
     }
     marked_unseen {
         TEXT repository PK

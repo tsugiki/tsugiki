@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::causes::Causes;
 use super::origins;
-use super::reasons::reasons;
+use super::reasons::{WorkReason, reasons};
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
 use crate::facts::filters::FilterResults;
 use crate::facts::patch_ids::PatchesOf;
@@ -32,9 +32,10 @@ pub(crate) fn matched(
         .collect()
 }
 
-/// The Issues and PRs on the Workbench in their own right: those a Filter found, each PR with a
-/// `WorkReason`, and each that Needs attention, as `causes` says. No viewer means nobody has signed in yet,
-/// so nothing is the user's work.
+/// The Issues and PRs on the Workbench in their own right: those a Filter found, each open PR the user wrote
+/// or reviewed, and each that Needs attention, as `causes` says. A Review request holds a PR only while it
+/// Needs attention, so Mark Seen takes it off (#865). No viewer means nobody has signed in yet, so nothing
+/// is the user's work.
 pub(crate) fn in_own_right(
     facts: &WorkFacts,
     repository: &RepositorySettings,
@@ -43,8 +44,9 @@ pub(crate) fn in_own_right(
     let Some(viewer) = facts.viewer.as_ref() else {
         return BTreeSet::new();
     };
+    let holds = |reason: &WorkReason| *reason != WorkReason::ReviewRequest;
     let reasoned = (facts.pull_requests.iter())
-        .filter(|pr| !reasons(pr, viewer).is_empty())
+        .filter(|pr| reasons(pr, viewer).iter().any(holds))
         .map(|pr| pr.number);
     let mut own = matched(&repository.filters, &facts.filters);
     own.extend(reasoned);

@@ -30,8 +30,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A **Bot backport** shares its Origin PR's review state, so Tsugiki checks none of its own. A **Manual
   backport** is reviewed on its own, and so is a Bot backport whose Origin PR Tsugiki lacks or is a Backport
   too, which the list shows by itself.
-- A **Review request** always counts as Needs attention, including on a Bot backport or a Draft PR. A Local
-  mark does not clear it.
+- A **Review request** counts as Needs attention until the user marks the PR seen, including on a Bot
+  backport or a Draft PR, and the Review requests view lists it until the user submits a review. A Local
+  mark ends neither.
 - A colleague's Draft PR only Needs attention when it has a Review request. When it becomes ready for review,
   that counts as **New activity**.
 - A Bot backport's Stale review is counted once, on its Origin PR.

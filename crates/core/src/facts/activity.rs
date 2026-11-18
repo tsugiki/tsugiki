@@ -50,6 +50,10 @@ pub struct ActivityFacts {
     /// The moment the Repository's first sync began, once a first sync has finished.
     pub first_sync: Option<OffsetDateTime>,
     pub last_seen: BTreeMap<u32, OffsetDateTime>,
+    /// The moment the user last acknowledged each item: a Review request, a Stale review or failed CI that
+    /// started before it no longer Needs attention. Mark Seen moves it with Last seen, and a write to GitHub
+    /// doesn't.
+    pub acknowledged: BTreeMap<u32, OffsetDateTime>,
     /// The moment the user marked each item unseen, for the items still flagged.
     pub marked_unseen: BTreeMap<u32, OffsetDateTime>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,

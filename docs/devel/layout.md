@@ -49,9 +49,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     list on a change for that row alone, and leaves the rest to the browser, also when the user had
     scrolled the Detail pane's row away.
 
-    An item that Needs attention is marked the way unread mail is, and keeps that look until the user marks
-    it seen. The preview says why in the words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes
-    requested by some-reviewer", "Review requested from you", or "Marked unseen". An Issue's Origin PRs and
+    An item that Needs attention is marked the way unread mail is, and keeps that look until nothing on it
+    waits on the user or the user marks it seen, which drops the whole look. The preview says why in the
+    words an **Alert** would use: "CI failed: Tests / Ubuntu", "Changes requested by some-reviewer", "Review
+    requested from you", or "Marked unseen". An Issue's Origin PRs and
     their Backports are listed under it, folded at first like a conversation in a mail client: the Issue's
     row shows `›` and its preview, and ↑ ↓ go from Issue to Issue. → or a click on `›` unfolds the Issue,
     and ↑ ↓ then stop on each of its PRs. ← folds it; on a PR's row ← moves the cursor to its Issue, as in

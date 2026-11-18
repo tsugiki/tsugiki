@@ -81,9 +81,10 @@ pub(crate) struct Cause {
 #[derive(Debug, Default)]
 pub(crate) struct Causes {
     by_number: BTreeMap<u32, Vec<Cause>>,
-    /// The PRs that carry a Review request.
+    /// The PRs that carry a Review request, acknowledged or not, which the Review requests view holds.
     pub(crate) review_requests: BTreeSet<u32>,
-    /// The PRs whose Stale review Needs attention, which the Stale reviews view holds.
+    /// The PRs whose Stale review waits on the user, which the Stale reviews view holds. It Needs attention
+    /// only until the user acknowledges it.
     pub(crate) stale_reviews: BTreeSet<u32>,
     /// The Issues and PRs with New activity, whoever it waits on.
     with_news: BTreeSet<u32>,
@@ -179,7 +180,7 @@ impl Causes {
     }
 }
 
-/// The PRs whose Stale review Needs attention: each open PR where `viewer`'s Review is a Stale review. A
+/// The PRs whose Stale review waits on the user: each open PR where `viewer`'s Review is a Stale review. A
 /// merged or closed PR waits on nobody, whatever its last check found, and nor does a colleague's Draft PR.
 /// A Bot backport's Stale review is its Origin PR's, and counts only on the Origin PR, so not at all once
 /// that has merged.
@@ -247,18 +248,41 @@ impl Judge<'_> {
             .any(|event| event.kind == ActivityKind::Comment && event.who == *self.viewer)
     }
 
-    /// The moment the user was last asked to review `pull_request`. Its timeline can have dropped that off
-    /// the end, and then its last update is the nearest time Tsugiki has.
-    fn requested_at(&self, pull_request: &PullRequestFacts) -> OffsetDateTime {
-        let asked = self.events_of(pull_request.number).filter(|event| {
+    /// The moment the user was last asked to review PR `number`, if its timeline still holds it.
+    fn requested_at(&self, number: u32) -> Option<OffsetDateTime> {
+        let asked = self.events_of(number).filter(|event| {
             let kind = matches!(
                 event.kind,
                 ActivityKind::ReviewRequested | ActivityKind::Assigned
             );
             kind && event.who == *self.viewer
         });
-        let last = asked.map(|event| event.at).max();
-        last.unwrap_or(pull_request.updated_at)
+        asked.map(|event| event.at).max()
+    }
+
+    /// The moment of the last push to PR `number` that Tsugiki saw.
+    fn pushed_at(&self, number: u32) -> Option<OffsetDateTime> {
+        let pushes = self.events_of(number);
+        let pushes = pushes.filter(|event| event.kind == ActivityKind::Commit);
+        pushes.map(|event| event.at).max()
+    }
+
+    /// `why` as a cause on `pull_request` from `started`, or none once the user has acknowledged it (#865).
+    /// A start Tsugiki doesn't know counts as earlier than any acknowledgement, since what starts a cause
+    /// anew, a request, a push or a failed run, leaves its moment in the facts. Such a cause counts from the
+    /// PR's last update.
+    fn standing_from(
+        &self,
+        pull_request: &PullRequestFacts,
+        started: Option<OffsetDateTime>,
+        why: Why,
+    ) -> Option<Cause> {
+        let acknowledged = self.facts.acknowledged.get(&pull_request.number);
+        let before = |acknowledged: &OffsetDateTime| started.is_none_or(|at| at <= *acknowledged);
+        (!acknowledged.is_some_and(before)).then(|| Cause {
+            at: started.unwrap_or(pull_request.updated_at),
+            why,
+        })
     }
 
     fn failed_checks_of(&self, number: u32) -> &[String] {
@@ -266,26 +290,26 @@ impl Judge<'_> {
         checks.map_or(&[], Vec::as_slice)
     }
 
-    /// The causes that wait on the user whatever they have seen: a Review request, and failed CI on an Own
-    /// PR.
+    /// The causes that wait on the user until they acknowledge them, whatever Last seen says: a Review
+    /// request, and failed CI on an Own PR.
     fn standing(&self, pull_request: &PullRequestFacts) -> Vec<Cause> {
         let number = pull_request.number;
         let asked = reasons(pull_request, self.viewer).contains(&WorkReason::ReviewRequest);
-        let requested = asked.then(|| Cause {
-            at: self.requested_at(pull_request),
-            why: Why::ReviewRequested,
-        });
+        let requested = asked
+            .then(|| {
+                let started = self.requested_at(number);
+                self.standing_from(pull_request, started, Why::ReviewRequested)
+            })
+            .flatten();
         let own = pull_request.author.as_ref() == Some(self.viewer);
         let open = pull_request.state == PrState::Open;
-        let failed = (own && open && has_failed(pull_request.ci)).then(|| {
-            let finished = self.facts.ci_finished.get(&number).copied();
-            Cause {
-                at: finished.unwrap_or(pull_request.updated_at),
-                why: Why::CiFailed {
-                    checks: self.failed_checks_of(number).to_vec(),
-                },
-            }
-        });
+        let failed = (own && open && has_failed(pull_request.ci))
+            .then(|| {
+                let finished = self.facts.ci_finished.get(&number).copied();
+                let checks = self.failed_checks_of(number).to_vec();
+                self.standing_from(pull_request, finished, Why::CiFailed { checks })
+            })
+            .flatten();
         requested.into_iter().chain(failed).collect()
     }
 
@@ -308,10 +332,8 @@ impl Judge<'_> {
             return causes;
         }
         if self.stale_reviews.contains(&number) {
-            causes.push(Cause {
-                at: pull_request.updated_at,
-                why: Why::StaleReview,
-            });
+            let pushed = self.pushed_at(number);
+            causes.extend(self.standing_from(pull_request, pushed, Why::StaleReview));
         }
         let involvement = if pull_request.is_written_or_reviewed_by(self.viewer) {
             Involvement::WroteOrReviewed

@@ -137,6 +137,24 @@ impl World {
             .map_or_else(Vec::new, |attention| attention.why)
     }
 
+    /// True when `view` lists item `number`.
+    fn lists(&self, view: &WorkbenchView, number: u32) -> bool {
+        let items = self.view(view).items;
+        items.iter().any(|listed| number_of(listed) == number)
+    }
+
+    fn on_workbench(&self, number: u32) -> bool {
+        self.lists(&WorkbenchView::Whole, number)
+    }
+
+    /// The reasons item `number` Needs attention, as `view` lists it.
+    fn why_in(&self, view: &WorkbenchView, number: u32) -> Vec<Why> {
+        let listed = listed_at(&self.view(view), number);
+        listed
+            .attention
+            .map_or_else(Vec::new, |attention| attention.why)
+    }
+
     fn since(&self, number: u32) -> OffsetDateTime {
         let workbench = self.workbench();
         let attention: Attention = listed_at(&workbench, number).attention.unwrap();
@@ -191,13 +209,47 @@ fn a_review_request_on_a_colleagues_draft_needs_attention() {
     world.finish();
 }
 
-#[test]
-fn marking_a_pr_with_a_review_request_seen_leaves_it_waiting() {
-    let world = World::new("attention-request-stays");
-    world.has(vec![requested(1)]);
-    world.marked_seen(1, hours_ago(1));
+fn review_requested(at: OffsetDateTime) -> Activity {
+    Activity {
+        kind: ActivityKind::ReviewRequested,
+        who: me(),
+        at,
+    }
+}
 
+#[test]
+fn mark_seen_takes_a_review_request_out_of_needs_attention_and_a_new_request_brings_it_back() {
+    let world = World::new("attention-request-seen");
+    world.has(vec![requested(1)]);
+    world.happened(1, vec![review_requested(hours_ago(5))]);
+
+    world.mark_seen(world.seen(1));
+    // It was on the Workbench only because it Needed attention.
+    assert!(!world.on_workbench(1));
+    let requests = WorkbenchView::ReviewRequests;
+    assert_eq!(world.why_in(&requests, 1), []);
+    assert_eq!(world.view(&requests).review_requests, 1);
+
+    let asked_again = hours_ago(1);
+    world.happened(1, vec![review_requested(asked_again)]);
     assert_eq!(world.why(1), [Why::ReviewRequested]);
+    assert_eq!(world.since(1), asked_again);
+    world.finish();
+}
+
+#[test]
+fn a_write_that_moves_only_last_seen_leaves_a_review_request_waiting() {
+    let world = World::new("attention-request-write");
+    world.has(vec![requested(1)]);
+    world.happened(1, vec![review_requested(hours_ago(5))]);
+    let mut facts = world.db.reader.work_facts(&cpython()).unwrap();
+    // A write to GitHub moves Last seen alone (#395).
+    let _moved = facts.activity.last_seen.insert(1, hours_ago(1));
+
+    let workbench = Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole);
+
+    let attention = listed_at(&workbench, 1).attention.unwrap();
+    assert_eq!(attention.why, [Why::ReviewRequested]);
     world.finish();
 }
 
@@ -211,6 +263,26 @@ fn a_review_request_with_no_event_left_on_the_timeline_counts_from_the_last_upda
     }]);
 
     assert_eq!(world.since(1), updated_at);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_acknowledges_a_review_request_with_no_event_whatever_updates_the_pr_later() {
+    let world = World::new("attention-request-no-event-seen");
+    let pull_request = PullRequestFacts {
+        updated_at: hours_ago(9),
+        ..requested(1)
+    };
+    world.has(vec![pull_request.clone()]);
+    world.mark_seen(world.seen(1));
+
+    // A colleague's label or comment moves the last update, and asks nothing new of the user.
+    world.has(vec![PullRequestFacts {
+        updated_at: hours_ago(1),
+        ..pull_request
+    }]);
+
+    assert_eq!(world.why_in(&WorkbenchView::ReviewRequests, 1), []);
     world.finish();
 }
 
@@ -279,13 +351,34 @@ fn assigning_yourself_to_your_own_pr_asks_nothing_of_you() {
 }
 
 #[test]
-fn failed_ci_on_an_own_pr_needs_attention_and_stays_after_mark_seen() {
+fn mark_seen_takes_failed_ci_on_an_own_pr_out_of_needs_attention_and_keeps_the_row() {
     let world = World::new("attention-own-ci");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Failure),
         ..own(1)
     }]);
-    world.marked_seen(1, OffsetDateTime::now_utc() + Duration::hours(1));
+    assert_eq!(world.why(1), [Why::CiFailed { checks: vec![] }]);
+
+    world.mark_seen(world.seen(1));
+
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn ci_that_fails_after_mark_seen_needs_attention() {
+    let world = World::new("attention-own-ci-after");
+    let pending = PullRequestFacts {
+        ci: Some(CiState::Pending),
+        ..own(1)
+    };
+    world.has(vec![pending.clone()]);
+    world.mark_seen(world.seen(1));
+
+    world.has(vec![PullRequestFacts {
+        ci: Some(CiState::Failure),
+        ..pending
+    }]);
 
     assert_eq!(world.why(1), [Why::CiFailed { checks: vec![] }]);
     world.finish();
@@ -763,7 +856,7 @@ fn by_attention_sorts_a_fresh_flag_first() {
 }
 
 #[test]
-fn mark_seen_clears_the_flag_and_only_what_last_seen_measures() {
+fn mark_seen_clears_the_flag_and_what_stood_before_it() {
     let world = World::new("attention-mark-seen-clears");
     world.has(vec![
         requested(1),
@@ -778,7 +871,7 @@ fn mark_seen_clears_the_flag_and_only_what_last_seen_measures() {
     world.mark_seen(world.seen(1));
     world.mark_seen(world.seen(2));
 
-    assert_eq!(world.why(1), [Why::ReviewRequested]);
+    assert_eq!(world.why_in(&WorkbenchView::ReviewRequests, 1), []);
     assert_eq!(world.why(2), []);
     world.finish();
 }
@@ -905,6 +998,26 @@ fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
     world.finish();
 }
 
+#[test]
+fn mark_seen_on_an_issue_acknowledges_what_stands_across_its_tree() {
+    let world = World::new("attention-mark-seen-tree-standing");
+    world.has_issues(vec![issue(5)]);
+    world.has(vec![
+        fixing_too(requested(1), 5),
+        PullRequestFacts {
+            ci: Some(CiState::Failure),
+            ..fixing_too(own(2), 5)
+        },
+    ]);
+    let standing = [Why::CiFailed { checks: vec![] }, Why::ReviewRequested];
+    assert_eq!(world.why(5), standing);
+
+    world.mark_seen(world.seen(5));
+
+    assert_eq!(world.why(5), []);
+    world.finish();
+}
+
 /// `Lib/ast.py` changed in the way `digit` names.
 fn ast_changed(digit: char) -> Vec<FilePatch> {
     let id = PatchId::parse(&digit.to_string().repeat(40)).unwrap();
@@ -994,7 +1107,7 @@ fn a_review_whose_check_cant_run_needs_attention_as_a_stale_review() {
 }
 
 #[test]
-fn a_stale_review_needs_attention_counts_and_stays_after_mark_seen() {
+fn a_stale_review_needs_attention_and_counts() {
     let world = World::new("attention-stale");
     let reviewed = reviewed_by_me(1);
     let updated_at = reviewed.updated_at;
@@ -1003,8 +1116,47 @@ fn a_stale_review_needs_attention_counts_and_stays_after_mark_seen() {
     assert_eq!(world.why(1), [Why::StaleReview]);
     assert_eq!(world.since(1), updated_at);
     assert_eq!(world.workbench().count, 1);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_takes_a_stale_review_out_of_needs_attention_until_a_later_push() {
+    let world = World::new("attention-stale-seen");
+    world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
+
     world.mark_seen(world.seen(1));
-    assert_eq!(world.why(1), [Why::StaleReview]);
+    // The user's Review holds it on the Workbench, as a plain row.
+    assert_eq!(world.why(1), []);
+    let stale = WorkbenchView::StaleReviews;
+    assert!(world.lists(&stale, 1));
+    assert_eq!(world.view(&stale).stale_reviews, 1);
+
+    let pushed = Activity {
+        kind: ActivityKind::Commit,
+        who: colleague(),
+        at: hours_ago(1),
+    };
+    world.happened(1, vec![pushed]);
+    assert!(world.why(1).contains(&Why::StaleReview));
+    world.finish();
+}
+
+#[test]
+fn a_comment_after_mark_seen_leaves_a_stale_review_acknowledged() {
+    let world = World::new("attention-stale-comment");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.mark_seen(world.seen(1));
+
+    let later = hours_ago(1);
+    world.has(vec![PullRequestFacts {
+        head: Some(sha_of('2')),
+        updated_at: later,
+        ..pull_request
+    }]);
+    world.happened(1, vec![comment(&colleague(), later)]);
+
+    assert_eq!(world.why(1), [Why::Comment { by: colleague() }]);
     world.finish();
 }
 

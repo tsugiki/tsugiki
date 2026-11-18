@@ -61,7 +61,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Opening an item leaves its Last seen alone, so it keeps its place in the list while the user reads it.
   - **Mark Seen** moves Last seen to the moment of the item's last sync that the window drew, never back,
     and clears Marked unseen. On an Issue it marks the Issue and every PR in its tree; on a PR, that PR. It
-    clears only what Last seen measures: a Review request, a Stale review or failed CI stays.
+    also clears a Review request, a Stale review and failed CI on an Own PR that started before that
+    moment, while a new request, a push that makes the Review stale again or a CI run that fails later
+    counts again. An item on the Workbench only because it Needed attention leaves it, and one that a
+    Filter, a pin or the user's Review holds stays as a plain row. The Review requests and Stale reviews
+    views keep listing their PRs.
   - **Mark Unseen** flags the item Marked unseen. It then Needs attention from the moment of the flag, so By
     attention sorts it first, and its preview says "Marked unseen". Flagging a PR brings its Issue back with
     it. Tsugiki keeps the flag per Repository and item.

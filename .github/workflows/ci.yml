@@ -225,7 +225,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: npm
-      - run: npm ci
+      # The root's packages alone, jscpd among them: the scan needs nothing of the ui workspace.
+      - run: npm ci --workspaces=false
       - run: npm run dupes
 
   # Codecov carries the last Rust figure forward on a run that skips this job (codecov.yml).

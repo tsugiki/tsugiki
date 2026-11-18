@@ -1,14 +1,22 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { ALLOWED, type Allowed, type Copy, describeCopy, find, judge, readReport, SCANS } from "./copies.ts";
+
+/** The folders `tree` made, which each test deletes after it. */
+const trees: string[] = [];
+
+afterEach(() => {
+  for (const root of trees.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 /** A folder in the system's temp folder holding `files`, each path relative to it with its text. */
 function tree(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "tsugiki-copies-"));
+  trees.push(root);
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);
@@ -113,20 +121,32 @@ const copy = (first: string, second: string): Copy => ({
 });
 
 describe("judge", () => {
-  const allowed: Allowed = { files: ["b.ts", "a.ts"], why: "They change for different reasons." };
+  const allowed: Allowed = {
+    files: ["b.ts", "a.ts"],
+    tokens: [60],
+    why: "They change for different reasons.",
+  };
 
   it("passes a repeat inside one file", () => {
     expect(judge([copy("a.ts", "a.ts")], [])).toEqual({ copies: [], unused: [] });
   });
 
-  it("passes a copy between two files the list allows, in either order", () => {
+  it("passes a copy between two files the list allows with its size, in either order", () => {
     expect(judge([copy("a.ts", "b.ts")], [allowed])).toEqual({ copies: [], unused: [] });
   });
 
-  it("fails a copy between two other files, and names an allowed pair it no longer finds", () => {
+  it("fails a copy between two other files, and names an allowed size it no longer finds", () => {
     expect(judge([copy("a.ts", "c.ts")], [allowed])).toEqual({
       copies: [copy("a.ts", "c.ts")],
-      unused: [allowed],
+      unused: [{ files: ["b.ts", "a.ts"], tokens: 60 }],
+    });
+  });
+
+  it("fails a copy of another size between two files the list allows", () => {
+    const grown = { ...copy("a.ts", "b.ts"), tokens: 75 };
+    expect(judge([grown], [allowed])).toEqual({
+      copies: [grown],
+      unused: [{ files: ["b.ts", "a.ts"], tokens: 60 }],
     });
   });
 });
@@ -174,9 +194,10 @@ describe("describeCopy", () => {
 });
 
 describe("ALLOWED", () => {
-  it("says why each repeat stays, and names two files that exist", () => {
-    for (const { files, why } of ALLOWED) {
+  it("says why each repeat stays, and names two files that exist and a size for each copy", () => {
+    for (const { files, tokens, why } of ALLOWED) {
       expect(why.trim(), files.join(" and ")).not.toBe("");
+      expect(tokens.length, why).toBeGreaterThan(0);
       expect(files[0], why).not.toBe(files[1]);
       for (const file of files) expect(existsSync(join("..", file)), file).toBe(true);
     }

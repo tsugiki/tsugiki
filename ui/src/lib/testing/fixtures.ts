@@ -125,15 +125,21 @@ export const diffThread = (
   id,
   at: typeof at === "number" ? { kind: "row", row: at } : at,
   resolution,
-  comments: Array.from({ length: comments }, () => ({
-    id: null,
-    author: "some-reviewer",
-    created_at: "2026-11-04T10:00:00Z",
-    body_html: "<p>Why?</p>",
-    hidden: null,
-    submission: "submitted",
-  })),
+  comments: Array.from({ length: comments }, () => reviewComment()),
   later_comments: 0,
+});
+
+/** A submitted comment of a review thread, by some-reviewer, with what `more` says instead. */
+export const reviewComment = (
+  more: Partial<DiffThread["comments"][number]> = {},
+): DiffThread["comments"][number] => ({
+  id: null,
+  author: "some-reviewer",
+  created_at: "2026-11-04T10:00:00Z",
+  body_html: "<p>Why?</p>",
+  hidden: null,
+  submission: "submitted",
+  ...more,
 });
 
 /** The core's answer to a search of the diff, which found `matches`, each a row and where in it the text

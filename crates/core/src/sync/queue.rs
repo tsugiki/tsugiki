@@ -660,7 +660,6 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         window_since: None,
     };
     let saved = fetch_issue_batch(&link, numbers)?;
-    drop(numbers.drain(..saved.asked_for));
     Ok(Stepped {
         touched: (!saved.touched.is_empty()).then_some(saved.touched),
         pause_until: saved.pause_until,

@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use super::issues::fetch_issue_batch;
+use super::issues::save_issue_batch;
 use super::origins::save_origin;
 use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
@@ -455,7 +455,7 @@ fn fetch_named_issues(
     loading: &mut Loading,
     numbers: &[u32],
 ) -> Result<Step, Error> {
-    let saved = fetch_issue_batch(link, numbers)?;
+    let saved = save_issue_batch(link, numbers)?;
     loading
         .issues_seen
         .extend(numbers.iter().take(saved.asked_for).copied());

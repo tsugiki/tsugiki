@@ -46,7 +46,6 @@ pub(super) fn fetch_named_issues(link: &Link<'_>, numbers: &mut Vec<u32>) -> Res
         return Ok((Step::Finished, None));
     }
     let saved = fetch_issue_batch(link, numbers)?;
-    drop(numbers.drain(..saved.asked_for));
     Ok((Step::saved_if_any(saved.touched, saved.pause_until), None))
 }
 
@@ -59,8 +58,20 @@ pub(super) struct SavedIssues {
     pub(super) pause_until: Option<OffsetDateTime>,
 }
 
-/// Fetches the first batch of `numbers`, which holds at least one, and saves the Issues.
-pub(super) fn fetch_issue_batch(link: &Link<'_>, numbers: &[u32]) -> Result<SavedIssues, Error> {
+/// Fetches the first batch of `numbers`, which holds at least one, saves the Issues and takes the batch off
+/// `numbers`.
+pub(super) fn fetch_issue_batch(
+    link: &Link<'_>,
+    numbers: &mut Vec<u32>,
+) -> Result<SavedIssues, Error> {
+    let saved = save_issue_batch(link, numbers)?;
+    drop(numbers.drain(..saved.asked_for));
+    Ok(saved)
+}
+
+/// Fetches the first batch of `numbers`, which holds at least one, and saves the Issues, leaving `numbers`
+/// as they are.
+pub(super) fn save_issue_batch(link: &Link<'_>, numbers: &[u32]) -> Result<SavedIssues, Error> {
     let batch = link
         .github
         .fetch_issues(link.repository, numbers, FETCH_BATCH)?;

@@ -5,10 +5,12 @@ import type {
 } from "../src/lib/data/bindings.ts";
 import {
   diffFile,
+  diffThread,
   done,
   loadedSettings,
   ok,
   readyFiles,
+  reviewComment,
   workbenchPage,
 } from "../src/lib/testing/fixtures.ts";
 import { dragEdge, home, issue, issueView, prView } from "./fixtures.ts";
@@ -190,22 +192,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
         threads: {
           kind: "shown",
           threads: [
-            {
-              id: "T1",
-              at,
-              resolution: "open",
-              comments: [
-                {
-                  id: 2,
-                  author: "some-reviewer",
-                  created_at: "2026-11-04T10:00:00Z",
-                  body_html: `<p>${words}</p>`,
-                  hidden: null,
-                  submission: "submitted",
-                },
-              ],
-              later_comments: 0,
-            },
+            { ...diffThread("T1", at), comments: [reviewComment({ id: 2, body_html: `<p>${words}</p>` })] },
           ],
         },
       }),

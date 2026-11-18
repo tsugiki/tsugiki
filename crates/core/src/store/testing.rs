@@ -35,10 +35,10 @@ pub(super) fn database_before(name: &str, sql: &str, rows: &str) -> (PathBuf, Te
     let (path, folder) = temp_database(name);
     let before = MIGRATIONS.iter().position(|step| step.sql == sql).unwrap();
     open_with(&path, &MIGRATIONS[..before]).unwrap().close();
-    Connection::open(&path)
-        .unwrap()
-        .execute_batch(rows)
-        .unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection.execute_batch(rows).unwrap();
+    // A seed that inserts nothing would leave the test reading an empty store.
+    assert!(connection.total_changes() > 0, "{rows} inserted no row");
     (path, folder)
 }
 

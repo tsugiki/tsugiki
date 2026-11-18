@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
-import { done, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { done, HOUR_POINTS, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { grabEdge, home, own, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -425,8 +425,7 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   const read = page.getByText(/points left · resets .* · This hour:/);
   await expect(points).toHaveCount(0);
 
-  const first = { limit: 5000, used: 3760, remaining: 1240, resets_at: "2026-11-17T14:32:00Z", spent: 3610 };
-  await emitFromCore(page, "hour-points-changed", { ...first, since: null });
+  await emitFromCore(page, "hour-points-changed", HOUR_POINTS);
   await expect(points).toHaveText(/^1,240 points left · resets [^·]+$/);
   await expect(points).toHaveAttribute(
     "title",
@@ -434,7 +433,7 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   );
   await expect(read).toContainText("Tsugiki spent 3,610 of them");
 
-  await emitFromCore(page, "hour-points-changed", { ...first, used: 3770, remaining: 1230, since: null });
+  await emitFromCore(page, "hour-points-changed", { ...HOUR_POINTS, used: 3770, remaining: 1230 });
   await expect(points).toHaveText(/^1,230 points left/);
 
   // The hour reset, and the next hour's count waits for GitHub's next answer.

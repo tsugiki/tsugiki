@@ -15,13 +15,16 @@ const { copies, unused } = judge(found, ALLOWED);
 for (const copy of copies) {
   console.error(describeCopy(copy));
 }
-for (const { files } of unused) {
-  console.error(`copies.ts allows a repeat between ${files.join(" and ")} that no longer exists. Remove it.`);
+for (const { files, tokens } of unused) {
+  console.error(
+    `copies.ts allows a copy of ${String(tokens)} tokens between ${files.join(" and ")}, which is gone. ` +
+      "Remove the size, or put in the size an edit gave it.",
+  );
 }
 if (copies.length > 0) {
   console.error(
     `${String(copies.length)} blocks of code have a copy in another file. Move each to one place both use, or ` +
-      "add the pair to ALLOWED in scripts/copies.ts with why it stays.",
+      "add the two files and the size to ALLOWED in scripts/copies.ts with why the copy stays.",
   );
 }
 if (copies.length > 0 || unused.length > 0) {

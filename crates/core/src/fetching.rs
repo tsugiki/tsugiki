@@ -140,10 +140,10 @@ pub struct Fetching {
 pub(crate) struct Headless(Arc<Mutex<Vec<Item>>>);
 
 impl Headless {
-    /// The session's read of PR `item`'s Conversation named no head.
+    /// The session's read of PR `item`'s Conversation named no head. A demand came before each read and took
+    /// the PR off, and `forget` takes off every copy, so a PR is never held twice for long.
     pub(crate) fn named_none(&self, item: &Item) {
         let mut items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        items.retain(|headless| !headless.is(item));
         items.push(item.clone());
     }
 

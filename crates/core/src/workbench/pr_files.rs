@@ -82,8 +82,7 @@ pub enum FilesRead {
     Asking,
     /// The Repository's mirror isn't cloned yet.
     NoMirror,
-    /// Tsugiki knows no head of the PR: the sync hasn't read one, and no Conversation saved since Tsugiki
-    /// kept a PR's head from it named one. A read of the Conversation names it.
+    /// Tsugiki knows no head of the PR: neither the sync nor a Conversation it saved named one.
     NoHead,
     /// The Mirror lacks the PR's head, and holds the diff at the last head of the PR it fetched, if any.
     Missing {
@@ -128,20 +127,6 @@ impl DiffSources<'_> {
             }));
         }
         let Some(head) = pr.head.clone() else {
-            // A Conversation saved now gives the PR its head, so one that names none already came back
-            // without it, and reading it again would only bring the same.
-            if content
-                .as_ref()
-                .is_some_and(|content| content.head.is_none())
-            {
-                return Err(Error::new(
-                    ErrorKind::NotFound,
-                    &format!(
-                        "Tsugiki's last read of PR #{number}'s Conversation named no head commit, so it \
-                         has no diff to show."
-                    ),
-                ));
-            }
             return Ok(Some(FilesRead::NoHead));
         };
         let at = PrAt {

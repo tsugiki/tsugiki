@@ -1,4 +1,4 @@
-use super::testing::handle;
+use super::testing::{handle, named};
 use super::*;
 use crate::facts::CommitSha;
 use crate::testing::cpython;
@@ -104,26 +104,10 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::HandEdit);
     fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::Window);
     fetching.mark_unseen(cpython(), 9);
+    fetching.sync(RepositorySettings::new(cpython()));
     fetching.stop_session();
 
-    let heard: Vec<String> = incoming
-        .try_iter()
-        .map(|message| match message {
-            SessionMessage::Fetch(Fetched::Issue(item), _) => format!("Issue #{}", item.number),
-            SessionMessage::Fetch(Fetched::PullRequest(item), _) => format!("PR #{}", item.number),
-            SessionMessage::Refresh => "refresh".to_owned(),
-            SessionMessage::SettingsChanged(settings, SavedBy::HandEdit) => {
-                format!("settings of {}", settings.name)
-            }
-            SessionMessage::SettingsChanged(_, SavedBy::Window) => "switch".to_owned(),
-            SessionMessage::Mark(Marked::Unseen { item, .. }) => format!("unseen #{}", item.number),
-            SessionMessage::Stop => "stop".to_owned(),
-            SessionMessage::Check { .. }
-            | SessionMessage::Sync { .. }
-            | SessionMessage::Mark(Marked::Seen { .. })
-            | SessionMessage::Patched(..) => "other".to_owned(),
-        })
-        .collect();
+    let heard: Vec<String> = incoming.try_iter().map(named).collect();
     assert_eq!(
         heard,
         [
@@ -133,6 +117,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             "settings of python/cpython",
             "switch",
             "unseen #9",
+            "other",
             "stop"
         ]
     );

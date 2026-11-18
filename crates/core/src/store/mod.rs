@@ -52,6 +52,7 @@ pub use columns::Numbers;
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use pr_links::Updates;
+pub use pull_request_content::HeadKept;
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -401,6 +402,18 @@ impl Store {
         number: u32,
         content: PullRequestContent,
     ) -> Result<(), Error> {
+        let saved = self.save_read_of_pull_request(repository, number, content);
+        saved.map(|_kept| ())
+    }
+
+    /// Keeps what PR `number` says as `save_pull_request_content` does, and says what that did to the head
+    /// in the PR's facts.
+    pub fn save_read_of_pull_request(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        content: PullRequestContent,
+    ) -> Result<HeadKept, Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
             pull_request_content::save(connection, &repository, number, &content)

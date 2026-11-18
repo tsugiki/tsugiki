@@ -10,9 +10,10 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::pull_requests::HeadInMirror;
 use crate::fetching::{Fetching, Queued};
+use crate::latest::LatestReader;
 use crate::mirror::LookupAt;
 use crate::repository::RepositoryName;
-use crate::settings::Settings;
+use crate::settings::SettingsView;
 use crate::workbench::pr_files::{DiffSources, DiffThread, FilesRead, OlderDiff, ShownDiff};
 
 /// What the Files tab shows.
@@ -66,7 +67,7 @@ pub enum DiffThreads {
 /// language servers, which open the files of the diff on show.
 pub struct PullRequestWork<'a> {
     pub sources: Result<DiffSources<'a>, Error>,
-    pub settings: &'a Settings,
+    pub settings: &'a LatestReader<SettingsView>,
     pub fetching: &'a Fetching,
     pub definitions: &'a Definitions,
 }
@@ -114,8 +115,9 @@ impl PullRequestWork<'_> {
         Ok(match read {
             FilesRead::Asking => PrFiles::Asking,
             FilesRead::NoMirror => {
-                let listed = (self.settings.repositories.iter())
-                    .any(|listed| listed.name.is_same(repository));
+                let settings = self.settings.get().loaded.settings;
+                let listed =
+                    (settings.repositories.iter()).any(|listed| listed.name.is_same(repository));
                 if !listed {
                     return Err(Error::new(
                         ErrorKind::NotFound,
@@ -127,6 +129,16 @@ impl PullRequestWork<'_> {
                 PrFiles::Cloning {
                     clone: fetching.clone_shown(repository.clone()),
                 }
+            }
+            // A read GitHub answered named no head, so another would bring the same.
+            FilesRead::NoHead if fetching.named_no_head(repository, number) => {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    &format!(
+                        "GitHub named no head commit of PR #{number} when Tsugiki read its \
+                         Conversation, so it has no diff to show."
+                    ),
+                ));
             }
             FilesRead::NoHead => PrFiles::Fetching {
                 fetch: fetching.find_head(repository.clone(), number),

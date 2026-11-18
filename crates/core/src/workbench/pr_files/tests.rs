@@ -57,21 +57,14 @@ fn a_pr_whose_head_the_sync_hasnt_read_and_whose_conversation_tsugiki_hasnt_read
 }
 
 #[test]
-fn a_pr_whose_conversation_named_no_head_says_so() {
+fn a_pr_whose_saved_conversation_named_no_head_has_none() {
     let world = World::new("no-head-named");
     let mirrored = Mirrored::new("pr-files-no-head-named");
     world.mirrors(&mirrored);
     world.has_pr(None, "main");
     world.has_conversation(None);
 
-    let problem = (world.sources())
-        .read(&world.repository(), 7, &|| false)
-        .unwrap_err();
-
-    assert_eq!(
-        problem.message,
-        "Tsugiki's last read of PR #7's Conversation named no head commit, so it has no diff to show."
-    );
+    assert_eq!(world.read(), Some(FilesRead::NoHead));
     world.finish();
 }
 

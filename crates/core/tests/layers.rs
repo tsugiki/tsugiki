@@ -320,6 +320,7 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "error",
             "facts",
+            "latest",
             "mirror",
             "mirror_source",
             "patch_ids",
@@ -329,7 +330,8 @@ const LAYERS: &[Layer] = &[
         ],
         why: "Takes the user's demands and the rules' wants, and hands each to the queue that owns it: the \
               Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
-              above can take them. A Mark Seen names what `work` marks.",
+              above can take them. A Mark Seen names what `work` marks. The PRs whose Conversation named \
+              no head come back from the session through `latest`.",
     },
     Layer {
         module: "sync",
@@ -359,6 +361,7 @@ const LAYERS: &[Layer] = &[
             "fetching",
             "folders",
             "github",
+            "latest",
             "mirror",
             "patch_ids",
             "repository",
@@ -371,7 +374,8 @@ const LAYERS: &[Layer] = &[
         ],
         why: "Runs the session thread, which owns the store and the syncs and takes the messages `fetching` \
               sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
-              which it builds on the requests `mirror` gives.",
+              which it builds on the requests `mirror` gives. The PRs whose Conversation named no head go \
+              back to `fetching` through `latest`.",
     },
     Layer {
         module: "calls",
@@ -380,6 +384,7 @@ const LAYERS: &[Layer] = &[
             "error",
             "facts",
             "fetching",
+            "latest",
             "mirror",
             "repository",
             "settings",
@@ -387,8 +392,9 @@ const LAYERS: &[Layer] = &[
         ],
         why: "Answers each screen's call: it reads through a view model in `workbench`, queues through \
               `fetching` what the read found missing, and holds the job in an answer that waits for its \
-              data. Only a Repository `settings` lists gets a clone. The diff on show opens its files on \
-              the language servers through `definitions`.",
+              data. Only a Repository `settings` lists gets a clone, read through `latest` when the read \
+              finds no mirror. The diff on show opens its files on the language servers through \
+              `definitions`.",
     },
 ];
 

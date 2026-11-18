@@ -128,14 +128,27 @@ fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_a
         head: Some(sha("aaaaaaa")),
         ..pr_facts(2)
     };
-    world.has(vec![pr_facts(1), kept]);
+    world.has(vec![pr_facts(1), kept, pr_facts(3)]);
     let store = &world.db.store;
-
-    for number in [1, 2] {
+    let save = |number, content| {
         store
-            .save_pull_request_content(&cpython(), number, with_reviews(vec![]))
-            .unwrap();
-    }
+            .save_read_of_pull_request(&cpython(), number, content)
+            .unwrap()
+    };
+    let named = |number| PrHead {
+        number,
+        commit: sha("ccccccc"),
+        target_branch: "main".to_owned(),
+    };
+    let unnamed = PullRequestContent {
+        head: None,
+        ..with_reviews(vec![])
+    };
+
+    assert_eq!(save(1, with_reviews(vec![])), HeadKept::Filled(named(1)));
+    assert_eq!(save(2, with_reviews(vec![])), HeadKept::Had(named(2)));
+    assert_eq!(save(3, unnamed), HeadKept::Unnamed);
+    assert_eq!(save(4, with_reviews(vec![])), HeadKept::NoFacts);
 
     let head = |number| {
         let (facts, _) = (world.db.reader)
@@ -146,8 +159,8 @@ fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_a
             .and_then(|pr| pr.head)
     };
     assert_eq!(
-        (head(1), head(2)),
-        (Some(sha("ccccccc")), Some(sha("aaaaaaa")))
+        (head(1), head(2), head(3)),
+        (Some(sha("ccccccc")), Some(sha("aaaaaaa")), None)
     );
     world.finish();
 }

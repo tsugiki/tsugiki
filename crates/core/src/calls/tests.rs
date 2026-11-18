@@ -8,16 +8,22 @@ use super::*;
 use crate::definitions::Sources;
 use crate::diff::testing::Mirrored;
 use crate::facts::pull_requests::PrHead;
-use crate::fetching::testing::handle;
-use crate::fetching::{Fetched, SessionMessage};
+use crate::fetching::testing::handle_with_headless;
+use crate::fetching::{Fetched, Item, SessionMessage};
+use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
+use crate::repository_settings::RepositorySettings;
+use crate::settings::{LoadedSettings, Settings};
 use crate::workbench::pr_files::testing::World;
 
 /// PR 7's world, settings that list its Repository, and the queues and language servers its calls ask,
-/// which only listen.
+/// which only listen, with the writers of what the settings say and of the PRs whose Conversation named no
+/// head.
 struct Calls {
     world: World,
-    settings: Settings,
+    settings: LatestWriter<SettingsView>,
+    view: LatestReader<SettingsView>,
+    headless: LatestWriter<Vec<Item>>,
     fetching: Fetching,
     session: Receiver<SessionMessage>,
     heard: HeardRequests,
@@ -26,7 +32,7 @@ struct Calls {
 
 impl Calls {
     fn new(name: &str) -> Self {
-        let (fetching, session, heard) = handle();
+        let (fetching, session, heard, headless) = handle_with_headless();
         let definitions = Definitions::start(Sources {
             checkout: Box::new(|_| None),
             servers: Box::new(|_| None),
@@ -34,13 +40,12 @@ impl Calls {
             changed: Box::new(|_| {}),
         });
         let world = World::new(&format!("calls-{name}"));
-        let settings = Settings {
-            repositories: vec![world.view.settings()],
-            ..Settings::default()
-        };
+        let (settings, view) = latest::channel(listing(vec![world.view.settings()]));
         Self {
             world,
             settings,
+            view,
+            headless,
             fetching,
             session,
             heard,
@@ -51,7 +56,7 @@ impl Calls {
     fn work(&self) -> PullRequestWork<'_> {
         PullRequestWork {
             sources: Ok(self.world.sources()),
-            settings: &self.settings,
+            settings: &self.view,
             fetching: &self.fetching,
             definitions: &self.definitions,
         }
@@ -66,8 +71,8 @@ impl Calls {
     fn conversations_read(&self) -> Vec<u32> {
         (self.session.try_iter())
             .filter_map(|message| match message {
-                SessionMessage::Fetch(Fetched::PullRequest(item), _) => Some(item.number),
-                SessionMessage::Fetch(Fetched::Issue(_), _)
+                SessionMessage::Fetch(Fetched::PullRequest(item)) => Some(item.number),
+                SessionMessage::Fetch(Fetched::Issue(_))
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
                 | SessionMessage::Sync { .. }
@@ -81,6 +86,21 @@ impl Calls {
 
     fn finish(self) {
         self.world.finish();
+    }
+}
+
+/// Settings that list `repositories` and nothing else.
+fn listing(repositories: Vec<RepositorySettings>) -> SettingsView {
+    let settings = Settings {
+        repositories,
+        ..Settings::default()
+    };
+    SettingsView {
+        loaded: LoadedSettings {
+            settings,
+            ..LoadedSettings::default()
+        },
+        ..SettingsView::default()
     }
 }
 
@@ -221,7 +241,7 @@ fn a_clone_that_waits_for_the_user_asks_and_queues_nothing() {
 fn the_files_tab_of_a_repository_the_settings_dont_list_queues_no_clone() {
     let mut calls = Calls::new("unlisted");
     calls.world.has_pr(None, "main");
-    calls.settings = Settings::default();
+    calls.settings.set(&listing(vec![]));
 
     let problem = calls
         .work()
@@ -238,17 +258,44 @@ fn the_files_tab_of_a_repository_the_settings_dont_list_queues_no_clone() {
 
 #[test]
 fn the_files_tab_of_a_pr_whose_conversation_named_no_head_asks_github_no_more() {
-    let calls = Calls::new("no-head-named");
+    let mut calls = Calls::new("no-head-named");
     let mirrored = Mirrored::new("calls-no-head-named");
     calls.world.mirrors(&mirrored);
     calls.world.has_pr(None, "main");
     calls.world.has_conversation(None);
+    let read_this_launch = Item {
+        repository: calls.world.repository(),
+        number: 7,
+    };
+    calls.headless.set(&vec![read_this_launch]);
 
-    let read = calls.work().pr_files(&calls.world.repository(), 7);
+    let problem = calls
+        .work()
+        .pr_files(&calls.world.repository(), 7)
+        .unwrap_err();
 
-    assert!(read.is_err(), "{read:?}");
+    assert_eq!(
+        problem.message,
+        "GitHub named no head commit of PR #7 when Tsugiki read its Conversation, so it has no diff to \
+         show."
+    );
     assert_eq!(calls.conversations_read(), [0_u32; 0]);
     assert!(calls.heard.asked().is_empty(), "{:?}", calls.heard.asked());
+    calls.finish();
+}
+
+#[test]
+fn the_files_tab_of_a_pr_whose_conversation_an_older_tsugiki_saved_without_a_head_reads_it_again() {
+    let calls = Calls::new("no-head-kept");
+    let mirrored = Mirrored::new("calls-no-head-kept");
+    calls.world.mirrors(&mirrored);
+    calls.world.has_pr(None, "main");
+    calls.world.has_conversation(None);
+
+    let files = calls.pr_files();
+
+    assert!(matches!(files, Some(PrFiles::Fetching { .. })), "{files:?}");
+    assert_eq!(calls.conversations_read(), [7]);
     calls.finish();
 }
 

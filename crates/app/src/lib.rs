@@ -44,7 +44,7 @@ use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use tsugiki_core::search::{Query, SearchId, SearchState, TextSearch};
 use tsugiki_core::settings::{
-    CommandId, Home, LoadedSettings, PaneLayout, Settings, SettingsOwner, SettingsView, TokenSource,
+    CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, SettingsView, TokenSource,
 };
 use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
 use tsugiki_core::store::StoreReader;
@@ -291,9 +291,7 @@ fn open_issue(repository: &str, number: u32, requests: State<'_, Fetching>) -> R
 /// Tells the core the user opened PR `number`. The Files tab reads the diff once it shows.
 fn open_pull_request(repository: &str, number: u32, work: &DiffWork) -> Result<(), Error> {
     let name = RepositoryName::parse(repository)?;
-    let view = work.settings.get();
-    work.pull_request(&view.loaded.settings)
-        .open_pull_request(&name, number)
+    work.pull_request().open_pull_request(&name, number)
 }
 
 /// Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
@@ -624,10 +622,10 @@ impl DiffWork {
     }
 
     /// What the core's calls for a PR's screens read from and ask.
-    fn pull_request<'a>(&'a self, settings: &'a Settings) -> PullRequestWork<'a> {
+    fn pull_request(&self) -> PullRequestWork<'_> {
         PullRequestWork {
             sources: self.sources(),
-            settings,
+            settings: &self.settings,
             fetching: &self.fetching,
             definitions: &self.definitions,
         }
@@ -766,9 +764,7 @@ fn read_pull_request_files(
     work: &DiffWork,
 ) -> Result<Option<PrFiles>, Error> {
     let name = RepositoryName::parse(repository)?;
-    let view = work.settings.get();
-    work.pull_request(&view.loaded.settings)
-        .pr_files(&name, number)
+    work.pull_request().pr_files(&name, number)
 }
 
 fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<LineInDiff>, Error> {

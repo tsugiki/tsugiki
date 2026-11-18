@@ -7,7 +7,7 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::testing::cpython_settings;
+use crate::testing::{cpython_settings, sha};
 use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
     backport, bots_backport, fixing, issue, me, mine, rows_of, someone, stranger, view_of,
@@ -229,4 +229,80 @@ fn nothing_is_reached_before_anyone_signs_in() {
     };
 
     assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::new());
+}
+
+#[test]
+fn the_conversations_worth_reading_ahead_are_the_owed_ones_in_reach() {
+    let pull_requests = vec![
+        mine(10),
+        PullRequestFacts {
+            number: 20,
+            ..stranger()
+        },
+        mine(30),
+    ];
+    let owed = BTreeSet::from([10, 20]);
+
+    let to_read = conversations_to_read(&facts(pull_requests, vec![]), &owed, &cpython_settings());
+
+    // A stranger's PR waits until the user opens it, and nothing owes a read of PR 30.
+    assert_eq!(to_read, BTreeSet::from([10]));
+}
+
+/// Settings whose first Filter is on and whose second is off, and facts in which the first finds PR 11 and
+/// the second PRs 12 and 13. PR 12's head is known, and PR 13's isn't.
+fn two_filters() -> (RepositorySettings, WorkFacts) {
+    let repository = cpython_settings();
+    let [on, off] = [&repository.filters[0], &repository.filters[1]];
+    assert_eq!(
+        [on.on_workbench, off.on_workbench],
+        [OnWorkbench::On, OnWorkbench::Off]
+    );
+    let found = |numbers: &[u32]| FilterResults {
+        numbers: numbers.iter().copied().collect(),
+        problem: None,
+    };
+    let strangers = |number: u32, head: Option<CommitSha>| PullRequestFacts {
+        number,
+        head,
+        ..stranger()
+    };
+    let facts = WorkFacts {
+        filters: BTreeMap::from([
+            (on.query.clone(), found(&[11])),
+            (off.query.clone(), found(&[12, 13])),
+        ]),
+        ..facts(
+            vec![
+                strangers(11, Some(sha("1111111"))),
+                strangers(12, Some(sha("2222222"))),
+                strangers(13, None),
+            ],
+            vec![],
+        )
+    };
+    (repository, facts)
+}
+
+#[test]
+fn a_filter_switched_off_leaves_the_conversations_of_its_find_unread() {
+    let (repository, facts) = two_filters();
+
+    let to_read = conversations_to_read(&facts, &BTreeSet::from([11, 12, 13]), &repository);
+
+    assert_eq!(to_read, BTreeSet::from([11]));
+}
+
+#[test]
+fn a_filter_switched_on_newly_reaches_its_find_with_the_heads_known_and_one_switched_off_nothing() {
+    let (before, facts) = two_filters();
+    let mut now = before.clone();
+    now.filters[1].on_workbench = OnWorkbench::On;
+
+    let newly = newly_reached(&facts, &now, &before);
+    let switched_off = newly_reached(&facts, &before, &now);
+
+    // PR 11 was in Reach already, so whatever the store owes it stays as it was.
+    assert_eq!(newly, [(12, Some(sha("2222222"))), (13, None)]);
+    assert_eq!(switched_off, []);
 }

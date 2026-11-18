@@ -8,10 +8,10 @@ use super::causes::Causes;
 use super::origins;
 use super::reasons::reasons;
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
-use crate::facts::WorkFacts;
 use crate::facts::filters::FilterResults;
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::PrHead;
+use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
@@ -94,7 +94,7 @@ fn linked(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<Linked> {
 /// 3. each Backport whose Origin PR is reached, and the Origin PR of each reached Backport.
 ///
 /// That holds every PR the whole Workbench shows, those in Issues' trees too.
-pub(crate) fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
+fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let causes = Causes::of(facts, repository.conventions);
     let own = in_own_right(facts, repository, &causes);
     let linked = linked(facts, repository);
@@ -136,6 +136,36 @@ pub fn mirror_work(
     let heads = reached_heads(facts, repository);
     let patches = patches_to_read(unread, &heads);
     (heads, patches)
+}
+
+/// The Conversations worth reading ahead in a Repository, the rules' want of GitHub as `mirror_work` is
+/// theirs of the Mirror: the PRs in Reach under `repository` among `owed`, those whose Conversation the store
+/// owes a read. The store owes one for each PR a refresh found changed, and for each PR a Filter switched on
+/// put in Reach with no Conversation read at its head. They're worth reading before the user opens them,
+/// and a stranger's PR waits until then.
+pub(crate) fn conversations_to_read(
+    facts: &WorkFacts,
+    owed: &BTreeSet<u32>,
+    repository: &RepositorySettings,
+) -> BTreeSet<u32> {
+    let reached = reach(facts, repository);
+    owed.intersection(&reached).copied().collect()
+}
+
+/// The PRs that settings `now` in place of `before` put in Reach, each with its head where `facts` holds
+/// one. No change on GitHub would owe a read of their Conversations (#819), so the store owes one of each
+/// it doesn't hold at that head.
+pub(crate) fn newly_reached(
+    facts: &WorkFacts,
+    now: &RepositorySettings,
+    before: &RepositorySettings,
+) -> Vec<(u32, Option<CommitSha>)> {
+    let reached = reach(facts, now);
+    let reached_before = reach(facts, before);
+    (facts.pull_requests.iter())
+        .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
+        .map(|pr| (pr.number, pr.head.clone()))
+        .collect()
 }
 
 /// The head of each PR Tsugiki reaches, in the order of their numbers.

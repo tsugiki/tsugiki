@@ -10,8 +10,8 @@ The core now has three layers, and follows functional core, imperative shell:
 
 - **The rules**, in `work`, take facts and return values. By Issue or PR number they judge what's on the
   Workbench in its own right, why it Needs attention and the user's review state. By Repository they work
-  out Reach, and from Reach the heads the Mirror fetches, the commits it keeps and reads patch-ids of, and
-  the checks the store keeps.
+  out Reach, and from Reach the heads the Mirror fetches, the commits it keeps and reads patch-ids of, the
+  Conversations worth reading ahead, and the checks the store keeps.
 - **Grouping**, in `workbench`, builds the Workbench's items from the links and sums each item's Needs
   attention and Seen over its tree.
 - **The screens**, in `workbench` too, lay the items out.
@@ -26,10 +26,10 @@ either. `layers.rs` holds this: `facts`, `links`, `activity` and `work` may use 
   A demand is urgent, and where two conflict the newer wins, as when the Lookup checkout follows the PR on
   screen.
 - **The rules** state **wants**: every head that should be in the Mirror, every commit the user's Reviews
-  covered, every commit whose patch-ids the Stale review check needs. A want is the whole set for a
-  Repository and replaces the last one, and the queue works toward it. A head that leaves the set before its
-  turn isn't fetched. New facts start the rules again: the session works out the wants after each sync step
-  that saves.
+  covered, every commit whose patch-ids the Stale review check needs, every Conversation worth reading
+  ahead. A want is the whole set for a Repository and replaces the last one, and the queue works toward it.
+  A head that leaves the set before its turn isn't fetched. New facts start the rules again: the session
+  works out the Mirror's wants after each sync step that saves.
 
 ## One handle, two queues
 
@@ -46,8 +46,9 @@ its queue the same way: the user's demands first, then the rules' wants, then ba
   of the PRs the user opened, in a fetch of their own, ahead of the heads the rules want, and of other
   Repositories' heads. Then the rules' heads, reviewed commits and patch-ids, then clones, then upkeep.
 - The session takes each demand between two sync steps, so a demand waits for one request at most and goes
-  ahead of the sync's tiers. Its wants of GitHub, the Conversations worth reading ahead, are still decided
-  inside the refresh step, which reads the store and then decides. Moving them out is left for later.
+  ahead of the sync's tiers. A refresh that would finish asks the rules which Conversations to read ahead,
+  which they work out from Reach and the PRs whose Conversations the store owes a read, and reads them
+  before it finishes. A change to the settings has it ask again.
 - The writes to GitHub that #393 starts will go ahead of all three.
 
 A demand keeps its rank once GitHub names the head. When the user opens a PR before the session knows its

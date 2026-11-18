@@ -1,6 +1,7 @@
 //! The user's work, judged from its facts. By Issue or PR number it says each one's place on the Workbench
 //! in its own right, what makes it Need attention, and where the user's Review stands. By Repository it works
-//! out Reach, and from it the Mirror's work and the checks the store keeps.
+//! out Reach, and from it the Mirror's work, the Conversations worth reading ahead and the checks the store
+//! keeps.
 //!
 //! It's the functional core: it takes `facts` and returns values. It opens no connection, runs no git and
 //! sends no message. `workbench` groups what it judges into items and lays them out, and `sync` and
@@ -18,7 +19,7 @@ use crate::links::BackportLink;
 pub(crate) use causes::{Cause, Causes};
 pub use causes::{SeenMark, Why};
 pub use reach::mirror_work;
-pub(crate) use reach::{in_own_right, matched, reach};
+pub(crate) use reach::{conversations_to_read, in_own_right, matched, newly_reached};
 pub use reasons::WorkReason;
 pub(crate) use reasons::reasons;
 pub(crate) use review_state::SharedReviews;

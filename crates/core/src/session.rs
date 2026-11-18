@@ -22,7 +22,7 @@ use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoa
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{SeenMark, checks_to_keep, mirror_work, reach};
+use crate::work::{SeenMark, checks_to_keep, mirror_work, newly_reached};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -526,12 +526,7 @@ fn follow_reach(
     let repository = &now.name;
     let facts = store.work_facts(repository).ok()?;
     hand_over_wants(fetching, store, now, &facts);
-    let reached = reach(&facts, now);
-    let reached_before = reach(&facts, before);
-    let newly = (facts.pull_requests.iter())
-        .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
-        .map(|pr| (pr.number, pr.head.clone()))
-        .collect();
+    let newly = newly_reached(&facts, now, before);
     if let Err(problem) = store.owe_read_ahead_at(repository, newly) {
         log::warn!(
             "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",

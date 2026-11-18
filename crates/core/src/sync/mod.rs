@@ -82,8 +82,8 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish reads the Conversations of the PRs in Reach it owes a read, lowest number
-    /// first (#157).
+    /// A refresh that would finish reads the Conversations the rules want read ahead, lowest number first
+    /// (#157).
     ReadingAhead(Ahead),
 }
 

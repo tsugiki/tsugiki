@@ -36,6 +36,7 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
+use crate::facts::WorkFacts;
 use crate::facts::activity::{ActivityFacts, ItemActivity};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
@@ -43,7 +44,7 @@ use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
-use crate::facts::{CommitSha, WorkFacts};
+use crate::facts::read_ahead::ReadAheadFacts;
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;
@@ -142,28 +143,24 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Owes a read of the Conversation of each PR of `heads` at its head, for the next refresh of
-    /// `repository` to read ahead, unless the store holds one read at that head. A PR whose head Tsugiki
-    /// doesn't know is owed one. A Filter switched on puts PRs in Reach that no change on GitHub would owe a
-    /// read (#819).
-    pub fn owe_read_ahead_at(
+    /// Owes a read of the Conversation of each of `numbers`, PRs of `repository`, until a read of it saves or
+    /// a sync finishes.
+    pub fn owe_read_ahead(
         &self,
         repository: &RepositoryName,
-        heads: Vec<(u32, Option<CommitSha>)>,
+        numbers: Vec<u32>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            sync_state::owe_read_ahead_at(connection, &repository, &heads)
+            sync_state::owe_read_ahead(connection, &repository, &numbers)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The PRs of `repository` whose Conversations a refresh owes a read. Saving a PR's Conversation clears
-    /// its debt, and saving a finished sync clears them all.
-    pub fn read_ahead_owed(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+    /// What the store holds of `repository`'s Conversations, from one transaction.
+    pub fn read_ahead_facts(&self, repository: &RepositoryName) -> Result<ReadAheadFacts, Error> {
         let repository = repository.clone();
-        let read =
-            self.call(move |connection| sync_state::read_ahead_owed(connection, &repository))?;
+        let read = self.call(move |connection| read_read_ahead_facts(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -604,6 +601,17 @@ fn write_last_login(connection: &Connection, login: &Login) -> rusqlite::Result<
             named_params! { ":login": login },
         )
         .map(drop)
+}
+
+fn read_read_ahead_facts(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<ReadAheadFacts> {
+    let transaction = connection.transaction()?;
+    Ok(ReadAheadFacts {
+        owed: sync_state::read_ahead_owed(&transaction, repository)?,
+        read_at: pull_request_content::read_heads(&transaction, repository)?,
+    })
 }
 
 // Add each read a screen waits on to `view_statements` in the tests, which check its plans (ADR 0017).

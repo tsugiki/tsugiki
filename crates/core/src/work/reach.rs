@@ -8,10 +8,11 @@ use super::causes::Causes;
 use super::origins;
 use super::reasons::reasons;
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
+use crate::facts::WorkFacts;
 use crate::facts::filters::FilterResults;
 use crate::facts::patch_ids::PatchesOf;
-use crate::facts::pull_requests::PrHead;
-use crate::facts::{CommitSha, WorkFacts};
+use crate::facts::pull_requests::{PrHead, PullRequestFacts};
+use crate::facts::read_ahead::ReadAheadFacts;
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
@@ -121,56 +122,96 @@ fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     reached
 }
 
-/// The Mirror's work in a Repository. It fetches the heads of the PRs in Reach. A PR
-/// stored before Tsugiki read heads has none to give. It reads the commits whose per-file patch-ids the Stale
-/// review check still needs: the reviewed commit and the head of each PR whose head moved on from the user's
-/// Review, apart from a Bot backport, which shares its Origin PR's review state. A merged or closed PR's
-/// check reads only while its head is among those fetched. It runs once on the final head, and its verdict
-/// freezes with the PR.
-pub fn mirror_work(
-    facts: &WorkFacts,
-    repository: &RepositorySettings,
-) -> (Vec<PrHead>, Vec<PatchesOf>) {
-    let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
-    let unread = unread_sides(facts, &shared);
-    let heads = reached_heads(facts, repository);
-    let patches = patches_to_read(unread, &heads);
-    (heads, patches)
+/// What the rules want in a Repository, each the whole set, worked out from one Reach.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Wants {
+    /// The heads the Mirror fetches: those of the PRs in Reach, in the order of their numbers. A PR stored
+    /// before Tsugiki read heads has none to give.
+    pub heads: Vec<PrHead>,
+    /// The commits whose per-file patch-ids the Stale review check still needs: the reviewed commit and the
+    /// head of each PR whose head moved on from the user's Review, apart from a Bot backport, which shares
+    /// its Origin PR's review state. A merged or closed PR's check reads only while its head is among
+    /// `heads`. It runs once on the final head, and its verdict freezes with the PR.
+    pub patches: Vec<PatchesOf>,
+    /// The PRs whose Conversations are worth reading before the user opens them: those in Reach whose
+    /// Conversations the store owes a read. A stranger's PR waits until the user opens it.
+    pub conversations: BTreeSet<u32>,
 }
 
-/// The Conversations worth reading ahead in a Repository, the rules' want of GitHub as `mirror_work` is
-/// theirs of the Mirror: the PRs in Reach under `repository` among `owed`, those whose Conversation the store
-/// owes a read. The store owes one for each PR a refresh found changed, and for each PR a Filter switched on
-/// put in Reach with no Conversation read at its head. They're worth reading before the user opens them,
-/// and a stranger's PR waits until then.
+impl Wants {
+    /// What the rules want in the Repository of `repository`, whose stored facts are `facts` and
+    /// `conversations`.
+    pub fn of(
+        facts: &WorkFacts,
+        conversations: &ReadAheadFacts,
+        repository: &RepositorySettings,
+    ) -> Self {
+        let reached = reach(facts, repository);
+        Self::in_reach(facts, &conversations.owed, repository, &reached)
+    }
+
+    /// What the rules want once settings `now` replace `before`, with the PRs whose Conversations the store
+    /// owes a read from now on: those `now` puts in Reach, apart from each whose Conversation the store holds
+    /// read at its head. No change on GitHub would owe a read of theirs (#819). The wants count them owed.
+    pub(crate) fn after_switch(
+        facts: &WorkFacts,
+        conversations: &ReadAheadFacts,
+        now: &RepositorySettings,
+        before: &RepositorySettings,
+    ) -> (Self, Vec<u32>) {
+        let reached = reach(facts, now);
+        let reached_before = reach(facts, before);
+        let read_at_head = |pr: &PullRequestFacts| {
+            (pr.head.as_ref())
+                .is_some_and(|head| conversations.read_at.get(&pr.number) == Some(head))
+        };
+        let newly_owed: Vec<u32> = (facts.pull_requests.iter())
+            .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
+            .filter(|pr| !read_at_head(pr))
+            .map(|pr| pr.number)
+            .collect();
+        let mut owed = conversations.owed.clone();
+        owed.extend(&newly_owed);
+        (Self::in_reach(facts, &owed, now, &reached), newly_owed)
+    }
+
+    /// The rules' wants of the PRs `reached` under `repository`, when the store owes a read of the
+    /// Conversations of `owed`.
+    fn in_reach(
+        facts: &WorkFacts,
+        owed: &BTreeSet<u32>,
+        repository: &RepositorySettings,
+        reached: &BTreeSet<u32>,
+    ) -> Self {
+        let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
+        let unread = unread_sides(facts, &shared);
+        let heads = reached_heads(facts, reached);
+        let patches = patches_to_read(unread, &heads);
+        Self {
+            heads,
+            patches,
+            conversations: owed_in_reach(owed, reached),
+        }
+    }
+}
+
+/// The Conversations worth reading ahead in the Repository of `repository`, as [`Wants`] says, without the
+/// Mirror's work.
 pub(crate) fn conversations_to_read(
     facts: &WorkFacts,
-    owed: &BTreeSet<u32>,
+    conversations: &ReadAheadFacts,
     repository: &RepositorySettings,
 ) -> BTreeSet<u32> {
-    let reached = reach(facts, repository);
-    owed.intersection(&reached).copied().collect()
+    owed_in_reach(&conversations.owed, &reach(facts, repository))
 }
 
-/// The PRs that settings `now` in place of `before` put in Reach, each with its head where `facts` holds
-/// one. No change on GitHub would owe a read of their Conversations (#819), so the store owes one of each
-/// it doesn't hold at that head.
-pub(crate) fn newly_reached(
-    facts: &WorkFacts,
-    now: &RepositorySettings,
-    before: &RepositorySettings,
-) -> Vec<(u32, Option<CommitSha>)> {
-    let reached = reach(facts, now);
-    let reached_before = reach(facts, before);
-    (facts.pull_requests.iter())
-        .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
-        .map(|pr| (pr.number, pr.head.clone()))
-        .collect()
+/// The PRs of `owed` among those `reached`.
+fn owed_in_reach(owed: &BTreeSet<u32>, reached: &BTreeSet<u32>) -> BTreeSet<u32> {
+    owed.intersection(reached).copied().collect()
 }
 
-/// The head of each PR Tsugiki reaches, in the order of their numbers.
-fn reached_heads(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<PrHead> {
-    let reached = reach(facts, repository);
+/// The head of each PR of `reached`, in the order of their numbers.
+fn reached_heads(facts: &WorkFacts, reached: &BTreeSet<u32>) -> Vec<PrHead> {
     let heads: BTreeMap<u32, PrHead> = (facts.pull_requests.iter())
         .filter(|pr| reached.contains(&pr.number))
         .filter_map(|pr| {

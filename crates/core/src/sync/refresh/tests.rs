@@ -14,12 +14,13 @@ use crate::github::testing::{
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::session::hand_over_read_ahead;
 use crate::status::Change;
 use crate::store::Store;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
-    no_cross_references, pr_node,
+    no_cross_references, pr_node, step_as_the_session,
 };
 use crate::sync::{Progress, Syncs};
 use crate::testing::{issue_facts, me, moment};
@@ -244,16 +245,20 @@ fn failed_checks(number: u32, names: &[&str]) -> Result<Reply, Unreachable> {
 }
 
 /// Runs the refresh to its end, and answers with everything it announced.
+/// Runs `syncs` until none is ready, as the session does once it opens CPython.
 fn run(syncs: &mut Syncs, harness: &Harness) -> Vec<Change> {
+    let _handed = hand_over_read_ahead(&harness.db.store, syncs, &cpython());
     let mut changes = Vec::new();
     while syncs.ready_at().is_some() {
-        if let Some(Progress::Changed(change)) =
-            syncs.step(&harness.github, &harness.db.store).unwrap()
-        {
+        if let Some(Progress::Changed(change)) = step(syncs, harness) {
             changes.push(change);
         }
     }
     changes
+}
+
+fn step(syncs: &mut Syncs, harness: &Harness) -> Option<Progress> {
+    step_as_the_session(syncs, harness, &harness.db.store).unwrap()
 }
 
 fn refreshing(settings: RepositorySettings) -> Syncs {
@@ -1159,7 +1164,7 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
     let mut off = filtering(&["a"]);
     off.filters[0].on_workbench = OnWorkbench::Off;
     let mut syncs = refreshing(off.clone());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    drop(step(&mut syncs, &harness));
 
     let before = syncs.replace_settings(filtering(&["a"]));
     drop(run(&mut syncs, &harness));
@@ -1193,20 +1198,19 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     harness
         .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(2, None)])
+        .owe_read_ahead(&cpython(), vec![2])
         .unwrap();
     let mut syncs = refreshing(b_off);
-    while reviews_held(&harness, 2).is_none() {
-        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    }
+    read_ahead_up_to(&mut syncs, &harness, 2);
 
     // As the session does when the user switches "b" on.
     drop(syncs.replace_settings(filtering(&["a", "b"])));
     harness
         .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(3, None)])
+        .owe_read_ahead(&cpython(), vec![3])
         .unwrap();
+    let _handed = hand_over_read_ahead(&harness.db.store, &mut syncs, &cpython());
     drop(run(&mut syncs, &harness));
 
     assert_eq!(
@@ -1221,6 +1225,45 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     harness.finish();
 }
 
+/// Steps `syncs`, which the session has told what to read ahead, until the store holds PR `number`'s Reviews.
+fn read_ahead_up_to(syncs: &mut Syncs, harness: &Harness, number: u32) {
+    let _handed = hand_over_read_ahead(&harness.db.store, syncs, &cpython());
+    while reviews_held(harness, number).is_none() {
+        drop(step(syncs, harness));
+    }
+}
+
+#[test]
+fn a_filter_switched_off_while_a_refresh_reads_ahead_leaves_what_it_reached_unread() {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync("switched-off-reading-ahead", vec![quiet, approved()]);
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    stored_filter(&harness, "b", &[3]);
+    harness
+        .db
+        .store
+        .owe_read_ahead(&cpython(), vec![2, 3])
+        .unwrap();
+    let mut syncs = refreshing(filtering(&["a", "b"]));
+    read_ahead_up_to(&mut syncs, &harness, 2);
+
+    // As the session does when the user switches "b" off.
+    let mut b_off = filtering(&["a", "b"]);
+    b_off.filters[1].on_workbench = OnWorkbench::Off;
+    drop(syncs.replace_settings(b_off));
+    let _handed = hand_over_read_ahead(&harness.db.store, &mut syncs, &cpython());
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    assert_eq!(reviews_held(&harness, 3), None);
+    harness.finish();
+}
+
 #[test]
 fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
@@ -1232,7 +1275,7 @@ fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     harness
         .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(2, None), (3, None)])
+        .owe_read_ahead(&cpython(), vec![2, 3])
         .unwrap();
     let mut syncs = refreshing(filtering(&["a"]));
 
@@ -1244,10 +1287,8 @@ fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     );
     assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
     assert_eq!(reviews_held(&harness, 3), None);
-    assert_eq!(
-        harness.db.store.read_ahead_owed(&cpython()).unwrap(),
-        BTreeSet::new()
-    );
+    assert_eq!(owed(&harness), BTreeSet::new());
+    assert_eq!(syncs.wanted(&cpython()), &BTreeSet::new());
     harness.finish();
 }
 
@@ -1350,11 +1391,13 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
         None,
         "the user's work doesn't reach a stranger's PR"
     );
-    assert_eq!(
-        harness.db.store.read_ahead_owed(&cpython()).unwrap(),
-        BTreeSet::new()
-    );
+    assert_eq!(owed(&harness), BTreeSet::new());
     harness.finish();
+}
+
+/// The PRs of CPython whose Conversations the store owes a read.
+fn owed(harness: &Harness) -> BTreeSet<u32> {
+    harness.db.store.read_ahead_facts(&cpython()).unwrap().owed
 }
 
 /// GitHub's answer to a probe of PR `number`, which `some-reviewer` approved without moving `updatedAt`.
@@ -1466,7 +1509,7 @@ fn a_refresh_that_stopped_reading_ahead_leaves_the_next_only_what_it_hadnt_read(
         .iter()
         .any(|operation| operation == "FetchPullRequestContent")
     {
-        drop(stopped.step(&harness.github, &harness.db.store).unwrap());
+        drop(step(&mut stopped, &harness));
         asked.extend(harness.operations());
     }
     drop(stopped);

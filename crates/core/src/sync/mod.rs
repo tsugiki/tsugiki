@@ -87,12 +87,10 @@ enum Phase {
     ReadingAhead(Ahead),
 }
 
-/// The PRs a refresh reads ahead.
+/// How far a refresh has read ahead.
+#[derive(Default)]
 struct Ahead {
-    /// Those still to read, or None once a change to the settings has the refresh ask the store again: a
-    /// Filter switched on can owe more, and one switched off takes PRs out of Reach.
-    left: Option<BTreeSet<u32>>,
-    /// Those this refresh has asked GitHub for, so it asks for each once.
+    /// The PRs this refresh has asked GitHub for, so it asks for each once, whatever the rules want next.
     tried: BTreeSet<u32>,
 }
 
@@ -314,14 +312,6 @@ impl UserWorkSync {
         sync
     }
 
-    /// The Repository's settings changed, so a read ahead under way works out again which PRs it owes a
-    /// read: a Filter switched on can owe more, and one switched off takes PRs out of Reach.
-    fn reach_changed(&mut self) {
-        if let Phase::ReadingAhead(ahead) = &mut self.phase {
-            ahead.left = None;
-        }
-    }
-
     /// A first sync's own state, if this is one.
     fn first_sync(&self) -> Option<&FirstSync> {
         match &self.kind {
@@ -332,16 +322,17 @@ impl UserWorkSync {
 
     /// Runs one step, then saves a first sync's place, so quitting, a crash or going offline comes back to
     /// the next page. A save that fails keeps the step, whose news still counts, for the next try to report.
-    /// `settings` are the Repository's as they are now, which say which PRs a refresh reads ahead.
+    /// `wanted` are the Conversations the rules last wanted read ahead, which a refresh reads before it
+    /// finishes.
     fn step(
         &mut self,
         github: &GitHub,
         store: &Store,
-        settings: &RepositorySettings,
+        wanted: &BTreeSet<u32>,
     ) -> Result<Step, Error> {
         let step = match self.unsaved.take() {
             Some(step) => step,
-            None => self.advance(github, store, settings)?,
+            None => self.advance(github, store, wanted)?,
         };
         match self.save_place(store) {
             Ok(()) => Ok(step),
@@ -438,7 +429,7 @@ impl UserWorkSync {
         &mut self,
         github: &GitHub,
         store: &Store,
-        settings: &RepositorySettings,
+        wanted: &BTreeSet<u32>,
     ) -> Result<Step, Error> {
         let link = Link {
             github,
@@ -458,13 +449,13 @@ impl UserWorkSync {
                     Some(phase) => self.phase = phase,
                     None => self.start_first_sync(store)?,
                 }
-                return self.advance(github, store, settings);
+                return self.advance(github, store, wanted);
             }
             Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
+            Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, wanted)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
                 cursor,
@@ -490,15 +481,12 @@ impl UserWorkSync {
             self.phase = next;
         }
         let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
-        if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
-            // The store keeps the PRs until the refresh finishes, so a failure here leaves them to the retry.
-            let left = refresh::to_read_ahead(&link, settings)?;
-            if !left.is_empty() {
-                let tried = BTreeSet::new();
-                let left = Some(left);
-                self.phase = Phase::ReadingAhead(Ahead { left, tried });
-                return Ok(Step::Moved);
-            }
+        if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh))
+            && !reads_ahead
+            && !wanted.is_empty()
+        {
+            self.phase = Phase::ReadingAhead(Ahead::default());
+            return Ok(Step::Moved);
         }
         if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
             (&mut self.kind, &step)

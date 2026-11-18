@@ -26,8 +26,6 @@ const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
 /// first sync costs thousands, so it waits for the user.
 const TRIES: u8 = 10;
 
-const NO_SETTINGS: &str = "Tsugiki lost the settings of a Repository it syncs.";
-
 /// What a step of the queue did that the rest of the app can see.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Progress {
@@ -166,6 +164,10 @@ pub struct Syncs {
     /// The Repositories whose fetch of Issues with no state has been queued since launch. An Issue GitHub no
     /// longer has keeps no state, so each launch asks for it once.
     fills_queued: Vec<RepositoryName>,
+    /// The Conversations the rules last wanted read ahead in each Repository, as the session handed them
+    /// over. A refresh that would finish reads them. A sync that finishes drops its Repository's, as the
+    /// store owes no read once a sync finishes.
+    read_ahead: Vec<(RepositoryName, BTreeSet<u32>)>,
 }
 
 impl Syncs {
@@ -196,8 +198,7 @@ impl Syncs {
 
     /// Takes the settings the settings owner handed over, `repository`'s, in place of those its syncs read,
     /// if it was opened since launch and they differ, and answers with those. Which Repository is open
-    /// stays, and nothing new is queued. A sync of it that is reading ahead works out again which PRs it
-    /// owes a read, as the new settings can reach others.
+    /// stays, and nothing new is queued.
     pub fn replace_settings(
         &mut self,
         repository: RepositorySettings,
@@ -212,11 +213,25 @@ impl Syncs {
         if *held == repository {
             return None;
         }
-        let before = mem::replace(held, repository);
-        if let Some(queued) = self.queued_mut(&name) {
-            queued.sync.reach_changed();
+        Some(mem::replace(held, repository))
+    }
+
+    /// Takes `conversations` as the whole set the rules want read ahead in `repository` from now on, in place
+    /// of the last. A read ahead under way reads those of them it hasn't tried.
+    pub fn want_read_ahead(&mut self, repository: &RepositoryName, conversations: BTreeSet<u32>) {
+        let held = (self.read_ahead.iter_mut()).find(|(name, _)| name.is_same(repository));
+        match held {
+            Some((_, wanted)) => *wanted = conversations,
+            None => self.read_ahead.push((repository.clone(), conversations)),
         }
-        Some(before)
+    }
+
+    /// The Conversations the rules last wanted read ahead in `repository`.
+    pub(crate) fn wanted(&self, repository: &RepositoryName) -> &BTreeSet<u32> {
+        const NONE: &BTreeSet<u32> = &BTreeSet::new();
+        (self.read_ahead.iter())
+            .find(|(name, _)| name.is_same(repository))
+            .map_or(NONE, |(_, wanted)| wanted)
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A
@@ -312,13 +327,6 @@ impl Syncs {
     /// The settings `repository`'s syncs read, if it was opened since launch.
     pub fn settings(&self, repository: &RepositoryName) -> Option<&RepositorySettings> {
         (self.settings.iter()).find(|settings| settings.name.is_same(repository))
-    }
-
-    /// The settings a step of `repository`'s sync reads. Each sync starts from settings these hold, and none
-    /// leave them, so a miss is Tsugiki's own mistake.
-    fn settings_for(&self, repository: &RepositoryName) -> Result<&RepositorySettings, Error> {
-        self.settings(repository)
-            .ok_or_else(|| Error::new(ErrorKind::Internal, NO_SETTINGS))
     }
 
     fn open_settings(&self) -> Option<&RepositorySettings> {
@@ -498,9 +506,8 @@ impl Syncs {
         store: &Store,
     ) -> Result<Option<Progress>, StepFailure> {
         self.not_before = None;
-        let stepped = (self.settings_for(&tree.sync.repository))
-            .and_then(|settings| tree.sync.step(github, store, settings));
-        let step = match stepped {
+        // A tree never reads ahead.
+        let step = match tree.sync.step(github, store, &BTreeSet::new()) {
             Ok(step) => step,
             // One Issue's trouble mustn't stand in the way of the syncs behind it.
             Err(problem) if !problem.kind.speaks_for_all_of_github() => {
@@ -536,12 +543,12 @@ impl Syncs {
         self.not_before = None;
         let is_open = self.is_open(&queued.sync.repository);
         queued.held_until = None;
-        let stepped = (self.settings_for(&queued.sync.repository))
-            .and_then(|settings| queued.sync.step(github, store, settings));
-        let stepped = match stepped.map(unfinished) {
+        let wanted = self.wanted(&queued.sync.repository);
+        let stepped = match queued.sync.step(github, store, wanted).map(unfinished) {
             Ok(Some(stepped)) => stepped,
             Ok(None) => match queued.sync.finish(store) {
                 Ok(finished) => {
+                    (self.read_ahead).retain(|(name, _)| !name.is_same(&finished.repository));
                     self.queue_fill(&finished.repository);
                     self.open_went_last = is_open;
                     return Ok(is_open.then_some(Progress::Finished(finished)));

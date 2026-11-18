@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use serde_json::{Value, json};
 use time::{Duration, OffsetDateTime};
 
@@ -990,7 +992,7 @@ fn a_first_sync_taken_up_again_keeps_when_it_started() {
     let mut first = UserWorkSync::new(&settings);
     drop(
         first
-            .step(&harness.github, &harness.db.store, &settings)
+            .step(&harness.github, &harness.db.store, &BTreeSet::new())
             .unwrap(),
     );
     drop(harness.github.viewer().unwrap());
@@ -998,7 +1000,7 @@ fn a_first_sync_taken_up_again_keeps_when_it_started() {
     let mut taken_up = UserWorkSync::new(&settings);
     drop(
         taken_up
-            .step(&harness.github, &harness.db.store, &settings)
+            .step(&harness.github, &harness.db.store, &BTreeSet::new())
             .unwrap(),
     );
 
@@ -1090,20 +1092,22 @@ fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
         crate::sync::Phase::Resumable(crate::sync::Resumable::Loading(_))
     ) {
         drop(
-            sync.step(&harness.github, &harness.db.store, &settings)
+            sync.step(&harness.github, &harness.db.store, &BTreeSet::new())
                 .unwrap(),
         );
     }
     // The count goes before the page.
     drop(
-        sync.step(&harness.github, &harness.db.store, &settings)
+        sync.step(&harness.github, &harness.db.store, &BTreeSet::new())
             .unwrap(),
     );
     // Reading the frozen PRs and this page's save land, but saving its place doesn't.
     let (saves_once, _calls) = harness.db.store.failing_at_call(Some(2));
 
-    let failed = sync.step(&harness.github, &saves_once, &settings);
-    let again = sync.step(&harness.github, &saves_once, &settings).unwrap();
+    let failed = sync.step(&harness.github, &saves_once, &BTreeSet::new());
+    let again = sync
+        .step(&harness.github, &saves_once, &BTreeSet::new())
+        .unwrap();
 
     saves_once.close();
     assert!(failed.is_err());

@@ -1144,7 +1144,8 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     );
     let on = heard.asked();
     let held = syncs.settings(&gcmon()).cloned();
-    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    let owed = store.read_ahead_facts(&gcmon()).unwrap().owed;
+    let wanted_on = syncs.wanted(&gcmon()).clone();
     let switched_off = settings_changed(
         &fetching,
         &store,
@@ -1152,6 +1153,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
         bugs_switched(OnWorkbench::Off),
     );
     let off = heard.asked();
+    let wanted_off = syncs.wanted(&gcmon()).clone();
 
     assert_eq!(unheld, None);
     assert_eq!(switched_on, Some(bugs_switched(OnWorkbench::Off)));
@@ -1164,7 +1166,13 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     // Issue 5 has no Conversation to read ahead as a PR, PR 9's was read at its head, and nothing reaches
     // PR 11.
     assert_eq!(owed, [8, 10].into());
+    assert_eq!(
+        wanted_on,
+        [8, 10].into(),
+        "a refresh reads what the switch owes"
+    );
     assert!(off.iter().all(|line| !line.contains("#8")), "{off:?}");
+    assert_eq!(wanted_off, BTreeSet::new(), "nor once it's switched off");
 }
 
 /// Switches the Bugs Filter on, which finds PR 8, with the store losing call `lost`, if any. Answers with
@@ -1201,7 +1209,7 @@ fn switch_bugs_on_losing(
         bugs_switched(OnWorkbench::On),
     );
 
-    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    let owed = store.read_ahead_facts(&gcmon()).unwrap().owed;
     (switched, heard.asked(), calls.try_iter().count(), owed)
 }
 
@@ -1878,6 +1886,10 @@ impl Transport for QuietRepository {
         if request.operation == "Viewer" {
             return reply_ok(r#"{"data":{"viewer":{"login":"octocat"}}}"#);
         }
+        // GitHub has nothing new to say of any PR a probe asks about.
+        if request.operation == "ProbePullRequests" {
+            return answer(json!({ "repository": {} }), RATE_LIMIT);
+        }
         let none = json!({ "pageInfo": page_info(None), "nodes": [] });
         let repository = json!({
             "openIssues": { "totalCount": 900 },
@@ -1948,6 +1960,25 @@ fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
         }
     );
     assert!(after.at > Some(at));
+}
+
+#[test]
+fn opening_a_repository_has_its_refresh_read_ahead_what_one_before_this_launch_owed() {
+    let (folders, _folder) = temp_folders("opened-owed");
+    let _at = after_a_finished_sync(&folders);
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&Login::new("octocat")).unwrap();
+    let stored = vec![stored_pr(8, "octocat", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    store.owe_read_ahead(&gcmon(), vec![8]).unwrap();
+    store.close();
+    let (access, asked) = quiet_repository();
+    let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
+
+    session.fetching().sync(plain_gcmon());
+    wait_for(&asked, "RefreshRepository");
+    wait_for(&asked, "FetchPullRequestContent");
+    session.stop(PLENTY);
 }
 
 #[test]

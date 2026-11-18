@@ -11,6 +11,7 @@ pub mod labels;
 pub mod patch_ids;
 pub mod pull_request_content;
 pub mod pull_requests;
+pub mod read_ahead;
 pub mod references;
 
 use std::collections::BTreeMap;

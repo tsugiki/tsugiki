@@ -28,8 +28,9 @@ either. `layers.rs` holds this: `facts`, `links`, `activity` and `work` may use 
 - **The rules** state **wants**: every head that should be in the Mirror, every commit the user's Reviews
   covered, every commit whose patch-ids the Stale review check needs, every Conversation worth reading
   ahead. A want is the whole set for a Repository and replaces the last one, and the queue works toward it.
-  A head that leaves the set before its turn isn't fetched. New facts start the rules again: the session
-  works out the Mirror's wants after each sync step that saves.
+  A head or a Conversation that leaves the set before its turn isn't read. New facts start the rules again:
+  the session works out the wants after each sync step that saves and after a change to the settings, and
+  the Conversations when it opens a Repository, for those a refresh before this launch didn't read.
 
 ## One handle, two queues
 
@@ -46,9 +47,9 @@ its queue the same way: the user's demands first, then the rules' wants, then ba
   of the PRs the user opened, in a fetch of their own, ahead of the heads the rules want, and of other
   Repositories' heads. Then the rules' heads, reviewed commits and patch-ids, then clones, then upkeep.
 - The session takes each demand between two sync steps, so a demand waits for one request at most and goes
-  ahead of the sync's tiers. A refresh that would finish asks the rules which Conversations to read ahead,
-  which they work out from Reach and the PRs whose Conversations the store owes a read, and reads them
-  before it finishes. A change to the settings has it ask again.
+  ahead of the sync's tiers. The rules' Conversations come last: a refresh that would finish reads those
+  the rules last wanted, and asks GitHub for each once. The rules work them out from Reach and the facts
+  the store holds of each Conversation: whether it owes a read, and the head it was read at.
 - The writes to GitHub that #393 starts will go ahead of all three.
 
 A demand keeps its rank once GitHub names the head. When the user opens a PR before the session knows its
@@ -89,5 +90,8 @@ check, without reading a diff.
   a stop.
 - A want replaces the last only in what it states. When the store can't read the reviewed commits, the want
   leaves them out, and the Mirror worker goes on with the last ones.
+- When the store can't answer the session after a step that saves, the syncs go on with the last
+  Conversations the rules wanted, until a later step's facts can be read. A refresh that finishes meanwhile
+  can leave a Conversation unread that the PR view then reads when it opens.
 - A test of a view model checks the values its read returns, and a test of the session checks what reached
   a Mirror worker that only listens.

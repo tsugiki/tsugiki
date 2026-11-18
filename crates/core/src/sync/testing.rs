@@ -6,12 +6,15 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 
+use super::queue::StepFailure;
 use super::{Progress, Syncs};
 pub(super) use crate::github::testing::{RATE_LIMIT, fetched_nodes, pr_node, search_page};
 use crate::github::testing::{Scripted, answer, github, issue_node, page_info, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryCounts, RepositoryName};
 use crate::repository_settings::RepositorySettings;
+use crate::session::hand_over_read_ahead;
+use crate::store::Store;
 use crate::store::testing::OpenStore;
 pub(super) use crate::testing::cpython;
 use crate::token::Token;
@@ -247,6 +250,29 @@ pub(super) fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<Reposi
         ));
     }
     changed
+}
+
+/// The syncs of a launch that opened the Repository of `settings`, as the session holds them.
+pub(super) fn opened(settings: &RepositorySettings, harness: &Harness) -> Syncs {
+    let mut syncs = Syncs::default();
+    syncs.add(settings.clone());
+    let _handed = hand_over_read_ahead(&harness.db.store, &mut syncs, &settings.name);
+    syncs
+}
+
+/// Runs a step of `syncs` on `store`, after which the session hands them the Conversations the rules want
+/// read ahead in the Repository the step saved facts of, if it saved any. The session reads those wants
+/// from `harness`'s own store, so a failure `store` stages is the step's alone.
+pub(super) fn step_as_the_session(
+    syncs: &mut Syncs,
+    harness: &Harness,
+    store: &Store,
+) -> Result<Option<Progress>, StepFailure> {
+    let stepped = syncs.step(&harness.github, store);
+    if let Ok(Some(Progress::Changed(change))) = &stepped {
+        let _handed = hand_over_read_ahead(&harness.db.store, syncs, &change.repository);
+    }
+    stepped
 }
 
 /// The Repository a step says changed, if it says one did.

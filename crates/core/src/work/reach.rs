@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::causes::Causes;
 use super::origins;
-use super::reasons::reasons;
+use super::reasons::{WorkReason, reasons};
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
 use crate::facts::filters::FilterResults;
 use crate::facts::patch_ids::PatchesOf;
@@ -32,9 +32,10 @@ pub(crate) fn matched(
         .collect()
 }
 
-/// The Issues and PRs on the Workbench in their own right: those a Filter found, each PR with a
-/// `WorkReason`, and each that Needs attention, as `causes` says. No viewer means nobody has signed in yet,
-/// so nothing is the user's work.
+/// The Issues and PRs on the Workbench in their own right: those a Filter found, each open PR the user wrote
+/// or reviewed, and each that Needs attention, as `causes` says. A Review request holds a PR only while it
+/// Needs attention, so Mark Seen takes it off (#865). No viewer means nobody has signed in yet, so nothing
+/// is the user's work.
 pub(crate) fn in_own_right(
     facts: &WorkFacts,
     repository: &RepositorySettings,
@@ -43,8 +44,9 @@ pub(crate) fn in_own_right(
     let Some(viewer) = facts.viewer.as_ref() else {
         return BTreeSet::new();
     };
+    let holds = |reason: &WorkReason| *reason != WorkReason::ReviewRequest;
     let reasoned = (facts.pull_requests.iter())
-        .filter(|pr| !reasons(pr, viewer).is_empty())
+        .filter(|pr| reasons(pr, viewer).iter().any(holds))
         .map(|pr| pr.number);
     let mut own = matched(&repository.filters, &facts.filters);
     own.extend(reasoned);
@@ -88,15 +90,17 @@ fn linked(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<Linked> {
 
 /// The numbers of the Issues and PRs Tsugiki reaches in `facts`:
 ///
-/// 1. each on the Workbench in its own right, with the Origin PR and the Backports of such a PR, and each
-///    Issue one of those fixes,
+/// 1. each on the Workbench in its own right or carrying a Review request, with the Origin PR and the
+///    Backports of such a PR, and each Issue one of those fixes,
 /// 2. each PR that fixes a reached Issue, open, merged or closed,
 /// 3. each Backport whose Origin PR is reached, and the Origin PR of each reached Backport.
 ///
 /// That holds every PR the whole Workbench shows, those in Issues' trees too.
 fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let causes = Causes::of(facts, repository.conventions);
-    let own = in_own_right(facts, repository, &causes);
+    let mut own = in_own_right(facts, repository, &causes);
+    // The Review requests view lists a PR the user marked seen, which has left the Workbench.
+    own.extend(&causes.review_requests);
     let linked = linked(facts, repository);
     let issues = facts.issues.iter().map(|issue| issue.number);
     let mut reached: BTreeSet<u32> = issues.filter(|number| own.contains(number)).collect();

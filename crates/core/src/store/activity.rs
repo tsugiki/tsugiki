@@ -57,6 +57,12 @@ pub(super) const MARKED_UNSEEN: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The moment the user last acknowledged what stands on each item: a Review request, a Stale review, failed
+/// CI on an Own PR (#865). Mark Seen moves it with Last seen, and the write to GitHub that #395 builds is to
+/// move Last seen alone. Null until the user marks the item seen, so what stood before this column still
+/// Needs attention.
+pub(super) const ACKNOWLEDGED: &str = "ALTER TABLE last_seen ADD COLUMN acknowledged_at INTEGER;";
+
 const COMMIT: &str = "commit";
 const COMMENT: &str = "comment";
 const REVIEW: &str = "review";
@@ -162,8 +168,8 @@ pub(super) fn read(
     Ok(events.into_iter().flatten().collect())
 }
 
-/// Mark Seen on `numbers`, all at once: clears their Marked unseen, and moves their Last seen on to `up_to`,
-/// if it's given. Last seen never moves back.
+/// Mark Seen on `numbers`, all at once: clears their Marked unseen, and moves their Last seen and the moment
+/// the user acknowledged them on to `up_to`, if it's given. Neither moves back.
 pub(super) fn mark_seen(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -179,8 +185,11 @@ pub(super) fn mark_seen(
         )?;
         if let Some(at) = up_to {
             let _moved = transaction.execute(
-                "INSERT INTO last_seen (repository, number, at) VALUES (:repository, :number, :at)
-                 ON CONFLICT (repository, number) DO UPDATE SET at = MAX(at, excluded.at)",
+                "INSERT INTO last_seen (repository, number, at, acknowledged_at)
+                 VALUES (:repository, :number, :at, :at)
+                 ON CONFLICT (repository, number) DO UPDATE SET
+                     at = MAX(at, excluded.at),
+                     acknowledged_at = MAX(COALESCE(acknowledged_at, excluded.at), excluded.at)",
                 named_params! {
                     ":repository": repository,
                     ":number": number,
@@ -316,6 +325,10 @@ pub(super) fn read_facts_of(
     let condition = items.condition("number");
     let last_seen =
         format!("SELECT number, at FROM last_seen WHERE repository = :repository {condition}");
+    let acknowledged = format!(
+        "SELECT number, acknowledged_at AS at FROM last_seen
+         WHERE repository = :repository AND acknowledged_at IS NOT NULL {condition}"
+    );
     let marked_unseen =
         format!("SELECT number, at FROM marked_unseen WHERE repository = :repository {condition}");
     let ci_finished = format!(
@@ -325,6 +338,7 @@ pub(super) fn read_facts_of(
     Ok(ActivityFacts {
         first_sync,
         last_seen: moments(connection, &last_seen, repository, items)?,
+        acknowledged: moments(connection, &acknowledged, repository, items)?,
         marked_unseen: moments(connection, &marked_unseen, repository, items)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,

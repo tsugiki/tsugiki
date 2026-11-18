@@ -3,7 +3,7 @@ use time::Duration;
 use super::*;
 use crate::store::Store;
 use crate::store::migrate::MIGRATIONS;
-use crate::store::testing::temp_database;
+use crate::store::testing::{database_before, temp_database};
 use crate::testing::cpython;
 
 #[test]
@@ -58,6 +58,32 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
     assert_eq!(restarted, BTreeMap::from([(7, flagged), (8, flagged)]));
     assert_eq!(after.marked_unseen, BTreeMap::from([(8, flagged)]));
     assert_eq!(after.last_seen, BTreeMap::new(), "nothing new to see");
+}
+
+#[test]
+fn a_last_seen_from_before_acknowledgements_acknowledges_nothing_until_mark_seen_moves_both() {
+    let seen = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(2);
+    let rows = format!(
+        "INSERT INTO last_seen (repository, number, at) VALUES ('python/cpython', 7, {})",
+        seen.unix_timestamp()
+    );
+    let (path, _folder) = database_before("activity-acknowledged", ACKNOWLEDGED, &rows);
+    let repository = cpython();
+    let store = Store::open(&path).unwrap();
+    let migrated = store.work_facts(&repository).unwrap().activity;
+    let later = seen + Duration::days(1);
+    store
+        .mark_seen(&repository, vec![7, 8], Some(later))
+        .unwrap();
+    store.mark_seen(&repository, vec![8], Some(seen)).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    assert_eq!(migrated.last_seen, BTreeMap::from([(7, seen)]));
+    assert_eq!(migrated.acknowledged, BTreeMap::new());
+    let both = BTreeMap::from([(7, later), (8, later)]);
+    assert_eq!(after.last_seen, both);
+    assert_eq!(after.acknowledged, both, "neither moves back");
 }
 
 #[test]

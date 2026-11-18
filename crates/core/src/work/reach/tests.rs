@@ -54,6 +54,24 @@ fn a_pr_in_a_reached_issues_tree_is_reached_open_merged_or_closed() {
 }
 
 #[test]
+fn a_review_request_the_user_marked_seen_leaves_the_workbench_and_stays_in_reach() {
+    let asked = PullRequestFacts {
+        number: 5,
+        review_requests: vec![me()],
+        ..stranger()
+    };
+    let mut facts = facts(vec![asked], vec![]);
+    let later = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    let _acknowledged = facts.activity.acknowledged.insert(5, later);
+    let settings = cpython_settings();
+
+    let causes = Causes::of(&facts, settings.conventions);
+
+    assert_eq!(in_own_right(&facts, &settings, &causes), BTreeSet::new());
+    assert_eq!(reach(&facts, &settings), BTreeSet::from([5]));
+}
+
+#[test]
 fn a_backport_of_a_reached_pr_is_reached_and_so_is_the_origin_pr_of_a_reached_backport() {
     let asked = PullRequestFacts {
         review_requests: vec![me()],

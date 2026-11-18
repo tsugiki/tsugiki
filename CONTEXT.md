@@ -65,7 +65,9 @@ An Issue, or a PR's conversation, also needs attention when someone else has pos
 seen** and the user is in the conversation: they opened it, it is assigned to them, they commented in it, or
 the new posts mention them. An Issue the user only follows through a **Filter** or a pin shows its New
 activity but does not need attention. Any Issue or PR the user **Marked unseen** needs attention, followed
-Issues included.
+Issues included. Mark Seen, Archive and Mute acknowledge a Review request, a Stale review and failed CI that
+stand on the item: each stops needing attention until something starts it again, a new request, a push that
+makes the Review stale again, or a CI run that fails.
 _Avoid_: Pending, todo
 
 **Maintained repository**:
@@ -221,8 +223,10 @@ A **Review** the user records only inside Tsugiki, without leaving a trace on Gi
 _Avoid_: Bookmark, seen flag
 
 **Review request**:
-A PR where the user is a requested reviewer or an assignee. It always counts as **Needs attention** until the
-user submits a review on GitHub (a **Local mark** does not clear it), even for a **Bot backport**.
+A PR where the user is a requested reviewer or an assignee, even a **Bot backport**. It lasts until the user
+submits a review on GitHub (a **Local mark** does not end it), and the Review requests view lists it until
+then. It counts as **Needs attention** until the user marks the PR seen, archives or mutes it; a request that
+comes after counts again.
 _Avoid_: Assignment, ping
 
 **Outdated thread**:
@@ -248,7 +252,10 @@ The moment up to which the user has seen a PR or an **Issue**, tracked per PR an
 it to the moment of the item's last sync that the window drew, so a comment that came in while the user read
 stays **New activity**. Mark Seen on an Issue moves the Last seen of the Issue and of every PR in its tree; on
 a PR, only that PR's. Archive, Mute, Unmute and a write to GitHub move it too. Opening an item, in Tsugiki or
-on GitHub, and handing a PR to a review tool leave it alone. It never moves back.
+on GitHub, and handing a PR to a review tool leave it alone. It never moves back. Beside it Tsugiki keeps the
+moment the user acknowledged the item, which Mark Seen, Archive and Mute move and a write to GitHub and
+Unmute leave alone: a **Review request**, a **Stale review** or failed CI that started before it no longer
+**Needs attention**.
 _Avoid_: Last visited, read
 
 **Marked unseen**:

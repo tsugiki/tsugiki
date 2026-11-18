@@ -19,12 +19,26 @@ use crate::repository_settings::RepositorySettings;
 
 #[cfg(test)]
 mod fixture;
+#[cfg(test)]
+pub(crate) mod import;
 
 #[cfg(test)]
 pub(crate) use fixture::Fixture;
 /// A test's folder or file under the repo's ignored `.temp` folder, removed when the test passes.
 #[cfg(test)]
 pub(crate) use tsugiki_test_git::{TempPath, temp_path};
+
+/// Adds `text` to the config of the repository whose git folder is `git_folder`, as `git config` writes it,
+/// without a git to write it: on Windows a git costs about 30 ms to start.
+#[cfg(test)]
+pub(crate) fn add_config(git_folder: &Path, text: &str) {
+    use std::io::Write as _;
+    let mut config = std::fs::OpenOptions::new()
+        .append(true)
+        .open(git_folder.join("config"))
+        .unwrap();
+    config.write_all(text.as_bytes()).unwrap();
+}
 
 /// The Repository a test works in.
 pub fn cpython() -> RepositoryName {

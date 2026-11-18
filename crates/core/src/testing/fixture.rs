@@ -2,12 +2,12 @@
 //! tests build: it needs `tsugiki-test-git`.
 
 use std::fs;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-use tsugiki_test_git::{git, git_reading};
+use tsugiki_test_git::git;
 
-use super::{TempPath, sha, temp_path};
+use super::import::{self, Change, Commit, Mode};
+use super::{TempPath, add_config, temp_path};
 use crate::facts::CommitSha;
 use crate::mirror::{LookupAt, LookupCheckout};
 
@@ -47,11 +47,7 @@ impl Fixture {
         let _ = git(&mirror, &["init", "-q", "-b", "main"]);
         // What `git config core.autocrlf false` writes, without a git to write it. The checkout reads it, so
         // it holds the bytes the commits do on a machine whose git turns LF into CRLF.
-        let mut config = fs::OpenOptions::new()
-            .append(true)
-            .open(mirror.join(".git").join("config"))
-            .unwrap();
-        config.write_all(b"[core]\n\tautocrlf = false\n").unwrap();
+        add_config(&mirror.join(".git"), "[core]\n\tautocrlf = false\n");
         let (base_commit, head_commit) = import(&mirror, base, head);
         let added: Vec<&str> = (head.iter())
             .filter(|(path, bytes)| bytes.is_some() && !base.iter().any(|(old, _)| old == path))
@@ -87,50 +83,32 @@ impl Fixture {
     }
 }
 
-/// Commits `base` to `main` in the repository at `mirror`, then `head` on top of it, with one `git
-/// fast-import`: about 30 ms for each git started on Windows, where adds and commits would start six. Gives
-/// the two commits. The repository's working tree and index stay empty, as a Mirror has none.
+/// Commits `base` to `main` in the repository at `mirror`, then `head` on top of it, and gives the two
+/// commits. `head` writes each file with bytes and deletes each without.
 fn import(
     mirror: &Path,
     base: &[(&str, &[u8])],
     head: &[(&str, Option<&[u8]>)],
 ) -> (CommitSha, CommitSha) {
-    let mut stream = Vec::new();
-    let base_files = base.iter().map(|(path, bytes)| (*path, Some(*bytes)));
-    commit_into(&mut stream, 1, "base", base_files);
-    commit_into(&mut stream, 2, "head", head.iter().copied());
-    // fast-import prints the commit of each mark it's asked for, a line each.
-    stream.extend_from_slice(b"get-mark :1\nget-mark :2\n");
-    let args = ["fast-import", "--quiet", "--date-format=now"];
-    let printed = git_reading(mirror, &args, &stream);
-    let mut commits = printed.lines().map(sha);
-    (commits.next().unwrap(), commits.next().unwrap())
-}
-
-/// Adds to `stream` a commit on `main` that writes each file with bytes and deletes each without, marked
-/// `mark` for `get-mark` to name.
-fn commit_into<'a>(
-    stream: &mut Vec<u8>,
-    mark: u32,
-    message: &str,
-    files: impl Iterator<Item = (&'a str, Option<&'a [u8]>)>,
-) {
-    let author = tsugiki_test_git::committer();
-    let length = message.len();
-    let header = format!("commit refs/heads/main\nmark :{mark}\ncommitter {author} now\n");
-    stream.extend_from_slice(header.as_bytes());
-    stream.extend_from_slice(format!("data {length}\n{message}\n").as_bytes());
-    for (path, bytes) in files {
-        match bytes {
-            Some(bytes) => {
-                let length = bytes.len();
-                let line = format!("M 100644 inline {path}\ndata {length}\n");
-                stream.extend_from_slice(line.as_bytes());
-                stream.extend_from_slice(bytes);
-                stream.push(b'\n');
-            }
-            None => stream.extend_from_slice(format!("D {path}\n").as_bytes()),
-        }
-    }
-    stream.push(b'\n');
+    let written: Vec<Change<'_>> = (base.iter())
+        .map(|(path, bytes)| Change::Write(Mode::File, path, bytes))
+        .collect();
+    let changed: Vec<Change<'_>> = (head.iter())
+        .map(|(path, bytes)| match bytes {
+            Some(bytes) => Change::Write(Mode::File, path, bytes),
+            None => Change::Delete(path),
+        })
+        .collect();
+    let on_main = |message, changes| Commit {
+        branch: "main",
+        message,
+        parents: &[],
+        changes,
+    };
+    let commits = import::import(
+        mirror,
+        &[on_main("base", &written), on_main("head", &changed)],
+    );
+    let [base, head] = <[CommitSha; 2]>::try_from(commits).unwrap();
+    (base, head)
 }

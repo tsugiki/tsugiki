@@ -133,6 +133,7 @@ describe("judge", () => {
 
   it("passes a copy between two files the list allows with its size, in either order", () => {
     expect(judge([copy("a.ts", "b.ts")], [allowed])).toEqual({ copies: [], unused: [] });
+    expect(judge([copy("b.ts", "a.ts")], [allowed])).toEqual({ copies: [], unused: [] });
   });
 
   it("fails a copy between two other files, and names an allowed size it no longer finds", () => {

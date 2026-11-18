@@ -891,10 +891,9 @@ struct Heads {
     /// The heads fetched since Tsugiki started, and those GitHub had no ref for at their retry. A head that
     /// moves on is fetched again.
     settled: BTreeMap<u32, CommitSha>,
-    /// The heads the user asked for, each with its Target branch: those of the PRs they opened. They go in a
-    /// fetch of their own, ahead of the heads the rules want and of the other Repositories', even when this
-    /// Repository's fetch is under way. Each waits in `waiting`, or is behind and waits for its retry, which
-    /// puts it back there: `drop_first_done` drops the others, so no fetch of a Target branch alone starts.
+    /// The heads of `waiting` the user asked for, each with its Target branch: those of the PRs they opened.
+    /// They go in a fetch of their own, ahead of the heads the rules want and of the other Repositories',
+    /// even when this Repository's fetch is under way.
     first: BTreeMap<u32, String>,
     /// The PRs the user opened before the session knew their heads, whose heads go in `first` once a sync
     /// step saves them.
@@ -922,17 +921,10 @@ struct Noted {
 }
 
 impl Heads {
-    /// Whether a head the user asked for waits to be fetched now.
+    /// Whether the fetch of their own waits for a head the user asked for. One a fetch already brought
+    /// waits no more, and the pick drops it.
     fn demanded_waits(&self) -> bool {
         (self.first.keys()).any(|number| self.waiting.contains_key(number))
-    }
-
-    /// Drops each head the user asked for that waits no more, now or after its retry.
-    fn drop_first_done(&mut self) {
-        let (waiting, behind) = (&self.waiting, &self.behind);
-        self.first.retain(|number, _| {
-            waiting.contains_key(number) || matches!(behind.get(number), Some(Behind::Due { .. }))
-        });
     }
 
     /// Notes where the heads of a fetch that succeeded `landed`, or why that couldn't be read. A head that
@@ -945,8 +937,7 @@ impl Heads {
     ) -> Noted {
         let mut noted = Noted::default();
         for (number, commit) in batch {
-            // The same head handed over during the fetch asks for nothing more. If it didn't land, it waits
-            // for its retry.
+            // The same head handed over during the fetch asks for nothing more.
             if self.waiting.get(&number) == Some(&commit) {
                 drop(self.waiting.remove(&number));
             }
@@ -985,7 +976,6 @@ impl Heads {
             }
             noted.stuck.entry(why).or_default().push(number);
         }
-        self.drop_first_done();
         noted
     }
 }
@@ -1291,18 +1281,12 @@ impl Worker {
             // A hand-over is a reason to try a head again, so one that was behind starts afresh.
             drop(known.behind.remove(&number));
             if known.settled.get(&number) == Some(&commit) {
-                // The mirror has the head the rules want. One the user asked for waits on, unless it is
-                // that commit.
-                let asked = known.first.contains_key(&number);
-                if !asked || known.waiting.get(&number) == Some(&commit) {
-                    drop(known.waiting.remove(&number));
-                }
+                drop(known.waiting.remove(&number));
             } else {
                 drop(known.waiting.insert(number, commit));
                 let _ = known.branches.insert(target_branch);
             }
         }
-        known.drop_first_done();
         self.heads.push_front(known);
     }
 
@@ -1665,10 +1649,8 @@ impl Worker {
     /// Starts a fetch of the heads the user asked for in `repository`, with their Target branches.
     fn start_demanded_fetch(&mut self, repository: &RepositoryName) {
         self.start_batch(repository, |heads| {
-            // Those behind wait for their retry.
-            let (first, behind): (BTreeMap<_, _>, _) = (mem::take(&mut heads.first).into_iter())
-                .partition(|(number, _)| heads.waiting.contains_key(number));
-            heads.first = behind;
+            let mut first = mem::take(&mut heads.first);
+            first.retain(|number, _| heads.waiting.contains_key(number));
             Batch {
                 heads: (first.keys())
                     .filter_map(|number| Some((*number, heads.waiting.remove(number)?)))
@@ -1681,10 +1663,15 @@ impl Worker {
 
     /// Starts a fetch of every head that waits in `repository`, with their Target branches.
     fn start_wanted_fetch(&mut self, repository: &RepositoryName) {
-        self.start_batch(repository, |heads| Batch {
-            heads: mem::take(&mut heads.waiting),
-            branches: mem::take(&mut heads.branches),
-            first: BTreeMap::new(),
+        self.start_batch(repository, |heads| {
+            // The heads the user asked for that are left a fetch already brought, or the pick would have
+            // been theirs.
+            heads.first.clear();
+            Batch {
+                heads: mem::take(&mut heads.waiting),
+                branches: mem::take(&mut heads.branches),
+                first: BTreeMap::new(),
+            }
         });
     }
 
@@ -1769,7 +1756,7 @@ impl Worker {
     /// Puts a Repository's heads back after its fetch: behind the other Repositories', so each takes its
     /// turn, unless a head the user asked for waits.
     fn requeue(&mut self, known: Heads) {
-        if known.demanded_waits() {
+        if !known.first.is_empty() {
             self.heads.push_front(known);
         } else {
             self.heads.push_back(known);
@@ -1819,10 +1806,6 @@ impl Worker {
         });
         let retry = Instant::now() + self.remotes.patience;
         let mut known = self.take_heads(&repository);
-        // A head the user asked for that is behind keeps its fetch of its own for its retry.
-        for (number, branch) in batch.first {
-            let _ = known.first.entry(number).or_insert(branch);
-        }
         let noted = known.note_fetched(batch.heads, landed.as_ref(), retry);
         if !noted.arrived.is_empty() {
             known.patches.read_missing_again();

@@ -892,9 +892,6 @@ fn newer(number: u32) -> PrHead {
     }
 }
 
-/// The refspec of `main`, which a fetch of the heads the user asked for brings with them.
-const MAIN: &str = "+refs/heads/main*:refs/heads/main*";
-
 fn refspec(number: u32) -> String {
     format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*")
 }
@@ -1295,7 +1292,7 @@ fn an_opened_pr_wakes_a_stalled_worker() {
 }
 
 #[test]
-fn an_opened_head_outlives_a_hand_over_of_an_older_one_the_mirror_holds() {
+fn a_hand_over_of_a_head_the_mirror_holds_leaves_no_fetch_of_its_target_branch_alone() {
     let place = Place::new("opened-settled");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
@@ -1312,79 +1309,11 @@ fn an_opened_head_outlives_a_hand_over_of_an_older_one_the_mirror_holds() {
     requests.follow(&Status::Online {
         login: Login::new("octocat"),
     });
-    let opened = starts.recv_timeout(PLENTY).unwrap();
-
-    assert_eq!(opened.refspecs(), [refspec(5)]);
-    assert_eq!(opened.branches(), [MAIN]);
-    opened.succeed_with(vec![newer(5)]);
     mirrors.wait_idle();
-    let after = starts.try_recv();
+    let started = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
-    assert!(after.is_err(), "{:?}", after.map(|start| start.args));
-}
 
-#[test]
-fn an_opened_head_outlives_a_hand_over_of_an_older_one_during_its_fetch_that_fails() {
-    let place = Place::new("opened-settled-fails");
-    let cpython = named("python/cpython");
-    place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
-    let requests = mirrors.requests();
-
-    requests.fetch_heads(cpython.clone(), vec![head(5)]);
-    starts.recv_timeout(PLENTY).unwrap().succeed();
-    requests.fetch_first(cpython.clone(), newer(5));
-    let opened = starts.recv_timeout(PLENTY).unwrap();
-    requests.fetch_heads(cpython, vec![head(5)]);
-    opened.fail();
-    let again = starts.recv_timeout(PLENTY).unwrap();
-
-    assert_eq!(again.refspecs(), [refspec(5)]);
-    assert_eq!(again.branches(), [MAIN]);
-    again.succeed_with(vec![newer(5)]);
-    mirrors.stop_cleanly(PLENTY);
-}
-
-#[test]
-fn an_opened_head_that_is_behind_keeps_its_fetch_of_its_own_at_its_retry() {
-    let place = Place::new("opened-behind");
-    let cpython = named("python/cpython");
-    place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
-    let requests = mirrors.requests();
-
-    requests.fetch_heads(cpython.clone(), vec![head(5)]);
-    let wanted = starts.recv_timeout(PLENTY).unwrap();
-    requests.fetch_first(cpython, head(5));
-    // GitHub hadn't moved `refs/pull/5/head` yet.
-    wanted.succeed_with(vec![older(5)]);
-    let again = starts.recv_timeout(PLENTY).unwrap();
-
-    assert_eq!(again.refspecs(), [refspec(5)]);
-    assert_eq!(again.branches(), [MAIN]);
-    again.succeed();
-    mirrors.stop_cleanly(PLENTY);
-}
-
-#[test]
-fn an_opened_head_its_own_fetch_finds_behind_keeps_a_fetch_of_its_own_at_its_retry() {
-    let place = Place::new("opened-own-behind");
-    let cpython = named("python/cpython");
-    place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
-    let requests = mirrors.requests();
-
-    requests.fetch_first(cpython, head(5));
-    starts
-        .recv_timeout(PLENTY)
-        .unwrap()
-        .succeed_with(vec![older(5)]);
-    let again = starts.recv_timeout(PLENTY).unwrap();
-
-    assert_eq!(again.refspecs(), [refspec(5)]);
-    assert_eq!(again.branches(), [MAIN]);
-    again.succeed();
-    mirrors.stop_cleanly(PLENTY);
+    assert!(started.is_err(), "{:?}", started.map(|start| start.args));
 }
 
 #[test]

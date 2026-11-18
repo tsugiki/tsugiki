@@ -50,8 +50,7 @@ logger a copy of the token.
 - `clippy.toml` sends the network and `gh` to `crates/token/src/live.rs`, and `git` to the core's
   `github/live.rs`. A `disallowed-methods` entry keeps `Token::from_gh` inside `read_token`.
 - `crates/token/src/lib.rs` keeps the 100% coverage gate
-  ([ADR 0009](0009-testing-and-full-coverage.md)). `live.rs` is left out of it, as the core's was, and the
-  release checks exercise it.
+  ([ADR 0009](0009-testing-and-full-coverage.md)). `live.rs` is left out of it, as the core's was.
 - The crate stays small by rule. Code belongs in it only if it decides where a token comes from, where bytes
   go on the network, or how a secret is hidden. GraphQL, JSON, reply parsing, GitHub's clock, rate limits,
   retries, domain types, UI text and logging belong in the core. `just lint` checks the crate's direct

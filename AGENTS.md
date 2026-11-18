@@ -128,8 +128,9 @@ check these six, so check them yourself when you write or review Rust:
 
 ## Writing prose
 
-Check docs, commit messages, issues and PRs with `/stop-slop` before you publish them. Run `just prose-check`
-first: it lists lines worth rereading from what the branch adds, or from a draft you name, and never fails.
+Route each statement to the file that owns it, as `docs/agents/prose.md` says, then check docs, commit
+messages, issues and PRs with `/stop-slop` before you publish them. Run `just prose-check` first: it lists
+lines worth rereading from what the branch adds, or from a draft you name, and never fails.
 
 Wrap the docs you write at 110 columns: Markdown files, comments and docstrings. Leave tables unwrapped.
 `just doc-width` fails on a line past that, and `just check` runs it.

@@ -91,6 +91,8 @@ enum Phase {
 #[derive(Default)]
 struct Ahead {
     /// The PRs this refresh has asked GitHub for, so it asks for each once, whatever the rules want next.
+    /// That's the queue's bookkeeping, not a rule: it keeps a PR whose Conversation GitHub wouldn't give
+    /// from being asked for again and again.
     tried: BTreeSet<u32>,
 }
 

@@ -520,14 +520,15 @@ fn settings_changed(
 /// The syncs read settings `now` in place of `before`. A Filter switched on puts PRs in Reach that no
 /// change on GitHub would have the Mirror fetch the head of or a refresh read ahead (#819). So the Mirror
 /// worker hears the new Reach at once, and the store owes a read of each Conversation the rules say the
-/// switch owes, which the next refresh reads ahead while the PR is still in Reach. One switched off takes
-/// PRs out, and the Mirror worker stops wanting their heads.
+/// switch owes. A refresh that finishes reads those still in Reach ahead. A first sync that finishes first
+/// forgets them, as it forgets every read owed. One switched off takes PRs out, and the Mirror worker stops
+/// wanting their heads.
 ///
-/// A store that can't read the facts leaves the heads to the next step that saves. One that can't say which
-/// heads its Conversations were read at owes a read of each PR the switch puts in Reach, which costs a
-/// request apiece and loses nothing. One that can't keep what it owes leaves the Conversations to the PR
-/// view, which reads one when it opens, and the log says so. Says whether it handed the Mirror worker
-/// anything.
+/// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
+/// are lost, as no later step works them out, and the log says so. One that can't say which heads its
+/// Conversations were read at owes a read of each PR the switch puts in Reach, which costs a request apiece
+/// and loses nothing. One that can't keep what it owes loses them too, and the log says so. The PR view reads
+/// a lost Conversation when it opens. Says whether it handed the Mirror worker anything.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
@@ -535,7 +536,14 @@ fn follow_reach(
     before: &RepositorySettings,
 ) -> Option<()> {
     let repository = &now.name;
-    let facts = store.work_facts(repository).ok()?;
+    let facts = (store.work_facts(repository))
+        .inspect_err(|problem| {
+            log::warn!(
+                "Tsugiki couldn't read what a Filter switched on in {repository} reaches: {}",
+                problem.message
+            );
+        })
+        .ok()?;
     let read_at = store.conversation_heads(repository).unwrap_or_default();
     let (work, owed) = switched(&facts, &read_at, now, before);
     let stated = Stated {

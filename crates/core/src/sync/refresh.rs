@@ -476,9 +476,10 @@ fn to_read_ahead(link: &Link<'_>, repository: &RepositorySettings) -> Result<BTr
 /// Reads the Conversation of the next PR that the rules want read ahead and `ahead` hasn't tried, with its
 /// Reviews and their threads: about a point each. Finishes once none are left. It asks the rules before each
 /// read, so a PR that leaves Reach, or whose Conversation the PR view read meanwhile, isn't read. A store
-/// that can't answer fails the step, which tries again, so the refresh never finishes, and forgets what the
-/// store owes, on a set it couldn't read. Trouble with one PR leaves the rest to read, and the PR view reads
-/// that one when it opens. Only trouble that speaks for all of GitHub stops the refresh.
+/// that can't answer fails the step, which the queue retries like any other, so the refresh doesn't finish,
+/// and forget what the store owes, on a set it couldn't read. Trouble with one PR leaves the rest to read,
+/// and the PR view reads that one when it opens. Only trouble that speaks for all of GitHub stops the
+/// refresh.
 pub(super) fn read_ahead(
     link: &Link<'_>,
     ahead: &mut Ahead,

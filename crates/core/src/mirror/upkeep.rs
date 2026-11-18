@@ -6,9 +6,9 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::{fs, io, mem};
+use std::{fs, io};
 
-use super::{Behind, Job, Run, Turn, Worker};
+use super::{Job, Run, Turn, Worker};
 use crate::repository::RepositoryName;
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -285,15 +285,11 @@ impl Worker {
             .heads
             .iter()
             .find(|heads| heads.repository.is_same(repository));
-        let Some((handed, opened)) =
-            known.and_then(|heads| Some((heads.handed.as_ref()?, &heads.viewed)))
-        else {
+        let Some(out_of_reach) = known.and_then(|heads| heads.prs.out_of_reach()) else {
             return Vec::new();
         };
         match self.read_pull_refs(mirror) {
-            Ok(refs) => (refs.into_keys())
-                .filter(|number| !handed.contains(number) && !opened.contains(number))
-                .collect(),
+            Ok(refs) => refs.into_keys().filter(out_of_reach).collect(),
             Err(cause) => {
                 log::warn!("Tsugiki can't read which PR refs {repository}'s mirror keeps: {cause}");
                 Vec::new()
@@ -359,10 +355,7 @@ impl Worker {
             let known =
                 (self.heads.iter_mut()).filter(|heads| heads.repository.is_same(repository));
             for known in known {
-                for number in &plan.pruning {
-                    drop(known.settled.remove(number));
-                    drop(known.behind.remove(number));
-                }
+                known.prs.pruned(&plan.pruning);
             }
             return;
         }
@@ -428,16 +421,7 @@ impl Worker {
         );
         self.replaced.push(repository.clone());
         let mut known = self.take_heads(repository);
-        let settled = mem::take(&mut known.settled);
-        let behind =
-            mem::take(&mut known.behind)
-                .into_iter()
-                .map(|(number, behind)| match behind {
-                    Behind::Due { commit, .. } | Behind::Retried { commit } => (number, commit),
-                });
-        for (number, commit) in settled.into_iter().chain(behind) {
-            let _ = known.waiting.entry(number).or_insert(commit);
-        }
+        known.prs.fetch_again();
         known.reviews.keep_again();
         known.lookup.forget();
         self.heads.push_front(known);

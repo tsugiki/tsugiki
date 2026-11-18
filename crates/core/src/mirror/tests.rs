@@ -771,14 +771,7 @@ impl Place {
 
     /// The worker with the fake git, each start of it, and each Repository's heads that arrived.
     fn start_faked_hearing(&self, patience: Duration) -> (Mirrors, Receiver<FakeStart>, Arrivals) {
-        let (arriving, arrivals) = channel();
-        let announce = Announce {
-            fetched: Box::new(move |repository, numbers| {
-                drop(arriving.send((repository.to_string(), numbers.to_vec())));
-            }),
-            ..Announce::cloning_only(Box::new(|_| {}))
-        };
-        let (mirrors, starts) = self.start_faked_announcing(patience, announce);
+        let (mirrors, starts, arrivals, _failures) = self.start_faked_hearing_all(patience);
         (mirrors, starts, arrivals)
     }
 
@@ -788,15 +781,29 @@ impl Place {
         &self,
         patience: Duration,
     ) -> (Mirrors, Receiver<FakeStart>, Failures) {
+        let (mirrors, starts, _arrivals, failures) = self.start_faked_hearing_all(patience);
+        (mirrors, starts, failures)
+    }
+
+    /// The worker with the fake git, each start of it, and each Repository's heads that arrived and that it
+    /// stopped fetching. Heads that are behind wait `patience` to be fetched once more.
+    fn start_faked_hearing_all(
+        &self,
+        patience: Duration,
+    ) -> (Mirrors, Receiver<FakeStart>, Arrivals, Failures) {
+        let (arriving, arrivals) = channel();
         let (failing, failures) = channel();
         let announce = Announce {
+            fetched: Box::new(move |repository, numbers| {
+                drop(arriving.send((repository.to_string(), numbers.to_vec())));
+            }),
             failed: Box::new(move |repository, numbers, why| {
                 drop(failing.send((repository.to_string(), numbers.to_vec(), why.clone())));
             }),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
         let (mirrors, starts) = self.start_faked_announcing(patience, announce);
-        (mirrors, starts, failures)
+        (mirrors, starts, arrivals, failures)
     }
 
     /// The worker with the fake git, which tells `announce` as it goes, and each start of it.
@@ -1055,7 +1062,7 @@ fn a_failed_fetch_tries_again_when_github_is_back() {
 }
 
 #[test]
-fn a_fetch_that_brings_an_older_commit_leaves_the_head_for_the_next_hand_over() {
+fn a_head_that_is_behind_waits_out_its_moment_though_handed_over_again() {
     let place = Place::new("older-head");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
@@ -1069,14 +1076,13 @@ fn a_fetch_that_brings_an_older_commit_leaves_the_head_for_the_next_hand_over() 
         .recv_timeout(PLENTY)
         .unwrap()
         .succeed_with(vec![older]);
-    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    requests.fetch_heads(cpython, vec![head(1), head(2)]);
     let next = starts.recv_timeout(PLENTY).unwrap();
 
-    assert_eq!(next.refspecs(), [refspec(1), refspec(2)]);
+    assert_eq!(next.refspecs(), [refspec(2)]);
     next.succeed();
-    requests.fetch_heads(cpython, vec![head(1), head(2)]);
     mirrors.stop_cleanly(PLENTY);
-    assert!(starts.recv().is_err(), "both heads landed");
+    assert!(starts.recv().is_err(), "head 1 waits longer than the test");
 }
 
 #[test]
@@ -1148,19 +1154,21 @@ fn a_head_github_doesnt_have_is_fetched_once_more_then_not_at_a_hand_over() {
 }
 
 #[test]
-fn heads_whose_refs_cant_be_read_back_are_fetched_at_the_next_hand_over() {
+fn heads_whose_refs_cant_be_read_back_at_their_retry_are_fetched_at_the_next_hand_over() {
     let place = Place::new("unread-refs");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
+    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
     let requests = mirrors.requests();
 
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed_unread();
     starts.recv_timeout(PLENTY).unwrap().succeed_unread();
     requests.fetch_heads(cpython, vec![head(1)]);
     let again = starts.recv_timeout(PLENTY).unwrap();
 
     assert_eq!(again.refspecs(), [refspec(1)]);
+    assert_eq!(again.branches(), ["+refs/heads/main*:refs/heads/main*"]);
     again.succeed();
     mirrors.stop_cleanly(PLENTY);
 }
@@ -1299,16 +1307,14 @@ fn a_hand_over_of_a_head_the_mirror_holds_leaves_no_fetch_of_its_target_branch_a
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
+    let retargeted = PrHead {
+        target_branch: "3.14".to_owned(),
+        ..head(5)
+    };
+
     requests.fetch_heads(cpython.clone(), vec![head(5)]);
-    let wanted = starts.recv_timeout(PLENTY).unwrap();
-    requests.fetch_first(cpython.clone(), newer(5));
-    // Offline, nothing starts once the fetch has brought `head(5)`, until the hand-over below.
-    requests.follow(&Status::Offline);
-    wanted.succeed();
-    requests.fetch_heads(cpython, vec![head(5)]);
-    requests.follow(&Status::Online {
-        login: Login::new("octocat"),
-    });
+    starts.recv_timeout(PLENTY).unwrap().succeed();
+    requests.fetch_heads(cpython, vec![retargeted]);
     mirrors.wait_idle();
     let started = starts.try_recv();
     mirrors.stop_cleanly(PLENTY);
@@ -1888,6 +1894,7 @@ not a commit          refs/tsugiki/pull/3/head
     assert_eq!(pull_refs(&listing), BTreeMap::from([(1, head(1).commit)]));
 }
 
+mod asks;
 mod borrowing;
 mod lookup;
 mod patches;

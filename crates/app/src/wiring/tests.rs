@@ -1768,8 +1768,8 @@ fn someone_elses_pr_1(folders: &Folders, commit: &str) {
 }
 
 #[test]
-fn the_files_tab_of_a_pr_whose_mirror_isnt_there_shows_the_clone() {
-    let (folders, _root) = temp_folders("wiring-files-no-mirror");
+fn the_files_tab_of_a_pr_in_a_repository_the_settings_dont_list_says_it_has_no_mirror() {
+    let (folders, _root) = temp_folders("wiring-files-unlisted");
     someone_elses_pr_1(&folders, "89abcde89abcde89abcde89abcde89abcde89abc");
     let wired = Wired::start(Ok(folders), no_network());
 
@@ -1779,7 +1779,8 @@ fn the_files_tab_of_a_pr_whose_mirror_isnt_there_shows_the_clone() {
     );
     drop(wired.stop());
 
-    assert_eq!(files.unwrap(), json!({ "state": "cloning" }));
+    let problem = files.unwrap_err();
+    assert_eq!(problem["kind"], json!("not_found"), "{problem}");
 }
 
 #[test]

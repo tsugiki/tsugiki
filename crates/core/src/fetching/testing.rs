@@ -1,0 +1,41 @@
+use std::sync::mpsc::{self, Receiver};
+
+use super::{Fetched, Fetching, Headless, Marked, SessionMessage};
+use crate::mirror::HeardRequests;
+use crate::repository_settings::SavedBy;
+
+/// `message` as a test names it: what it reads, refreshes, changes or marks, or "other".
+pub(crate) fn named(message: SessionMessage) -> String {
+    match message {
+        SessionMessage::Fetch(Fetched::Issue(item)) => format!("Issue #{}", item.number),
+        SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
+        SessionMessage::Refresh => "refresh".to_owned(),
+        SessionMessage::SettingsChanged(settings, SavedBy::HandEdit) => {
+            format!("settings of {}", settings.name)
+        }
+        SessionMessage::SettingsChanged(_, SavedBy::Window) => "switch".to_owned(),
+        SessionMessage::Mark(Marked::Unseen { item, .. }) => format!("unseen #{}", item.number),
+        SessionMessage::Stop => "stop".to_owned(),
+        SessionMessage::Check { .. }
+        | SessionMessage::Sync { .. }
+        | SessionMessage::Mark(Marked::Seen { .. })
+        | SessionMessage::Patched(..) => "other".to_owned(),
+    }
+}
+
+/// A handle, what reaches the session through it, and what reaches the Mirror worker.
+pub(crate) fn handle() -> (Fetching, Receiver<SessionMessage>, HeardRequests) {
+    let (fetching, incoming, heard, _headless) = handle_with_headless();
+    (fetching, incoming, heard)
+}
+
+/// A handle as `handle` makes it, and the PRs whose Conversation, as the session read it, named no head,
+/// which the handle shares.
+pub(crate) fn handle_with_headless() -> (Fetching, Receiver<SessionMessage>, HeardRequests, Headless)
+{
+    let (messages, incoming) = mpsc::channel();
+    let (mirrors, heard) = HeardRequests::new();
+    let headless = Headless::default();
+    let fetching = Fetching::new(messages, mirrors, headless.clone());
+    (fetching, incoming, heard, headless)
+}

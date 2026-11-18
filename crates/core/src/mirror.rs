@@ -342,6 +342,8 @@ enum Message {
     Opened(RepositoryName, u32),
     /// A PR the user opened before the session knew its head, whose head goes first once it does.
     Awaited(RepositoryName, u32),
+    /// A PR whose head no read will name, so its await ends.
+    Unawaited(RepositoryName, u32),
     /// Heads of a Repository's PRs that a sync step saved.
     Saved(RepositoryName, Vec<PrHead>),
     /// Where the PR on screen wants a Repository's Lookup checkout.
@@ -469,6 +471,12 @@ impl MirrorRequests {
         self.send(Message::Awaited(repository, number));
     }
 
+    /// Ends the await of PR `number`, whose Conversation named no head, so a head a sync step saves later
+    /// takes its turn with the others. Its ref stays until the next launch.
+    pub fn no_head(&self, repository: RepositoryName, number: u32) {
+        self.send(Message::Unawaited(repository, number));
+    }
+
     /// Says a sync step saved `heads` of `repository`'s PRs. The head of a PR `await_head` named goes first,
     /// and the worker passes over the others.
     pub fn heads_saved(&self, repository: RepositoryName, heads: Vec<PrHead>) {
@@ -542,6 +550,16 @@ impl HeardRequests {
         (requests, heard)
     }
 
+    /// The Repositories whose clones were asked for since the last call.
+    pub(crate) fn clones(&self) -> Vec<RepositoryName> {
+        self.take(|message| {
+            let Message::Clone(repository, ..) = message else {
+                return Err(message);
+            };
+            Ok(repository)
+        })
+    }
+
     /// The heads asked for first since the last call.
     pub(crate) fn firsts(&self) -> Vec<(RepositoryName, PrHead)> {
         self.take(|message| {
@@ -596,6 +614,9 @@ impl HeardRequests {
             }
             Message::Opened(repository, number) => Ok(format!("{repository} opened #{number}")),
             Message::Awaited(repository, number) => Ok(format!("{repository} awaits #{number}")),
+            Message::Unawaited(repository, number) => {
+                Ok(format!("{repository} awaits no head of #{number}"))
+            }
             other @ (Message::Clone(..)
             | Message::PatchesTo(_)
             | Message::First(..)
@@ -1092,6 +1113,11 @@ impl Worker {
                     self.note_opened(&repository, number);
                     self.change_heads(&repository, |known| {
                         let _ = known.awaited.insert(number);
+                    });
+                }
+                Ok(Message::Unawaited(repository, number)) => {
+                    self.change_heads(&repository, |known| {
+                        let _ = known.awaited.remove(&number);
                     });
                 }
                 Ok(Message::Saved(repository, heads)) => self.saved(&repository, heads),

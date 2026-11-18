@@ -193,6 +193,7 @@ pub(crate) fn connect_core<R: Runtime>(
         fetching: fetching.clone(),
         highlighter: Highlighter::start(),
         definitions: definitions.clone(),
+        settings: settings.reader(),
     };
     assert!(app.manage(diffs), "only this manages the diffs");
     let search_handle = app.clone();

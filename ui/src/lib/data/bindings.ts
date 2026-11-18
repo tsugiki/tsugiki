@@ -2270,19 +2270,17 @@ export type PrFiles_Deserialize =
  *  objects.
  */
 { state: "asking" } | 
-/**  The mirror lacks the PR's commits, and is fetching them. */
+/**
+ *  The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
+ *  names the PR's head.
+ */
 { state: "fetching" } | 
 /**  The diff, whose rows the window asks for by number. */
-{ state: "ready"; 
-/**  The commit the diff ends at, which each chunk names. */
-head: string; 
-/**
- *  The merge base the diff starts from, which each chunk names too. A PR moved to another
- *  Target branch keeps its head and gets another merge base (#211).
- */
-base: string; files: DiffFile_Deserialize[]; rows: number; 
-/**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Deserialize[]; threads: DiffThreads_Deserialize };
+{
+	state: "ready",
+} & {
+	threads: DiffThreads_Deserialize,
+} & ShownDiff_Deserialize;
 
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
@@ -2293,19 +2291,17 @@ export type PrFiles_Serialize =
  *  objects.
  */
 { state: "asking" } | 
-/**  The mirror lacks the PR's commits, and is fetching them. */
+/**
+ *  The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
+ *  names the PR's head.
+ */
 { state: "fetching" } | 
 /**  The diff, whose rows the window asks for by number. */
-{ state: "ready"; 
-/**  The commit the diff ends at, which each chunk names. */
-head: string; 
-/**
- *  The merge base the diff starts from, which each chunk names too. A PR moved to another
- *  Target branch keeps its head and gets another merge base (#211).
- */
-base: string; files: DiffFile_Serialize[]; rows: number; 
-/**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Serialize[]; threads: DiffThreads_Serialize };
+{
+	state: "ready",
+} & {
+	threads: DiffThreads_Serialize,
+} & ShownDiff_Serialize;
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -2994,6 +2990,39 @@ export type Settings_Serialize = {
 	/**  `[keys]`: each action the user gave another key, or none, in the file's order (#549). */
 	keys: Partial<{ [key in Action]: string }>,
 	repositories: RepositorySettings_Serialize[],
+};
+
+/**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
+export type ShownDiff = ShownDiff_Serialize | ShownDiff_Deserialize;
+
+/**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
+export type ShownDiff_Deserialize = {
+	/**  The commit the diff ends at, which each chunk names. */
+	head: string,
+	/**
+	 *  The merge base the diff starts from, which each chunk names too. A PR moved to another Target branch
+	 *  keeps its head and gets another merge base (#211).
+	 */
+	base: string,
+	files: DiffFile_Deserialize[],
+	rows: number,
+	/**  The PR's NEWS entries, rendered above the rows. */
+	news: NewsEntry_Deserialize[],
+};
+
+/**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
+export type ShownDiff_Serialize = {
+	/**  The commit the diff ends at, which each chunk names. */
+	head: string,
+	/**
+	 *  The merge base the diff starts from, which each chunk names too. A PR moved to another Target branch
+	 *  keeps its head and gets another merge base (#211).
+	 */
+	base: string,
+	files: DiffFile_Serialize[],
+	rows: number,
+	/**  The PR's NEWS entries, rendered above the rows. */
+	news: NewsEntry_Serialize[],
 };
 
 /**  The version of the file a thread's line is in, as GitHub's `diffSide` names it. */

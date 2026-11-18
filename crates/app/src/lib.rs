@@ -19,6 +19,7 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
+use tsugiki_core::calls::{PrFiles, PullRequestWork};
 use tsugiki_core::definitions::{
     Answer, Code, Definitions, DiffEnd, HitFile, HitLines, Lookup, OnIndex, OnWaiting, ServerName,
     ServerRow, Ticket, server_log,
@@ -53,7 +54,7 @@ use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::work::SeenMark;
 use tsugiki_core::workbench::inbox::{Inbox, InboxPage};
 use tsugiki_core::workbench::issue_view::IssueView;
-use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, FilesRead, LineInDiff, PrFiles};
+use tsugiki_core::workbench::pr_files::{DiffSources, FileLine, LineInDiff};
 use tsugiki_core::workbench::pr_view::PrView;
 use tsugiki_core::workbench::quick_open;
 use tsugiki_core::workbench::{Workbench, WorkbenchView};
@@ -287,16 +288,10 @@ fn open_issue(repository: &str, number: u32, requests: State<'_, Fetching>) -> R
     Ok(())
 }
 
-/// Tells the core the user opened PR `number`, which reads its Conversation from GitHub and asks the mirror
-/// first for its head if the mirror lacks it. The Files tab reads the diff once it shows. Its Last seen
-/// stays.
+/// Tells the core the user opened PR `number`. The Files tab reads the diff once it shows.
 fn open_pull_request(repository: &str, number: u32, work: &DiffWork) -> Result<(), Error> {
     let name = RepositoryName::parse(repository)?;
-    work.fetching.fetch_pull_request(name.clone(), number);
-    if let Some(head) = PrFiles::head_in_mirror(&work.sources()?, &name, number)? {
-        work.fetching.pull_request_opened(name, number, head);
-    }
-    Ok(())
+    work.pull_request().open_pull_request(&name, number)
 }
 
 /// Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
@@ -600,9 +595,9 @@ fn find_items(
     quick_open::find(reader, &RepositoryName::parse(repository)?, typed)
 }
 
-/// What the Files tab reads besides the database: where the mirrors are, the diff on show, the way to ask
-/// the mirrors' worker for what a read found missing, the highlighter, which parses the files, and the
-/// language servers.
+/// What the Files tab reads besides the database: where the mirrors are, the diff on show, the queues the
+/// core's calls ask for what a read found missing, the highlighter, which parses the files, and the language
+/// servers.
 pub(crate) struct DiffWork {
     pub(crate) folders: Result<Folders, Error>,
     pub(crate) reader: StoreReader,
@@ -611,6 +606,8 @@ pub(crate) struct DiffWork {
     pub(crate) highlighter: Highlighter,
     /// The language servers' thread, which the Definition peek asks.
     pub(crate) definitions: Definitions,
+    /// A copy of the settings, whose Repositories the Files tab may wait for the clone of.
+    pub(crate) settings: LatestReader<SettingsView>,
 }
 
 impl DiffWork {
@@ -622,6 +619,16 @@ impl DiffWork {
             diffs: &self.diffs,
             highlighter: &self.highlighter,
         })
+    }
+
+    /// What the core's calls for a PR's screens read from and ask.
+    fn pull_request(&self) -> PullRequestWork<'_> {
+        PullRequestWork {
+            sources: self.sources(),
+            settings: &self.settings,
+            fetching: &self.fetching,
+            definitions: &self.definitions,
+        }
     }
 }
 
@@ -757,44 +764,22 @@ fn read_pull_request_files(
     work: &DiffWork,
 ) -> Result<Option<PrFiles>, Error> {
     let name = RepositoryName::parse(repository)?;
-    let asks = || work.fetching.mirror_asks(&name);
-    let read = PrFiles::read(&work.sources()?, &name, number, &asks)?;
-    Ok(read.map(|FilesRead { files, head }| {
-        // The user opened the PR: its ref stays, and a head the mirror lacks goes first.
-        if let Some(head) = head {
-            work.fetching
-                .pull_request_opened(name.clone(), number, head);
-        }
-        // The diff on show is the PR on screen: its Lookup checkout moves to the diff's ends, where text
-        // search looks for them, and ty opens its Python files.
-        if let PrFiles::Ready {
-            head, base, files, ..
-        } = &files
-        {
-            let at = LookupAt {
-                base: base.clone(),
-                head: head.clone(),
-            };
-            work.fetching.look_up(name.clone(), at.clone());
-            work.definitions.opened(name.clone(), at, files);
-        }
-        files
-    }))
+    work.pull_request().pr_files(&name, number)
 }
 
 fn read_pull_request_row(line: DiffLine, work: &DiffWork) -> Result<Option<LineInDiff>, Error> {
     let (of, line) = line.parse()?;
-    PrFiles::row(&work.sources()?, &of, &line)
+    work.sources()?.row(&of, &line)
 }
 
 fn read_pull_request_rows(chunk: DiffChunk, work: &DiffWork) -> Result<Vec<DiffRow>, Error> {
     let (of, rows) = chunk.parse()?;
-    PrFiles::rows(&work.sources()?, &of, rows)
+    work.sources()?.rows(&of, rows)
 }
 
 fn find_in_pull_request(search: DiffSearch, work: &DiffWork) -> Result<Found, Error> {
     let (of, query) = search.parse()?;
-    PrFiles::find(&work.sources()?, &of, &query)
+    work.sources()?.find(&of, &query)
 }
 
 fn read_pull_request_spans(
@@ -803,12 +788,12 @@ fn read_pull_request_spans(
     work: &DiffWork,
 ) -> Result<Vec<Vec<Span>>, Error> {
     let (of, rows) = chunk.parse()?;
-    PrFiles::spans(&work.sources()?, &of, rows, collapsed)
+    work.sources()?.spans(&of, rows, collapsed)
 }
 
 fn read_pull_request_lines(lines: GapLines, work: &DiffWork) -> Result<Vec<HeadLine>, Error> {
     let (of, file, lines) = lines.parse()?;
-    PrFiles::lines(&work.sources()?, &of, file, lines)
+    work.sources()?.lines(&of, file, lines)
 }
 
 /// A lookup of where the picked word is defined, as the window asks for it when the user opens the

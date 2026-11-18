@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Row, Transaction, named_params};
+use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 
 use super::Connection;
 use super::columns::UnixTime;
@@ -14,7 +14,7 @@ use crate::facts::pull_request_content::{
     DiffHunk, Opening, PullRequestContent, Review, Side, Subject, ThreadComment, ThreadId,
     ThreadLine,
 };
-use crate::facts::pull_requests::{ReviewState, ReviewedCommit};
+use crate::facts::pull_requests::{PrHead, ReviewState, ReviewedCommit};
 use crate::repository::RepositoryName;
 
 /// The Reviews, and a line for each thread one started (#156). A comment hidden on GitHub keeps its reason.
@@ -115,8 +115,9 @@ pub(super) fn save(
     repository: &RepositoryName,
     number: u32,
     content: &PullRequestContent,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<ConversationSaved> {
     let transaction = connection.transaction()?;
+    let reviewed_before = reviewed_commit(&transaction, repository, number)?;
     issue_content::save_in(&transaction, repository, number, &content.conversation)?;
     let asked = named_params! { ":repository": repository, ":number": number };
     let _ = transaction.execute(
@@ -141,6 +142,10 @@ pub(super) fn save(
             ":head": content.head,
         },
     )?;
+    let kept = match &content.head {
+        Some(commit) => keep_head(&transaction, repository, number, commit)?,
+        None => HeadKept::Unnamed,
+    };
     let mut position = 0_u32;
     for review in &content.reviews {
         save_review(&transaction, repository, (number, position), review)?;
@@ -162,7 +167,83 @@ pub(super) fn save(
     }
     // A refresh that owed this read, and stops before it finishes, leaves the next one less to read.
     sync_state::forget_read_ahead_of(&transaction, repository, number)?;
-    transaction.commit()
+    let reviewed_moved = reviewed_commit(&transaction, repository, number)? != reviewed_before;
+    transaction.commit()?;
+    Ok(ConversationSaved {
+        head: kept,
+        reviewed_moved,
+    })
+}
+
+/// What saving a PR's Conversation changed beside it: the head in the PR's facts, and whether the commit the
+/// user's latest Review of the PR covered moved, which the Mirror keeps for the Stale review check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSaved {
+    pub head: HeadKept,
+    pub reviewed_moved: bool,
+}
+
+/// What saving a PR's Conversation did to the head in the PR's facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeadKept {
+    /// The Conversation names no head.
+    Unnamed,
+    /// The facts hold no PR of that number, so nothing there keeps the head.
+    NoFacts,
+    /// The facts held a head already, which stays: the head the Files tab asks for.
+    Had(PrHead),
+    /// The facts had no head, and keep the one the Conversation names.
+    Filled(PrHead),
+}
+
+/// The commit the user's latest Review of PR `number` covered, as `reviewed_commits` says.
+fn reviewed_commit(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<CommitSha>> {
+    let reviewed = reviewed_commits(transaction, repository)?;
+    Ok((reviewed.into_iter())
+        .find(|reviewed| reviewed.number == number)
+        .map(|reviewed| reviewed.commit))
+}
+
+/// A PR stored before Tsugiki kept heads has none, and the sync reads it again only once it changes, so it
+/// takes `commit`, the head its Conversation names (#782).
+fn keep_head(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+    commit: &CommitSha,
+) -> rusqlite::Result<HeadKept> {
+    let asked = named_params! { ":repository": repository, ":number": number, ":head": commit };
+    let filled = transaction.execute(
+        "UPDATE pull_requests SET head = :head
+         WHERE repository = :repository AND number = :number AND head IS NULL",
+        asked,
+    )? > 0;
+    let kept: Option<(Option<CommitSha>, String)> = transaction
+        .query_row(
+            "SELECT head, target_branch FROM pull_requests
+             WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+            |row| Ok((row.get("head")?, row.get("target_branch")?)),
+        )
+        .optional()?;
+    // The update leaves no PR it finds without a head.
+    let Some((Some(commit), target_branch)) = kept else {
+        return Ok(HeadKept::NoFacts);
+    };
+    let head = PrHead {
+        number,
+        commit,
+        target_branch,
+    };
+    Ok(if filled {
+        HeadKept::Filled(head)
+    } else {
+        HeadKept::Had(head)
+    })
 }
 
 fn save_review(

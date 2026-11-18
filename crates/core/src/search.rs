@@ -3,12 +3,12 @@
 //! It runs on ripgrep's crates. It reads the **Lookup checkout** for the files the PR doesn't change and its
 //! added files, and the PR's head from the **Mirror** for the files it changes, and leaves out the files it
 //! deletes. It needs nothing but the Mirror and the checkout, so it works offline at any commit the Mirror
-//! holds. Each query names the ends of the diff it searches. The Files tab's read of that diff
-//! (`PrFiles::show`) moves the checkout there, and a query never does: two queries on their own threads
-//! would send their moves in either order, and the last would win. A query that arrives while the checkout
-//! moves waits for the move: `git grep` could answer sooner, but its idea of a regex and of a word differ
-//! from ripgrep's, so a query would match differently by timing. A checkout at another diff has nothing of
-//! the query's to search, and the window then reads the diff again.
+//! holds. Each query names the ends of the diff it searches. The Files tab's call for that diff
+//! (`PullRequestWork::pr_files`) moves the checkout there, and a query never does: two queries on their own
+//! threads would send their moves in either order, and the last would win. A query that arrives while the
+//! checkout moves waits for the move: `git grep` could answer sooner, but its idea of a regex and of a word
+//! differ from ripgrep's, so a query would match differently by timing. A checkout at another diff has
+//! nothing of the query's to search, and the window then reads the diff again.
 //!
 //! One thread owns what the window reads, a [`SearchState`]. Each query runs on threads of its own, which
 //! send it what they find, and a newer query cancels the one running.

@@ -9,6 +9,7 @@
 
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use time::OffsetDateTime;
 
@@ -39,10 +40,17 @@ pub struct MirrorWant {
 }
 
 /// An Issue or a PR of a Repository, in a message to the session's thread.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Item {
     pub(crate) repository: RepositoryName,
     pub(crate) number: u32,
+}
+
+impl Item {
+    /// Whether `other` names this item, whatever the case of its Repository's name.
+    pub(crate) fn is(&self, other: &Self) -> bool {
+        self.repository.is_same(&other.repository) && self.number == other.number
+    }
 }
 
 /// A mark the user made on an item: seen or unseen.
@@ -68,6 +76,15 @@ impl Fetched {
         let (Self::Issue(item) | Self::PullRequest(item)) = self;
         item
     }
+
+    /// Whether `other` is the same read: of the same kind, of the same item.
+    pub(crate) fn is(&self, other: &Self) -> bool {
+        let same_kind = matches!(
+            (self, other),
+            (Self::Issue(_), Self::Issue(_)) | (Self::PullRequest(_), Self::PullRequest(_))
+        );
+        same_kind && self.item().is(other.item())
+    }
 }
 
 /// What the session's thread is asked, which alone holds the token, the client and the store's writer. It
@@ -87,10 +104,18 @@ pub(crate) enum SessionMessage {
     /// The user changed what these settings say, and nothing on GitHub changed with them.
     SettingsChanged(RepositorySettings, SavedBy),
     Mark(Marked),
+    /// A read of what an item says. A demand that comes while the same read waits or runs shares its outcome.
     Fetch(Fetched),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
 }
+
+/// A job the core queued, which brings the data an answer waits for. Only `Fetching` makes one, as it queues
+/// the job, so an answer that says its data is on the way can't be built while nothing brings it (ADR 0023).
+/// It has no `Clone`, so each answer holds a job of its own.
+#[derive(Debug, PartialEq, Eq)]
+#[must_use]
+pub struct Queued(());
 
 /// Keeps the per-file patch-ids read of commits in a Repository, and the commits that can't be read, as
 /// `Fetching::patch_ids_keeper` gives it.
@@ -103,12 +128,50 @@ pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, PatchReads) + Send>;
 pub struct Fetching {
     session: Sender<SessionMessage>,
     mirrors: MirrorRequests,
+    headless: Headless,
+}
+
+/// The PRs whose Conversation, as the session last read it since launch, named no head, and whose
+/// Conversation no demand has asked to read since. The session adds a PR when its read names no head, and a
+/// demand for the Conversation takes the PR off, so the read it asks for decides again. Each method takes
+/// the lock for one action, and no guard leaves the type. Nothing in it can panic while it holds the lock, so
+/// it reads through a poisoned one.
+#[derive(Clone, Default)]
+pub(crate) struct Headless(Arc<Mutex<Vec<Item>>>);
+
+impl Headless {
+    /// The session's read of PR `item`'s Conversation named no head. A demand came before each read and took
+    /// the PR off, and `forget` takes off every copy, so a PR is never held twice for long.
+    pub(crate) fn named_none(&self, item: &Item) {
+        let mut items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        items.push(item.clone());
+    }
+
+    /// PR `item` has a head, or the read of its Conversation that a demand asked for decides it.
+    pub(crate) fn forget(&self, item: &Item) {
+        let mut items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        items.retain(|headless| !headless.is(item));
+    }
+
+    fn holds(&self, item: &Item) -> bool {
+        let items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        items.iter().any(|headless| headless.is(item))
+    }
 }
 
 impl Fetching {
-    /// A handle on the session's queue, which `session` sends to, and on the Mirror worker's.
-    pub(crate) fn new(session: Sender<SessionMessage>, mirrors: MirrorRequests) -> Self {
-        Self { session, mirrors }
+    /// A handle on the session's queue, which `session` sends to, and on the Mirror worker's, with the PRs
+    /// whose Conversation the session read named no head.
+    pub(crate) fn new(
+        session: Sender<SessionMessage>,
+        mirrors: MirrorRequests,
+        headless: Headless,
+    ) -> Self {
+        Self {
+            session,
+            mirrors,
+            headless,
+        }
     }
 
     /// Tells the session to finish.
@@ -142,10 +205,27 @@ impl Fetching {
     }
 
     /// A PR on screen: the session reads its Conversation now. Like `fetch_issue`, this leaves Last seen
-    /// alone.
+    /// alone. Whether the PR has a head waits for this read, whatever the last one named.
     pub fn fetch_pull_request(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
+        self.headless.forget(&item);
         self.to_session(SessionMessage::Fetch(Fetched::PullRequest(item)));
+    }
+
+    /// Whether the session's last read of PR `number`'s Conversation since launch named no head, and no
+    /// demand has asked for another read since. A Conversation saved by an older Tsugiki, which kept no
+    /// head, hasn't been read yet.
+    pub fn named_no_head(&self, repository: &RepositoryName, number: u32) -> bool {
+        self.headless.holds(&Item {
+            repository: repository.clone(),
+            number,
+        })
+    }
+
+    /// PR `number`'s Conversation named no head, or the facts hold no such PR, so nothing will answer the
+    /// Mirror worker's await of its head.
+    pub(crate) fn no_head(&self, repository: RepositoryName, number: u32) {
+        self.mirrors.no_head(repository, number);
     }
 
     /// Mark Seen on what `mark` names, as the window drew it. A session that can't ask GitHub still records
@@ -232,6 +312,29 @@ impl Fetching {
         }
     }
 
+    /// A screen waits for `repository`'s Mirror: its clone goes on, or takes its turn after the ones waiting.
+    /// A clone under way, waiting or failed stays as it is.
+    pub fn clone_shown(&self, repository: RepositoryName) -> Queued {
+        self.mirrors.clone_mirror(repository, None);
+        Queued(())
+    }
+
+    /// A screen waits for the head of PR `number`, which Tsugiki doesn't know: the session reads the PR's
+    /// Conversation, which names it, or this shares a read of it already waiting or under way. The Mirror
+    /// worker keeps the PR's ref, and fetches the head first once the session saves it.
+    pub fn find_head(&self, repository: RepositoryName, number: u32) -> Queued {
+        self.mirrors.await_head(repository.clone(), number);
+        self.fetch_pull_request(repository, number);
+        Queued(())
+    }
+
+    /// A screen waits for `head`, of a PR the user opened, which `repository`'s Mirror lacks. It goes ahead
+    /// of the heads the rules want, and the PR's ref stays until the next launch.
+    pub fn fetch_head(&self, repository: RepositoryName, head: PrHead) -> Queued {
+        self.mirrors.fetch_first(repository, head);
+        Queued(())
+    }
+
     /// The Files tab shows the diff between the ends in `at`, so `repository`'s **Lookup checkout** moves
     /// there, ahead of the Mirror worker's other work. A newer move replaces one still waiting.
     pub fn look_up(&self, repository: RepositoryName, at: LookupAt) {
@@ -264,5 +367,7 @@ impl Fetching {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod testing;
 #[cfg(test)]
 mod tests;

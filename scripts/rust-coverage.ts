@@ -21,6 +21,9 @@ const EXCLUDED = [
   "crates/core/src/github/live\\.rs$",
   // coverage: starting a real language server, which tests replace with a fake one over in-memory pipes.
   "crates/lsp/src/process\\.rs$",
+  // coverage: a fake server program for the core's tests. They run the build `scripts/test-servers.ts` makes,
+  // not the one this gate measures.
+  "crates/lsp/src/bin/fake_server\\.rs$",
   // coverage: one call on a real webview, which `npm run smoke` shows working.
   "crates/webview-keys/src/lib\\.rs$",
 ];

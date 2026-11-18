@@ -81,6 +81,36 @@ pub fn write_message(output: &mut impl Write, message: &Value) -> io::Result<()>
     framing::write(output, message.to_string().as_bytes())
 }
 
+/// The file beside the program of `tsugiki-fake-server` that holds its [`fake_server_script`].
+pub const FAKE_SERVER_SCRIPT: &str = "fake-server.json";
+
+/// What `tsugiki-fake-server` answers: it prints `version` for `--version` and names it answering
+/// `initialize`, and gives `answers` to `textDocument/definition` in order, the last for the rest. The
+/// derives of a struct would be functions that only the program runs, which the coverage gate doesn't see.
+pub fn fake_server_script(version: &str, answers: Vec<Value>) -> Value {
+    json!({"version": version, "answers": answers})
+}
+
+/// The answer a fake server's script gives the lookup asked after `asked` others: the next of `answers`,
+/// or the last once they run out, and null if there are none.
+pub fn nth_answer(answers: &[Value], asked: usize) -> Value {
+    (answers.get(asked).or(answers.last()))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+/// What a fake server answers request `id` with when its script gives `result`: an `error` field fails the
+/// request with that error, a `silent` field means no answer ever comes, and anything else is the result.
+pub fn reply_to(id: &Value, result: Value) -> Option<Value> {
+    if result.get("silent").is_some() {
+        return None;
+    }
+    Some(match result.get("error") {
+        Some(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
+        None => json!({"jsonrpc": "2.0", "id": id, "result": result}),
+    })
+}
+
 /// The server's side of the pipes, and its process's controls.
 pub struct Fake {
     /// What the client writes. `None` once the server has stopped reading.

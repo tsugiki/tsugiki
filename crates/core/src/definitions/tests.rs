@@ -1,6 +1,7 @@
 //! A test of what a server finds starts the real ty, rust-analyzer or clangd that CI fetches, on a
 //! Repository built with the real git, and nothing reaches the network. A test of what the owner does with a
-//! server, such as a cancel or a PR that moves, runs a [`FakeClangd`] in its place where it can.
+//! server, such as a cancel or a PR that moves, runs a [`FakeClangd`] in its place where it can, and the
+//! fake server program of [`fake_program`] where the owner starts the server itself.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,10 +10,10 @@ use serde_json::json;
 use tsugiki_test_git::within;
 
 use super::server::{Ready, Setup};
-use super::testing::{FakeClangd, Initialize, Notified, ty};
+use super::testing::{FakeClangd, Initialize, Notified, fake_program, ty};
 use super::*;
 use crate::diff::FileChange;
-use crate::testing::{Fixture, cpython};
+use crate::testing::{Fixture, TempPath, cpython};
 
 const PATCHLEVEL: &str = "#define PY_MAJOR_VERSION        3\n#define PY_MINOR_VERSION        14\n";
 
@@ -108,6 +109,22 @@ fn sources_for(
         idle: idle_after(Duration::from_secs(3600)),
         changed: Box::new(|_| {}),
     }
+}
+
+/// A fake ty in a folder of its own named `name`, which answers lookups with `answers` as [`fake_program`]
+/// says, and the folder. For a test of what the owner does as it starts or stops ty, which a real one would
+/// only slow down: the real ty has tests of its own.
+fn ty_program(name: &str, answers: Vec<serde_json::Value>) -> (PathBuf, TempPath) {
+    let folder = crate::testing::temp_path(name);
+    let program = folder.join("ty.exe");
+    let version = format!("ty {}", ServerName::Ty.tested()[0]);
+    fake_program(&program, &version, answers);
+    (program, folder)
+}
+
+/// Where ty finds `only_head` in `Tools/shop.py` at the head, as a server names a location.
+fn only_head_in_shop(fixture: &Fixture) -> serde_json::Value {
+    location(fixture, SHOP, (4, 4))
 }
 
 /// An idle time of `idle`, which the tests that don't stop an idle server set past their end.
@@ -419,7 +436,8 @@ fn a_lookup_before_its_pr_opened_starts_ty_with_no_file_open() {
 fn a_pr_at_other_commits_gets_a_new_ty() {
     let fixture = cpython_pr("definitions-moved");
     let other = another("definitions-moved-other");
-    let mut owner = opened(&fixture);
+    let (ty, _ty_folder) = ty_program("definitions-moved-ty", vec![json!([])]);
+    let mut owner = opened_with(&fixture, (ServerName::Ty, ty), changed());
     let first = owner
         .servers
         .get(&ty_of(cpython()))
@@ -514,10 +532,11 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
 #[test]
 fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_again() {
     let fixture = cpython_pr("definitions-idle");
+    let (ty, _ty_folder) = ty_program("definitions-idle-ty", vec![only_head_in_shop(&fixture)]);
     let idle = Duration::from_secs(1);
     let mut owner = owner_of(Sources {
         idle: idle_after(idle),
-        ..sources(Some(fixture.checkout.clone()), Some(ty()))
+        ..sources(Some(fixture.checkout.clone()), Some(ty))
     });
     let pr = Pr {
         at: fixture.checkout.at.clone(),
@@ -569,6 +588,7 @@ fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_
     let fixture = cpython_pr("definitions-remove");
     let second = another("definitions-remove-other");
     let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();
+    let (ty, _ty_folder) = ty_program("definitions-remove-ty", vec![json!([])]);
     let (checkout, elsewhere, theirs) = (
         fixture.checkout.clone(),
         second.checkout.clone(),
@@ -582,7 +602,7 @@ fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_
                 checkout.clone()
             })
         }),
-        ..sources(None, Some(ty()))
+        ..sources(None, Some(ty))
     });
     let pr = |fixture: &Fixture, changed: Vec<String>| Pr {
         at: fixture.checkout.at.clone(),
@@ -613,7 +633,8 @@ fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_
 #[test]
 fn the_handle_removes_a_repository_once_its_ty_has_ended() {
     let fixture = cpython_pr("definitions-handle-remove");
-    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-handle-remove-ty", vec![json!([])]);
+    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at = fixture.checkout.at.clone();
 
     definitions.opened(cpython(), at, &[diff_file(SHOP)]);
@@ -682,7 +703,8 @@ fn a_cancel_the_core_takes_before_its_lookup_cancels_it_and_ty_is_asked_nothing(
 #[test]
 fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
     let fixture = cpython_pr("definitions-waiting");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-waiting-ty", vec![only_head_in_shop(&fixture)]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
 
     let first = ask(&mut owner, &at_head, Ticket(1));
@@ -703,7 +725,8 @@ fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
 #[test]
 fn a_lookup_asked_again_while_ty_starts_asks_ty_nothing() {
     let fixture = cpython_pr("definitions-again-starting");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-again-starting-ty", vec![json!([])]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     // The newer lookup waits in the thread's messages while ty starts.
     let (reply, _answer) = mpsc::channel();
@@ -728,7 +751,8 @@ fn a_lookup_asked_again_while_ty_starts_asks_ty_nothing() {
 #[test]
 fn a_lookup_cancelled_while_ty_starts_asks_ty_nothing() {
     let fixture = cpython_pr("definitions-cancel-starting");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-cancel-starting-ty", vec![json!([])]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     // The cancels wait in the thread's messages while ty starts: one for an older lookup, and one for this.
     owner.own.send(Message::Cancel(Ticket(1))).unwrap();
@@ -749,7 +773,9 @@ fn a_lookup_cancelled_while_ty_starts_asks_ty_nothing() {
 #[test]
 fn a_cancel_for_an_older_lookup_while_ty_starts_leaves_the_new_one_be() {
     let fixture = cpython_pr("definitions-cancel-older");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let eggs = location(&fixture, "Lib/spam.py", (0, 4));
+    let (ty, _ty_folder) = ty_program("definitions-cancel-older-ty", vec![eggs]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_base = lookup(&fixture, DiffEnd::Base, 10, "eggs");
     // Nor does a PR that opens meanwhile.
     let pr = Pr {
@@ -768,7 +794,9 @@ fn a_cancel_for_an_older_lookup_while_ty_starts_leaves_the_new_one_be() {
 #[test]
 fn a_ty_that_ends_before_it_answers_fails_its_lookup_and_the_next_one_starts_it_again() {
     let fixture = cpython_pr("definitions-stopped");
-    let mut owner = opened(&fixture);
+    // The fake runs on after the client says it ended, as the core then hears no exit.
+    let (ty, _ty_folder) = ty_program("definitions-stopped-ty", vec![only_head_in_shop(&fixture)]);
+    let mut owner = opened_with(&fixture, (ServerName::Ty, ty), changed());
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
     let asked = ask(&mut owner, &at_head, Ticket(1));
@@ -988,7 +1016,8 @@ fn the_files_a_server_reads_are_python_rust_and_c_files() {
 #[test]
 fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
     let fixture = cpython_pr("definitions-handle");
-    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-handle-ty", vec![only_head_in_shop(&fixture)]);
+    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty)));
     let files = [SHOP, "Lib/added.py", "README.rst"].map(diff_file);
     let at = fixture.checkout.at.clone();
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
@@ -2188,8 +2217,9 @@ fn a_path_set_in_settings_is_checked_with_version_and_stops_the_server_it_replac
     let (rows, heard) = mpsc::channel();
     let mut owner = owner_of(settable(&fixture, (&ty, &idle), rows));
     let first = heard.try_recv().unwrap();
+    let (fake, _fake_folder) = ty_program("definitions-check-ty", vec![json!([])]);
 
-    let found = set_ty(&mut owner, &ty, super::testing::ty());
+    let found = set_ty(&mut owner, &ty, fake);
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed: changed(),
@@ -2332,7 +2362,8 @@ fn a_new_path_forgets_the_problem_the_old_program_had() {
 fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
     let fixture = cpython_pr("definitions-rows-shown");
     let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-rows-shown-ty", vec![json!([])]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed: changed(),
@@ -2370,7 +2401,8 @@ fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
 #[test]
 fn a_shorter_idle_time_applies_at_the_next_idle_check_which_a_change_of_settings_brings_on() {
     let fixture = cpython_pr("definitions-idle-changed");
-    let ty = Arc::new(Mutex::new(Some(super::testing::ty())));
+    let (fake, _fake_folder) = ty_program("definitions-idle-changed-ty", vec![json!([])]);
+    let ty = Arc::new(Mutex::new(Some(fake)));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, heard) = mpsc::channel();
     let definitions = Definitions::start(settable(&fixture, (&ty, &idle), rows));
@@ -2396,7 +2428,8 @@ fn a_shorter_idle_time_applies_at_the_next_idle_check_which_a_change_of_settings
 #[test]
 fn each_start_writes_the_server_s_log_beside_the_checkout_and_keeps_the_last_one() {
     let fixture = cpython_pr("definitions-log");
-    let mut owner = opened(&fixture);
+    let (ty, _ty_folder) = ty_program("definitions-log-ty", vec![only_head_in_shop(&fixture)]);
+    let mut owner = opened_with(&fixture, (ServerName::Ty, ty), changed());
     let log = server_log(&fixture.checkout.folder, ServerName::Ty);
     let first = owner.servers.remove(&ty_of(cpython())).unwrap();
     first.stop().wait(Instant::now() + PATIENCE);
@@ -2414,7 +2447,8 @@ fn each_start_writes_the_server_s_log_beside_the_checkout_and_keeps_the_last_one
 }
 
 /// A folder unpacked from clangd's archive, as far as `files` go, and the path of its `bin\clangd.exe`,
-/// which is empty: a fake clangd runs nothing. Then the folder.
+/// which is empty, as a [`FakeClangd`] runs nothing, until [`fake_program`] puts a program there. Then the
+/// folder.
 fn clangd_folder(name: &str, files: &[&str]) -> (PathBuf, crate::testing::TempPath) {
     let root = crate::testing::temp_path(name);
     for path in ["bin/clangd.exe"].iter().chain(files) {
@@ -2565,13 +2599,13 @@ fn set_clangd(owner: &mut Owner, clangd: &Mutex<Option<PathBuf>>, path: PathBuf)
 #[test]
 fn apply_of_a_clangd_unpacked_without_its_built_in_headers_says_so_and_shows_its_version() {
     let fixture = c_including("definitions-built-ins-apply", "int eggs;\n");
-    // The real clangd, linked into a folder that has nothing else.
+    // A clangd in a folder that has nothing else, and one unpacked whole. The real clangd's `--version` has a
+    // test in `health`.
+    let version = format!("clangd version {}", ServerName::Clangd.tested()[0]);
     let (lone, _lone_folder) = clangd_folder("definitions-built-ins-apply-lone", &[]);
-    std::fs::remove_file(&lone).unwrap();
-    let clangd = super::testing::clangd();
-    if std::fs::hard_link(&clangd, &lone).is_err() {
-        let _copied = std::fs::copy(&clangd, &lone).unwrap();
-    }
+    fake_program(&lone, &version, vec![json!([])]);
+    let (clangd, _whole_folder) = clangd_folder("definitions-built-ins-apply-whole", &[BUILT_INS]);
+    fake_program(&clangd, &version, vec![json!([])]);
     let path = Arc::new(Mutex::new(None));
     let mut owner = owner_of(clangd_settable(&fixture, &path));
 

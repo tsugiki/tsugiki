@@ -26,6 +26,15 @@ windows.workspace = true
 # `[dev-dependencies]` turn it on, so no release build has it.
 testing = []
 
+# A fake server as a program, which `scripts/test-servers.ts` builds for the core's tests to start. Built with
+# `testing` alone, so no release build has it, and it has no unit tests.
+[[bin]]
+name = "tsugiki-fake-server"
+path = "src/bin/fake_server.rs"
+required-features = ["testing"]
+test = false
+doc = false
+
 [dev-dependencies]
 tsugiki-test-git.workspace = true
 

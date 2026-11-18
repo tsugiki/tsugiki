@@ -237,6 +237,12 @@ pub fn clangd() -> PathBuf {
     test_server("TSUGIKI_CLANGD")
 }
 
+/// The fake language server in `tsugiki-lsp` that `TSUGIKI_FAKE_SERVER` names, which `just cargo-test` and
+/// `just rust-coverage` build and set.
+pub fn fake_server() -> PathBuf {
+    test_server("TSUGIKI_FAKE_SERVER")
+}
+
 /// The language server the environment variable `name` names. One that isn't there fails the test.
 fn test_server(name: &str) -> PathBuf {
     let path = PathBuf::from(env::var_os(name).unwrap_or_default());

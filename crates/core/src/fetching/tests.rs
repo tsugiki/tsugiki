@@ -109,8 +109,8 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     let heard: Vec<String> = incoming
         .try_iter()
         .map(|message| match message {
-            SessionMessage::Fetch(Fetched::Issue(item)) => format!("Issue #{}", item.number),
-            SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
+            SessionMessage::Fetch(Fetched::Issue(item), _) => format!("Issue #{}", item.number),
+            SessionMessage::Fetch(Fetched::PullRequest(item), _) => format!("PR #{}", item.number),
             SessionMessage::Refresh => "refresh".to_owned(),
             SessionMessage::SettingsChanged(settings, SavedBy::HandEdit) => {
                 format!("settings of {}", settings.name)

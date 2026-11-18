@@ -26,7 +26,14 @@ arguments and makes the call.
   no `Queued`.
 - The job has to bring what the read looks at, or the read finds the same lack after the job saves and
   queues it again on each `changed`. A PR whose head Tsugiki doesn't know reads its Conversation, which names
-  the head, so the read takes a PR's head from its Conversation when the sync has none.
+  the head, and the store keeps that head in the PR's facts when they have none. Every reader of the facts
+  then sees it: the Files tab, the Mirror's head wants, Reach, Stale review and patch-ids.
+- A job that brought nothing new ends the wait. A Conversation saved with no head leaves the Files tab no
+  head to wait for, so the read says so, where queuing the read again would bring the same.
+- The session reads a Conversation once for the demands asked before one read of it finishes. Opening a PR
+  and its Files tab's read then ask GitHub once between them.
+- The Files tab queues the clone only of a Repository the settings list. Another has no mirror to wait for,
+  and its read says so.
 
 ## Considered Options
 
@@ -36,13 +43,21 @@ arguments and makes the call.
 - **A `Queued` made by any send on a channel.** A send nobody reads would make one too.
 - **The demands stay in the command.** Each command decides what to fetch its own way, as #843 found of the
   settings that three commands pushed into the session.
+- **The Files tab's read takes the head from the Conversation.** Only the Files tab would see it. The
+  Mirror's head wants, Reach and Stale review would go on without it.
+- **A migration that copies each kept Conversation's head into the PR's facts.** A Conversation read long
+  ago can name a head the PR has moved on from, and the Mirror would fetch that first. Opening the PR reads
+  its Conversation again, and that read fills the facts.
 
 ## Consequences
 
 - A test of a call checks the answer, and what reached a session and a Mirror worker that only listen.
 - Each read of a Files tab that waits for its Mirror queues the clone again. The Mirror worker leaves a clone
   under way, waiting or failed as it is.
-- The Mirror worker still awaits the head of a PR opened before Tsugiki knew it, so a sync step that names
-  the head before the Conversation comes keeps the demand's rank.
+- The Mirror worker still awaits the head of a PR opened before Tsugiki knew it. The session hands it the
+  head a Conversation saved, as it hands a sync step's, so the head keeps the demand's rank whichever names
+  it first. In a Repository the session doesn't sync, the `changed` that follows the save brings the Files
+  tab's read back, and it queues the head first.
+- The session keeps, for each item it read since launch, when its last read finished.
 - `crates/app` can still name `Fetching` and a view model's raw `read`, so nothing yet stops a command from
   sending a demand itself.

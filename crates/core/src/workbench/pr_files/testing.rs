@@ -71,7 +71,7 @@ impl World {
 
     /// PR 7's Conversation, as GitHub had it at `head`.
     pub(crate) fn has_conversation(&self, head: Option<CommitSha>) {
-        let mut content = crate::workbench::pr_view::tests::reviewed();
+        let mut content = crate::workbench::pr_view::testing::reviewed();
         content.head = head;
         let name = self.repository();
         self.view

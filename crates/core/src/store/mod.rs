@@ -394,7 +394,7 @@ impl Store {
     }
 
     /// Keeps what PR `number` says, its Reviews included, in place of what was kept before. A refresh no
-    /// longer owes a read of it.
+    /// longer owes a read of it. A PR kept with no head takes the head the Conversation names.
     pub fn save_pull_request_content(
         &self,
         repository: &RepositoryName,

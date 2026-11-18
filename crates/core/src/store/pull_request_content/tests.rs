@@ -2,12 +2,12 @@ use time::OffsetDateTime;
 
 use super::*;
 use crate::facts::issue_content::IssueContent;
-use crate::facts::pull_requests::ReviewedCommit;
+use crate::facts::pull_requests::{PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::Store;
-use crate::store::testing::{OpenStore, database_before, temp_database};
-use crate::testing::{cpython, sha};
+use crate::store::testing::{OpenStore, World, database_before, temp_database};
+use crate::testing::{cpython, pr_facts, sha};
 
 #[test]
 fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read() {
@@ -119,4 +119,35 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
     );
     assert_eq!(elsewhere, []);
     store.close();
+}
+
+#[test]
+fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_alone() {
+    let world = World::new("conversation-head");
+    let kept = PullRequestFacts {
+        head: Some(sha("aaaaaaa")),
+        ..pr_facts(2)
+    };
+    world.has(vec![pr_facts(1), kept]);
+    let store = &world.db.store;
+
+    for number in [1, 2] {
+        store
+            .save_pull_request_content(&cpython(), number, with_reviews(vec![]))
+            .unwrap();
+    }
+
+    let head = |number| {
+        let (facts, _) = (world.db.reader)
+            .pull_request_facts(&cpython(), number)
+            .unwrap();
+        (facts.pull_requests.into_iter())
+            .find(|pr| pr.number == number)
+            .and_then(|pr| pr.head)
+    };
+    assert_eq!(
+        (head(1), head(2)),
+        (Some(sha("ccccccc")), Some(sha("aaaaaaa")))
+    );
+    world.finish();
 }

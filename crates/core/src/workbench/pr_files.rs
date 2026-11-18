@@ -82,7 +82,8 @@ pub enum FilesRead {
     Asking,
     /// The Repository's mirror isn't cloned yet.
     NoMirror,
-    /// Tsugiki knows no head of the PR: the sync hasn't read one, and no Conversation it read names one.
+    /// Tsugiki knows no head of the PR: the sync hasn't read one, and no Conversation saved since Tsugiki
+    /// kept a PR's head from it named one. A read of the Conversation names it.
     NoHead,
     /// The Mirror lacks the PR's head, and holds the diff at the last head of the PR it fetched, if any.
     Missing {
@@ -127,6 +128,20 @@ impl DiffSources<'_> {
             }));
         }
         let Some(head) = pr.head.clone() else {
+            // A Conversation saved now gives the PR its head, so one that names none already came back
+            // without it, and reading it again would only bring the same.
+            if content
+                .as_ref()
+                .is_some_and(|content| content.head.is_none())
+            {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    &format!(
+                        "Tsugiki's last read of PR #{number}'s Conversation named no head commit, so it \
+                         has no diff to show."
+                    ),
+                ));
+            }
             return Ok(Some(FilesRead::NoHead));
         };
         let at = PrAt {
@@ -152,24 +167,20 @@ impl DiffSources<'_> {
                 let older = diff::last_head(&mirror, number).filter(|older| {
                     matches!(diff::held(&mirror, &pr.target_branch, older), Held::Both)
                 });
-                let older = match older {
-                    Some(older) => {
-                        let read = || diff::read(&mirror, &pr.target_branch, &start, &older);
-                        let at = PrAt {
-                            head: older.clone(),
-                            ..at
-                        };
-                        let open = self.diffs.get_or_read(&at, target, read)?;
-                        let count = content
-                            .as_ref()
-                            .map_or(0, |content| content.threads().count());
-                        Some(OlderDiff {
-                            diff: shown(&open),
-                            threads: u32::try_from(count).unwrap_or(u32::MAX),
-                        })
-                    }
-                    None => None,
-                };
+                let older = older.map(|older| {
+                    let read = || diff::read(&mirror, &pr.target_branch, &start, &older);
+                    let at = PrAt {
+                        head: older.clone(),
+                        ..at
+                    };
+                    let open = self.diffs.get_or_read(&at, target, read)?;
+                    let count = (content.as_ref()).map_or(0, |content| content.threads().count());
+                    Ok::<_, Error>(OlderDiff {
+                        diff: shown(&open),
+                        threads: u32::try_from(count).unwrap_or(u32::MAX),
+                    })
+                });
+                let older = older.transpose()?;
                 let head = PrHead {
                     number,
                     commit: head,
@@ -333,8 +344,7 @@ fn start(pr: &PullRequestFacts) -> Start {
     }
 }
 
-/// PR `number`'s facts, and its Conversation once Tsugiki has read it, as the database last had them. A PR
-/// stored before Tsugiki kept heads has none, and takes the head its Conversation names (#782).
+/// PR `number`'s facts, and its Conversation once Tsugiki has read it, as the database last had them.
 fn facts(
     reader: &StoreReader,
     repository: &RepositoryName,
@@ -345,12 +355,7 @@ fn facts(
         .pull_requests
         .into_iter()
         .find(|pr| pr.number == number);
-    Ok(pr.map(|mut pr| {
-        if pr.head.is_none() {
-            pr.head = content.as_ref().and_then(|content| content.head.clone());
-        }
-        (pr, content)
-    }))
+    Ok(pr.map(|pr| (pr, content)))
 }
 
 #[cfg(test)]

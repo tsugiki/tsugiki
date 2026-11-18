@@ -6,16 +6,17 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::definitions::Definitions;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::pull_requests::HeadInMirror;
 use crate::fetching::{Fetching, Queued};
 use crate::mirror::LookupAt;
 use crate::repository::RepositoryName;
+use crate::settings::Settings;
 use crate::workbench::pr_files::{DiffSources, DiffThread, FilesRead, OlderDiff, ShownDiff};
 
 /// What the Files tab shows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum PrFiles {
     /// The Repository's mirror is still being cloned, and the clone says how far it is.
@@ -43,7 +44,7 @@ pub enum PrFiles {
 }
 
 /// The review threads the Files tab shows with a diff.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DiffThreads {
     /// The threads, in the order the tab shows them, from the PR's Conversation as Tsugiki last read it.
@@ -60,10 +61,12 @@ pub enum DiffThreads {
     },
 }
 
-/// What the calls of a PR's screens read from and ask: where the Files tab reads, the queues behind
-/// `fetching`, and the language servers, which open the files of the diff on show.
+/// What the calls of a PR's screens read from and ask: where the Files tab reads, or why it can't, the
+/// settings, which list the Repositories Tsugiki keeps a mirror of, the queues behind `fetching`, and the
+/// language servers, which open the files of the diff on show.
 pub struct PullRequestWork<'a> {
-    pub sources: DiffSources<'a>,
+    pub sources: Result<DiffSources<'a>, Error>,
+    pub settings: &'a Settings,
     pub fetching: &'a Fetching,
     pub definitions: &'a Definitions,
 }
@@ -71,10 +74,11 @@ pub struct PullRequestWork<'a> {
 impl PullRequestWork<'_> {
     /// The user opened PR `number`: the session reads its Conversation from GitHub, each time, and the Mirror
     /// worker fetches its head first if it lacks it. It waits for one git, which says whether the mirror
-    /// holds the head. Its Last seen stays.
+    /// holds the head. The Conversation is read even when the mirrors' folder can't be found. Its Last seen
+    /// stays.
     pub fn open_pull_request(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
         self.fetching.fetch_pull_request(repository.clone(), number);
-        if let Some(head) = self.sources.head_in_mirror(repository, number)? {
+        if let Some(head) = self.sources()?.head_in_mirror(repository, number)? {
             self.fetching
                 .pull_request_opened(repository.clone(), number, head);
         }
@@ -89,19 +93,41 @@ impl PullRequestWork<'_> {
         number: u32,
     ) -> Result<Option<PrFiles>, Error> {
         let asks = || self.fetching.mirror_asks(repository);
-        let read = self.sources.read(repository, number, &asks)?;
-        Ok(read.map(|read| self.answer(repository, number, read)))
+        let read = self.sources()?.read(repository, number, &asks)?;
+        read.map(|read| self.answer(repository, number, read))
+            .transpose()
+    }
+
+    fn sources(&self) -> Result<&DiffSources<'_>, Error> {
+        self.sources.as_ref().map_err(Clone::clone)
     }
 
     /// What the Files tab of PR `number` shows of `read`. Each answer that waits for data queues the job
-    /// that brings it.
-    fn answer(&self, repository: &RepositoryName, number: u32, read: FilesRead) -> PrFiles {
+    /// that brings it. A Repository the settings don't list has no mirror to wait for.
+    fn answer(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        read: FilesRead,
+    ) -> Result<PrFiles, Error> {
         let fetching = self.fetching;
-        match read {
+        Ok(match read {
             FilesRead::Asking => PrFiles::Asking,
-            FilesRead::NoMirror => PrFiles::Cloning {
-                clone: fetching.clone_shown(repository.clone()),
-            },
+            FilesRead::NoMirror => {
+                let listed = (self.settings.repositories.iter())
+                    .any(|listed| listed.name.is_same(repository));
+                if !listed {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        &format!(
+                            "Tsugiki keeps no mirror of {repository}, which the settings don't list."
+                        ),
+                    ));
+                }
+                PrFiles::Cloning {
+                    clone: fetching.clone_shown(repository.clone()),
+                }
+            }
             FilesRead::NoHead => PrFiles::Fetching {
                 fetch: fetching.find_head(repository.clone(), number),
             },
@@ -125,7 +151,7 @@ impl PullRequestWork<'_> {
                 fetching.pull_request_opened(repository.clone(), number, HeadInMirror::Held);
                 self.ready(repository, diff, DiffThreads::Shown { threads })
             }
-        }
+        })
     }
 
     /// The diff on show is the PR on screen: its Lookup checkout moves to the diff's ends, where text search

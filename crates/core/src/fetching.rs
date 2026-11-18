@@ -9,6 +9,7 @@
 
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
+use std::time::Instant;
 
 use time::OffsetDateTime;
 
@@ -39,10 +40,17 @@ pub struct MirrorWant {
 }
 
 /// An Issue or a PR of a Repository, in a message to the session's thread.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Item {
     pub(crate) repository: RepositoryName,
     pub(crate) number: u32,
+}
+
+impl Item {
+    /// Whether `other` names this item, whatever the case of its Repository's name.
+    pub(crate) fn is(&self, other: &Self) -> bool {
+        self.repository.is_same(&other.repository) && self.number == other.number
+    }
 }
 
 /// A mark the user made on an item: seen or unseen.
@@ -87,14 +95,17 @@ pub(crate) enum SessionMessage {
     /// The user changed what these settings say, and nothing on GitHub changed with them.
     SettingsChanged(RepositorySettings, SavedBy),
     Mark(Marked),
-    Fetch(Fetched),
+    /// A read of what an item says, asked at the instant it holds. A read that finished since answers it.
+    Fetch(Fetched, Instant),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
 }
 
 /// A job the core queued, which brings the data an answer waits for. Only `Fetching` makes one, as it queues
 /// the job, so an answer that says its data is on the way can't be built while nothing brings it (ADR 0023).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// It has no `Clone`, so each answer holds a job of its own.
+#[derive(Debug, PartialEq, Eq)]
+#[must_use]
 pub struct Queued(());
 
 /// Keeps the per-file patch-ids read of commits in a Repository, and the commits that can't be read, as
@@ -143,14 +154,17 @@ impl Fetching {
     /// the Issue or reading it again leaves it alone.
     pub fn fetch_issue(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
-        self.to_session(SessionMessage::Fetch(Fetched::Issue(item)));
+        self.to_session(SessionMessage::Fetch(Fetched::Issue(item), Instant::now()));
     }
 
     /// A PR on screen: the session reads its Conversation now. Like `fetch_issue`, this leaves Last seen
     /// alone.
     pub fn fetch_pull_request(&self, repository: RepositoryName, number: u32) {
         let item = Item { repository, number };
-        self.to_session(SessionMessage::Fetch(Fetched::PullRequest(item)));
+        self.to_session(SessionMessage::Fetch(
+            Fetched::PullRequest(item),
+            Instant::now(),
+        ));
     }
 
     /// Mark Seen on what `mark` names, as the window drew it. A session that can't ask GitHub still records
@@ -232,9 +246,7 @@ impl Fetching {
     pub fn pull_request_opened(&self, repository: RepositoryName, number: u32, head: HeadInMirror) {
         match head {
             HeadInMirror::Unknown => self.mirrors.await_head(repository, number),
-            HeadInMirror::Missing(head) => {
-                let _fetch = self.fetch_head(repository, head);
-            }
+            HeadInMirror::Missing(head) => self.mirrors.fetch_first(repository, head),
             HeadInMirror::Held => self.mirrors.opened(repository, number),
         }
     }
@@ -247,8 +259,8 @@ impl Fetching {
     }
 
     /// A screen waits for the head of PR `number`, which Tsugiki doesn't know: the session reads the PR's
-    /// Conversation, which names it. The Mirror worker keeps the PR's ref, and fetches the head first once a
-    /// sync step saves it, if that comes first.
+    /// Conversation, which names it, unless a read of it finishes after this asks. The Mirror worker keeps
+    /// the PR's ref, and fetches the head first once the session saves it.
     pub fn find_head(&self, repository: RepositoryName, number: u32) -> Queued {
         self.mirrors.await_head(repository.clone(), number);
         self.fetch_pull_request(repository, number);

@@ -382,11 +382,13 @@ const LAYERS: &[Layer] = &[
             "fetching",
             "mirror",
             "repository",
+            "settings",
             "workbench",
         ],
         why: "Answers each screen's call: it reads through a view model in `workbench`, queues through \
               `fetching` what the read found missing, and holds the job in an answer that waits for its \
-              data. The diff on show opens its files on the language servers through `definitions`.",
+              data. Only a Repository `settings` lists gets a clone. The diff on show opens its files on \
+              the language servers through `definitions`.",
     },
 ];
 

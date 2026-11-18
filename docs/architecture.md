@@ -112,10 +112,12 @@ Tauri's managed state.
 4. The screen's call works out what the read lacks, queues through `fetching` the job that brings it, and
    answers. An answer that says its data is on the way holds that job
    ([ADR 0023](adr/0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)).
-   The Files tab's read says what the Mirror lacks and which diff it shows. Its call queues the Mirror's
-   clone, the PR's head first when the Mirror lacks it, or a read of the PR's Conversation when Tsugiki knows
-   no head, and moves the Lookup checkout to the diff's ends, where text search looks for it. Opening a PR
-   reads its Conversation each time.
+   The Files tab's read says what the Mirror lacks and which diff it shows. Its call queues the clone of a
+   Repository the settings list, the PR's head first when the Mirror lacks it, or a read of the PR's
+   Conversation when Tsugiki knows no head, and moves the Lookup checkout to the diff's ends, where text
+   search looks for it. Opening a PR reads its Conversation each time. The store keeps the head a
+   Conversation names for a PR kept with none, and the session asks GitHub once for the reads of a
+   Conversation asked before one of them finishes.
 5. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again. The settings owner's thread hands the session each Repository's settings a change saves

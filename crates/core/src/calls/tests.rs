@@ -13,9 +13,11 @@ use crate::fetching::{Fetched, SessionMessage};
 use crate::mirror::HeardRequests;
 use crate::workbench::pr_files::testing::World;
 
-/// PR 7's world, and the queues and language servers its calls ask, which only listen.
+/// PR 7's world, settings that list its Repository, and the queues and language servers its calls ask,
+/// which only listen.
 struct Calls {
     world: World,
+    settings: Settings,
     fetching: Fetching,
     session: Receiver<SessionMessage>,
     heard: HeardRequests,
@@ -31,8 +33,14 @@ impl Calls {
             idle: Box::new(|| Duration::from_secs(3600)),
             changed: Box::new(|_| {}),
         });
+        let world = World::new(&format!("calls-{name}"));
+        let settings = Settings {
+            repositories: vec![world.view.settings()],
+            ..Settings::default()
+        };
         Self {
-            world: World::new(&format!("calls-{name}")),
+            world,
+            settings,
             fetching,
             session,
             heard,
@@ -42,7 +50,8 @@ impl Calls {
 
     fn work(&self) -> PullRequestWork<'_> {
         PullRequestWork {
-            sources: self.world.sources(),
+            sources: Ok(self.world.sources()),
+            settings: &self.settings,
             fetching: &self.fetching,
             definitions: &self.definitions,
         }
@@ -57,8 +66,8 @@ impl Calls {
     fn conversations_read(&self) -> Vec<u32> {
         (self.session.try_iter())
             .filter_map(|message| match message {
-                SessionMessage::Fetch(Fetched::PullRequest(item)) => Some(item.number),
-                SessionMessage::Fetch(Fetched::Issue(_))
+                SessionMessage::Fetch(Fetched::PullRequest(item), _) => Some(item.number),
+                SessionMessage::Fetch(Fetched::Issue(_), _)
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
                 | SessionMessage::Sync { .. }
@@ -99,6 +108,7 @@ fn the_files_tab_of_a_pr_whose_head_tsugiki_doesnt_know_reads_its_conversation()
         json!({ "state": "fetching" })
     );
     assert_eq!(calls.conversations_read(), [7]);
+    assert_eq!(calls.heard.clones(), [], "the mirror is there");
     assert_eq!(calls.heard.asked(), ["python/cpython awaits #7"]);
     calls.finish();
 }
@@ -201,9 +211,60 @@ fn a_clone_that_waits_for_the_user_asks_and_queues_nothing() {
 
     let files = (calls.work()).answer(&calls.world.repository(), 7, FilesRead::Asking);
 
-    assert_eq!(files, PrFiles::Asking);
+    assert_eq!(files.unwrap(), PrFiles::Asking);
     assert_eq!(calls.heard.clones(), []);
     assert_eq!(calls.conversations_read(), [0_u32; 0]);
+    calls.finish();
+}
+
+#[test]
+fn the_files_tab_of_a_repository_the_settings_dont_list_queues_no_clone() {
+    let mut calls = Calls::new("unlisted");
+    calls.world.has_pr(None, "main");
+    calls.settings = Settings::default();
+
+    let problem = calls
+        .work()
+        .pr_files(&calls.world.repository(), 7)
+        .unwrap_err();
+
+    assert_eq!(
+        problem.message,
+        "Tsugiki keeps no mirror of python/cpython, which the settings don't list."
+    );
+    assert_eq!(calls.heard.clones(), []);
+    calls.finish();
+}
+
+#[test]
+fn the_files_tab_of_a_pr_whose_conversation_named_no_head_asks_github_no_more() {
+    let calls = Calls::new("no-head-named");
+    let mirrored = Mirrored::new("calls-no-head-named");
+    calls.world.mirrors(&mirrored);
+    calls.world.has_pr(None, "main");
+    calls.world.has_conversation(None);
+
+    let read = calls.work().pr_files(&calls.world.repository(), 7);
+
+    assert!(read.is_err(), "{read:?}");
+    assert_eq!(calls.conversations_read(), [0_u32; 0]);
+    assert!(calls.heard.asked().is_empty(), "{:?}", calls.heard.asked());
+    calls.finish();
+}
+
+#[test]
+fn opening_a_pr_reads_its_conversation_though_the_mirrors_folder_cant_be_found() {
+    let calls = Calls::new("open-no-folders");
+    let missing = Error::new(ErrorKind::NotFound, "No folder for the mirrors.");
+    let work = PullRequestWork {
+        sources: Err(missing.clone()),
+        ..calls.work()
+    };
+
+    let opened = work.open_pull_request(&calls.world.repository(), 7);
+
+    assert_eq!(opened.unwrap_err(), missing);
+    assert_eq!(calls.conversations_read(), [7]);
     calls.finish();
 }
 

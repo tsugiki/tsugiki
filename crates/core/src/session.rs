@@ -195,7 +195,7 @@ enum Turn {
     /// The user marked an item seen or unseen.
     Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
-    Fetch(Fetched),
+    Fetch(Fetched, Instant),
     /// The Mirror worker read patch-ids, or found commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
@@ -220,7 +220,7 @@ impl Refreshes {
                 SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
                 }
-                SessionMessage::Fetch(fetched) => {
+                SessionMessage::Fetch(fetched, _) => {
                     board.failed_read(&failed(fetched.item(), ReadFailure::NoToken));
                 }
                 SessionMessage::Check { .. }
@@ -254,7 +254,7 @@ impl Refreshes {
                     return Turn::SettingsChanged(settings, by);
                 }
                 Ok(SessionMessage::Mark(marked)) => return Turn::Mark(marked),
-                Ok(SessionMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
+                Ok(SessionMessage::Fetch(fetched, asked)) => return Turn::Fetch(fetched, asked),
                 Ok(SessionMessage::Patched(repository, patches)) => {
                     return Turn::Patched(repository, patches);
                 }
@@ -301,6 +301,25 @@ const HOUR_CHECK: Duration = Duration::from_secs(60);
 fn hour_check(github: &GitHub) -> Option<Instant> {
     let left = github.hour_left()?;
     Some(Instant::now() + left.min(HOUR_CHECK))
+}
+
+/// When the session last finished reading each item's conversation since launch. A demand asked before
+/// then has its answer in that read, so the window asking again while a read waits or runs asks GitHub
+/// nothing more.
+#[derive(Default)]
+struct Reads(Vec<(Item, Instant)>);
+
+impl Reads {
+    /// Whether a read of `item` finished after a demand for it was asked at `asked`.
+    fn answered(&self, item: &Item, asked: Instant) -> bool {
+        (self.0.iter()).any(|(read, finished)| read.is(item) && *finished >= asked)
+    }
+
+    /// A read of `item` finished at `at`, whether it brought an answer or not.
+    fn finished(&mut self, item: Item, at: Instant) {
+        self.0.retain(|(read, _)| !read.is(&item));
+        self.0.push((item, at));
+    }
 }
 
 /// The database a session opens when it starts.
@@ -351,6 +370,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
     };
     board.hour_points(github.hour_points());
     let mut syncs = Syncs::default();
+    let mut reads = Reads::default();
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
     loop {
@@ -391,13 +411,22 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
             Turn::CheckHour => {}
-            Turn::Fetch(fetched) => {
+            Turn::Fetch(fetched, asked) => {
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);
                 }
-                if let Err(problem) = fetch_conversation(board, store, &github, fetched) {
-                    syncs.after_fetch_failure(&problem, due.status, github.clock());
-                    board.set(status_after(problem, store));
+                let item = fetched.item().clone();
+                if !reads.answered(&item, asked) {
+                    let read = Reading {
+                        github: &github,
+                        fetching: &refreshes.fetching,
+                        syncs: &syncs,
+                    };
+                    if let Err(problem) = read_conversation(board, store, &read, fetched) {
+                        syncs.after_fetch_failure(&problem, due.status, github.clock());
+                        board.set(status_after(problem, store));
+                    }
+                    reads.finished(item, Instant::now());
                 }
             }
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
@@ -634,16 +663,44 @@ enum Content {
     PullRequest(PullRequestContent),
 }
 
-/// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. GitHub numbers both from
-/// one sequence, so they share where they are kept. If this fails, the view goes on showing what was last
-/// read, and the window hears why. An error returned here speaks for all of GitHub, so the status bar and
-/// the syncs need to hear it. Any other trouble is this one item's, and goes to the log.
+/// What a read of a conversation asks: GitHub, and the Mirror worker with the settings of the Repositories
+/// syncing, whose wants a PR's Conversation can change.
+struct Reading<'a> {
+    github: &'a GitHub,
+    fetching: &'a Fetching,
+    syncs: &'a Syncs,
+}
+
+/// Reads what an Issue or a PR says, keeps it, and tells the window, as `fetch_conversation` says. A PR's
+/// Conversation names its head, which the store keeps for a PR kept with none, so the Mirror worker hears
+/// the PR's head is saved, and fetches it first if the user opened the PR.
+fn read_conversation(
+    board: &mut StatusBoard,
+    store: &Store,
+    read: &Reading<'_>,
+    fetched: Fetched,
+) -> Result<(), Error> {
+    let pull_request = matches!(fetched, Fetched::PullRequest(_));
+    if let Some(change) = fetch_conversation(board, store, read.github, fetched)? {
+        if pull_request {
+            let _handed = hand_over_heads(read.fetching, store, read.syncs, &change);
+        }
+        board.changed(&change);
+    }
+    Ok(())
+}
+
+/// Reads what an Issue or a PR says from GitHub, keeps it, and gives the change for the window to hear.
+/// GitHub numbers both from one sequence, so they share where they are kept. If this fails, the view goes
+/// on showing what was last read, and the window hears why. An error returned here speaks for all of
+/// GitHub, so the status bar and the syncs need to hear it. Any other trouble is this one item's, and goes
+/// to the log.
 fn fetch_conversation(
     board: &mut StatusBoard,
     store: &Store,
     github: &GitHub,
     fetched: Fetched,
-) -> Result<(), Error> {
+) -> Result<Option<Change>, Error> {
     let (item, noun, read) = match fetched {
         Fetched::Issue(item) => {
             let read = github.issue_content(&item.repository, item.number);
@@ -677,7 +734,7 @@ fn fetch_conversation(
                 item.repository,
                 problem.message
             );
-            return Ok(());
+            return Ok(None);
         }
     };
     let Item { repository, number } = item;
@@ -688,13 +745,15 @@ fn fetch_conversation(
         }
     };
     match saved {
-        Ok(()) => board.changed(&Change {
+        Ok(()) => Ok(Some(Change {
             repository,
             items: vec![number],
-        }),
-        Err(problem) => board.set(Status::Problem { problem }),
+        })),
+        Err(problem) => {
+            board.set(Status::Problem { problem });
+            Ok(None)
+        }
     }
-    Ok(())
 }
 
 /// Tells the window when `repository` last finished a sync, so the status bar can say.

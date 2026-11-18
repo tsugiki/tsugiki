@@ -46,14 +46,32 @@ fn before_the_user_says_where_its_mirror_gets_its_objects_a_pr_asks() {
 }
 
 #[test]
-fn a_pr_whose_head_neither_the_sync_nor_a_conversation_named_has_none() {
+fn a_pr_whose_head_the_sync_hasnt_read_and_whose_conversation_tsugiki_hasnt_read_has_none() {
     let world = World::new("no-head");
     let mirrored = Mirrored::new("pr-files-no-head");
     world.mirrors(&mirrored);
     world.has_pr(None, "main");
-    world.has_conversation(None);
 
     assert_eq!(world.read(), Some(FilesRead::NoHead));
+    world.finish();
+}
+
+#[test]
+fn a_pr_whose_conversation_named_no_head_says_so() {
+    let world = World::new("no-head-named");
+    let mirrored = Mirrored::new("pr-files-no-head-named");
+    world.mirrors(&mirrored);
+    world.has_pr(None, "main");
+    world.has_conversation(None);
+
+    let problem = (world.sources())
+        .read(&world.repository(), 7, &|| false)
+        .unwrap_err();
+
+    assert_eq!(
+        problem.message,
+        "Tsugiki's last read of PR #7's Conversation named no head commit, so it has no diff to show."
+    );
     world.finish();
 }
 
@@ -334,7 +352,7 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
     });
     let (row, line) = added.unwrap();
     let file = whole.files().iter().rfind(|file| file.row < row).unwrap();
-    let mut content = crate::workbench::pr_view::tests::reviewed();
+    let mut content = crate::workbench::pr_view::testing::reviewed();
     let thread = content.reviews[0].threads.get_mut(0).unwrap();
     thread.path.clone_from(&file.path);
     thread.subject = Subject::Line {

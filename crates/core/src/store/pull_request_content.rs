@@ -141,6 +141,13 @@ pub(super) fn save(
             ":head": content.head,
         },
     )?;
+    // A PR stored before Tsugiki kept heads has none, and the sync reads it again only once it changes, so
+    // it takes the head its Conversation names (#782).
+    let _ = transaction.execute(
+        "UPDATE pull_requests SET head = :head
+         WHERE repository = :repository AND number = :number AND head IS NULL",
+        named_params! { ":repository": repository, ":number": number, ":head": content.head },
+    )?;
     let mut position = 0_u32;
     for review in &content.reviews {
         save_review(&transaction, repository, (number, position), review)?;

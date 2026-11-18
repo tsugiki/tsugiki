@@ -581,15 +581,100 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let access = replying(vec![signed_in(), issue_content_reply()]);
     let github = connect(&mut quiet_board(), &empty_store(), access).unwrap();
 
-    fetch_conversation(
+    let saved = fetch_conversation(
         &mut board,
         &Store::stopped(),
         &github,
         Fetched::Issue(issue_7()),
-    )
-    .unwrap();
+    );
 
+    assert_eq!(saved, Ok(None), "nothing saved for the window to hear");
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+}
+
+#[test]
+fn a_conversation_that_names_the_head_of_a_pr_kept_with_none_hands_the_head_to_the_mirror() {
+    let (folders, _folder) = temp_folders("conversation-head");
+    let store = Store::open(&folders.database()).unwrap();
+    let headless = PullRequestFacts {
+        head: None,
+        ..stored_pr(7, "some-author", "0123abc")
+    };
+    store.save_pull_requests(&gcmon(), vec![headless]).unwrap();
+    let access = replying(vec![signed_in(), pr_content_reply()]);
+    let github = connect(&mut quiet_board(), &store, access).unwrap();
+    let (fetching, _incoming, heard) = crate::fetching::testing::handle();
+    let mut syncs = Syncs::default();
+    syncs.add(plain_gcmon());
+    let read = Reading {
+        github: &github,
+        fetching: &fetching,
+        syncs: &syncs,
+    };
+
+    let pr_7 = Fetched::PullRequest(Item {
+        repository: gcmon(),
+        number: 7,
+    });
+    read_conversation(&mut quiet_board(), &store, &read, pr_7).unwrap();
+    store.close();
+
+    let handed = heard.asked();
+    assert_eq!(
+        handed.last().map(String::as_str),
+        Some("some-maintainer/gcmon saved heads #7 at 0123abc on main"),
+        "{handed:?}"
+    );
+}
+
+#[test]
+fn two_demands_for_a_conversation_before_its_read_finishes_ask_github_once() {
+    let (script, asked) = Scripted::new(vec![signed_in(), pr_content_reply()]);
+    let access = GitHubAccess {
+        transport: Box::new(script),
+        run_gh: signed_in_gh,
+    };
+    let (folders, _folder) = temp_folders("one-read");
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+
+    session.fetching().fetch_pull_request(gcmon(), 7);
+    session.fetching().fetch_pull_request(gcmon(), 7);
+    let _change = changes.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    let operations: Vec<String> = asked.try_iter().map(|(operation, _)| operation).collect();
+    assert_eq!(
+        operations.len(),
+        2,
+        "the sign-in and one read: {operations:?}"
+    );
+}
+
+#[test]
+fn a_read_that_finished_after_a_demand_answers_it_and_an_earlier_one_doesnt() {
+    let start = Instant::now();
+    let at = |seconds| start + Duration::from_secs(seconds);
+    let mut reads = Reads::default();
+    reads.finished(issue_7(), at(1));
+    let shouted = |number| Item {
+        repository: RepositoryName::parse("Some-Maintainer/GCMON").unwrap(),
+        number,
+    };
+
+    assert!(reads.answered(&issue_7(), at(0)));
+    assert!(!reads.answered(&issue_7(), at(2)));
+    assert!(
+        !reads.answered(&shouted(8), at(0)),
+        "another item's read answers nothing"
+    );
+    assert!(
+        reads.answered(&shouted(7), at(0)),
+        "the case of a name doesn't matter"
+    );
+    reads.finished(shouted(7), at(3));
+    assert!(reads.answered(&issue_7(), at(2)), "the newer read answers");
+    assert_eq!(reads.0.len(), 1, "it takes the older read's place");
 }
 
 #[test]

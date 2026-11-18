@@ -1,28 +1,20 @@
 use time::OffsetDateTime;
 
-use super::super::*;
 use super::*;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_requests::ReviewedCommit;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::Store;
-use crate::store::testing::{OpenStore, temp_database};
+use crate::store::testing::{OpenStore, database_before, temp_database};
 use crate::testing::{cpython, sha};
 
 #[test]
 fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read() {
-    let (path, folder) = temp_database("conversation-before-ids");
-    let before = MIGRATIONS
-        .iter()
-        .position(|step| step.sql == super::DATABASE_IDS)
-        .unwrap();
-    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
-    // A store of that age can't run today's save, which writes the numbers, so SQL stands in for it.
-    Connection::open(&path)
-        .unwrap()
-        .execute_batch(
-            "INSERT INTO issue_content (repository, number, body_html, earlier_comments, opened_at)
+    let (path, folder) = database_before(
+        "conversation-before-ids",
+        super::DATABASE_IDS,
+        "INSERT INTO issue_content (repository, number, body_html, earlier_comments, opened_at)
              VALUES ('python/cpython', 1, '<p>Fixes it</p>', 0, 1);
              INSERT INTO issue_comments (repository, number, position, author, created_at, body_html)
              VALUES ('python/cpython', 1, 0, 'some-author', 2, '<p>Thanks</p>');
@@ -34,8 +26,7 @@ fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read()
              INSERT INTO review_thread_comments (repository, number, review, thread, position, author,
                                                  created_at, body_html)
              VALUES ('python/cpython', 1, 0, 0, 0, 'some-reviewer', 3, '<p>Why?</p>');",
-        )
-        .unwrap();
+    );
 
     let db = OpenStore::of(path, folder);
     let (_, kept) = db.reader.pull_request_facts(&cpython(), 1).unwrap();

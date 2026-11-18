@@ -269,6 +269,16 @@ pub fn rust_sources(dir: &Path) -> Vec<PathBuf> {
     sources
 }
 
+/// The Rust item `item` without the `pub` or `pub(...)` in front of it.
+pub fn without_visibility(item: &str) -> &str {
+    let item = match item.strip_prefix("pub") {
+        Some(after) if after.starts_with('(') => after.split_once(')').map_or("", |(_, rest)| rest),
+        Some(after) => after,
+        None => item,
+    };
+    item.trim_start()
+}
+
 /// A file the repo commits that code generates, and how a developer brings it up to date.
 #[derive(Debug, Clone, Copy)]
 pub struct GeneratedFile<'a> {

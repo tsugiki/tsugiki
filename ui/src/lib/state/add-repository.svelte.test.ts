@@ -1,22 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { commands, type NameCheck_Serialize, type RepositoryCheck_Serialize } from "$lib/data/bindings";
+import { commands, type NameCheck_Serialize } from "$lib/data/bindings";
+import { repositoryCheck } from "$lib/testing/fixtures";
 import { AddRepositoryState } from "./add-repository.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { checkRepository: vi.fn(), addRepository: vi.fn(), pickFolder: vi.fn(), checkClone: vi.fn() },
 }));
 
-const check: RepositoryCheck_Serialize = {
-  repository: { name: "Some-Maintainer/gcmon", conventions: "github", filters: [] },
-  open_issues: 10,
-  open_prs: 3,
-  size: "small",
-  window_days: 30,
-  first_sync_items: 48,
-  first_sync_seconds: 5,
-  first_sync_points: 12,
-  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-};
+// GitHub names the Repository as its owner spells it, whatever case the user typed.
+const check = repositoryCheck("Some-Maintainer/gcmon");
 
 const found: NameCheck_Serialize = { kind: "new", check };
 

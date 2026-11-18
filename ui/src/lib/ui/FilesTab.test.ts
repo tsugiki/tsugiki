@@ -16,7 +16,16 @@ import {
   type PrFiles,
 } from "$lib/state/pr-files.svelte";
 import type { YourReview } from "$lib/state/workbench.svelte";
-import { diffFile, done, ok, readyFiles, refused } from "$lib/testing/fixtures";
+import {
+  diffFile,
+  diffThread,
+  done,
+  fileLines,
+  foundText,
+  ok,
+  readyFiles,
+  refused,
+} from "$lib/testing/fixtures";
 import { clickAt, nextTask, pressed } from "$lib/testing/helpers";
 import { ChordAction } from "./chord.svelte";
 import FilesTab from "./FilesTab.svelte";
@@ -626,8 +635,8 @@ it("offers to show the lines each gap leaves out, and draws them highlighted onc
 it("opens the lines around a thread on a line no hunk shows, with buttons for those hidden around them", async () => {
   setUpGapped();
   const threads = [
-    threadAt("T1", { kind: "outside", file: 0, line: 80, head_line: 80 }, "open"),
-    threadAt("T2", { kind: "gone", path: "Lib/old.py", code: null }, "open"),
+    diffThread("T1", { kind: "outside", file: 0, line: 80, head_line: 80 }, "open"),
+    diffThread("T2", { kind: "gone", path: "Lib/old.py", code: null }, "open"),
   ];
   await shown(ready(gapped.length, { files: [gappedFile], threads }));
   await vi.waitFor(() => {
@@ -907,31 +916,10 @@ it("keeps the row at the top in view as the view switches", async () => {
   expect(diff.scrollTop).toBe(0);
 });
 
-/** Thread `id` under row `row`, or at `row` when it isn't a number, with `comments` comments. */
-const threadAt = (
-  id: string,
-  row: number | DiffThread["at"],
-  resolution: "open" | "resolved",
-  comments = 1,
-): DiffThread => ({
-  id,
-  at: typeof row === "number" ? { kind: "row", row } : row,
-  resolution,
-  comments: Array.from({ length: comments }, () => ({
-    id: null,
-    author: "some-reviewer",
-    created_at: "2026-11-04T10:00:00Z",
-    body_html: "<p>Why?</p>",
-    hidden: null,
-    submission: "submitted",
-  })),
-  later_comments: 0,
-});
-
 /** The diff of `rows` with an open thread of two comments under row 2, which takes 7 places until it's
  * measured, and a resolved one under row 4, folded to one place: row 5 shows at place 13. */
 const threadedDiff = () =>
-  ready(rows.length, { threads: [threadAt("T1", 2, "open", 2), threadAt("T2", 4, "resolved")] });
+  ready(rows.length, { threads: [diffThread("T1", 2, "open", 2), diffThread("T2", 4, "resolved")] });
 
 const threadBoxes = () => screen.getAllByRole("group", { name: "Review thread" });
 
@@ -1035,11 +1023,6 @@ it("scrolls to the change it moves to, with a few rows of code above it", async 
   });
 });
 
-/** The core's answer to a search, which found `matches`, each a row and where in it the text starts and
- * ends. */
-const found = (matches: [number, number, number][], more = false) =>
-  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
-
 /** The text of each match the rows mark, and whether it is the one the tab is on. */
 const marks = () =>
   [...document.querySelectorAll(".row .match, .row .current")].map((mark) => [
@@ -1060,7 +1043,7 @@ const searching = async (choice = new DiffViewChoice()) => {
 
 it("searches every row from its box, marks the matches, and moves between them with Enter and its buttons", async () => {
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 1],
       [6, 0, 1],
     ]),
@@ -1095,7 +1078,7 @@ it("searches every row from its box, marks the matches, and moves between them w
 });
 
 it("says when it finds nothing, with nowhere to move, and when the core stopped counting", async () => {
-  core.pullRequestFind.mockResolvedValueOnce(found([]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([]));
   const { box } = await searching();
   const status = () => screen.getByRole("search").querySelector(".count")?.textContent;
 
@@ -1105,7 +1088,7 @@ it("says when it finds nothing, with nowhere to move, and when the core stopped 
   });
   const moves = ["Previous match", "Next match"].map((name) => screen.getByRole("button", { name }));
   expect(moves.map((button) => (button as HTMLButtonElement).disabled)).toEqual([true, true]);
-  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 1]], true));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[3, 0, 1]], true));
   await fireEvent.input(box, { target: { value: "b" } });
   await vi.waitFor(() => {
     expect(status()).toBe("1 of 1+");
@@ -1125,7 +1108,7 @@ it("closes the search on Escape or its button, handing the diff its focus back",
 
 it("marks the matches side by side, a line of context's on both sides", async () => {
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [2, 0, 1],
       [3, 0, 1],
       [6, 0, 1],
@@ -1160,7 +1143,7 @@ it("says in the box why it couldn't search", async () => {
 it("leaves a match it shows in place, and scrolls to one it doesn't", async () => {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 1],
       [10, 0, 1],
     ]),
@@ -1330,7 +1313,7 @@ it("puts the NEWS entries on a page of their own, and a NEWS entry's Show file g
 it("gives the threads on files no longer in the diff a last page of their own", async () => {
   const files = await shownOne(
     ready(rows.length, {
-      threads: [threadAt("lost", { kind: "gone", path: "Lib/old.py", code: null }, "open")],
+      threads: [diffThread("lost", { kind: "gone", path: "Lib/old.py", code: null }, "open")],
     }),
   );
   files.showFile(1);
@@ -1895,14 +1878,7 @@ const peekCode = () =>
   );
 
 /** A file of `count` lines, line N of which reads `line N`, as the core reads a hit's file. */
-const fileOf = (count: number) => {
-  core.definitionCode.mockImplementation((code) => {
-    const lines = [];
-    for (let line = code.start; line < Math.min(code.end, count + 1); line++)
-      lines.push(`line ${String(line)}`);
-    return Promise.resolve(ok({ count, lines }));
-  });
-};
+const fileOf = (count: number) => core.definitionCode.mockImplementation(fileLines(count));
 
 it("opens the Definition peek under the picked line, names the hit, shows its code and pushes the rows after it down", async () => {
   const hit = (path: string, line: number, text: string) => ({

@@ -46,7 +46,7 @@ ticket's title gives. It prints the worktree's path and branch, which the builde
 A ticket that starts on a sibling's branch gets its worktree the same way, then merges that branch:
 `git -C .temp/wt-<n> merge <sibling-branch>`. The worktrees share one repository, so the name is enough.
 
-Add the wave's entry to `## Wave log`, from the form in step 7, with the agents' start time.
+Add the wave's entry to `## Wave log`, from the form in step 8, with the agents' start time.
 
 Done when each ticket has a worktree with `node_modules` installed, and the log has the wave's entry.
 
@@ -112,7 +112,16 @@ the tests found with no conflict.
 Once those tests pass, push: CI runs the full gates on the push. Ask for `just preflight` again only when a
 resolution rewrote code, a moderate or hard conflict, where a failed CI round trip costs more than the run.
 
-### 7. Close the wave
+### 7. Look for copies the siblings made
+
+Once the wave's last PR has merged, run `just merged` and then `just dupes` on main. Each PR passed against
+the main it started from, so a helper two siblings each wrote shows up only once both are in. Fold each copy
+it finds into one place both use, in one small PR, and wait for it to merge before the next wave starts. If a
+repeat has to stay, the PR adds it to `ALLOWED` in `scripts/copies.ts` with why.
+
+Done when `just dupes` passes on main.
+
+### 8. Close the wave
 
 The wave's entry in `## Wave log` takes this form:
 

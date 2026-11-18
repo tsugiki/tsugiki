@@ -1,8 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
-import type { LoadedSettings_Serialize } from "../src/lib/data/bindings.ts";
-import { ok } from "../src/lib/testing/fixtures.ts";
-import { mockCore, noServers } from "./mock-core.ts";
-import { appearance, themes } from "./themes.ts";
+import { loadedSettings, ok } from "../src/lib/testing/fixtures.ts";
+import { mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
 const colours = (page: Page) =>
   page.evaluate(() => {
@@ -68,18 +67,7 @@ test("Settings › General shows a dark Theme on the window before Apply, and Ca
   page,
 }) => {
   await page.emulateMedia({ colorScheme: "light" });
-  const loaded: LoadedSettings_Serialize = {
-    settings: {
-      status_bar: { visible: true },
-      releases: { check: true },
-      appearance,
-      diff: { files: "all", peek: "inline" },
-      keys: {},
-      repositories: [],
-    },
-    language_servers: noServers,
-    problems: [],
-  };
+  const loaded = loadedSettings();
   await mockCore(page, {
     themes: ok(themes),
     settings: loaded,

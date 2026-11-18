@@ -173,8 +173,8 @@ fn read_all(mut stream: impl Read + Send + 'static) -> JoinHandle<String> {
 }
 
 /// `command` with no console window of its own on Windows, in a job object, or in a process group of its
-/// own elsewhere, so the processes it starts end with it.
-fn windowless(mut command: CommandWrap) -> CommandWrap {
+/// own elsewhere, so the processes it starts end with it. The core starts git this way too.
+pub fn windowless(mut command: CommandWrap) -> CommandWrap {
     #[cfg(windows)]
     let _ = command
         .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))

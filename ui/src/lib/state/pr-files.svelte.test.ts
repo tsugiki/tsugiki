@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Answer, DefinitionLookup, DiffLine, Hit, LineInDiff, Waiting } from "$lib/data/bindings";
-import { diffFile, ok, readyFiles, type ReadyFiles } from "$lib/testing/fixtures";
+import { diffFile, diffThread, foundText, ok, readyFiles, type ReadyFiles } from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import {
   CHUNK,
@@ -1259,27 +1259,6 @@ it("lays the diff out in the view the window chose, which one choice holds for e
   expect(one.shownAs).toBe("unified");
 });
 
-/** An open thread `id` at `at`, a row of the diff when a number, with `comments` comments. */
-const thread = (
-  id: string,
-  at: number | DiffThread["at"],
-  resolution: "open" | "resolved" = "open",
-  comments = 1,
-): DiffThread => ({
-  id,
-  at: typeof at === "number" ? { kind: "row", row: at } : at,
-  resolution,
-  comments: Array.from({ length: comments }, () => ({
-    id: null,
-    author: "some-reviewer",
-    created_at: "2026-11-04T10:00:00Z",
-    body_html: "<p>Why?</p>",
-    hidden: null,
-    submission: "submitted",
-  })),
-  later_comments: 0,
-});
-
 /** The threads `threads`, as the core sends them with a diff. */
 const shown = (...threads: DiffThread[]) => ({ kind: "shown" as const, threads });
 
@@ -1287,7 +1266,12 @@ const shown = (...threads: DiffThread[]) => ({ kind: "shown" as const, threads }
  * second resolved. */
 const threaded = (): ReadyFiles => ({
   ...ready("abc", 40, [diffFile("Lib/ast.py", 0), diffFile("Python/generated.c.h", 20, { generated: true })]),
-  threads: shown(thread("T2", 2, "open", 2), thread("T5", 5, "resolved"), thread("T9", 9), thread("T25", 25)),
+  threads: shown(
+    diffThread("T2", 2, "open", 2),
+    diffThread("T5", 5, "resolved"),
+    diffThread("T9", 9),
+    diffThread("T25", 25),
+  ),
 });
 
 /** The places each thread takes, by its id, and `-` for one that doesn't show. */
@@ -1341,13 +1325,13 @@ it("starts from the last thread going back, and goes nowhere without an open thr
   expect(files.jump).toEqual({ id: "T25" });
   // A new diff without the thread starts from the end again.
   core.pullRequestFiles.mockResolvedValue(
-    ok({ ...threaded(), threads: shown(thread("T2", 2), thread("T9", 9)) }),
+    ok({ ...threaded(), threads: shown(diffThread("T2", 2), diffThread("T9", 9)) }),
   );
   await files.ask();
   files.nextThread(1);
   expect(files.jump).toEqual({ id: "T2" });
 
-  const none = await loaded({ ...threaded(), threads: shown(thread("T5", 5, "resolved")) });
+  const none = await loaded({ ...threaded(), threads: shown(diffThread("T5", 5, "resolved")) });
   none.nextThread(1);
   expect(none.jump).toBeUndefined();
 });
@@ -1397,11 +1381,11 @@ it("puts a file's own threads at its top, its Outdated ones after them, and thre
   const files = await loaded({
     ...threaded(),
     threads: shown(
-      thread("whole", { kind: "file", file: 1 }),
-      thread("outdated", { kind: "outdated", file: 1, code: code(9) }),
-      thread("bare", { kind: "outdated", file: 1, code: null }),
-      thread("in it", 25),
-      thread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
+      diffThread("whole", { kind: "file", file: 1 }),
+      diffThread("outdated", { kind: "outdated", file: 1, code: code(9) }),
+      diffThread("bare", { kind: "outdated", file: 1, code: null }),
+      diffThread("in it", 25),
+      diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
     ),
   });
   files.toggle(1);
@@ -1415,7 +1399,10 @@ it("puts a file's own threads at its top, its Outdated ones after them, and thre
 });
 
 it("puts a thread on a file the diff doesn't have at the top, should a payload name one", async () => {
-  const files = await loaded({ ...threaded(), threads: shown(thread("lost", { kind: "file", file: 9 })) });
+  const files = await loaded({
+    ...threaded(),
+    threads: shown(diffThread("lost", { kind: "file", file: 9 })),
+  });
 
   expect(threadPlaces(files)).toEqual(["lost 1"]);
 });
@@ -1424,8 +1411,8 @@ it("reveals a thread at the top of a collapsed file, opening the file, and one o
   const files = await loaded({
     ...threaded(),
     threads: shown(
-      thread("outdated", { kind: "outdated", file: 1, code: null }),
-      thread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
+      diffThread("outdated", { kind: "outdated", file: 1, code: null }),
+      diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
     ),
   });
 
@@ -1436,7 +1423,7 @@ it("reveals a thread at the top of a collapsed file, opening the file, and one o
 });
 
 it("opens the lines around a thread on a line no hunk shows, once, and its thread sits under the line", async () => {
-  const outside = thread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
+  const outside = diffThread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
   const files = await loaded({ ...gapped(), threads: shown(outside) });
   await vi.waitFor(() => {
     expect(files.line(0, 33)).toEqual({ text: "line 33", spans: [] });
@@ -1445,7 +1432,7 @@ it("opens the lines around a thread on a line no hunk shows, once, and its threa
   core.pullRequestFiles.mockResolvedValue(
     ok({
       ...gapped(),
-      threads: shown(outside, thread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
+      threads: shown(outside, diffThread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
     }),
   );
   await files.ask();
@@ -1561,15 +1548,10 @@ it("moves to the last change first with Shift+F7, and nowhere in a diff without 
   expect(changes(await loaded(), 1, 1)).toEqual([undefined]);
 });
 
-/** The core's answer to a search, which found `matches`, each a row and where in it the text starts and
- * ends. */
-const found = (matches: [number, number, number][], more = false) =>
-  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
-
 it("finds text in every row through the core, moves to the first match, and goes round the matches", async () => {
   const files = await loaded(changed());
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 2],
       [3, 4, 6],
       [24, 1, 3],
@@ -1611,7 +1593,7 @@ it("finds text in every row through the core, moves to the first match, and goes
 it("keeps to the match it was on, or the first after it, as the query grows", async () => {
   const files = await loaded(changed());
   core.pullRequestFind.mockResolvedValueOnce(
-    found([
+    foundText([
       [3, 0, 1],
       [9, 0, 1],
       [24, 0, 1],
@@ -1621,7 +1603,7 @@ it("keeps to the match it was on, or the first after it, as the query grows", as
   files.nextMatch(1);
 
   core.pullRequestFind.mockResolvedValueOnce(
-    found([
+    foundText([
       [3, 0, 2],
       [12, 0, 2],
     ]),
@@ -1633,13 +1615,13 @@ it("keeps to the match it was on, or the first after it, as the query grows", as
 
 it("says when it finds nothing or more than the core sends, and an empty query asks nothing", async () => {
   const files = await loaded(changed());
-  core.pullRequestFind.mockResolvedValueOnce(found([]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([]));
   await files.find("zz");
   const none = files.search;
   // Nowhere to move to.
   files.nextMatch(1);
   expect(files.jump).toBeUndefined();
-  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 1]], true));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[3, 0, 1]], true));
   await files.find("z");
   const more = files.search;
 
@@ -1663,10 +1645,10 @@ it("drops the answer to an older query that comes after a newer one", async () =
     }),
   );
   const older = files.find("a");
-  core.pullRequestFind.mockResolvedValueOnce(found([[9, 0, 2]]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[9, 0, 2]]));
   await files.find("ab");
 
-  answer(found([[3, 0, 1]]));
+  answer(foundText([[3, 0, 1]]));
   await older;
 
   expect([files.query, files.search?.count, files.jump]).toEqual(["ab", 1, { row: 9 }]);
@@ -1677,7 +1659,7 @@ it("searches the newer diff again for the same text, and asks nothing before a d
   await files.find("ab");
   expect(core.pullRequestFind).not.toHaveBeenCalled();
 
-  core.pullRequestFind.mockResolvedValue(found([[3, 0, 2]]));
+  core.pullRequestFind.mockResolvedValue(foundText([[3, 0, 2]]));
   core.pullRequestFiles.mockResolvedValue(ok(changed()));
   await files.ask();
   await vi.waitFor(() => {
@@ -1699,7 +1681,7 @@ it("says in the search why it failed, and leaves the tab's error to the diff", a
   await files.find("abc");
   const rejected = files.searchProblem;
 
-  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 2]]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[3, 0, 2]]));
   await files.find("ab");
 
   expect(failed).toEqual([undefined, "gone", undefined]);
@@ -1709,7 +1691,7 @@ it("says in the search why it failed, and leaves the tab's error to the diff", a
 
 it("searches a new diff again without moving, and drops the matches of the diff before at once", async () => {
   const files = await loaded(changed());
-  core.pullRequestFind.mockResolvedValueOnce(found([[24, 0, 2]]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[24, 0, 2]]));
   await files.find("ab");
   files.jump = undefined;
   let answer: (answer: unknown) => void = () => {};
@@ -1722,7 +1704,7 @@ it("searches a new diff again without moving, and drops the matches of the diff 
   core.pullRequestFiles.mockResolvedValue(ok({ ...changed(), head: "def" }));
   await files.ask();
   const meanwhile = [files.search, files.foundIn(24)];
-  answer(found([[3, 0, 2]]));
+  answer(foundText([[3, 0, 2]]));
   await vi.waitFor(() => {
     expect(files.search?.count).toBe(1);
   });
@@ -1737,7 +1719,7 @@ it("searches a new diff again without moving, and drops the matches of the diff 
 
 it("closes the search, forgetting its text and its matches", async () => {
   const files = await loaded(changed());
-  core.pullRequestFind.mockResolvedValue(found([[3, 0, 2]]));
+  core.pullRequestFind.mockResolvedValue(foundText([[3, 0, 2]]));
   files.openSearch();
   await files.find("ab");
 
@@ -1813,7 +1795,7 @@ it("gives a Generated file its turn, collapsed to its header", async () => {
 it("shows the threads on files the PR no longer changes on a last page of their own", async () => {
   const files = await oneAtATime({
     ...threaded(),
-    threads: shown(thread("T2", 2), thread("gone", { kind: "gone", path: "Lib/old.py", code: null })),
+    threads: shown(diffThread("T2", 2), diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null })),
   });
 
   files.nextFile(1);
@@ -1938,7 +1920,7 @@ it("starts F8 from the first thread after a move to the NEWS entries", async () 
 it("finds text across the whole PR, showing the file of each match", async () => {
   const files = await oneAtATime(changed());
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 2],
       [24, 1, 3],
     ]),

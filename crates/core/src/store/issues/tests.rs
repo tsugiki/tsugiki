@@ -1,4 +1,4 @@
-use super::super::testing::{OpenStore, temp_database};
+use super::super::testing::{OpenStore, database_before, temp_database};
 use super::super::*;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
@@ -115,22 +115,12 @@ fn an_issue_keeps_its_labels_and_a_save_replaces_them() {
 
 #[test]
 fn an_issue_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
-    let (path, _folder) = temp_database("issues-before-labels");
-    let before = MIGRATIONS
-        .iter()
-        .position(|step| step.sql == super::LABELS)
-        .unwrap();
-    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
-    // A store of that age can't run today's save, which writes labels, so SQL stands in for it.
-    let inserted = Connection::open(&path)
-        .unwrap()
-        .execute(
-            "INSERT INTO issues (repository, number, title, author, updated_at, state)
-             VALUES ('python/cpython', 1, 'Issue 1', 'some-author', 7, 'OPEN')",
-            [],
-        )
-        .unwrap();
-    assert_eq!(inserted, 1);
+    let (path, _folder) = database_before(
+        "issues-before-labels",
+        super::LABELS,
+        "INSERT INTO issues (repository, number, title, author, updated_at, state)
+         VALUES ('python/cpython', 1, 'Issue 1', 'some-author', 7, 'OPEN')",
+    );
 
     let store = Store::open(&path).unwrap();
     let read = store.issues(&cpython()).unwrap();

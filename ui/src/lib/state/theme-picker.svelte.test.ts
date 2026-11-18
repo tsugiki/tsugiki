@@ -1,40 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
 import { type PickerRow, ThemePicker } from "./theme-picker.svelte";
-import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "./theme.svelte";
+import { builtInThemes, themeView } from "$lib/testing/fixtures";
+import { type DarkQuery, ThemeState, type Themes } from "./theme.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: { themes: vi.fn(), saveTheme: vi.fn(), turnWindow: vi.fn(async () => null) },
 }));
 
-const view = (name: string, kind: "light" | "dark"): ThemeView => ({ name, kind, tokens: [] });
-
-const THEMES: Themes = {
-  theme: { kind: "system" },
-  light: {
-    chosen: "VS Code Light Modern",
-    all: [view("VS Code Light Modern", "light"), view("Gruvbox Light Hard", "light")],
-    failed: [],
-  },
-  dark: {
-    chosen: "Gruvbox Dark Hard",
-    all: [view("VS Code Dark Modern", "dark"), view("Gruvbox Dark Hard", "dark")],
-    failed: [],
-  },
-  problems: [],
-};
+const THEMES: Themes = builtInThemes("Gruvbox Dark Hard");
 
 /** THEMES with a file of each side that loaded and one of each that failed. */
 const WITH_FILES: Themes = {
   ...THEMES,
   light: {
     ...THEMES.light,
-    all: [...THEMES.light.all, view("Solarized Light", "light")],
+    all: [...THEMES.light.all, themeView("Solarized Light", "light")],
     failed: [{ name: "Dawn", file: "dawn.toml", reason: 'its kind is "day"' }],
   },
   dark: {
     ...THEMES.dark,
-    all: [...THEMES.dark.all, view("Solarized Dark", "dark")],
+    all: [...THEMES.dark.all, themeView("Solarized Dark", "dark")],
     failed: [{ name: "Night", file: "night.toml", reason: "it extends Dusk, which no theme is named" }],
   },
 };

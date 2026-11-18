@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
-import type { RepositoryCheck } from "$lib/state/add-repository.svelte";
+import { repositoryCheck } from "$lib/testing/fixtures";
 import AddRepository from "./AddRepository.svelte";
 
 const core = vi.hoisted(() => ({
@@ -11,17 +11,7 @@ const core = vi.hoisted(() => ({
 }));
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
-const check: RepositoryCheck = {
-  repository: { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
-  open_issues: 10,
-  open_prs: 3,
-  size: "small",
-  window_days: 30,
-  first_sync_items: 48,
-  first_sync_seconds: 5,
-  first_sync_points: 12,
-  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-};
+const check = repositoryCheck();
 
 const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
 

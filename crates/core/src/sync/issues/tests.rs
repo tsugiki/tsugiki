@@ -29,9 +29,7 @@ fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
         asked[4..],
         ["FetchPullRequests", "FetchIssues", "FetchIssueReferences",]
     );
-    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
-    let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
-    assert_eq!(stored, [1, 2]);
+    assert_eq!(harness.issue_numbers(), [1, 2]);
     assert_eq!(changed, [cpython(), cpython()]);
     harness.finish();
 }

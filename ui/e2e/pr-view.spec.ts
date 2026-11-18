@@ -3,10 +3,19 @@ import type {
   DiffThread_Serialize as DiffThread,
   PrView_Serialize as PrView,
 } from "../src/lib/data/bindings.ts";
-import { diffFile, done, ok, readyFiles, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import {
+  diffFile,
+  diffThread,
+  done,
+  loadedSettings,
+  ok,
+  readyFiles,
+  reviewComment,
+  workbenchPage,
+} from "../src/lib/testing/fixtures.ts";
 import { dragEdge, home, issue, issueView, prView } from "./fixtures.ts";
-import { changeAnswer, mockCore, noServers } from "./mock-core.ts";
-import { appearance, themes } from "./themes.ts";
+import { changeAnswer, mockCore } from "./mock-core.ts";
+import { themes } from "./themes.ts";
 
 /** PR #10, approved at the head its diff reads from. */
 const view = prView([
@@ -183,22 +192,7 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
         threads: {
           kind: "shown",
           threads: [
-            {
-              id: "T1",
-              at,
-              resolution: "open",
-              comments: [
-                {
-                  id: 2,
-                  author: "some-reviewer",
-                  created_at: "2026-11-04T10:00:00Z",
-                  body_html: `<p>${words}</p>`,
-                  hidden: null,
-                  submission: "submitted",
-                },
-              ],
-              later_comments: 0,
-            },
+            { ...diffThread("T1", at), comments: [reviewComment({ id: 2, body_html: `<p>${words}</p>` })] },
           ],
         },
       }),
@@ -452,18 +446,7 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
 }) => {
   const news = "Misc/NEWS.d/next/Library/2026-11-12.gh-issue-7.abc.rst";
   await mockCore(page, {
-    settings: {
-      settings: {
-        status_bar: { visible: true },
-        releases: { check: true },
-        appearance,
-        diff: { files: "one", peek: "inline" },
-        keys: {},
-        repositories: [],
-      },
-      language_servers: noServers,
-      problems: [],
-    },
+    settings: loadedSettings({ diff: { files: "one", peek: "inline" } }),
     home,
     workbench: workbenchPage([issue]),
     openPullRequest: done,

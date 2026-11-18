@@ -1,18 +1,9 @@
 import { expect, it } from "vitest";
 import type { RepositoryCheck } from "$lib/state/add-repository.svelte";
+import { repositoryCheck } from "$lib/testing/fixtures";
 import { describeCheck, describeMirror } from "./repository-check";
 
-const gcmon: RepositoryCheck = {
-  repository: { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
-  open_issues: 10,
-  open_prs: 3,
-  size: "small",
-  window_days: 30,
-  first_sync_items: 48,
-  first_sync_seconds: 5,
-  first_sync_points: 12,
-  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-};
+const gcmon = repositoryCheck();
 
 const cpython: RepositoryCheck = {
   repository: { name: "python/cpython", conventions: "cpython", filters: [] },

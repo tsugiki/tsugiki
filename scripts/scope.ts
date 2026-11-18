@@ -4,7 +4,8 @@
 /**
  * What a CI job reads, which decides when it runs. `rust` is rustfmt, Clippy and the Rust tests with their
  * coverage gate, on Windows and macOS. `dependencies` is cargo-deny and cargo-machete. `ui` is ESLint,
- * Prettier, svelte-check, token-deps, Vitest and Playwright, on Windows and macOS.
+ * Prettier, svelte-check, token-deps, Vitest and Playwright, on Windows and macOS. The dupes gate reads both
+ * `rust` and `ui`, so either runs it.
  */
 export type Job = "rust" | "dependencies" | "ui";
 

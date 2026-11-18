@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
-import { done, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
-import { grabEdge, home, repository } from "./fixtures.ts";
+import { done, HOUR_POINTS, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { grabEdge, home, own, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
@@ -41,21 +41,6 @@ const review: ListedItem = {
     mark: { numbers: [112564, 160662, 160700], up_to: null },
     state: "seen",
   },
-};
-
-const own: ListedItem = {
-  attention: null,
-  kind: "standalone_pr",
-  ...workbenchRow(157178, {
-    title: "GH-156425: Clear GC frame on early return",
-    author: "octocat",
-    is_draft: true,
-    target_branch: "3.14",
-    ci: "FAILURE",
-    updated_at: "2026-11-04T09:00:00Z",
-    reasons: ["own_pr"],
-  }),
-  backports: [],
 };
 
 test("the Workbench lists what waits on the user", async ({ page }) => {
@@ -440,8 +425,7 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   const read = page.getByText(/points left · resets .* · This hour:/);
   await expect(points).toHaveCount(0);
 
-  const first = { limit: 5000, used: 3760, remaining: 1240, resets_at: "2026-11-17T14:32:00Z", spent: 3610 };
-  await emitFromCore(page, "hour-points-changed", { ...first, since: null });
+  await emitFromCore(page, "hour-points-changed", HOUR_POINTS);
   await expect(points).toHaveText(/^1,240 points left · resets [^·]+$/);
   await expect(points).toHaveAttribute(
     "title",
@@ -449,7 +433,7 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   );
   await expect(read).toContainText("Tsugiki spent 3,610 of them");
 
-  await emitFromCore(page, "hour-points-changed", { ...first, used: 3770, remaining: 1230, since: null });
+  await emitFromCore(page, "hour-points-changed", { ...HOUR_POINTS, used: 3770, remaining: 1230 });
   await expect(points).toHaveText(/^1,230 points left/);
 
   // The hour reset, and the next hour's count waits for GitHub's next answer.

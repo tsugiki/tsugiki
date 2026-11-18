@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
-import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
+import { type DarkQuery, ThemeState, type Themes } from "$lib/state/theme.svelte";
+import { builtInThemes, themeView } from "$lib/testing/fixtures";
 import ThemePicker from "./ThemePicker.svelte";
 
 const commands = vi.hoisted(() => ({
@@ -10,22 +11,7 @@ const commands = vi.hoisted(() => ({
 }));
 vi.mock("$lib/data/bindings", () => ({ commands }));
 
-const view = (name: string, kind: "light" | "dark"): ThemeView => ({ name, kind, tokens: [] });
-
-const THEMES: Themes = {
-  theme: { kind: "system" },
-  light: {
-    chosen: "VS Code Light Modern",
-    all: [view("VS Code Light Modern", "light"), view("Gruvbox Light Hard", "light")],
-    failed: [],
-  },
-  dark: {
-    chosen: "VS Code Dark Modern",
-    all: [view("VS Code Dark Modern", "dark"), view("Gruvbox Dark Hard", "dark")],
-    failed: [],
-  },
-  problems: [],
-};
+const THEMES: Themes = builtInThemes("VS Code Dark Modern");
 
 /** The picker open over the core's themes, with Windows on its dark side. */
 async function opened(themes: Themes = THEMES) {
@@ -102,7 +88,10 @@ it("reads the themes folder again on Reload themes and stays open on the new lis
   const { onclose } = await opened();
   vi.mocked(commands.themes).mockResolvedValue({
     status: "ok",
-    data: { ...THEMES, dark: { ...THEMES.dark, all: [...THEMES.dark.all, view("Solarized Dark", "dark")] } },
+    data: {
+      ...THEMES,
+      dark: { ...THEMES.dark, all: [...THEMES.dark.all, themeView("Solarized Dark", "dark")] },
+    },
   });
   await fireEvent.click(screen.getByRole("option", { name: "Reload themes" }));
   await vi.waitFor(() => {

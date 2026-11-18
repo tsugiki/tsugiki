@@ -757,14 +757,6 @@
     color: var(--fg-muted);
   }
 
-  .added {
-    background: color-mix(in srgb, var(--add) 18%, transparent);
-  }
-
-  .removed {
-    background: color-mix(in srgb, var(--del) 18%, transparent);
-  }
-
   /* The search's matches show on the theme's find colour, and the one the tab is on stands out from them. */
   .text :global(.match) {
     background: color-mix(in srgb, var(--find) 40%, transparent);

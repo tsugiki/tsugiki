@@ -1,26 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { expect, it, vi } from "vitest";
 import type { DiffThread } from "$lib/state/pr-files.svelte";
+import { diffThread, reviewComment } from "$lib/testing/fixtures";
 import ReviewThread from "./ReviewThread.svelte";
 
 const NOW = new Date("2026-11-04T12:00:00Z");
 
-const comment = (changes: Partial<DiffThread["comments"][number]> = {}) => ({
-  id: null,
-  author: "some-reviewer",
-  created_at: "2026-11-04T10:00:00Z",
-  body_html: "<p>Why not a set?</p>",
-  hidden: null,
-  submission: "submitted" as const,
-  ...changes,
-});
+const comment = (changes: Partial<DiffThread["comments"][number]> = {}) =>
+  reviewComment({ body_html: "<p>Why not a set?</p>", ...changes });
 
 const thread = (changes: Partial<DiffThread> = {}): DiffThread => ({
-  id: "T1",
-  at: { kind: "row", row: 2 },
-  resolution: "open",
+  ...diffThread("T1", 2),
   comments: [comment()],
-  later_comments: 0,
   ...changes,
 });
 

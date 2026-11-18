@@ -59,13 +59,7 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit
     // is a launcher that starts the real one. Each helper joins git's job object, or its process group, as
     // it starts, so `StartedGit::stop` ends them all. Reading the tree when stopping misses a helper that
     // starts while it reads, and that helper goes on holding files in the mirror (#208).
-    let mut command = CommandWrap::from(command);
-    #[cfg(windows)]
-    let _ = command
-        .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))
-        .wrap(process_wrap::std::JobObject);
-    #[cfg(not(windows))]
-    let _ = command.wrap(process_wrap::std::ProcessGroup::leader());
+    let mut command = tsugiki_lsp::windowless(CommandWrap::from(command));
     let mut git = StartedGit(command.spawn()?);
     // On a thread of its own, so a git that writes before it reads can't leave both waiting on a full pipe.
     // A git that stops reading says why on its error output. Closing the input tells git that is all.

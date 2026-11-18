@@ -29,6 +29,19 @@ pub(super) fn temp_database(name: &str) -> (PathBuf, TempPath) {
     (folder.join("tsugiki.db"), folder)
 }
 
+/// A database in a new temp folder, as [`temp_database`] makes it, at the age before the migration `sql`,
+/// holding what the SQL statements `rows` insert: a store of that age can't run today's saves.
+pub(super) fn database_before(name: &str, sql: &str, rows: &str) -> (PathBuf, TempPath) {
+    let (path, folder) = temp_database(name);
+    let before = MIGRATIONS.iter().position(|step| step.sql == sql).unwrap();
+    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
+    let connection = Connection::open(&path).unwrap();
+    connection.execute_batch(rows).unwrap();
+    // A seed that inserts nothing would leave the test reading an empty store.
+    assert!(connection.total_changes() > 0, "{rows} inserted no row");
+    (path, folder)
+}
+
 /// A database in a new temp folder, the store that writes it and a reader of it.
 pub(crate) struct OpenStore {
     pub(crate) store: Store,

@@ -49,6 +49,14 @@ pub(super) fn fetch_origin(
         };
         return Ok((step, next));
     };
+    let step = save_origin(link, leads, number)?;
+    fetched.extend([number]);
+    Ok((step, None))
+}
+
+/// Fetches Origin PR `number` by itself, because only its number is known, saves it, and takes it off
+/// `leads`, adding the numbers it names.
+pub(super) fn save_origin(link: &Link<'_>, leads: &mut Leads, number: u32) -> Result<Step, Error> {
     let answer = link
         .github
         .fetch_origin_pull_request(link.repository, number)?;
@@ -68,9 +76,8 @@ pub(super) fn fetch_origin(
     } else {
         Step::Searched { pause_until }
     };
-    fetched.extend([number]);
     leads.origins.retain(|other| *other != number);
-    Ok((step, None))
+    Ok(step)
 }
 
 #[cfg(test)]

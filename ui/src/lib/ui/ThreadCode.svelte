@@ -46,12 +46,4 @@
   .hunk {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
-
-  .added {
-    background: color-mix(in srgb, var(--add) 18%, transparent);
-  }
-
-  .removed {
-    background: color-mix(in srgb, var(--del) 18%, transparent);
-  }
 </style>

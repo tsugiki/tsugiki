@@ -44,15 +44,8 @@ fn a_first_sync_keeps_what_happened_on_the_prs_it_fetched_and_on_their_origin_pr
 
     drop(run_to_the_end(&mut syncs, &harness));
 
-    let who = |number: u32| -> Vec<String> {
-        let events = harness.db.store.activity(&cpython(), number).unwrap();
-        events
-            .iter()
-            .map(|event| event.who.as_str().to_owned())
-            .collect()
-    };
-    assert_eq!(who(1), ["some-reviewer"]);
-    assert_eq!(who(9), ["some-author"]);
+    assert_eq!(harness.activity_by(1), ["some-reviewer"]);
+    assert_eq!(harness.activity_by(9), ["some-author"]);
     harness.finish();
 }
 
@@ -171,9 +164,7 @@ fn a_sync_fetches_the_issues_a_users_backports_origin_pr_names() {
 
     drop(run_to_the_end(&mut syncs, &harness));
 
-    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
-    let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
-    assert_eq!(stored, [1]);
+    assert_eq!(harness.issue_numbers(), [1]);
     harness.finish();
 }
 

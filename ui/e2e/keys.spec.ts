@@ -1,20 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
-import { type CoreAnswers, mockCore, noServers } from "./mock-core.ts";
-import { appearance } from "./themes.ts";
+import { loadedSettings } from "../src/lib/testing/fixtures.ts";
+import { type CoreAnswers, mockCore } from "./mock-core.ts";
 
 const core: CoreAnswers = {
-  settings: {
-    settings: {
-      status_bar: { visible: true },
-      releases: { check: true },
-      appearance,
-      diff: { files: "all", peek: "inline" },
-      keys: {},
-      repositories: [],
-    },
-    language_servers: noServers,
-    problems: [],
-  },
+  settings: loadedSettings(),
   status: { state: "online", login: "octocat" },
 };
 

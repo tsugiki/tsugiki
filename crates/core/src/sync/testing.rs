@@ -8,7 +8,7 @@ use time::format_description::well_known::Rfc3339;
 
 use super::{Progress, Syncs};
 pub(super) use crate::github::testing::{RATE_LIMIT, fetched_nodes, pr_node, search_page};
-use crate::github::testing::{Scripted, answer, github, page_info, reply_ok, token};
+use crate::github::testing::{Scripted, answer, github, issue_node, page_info, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
 use crate::repository::{RepositoryCounts, RepositoryName};
 use crate::repository_settings::RepositorySettings;
@@ -206,6 +206,21 @@ impl Harness {
         numbers
     }
 
+    /// The numbers of the Issues the store holds, in the order it reads them.
+    pub(super) fn issue_numbers(&self) -> Vec<u32> {
+        let facts = self.db.reader.work_facts(&cpython()).unwrap();
+        facts.issues.iter().map(|issue| issue.number).collect()
+    }
+
+    /// The login behind each event the store holds of Issue or PR `number`.
+    pub(super) fn activity_by(&self, number: u32) -> Vec<String> {
+        let events = self.db.store.activity(&cpython(), number).unwrap();
+        events
+            .iter()
+            .map(|event| event.who.as_str().to_owned())
+            .collect()
+    }
+
     pub(super) fn operations(&self) -> Vec<String> {
         self.asked
             .try_iter()
@@ -249,21 +264,7 @@ pub(super) fn nothing(rate: &str) -> Result<Reply, Unreachable> {
 pub(super) fn issues(numbers: &[u32], rate: &str) -> Result<Reply, Unreachable> {
     let fields: serde_json::Map<String, Value> = numbers
         .iter()
-        .map(|number| {
-            let issue = json!({
-                "__typename": "Issue",
-                "number": number,
-                "title": format!("Issue {number}"),
-                "updatedAt": "2026-11-04T10:00:00Z",
-                "state": "OPEN",
-                "stateReason": null,
-                "assignees": { "nodes": [] },
-                "labels": { "nodes": [] },
-                "timelineItems": { "nodes": [] },
-                "author": { "login": "some-author" },
-            });
-            (format!("i{number}"), issue)
-        })
+        .map(|&number| (format!("i{number}"), issue_node(number)))
         .collect();
     answer(json!({ "repository": fields }), rate)
 }
@@ -354,6 +355,16 @@ pub(super) fn up_to_the_first_issue() -> Vec<Result<Reply, Unreachable>> {
     let mut replies = searches_finding(&["a"]);
     replies.push(fetched_nodes(&[pr_node(1, &json!({}))], RATE_LIMIT));
     replies.push(issues(&[1], RATE_LIMIT));
+    replies
+}
+
+/// The replies of [`up_to_the_first_issue`], then Issue #1's cross-references over two pages: merged PR #3
+/// on the first, merged PR #2 on the second, and those two PRs.
+pub(super) fn a_tree_over_two_pages() -> Vec<Result<Reply, Unreachable>> {
+    let mut replies = up_to_the_first_issue();
+    replies.push(issue_references_with_more(1, &[3], "older", RATE_LIMIT));
+    replies.push(cross_references(&[2], None, RATE_LIMIT));
+    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], RATE_LIMIT));
     replies
 }
 

@@ -592,12 +592,20 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let access = replying(vec![signed_in(), issue_content_reply()]);
     let github = connect(&mut quiet_board(), &empty_store(), access).unwrap();
 
-    let content = ask_github(&mut board, &github, &Fetched::Issue(issue_7()))
-        .unwrap()
-        .unwrap();
-    let kept = keep_conversation(&mut board, &Store::stopped(), &issue_7(), content);
+    let read = Reading {
+        github: &github,
+        queue: &unheard_refreshes(),
+        syncs: &Syncs::default(),
+    };
 
-    assert_eq!(kept, None, "nothing saved for the window to hear");
+    let outcome = read_conversation(
+        &mut board,
+        &Store::stopped(),
+        &read,
+        &Fetched::Issue(issue_7()),
+    );
+
+    assert_eq!(outcome, Ok(()), "the trouble is this item's alone");
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
 }
 

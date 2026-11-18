@@ -143,9 +143,8 @@ impl Headless {
     /// The session's read of PR `item`'s Conversation named no head.
     pub(crate) fn named_none(&self, item: &Item) {
         let mut items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        if !items.iter().any(|headless| headless.is(item)) {
-            items.push(item.clone());
-        }
+        items.retain(|headless| !headless.is(item));
+        items.push(item.clone());
     }
 
     /// PR `item` has a head, or the read of its Conversation that a demand asked for decides it.

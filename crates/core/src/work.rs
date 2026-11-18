@@ -18,8 +18,8 @@ use crate::links::BackportLink;
 
 pub(crate) use causes::{Cause, Causes};
 pub use causes::{SeenMark, Why};
-pub use reach::Wants;
-pub(crate) use reach::{conversations_to_read, in_own_right, matched};
+pub use reach::MirrorWork;
+pub(crate) use reach::{conversations_to_read, in_own_right, matched, switched};
 pub use reasons::WorkReason;
 pub(crate) use reasons::reasons;
 pub(crate) use review_state::SharedReviews;

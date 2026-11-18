@@ -1,4 +1,5 @@
 use super::*;
+use crate::conventions::Conventions;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::github::clock::GitHubClock;
 use crate::github::pull_requests::RateLimit;
@@ -10,7 +11,7 @@ use crate::sync::testing::{
     issues, merged_node, nothing, plain, pr_node, run_to_the_end, search_page, searches_finding,
     soon,
 };
-use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
+use crate::sync::{Ahead, Phase, RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
 
 fn limited_until(from_now: i64) -> Error {
@@ -1198,15 +1199,40 @@ fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_t
 }
 
 #[test]
-fn a_want_of_conversations_replaces_the_last_of_its_repository_alone() {
+fn a_sync_whose_settings_went_missing_says_it_is_tsugikis_mistake_and_asks_github_nothing() {
+    let harness = Harness::new("settings-lost", vec![]);
     let mut syncs = Syncs::default();
-    let shouted = RepositoryName::parse("Python/CPython").unwrap();
+    syncs.add(plain(cpython()));
+    syncs.settings.clear();
 
-    syncs.want_read_ahead(&cpython(), BTreeSet::from([2, 3]));
-    syncs.want_read_ahead(&peps(), BTreeSet::from([4]));
-    syncs.want_read_ahead(&shouted, BTreeSet::from([3]));
+    let failure = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 
-    assert_eq!(syncs.wanted(&cpython()), &BTreeSet::from([3]));
-    assert_eq!(syncs.wanted(&peps()), &BTreeSet::from([4]));
-    assert_eq!(syncs.wanted(&devguide()), &BTreeSet::new());
+    assert_eq!(failure.problem.kind, ErrorKind::Internal);
+    assert_eq!(failure.problem.message, NO_SETTINGS);
+    assert_eq!(harness.operations(), Vec::<String>::new());
+    harness.finish();
+}
+
+#[test]
+fn new_settings_leave_a_read_ahead_under_way_with_what_it_tried() {
+    let mut syncs = Syncs::default();
+    syncs.add(plain(cpython()));
+    let ahead = Ahead {
+        tried: BTreeSet::from([2]),
+    };
+    syncs.queue[0].sync.phase = Phase::ReadingAhead(ahead);
+
+    let same = syncs.replace_settings(plain(cpython()));
+    let regrouped = RepositorySettings {
+        conventions: Conventions::Github,
+        ..plain(cpython())
+    };
+    let replaced = syncs.replace_settings(regrouped);
+
+    assert_eq!(same, None);
+    assert_eq!(replaced, Some(plain(cpython())));
+    assert!(matches!(
+        &syncs.queue[0].sync.phase,
+        Phase::ReadingAhead(ahead) if ahead.tried == BTreeSet::from([2])
+    ));
 }

@@ -7,7 +7,6 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::facts::read_ahead::ReadAheadFacts;
 use crate::testing::{cpython_settings, sha};
 use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
@@ -257,16 +256,9 @@ fn the_conversations_worth_reading_ahead_are_the_owed_ones_in_reach() {
         },
         mine(30),
     ];
-    let conversations = ReadAheadFacts {
-        owed: BTreeSet::from([10, 20]),
-        read_at: BTreeMap::new(),
-    };
+    let owed = BTreeSet::from([10, 20]);
 
-    let to_read = conversations_to_read(
-        &facts(pull_requests, vec![]),
-        &conversations,
-        &cpython_settings(),
-    );
+    let to_read = conversations_to_read(&facts(pull_requests, vec![]), &owed, &cpython_settings());
 
     // A stranger's PR waits until the user opens it, and nothing owes a read of PR 30.
     assert_eq!(to_read, BTreeSet::from([10]));
@@ -295,18 +287,21 @@ fn a_filter_switched_on_owes_the_conversations_it_reaches_unless_read_at_their_h
         (&[11], &[12, 13, 14, 15]),
         facts(pull_requests, vec![]),
     );
-    let conversations = ReadAheadFacts {
-        owed: BTreeSet::from([11, 20]),
-        read_at: BTreeMap::from([(14, sha("4444444")), (15, sha("0555555"))]),
-    };
+    let read_at = BTreeMap::from([(14, sha("4444444")), (15, sha("0555555"))]);
 
-    let (on, owed_on) = Wants::after_switch(&facts, &conversations, &now, &before);
-    let (off, owed_off) = Wants::after_switch(&facts, &conversations, &before, &now);
+    let (on, owed_on) = switched(&facts, &read_at, &now, &before);
+    let (off, owed_off) = switched(&facts, &read_at, &before, &now);
+    let owed = BTreeSet::from([11, 12, 13, 15, 20]);
+    let to_read_on = conversations_to_read(&facts, &owed, &now);
+    let to_read_off = conversations_to_read(&facts, &owed, &before);
 
     // PR 14's Conversation was read at its head, PR 15's at an older one, and PR 13's head is unknown.
     assert_eq!(owed_on, [12, 13, 15]);
-    assert_eq!(on.conversations, BTreeSet::from([11, 12, 13, 15]));
-    // PR 20 is owed a read, but out of Reach either way.
+    let fetched: Vec<u32> = on.heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [11, 12, 14, 15]);
     assert_eq!(owed_off, Vec::<u32>::new());
-    assert_eq!(off.conversations, BTreeSet::from([11]));
+    assert_eq!(off, MirrorWork::of(&facts, &before));
+    // PR 20 is owed a read, but out of Reach either way.
+    assert_eq!(to_read_on, BTreeSet::from([11, 12, 13, 15]));
+    assert_eq!(to_read_off, BTreeSet::from([11]));
 }

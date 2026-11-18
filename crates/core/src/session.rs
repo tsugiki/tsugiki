@@ -22,7 +22,7 @@ use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoa
 use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{SeenMark, Wants, checks_to_keep, conversations_to_read};
+use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -380,10 +380,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 }
                 due.repository = Instant::now() + intervals.repository;
             }
-            Turn::Opened(repository) => {
-                let _handed = hand_over_read_ahead(store, &mut syncs, &repository);
-                show_last_sync(board, store, repository);
-            }
+            Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::SettingsChanged(settings, by) => {
                 let repository = settings.name.clone();
                 if settings_changed(&refreshes.fetching, store, &mut syncs, settings).is_some() {
@@ -411,8 +408,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::SyncStep => match syncs.step(&github, store) {
                 Ok(Some(Progress::Changed(change))) => {
                     if !change.items.is_empty() {
-                        let _handed =
-                            hand_over_heads(&refreshes.fetching, store, &mut syncs, &change);
+                        let _handed = hand_over_heads(&refreshes.fetching, store, &syncs, &change);
                     }
                     board.changed(&change);
                 }
@@ -431,31 +427,29 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
     }
 }
 
-/// Hands over what the rules want of the Repository a step just saved facts of. The Mirror worker hears of
-/// the heads of the PRs in its Reach, the commit each of the user's Reviews there covered, and the commits
-/// whose patch-ids the Stale review check needs and the store lacks, then of the heads the step saved, so a
-/// PR the user opened before its head was known gets its head first. The syncs hear of the Conversations to
-/// read ahead. It keeps the last check of each PR whose sides are both read first. The mirror fetches only
-/// the heads that moved, and the reviewed commits it doesn't keep yet. A store that can't answer just saved,
-/// and the next step that saves says if it is in trouble, and hands the wants over. The heads go though the
-/// reviewed commits can't be read, and those wait for a step whose read works. Says whether it handed
-/// anything over.
+/// Hands the Mirror worker what the rules want of the Repository a step just saved facts of: the heads of
+/// the PRs in its Reach, the commit each of the user's Reviews there covered, and the commits whose patch-ids
+/// the Stale review check needs and the store lacks. Then the heads the step saved, so a PR the user opened
+/// before its head was known gets its head first. It keeps the last check of each PR whose sides are both
+/// read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
+/// store that can't answer just saved, and the next step that saves says if it is in trouble, and hands the
+/// heads. The heads go though the reviewed commits can't be read, and those wait for a step whose read works.
+/// Says whether it handed anything over.
 fn hand_over_heads(
     fetching: &Fetching,
     store: &Store,
-    syncs: &mut Syncs,
+    syncs: &Syncs,
     saved: &Change,
 ) -> Option<()> {
     let repository = &saved.repository;
     let facts = store.work_facts(repository).ok()?;
-    let conversations = store.read_ahead_facts(repository).ok()?;
-    let wants = Wants::of(&facts, &conversations, syncs.settings(repository)?);
+    let work = MirrorWork::of(&facts, syncs.settings(repository)?);
     let stated = Stated {
         repository,
         facts: &facts,
-        wants,
+        work,
     };
-    hand_over_wants(fetching, store, syncs, stated);
+    hand_over_wants(fetching, store, stated);
     let saved_heads = (facts.pull_requests.iter())
         .filter(|pr| saved.items.contains(&pr.number))
         .filter_map(|pr| {
@@ -469,46 +463,30 @@ fn hand_over_heads(
     Some(())
 }
 
-/// What the rules want of a Repository, with the stored facts they worked it out from.
+/// The Mirror's work in a Repository, with the stored facts the rules worked it out from.
 struct Stated<'a> {
     repository: &'a RepositoryName,
     facts: &'a WorkFacts,
-    wants: Wants,
+    work: MirrorWork,
 }
 
-/// Hands the Mirror worker and the syncs what the rules want, as `hand_over_heads` says.
-fn hand_over_wants(fetching: &Fetching, store: &Store, syncs: &mut Syncs, stated: Stated<'_>) {
+/// Hands the Mirror worker what the rules want of it, as `hand_over_heads` says.
+fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
     let Stated {
         repository,
         facts,
-        wants,
+        work,
     } = stated;
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
     // that can't keep it says so at the next step that saves.
     let _kept = keep_last_checks(store, repository, facts);
     let want = MirrorWant {
-        heads: wants.heads,
+        heads: work.heads,
         reviewed,
-        patches: wants.patches,
+        patches: work.patches,
     };
     fetching.want(repository, want);
-    syncs.want_read_ahead(repository, wants.conversations);
-}
-
-/// Hands the syncs the Conversations the rules want read ahead in `repository`, opened since launch, so a
-/// refresh reads those a refresh before this launch owed and didn't read. A store that can't answer leaves
-/// them to the next step that saves. Says whether it handed them over.
-pub(crate) fn hand_over_read_ahead(
-    store: &Store,
-    syncs: &mut Syncs,
-    repository: &RepositoryName,
-) -> Option<()> {
-    let facts = store.work_facts(repository).ok()?;
-    let conversations = store.read_ahead_facts(repository).ok()?;
-    let wanted = conversations_to_read(&facts, &conversations, syncs.settings(repository)?);
-    syncs.want_read_ahead(repository, wanted);
-    Some(())
 }
 
 /// The settings owner saved `repository`'s settings otherwise than they were, as `by` did. New Conventions
@@ -535,35 +513,37 @@ fn settings_changed(
 ) -> Option<RepositorySettings> {
     let now = settings.clone();
     let before = syncs.replace_settings(settings)?;
-    let _followed = follow_reach(fetching, store, syncs, (&now, &before));
+    let _followed = follow_reach(fetching, store, &now, &before);
     Some(before)
 }
 
 /// The syncs read settings `now` in place of `before`. A Filter switched on puts PRs in Reach that no
 /// change on GitHub would have the Mirror fetch the head of or a refresh read ahead (#819). So the Mirror
-/// worker and the syncs hear at once what the rules want under the new settings, and the store owes a read
-/// of each Conversation the rules say the switch owes. One switched off takes PRs out, and neither the Mirror
-/// worker nor a refresh wants theirs any more.
+/// worker hears the new Reach at once, and the store owes a read of each Conversation the rules say the
+/// switch owes, which the next refresh reads ahead while the PR is still in Reach. One switched off takes
+/// PRs out, and the Mirror worker stops wanting their heads.
 ///
-/// A store that can't read the facts leaves the wants to the next step that saves. One that can't keep what
-/// it owes leaves the Conversations to this launch's refreshes, which read them while the rules still want
-/// them, and the log says so. Says whether it handed anything over.
+/// A store that can't read the facts leaves the heads to the next step that saves. One that can't say which
+/// heads its Conversations were read at owes a read of each PR the switch puts in Reach, which costs a
+/// request apiece and loses nothing. One that can't keep what it owes leaves the Conversations to the PR
+/// view, which reads one when it opens, and the log says so. Says whether it handed the Mirror worker
+/// anything.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
-    syncs: &mut Syncs,
-    (now, before): (&RepositorySettings, &RepositorySettings),
+    now: &RepositorySettings,
+    before: &RepositorySettings,
 ) -> Option<()> {
     let repository = &now.name;
     let facts = store.work_facts(repository).ok()?;
-    let conversations = store.read_ahead_facts(repository).ok()?;
-    let (wants, owed) = Wants::after_switch(&facts, &conversations, now, before);
+    let read_at = store.conversation_heads(repository).unwrap_or_default();
+    let (work, owed) = switched(&facts, &read_at, now, before);
     let stated = Stated {
         repository,
         facts: &facts,
-        wants,
+        work,
     };
-    hand_over_wants(fetching, store, syncs, stated);
+    hand_over_wants(fetching, store, stated);
     if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
             "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",

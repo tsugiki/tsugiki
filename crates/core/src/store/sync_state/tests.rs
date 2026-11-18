@@ -94,11 +94,11 @@ fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
     store.close();
 
     let store = Store::open(&path).unwrap();
-    let owed = store.read_ahead_facts(&cpython()).unwrap().owed;
+    let owed = store.read_ahead_owed(&cpython()).unwrap();
     store
         .save_sync_state(&cpython(), at(200, ChangeCheck::Skipped))
         .unwrap();
-    let after = store.read_ahead_facts(&cpython()).unwrap().owed;
+    let after = store.read_ahead_owed(&cpython()).unwrap();
     store.close();
 
     assert_eq!(owed, BTreeSet::from([1, 3]), "PR 2's Conversation was read");
@@ -140,11 +140,12 @@ fn the_store_says_what_it_owes_and_the_head_each_conversation_was_read_at() {
 
     store.owe_read_ahead(&cpython(), vec![1, 3]).unwrap();
     store.owe_read_ahead(&cpython(), vec![3, 5]).unwrap();
-    let facts = store.read_ahead_facts(&cpython()).unwrap();
+    let owed = store.read_ahead_owed(&cpython()).unwrap();
+    let heads = store.conversation_heads(&cpython()).unwrap();
     store.close();
 
-    assert_eq!(facts.owed, BTreeSet::from([1, 3, 5]));
-    let read_at: Vec<(u32, &str)> = (facts.read_at.iter())
+    assert_eq!(owed, BTreeSet::from([1, 3, 5]));
+    let read_at: Vec<(u32, &str)> = (heads.iter())
         .map(|(number, head)| (*number, head.as_str()))
         .collect();
     assert_eq!(read_at, [(2, "0123abc"), (3, "89abcde")]);

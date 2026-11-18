@@ -21,8 +21,9 @@ use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest}
 use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
 use crate::repository::RepositorySize;
+use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
-use crate::work::reasons;
+use crate::work::{conversations_to_read, reasons};
 
 /// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
 /// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
@@ -461,15 +462,29 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// Reads the Conversation of the next PR of `wanted`, those the rules last wanted read ahead, that `ahead`
-/// hasn't tried, with its Reviews and their threads: about a point each. Finishes once none are left. Trouble
-/// with one PR leaves the rest to read, and the PR view reads that one when it opens. Only trouble that
-/// speaks for all of GitHub stops the refresh.
+/// The Conversations the rules want read ahead under `repository`'s settings, from what the store holds
+/// now. With no read owed, reading the facts would cost a read of the whole Repository for nothing.
+fn to_read_ahead(link: &Link<'_>, repository: &RepositorySettings) -> Result<BTreeSet<u32>, Error> {
+    let owed = link.store.read_ahead_owed(link.repository)?;
+    if owed.is_empty() {
+        return Ok(owed);
+    }
+    let facts = link.store.work_facts(link.repository)?;
+    Ok(conversations_to_read(&facts, &owed, repository))
+}
+
+/// Reads the Conversation of the next PR that the rules want read ahead and `ahead` hasn't tried, with its
+/// Reviews and their threads: about a point each. Finishes once none are left. It asks the rules before each
+/// read, so a PR that leaves Reach, or whose Conversation the PR view read meanwhile, isn't read. A store
+/// that can't answer fails the step, which tries again, so the refresh never finishes, and forgets what the
+/// store owes, on a set it couldn't read. Trouble with one PR leaves the rest to read, and the PR view reads
+/// that one when it opens. Only trouble that speaks for all of GitHub stops the refresh.
 pub(super) fn read_ahead(
     link: &Link<'_>,
     ahead: &mut Ahead,
-    wanted: &BTreeSet<u32>,
+    repository: &RepositorySettings,
 ) -> Result<Moved, Error> {
+    let wanted = to_read_ahead(link, repository)?;
     let Some(number) = wanted.difference(&ahead.tried).next().copied() else {
         return Ok((Step::Finished, None));
     };

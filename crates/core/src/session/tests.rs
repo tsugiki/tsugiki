@@ -1144,8 +1144,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     );
     let on = heard.asked();
     let held = syncs.settings(&gcmon()).cloned();
-    let owed = store.read_ahead_facts(&gcmon()).unwrap().owed;
-    let wanted_on = syncs.wanted(&gcmon()).clone();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
     let switched_off = settings_changed(
         &fetching,
         &store,
@@ -1153,7 +1152,6 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
         bugs_switched(OnWorkbench::Off),
     );
     let off = heard.asked();
-    let wanted_off = syncs.wanted(&gcmon()).clone();
 
     assert_eq!(unheld, None);
     assert_eq!(switched_on, Some(bugs_switched(OnWorkbench::Off)));
@@ -1166,13 +1164,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     // Issue 5 has no Conversation to read ahead as a PR, PR 9's was read at its head, and nothing reaches
     // PR 11.
     assert_eq!(owed, [8, 10].into());
-    assert_eq!(
-        wanted_on,
-        [8, 10].into(),
-        "a refresh reads what the switch owes"
-    );
     assert!(off.iter().all(|line| !line.contains("#8")), "{off:?}");
-    assert_eq!(wanted_off, BTreeSet::new(), "nor once it's switched off");
 }
 
 /// Switches the Bugs Filter on, which finds PR 8, with the store losing call `lost`, if any. Answers with
@@ -1209,7 +1201,7 @@ fn switch_bugs_on_losing(
         bugs_switched(OnWorkbench::On),
     );
 
-    let owed = store.read_ahead_facts(&gcmon()).unwrap().owed;
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
     (switched, heard.asked(), calls.try_iter().count(), owed)
 }
 

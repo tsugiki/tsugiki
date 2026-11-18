@@ -36,7 +36,6 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
-use crate::facts::WorkFacts;
 use crate::facts::activity::{ActivityFacts, ItemActivity};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
@@ -44,7 +43,7 @@ use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
-use crate::facts::read_ahead::ReadAheadFacts;
+use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::repository::RepositoryName;
@@ -157,10 +156,23 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// What the store holds of `repository`'s Conversations, from one transaction.
-    pub fn read_ahead_facts(&self, repository: &RepositoryName) -> Result<ReadAheadFacts, Error> {
+    /// The PRs of `repository` whose Conversations the store owes a read. Saving a PR's Conversation pays
+    /// its debt, and saving a finished sync pays them all.
+    pub fn read_ahead_owed(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
-        let read = self.call(move |connection| read_read_ahead_facts(connection, &repository))?;
+        let read =
+            self.call(move |connection| sync_state::read_ahead_owed(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The head each of `repository`'s held Conversations was read at, of those read with one.
+    pub fn conversation_heads(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<BTreeMap<u32, CommitSha>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| pull_request_content::read_heads(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -601,17 +613,6 @@ fn write_last_login(connection: &Connection, login: &Login) -> rusqlite::Result<
             named_params! { ":login": login },
         )
         .map(drop)
-}
-
-fn read_read_ahead_facts(
-    connection: &mut Connection,
-    repository: &RepositoryName,
-) -> rusqlite::Result<ReadAheadFacts> {
-    let transaction = connection.transaction()?;
-    Ok(ReadAheadFacts {
-        owed: sync_state::read_ahead_owed(&transaction, repository)?,
-        read_at: pull_request_content::read_heads(&transaction, repository)?,
-    })
 }
 
 // Add each read a screen waits on to `view_statements` in the tests, which check its plans (ADR 0017).

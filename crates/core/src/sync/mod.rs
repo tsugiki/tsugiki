@@ -87,7 +87,7 @@ enum Phase {
     ReadingAhead(Ahead),
 }
 
-/// How far a refresh has read ahead.
+/// The reading ahead a refresh has done.
 #[derive(Default)]
 struct Ahead {
     /// The PRs this refresh has asked GitHub for, so it asks for each once, whatever the rules want next.
@@ -322,17 +322,16 @@ impl UserWorkSync {
 
     /// Runs one step, then saves a first sync's place, so quitting, a crash or going offline comes back to
     /// the next page. A save that fails keeps the step, whose news still counts, for the next try to report.
-    /// `wanted` are the Conversations the rules last wanted read ahead, which a refresh reads before it
-    /// finishes.
+    /// `settings` are the Repository's as they are now, which say which PRs a refresh reads ahead.
     fn step(
         &mut self,
         github: &GitHub,
         store: &Store,
-        wanted: &BTreeSet<u32>,
+        settings: &RepositorySettings,
     ) -> Result<Step, Error> {
         let step = match self.unsaved.take() {
             Some(step) => step,
-            None => self.advance(github, store, wanted)?,
+            None => self.advance(github, store, settings)?,
         };
         match self.save_place(store) {
             Ok(()) => Ok(step),
@@ -429,7 +428,7 @@ impl UserWorkSync {
         &mut self,
         github: &GitHub,
         store: &Store,
-        wanted: &BTreeSet<u32>,
+        settings: &RepositorySettings,
     ) -> Result<Step, Error> {
         let link = Link {
             github,
@@ -449,13 +448,13 @@ impl UserWorkSync {
                     Some(phase) => self.phase = phase,
                     None => self.start_first_sync(store)?,
                 }
-                return self.advance(github, store, wanted);
+                return self.advance(github, store, settings);
             }
             Phase::CheckingList(poll) => refresh::check_list(&link, poll, &self.check)?,
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, wanted)?,
+            Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
                 cursor,
@@ -481,12 +480,10 @@ impl UserWorkSync {
             self.phase = next;
         }
         let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
-        if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh))
-            && !reads_ahead
-            && !wanted.is_empty()
-        {
+        if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
+            // Asking the rules is no request to GitHub, so this goes straight on to the first read.
             self.phase = Phase::ReadingAhead(Ahead::default());
-            return Ok(Step::Moved);
+            return self.advance(github, store, settings);
         }
         if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
             (&mut self.kind, &step)

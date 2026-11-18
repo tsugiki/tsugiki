@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use crate::testing::sha_of;
 
 /// A patience that is over by the time a test looks.
 const NONE: Duration = Duration::ZERO;
@@ -8,14 +9,10 @@ const NONE: Duration = Duration::ZERO;
 /// A patience that lasts longer than a test.
 const MINUTE: Duration = Duration::from_secs(60);
 
-fn sha(digit: char) -> CommitSha {
-    CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
-}
-
 fn at(number: u32, digit: char) -> PrHead {
     PrHead {
         number,
-        commit: sha(digit),
+        commit: sha_of(digit),
         target_branch: "main".to_owned(),
     }
 }
@@ -29,12 +26,18 @@ fn later() -> Instant {
     Instant::now() + MINUTE * 2
 }
 
-/// Notes a fetch of `batch` that succeeded, with each ref at `refs`.
+/// Notes a fetch of `batch`, started and ended now, that succeeded with each ref at `refs`. A head it
+/// didn't bring is fetched once more after `patience`.
 fn fetched(prs: &mut Prs, batch: &[PrHead], refs: &[PrHead], patience: Duration) -> Noted {
     let landed = (refs.iter())
         .map(|head| (head.number, head.commit.clone()))
         .collect();
-    prs.note_fetched(batch, Ok(&landed), patience)
+    let now = Instant::now();
+    let retry = Retry {
+        started: now,
+        at: now + patience,
+    };
+    prs.note_fetched(batch, Ok(&landed), retry)
 }
 
 #[test]
@@ -45,7 +48,7 @@ fn a_hand_over_wants_only_the_heads_the_mirror_lacks_and_drops_the_prs_it_leaves
 
     prs.hand_over(vec![at(1, 'a'), at(3, 'c')]);
 
-    assert_eq!(numbers(prs.wanted(Instant::now())), [(3, sha('c'))]);
+    assert_eq!(numbers(prs.wanted(Instant::now())), [(3, sha_of('c'))]);
 }
 
 #[test]
@@ -59,8 +62,11 @@ fn a_hand_over_leaves_a_head_waiting_its_moment_and_restarts_one_whose_retry_is_
 
     prs.hand_over(vec![at(1, 'a'), at(2, 'b')]);
 
-    assert_eq!(numbers(prs.wanted(Instant::now())), [(2, sha('b'))]);
-    assert_eq!(numbers(prs.wanted(later())), [(1, sha('a')), (2, sha('b'))]);
+    assert_eq!(numbers(prs.wanted(Instant::now())), [(2, sha_of('b'))]);
+    assert_eq!(
+        numbers(prs.wanted(later())),
+        [(1, sha_of('a')), (2, sha_of('b'))]
+    );
 }
 
 #[test]
@@ -77,7 +83,7 @@ fn a_fetch_speaks_for_the_users_head_at_its_commit_and_leaves_the_rules_head_at_
 
     assert_eq!(noted.arrived, [5]);
     assert!(prs.demanded(now).next().is_none(), "the fetch brought it");
-    assert_eq!(numbers(prs.wanted(now)), [(5, sha('b'))]);
+    assert_eq!(numbers(prs.wanted(now)), [(5, sha_of('b'))]);
 }
 
 #[test]
@@ -97,7 +103,7 @@ fn the_app_hears_of_a_pr_the_user_opened_only_from_the_fetches_its_head_was_in()
     assert_eq!(first.stuck, BTreeMap::new());
     let behind = BTreeMap::from([(Unfetched::Behind, vec![6])]);
     assert_eq!(second.stuck, behind);
-    assert_eq!(numbers(prs.demanded(Instant::now())), [(5, sha('b'))]);
+    assert_eq!(numbers(prs.demanded(Instant::now())), [(5, sha_of('b'))]);
 }
 
 #[test]
@@ -111,7 +117,7 @@ fn a_head_the_user_opened_waiting_its_moment_takes_no_try_from_the_rules_fetch()
 
     assert_eq!(noted, Noted::default(), "GitHub may move the ref yet");
     assert!(prs.demanded(Instant::now()).next().is_none());
-    assert_eq!(numbers(prs.demanded(later())), [(5, sha('a'))]);
+    assert_eq!(numbers(prs.demanded(later())), [(5, sha_of('a'))]);
 }
 
 #[test]
@@ -145,7 +151,7 @@ fn the_users_look_at_another_commit_leaves_where_the_ref_stands() {
         prs.wanted(now).next().is_none(),
         "the mirror holds the rules' head"
     );
-    assert_eq!(numbers(prs.demanded(now)), [(5, sha('b'))]);
+    assert_eq!(numbers(prs.demanded(now)), [(5, sha_of('b'))]);
 }
 
 #[test]
@@ -164,7 +170,7 @@ fn a_saved_head_of_an_awaited_pr_is_asked_for_unless_the_mirror_holds_it() {
 
     assert!(asked);
     let demanded = numbers(prs.demanded(Instant::now()));
-    assert_eq!(demanded, [(8, sha('b')), (10, sha('d'))]);
+    assert_eq!(demanded, [(8, sha_of('b')), (10, sha_of('d'))]);
 }
 
 #[test]
@@ -208,5 +214,5 @@ fn a_pr_back_in_reach_whose_ref_upkeep_pruned_meanwhile_is_fetched_again() {
 
     prs.pruned(&[1, 2]);
 
-    assert_eq!(numbers(prs.wanted(Instant::now())), [(1, sha('a'))]);
+    assert_eq!(numbers(prs.wanted(Instant::now())), [(1, sha_of('a'))]);
 }

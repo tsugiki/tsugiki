@@ -34,7 +34,7 @@ mod patches;
 mod reviewed;
 mod source;
 mod upkeep;
-use heads::Prs;
+use heads::{Prs, Retry};
 use lookup::{Lookup, Move};
 pub use lookup::{LookupAt, LookupCheckout};
 use patches::Patches;
@@ -884,6 +884,8 @@ struct Fetch {
     mirror: PathBuf,
     /// Each head it fetches, at the commit asked for, with the Target branch it brings up to date.
     batch: Vec<PrHead>,
+    /// When it started, which says of a head that joined it whether its moment was over.
+    started: Instant,
     git: Box<dyn Run>,
     /// Heads or a status came while it ran, so if it fails, the next fetch has a reason to try again.
     news: bool,
@@ -1191,12 +1193,11 @@ impl Worker {
     /// Asks for each head of `heads` whose PR the user opened before the session knew its head, unless the
     /// mirror fetched that head since launch, and puts the Repository ahead of the others if it asked.
     fn saved(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
-        if !(self.heads.iter()).any(|known| known.repository.is_same(repository)) {
+        let known = (self.heads.iter_mut()).find(|known| known.repository.is_same(repository));
+        let Some(known) = known else {
             return;
-        }
-        let mut asked = false;
-        self.change_heads(repository, |known| asked = known.prs.saved(heads));
-        if asked {
+        };
+        if known.prs.saved(heads) {
             self.wake();
             let known = self.take_heads(repository);
             self.heads.push_front(known);
@@ -1259,11 +1260,8 @@ impl Worker {
             .filter_map(|known| {
                 let waits = [
                     (Waiting::LookupMove, known.lookup.waits()),
-                    (
-                        Waiting::DemandedHeads,
-                        known.prs.demanded(now).next().is_some(),
-                    ),
-                    (Waiting::Heads, known.prs.wanted(now).next().is_some()),
+                    (Waiting::DemandedHeads, known.prs.demands(now)),
+                    (Waiting::Heads, known.prs.wants(now)),
                     (Waiting::Reviewed, known.reviews.waits()),
                     (Waiting::PatchIds, known.patches.waits()),
                 ];
@@ -1463,7 +1461,9 @@ impl Worker {
     /// A head whose moment was over at the turn's pick, `now`, waits for a pick after the next git or
     /// message.
     fn next_due(&self, pick_again: Option<Instant>, now: Instant) -> Option<Instant> {
-        let heads = (self.heads.iter()).filter_map(|known| known.prs.next_due(now));
+        // Only an idle worker picks a head, and a git's end wakes it, so only it wakes for one.
+        let idle = self.job.is_none().then_some(&self.heads);
+        let heads = (idle.into_iter().flatten()).filter_map(|known| known.prs.next_due(now));
         let clones = self.failed.iter().map(|failed| failed.retry_at);
         // Only an idle worker with a usable git starts an upkeep, so only it wakes for one.
         let git_usable = !self
@@ -1527,6 +1527,7 @@ impl Worker {
                     repository,
                     mirror,
                     batch,
+                    started: Instant::now(),
                     git: started.run,
                     news: false,
                 }));
@@ -1573,6 +1574,7 @@ impl Worker {
             repository,
             mirror,
             batch,
+            started,
             mut git,
             news,
         } = fetch;
@@ -1612,7 +1614,11 @@ impl Worker {
             }
         }
         let mut known = self.take_heads(&repository);
-        let noted = (known.prs).note_fetched(&batch, landed.as_ref(), self.remotes.patience);
+        let retry = Retry {
+            started,
+            at: Instant::now() + self.remotes.patience,
+        };
+        let noted = known.prs.note_fetched(&batch, landed.as_ref(), retry);
         if !noted.arrived.is_empty() {
             known.patches.read_missing_again();
         }

@@ -8,7 +8,7 @@
 //! for each head at that commit.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::Unfetched;
 use crate::facts::CommitSha;
@@ -121,15 +121,16 @@ impl Intent {
         }
     }
 
-    /// Notes a fetch that found the head elsewhere. Says whether it was the retry. One still waiting out its
-    /// moment, which joined another side's fetch, takes nothing from it: GitHub may move the ref yet.
+    /// Notes a fetch that found the head elsewhere. Says whether it was the retry. One whose moment wasn't
+    /// over when the fetch started, which joined another side's fetch, takes nothing from it: GitHub may
+    /// move the ref yet.
     fn missed(&mut self, retry: Retry) -> bool {
         match self.tries {
             Tries::Fresh => {
                 self.tries = Tries::Due(retry.at);
                 false
             }
-            Tries::Due(at) if at > retry.now => false,
+            Tries::Due(at) if at > retry.started => false,
             Tries::Due(_) | Tries::Retried => {
                 self.tries = Tries::Retried;
                 true
@@ -138,22 +139,34 @@ impl Intent {
     }
 }
 
-/// When a fetch that succeeded ended, and when a head it didn't bring is fetched once more.
+/// When a fetch that succeeded started, and when a head it didn't bring is fetched once more.
 #[derive(Debug, Clone, Copy)]
-struct Retry {
-    now: Instant,
-    at: Instant,
+pub(super) struct Retry {
+    pub(super) started: Instant,
+    pub(super) at: Instant,
 }
 
 impl Settled {
-    /// A want is met by a ref that GitHub has at its commit, or has none for.
-    fn meets_want(&self, commit: &CommitSha) -> bool {
-        self.commit == *commit
+    /// An ask fetches whatever the worker noted before, so only a ref that landed at its commit meets it. A
+    /// want is met by any record at its commit, as one GitHub has no ref for isn't fetched again.
+    fn landed_at(&self, commit: &CommitSha) -> bool {
+        self.found == Found::Landed && self.commit == *commit
+    }
+}
+
+impl Ask {
+    fn intent(&self) -> Option<&Intent> {
+        match self {
+            Self::Fetch(intent) => Some(intent),
+            Self::Awaited | Self::Held => None,
+        }
     }
 
-    /// An ask fetches whatever the worker noted before, so only a ref that landed at its commit meets it.
-    fn meets_ask(&self, commit: &CommitSha) -> bool {
-        self.found == Found::Landed && self.commit == *commit
+    fn intent_mut(&mut self) -> Option<&mut Intent> {
+        match self {
+            Self::Fetch(intent) => Some(intent),
+            Self::Awaited | Self::Held => None,
+        }
     }
 }
 
@@ -162,44 +175,34 @@ impl Head {
         self.settled.is_none() && self.want.is_none() && self.ask.is_none()
     }
 
-    fn unmet_want(&self) -> Option<&Intent> {
-        let met =
-            |want: &Intent| (self.settled.as_ref()).is_some_and(|s| s.meets_want(&want.commit));
-        self.want.as_ref().filter(|want| !met(want))
+    /// The rules' want, which is never met: it goes once it is.
+    fn want(&self) -> Option<&Intent> {
+        self.want.as_ref()
     }
 
     fn unmet_ask(&self) -> Option<&Intent> {
-        match &self.ask {
-            Some(Ask::Fetch(intent))
-                if !(self.settled.as_ref()).is_some_and(|s| s.meets_ask(&intent.commit)) =>
-            {
-                Some(intent)
-            }
-            Some(Ask::Awaited | Ask::Held | Ask::Fetch(_)) | None => None,
-        }
+        let landed =
+            |intent: &Intent| (self.settled.as_ref()).is_some_and(|s| s.landed_at(&intent.commit));
+        (self.ask.as_ref())
+            .and_then(Ask::intent)
+            .filter(|intent| !landed(intent))
     }
 
-    /// The want goes once `settled` meets it.
-    fn drop_met_want(&mut self) {
-        if self.unmet_want().is_none() {
+    /// Notes where the ref stands. The want goes once it is met, so a want kept is never met.
+    fn settle(&mut self, settled: Settled) {
+        if (self.want.as_ref()).is_some_and(|want| want.commit == settled.commit) {
             self.want = None;
         }
+        self.settled = Some(settled);
     }
 
-    /// Notes a fetch of `commit` that didn't bring it, on each side at that commit that it doesn't meet.
-    /// Says, for each side, whether that was its retry.
-    fn missed(&mut self, commit: &CommitSha, retry: Retry) -> (Option<bool>, Option<bool>) {
-        let (want_unmet, ask_unmet) = (self.unmet_want().is_some(), self.unmet_ask().is_some());
-        let want = (self.want.as_mut())
-            .filter(|want| want_unmet && want.commit == *commit)
-            .map(|want| want.missed(retry));
-        let ask = match &mut self.ask {
-            Some(Ask::Fetch(intent)) if ask_unmet && intent.commit == *commit => {
-                Some(intent.missed(retry))
-            }
-            Some(Ask::Awaited | Ask::Held | Ask::Fetch(_)) | None => None,
-        };
-        (want, ask)
+    /// Turns where the ref stood into a fresh want, as the ref went. A want the rules hold already stays.
+    fn refetch_settled(&mut self) {
+        if let Some(Settled { commit, branch, .. }) = self.settled.take()
+            && self.want.is_none()
+        {
+            self.want = Some(Intent::fresh(commit, branch));
+        }
     }
 
     /// Notes where the ref a fetch of `asked` brought was `found`, if it could be read. Says whether the head
@@ -218,8 +221,7 @@ impl Head {
         let (arrived, why) = match found {
             Ok(Some(at)) => {
                 let arrived = self.arrives(at, &asked.commit);
-                self.settled = Some(settled(at, Found::Landed));
-                self.drop_met_want();
+                self.settle(settled(at, Found::Landed));
                 if *at == asked.commit {
                     return (arrived, None);
                 }
@@ -232,14 +234,22 @@ impl Head {
             }
             Err(unread) => (false, unread.clone()),
         };
-        let (want, ask) = self.missed(&asked.commit, retry);
-        let spent = want == Some(true) || ask == Some(true);
-        if spent && why == Unfetched::NotOnGitHub {
-            self.settled = Some(settled(&asked.commit, Found::NotOnGitHub));
-            self.drop_met_want();
+        // Each side at the commit asked for that the outcome doesn't meet moves on a try.
+        let commit = &asked.commit;
+        let user_asked = self.ask.is_some();
+        let unmet_ask = self.unmet_ask().is_some();
+        let want_spent = (self.want.as_mut())
+            .filter(|want| want.commit == *commit)
+            .is_some_and(|want| want.missed(retry));
+        let ask_spent = (self.ask.as_mut())
+            .and_then(Ask::intent_mut)
+            .filter(|intent| unmet_ask && intent.commit == *commit)
+            .is_some_and(|intent| intent.missed(retry));
+        if (want_spent || ask_spent) && why == Unfetched::NotOnGitHub {
+            self.settle(settled(commit, Found::NotOnGitHub));
         }
-        let heard = if self.ask.is_some() { ask } else { want };
-        (arrived, (heard == Some(true)).then_some(why))
+        let heard = if user_asked { ask_spent } else { want_spent };
+        (arrived, heard.then_some(why))
     }
 
     /// Whether the app hears that a ref which landed at `at`, in a fetch of `asked`, brought the head. For
@@ -247,23 +257,12 @@ impl Head {
     /// came from: the Files tab asks again for a head that arrived elsewhere. For the others, it hears of
     /// the commit asked for, and of the rules' head that the ref moved to during the fetch.
     fn arrives(&self, at: &CommitSha, asked: &CommitSha) -> bool {
-        match &self.ask {
-            Some(Ask::Fetch(intent)) => {
-                let held = (self.settled.as_ref()).is_some_and(|s| s.meets_ask(at));
-                intent.commit == *at && !held
-            }
-            Some(Ask::Awaited | Ask::Held) | None => {
+        match self.ask.as_ref().map(Ask::intent) {
+            Some(Some(_)) => self.unmet_ask().is_some_and(|intent| intent.commit == *at),
+            Some(None) | None => {
                 *at == *asked || (self.want.as_ref()).is_some_and(|want| want.commit == *at)
             }
         }
-    }
-
-    fn intents_mut(&mut self) -> impl Iterator<Item = &mut Intent> {
-        let ask = match &mut self.ask {
-            Some(Ask::Fetch(intent)) => Some(intent),
-            Some(Ask::Awaited | Ask::Held) | None => None,
-        };
-        self.want.as_mut().into_iter().chain(ask)
     }
 }
 
@@ -294,7 +293,7 @@ impl Prs {
                     }
                 }
                 Some(_) | None => {
-                    let met = (head.settled.as_ref()).is_some_and(|s| s.meets_want(&commit));
+                    let met = (head.settled.as_ref()).is_some_and(|s| s.commit == commit);
                     head.want = (!met).then(|| Intent::fresh(commit, target_branch));
                 }
             }
@@ -305,7 +304,10 @@ impl Prs {
 
     /// Keeps PR `number`'s ref until the next launch: the user opened it, and the mirror holds its head.
     pub(super) fn opened(&mut self, number: u32) {
-        let _ask = (self.heads.entry(number).or_default().ask).get_or_insert(Ask::Held);
+        let head = self.heads.entry(number).or_default();
+        if head.ask.is_none() {
+            head.ask = Some(Ask::Held);
+        }
     }
 
     /// Notes PR `number` opened before the session knew its head, whose head goes first once a sync step
@@ -353,7 +355,7 @@ impl Prs {
             if !matches!(head.ask, Some(Ask::Awaited)) {
                 continue;
             }
-            let held = (head.settled.as_ref()).is_some_and(|s| s.meets_ask(&commit));
+            let held = (head.settled.as_ref()).is_some_and(|s| s.landed_at(&commit));
             head.ask = Some(if held {
                 Ask::Held
             } else {
@@ -366,17 +368,34 @@ impl Prs {
 
     /// The heads the user asked for that the next fetch of their own takes.
     pub(super) fn demanded(&self, now: Instant) -> impl Iterator<Item = PrHead> + '_ {
-        (self.heads.iter()).filter_map(move |(number, head)| {
-            let intent = head.unmet_ask().filter(|intent| intent.due(now))?;
-            Some(intent.head_of(*number))
-        })
+        self.due(now, Head::unmet_ask)
+            .map(|(number, intent)| intent.head_of(number))
     }
 
     /// The heads the rules want that the next fetch of them takes.
     pub(super) fn wanted(&self, now: Instant) -> impl Iterator<Item = PrHead> + '_ {
+        self.due(now, Head::want)
+            .map(|(number, intent)| intent.head_of(number))
+    }
+
+    /// Whether `demanded` has a head.
+    pub(super) fn demands(&self, now: Instant) -> bool {
+        self.due(now, Head::unmet_ask).next().is_some()
+    }
+
+    /// Whether `wanted` has a head.
+    pub(super) fn wants(&self, now: Instant) -> bool {
+        self.due(now, Head::want).next().is_some()
+    }
+
+    /// The intents of one side, `side` picks, that the next fetch takes, by PR.
+    fn due(
+        &self,
+        now: Instant,
+        side: fn(&Head) -> Option<&Intent>,
+    ) -> impl Iterator<Item = (u32, &Intent)> {
         (self.heads.iter()).filter_map(move |(number, head)| {
-            let intent = head.unmet_want().filter(|intent| intent.due(now))?;
-            Some(intent.head_of(*number))
+            Some((*number, side(head).filter(|intent| intent.due(now))?))
         })
     }
 
@@ -389,8 +408,8 @@ impl Prs {
 
     /// When the first head whose moment isn't over yet is due to be fetched once more.
     pub(super) fn next_due(&self, now: Instant) -> Option<Instant> {
-        let unmet = (self.heads.values())
-            .flat_map(|head| head.unmet_ask().into_iter().chain(head.unmet_want()));
+        let unmet =
+            (self.heads.values()).flat_map(|head| head.unmet_ask().into_iter().chain(head.want()));
         unmet
             .filter_map(|intent| match intent.tries {
                 Tries::Due(at) => (at > now).then_some(at),
@@ -402,19 +421,14 @@ impl Prs {
     /// Notes where the heads of `batch`, a fetch that succeeded, `landed`, or why that couldn't be read.
     /// The outcome speaks for each head at the commit the batch asked for, whichever side wants it and
     /// whether it was in the batch or came during the fetch. A side at another commit takes nothing from
-    /// it, apart from a ref that landed at its commit. A head that didn't land is fetched once more after
-    /// `patience`.
+    /// it, apart from a ref that landed at its commit. A head that didn't land is fetched once more as
+    /// `retry` says.
     pub(super) fn note_fetched(
         &mut self,
         batch: &[PrHead],
         landed: Result<&BTreeMap<u32, CommitSha>, &Unfetched>,
-        patience: Duration,
+        retry: Retry,
     ) -> Noted {
-        let now = Instant::now();
-        let retry = Retry {
-            now,
-            at: now + patience,
-        };
         let mut noted = Noted::default();
         for asked in batch {
             let head = self.heads.entry(asked.number).or_default();
@@ -452,11 +466,10 @@ impl Prs {
             let Some(head) = self.heads.get_mut(number) else {
                 continue;
             };
-            if let Some(Settled { commit, branch, .. }) = head.settled.take()
-                && kept
-                && head.want.is_none()
-            {
-                head.want = Some(Intent::fresh(commit, branch));
+            if kept {
+                head.refetch_settled();
+            } else {
+                head.settled = None;
             }
         }
         self.tidy();
@@ -466,12 +479,9 @@ impl Prs {
     /// of a broken mirror.
     pub(super) fn fetch_again(&mut self) {
         for head in self.heads.values_mut() {
-            if let Some(Settled { commit, branch, .. }) = head.settled.take()
-                && head.want.is_none()
-            {
-                head.want = Some(Intent::fresh(commit, branch));
-            }
-            for intent in head.intents_mut() {
+            head.refetch_settled();
+            let ask = head.ask.as_mut().and_then(Ask::intent_mut);
+            for intent in head.want.as_mut().into_iter().chain(ask) {
                 intent.tries = Tries::Fresh;
             }
         }

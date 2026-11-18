@@ -69,15 +69,14 @@ impl IssueView {
         let causes = Causes::of(&facts, repository.conventions);
         let found = candidates_of(facts, repository, &BTreeSet::new(), &causes)
             .into_iter()
-            .find(|item| item.key() == ItemKey::Issue { number })
-            .and_then(|item| {
-                let archived = causes.is_archived(item.key(), &item.numbers());
-                match item {
-                    WorkbenchItem::Issue(issue) => Some((issue, archived)),
-                    WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
-                }
+            .find_map(|item| match item {
+                WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),
+                WorkbenchItem::Issue(_)
+                | WorkbenchItem::StandalonePr(_)
+                | WorkbenchItem::StandaloneBackport(_) => None,
             });
-        Ok(found.map(|(mut issue, archived)| {
+        Ok(found.map(|mut issue| {
+            let archived = causes.is_archived(ItemKey::Issue { number }, &issue.numbers());
             let needs_attention = (issue.rows().into_iter())
                 .map(|row| row.number)
                 .filter(|&pr| causes.needs_attention(pr))

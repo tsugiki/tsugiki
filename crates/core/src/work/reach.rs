@@ -93,8 +93,8 @@ impl Walk {
                 walk.fixing.entry(*issue).or_default().push(pr.number);
             }
             walk.members.entry(family).or_default().push(pr.number);
-            let _first = walk.family.insert(pr.number, family);
-            let _first = walk.fixes.insert(pr.number, fixes);
+            walk.family.extend([(pr.number, family)]);
+            walk.fixes.extend([(pr.number, fixes)]);
         }
         walk
     }

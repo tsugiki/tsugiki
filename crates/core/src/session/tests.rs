@@ -634,9 +634,8 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
     for marked in [seen_mark, unseen] {
         let (mut board, seen) = watched_board();
 
-        let saved = mark(&mut board, &Store::stopped(), marked);
+        mark(&mut board, &Store::stopped(), marked);
 
-        assert_eq!(saved, None);
         assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
 }

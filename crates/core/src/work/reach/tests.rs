@@ -434,7 +434,7 @@ fn a_muted_item_where_an_ask_stands_stays_in_reach_with_its_tree_until_the_ask_e
     let mut facts = facts(pull_requests, issues);
     // Mark Seen acknowledges an ask, which stands all the same.
     let later = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
-    let _acknowledged = facts.activity.acknowledged.insert(1, later);
+    facts.activity.acknowledged.extend([(1, later)]);
     let standalone = ItemKey::PullRequest { number: 5 };
     let keys = [issue_key(1), issue_key(2), issue_key(6), standalone];
     let mut facts = muting(facts, &keys);
@@ -499,7 +499,7 @@ fn an_archived_item_stays_in_reach() {
         seen_up_to: hours_ago(1),
         archived_at: hours_ago(1),
     };
-    let _archived = facts.activity.archived.insert(issue_key(1), archive);
+    facts.activity.archived.extend([(issue_key(1), archive)]);
 
     // The Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
     assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::from([1, 10]));

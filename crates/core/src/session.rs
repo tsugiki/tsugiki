@@ -250,9 +250,7 @@ impl Refreshes {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
-                SessionMessage::Mark(marked) => {
-                    let _saved = mark(board, store, marked);
-                }
+                SessionMessage::Mark(marked) => mark(board, store, marked),
                 SessionMessage::SettingsChanged(settings, by) => {
                     announce_settings(board, &settings.name, by);
                 }
@@ -425,11 +423,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Mark(marked) => {
                 let moved = ReachMove::of(&marked, store, &syncs);
-                if mark(board, store, marked).is_some()
-                    && let Some(moved) = moved
-                {
-                    let _followed = moved.follow(&refreshes.fetching, store, &syncs);
-                }
+                mark_moving_reach(board, store, &refreshes.fetching, (marked, moved));
             }
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
@@ -638,65 +632,45 @@ fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: R
     }
 }
 
-/// The move of Reach a mark makes in a Repository the session has opened since launch (#918), worked out
-/// before the store keeps the mark.
-enum ReachMove<'a> {
-    /// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
-    /// Mirror worker stops wanting their heads. `hand_over_rules_wants` leaves alone a Repository the session
-    /// hasn't opened.
-    Mute(RepositoryName),
-    Unmute(Box<Unmuting<'a>>),
-}
-
-/// Unmute of an item under `settings`.
-struct Unmuting<'a> {
+/// A Mute or an Unmute in a Repository the session has opened since launch, which moves Reach (#918), with
+/// the stored facts from before the store keeps it.
+///
+/// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
+/// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
+/// the Mirror fetch the heads of or a refresh read ahead. So the Mirror worker hears the new Reach at once,
+/// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
+struct ReachMove<'a> {
     settings: &'a RepositorySettings,
-    /// The stored facts before the Unmute, which still hold the item Muted, if the store could read them.
-    before: Option<WorkFacts>,
+    before: WorkFacts,
 }
 
 impl<'a> ReachMove<'a> {
     /// The move `marked` makes, under the settings `syncs` hold: none for a mark other than Mute and Unmute.
+    /// Facts the store can't read, before the mark or after it, leave the heads to the next step that saves,
+    /// and lose the reads an Unmute owes.
     fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
-        match marked {
-            Marked::Muted { repository, .. } => Some(Self::Mute(repository.clone())),
-            Marked::Unmuted { repository, .. } => {
-                let settings = syncs.settings(repository)?;
-                let before = facts_for_move(store, repository);
-                Some(Self::Unmute(Box::new(Unmuting { settings, before })))
-            }
+        let repository = match marked {
+            Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
             Marked::Seen { .. }
             | Marked::Unseen { .. }
             | Marked::Archived { .. }
-            | Marked::Unarchived { .. } => None,
-        }
+            | Marked::Unarchived { .. } => return None,
+        };
+        let settings = syncs.settings(repository)?;
+        let before = facts_for_move(store, repository)?;
+        Some(Self { settings, before })
     }
 
-    /// Has the Mirror worker follow the move, once the store kept the mark. Says whether it handed the
-    /// Mirror worker anything.
-    fn follow(self, fetching: &Fetching, store: &Store, syncs: &Syncs) -> Option<()> {
-        match self {
-            Self::Mute(repository) => {
-                hand_over_rules_wants(fetching, store, syncs, &repository).map(drop)
-            }
-            Self::Unmute(unmuting) => follow_unmute(fetching, store, *unmuting),
-        }
+    /// Has the Mirror worker follow the move, once the store kept the mark. Reach after it goes by the facts
+    /// the store kept.
+    fn follow(self, fetching: &Fetching, store: &Store) {
+        let Self { settings, before } = self;
+        let Some(now) = facts_for_move(store, &settings.name) else {
+            return;
+        };
+        let from = |facts| ReachFrom { facts, settings };
+        follow_move(fetching, store, from(&before), from(&now));
     }
-}
-
-/// The user unmuted an item, whose tree is back in Reach. No change on GitHub would have the Mirror fetch
-/// its heads or a refresh read its Conversations ahead. So the Mirror worker hears the new Reach at once,
-/// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
-/// Reach after the Unmute goes by the facts the store kept. Facts the store couldn't read, before or after,
-/// leave the heads to the next step that saves, and lose the reads. Says whether it handed the Mirror
-/// worker anything.
-fn follow_unmute(fetching: &Fetching, store: &Store, unmuting: Unmuting<'_>) -> Option<()> {
-    let Unmuting { settings, before } = unmuting;
-    let before = before?;
-    let now = facts_for_move(store, &settings.name)?;
-    let from = |facts| ReachFrom { facts, settings };
-    follow_move(fetching, store, from(&before), from(&now));
-    Some(())
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose
@@ -760,9 +734,40 @@ fn keep_last_checks(
     store.save_last_checks(repository, checks)
 }
 
-/// Keeps what the user marked, and tells the window, whose lists go by it. Says whether the store kept it.
-fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) -> Option<()> {
-    let (saved, change) = match marked {
+/// Keeps what the user marked, and tells the window, whose lists go by it.
+fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
+    let (saved, change) = keep_mark(store, marked);
+    tell_marked(board, saved, &change);
+}
+
+/// Keeps what the user marked, as `mark` does, and has the Mirror worker follow the move of Reach that
+/// `moved` says the mark makes, if the store kept it.
+fn mark_moving_reach(
+    board: &mut StatusBoard,
+    store: &Store,
+    fetching: &Fetching,
+    (marked, moved): (Marked, Option<ReachMove<'_>>),
+) {
+    let (saved, change) = keep_mark(store, marked);
+    if saved.is_ok()
+        && let Some(moved) = moved
+    {
+        moved.follow(fetching, store);
+    }
+    tell_marked(board, saved, &change);
+}
+
+/// Tells the window of `change`, which a mark made, or the status bar why the store couldn't keep it.
+fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Change) {
+    match saved {
+        Ok(()) => board.changed(change),
+        Err(problem) => board.set(Status::Problem { problem }),
+    }
+}
+
+/// Keeps what the user marked, with the change to tell the window of.
+fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
+    match marked {
         Marked::Seen { repository, mark } => {
             let SeenMark { numbers, up_to } = mark;
             let change = Change {
@@ -830,16 +835,6 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) -> Option<()> {
             let saved = store.unmute(&repository, key);
             let items = vec![key.number()];
             (saved, Change { repository, items })
-        }
-    };
-    match saved {
-        Ok(()) => {
-            board.changed(&change);
-            Some(())
-        }
-        Err(problem) => {
-            board.set(Status::Problem { problem });
-            None
         }
     }
 }

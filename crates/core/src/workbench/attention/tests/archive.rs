@@ -300,6 +300,18 @@ fn the_archived_view_lists_the_archived_items_the_last_archived_first_and_counts
 }
 
 #[test]
+fn two_archives_in_one_second_keep_their_order() {
+    let world = World::new("archived-view-one-second");
+    world.has(vec![own(1), own(2)]);
+    let at = hours_ago(1).replace_millisecond(100).unwrap();
+    world.archive_at(&WorkbenchView::Whole, 2, at);
+    world.archive_at(&WorkbenchView::Whole, 1, at + Duration::milliseconds(200));
+
+    assert_eq!(archived_in_order(&world), [1, 2]);
+    world.finish();
+}
+
+#[test]
 fn an_item_that_comes_back_leaves_the_archived_view() {
     let world = World::new("archived-view-back");
     world.has(vec![own(1), own(2)]);

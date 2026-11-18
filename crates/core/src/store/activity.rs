@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 use time::OffsetDateTime;
 
 use super::Connection;
-use super::columns::{Items, UnixTime};
+use super::columns::{Items, UnixMillis, UnixTime};
 use super::failed_checks;
 use crate::facts::activity::{
     Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, PutAway,
@@ -77,11 +77,12 @@ pub(super) const ARCHIVED: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// When the user put each archived item away, which orders the Archived view (#491). An item archived
-/// before this column goes by the moment Archive marked it seen up to.
+/// When the user put each archived item away, which orders the Archived view (#491), in milliseconds, so
+/// two archives in one second keep their order. An item archived before this column goes by the moment
+/// Archive marked it seen up to.
 pub(super) const ARCHIVED_AT: &str = "
     ALTER TABLE archived ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0;
-    UPDATE archived SET archived_at = at;
+    UPDATE archived SET archived_at = at * 1000;
 ";
 
 const ISSUE: &str = "issue";
@@ -236,14 +237,38 @@ fn mark_seen_in(
     Ok(())
 }
 
-/// Flags item `number` Marked unseen from `at`, and unarchives it. Marking it again starts the flag afresh.
+/// What Mark Unseen writes: the flag on Issue or PR `number`, and the unarchive of `archived`, the item that
+/// holds it if the window draws that Archived, as a flag on a PR in an Archived Issue's tree would otherwise
+/// leave the Issue archived (#491).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Flagging {
+    pub number: u32,
+    pub archived: Option<ItemKey>,
+}
+
+impl Flagging {
+    /// The flag on Issue or PR `number`, with no item drawn Archived to unarchive.
+    pub fn on(number: u32) -> Self {
+        Self {
+            number,
+            archived: None,
+        }
+    }
+}
+
+/// Flags `flagging`'s Issue or PR Marked unseen from `at`, and unarchives it and the item it names. Marking
+/// it again starts the flag afresh.
 pub(super) fn mark_unseen(
     connection: &mut Connection,
     repository: &RepositoryName,
-    number: u32,
+    flagging: Flagging,
     at: OffsetDateTime,
 ) -> rusqlite::Result<()> {
+    let Flagging { number, archived } = flagging;
     let transaction = connection.transaction()?;
+    if let Some(key) = archived {
+        unarchive(&transaction, repository, key)?;
+    }
     let _flagged = transaction.execute(
         "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
          ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
@@ -322,7 +347,7 @@ pub(super) fn archive(
             ":kind": kind,
             ":number": number,
             ":at": at,
-            ":now": now.unix_timestamp(),
+            ":now": UnixMillis(now),
             ":as_before": as_before,
         },
     )?;
@@ -368,7 +393,7 @@ fn archived(
             _ => continue,
         };
         let UnixTime(seen_up_to) = row.get("at")?;
-        let UnixTime(archived_at) = row.get("archived_at")?;
+        let UnixMillis(archived_at) = row.get("archived_at")?;
         let archive = Archive {
             seen_up_to,
             archived_at,

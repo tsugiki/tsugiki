@@ -348,12 +348,12 @@ export class WorkbenchState {
     return item?.archived ? item.key : undefined;
   }
 
-  /** Mark Unseen on item `number`. Of an item the window draws `archived`, it unarchives the item first, as
-   * the flag on a PR in an Archived Issue's tree would otherwise leave the Issue archived (#491). Says what
-   * went wrong, if anything did. */
+  /** Mark Unseen on Issue or PR `number`. It unarchives `archived`, the item that holds it if the window
+   * draws that Archived, as the flag on a PR in an Archived Issue's tree would otherwise leave the Issue
+   * archived (#491). Says what went wrong, if anything did. */
   async markUnseen(number: number, archived?: ItemKey) {
-    const unarchived = archived && (await this.unarchive(archived));
-    return unarchived ?? problemIn(commands.markUnseen(this.#repository, number));
+    const marking = commands.markUnseen(this.#repository, number, archived ?? null);
+    return this.#leave(archived && this.#unarchiving(archived), marking);
   }
 
   /** What Archive on line `stop` acts on: the item that holds the line, with its tree's part in Mark Seen. */
@@ -371,15 +371,21 @@ export class WorkbenchState {
   /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),
    * a cursor on any of its lines lands on the item after it. Says what went wrong, if anything did. */
   async unarchive(key: ItemKey) {
-    return this.#leave(key, commands.unarchive(this.#repository, key));
+    return this.#leave(this.#unarchiving(key), commands.unarchive(this.#repository, key));
   }
 
-  /** Waits for `marking`, a mark that can take the item `key` names off the list, which then lands the
-   * cursor on the item after it. Says what went wrong, if anything did. */
-  async #leave(key: ItemKey, marking: Parameters<typeof problemIn>[0]) {
-    this.#leaving.add(key.number);
+  /** `key`, of an item to unarchive, while the list shows the Archived view, which the item then leaves.
+   * Any other view keeps listing it. */
+  #unarchiving(key: ItemKey): ItemKey | undefined {
+    return this.#shown.kind === "archived" ? key : undefined;
+  }
+
+  /** Waits for `marking`, a mark that takes the item `key` names off the list, if it names one, which then
+   * lands the cursor on the item after it. Says what went wrong, if anything did. */
+  async #leave(key: ItemKey | undefined, marking: Parameters<typeof problemIn>[0]) {
+    if (key) this.#leaving.add(key.number);
     const problem = await problemIn(marking);
-    if (problem !== undefined) this.#leaving.delete(key.number);
+    if (key && problem !== undefined) this.#leaving.delete(key.number);
     return problem;
   }
 

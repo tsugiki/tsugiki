@@ -61,8 +61,14 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         mark: SeenMark,
     },
-    /// The flag starts at `at`.
-    Unseen { item: Item, at: OffsetDateTime },
+    /// The flag on Issue or PR `number` starts at `at`, and `archived`, the item the window draws Archived
+    /// that holds it, if any, is unarchived.
+    Unseen {
+        repository: RepositoryName,
+        number: u32,
+        archived: Option<ItemKey>,
+        at: OffsetDateTime,
+    },
     /// Archive on the item `key` names, with the Mark Seen the window drew for it, at `at`, putting the item
     /// away as `put_away` says.
     Archived {
@@ -267,11 +273,16 @@ impl Fetching {
         self.to_session(SessionMessage::Mark(Marked::Seen { repository, mark }));
     }
 
-    /// Mark Unseen on item `number`, from now.
-    pub fn mark_unseen(&self, repository: RepositoryName, number: u32) {
-        let item = Item { repository, number };
+    /// Mark Unseen on Issue or PR `number`, from now. It unarchives `archived`, the item that holds it, when
+    /// the window draws that Archived (#491).
+    pub fn mark_unseen(&self, repository: RepositoryName, number: u32, archived: Option<ItemKey>) {
         let at = OffsetDateTime::now_utc();
-        self.to_session(SessionMessage::Mark(Marked::Unseen { item, at }));
+        self.to_session(SessionMessage::Mark(Marked::Unseen {
+            repository,
+            number,
+            archived,
+            at,
+        }));
     }
 
     /// Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away

@@ -84,8 +84,11 @@ export const commands = {
 	 *  Returns at once, and the `changed` event follows.
 	 */
 	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
-	/**  Mark Unseen on item `number`, and returns at once. */
-	markUnseen: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number })),
+	/**
+	 *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
+	 *  draws that Archived (#491). Returns at once.
+	 */
+	markUnseen: (repository: string, number: number, archived: ItemKey | null) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number, archived })),
 	/**
 	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
 	 *  once, and the `changed` event follows.

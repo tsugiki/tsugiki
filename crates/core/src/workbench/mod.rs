@@ -234,9 +234,6 @@ impl Workbench {
         let causes = Causes::of(&facts, repository.conventions);
         let own_right = in_own_right(&facts, repository, &causes);
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
-        let archived_at: BTreeMap<ItemKey, OffsetDateTime> = (facts.activity.archived.iter())
-            .map(|(key, archive)| (*key, archive.archived_at))
-            .collect();
         let matched = filters.matched();
         let selected = match view {
             WorkbenchView::Whole | WorkbenchView::Archived => None,
@@ -278,7 +275,7 @@ impl Workbench {
         let items = match view {
             WorkbenchView::Filter { .. } | WorkbenchView::ReviewRequests => shown_of(&kept),
             WorkbenchView::Whole | WorkbenchView::StaleReviews => shown_of(&unarchived),
-            WorkbenchView::Archived => last_archived_first(&put_away, &archived_at),
+            WorkbenchView::Archived => last_archived_first(&put_away, &causes),
         };
         Self {
             items,
@@ -291,16 +288,11 @@ impl Workbench {
     }
 }
 
-/// `put_away`, the Archived items, the last archived first by `archived_at`, and the higher number first of
+/// `put_away`, the Archived items, the last archived first as `causes` say, and the higher number first of
 /// two archived at once.
-fn last_archived_first(
-    put_away: &[&ListedItem],
-    archived_at: &BTreeMap<ItemKey, OffsetDateTime>,
-) -> Vec<ListedItem> {
+fn last_archived_first(put_away: &[&ListedItem], causes: &Causes) -> Vec<ListedItem> {
     let mut items: Vec<ListedItem> = put_away.iter().map(|listed| (*listed).clone()).collect();
-    items.sort_by_key(|listed| {
-        Reverse((archived_at.get(&listed.key).copied(), listed.key.number()))
-    });
+    items.sort_by_key(|listed| Reverse((causes.archived_at(listed.key), listed.key.number())));
     items
 }
 

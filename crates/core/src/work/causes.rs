@@ -13,7 +13,7 @@ use super::review_state::{SharedReviews, YourReview, your_reviews};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
-use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemKey};
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, Archive, ItemKey};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
@@ -95,8 +95,8 @@ pub(crate) struct Causes {
     marked_unseen: BTreeSet<u32>,
     /// Where the user's Review of each PR stands. A PR missing here is Unreviewed.
     reviews: BTreeMap<u32, YourReview>,
-    /// The items the user archived, each with the moment Archive marked it seen up to.
-    archived: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The items the user archived.
+    archived: BTreeMap<ItemKey, Archive>,
     /// The moment the user last acknowledged each Issue and PR.
     acknowledged: BTreeMap<u32, OffsetDateTime>,
 }
@@ -144,9 +144,7 @@ impl Causes {
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
-            archived: (facts.activity.archived.iter())
-                .map(|(key, archive)| (*key, archive.seen_up_to))
-                .collect(),
+            archived: facts.activity.archived.clone(),
             acknowledged: facts.activity.acknowledged.clone(),
         }
     }
@@ -156,13 +154,20 @@ impl Causes {
     /// stays back once the user marks it seen past the moment of the archive, as Mark Seen moves the moment
     /// they acknowledged it on.
     pub(crate) fn is_archived(&self, key: ItemKey, numbers: &[u32]) -> bool {
-        let Some(archived) = self.archived.get(&key) else {
+        let Some(archive) = self.archived.get(&key) else {
             return false;
         };
         numbers.iter().all(|number| {
             let acknowledged = self.acknowledged.get(number);
-            !self.needs_attention(*number) && acknowledged.is_none_or(|at| at <= archived)
+            let seen = acknowledged.is_none_or(|at| *at <= archive.seen_up_to);
+            !self.needs_attention(*number) && seen
         })
+    }
+
+    /// When the user last put away the item `key` names, if they archived it, which orders the Archived view
+    /// (#491).
+    pub(crate) fn archived_at(&self, key: ItemKey) -> Option<OffsetDateTime> {
+        self.archived.get(&key).map(|archive| archive.archived_at)
     }
 
     /// Where the user's Review of PR `number` stands.

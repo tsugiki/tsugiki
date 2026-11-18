@@ -24,6 +24,7 @@ vi.mock("$lib/data/bindings", () => ({
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
     archive: vi.fn(),
+    unarchive: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
   },
   events: { changed: { listen: vi.fn() } },
@@ -418,6 +419,36 @@ describe("WorkbenchState", () => {
     await reload(6);
 
     expect(state.underCursor, "it left for another reason, as a closed item does").toBeUndefined();
+    state.stop();
+  });
+
+  it("waits for an unarchived item to leave only in the Archived view, as any other keeps listing it", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.unarchive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    const reload = async (...listed: number[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(answer(...listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(numbers(state)).toEqual(listed);
+      });
+    };
+
+    // From the Issue view's button, while the Workbench lists the item it brings back.
+    await state.unarchive(item(5).key);
+    await reload(5, 6);
+    await reload(6);
+    expect(state.underCursor, "it left for another reason, as a closed item does").toBeUndefined();
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(7, 8));
+    await state.select({ kind: "archived" });
+    state.moveCursor(1);
+    await state.unarchive(item(7).key);
+    await reload(8);
+    expect(state.cursor?.number).toBe(8);
     state.stop();
   });
 
@@ -871,7 +902,7 @@ describe("WorkbenchState", () => {
     expect(await state.markUnseen(7)).toBe("no database");
 
     expect(commands.markSeen).toHaveBeenCalledWith("python/cpython", mark);
-    expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7);
+    expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7, null);
   });
 
   /** Item `number`, with a Review request waiting on the user. */

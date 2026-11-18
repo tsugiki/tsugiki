@@ -390,7 +390,7 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
     let drawn = hours_ago(2);
 
     let (content, activity, _) = after_asking("mark-seen", access, |asked| {
-        asked.mark_unseen(gcmon(), 8);
+        asked.mark_unseen(gcmon(), 8, None);
         asked.mark_seen(
             gcmon(),
             SeenMark {
@@ -438,8 +438,9 @@ fn mark_unseen_flags_the_item_from_now() {
     let access = replying(vec![signed_in()]);
     let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
 
-    let (_, activity, _) =
-        after_asking("mark-unseen", access, |asked| asked.mark_unseen(gcmon(), 7));
+    let (_, activity, _) = after_asking("mark-unseen", access, |asked| {
+        asked.mark_unseen(gcmon(), 7, None)
+    });
 
     let flagged = activity.marked_unseen.get(&7).copied().unwrap();
     assert!(flagged >= before, "{flagged} {before}");
@@ -522,7 +523,7 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
                 up_to: Some(drawn),
             },
         );
-        asked.mark_unseen(gcmon(), 8);
+        asked.mark_unseen(gcmon(), 8, None);
     });
 
     assert_eq!(content, None);
@@ -602,7 +603,9 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         },
     };
     let unseen = Marked::Unseen {
-        item: issue_7(),
+        repository: gcmon(),
+        number: 7,
+        archived: None,
         at: OffsetDateTime::UNIX_EPOCH,
     };
     for marked in [seen_mark, unseen] {

@@ -34,7 +34,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Open on GitHub | `Ctrl+Shift+G` |
 | Switch Repository | `Ctrl+R`, or the command palette |
 | Reset the layout | the command palette |
-| Archive, the row under the cursor or the Detail pane's item, by focus; Unarchive, a row of the Archived view | `E` |
+| Archive, the row under the cursor or the Detail pane's item, by focus | `E` |
 | Mute the selected item | `M` |
 | Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus | `Q` / `Shift+Q` |
 | Settings | `Ctrl+,`, or the command palette |

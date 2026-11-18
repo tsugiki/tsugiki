@@ -120,7 +120,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.refresh();
     fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::HandEdit);
     fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::Window);
-    fetching.mark_unseen(cpython(), 9);
+    fetching.mark_unseen(cpython(), 9, None);
     fetching.sync(RepositorySettings::new(cpython()));
     fetching.stop_session();
 

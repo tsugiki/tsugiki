@@ -41,8 +41,12 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
     let repository = cpython();
     let flagged = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
-    store.mark_unseen(&repository, 7, flagged).unwrap();
-    store.mark_unseen(&repository, 8, flagged).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(7), flagged)
+        .unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(8), flagged)
+        .unwrap();
     store.close();
 
     let store = Store::open(&path).unwrap();
@@ -93,7 +97,9 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
     let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
     let now = drawn + Duration::hours(1);
     let store = Store::open(&path).unwrap();
-    store.mark_unseen(&repository, 8, drawn).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(8), drawn)
+        .unwrap();
     let issue = ItemKey::Issue { number: 7 };
     let key = issue;
     store
@@ -226,31 +232,18 @@ fn archive_puts_the_item_away_now_and_mark_seen_on_an_archived_item_keeps_when()
 
 #[test]
 fn a_file_from_before_archived_at_puts_each_item_away_at_its_mark() {
-    let (path, _folder) = temp_database("activity-archived-at-migrates");
-    let repository = cpython();
     let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
-    let before = MIGRATIONS
-        .iter()
-        .position(|step| step.version == 31)
-        .unwrap();
-    crate::store::open_with(&path, MIGRATIONS.split_at(before).0)
-        .unwrap()
-        .close();
-    // Our functions can't write a file of an older version.
-    let raw = Connection::open(&path).unwrap();
-    let inserted = raw
-        .execute(
-            "INSERT INTO archived (repository, kind, number, at) VALUES (:repository, 'issue', 7, :at)",
-            named_params! { ":repository": repository, ":at": drawn.unix_timestamp() },
-        )
-        .unwrap();
-    drop(raw);
+    let rows = format!(
+        "INSERT INTO archived (repository, kind, number, at) VALUES ('python/cpython', 'issue', 7, {})",
+        drawn.unix_timestamp()
+    );
+    let (path, _folder) = database_before("activity-archived-at", ARCHIVED_AT, &rows);
+    let repository = cpython();
 
     let store = Store::open(&path).unwrap();
     let archived = store.work_facts(&repository).unwrap().activity.archived;
 
     store.close();
-    assert_eq!(inserted, 1);
     let archive = Archive {
         seen_up_to: drawn,
         archived_at: drawn,
@@ -280,12 +273,41 @@ fn mark_unseen_unarchives_the_item() {
             now,
         )
         .unwrap();
-    store.mark_unseen(&repository, 7, now).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(7), now)
+        .unwrap();
     let after = store.work_facts(&repository).unwrap().activity;
 
     store.close();
     assert_eq!(after.archived, BTreeMap::new());
     assert_eq!(after.marked_unseen, BTreeMap::from([(7, now)]));
+}
+
+#[test]
+fn mark_unseen_on_a_pr_unarchives_the_archived_item_that_holds_it() {
+    let (path, _folder) = temp_database("activity-unseen-unarchives-holder");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    let key = ItemKey::Issue { number: 7 };
+    let archiving = Archiving {
+        key,
+        numbers: vec![7, 8],
+        up_to: Some(now),
+        put_away: PutAway::Now,
+    };
+    store.archive(&repository, archiving, now).unwrap();
+    let flagging = Flagging {
+        number: 8,
+        archived: Some(key),
+    };
+
+    store.mark_unseen(&repository, flagging, now).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    assert_eq!(after.archived, BTreeMap::new());
+    assert_eq!(after.marked_unseen, BTreeMap::from([(8, now)]));
 }
 
 #[test]

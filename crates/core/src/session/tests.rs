@@ -390,7 +390,7 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
     let drawn = hours_ago(2);
 
     let (content, activity, _) = after_asking("mark-seen", access, |asked| {
-        asked.mark_unseen(gcmon(), 8);
+        asked.mark_unseen(gcmon(), 8, None);
         asked.mark_seen(
             gcmon(),
             SeenMark {
@@ -418,11 +418,17 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
             up_to: Some(drawn),
         };
         asked.archive(gcmon(), issue, mark(vec![7, 8]));
+        asked.keep_archived(gcmon(), issue, mark(vec![7]));
         asked.archive(gcmon(), standalone, mark(vec![9]));
         asked.unarchive(gcmon(), standalone);
     });
 
-    assert_eq!(activity.archived, BTreeMap::from([(issue, drawn)]));
+    let archived = activity.archived.iter();
+    let seen_up_to = archived.map(|(key, archive)| (*key, archive.seen_up_to));
+    assert_eq!(
+        BTreeMap::from_iter(seen_up_to),
+        BTreeMap::from([(issue, drawn)])
+    );
     let seen = BTreeMap::from([(7, drawn), (8, drawn), (9, drawn)]);
     assert_eq!(activity.last_seen, seen);
 }
@@ -432,8 +438,9 @@ fn mark_unseen_flags_the_item_from_now() {
     let access = replying(vec![signed_in()]);
     let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
 
-    let (_, activity, _) =
-        after_asking("mark-unseen", access, |asked| asked.mark_unseen(gcmon(), 7));
+    let (_, activity, _) = after_asking("mark-unseen", access, |asked| {
+        asked.mark_unseen(gcmon(), 7, None)
+    });
 
     let flagged = activity.marked_unseen.get(&7).copied().unwrap();
     assert!(flagged >= before, "{flagged} {before}");
@@ -516,7 +523,7 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
                 up_to: Some(drawn),
             },
         );
-        asked.mark_unseen(gcmon(), 8);
+        asked.mark_unseen(gcmon(), 8, None);
     });
 
     assert_eq!(content, None);
@@ -596,7 +603,9 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         },
     };
     let unseen = Marked::Unseen {
-        item: issue_7(),
+        repository: gcmon(),
+        number: 7,
+        archived: None,
         at: OffsetDateTime::UNIX_EPOCH,
     };
     for marked in [seen_mark, unseen] {

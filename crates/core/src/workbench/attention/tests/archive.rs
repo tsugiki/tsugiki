@@ -2,7 +2,7 @@
 //! there, read the way the window reads it.
 
 use super::*;
-use crate::facts::activity::ItemKey;
+use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::filters::FilterResults;
 use crate::filters::FilterQuery;
 use crate::store::Archiving;
@@ -35,6 +35,25 @@ impl World {
 
     /// Archive on item `number`'s line of `view`, as the window drew it.
     fn archive_in(&self, view: &WorkbenchView, number: u32) {
+        self.archive_at(view, number, OffsetDateTime::now_utc());
+    }
+
+    /// Archive on item `number`'s line of `view`, as the window drew it, at `now`.
+    fn archive_at(&self, view: &WorkbenchView, number: u32, now: OffsetDateTime) {
+        let archiving = self.archiving_in(view, number, PutAway::Now);
+        self.db.store.archive(&cpython(), archiving, now).unwrap();
+    }
+
+    /// Mark Seen at `now` on item `number`'s line of the Archived view, as the window drew it, which keeps
+    /// the item Archived.
+    fn keep_archived_at(&self, number: u32, now: OffsetDateTime) {
+        let archiving = self.archiving_in(&WorkbenchView::Archived, number, PutAway::AsBefore);
+        self.db.store.archive(&cpython(), archiving, now).unwrap();
+    }
+
+    /// What Archive on item `number`'s line of `view` writes, as the window drew it, putting the item away as
+    /// `put_away` says.
+    fn archiving_in(&self, view: &WorkbenchView, number: u32, put_away: PutAway) -> Archiving {
         let listed = self.listed_in(view, number);
         let seen = match &listed.item {
             WorkbenchItem::Issue(issue) => issue.seen.clone(),
@@ -43,13 +62,12 @@ impl World {
         };
         let SeenMark { numbers, up_to } = seen.mark;
         let key = listed.key;
-        let archiving = Archiving {
+        Archiving {
             key,
             numbers,
             up_to,
-        };
-        let now = OffsetDateTime::now_utc();
-        self.db.store.archive(&cpython(), archiving, now).unwrap();
+            put_away,
+        }
     }
 
     fn archive(&self, number: u32) {
@@ -240,5 +258,115 @@ fn an_archived_pr_leaves_the_stale_reviews_view_and_its_count() {
     let read = world.view(&stale);
     assert!(read.items.is_empty());
     assert_eq!(read.stale_reviews, 0);
+    world.finish();
+}
+
+// The Archived view (#491).
+
+/// The Archived view lists the items in this order, whichever order the list has.
+fn archived_in_order(world: &World) -> Vec<u32> {
+    let settings = cpython_settings();
+    let read = |order| {
+        let view = Workbench::read(&world.db.reader, &settings, &WorkbenchView::Archived, order);
+        numbers(&view.unwrap().items)
+    };
+    let by_attention = read(ListOrder::Attention);
+    assert_eq!(
+        read(ListOrder::LastUpdate),
+        by_attention,
+        "it keeps its own order"
+    );
+    by_attention
+}
+
+#[test]
+fn the_archived_view_lists_the_archived_items_the_last_archived_first_and_counts_items() {
+    let world = World::new("archived-view");
+    world.has(vec![own(1), own(2), fixing_too(own(6), 5), own(7)]);
+    world.has_issues(vec![issue(5)]);
+    let whole = WorkbenchView::Whole;
+    world.archive_at(&whole, 2, hours_ago(3));
+    world.archive_at(&whole, 5, hours_ago(2));
+    world.archive_at(&whole, 1, hours_ago(1));
+
+    let order = archived_in_order(&world);
+
+    assert_eq!(order, [1, 5, 2]);
+    let read = world.view(&WorkbenchView::Archived);
+    assert!(read.items.iter().all(|listed| listed.archived));
+    assert_eq!(read.archived, 3, "an Issue with its PR counts once");
+    assert_eq!(world.workbench().archived, 3);
+    world.finish();
+}
+
+#[test]
+fn two_archives_in_one_second_keep_their_order() {
+    let world = World::new("archived-view-one-second");
+    world.has(vec![own(1), own(2)]);
+    let at = hours_ago(1).replace_millisecond(100).unwrap();
+    world.archive_at(&WorkbenchView::Whole, 2, at);
+    world.archive_at(&WorkbenchView::Whole, 1, at + Duration::milliseconds(200));
+
+    assert_eq!(archived_in_order(&world), [1, 2]);
+    world.finish();
+}
+
+#[test]
+fn an_item_that_comes_back_leaves_the_archived_view() {
+    let world = World::new("archived-view-back");
+    world.has(vec![own(1), own(2)]);
+    world.archive(1);
+    world.archive(2);
+
+    world.happened(1, vec![comment(&colleague(), hours_ago(1))]);
+
+    assert_eq!(archived_in_order(&world), [2]);
+    assert_eq!(world.workbench().archived, 1);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_on_an_archived_item_keeps_its_place_and_archive_moves_it_first() {
+    let world = World::new("archived-view-mark-seen");
+    world.has(vec![own(1), own(2)]);
+    let archived = WorkbenchView::Archived;
+    world.archive_at(&WorkbenchView::Whole, 1, hours_ago(3));
+    world.archive_at(&WorkbenchView::Whole, 2, hours_ago(2));
+
+    world.keep_archived_at(1, hours_ago(1));
+    let kept = archived_in_order(&world);
+    world.archive_at(&archived, 1, hours_ago(1));
+
+    assert_eq!(kept, [2, 1]);
+    assert_eq!(archived_in_order(&world), [1, 2]);
+    world.finish();
+}
+
+#[test]
+fn unarchive_puts_the_item_back_where_its_state_puts_it() {
+    let world = World::new("archived-view-unarchive");
+    world.has(vec![own(1), own(2)]);
+    world.archive(1);
+    world.archive(2);
+
+    let key = world.listed_in(&WorkbenchView::Archived, 1).key;
+    world.db.store.unarchive(&cpython(), key).unwrap();
+
+    assert_eq!(archived_in_order(&world), [2]);
+    assert!(world.on_workbench(1));
+    assert!(!world.listed_in(&WorkbenchView::Whole, 1).archived);
+    world.finish();
+}
+
+#[test]
+fn mark_unseen_on_an_archived_item_brings_it_back_marked_unseen() {
+    let world = World::new("archived-view-unseen");
+    world.has(vec![own(1)]);
+    world.archive(1);
+
+    world.marked_unseen(1, hours_ago(1));
+
+    assert_eq!(archived_in_order(&world), Vec::<u32>::new());
+    assert_eq!(world.why(1), [Why::MarkedUnseen]);
     world.finish();
 }

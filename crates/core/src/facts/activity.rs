@@ -64,6 +64,27 @@ impl ItemKey {
     }
 }
 
+/// One item the user archived (#490).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Archive {
+    /// The moment Archive marked the item seen up to. What the user acknowledges after it brings the item
+    /// back.
+    pub seen_up_to: OffsetDateTime,
+    /// When the user put the item away, which orders the Archived view (#491).
+    pub archived_at: OffsetDateTime,
+}
+
+/// When Archive puts its item away, which orders the Archived view (#491).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutAway {
+    /// Now, as E, the palette's Archive and the Issue view's button do: the item goes to the top of the
+    /// Archived view.
+    Now,
+    /// When it was last put away, as Mark Seen does on an item the window draws Archived: the item keeps its
+    /// place in the Archived view.
+    AsBefore,
+}
+
 /// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
 /// list costs no query for each item.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -77,9 +98,9 @@ pub struct ActivityFacts {
     pub acknowledged: BTreeMap<u32, OffsetDateTime>,
     /// The moment the user marked each item unseen, for the items still flagged.
     pub marked_unseen: BTreeMap<u32, OffsetDateTime>,
-    /// The items the user archived, each with the moment Archive marked it seen up to. Whether each is still
-    /// Archived or has come back, `workbench` judges (#490).
-    pub archived: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The items the user archived. Whether each is still Archived or has come back, `workbench` judges
+    /// (#490).
+    pub archived: BTreeMap<ItemKey, Archive>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.

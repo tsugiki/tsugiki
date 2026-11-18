@@ -304,11 +304,17 @@ fn mark_seen(repository: &str, mark: SeenMark, requests: State<'_, Fetching>) ->
     Ok(())
 }
 
-/// Mark Unseen on item `number`, and returns at once.
+/// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
+/// draws that Archived (#491). Returns at once.
 #[tauri::command]
 #[specta::specta]
-fn mark_unseen(repository: &str, number: u32, requests: State<'_, Fetching>) -> Result<(), Error> {
-    requests.mark_unseen(RepositoryName::parse(repository)?, number);
+fn mark_unseen(
+    repository: &str,
+    number: u32,
+    archived: Option<ItemKey>,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.mark_unseen(RepositoryName::parse(repository)?, number, archived);
     Ok(())
 }
 
@@ -323,6 +329,20 @@ fn archive(
     requests: State<'_, Fetching>,
 ) -> Result<(), Error> {
     requests.archive(RepositoryName::parse(repository)?, item, mark);
+    Ok(())
+}
+
+/// Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
+/// its place in the Archived view (#491). Returns at once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn keep_archived(
+    repository: &str,
+    item: ItemKey,
+    mark: SeenMark,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.keep_archived(RepositoryName::parse(repository)?, item, mark);
     Ok(())
 }
 
@@ -1103,6 +1123,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             mark_seen,
             mark_unseen,
             archive,
+            keep_archived,
             unarchive,
             settings,
             slow_commands::themes,

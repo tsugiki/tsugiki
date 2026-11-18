@@ -167,9 +167,13 @@ impl ListedItem {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WorkbenchView {
     Whole,
-    Filter { query: FilterQuery },
+    Filter {
+        query: FilterQuery,
+    },
     ReviewRequests,
     StaleReviews,
+    /// The Archived items, the last archived first (#491).
+    Archived,
 }
 
 /// A Repository's Workbench or one of its views, with what the Sidebar shows beside it.
@@ -184,6 +188,8 @@ pub struct Workbench {
     pub review_requests: u32,
     /// The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one.
     pub stale_reviews: u32,
+    /// The count of Archived items.
+    pub archived: u32,
     pub filters: Vec<FilterLine>,
 }
 
@@ -197,7 +203,15 @@ impl Workbench {
         order: ListOrder,
     ) -> Result<Self, Error> {
         let facts = reader.work_facts(&repository.name)?;
-        Ok(Self::from_facts(facts, repository, view).ordered(order))
+        let workbench = Self::from_facts(facts, repository, view);
+        Ok(match view {
+            // Archived keeps its own order, the last archived first.
+            WorkbenchView::Archived => workbench,
+            WorkbenchView::Whole
+            | WorkbenchView::Filter { .. }
+            | WorkbenchView::ReviewRequests
+            | WorkbenchView::StaleReviews => workbench.ordered(order),
+        })
     }
 
     /// The Workbench with its items in `order`.
@@ -222,7 +236,7 @@ impl Workbench {
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
         let selected = match view {
-            WorkbenchView::Whole => None,
+            WorkbenchView::Whole | WorkbenchView::Archived => None,
             WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
             WorkbenchView::ReviewRequests => Some(&causes.review_requests),
             WorkbenchView::StaleReviews => Some(&causes.stale_reviews),
@@ -248,23 +262,38 @@ impl Workbench {
         );
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
         let stale_reviews = prs_of(&unarchived, &causes.stale_reviews);
-        let from = match view {
-            WorkbenchView::Filter { .. } | WorkbenchView::ReviewRequests => &kept,
-            WorkbenchView::Whole | WorkbenchView::StaleReviews => &unarchived,
+        let put_away: Vec<&ListedItem> = (listed.iter()).filter(|listed| listed.archived).collect();
+        let archived = count_of(put_away.iter());
+        let shown_of = |from: &[&ListedItem]| {
+            let shown = from.iter().filter(|listed| match selected {
+                Some(numbers) => listed.item.is_reached_by(numbers),
+                // The item is on the Workbench when anything in its tree is, in its own right.
+                None => listed.item.is_reached_by(&own_right),
+            });
+            by_attention(shown.map(|listed| (*listed).clone()).collect())
         };
-        let shown = from.iter().filter(|listed| match selected {
-            Some(numbers) => listed.item.is_reached_by(numbers),
-            // The item is on the Workbench when anything in its tree is, in its own right.
-            None => listed.item.is_reached_by(&own_right),
-        });
+        let items = match view {
+            WorkbenchView::Filter { .. } | WorkbenchView::ReviewRequests => shown_of(&kept),
+            WorkbenchView::Whole | WorkbenchView::StaleReviews => shown_of(&unarchived),
+            WorkbenchView::Archived => last_archived_first(&put_away, &causes),
+        };
         Self {
-            items: by_attention(shown.map(|listed| (*listed).clone()).collect()),
+            items,
             count,
             review_requests,
             stale_reviews,
+            archived,
             filters: lines,
         }
     }
+}
+
+/// `put_away`, the Archived items, the last archived first as `causes` say, and the higher number first of
+/// two archived at once.
+fn last_archived_first(put_away: &[&ListedItem], causes: &Causes) -> Vec<ListedItem> {
+    let mut items: Vec<ListedItem> = put_away.iter().map(|listed| (*listed).clone()).collect();
+    items.sort_by_key(|listed| Reverse((causes.archived_at(listed.key), listed.key.number())));
+    items
 }
 
 /// The count of the PRs in `numbers` that `listed` shows. A PR that fixes two Issues counts once.

@@ -1,7 +1,7 @@
 use time::Duration;
 
 use super::*;
-use crate::facts::activity::ItemKey;
+use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::Archiving;
@@ -282,6 +282,7 @@ fn archive_takes_an_item_out_and_a_page_of_archived_items_gives_way_to_the_next(
             key,
             numbers: vec![number],
             up_to: Some(ago(0)),
+            put_away: PutAway::Now,
         };
         world
             .db

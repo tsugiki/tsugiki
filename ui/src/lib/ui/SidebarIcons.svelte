@@ -37,6 +37,7 @@
     count,
     reviewRequests,
     staleReviews,
+    archived,
     filters,
     selected,
     onselect,
@@ -50,6 +51,8 @@
     count: number;
     reviewRequests: number;
     staleReviews: number;
+    /** How many items the Archived view holds. */
+    archived: number;
     filters: FilterLine[];
     selected: SidebarView;
     /** Brings the full Sidebar back and shows `view`. */
@@ -63,6 +66,7 @@
     inbox: "M2 8a6 6 0 1 0 12 0 6 6 0 1 0-12 0M7.4 8a.6.6 0 1 0 1.2 0 .6.6 0 1 0-1.2 0",
     review_requests: "M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5zM6 8a2 2 0 1 0 4 0 2 2 0 1 0-4 0",
     stale_reviews: "M2 8a6 6 0 1 0 12 0 6 6 0 1 0-12 0M8 4.5V8l2.5 1.5",
+    archived: "M2 3h12v3H2zM3 6v7h10V6M6.5 9h3",
     filter: "M2 3h12L9.5 8.5V13l-3 1.5V8.5z",
   };
 </script>
@@ -101,6 +105,7 @@
   <span class="rule"></span>
   {@render entry(ICONS.review_requests, "Review requests", reviewRequests, { kind: "review_requests" })}
   {@render entry(ICONS.stale_reviews, "Stale reviews", staleReviews, { kind: "stale_reviews" })}
+  {@render entry(ICONS.archived, "Archived", archived, { kind: "archived" })}
   {#if filters.length > 0}
     <span class="rule"></span>
   {/if}

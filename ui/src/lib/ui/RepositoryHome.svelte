@@ -83,6 +83,7 @@
       "Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing for a search it can't read.",
     review_requests: "Nobody has asked you for a review.",
     stale_reviews: "No Review of yours is stale.",
+    archived: "Nothing archived. E archives the item under the cursor.",
     inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
   };
 
@@ -463,8 +464,10 @@
     return shown?.number === stop.number && shown.kind === stop.kind;
   }
 
+  /** Mark Unseen on `marked`. It unarchives the Archived item that holds it, which comes back Marked unseen
+   * (#491). */
   async function markUnseen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markUnseen(marked.number));
+    if (marked) await sayMarkProblem((opened) => opened.markUnseen(marked.number, marked.archived));
   }
 
   /** Mark Seen or Mark Unseen on the item on show, whichever its header's button offers. */
@@ -493,15 +496,33 @@
     return stop && workbench.archivedBy(stop);
   }
 
+  /** What `E` does for a press `at`: on a row of the Archived view it unarchives the item that holds the row
+   * (#491), and otherwise it archives what `keyArchived` names. */
+  function keyArchive(at: KeyTarget): (() => void) | undefined {
+    const stop = forDetail(at) ? undefined : workbench.underCursor;
+    if (stop && workbench.shown.kind === "archived") {
+      const key = workbench.archivedBy(stop)?.key;
+      return key && (() => void unarchive(key));
+    }
+    const archived = keyArchived(at);
+    return archived && (() => void archive(archived));
+  }
+
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
   async function archive(archived: Archived) {
     await sayMarkProblem((opened) => opened.archive(archived));
   }
 
+  /** Unarchives the item `key` names. Once it leaves the list, as the Archived view, a cursor on it lands on
+   * the row after it. */
+  async function unarchive(key: ItemKey) {
+    await sayMarkProblem((opened) => opened.unarchive(key));
+  }
+
   /** The Issue view's Archive button: Archive on the Issue `view` shows, or Unarchive on an Archived one. */
   function archiveByButton(view: IssueView) {
     const key = { kind: "issue" as const, number: view.number };
-    if (view.archived) void sayMarkProblem((opened) => opened.unarchive(key));
+    if (view.archived) void unarchive(key);
     else void archive({ key, mark: view.seen.mark });
   }
 
@@ -661,21 +682,24 @@
     return name && { ...name, action, run: () => run(false) };
   }
 
+  /** Whether the view selected keeps its own order, and so has no switch of order: the Inbox, the latest
+   * update first, and Archived, the last archived first. */
+  const ownOrder = () => workbench.selected.kind === "inbox" || workbench.selected.kind === "archived";
+
   /** The commands this screen adds to the palette that run no action, which follow the actions. */
   export function paletteCommands(): PaletteAction[] {
-    // The Inbox keeps its own order.
-    const sort: PaletteAction[] =
-      workbench.selected.kind === "inbox"
-        ? []
-        : [
-            panes.order === "attention"
-              ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
-              : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
-          ];
+    const sort: PaletteAction[] = ownOrder()
+      ? []
+      : [
+          panes.order === "attention"
+            ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
+            : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
+        ];
     return [
       ...sort,
       { title: "View: Inbox", run: () => showView({ kind: "inbox" }) },
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
+      { title: "View: Archived", run: () => showView({ kind: "archived" }) },
       // Each shape but the one on show, so a hidden Sidebar offers both.
       ...(panes.hidden("sidebar") || !panes.sidebarIcons
         ? [{ title: "View: Sidebar as Icons", run: () => showSidebar(true) }]
@@ -842,11 +866,11 @@
     mark_seen: marking(markSeen),
     mark_unseen: marking(markUnseen),
     archive: (at) => {
-      const archived = keyArchived(at);
+      const run = keyArchive(at);
       return (
-        archived &&
+        run &&
         ((held) => {
-          if (!held) void archive(archived);
+          if (!held) run();
         })
       );
     },
@@ -1055,6 +1079,7 @@
      attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
   {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
+  {@const inArchived = workbench.shown.kind === "archived"}
   {@const stop: Stop = {
     number: item.number,
     kind: item.kind === "issue" ? "issue" : "pull_request",
@@ -1087,10 +1112,19 @@
         {#if item.kind === "issue" && item.pull_requests.length > 0}
           <small class="count">{treeCount(item)}</small>
         {/if}
-        {#if item.archived}
+        <!-- Every row of the Archived view is Archived, so there it offers Unarchive instead (#491). -->
+        {#if item.archived && !inArchived}
           <small class="archived">Archived</small>
         {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
+        {#if inArchived}
+          <button
+            class="link unarchive"
+            onclick={() => {
+              void unarchive(item.key);
+            }}>Unarchive</button
+          >
+        {/if}
       </span>
       <small class="facts"
         >{#if item.attention}{preview(item.attention)}{:else if item.kind !== "issue"}{@render facts(
@@ -1179,6 +1213,7 @@
         count={workbench.count}
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
+        archived={workbench.archived}
         filters={workbench.filters}
         selected={workbench.selected}
         onselect={showViewInFull}
@@ -1194,6 +1229,7 @@
         count={workbench.count}
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
+        archived={workbench.archived}
         filters={workbench.filters}
         selected={workbench.selected}
         onselect={showView}
@@ -1247,8 +1283,7 @@
             />On the Workbench</label
           >
         {/if}
-        <!-- The Inbox keeps its own order, the latest update first. -->
-        {#if workbench.selected.kind !== "inbox"}
+        {#if !ownOrder()}
           <button
             class="link order"
             title="Change the order"
@@ -1489,6 +1524,15 @@
 
   .attention > .row .age {
     color: var(--accent);
+  }
+
+  /* Unarchive on a row of the Archived view sits above the title's cover, so a click on it unarchives
+     rather than opens. */
+  .unarchive {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    font-size: 12px;
   }
 
   /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. It sits above the

@@ -26,6 +26,30 @@ fn stored_texts<T: ToSql + FromSql + Debug + PartialEq>(all: &[T]) -> Vec<String
 }
 
 #[test]
+fn a_time_in_milliseconds_keeps_them_and_refuses_one_past_the_calendar() {
+    let at = OffsetDateTime::from_unix_timestamp_nanos(1_795_000_000_123_456_789).unwrap();
+    let connection = Connection::open_in_memory().unwrap();
+    let (stored, read): (i64, UnixMillis) = connection
+        .query_row(
+            "SELECT :value AS value",
+            named_params! {":value": UnixMillis(at)},
+            |row| Ok((row.get("value")?, row.get("value")?)),
+        )
+        .unwrap();
+    let past: rusqlite::Result<UnixMillis> =
+        connection.query_row("SELECT 9223372036854775807 AS value", [], |row| {
+            row.get("value")
+        });
+
+    assert_eq!(stored, 1_795_000_000_123);
+    assert_eq!(
+        read,
+        UnixMillis(at.replace_nanosecond(123_000_000).unwrap())
+    );
+    assert!(past.is_err());
+}
+
+#[test]
 fn each_mark_on_a_thread_keeps_its_text() {
     assert_eq!(stored_texts(Resolution::ALL), ["open", "resolved"]);
     assert_eq!(stored_texts(Anchor::ALL), ["current", "outdated"]);

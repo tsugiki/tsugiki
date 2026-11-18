@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::error::{Error, ErrorKind};
+use crate::facts::activity::ItemKey;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::PrHead;
@@ -21,7 +22,8 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
 use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
-    self, Archiving, ConversationSaved, HeadKept, OpenReader, ReaderToOpen, Store, StoreReader,
+    self, Archiving, ConversationSaved, Flagging, HeadKept, OpenReader, ReaderToOpen, Store,
+    StoreReader,
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
@@ -684,17 +686,22 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
             (store.mark_seen(&change.repository, numbers, up_to), change)
         }
         Marked::Unseen {
-            item: Item { repository, number },
+            repository,
+            number,
+            archived,
             at,
         } => {
-            let saved = store.mark_unseen(&repository, number, at);
-            let items = vec![number];
+            let saved = store.mark_unseen(&repository, Flagging { number, archived }, at);
+            let unarchived = archived.map(ItemKey::number);
+            let mut items = vec![number];
+            items.extend(unarchived.filter(|holder| *holder != number));
             (saved, Change { repository, items })
         }
         Marked::Archived {
             repository,
             key,
             mark: SeenMark { numbers, up_to },
+            put_away,
             at,
         } => {
             let change = Change {
@@ -705,6 +712,7 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
                 key,
                 numbers,
                 up_to,
+                put_away,
             };
             let saved = store.archive(&change.repository, archiving, at);
             (saved, change)

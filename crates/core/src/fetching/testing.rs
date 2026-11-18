@@ -14,7 +14,7 @@ pub(crate) fn named(message: SessionMessage) -> String {
             format!("settings of {}", settings.name)
         }
         SessionMessage::SettingsChanged(_, SavedBy::Window) => "switch".to_owned(),
-        SessionMessage::Mark(Marked::Unseen { item, .. }) => format!("unseen #{}", item.number),
+        SessionMessage::Mark(Marked::Unseen { number, .. }) => format!("unseen #{number}"),
         SessionMessage::Stop => "stop".to_owned(),
         SessionMessage::Check { .. }
         | SessionMessage::Sync { .. }

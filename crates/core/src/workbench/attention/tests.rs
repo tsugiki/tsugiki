@@ -19,6 +19,7 @@ use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFac
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
 use crate::settings::ListOrder;
+use crate::store::Flagging;
 use crate::store::testing::World;
 use crate::testing::{cpython, cpython_settings, hours_ago, issue_facts, me, pr_facts, sha_of};
 use crate::work::{SeenMark, Why, YourReview};
@@ -120,7 +121,8 @@ impl World {
     }
 
     fn marked_unseen(&self, number: u32, at: OffsetDateTime) {
-        self.db.store.mark_unseen(&cpython(), number, at).unwrap();
+        let flagging = Flagging::on(number);
+        self.db.store.mark_unseen(&cpython(), flagging, at).unwrap();
     }
 
     /// The mark that Mark Seen on item `number`'s line of the Workbench sends, as the window drew it.

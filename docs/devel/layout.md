@@ -65,7 +65,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     with the focus in the Detail pane or the list hidden, it archives the Issue on show, or the item the PR
     on show belongs to while the list holds it, and with nothing open it does nothing. `Q` on an Archived
     item marks it seen and keeps it Archived. A row the list keeps while Archived, as the Review requests
-    view keeps a PR whose Review request stood at the archive, says "Archived" beside its age. Any item can
+    view keeps a PR whose Review request stood at the archive, says "Archived" beside its age. In the
+    Archived view each item's row has Unarchive after its age, and `E` on any of its rows unarchives it too;
+    either way the cursor moves on to the next row once the item leaves the list, while `E` with the focus in
+    the Detail pane still archives. "View: Archived" in the command palette opens the view. Any item can
     be **Muted**, and its author **Muted**. A footer under the list gives the legend and the list's keys (↑
     ↓, ← →, E, M, `Alt+←`, `?` for all); it can be switched off.
 

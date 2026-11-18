@@ -30,6 +30,27 @@ impl FromSql for UnixTime {
     }
 }
 
+/// A time in a column, as milliseconds since the Unix epoch, for an order that two moments in one second
+/// mustn't tie in, as the Archived view's doesn't (#491).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct UnixMillis(pub(super) OffsetDateTime);
+
+impl ToSql for UnixMillis {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        let Self(at) = self;
+        let millis = at.unix_timestamp() * 1000 + i64::from(at.millisecond());
+        Ok(ToSqlOutput::from(millis))
+    }
+}
+
+impl FromSql for UnixMillis {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        OffsetDateTime::from_unix_timestamp_nanos(i128::from(value.as_i64()?) * 1_000_000)
+            .map(Self)
+            .map_err(|cause| FromSqlError::Other(Box::new(cause)))
+    }
+}
+
 /// Some Issue and PR numbers as one parameter: a JSON array, which a query reads with `json_each`, so one
 /// statement asks for all of them. A caller that asks with the same numbers more than once builds it once.
 pub struct Numbers(String);

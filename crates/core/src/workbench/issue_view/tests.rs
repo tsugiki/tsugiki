@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use time::OffsetDateTime;
 
 use super::*;
-use crate::facts::activity::ItemKey;
+use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::{Comment, CommentId, IssueComment};
 use crate::facts::issues::IssueFacts;
@@ -170,6 +170,7 @@ fn the_view_says_whether_the_issue_is_archived() {
         key,
         numbers,
         up_to: None,
+        put_away: PutAway::Now,
     };
     let now = OffsetDateTime::now_utc();
     world.db.store.archive(&cpython(), archiving, now).unwrap();

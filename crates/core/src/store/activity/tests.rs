@@ -41,8 +41,12 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
     let repository = cpython();
     let flagged = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
-    store.mark_unseen(&repository, 7, flagged).unwrap();
-    store.mark_unseen(&repository, 8, flagged).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(7), flagged)
+        .unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(8), flagged)
+        .unwrap();
     store.close();
 
     let store = Store::open(&path).unwrap();
@@ -93,7 +97,9 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
     let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
     let now = drawn + Duration::hours(1);
     let store = Store::open(&path).unwrap();
-    store.mark_unseen(&repository, 8, drawn).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(8), drawn)
+        .unwrap();
     let issue = ItemKey::Issue { number: 7 };
     let key = issue;
     store
@@ -103,6 +109,7 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
                 key,
                 numbers: vec![7, 8],
                 up_to: Some(drawn),
+                put_away: PutAway::Now,
             },
             now,
         )
@@ -116,6 +123,7 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
                 key,
                 numbers: vec![9],
                 up_to: None,
+                put_away: PutAway::Now,
             },
             now,
         )
@@ -128,16 +136,20 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
     let after = store.work_facts(&repository).unwrap().activity;
 
     store.close();
+    let archive = |seen_up_to| Archive {
+        seen_up_to,
+        archived_at: now,
+    };
     assert_eq!(
         restarted.archived,
-        BTreeMap::from([(issue, drawn), (standalone, now)]),
+        BTreeMap::from([(issue, archive(drawn)), (standalone, archive(now))]),
         "with nothing drawn, it counts from now"
     );
     let both = BTreeMap::from([(7, drawn), (8, drawn)]);
     assert_eq!(restarted.last_seen, both);
     assert_eq!(restarted.acknowledged, both);
     assert_eq!(restarted.marked_unseen, BTreeMap::new());
-    assert_eq!(after.archived, BTreeMap::from([(issue, drawn)]));
+    assert_eq!(after.archived, BTreeMap::from([(issue, archive(drawn))]));
     assert_eq!(after.last_seen, both, "unarchive leaves Last seen");
 }
 
@@ -155,6 +167,7 @@ fn archive_counts_from_the_latest_moment_its_tree_was_acknowledged_and_never_mov
         key,
         numbers,
         up_to: Some(drawn),
+        put_away: PutAway::Now,
     };
     store
         .archive(&repository, archiving(vec![7, 8]), drawn)
@@ -167,10 +180,77 @@ fn archive_counts_from_the_latest_moment_its_tree_was_acknowledged_and_never_mov
     let again = store.work_facts(&repository).unwrap().activity.archived;
 
     store.close();
-    assert_eq!(first, BTreeMap::from([(key, later)]));
+    let archive = Archive {
+        seen_up_to: later,
+        archived_at: drawn,
+    };
+    assert_eq!(first, BTreeMap::from([(key, archive)]));
     assert_eq!(
         again, first,
         "archiving again from an older mark moves nothing back"
+    );
+}
+
+#[test]
+fn archive_puts_the_item_away_now_and_mark_seen_on_an_archived_item_keeps_when() {
+    let (path, _folder) = temp_database("activity-archived-at");
+    let repository = cpython();
+    let first = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let (second, third) = (first + Duration::hours(1), first + Duration::hours(2));
+    let store = Store::open(&path).unwrap();
+    let archive = |number, put_away, now| {
+        let archiving = Archiving {
+            key: ItemKey::Issue { number },
+            numbers: vec![number],
+            up_to: Some(first),
+            put_away,
+        };
+        store.archive(&repository, archiving, now).unwrap();
+        let archived = store.work_facts(&repository).unwrap().activity.archived;
+        archived[&ItemKey::Issue { number }].archived_at
+    };
+
+    let kept = (
+        archive(7, PutAway::Now, first),
+        archive(7, PutAway::AsBefore, second),
+    );
+    let moved = archive(7, PutAway::Now, third);
+    let fresh = archive(8, PutAway::AsBefore, second);
+
+    store.close();
+    assert_eq!(
+        kept,
+        (first, first),
+        "Mark Seen on it keeps when it was put away"
+    );
+    assert_eq!(moved, third, "archiving it again puts it away now");
+    assert_eq!(
+        fresh, second,
+        "an item with no archive to keep is put away now"
+    );
+}
+
+#[test]
+fn a_file_from_before_archived_at_puts_each_item_away_at_its_mark() {
+    let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let rows = format!(
+        "INSERT INTO archived (repository, kind, number, at) VALUES ('python/cpython', 'issue', 7, {})",
+        drawn.unix_timestamp()
+    );
+    let (path, _folder) = database_before("activity-archived-at-migrates", ARCHIVED_AT, &rows);
+    let repository = cpython();
+
+    let store = Store::open(&path).unwrap();
+    let archived = store.work_facts(&repository).unwrap().activity.archived;
+
+    store.close();
+    let archive = Archive {
+        seen_up_to: drawn,
+        archived_at: drawn,
+    };
+    assert_eq!(
+        archived,
+        BTreeMap::from([(ItemKey::Issue { number: 7 }, archive)])
     );
 }
 
@@ -188,16 +268,46 @@ fn mark_unseen_unarchives_the_item() {
                 key,
                 numbers: vec![7],
                 up_to: Some(now),
+                put_away: PutAway::Now,
             },
             now,
         )
         .unwrap();
-    store.mark_unseen(&repository, 7, now).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(7), now)
+        .unwrap();
     let after = store.work_facts(&repository).unwrap().activity;
 
     store.close();
     assert_eq!(after.archived, BTreeMap::new());
     assert_eq!(after.marked_unseen, BTreeMap::from([(7, now)]));
+}
+
+#[test]
+fn mark_unseen_on_a_pr_unarchives_the_archived_item_that_holds_it() {
+    let (path, _folder) = temp_database("activity-unseen-unarchives-holder");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    let key = ItemKey::Issue { number: 7 };
+    let archiving = Archiving {
+        key,
+        numbers: vec![7, 8],
+        up_to: Some(now),
+        put_away: PutAway::Now,
+    };
+    store.archive(&repository, archiving, now).unwrap();
+    let flagging = Flagging {
+        number: 8,
+        archived: Some(key),
+    };
+
+    store.mark_unseen(&repository, flagging, now).unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+
+    store.close();
+    assert_eq!(after.archived, BTreeMap::new());
+    assert_eq!(after.marked_unseen, BTreeMap::from([(8, now)]));
 }
 
 #[test]

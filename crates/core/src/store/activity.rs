@@ -8,9 +8,11 @@ use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 use time::OffsetDateTime;
 
 use super::Connection;
-use super::columns::{Items, UnixTime};
+use super::columns::{Items, UnixMillis, UnixTime};
 use super::failed_checks;
-use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemActivity, ItemKey};
+use crate::facts::activity::{
+    Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, PutAway,
+};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -73,6 +75,14 @@ pub(super) const ARCHIVED: &str = "
         at INTEGER NOT NULL,
         PRIMARY KEY (repository, kind, number)
     ) WITHOUT ROWID;
+";
+
+/// When the user put each archived item away, which orders the Archived view (#491), in milliseconds, so
+/// two archives in one second keep their order. An item archived before this column goes by the moment
+/// Archive marked it seen up to.
+pub(super) const ARCHIVED_AT: &str = "
+    ALTER TABLE archived ADD COLUMN archived_at INTEGER NOT NULL DEFAULT 0;
+    UPDATE archived SET archived_at = at * 1000;
 ";
 
 const ISSUE: &str = "issue";
@@ -227,14 +237,38 @@ fn mark_seen_in(
     Ok(())
 }
 
-/// Flags item `number` Marked unseen from `at`, and unarchives it. Marking it again starts the flag afresh.
+/// What Mark Unseen writes: the flag on Issue or PR `number`, and the unarchive of `archived`, the item that
+/// holds it if the window draws that Archived, as a flag on a PR in an Archived Issue's tree would otherwise
+/// leave the Issue archived (#491).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Flagging {
+    pub number: u32,
+    pub archived: Option<ItemKey>,
+}
+
+impl Flagging {
+    /// The flag on Issue or PR `number`, with no item drawn Archived to unarchive.
+    pub fn on(number: u32) -> Self {
+        Self {
+            number,
+            archived: None,
+        }
+    }
+}
+
+/// Flags `flagging`'s Issue or PR Marked unseen from `at`, and unarchives it and the item it names. Marking
+/// it again starts the flag afresh.
 pub(super) fn mark_unseen(
     connection: &mut Connection,
     repository: &RepositoryName,
-    number: u32,
+    flagging: Flagging,
     at: OffsetDateTime,
 ) -> rusqlite::Result<()> {
+    let Flagging { number, archived } = flagging;
     let transaction = connection.transaction()?;
+    if let Some(key) = archived {
+        unarchive(&transaction, repository, key)?;
+    }
     let _flagged = transaction.execute(
         "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
          ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
@@ -259,18 +293,20 @@ fn key_columns(key: ItemKey) -> (&'static str, u32) {
     }
 }
 
-/// What Archive writes: the item `key` names, and Mark Seen on `numbers`, the item and its tree, up to
-/// `up_to` as the window drew it.
+/// What Archive writes: the item `key` names, Mark Seen on `numbers`, the item and its tree, up to `up_to` as
+/// the window drew it, and when it puts the item away.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Archiving {
     pub key: ItemKey,
     pub numbers: Vec<u32>,
     pub up_to: Option<OffsetDateTime>,
+    pub put_away: PutAway,
 }
 
 /// Archive on `archiving`'s item: Mark Seen on its numbers, and the item kept as archived from `up_to`, or
 /// from `now` when the window drew no sync, or from a later moment one of its numbers was acknowledged at.
-/// Archiving it again never moves that moment back.
+/// Archiving it again never moves that moment back. The item is put away `now`, or, as `put_away` says, when
+/// it last was, if it was.
 pub(super) fn archive(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -281,6 +317,7 @@ pub(super) fn archive(
         key,
         numbers,
         up_to,
+        put_away,
     } = archiving;
     let transaction = connection.transaction()?;
     mark_seen_in(&transaction, repository, numbers, *up_to)?;
@@ -299,14 +336,19 @@ pub(super) fn archive(
         at = at.max(acknowledged.unwrap_or(at));
     }
     let (kind, number) = key_columns(*key);
+    let as_before = matches!(put_away, PutAway::AsBefore);
     let _archived = transaction.execute(
-        "INSERT INTO archived (repository, kind, number, at) VALUES (:repository, :kind, :number, :at)
-         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at)",
+        "INSERT INTO archived (repository, kind, number, at, archived_at)
+         VALUES (:repository, :kind, :number, :at, :now)
+         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at),
+             archived_at = CASE WHEN :as_before THEN archived_at ELSE excluded.archived_at END",
         named_params! {
             ":repository": repository,
             ":kind": kind,
             ":number": number,
             ":at": at,
+            ":now": UnixMillis(now),
+            ":as_before": as_before,
         },
     )?;
     transaction.commit()
@@ -327,15 +369,16 @@ pub(super) fn unarchive(
         .map(drop)
 }
 
-/// The archived items of `items`, each with the moment it was archived from.
+/// The archived items of `items`.
 fn archived(
     connection: &Connection,
     repository: &RepositoryName,
     items: Items<'_>,
-) -> rusqlite::Result<BTreeMap<ItemKey, OffsetDateTime>> {
+) -> rusqlite::Result<BTreeMap<ItemKey, Archive>> {
     let condition = items.condition("number");
-    let query =
-        format!("SELECT kind, number, at FROM archived WHERE repository = :repository {condition}");
+    let query = format!(
+        "SELECT kind, number, at, archived_at FROM archived WHERE repository = :repository {condition}"
+    );
     let mut statement = connection.prepare(&query)?;
     let asked = items.with(vec![(":repository", repository)]);
     let mut rows = statement.query(asked.as_slice())?;
@@ -349,8 +392,13 @@ fn archived(
             // A later version's kind, such as Dependency updates, means nothing to this one.
             _ => continue,
         };
-        let UnixTime(at) = row.get("at")?;
-        let _replaced = found.insert(key, at);
+        let UnixTime(seen_up_to) = row.get("at")?;
+        let UnixMillis(archived_at) = row.get("archived_at")?;
+        let archive = Archive {
+            seen_up_to,
+            archived_at,
+        };
+        let _replaced = found.insert(key, archive);
     }
     Ok(found)
 }

@@ -84,13 +84,21 @@ export const commands = {
 	 *  Returns at once, and the `changed` event follows.
 	 */
 	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
-	/**  Mark Unseen on item `number`, and returns at once. */
-	markUnseen: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number })),
+	/**
+	 *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
+	 *  draws that Archived (#491). Returns at once.
+	 */
+	markUnseen: (repository: string, number: number, archived: ItemKey | null) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number, archived })),
 	/**
 	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
 	 *  once, and the `changed` event follows.
 	 */
 	archive: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, item, mark })),
+	/**
+	 *  Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
+	 *  its place in the Archived view (#491). Returns at once, and the `changed` event follows.
+	 */
+	keepArchived: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, item, mark })),
 	/**  Unarchives the item `item` names, and returns at once. */
 	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
@@ -3564,7 +3572,9 @@ export type WorkbenchRow_Serialize = {
 };
 
 /**  The list the window asks for. */
-export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" } | { kind: "stale_reviews" };
+export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" } | { kind: "stale_reviews" } | 
+/**  The Archived items, the last archived first (#491). */
+{ kind: "archived" };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
@@ -3579,6 +3589,8 @@ export type Workbench_Deserialize = {
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
+	/**  The count of Archived items. */
+	archived: number,
 	filters: FilterLine_Deserialize[],
 };
 
@@ -3595,6 +3607,8 @@ export type Workbench_Serialize = {
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
+	/**  The count of Archived items. */
+	archived: number,
 	filters: FilterLine_Serialize[],
 };
 

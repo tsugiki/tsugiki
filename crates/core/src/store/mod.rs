@@ -20,7 +20,7 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
-pub use activity::Archiving;
+pub use activity::{Archiving, Flagging};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -506,16 +506,16 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Flags item `number` Marked unseen from `at`.
+    /// Flags `flagging`'s Issue or PR Marked unseen from `at`, and unarchives what it names.
     pub fn mark_unseen(
         &self,
         repository: &RepositoryName,
-        number: u32,
+        flagging: Flagging,
         at: OffsetDateTime,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self
-            .call(move |connection| activity::mark_unseen(connection, &repository, number, at))?;
+            .call(move |connection| activity::mark_unseen(connection, &repository, flagging, at))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

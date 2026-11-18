@@ -27,6 +27,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   badge, with the changed files in the hover, but it never Needs attention and adds to no count. While its
   check waits or can't run, it shows what an open PR's would. A PR merged with a merge commit has its
   commits on the Target branch, so each one's diff starts from the branch as it stood before that merge.
+- The check runs only on PRs in Reach, so a **Muted** item's PRs go unchecked while nobody asks the user
+  about it ([#918](https://github.com/tsugiki/tsugiki/issues/918)). A PR that Unmute puts back in Reach
+  keeps its last verdict until the Mirror has fetched its head and the check has run.
 - A **Bot backport** shares its Origin PR's review state, so Tsugiki checks none of its own. A **Manual
   backport** is reviewed on its own, and so is a Bot backport whose Origin PR Tsugiki lacks or is a Backport
   too, which the list shows by itself.

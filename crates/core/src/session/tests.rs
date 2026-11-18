@@ -633,8 +633,9 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
     for marked in [seen_mark, unseen] {
         let (mut board, seen) = watched_board();
 
-        mark(&mut board, &Store::stopped(), marked);
+        let saved = mark(&mut board, &Store::stopped(), marked);
 
+        assert_eq!(saved, None);
         assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
 }
@@ -1716,6 +1717,68 @@ fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
         handed.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
         "{handed:?}"
     );
+}
+
+#[test]
+fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owes_their_reads() {
+    let (folders, _folder) = temp_folders("muted-session");
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&me()).unwrap();
+    let issue = IssueFacts {
+        number: 5,
+        title: "A bug".to_owned(),
+        author: None,
+        assignees: vec![],
+        labels: vec![],
+        updated_at: OffsetDateTime::UNIX_EPOCH,
+        state: Some(IssueState::Open),
+    };
+    store.save_issues(&gcmon(), vec![issue]).unwrap();
+    let fixing_5 = |number: u32, author: &str, head: &str| PullRequestFacts {
+        title: "gh-5: Fix it".to_owned(),
+        ..stored_pr(number, author, head)
+    };
+    let stored = vec![
+        fixing_5(8, "octocat", "4567def"),
+        fixing_5(9, "some-author", "89abcde"),
+    ];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+    };
+    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+    let mark = SeenMark {
+        numbers: vec![5, 8, 9],
+        up_to: None,
+    };
+
+    // CPython's Conventions link a PR to the Issue its title names.
+    let settings = RepositorySettings {
+        conventions: Conventions::Cpython,
+        ..plain_gcmon()
+    };
+
+    let asked = session.fetching();
+    asked.sync(settings);
+    asked.mute(gcmon(), issue, mark);
+    let muted = heard.asked_through("wants heads none", PLENTY);
+    asked.unmute(gcmon(), issue);
+    let unmuted = heard.asked_through("wants heads #8", PLENTY);
+    session.stop(PLENTY);
+    let store = Store::open(&folders.database()).unwrap();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+
+    assert!(
+        muted.contains(&"some-maintainer/gcmon wants heads none".to_owned()),
+        "{muted:?}"
+    );
+    let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
+    assert!(unmuted.contains(&heads.to_owned()), "{unmuted:?}");
+    assert_eq!(owed, [8, 9].into());
 }
 
 #[test]

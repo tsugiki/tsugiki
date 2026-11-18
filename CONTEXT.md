@@ -118,11 +118,14 @@ _Avoid_: Dashboard
 **Reach**:
 The Issues and PRs Tsugiki keeps ready to open in a **Repository**: their heads in the **Mirror** and their
 Conversations read ahead. It is worked out from the **Workbench** and the links between Issues and PRs, never
-from the rows the list draws. It holds each Issue and PR on the Workbench in its own right, with the Origin
-PR and the Backports of such a PR, and each Issue one of those fixes; then each PR that fixes a reached
-Issue, through the Repository's **Conventions**, whether open, merged or closed; then each **Backport** whose
-**Origin PR** is reached, and the Origin PR of each reached Backport. An item that only a **Filter** switched
-off the Workbench finds stays out of it.
+from the rows the list draws. It starts from each Issue and PR on the Workbench in its own right or carrying
+a **Review request**, with each **Muted** item's tree left out of them. It holds those, with the Origin PR
+and the Backports of such a PR, and each Issue one of those fixes; then each PR that fixes a reached Issue,
+through the Repository's **Conventions**, whether open, merged or closed; then each **Backport** whose
+**Origin PR** is reached, and the Origin PR of each reached Backport; and no more. A PR in a Muted tree
+comes back when another item reaches it through those links. Reach also holds the tree of each Muted item
+where a Review request or an assignment to the user stands, acknowledged or not. An **Archived** item stays
+in it. An item that only a **Filter** switched off the Workbench finds stays out of it.
 _Avoid_: The PRs the user's work reaches
 
 **Filter**:

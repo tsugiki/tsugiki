@@ -100,6 +100,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     alone, until the request or the assignment ends. An assignment's start is the newest the Issue's or PR's
     timeline holds; one the timeline no longer holds counts as from before the mute. Tsugiki keeps Muted
     items per Repository under Archive's key.
+  - A Muted item's tree leaves **Reach** while nobody asks the user about it
+    ([#918](https://github.com/tsugiki/tsugiki/issues/918)): the Mirror fetches none of its heads and
+    Tsugiki reads ahead none of its Conversations, so opening one of its PRs from the Issue view or the
+    history waits on a fetch. A PR in it that another item reaches through its links stays in Reach. A
+    Review request or an assignment to the user anywhere in the tree, acknowledged or not, keeps the whole
+    tree in Reach until it ends. Unmute puts the tree back at once, as switching a Filter on does: the
+    Mirror fetches its heads, and the next refresh reads ahead the Conversations Tsugiki hasn't read at
+    their heads. An Archived item stays in Reach.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened
     still shows when another PR in it needs attention or a Filter matches it.

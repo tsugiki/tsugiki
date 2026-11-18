@@ -27,7 +27,7 @@ use crate::store::{
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched};
+use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched, unmuted};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -250,7 +250,9 @@ impl Refreshes {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
-                SessionMessage::Mark(marked) => mark(board, store, marked),
+                SessionMessage::Mark(marked) => {
+                    let _saved = mark(board, store, marked);
+                }
                 SessionMessage::SettingsChanged(settings, by) => {
                     announce_settings(board, &settings.name, by);
                 }
@@ -421,7 +423,14 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                     announce_settings(board, &repository, by);
                 }
             }
-            Turn::Mark(marked) => mark(board, store, marked),
+            Turn::Mark(marked) => {
+                let moved = ReachMove::of(&marked, store, &syncs);
+                if mark(board, store, marked).is_some()
+                    && let Some(moved) = moved
+                {
+                    let _followed = moved.follow(&refreshes.fetching, store, &syncs);
+                }
+            }
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
             Turn::CheckHour => {}
@@ -603,13 +612,105 @@ fn follow_reach(
         facts: &facts,
         work,
     };
+    owe_what_moved(fetching, store, stated, owed);
+    Some(())
+}
+
+/// Hands the Mirror worker what `stated` says, and has the store owe the reads ahead of `owed`, both after a
+/// move of Reach. A store that can't keep what it owes loses them, and the log says so.
+fn owe_what_moved(fetching: &Fetching, store: &Store, stated: Stated<'_>, owed: Vec<u32>) {
+    let repository = stated.repository;
     hand_over_wants(fetching, store, stated);
     if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
-            "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",
+            "Tsugiki couldn't keep the reads ahead owed in {repository}: {}",
             problem.message
         );
     }
+}
+
+/// The move of Reach a mark makes in a Repository the session has opened since launch (#918), worked out
+/// before the store keeps the mark.
+enum ReachMove<'a> {
+    /// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
+    /// Mirror worker stops wanting their heads.
+    Mute(&'a RepositoryName),
+    Unmute(Box<Unmuting<'a>>),
+}
+
+/// Unmute of the item `key` under `settings`.
+struct Unmuting<'a> {
+    settings: &'a RepositorySettings,
+    /// The stored facts before the Unmute, which still hold the item Muted, if the store could read them.
+    before: Result<WorkFacts, Error>,
+    key: ItemKey,
+}
+
+impl<'a> ReachMove<'a> {
+    /// The move `marked` makes, under the settings `syncs` hold: none for a mark other than Mute and Unmute.
+    fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
+        match marked {
+            Marked::Muted { repository, .. } => {
+                let settings = syncs.settings(repository)?;
+                Some(Self::Mute(&settings.name))
+            }
+            Marked::Unmuted { repository, key } => {
+                let settings = syncs.settings(repository)?;
+                let before = store.work_facts(repository);
+                let key = *key;
+                Some(Self::Unmute(Box::new(Unmuting {
+                    settings,
+                    before,
+                    key,
+                })))
+            }
+            Marked::Seen { .. }
+            | Marked::Unseen { .. }
+            | Marked::Archived { .. }
+            | Marked::Unarchived { .. } => None,
+        }
+    }
+
+    /// Has the Mirror worker follow the move, once the store kept the mark. Says whether it handed the
+    /// Mirror worker anything.
+    fn follow(self, fetching: &Fetching, store: &Store, syncs: &Syncs) -> Option<()> {
+        match self {
+            Self::Mute(repository) => {
+                hand_over_rules_wants(fetching, store, syncs, repository).map(drop)
+            }
+            Self::Unmute(unmuting) => follow_unmute(fetching, store, *unmuting),
+        }
+    }
+}
+
+/// The user unmuted an item, whose tree is back in Reach. No change on GitHub would have the Mirror fetch
+/// its heads or a refresh read its Conversations ahead. So the Mirror worker hears the new Reach at once,
+/// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
+/// Facts the store couldn't read leave the heads to the next step that saves, and lose the reads. Says
+/// whether it handed the Mirror worker anything.
+fn follow_unmute(fetching: &Fetching, store: &Store, unmuting: Unmuting<'_>) -> Option<()> {
+    let Unmuting {
+        settings,
+        before,
+        key,
+    } = unmuting;
+    let repository = &settings.name;
+    let mut facts = before
+        .inspect_err(|problem| {
+            log::warn!(
+                "Tsugiki couldn't read what an Unmute in {repository} puts back in Reach: {}",
+                problem.message
+            );
+        })
+        .ok()?;
+    let read_at = store.conversation_heads(repository).unwrap_or_default();
+    let (work, owed) = unmuted(&mut facts, key, &read_at, settings);
+    let stated = Stated {
+        repository,
+        facts: &facts,
+        work,
+    };
+    owe_what_moved(fetching, store, stated, owed);
     Some(())
 }
 
@@ -674,8 +775,8 @@ fn keep_last_checks(
     store.save_last_checks(repository, checks)
 }
 
-/// Keeps what the user marked, and tells the window, whose lists go by it.
-fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
+/// Keeps what the user marked, and tells the window, whose lists go by it. Says whether the store kept it.
+fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) -> Option<()> {
     let (saved, change) = match marked {
         Marked::Seen { repository, mark } => {
             let SeenMark { numbers, up_to } = mark;
@@ -747,8 +848,14 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
         }
     };
     match saved {
-        Ok(()) => board.changed(&change),
-        Err(problem) => board.set(Status::Problem { problem }),
+        Ok(()) => {
+            board.changed(&change);
+            Some(())
+        }
+        Err(problem) => {
+            board.set(Status::Problem { problem });
+            None
+        }
     }
 }
 

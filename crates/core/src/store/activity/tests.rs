@@ -237,7 +237,7 @@ fn a_file_from_before_archived_at_puts_each_item_away_at_its_mark() {
         "INSERT INTO archived (repository, kind, number, at) VALUES ('python/cpython', 'issue', 7, {})",
         drawn.unix_timestamp()
     );
-    let (path, _folder) = database_before("activity-archived-at", ARCHIVED_AT, &rows);
+    let (path, _folder) = database_before("activity-archived-at-migrates", ARCHIVED_AT, &rows);
     let repository = cpython();
 
     let store = Store::open(&path).unwrap();

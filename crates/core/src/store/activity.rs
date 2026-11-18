@@ -341,7 +341,7 @@ pub(super) fn archive(
         "INSERT INTO archived (repository, kind, number, at, archived_at)
          VALUES (:repository, :kind, :number, :at, :now)
          ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at),
-             archived_at = IIF(:as_before, archived_at, excluded.archived_at)",
+             archived_at = CASE WHEN :as_before THEN archived_at ELSE excluded.archived_at END",
         named_params! {
             ":repository": repository,
             ":kind": kind,

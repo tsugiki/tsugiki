@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 
 use super::upkeep::remove_if_there;
-use super::{Job, MirrorProblem, Run, Worker};
+use super::{Job, MirrorProblem, Run, Worker, without_git};
 use crate::facts::CommitSha;
 use crate::repository::RepositoryName;
 
@@ -128,11 +128,7 @@ impl Worker {
         repository: &RepositoryName,
         reply: Sender<Option<LookupCheckout>>,
     ) {
-        let stuck = self.folders.is_err()
-            || matches!(
-                self.problem,
-                Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-            );
+        let stuck = self.folders.is_err() || without_git(self.problem.as_ref());
         let moving = self.moving(repository).is_some();
         self.change_heads(repository, |known| {
             let lookup = &mut known.lookup;

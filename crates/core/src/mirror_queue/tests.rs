@@ -7,7 +7,7 @@ fn repository(name: &str) -> RepositoryName {
 fn queued(name: &str, waiting: &[Waiting]) -> Queued {
     Queued {
         repository: repository(name),
-        waiting: waiting.to_vec(),
+        waiting: waiting.iter().copied().collect(),
     }
 }
 
@@ -38,7 +38,7 @@ fn run(queue: &mut Queue, job: &Next) {
         let queued = (queue.repositories.iter_mut())
             .find(|queued| queued.repository.is_same(repository))
             .unwrap();
-        queued.waiting.retain(|waiting| *waiting != kind);
+        let _ = queued.waiting.remove(&kind);
     };
     match job {
         Next::MoveLookup(repository) => done(repository, Waiting::LookupMove),

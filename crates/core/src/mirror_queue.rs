@@ -7,9 +7,12 @@
 //! so they go ahead of the clones. A mirror's upkeep can wait, so it comes last. Within each kind, the
 //! Repository whose turn comes first goes first.
 //!
-//! Nothing starts without a usable git, and short of disk only clones wait. Offline, only a move and
-//! upkeep start, as neither needs the network. While fetches wait for news after one failed, reads of
-//! patch-ids and clones go on.
+//! Nothing starts without a usable git, and short of disk clones wait. A move that would make its Lookup
+//! checkout afresh is refused then too, but by the move itself, as it answers the readers who wait for it.
+//! Offline, only a move and upkeep start, as neither needs the network. While fetches wait for news after
+//! one failed, reads of patch-ids and clones go on.
+
+use std::collections::BTreeSet;
 
 use crate::repository::RepositoryName;
 
@@ -52,11 +55,11 @@ pub struct Queue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Queued {
     pub repository: RepositoryName,
-    pub waiting: Vec<Waiting>,
+    pub waiting: BTreeSet<Waiting>,
 }
 
 /// A kind of job that waits in a Repository whose mirror is there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Waiting {
     /// A move of its Lookup checkout.
     LookupMove,

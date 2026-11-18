@@ -78,6 +78,21 @@ pub enum MirrorProblem {
     },
 }
 
+impl MirrorProblem {
+    /// The jobs the problem holds back: every one without a usable git, and clones short of disk.
+    fn holds_back(&self) -> Problem {
+        match self {
+            Self::NoGit | Self::OldGit { .. } => Problem::Git,
+            Self::DiskShort { .. } => Problem::DiskShort,
+        }
+    }
+}
+
+/// Whether `problem` leaves no usable git.
+fn without_git(problem: Option<&MirrorProblem>) -> bool {
+    problem.map(MirrorProblem::holds_back) == Some(Problem::Git)
+}
+
 /// How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
 /// yet (#320).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -876,7 +891,9 @@ struct Heads {
     settled: BTreeMap<u32, CommitSha>,
     /// The heads of `waiting` the user asked for, each with its Target branch: those of the PRs they opened.
     /// They go in a fetch of their own, ahead of the heads the rules want and of the other Repositories',
-    /// even when this Repository's fetch is under way.
+    /// even when this Repository's fetch is under way. None is here without its head in `waiting`: such a
+    /// head stays there though it leaves Reach, as its PR is one the user opened, the fetch of its own
+    /// takes it out of both, and so does `stop_waiting`.
     first: BTreeMap<u32, String>,
     /// The PRs the user opened before the session knew their heads, whose heads go in `first` once a sync
     /// step saves them.
@@ -904,6 +921,13 @@ struct Noted {
 }
 
 impl Heads {
+    /// Takes PR `number`'s head out of the next fetch, and out of the heads the user asked for, so no fetch
+    /// of their Target branches alone starts.
+    fn stop_waiting(&mut self, number: u32) {
+        drop(self.waiting.remove(&number));
+        drop(self.first.remove(&number));
+    }
+
     /// Notes where the heads of a fetch that succeeded `landed`, or why that couldn't be read. A head that
     /// didn't land for the first time since it was handed over is fetched once more at `retry`.
     fn note_fetched(
@@ -914,11 +938,9 @@ impl Heads {
     ) -> Noted {
         let mut noted = Noted::default();
         for (number, commit) in batch {
-            // The same head handed over during the fetch asks for nothing more, and needs no fetch of its
-            // own though the user asked for it.
+            // The same head handed over during the fetch asks for nothing more.
             if self.waiting.get(&number) == Some(&commit) {
-                drop(self.waiting.remove(&number));
-                drop(self.first.remove(&number));
+                self.stop_waiting(number);
             }
             let why = match landed {
                 Ok(landed) => match landed.get(&number) {
@@ -1032,10 +1054,10 @@ struct FailedClone {
 impl Worker {
     fn run(&mut self, incoming: &Receiver<Message>) {
         loop {
-            self.start_next();
+            let pick_again = self.start_next();
             self.tell_states();
             self.tell_unchecked();
-            let due = self.next_due();
+            let due = self.next_due(pick_again);
             #[cfg(test)]
             self.tell_idle(due);
             let message = match due {
@@ -1259,7 +1281,7 @@ impl Worker {
             // A hand-over is a reason to try a head again, so one that was behind starts afresh.
             drop(known.behind.remove(&number));
             if known.settled.get(&number) == Some(&commit) {
-                drop(known.waiting.remove(&number));
+                known.stop_waiting(number);
             } else {
                 drop(known.waiting.insert(number, commit));
                 let _ = known.branches.insert(target_branch);
@@ -1317,8 +1339,9 @@ impl Worker {
     }
 
     /// Starts the next git, unless one is under way, in the order `mirror_queue` picks. A job can end
-    /// before it starts a git, as when nothing it took needs one, and the next job is picked then.
-    fn start_next(&mut self) {
+    /// before it starts a git, as when nothing it took needs one, and the next job is picked then. Gives
+    /// the time to pick again when it stopped picking with jobs perhaps left: after a read of patch-ids.
+    fn start_next(&mut self) -> Option<Instant> {
         // Before the checks, so a wait that is over leaves `next_due` even while nothing can start.
         self.retry_due();
         self.retry_failed(Instant::now());
@@ -1331,44 +1354,39 @@ impl Worker {
             self.set_problem(None);
         }
         while self.job.is_none() {
-            let Some(next) = mirror_queue::next(&self.queue()) else {
-                return;
-            };
+            let next = mirror_queue::next(&self.queue())?;
             match next {
                 Next::MoveLookup(repository) => self.start_lookup_move(&repository),
                 Next::FetchDemanded(repository) => self.start_demanded_fetch(&repository),
                 Next::FetchWanted(repository) => self.start_wanted_fetch(&repository),
                 Next::KeepReviewed(repository) => self.start_keeping_reviewed(&repository),
-                // One read at a time, so a message waits for one read at most. `next_due` brings the loop
-                // back.
+                // One read at a time, so a message waits for one read at most. The loop picks again at
+                // once, after the messages that came meanwhile.
                 Next::ReadPatchIds(repository) => {
                     self.read_waiting_patch(&repository);
-                    return;
+                    return Some(Instant::now());
                 }
-                Next::Clone(repository) => {
-                    let at = (self.waiting.iter()).position(|one| one.is_same(&repository));
-                    if let Some(repository) = at.and_then(|at| self.waiting.remove(at)) {
+                // `queue` puts the first in line up for its clone.
+                Next::Clone(_) => {
+                    if let Some(repository) = self.waiting.pop_front() {
                         self.try_clone(repository);
                     }
                 }
                 Next::Upkeep(repository) => self.start_upkeep(&repository),
             }
         }
+        None
     }
 
-    /// The worker's queue, for `mirror_queue` to pick from.
+    /// The worker's queue, for `mirror_queue` to pick from. Only a Repository with a job waiting has its
+    /// mirror looked for.
     fn queue(&self) -> Queue {
-        let problem = self.problem.as_ref().map(|problem| match problem {
-            MirrorProblem::NoGit | MirrorProblem::OldGit { .. } => Problem::Git,
-            MirrorProblem::DiskShort { .. } => Problem::DiskShort,
-        });
         let folders = self.folders.as_ref().ok();
         let there = |repository: &RepositoryName| {
             folders.is_some_and(|folders| folders.mirror(repository).exists())
         };
         let repositories = (self.heads.iter())
-            .filter(|known| there(&known.repository))
-            .map(|known| {
+            .filter_map(|known| {
                 let waits = [
                     (Waiting::LookupMove, known.lookup.waits()),
                     (Waiting::DemandedHeads, !known.first.is_empty()),
@@ -1376,16 +1394,18 @@ impl Worker {
                     (Waiting::Reviewed, known.reviews.waits()),
                     (Waiting::PatchIds, known.patches.waits()),
                 ];
-                Queued {
+                let waiting: BTreeSet<Waiting> = (waits.into_iter())
+                    .filter_map(|(kind, waits)| waits.then_some(kind))
+                    .collect();
+                let ready = !waiting.is_empty() && there(&known.repository);
+                ready.then(|| Queued {
                     repository: known.repository.clone(),
-                    waiting: (waits.into_iter())
-                        .filter_map(|(kind, waits)| waits.then_some(kind))
-                        .collect(),
-                }
+                    waiting,
+                })
             })
             .collect();
         Queue {
-            problem,
+            problem: self.problem.as_ref().map(MirrorProblem::holds_back),
             pace: self.pace,
             reads_patch_ids: self.patched.is_some() && self.old_for_check.is_none(),
             repositories,
@@ -1480,11 +1500,7 @@ impl Worker {
             }
         };
         // A good git says nothing of a short disk the window heard of: the next clone does.
-        let told_of_git = matches!(
-            self.told,
-            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-        );
-        if problem.is_some() || told_of_git {
+        if problem.is_some() || without_git(self.told.as_ref()) {
             self.set_problem(problem);
         }
     }
@@ -1570,9 +1586,8 @@ impl Worker {
     }
 
     /// The time the first head that is behind is due to be fetched once more, the first clone that failed
-    /// is due to go back in line, or the first mirror's upkeep falls due. An idle worker that has a job to
-    /// start, as after a read of patch-ids, starts it at once.
-    fn next_due(&self) -> Option<Instant> {
+    /// is due to go back in line, the first mirror's upkeep falls due, or `start_next` said to pick again.
+    fn next_due(&self, pick_again: Option<Instant>) -> Option<Instant> {
         let heads = self
             .heads
             .iter()
@@ -1583,17 +1598,12 @@ impl Worker {
             });
         let clones = self.failed.iter().map(|failed| failed.retry_at);
         // Only an idle worker with a usable git starts an upkeep, so only it wakes for one.
-        let git_unusable = matches!(
-            self.problem,
-            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-        );
-        let upkeep = (self.job.is_none() && !git_unusable).then(|| self.upkeep_due());
-        // It starts at the next turn of the loop, after the messages that came meanwhile.
-        let startable = self.job.is_none() && mirror_queue::next(&self.queue()).is_some();
+        let git_usable = !without_git(self.problem.as_ref());
+        let upkeep = (self.job.is_none() && git_usable).then(|| self.upkeep_due());
         heads
             .chain(clones)
             .chain(upkeep.flatten())
-            .chain(startable.then(Instant::now))
+            .chain(pick_again)
             .min()
     }
 

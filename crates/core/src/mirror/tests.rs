@@ -1284,6 +1284,35 @@ fn an_opened_pr_wakes_a_stalled_worker() {
 }
 
 #[test]
+fn a_hand_over_of_a_head_the_mirror_holds_leaves_no_fetch_of_its_target_branch_alone() {
+    let place = Place::new("opened-settled");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+    let moved_on = PrHead {
+        commit: CommitSha::parse(&"5".repeat(40)).unwrap(),
+        ..head(5)
+    };
+
+    requests.fetch_heads(cpython.clone(), vec![head(5)]);
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_first(cpython.clone(), moved_on);
+    // Offline, nothing starts once the fetch has brought `head(5)`, until the hand-over below.
+    requests.follow(&Status::Offline);
+    wanted.succeed();
+    requests.fetch_heads(cpython, vec![head(5)]);
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    mirrors.wait_idle();
+    let started = starts.try_recv();
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(started.is_err(), "{:?}", started.map(|start| start.args));
+}
+
+#[test]
 fn an_opened_prs_head_goes_in_a_fetch_of_its_own_ahead_of_the_heads_wanted() {
     let place = Place::new("opened-alone");
     let cpython = named("python/cpython");

@@ -551,7 +551,7 @@ table! {
     SwitchRepository: "Switch Repository", (Ctrl 'r'), Anywhere;
     ResetLayout: "Reset Layout", (), Anywhere;
     Archive: "Archive", (Plain 'e'), Anywhere;
-    Mute: "Mute", (Plain 'm'), IssueList;
+    Mute: "Mute", (Plain 'm'), Anywhere;
     MarkSeen: "Mark Seen", (Plain 'q'), Anywhere;
     MarkUnseen: "Mark Unseen", (Shift 'q'), Anywhere;
     OpenSettings: "Open Settings", (Ctrl ','), Anywhere;

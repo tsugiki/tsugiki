@@ -1,6 +1,7 @@
 //! Each rule of Needs attention as a scenario in the glossary's words, read the way the window reads it.
 
 mod archive;
+mod mute;
 
 use std::collections::BTreeMap;
 
@@ -8,7 +9,8 @@ use time::{Duration, OffsetDateTime};
 
 use super::Attention;
 use crate::facts::CommitSha;
-use crate::facts::activity::{Activity, ActivityKind};
+use crate::facts::activity::{Activity, ActivityKind, ItemKey};
+use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{
@@ -16,6 +18,7 @@ use crate::facts::patch_ids::{
 };
 use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
 use crate::settings::ListOrder;
@@ -127,12 +130,36 @@ impl World {
 
     /// The mark that Mark Seen on item `number`'s line of the Workbench sends, as the window drew it.
     fn seen(&self, number: u32) -> Seen {
-        let workbench = self.workbench();
-        match &listed_at(&workbench, number).item {
-            WorkbenchItem::Issue(issue) => issue.seen.clone(),
-            WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
-            WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
-        }
+        seen_of(&listed_at(&self.workbench(), number).item)
+    }
+
+    /// The key of item `number`'s line of `view`, and the mark Mark Seen on it sends, as the window drew it.
+    fn drawn_in(&self, view: &WorkbenchView, number: u32) -> (ItemKey, SeenMark) {
+        let listed = self.listed_in(view, number);
+        (listed.key, seen_of(&listed.item).mark)
+    }
+
+    /// The Filter that searches `query` found `numbers`.
+    fn found(&self, query: &FilterQuery, numbers: &[u32]) {
+        let results = FilterResults {
+            numbers: numbers.iter().copied().collect(),
+            problem: None,
+        };
+        (self.db.store)
+            .save_filter_results(&cpython(), query, results)
+            .unwrap();
+    }
+
+    /// Item `number` as `view` lists it.
+    fn listed_in(&self, view: &WorkbenchView, number: u32) -> ListedItem {
+        listed_at(&self.view(view), number)
+    }
+
+    /// The Sidebar's count beside the Filter that searches `query`.
+    fn count_of(&self, query: &FilterQuery) -> u32 {
+        let lines = self.workbench().filters;
+        let line = lines.iter().find(|line| line.query == *query).unwrap();
+        line.count
     }
 
     /// Mark Seen with what the window drew in `seen`.
@@ -182,6 +209,65 @@ impl World {
         let attention: Attention = listed_at(&workbench, number).attention.unwrap();
         attention.since
     }
+
+    /// Own PR 1 with a colleague's comment, which the user Marked unseen since. Gives when the comment came.
+    fn has_a_flagged_comment(&self) -> OffsetDateTime {
+        self.has(vec![own(1)]);
+        let commented = hours_ago(2);
+        self.happened(1, vec![comment(&colleague(), commented)]);
+        self.marked_unseen(1, hours_ago(1));
+        commented
+    }
+
+    /// Fails unless the user saw PR 1 up to `at`, and nothing is Marked unseen.
+    fn assert_seen_up_to(&self, at: OffsetDateTime) {
+        let facts = self.db.reader.work_facts(&cpython()).unwrap().activity;
+        assert_eq!(facts.marked_unseen, BTreeMap::new());
+        assert_eq!(facts.last_seen.get(&1), Some(&at));
+    }
+
+    /// PR 1, which asks the user for a review from five hours ago, and the "Involved" Filter finds. Gives the
+    /// PR, for `request_ends`.
+    fn has_a_requested_pr_involved_finds(&self) -> PullRequestFacts {
+        let pull_request = requested(1);
+        self.has(vec![pull_request.clone()]);
+        self.happened(1, vec![review_requested(hours_ago(5))]);
+        self.found(&involved(), &[1]);
+        pull_request
+    }
+
+    /// The Review request on `pull_request` ends, and fails unless Review requests and "Involved" drop it.
+    fn request_ends(&self, pull_request: PullRequestFacts) {
+        self.has(vec![PullRequestFacts {
+            review_requests: vec![],
+            updated_at: hours_ago(4),
+            ..pull_request
+        }]);
+        assert!(!self.lists(&WorkbenchView::ReviewRequests, 1));
+        assert!(!self.lists(&filter(involved()), 1));
+    }
+}
+
+/// The part in Mark Seen of `item`'s own line.
+fn seen_of(item: &WorkbenchItem) -> Seen {
+    match item {
+        WorkbenchItem::Issue(issue) => issue.seen.clone(),
+        WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
+        WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
+    }
+}
+
+/// The starter Filters: "Mine", on the Workbench, and "Involved", off it.
+fn mine() -> FilterQuery {
+    cpython_settings().filters[0].query.clone()
+}
+
+fn involved() -> FilterQuery {
+    cpython_settings().filters[1].query.clone()
+}
+
+fn filter(query: FilterQuery) -> WorkbenchView {
+    WorkbenchView::Filter { query }
 }
 
 fn number_of(listed: &ListedItem) -> u32 {
@@ -658,6 +744,31 @@ fn someone_posting_on_an_issue_the_user_opened_is_assigned_or_commented_on_needs
             "{number}"
         );
     }
+    world.finish();
+}
+
+#[test]
+fn an_issue_the_user_was_unassigned_from_is_no_longer_their_conversation() {
+    let world = World::new("attention-issue-unassigned");
+    world.has_issues(vec![issue(1), issue(2)]);
+    world.found(&involved(), &[1, 2]);
+    let assigned = Activity {
+        kind: ActivityKind::Assigned,
+        who: me(),
+        at: hours_ago(5),
+    };
+    let post = comment(&colleague(), hours_ago(1));
+    world.happened(1, vec![assigned, post.clone()]);
+    world.happened(2, vec![post]);
+
+    let view = filter(involved());
+    assert_eq!(world.why_in(&view, 1), []);
+    let state = |number| seen_of(&world.listed_in(&view, number).item).state;
+    assert_eq!(
+        state(1),
+        state(2),
+        "the old assignment reads as no involvement"
+    );
     world.finish();
 }
 

@@ -4,8 +4,8 @@ use super::*;
 use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::store::Archiving;
 use crate::store::testing::OpenStore;
+use crate::store::{Archiving, Muting};
 use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
 
@@ -299,6 +299,30 @@ fn archive_takes_an_item_out_and_a_page_of_archived_items_gives_way_to_the_next(
 
     assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
     assert_eq!(latest.older, None);
+}
+
+#[test]
+fn mute_takes_an_item_out() {
+    let world = ViewWorld::new("inbox-muted");
+    world.has(
+        vec![pr_at(20, None, ago(1)), pr_at(21, None, ago(50))],
+        vec![issue_at(1, ago(2))],
+    );
+    let mute = |key, number| {
+        let muting = Muting {
+            key,
+            numbers: vec![number],
+            up_to: Some(ago(0)),
+        };
+        world.db.store.mute(&cpython(), muting, now()).unwrap();
+    };
+    mute(ItemKey::PullRequest { number: 20 }, 20);
+    mute(ItemKey::Issue { number: 1 }, 1);
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
 }
 
 #[test]

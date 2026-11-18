@@ -20,7 +20,7 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, Flagging};
+pub use activity::{Archiving, Flagging, Muting};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -538,6 +538,27 @@ impl Store {
         let repository = repository.clone();
         let saved =
             self.call(move |connection| activity::unarchive(connection, &repository, key))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Mute on `muting`'s item: Mark Seen on its numbers, and the item kept as muted, as `activity::mute`
+    /// says.
+    pub fn mute(
+        &self,
+        repository: &RepositoryName,
+        muting: Muting,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::mute(connection, &repository, &muting, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unmutes the item `key` names.
+    pub fn unmute(&self, repository: &RepositoryName, key: ItemKey) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| activity::unmute(connection, &repository, key))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

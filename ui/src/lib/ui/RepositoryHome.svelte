@@ -27,7 +27,7 @@
   import {
     sameStop,
     WorkbenchState,
-    type Archived,
+    type Hiding,
     type ItemKey,
     type BackportRow,
     type ListedItem,
@@ -362,20 +362,29 @@
    * (#490). */
   type Marked = { stop: Stop | undefined; number: number; seen: Seen; archived?: ItemKey | undefined };
 
-  /** The item the Detail pane shows, once its view has arrived. */
+  /** The item the Detail pane shows, once its view has arrived, unless it is Muted, which takes no mark
+   * (#492). */
   function detailMarked(): Marked | undefined {
     const view = detail?.view;
-    if (!view) return undefined;
+    if (!view || detailMuted()) return undefined;
     const stop = detailLine();
     // The Issue view knows whether its Issue is Archived, listed or not.
     const issue = detail instanceof IssueViewState ? detail.view : undefined;
-    const archived = issue ? issueArchived(issue) : stop && workbench.archivedHolding(stop);
+    const archived = issue ? issueArchived(issue) : stop && workbench.hiddenHolding(stop, "archived");
     return { stop, number: view.number, seen: view.seen, archived };
   }
 
   /** The key of the Issue `view` shows, while it's Archived. */
   function issueArchived(view: IssueView): ItemKey | undefined {
-    return view.archived ? { kind: "issue", number: view.number } : undefined;
+    return view.hidden === "archived" ? { kind: "issue", number: view.number } : undefined;
+  }
+
+  /** Whether the Detail pane's item is Muted (#492): the Issue on show, or the item that holds the PR on
+   * show, as its view knows listed or not. Until the view arrives, the list says. */
+  function detailMuted(): boolean {
+    if (detail?.view) return detail.view.hidden === "muted";
+    const line = detailLine();
+    return line !== undefined && workbench.hiddenHolding(line, "muted") !== undefined;
   }
 
   /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
@@ -392,13 +401,13 @@
   const forDetail = (at: KeyTarget) => panes.hidden("list") || at.pane === "detail";
 
   /** The item `Q` and `Shift+Q` act on for a press `at`: the Detail pane's item while it holds the focus or
-   * the list is hidden, and otherwise the line under the cursor. */
+   * the list is hidden, and otherwise the line under the cursor, unless the item is Muted (#492). */
   function keyMarked(at: KeyTarget): Marked | undefined {
     if (forDetail(at)) return detailMarked();
     const stop = workbench.underCursor;
-    const seen = stop && workbench.seenOf(stop);
+    const seen = stop && !workbench.hiddenHolding(stop, "muted") && workbench.seenOf(stop);
     return stop && seen
-      ? { stop, number: stop.number, seen, archived: workbench.archivedHolding(stop) }
+      ? { stop, number: stop.number, seen, archived: workbench.hiddenHolding(stop, "archived") }
       : undefined;
   }
 
@@ -477,40 +486,63 @@
     else void markUnseen(marked);
   }
 
-  /** What Archive acts on in the Detail pane: the Issue on show, or the item that holds the PR on show,
-   * once its view has arrived. */
-  function detailArchived(): Archived | undefined {
+  /** What Archive and Mute act on in the Detail pane: the Issue on show, or the item that holds the PR on
+   * show, once its view has arrived. */
+  function detailHiding(): Hiding | undefined {
     if (detail instanceof IssueViewState) {
       const view = detail.view;
       return view ? { key: { kind: "issue", number: view.number }, mark: view.seen.mark } : undefined;
     }
     const line = detailLine();
-    return line && workbench.archivedBy(line);
+    return line && workbench.hidingBy(line);
   }
 
-  /** What `E` archives for a press `at`: the Detail pane's item while it holds the focus or the list is
-   * hidden, as for `Q`, and otherwise the item that holds the line under the cursor. */
-  function keyArchived(at: KeyTarget): Archived | undefined {
-    if (forDetail(at)) return detailArchived();
+  /** What `E` and `M` act on for a press `at`: the Detail pane's item while it holds the focus or the list is
+   * hidden, as for `Q`, and otherwise the item that holds the line under the cursor. With whether that item
+   * is Muted (#492). */
+  function keyHiding(at: KeyTarget): (Hiding & { muted: boolean }) | undefined {
+    if (forDetail(at)) {
+      const hiding = detailHiding();
+      return hiding && { ...hiding, muted: detailMuted() };
+    }
     const stop = workbench.underCursor;
-    return stop && workbench.archivedBy(stop);
+    const hiding = stop && workbench.hidingBy(stop);
+    return stop && hiding && { ...hiding, muted: workbench.hiddenHolding(stop, "muted") !== undefined };
   }
 
   /** What `E` does for a press `at`: on a row of the Archived view it unarchives the item that holds the row
-   * (#491), and otherwise it archives what `keyArchived` names. */
+   * (#491), on a Muted item nothing (#492), and otherwise it archives what `keyHiding` names. */
   function keyArchive(at: KeyTarget): (() => void) | undefined {
     const stop = forDetail(at) ? undefined : workbench.underCursor;
     if (stop && workbench.shown.kind === "archived") {
-      const key = workbench.archivedBy(stop)?.key;
+      const key = workbench.hidingBy(stop)?.key;
       return key && (() => void unarchive(key));
     }
-    const archived = keyArchived(at);
-    return archived && (() => void archive(archived));
+    const hiding = keyHiding(at);
+    return hiding && !hiding.muted ? () => void archive(hiding) : undefined;
+  }
+
+  /** What `M` does for a press `at`: it unmutes a Muted item, and mutes any other, the item `keyHiding`
+   * names (#492). */
+  function keyMute(at: KeyTarget): (() => void) | undefined {
+    const hiding = keyHiding(at);
+    if (!hiding) return undefined;
+    return hiding.muted ? () => void unmute(hiding.key) : () => void mute(hiding);
   }
 
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
-  async function archive(archived: Archived) {
+  async function archive(archived: Hiding) {
     await sayMarkProblem((opened) => opened.archive(archived));
+  }
+
+  /** Mute on `muted`. Once the item leaves the list, a cursor on it lands on the row after it. */
+  async function mute(muted: Hiding) {
+    await sayMarkProblem((opened) => opened.mute(muted));
+  }
+
+  /** Unmutes the item `key` names. */
+  async function unmute(key: ItemKey) {
+    await sayMarkProblem((opened) => opened.unmute(key));
   }
 
   /** Unarchives the item `key` names. Once it leaves the list, as the Archived view, a cursor on it lands on
@@ -522,8 +554,15 @@
   /** The Issue view's Archive button: Archive on the Issue `view` shows, or Unarchive on an Archived one. */
   function archiveByButton(view: IssueView) {
     const key = { kind: "issue" as const, number: view.number };
-    if (view.archived) void unarchive(key);
+    if (view.hidden === "archived") void unarchive(key);
     else void archive({ key, mark: view.seen.mark });
+  }
+
+  /** The Issue view's Mute button: Mute on the Issue `view` shows, or Unmute on a Muted one (#492). */
+  function muteByButton(view: IssueView) {
+    const key = { kind: "issue" as const, number: view.number };
+    if (view.hidden === "muted") void unmute(key);
+    else void mute({ key, mark: view.seen.mark });
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -814,6 +853,13 @@
         if (!held) void mark(keyMarked(at));
       });
 
+  /** The run of a key that calls `run`, if there is one, once: a held key doesn't call it again. */
+  const once = (run: (() => void) | undefined): Run | undefined =>
+    run &&
+    ((held) => {
+      if (!held) run();
+    });
+
   /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block
    * sideways. */
   const folding =
@@ -865,15 +911,8 @@
     },
     mark_seen: marking(markSeen),
     mark_unseen: marking(markUnseen),
-    archive: (at) => {
-      const run = keyArchive(at);
-      return (
-        run &&
-        ((held) => {
-          if (!held) run();
-        })
-      );
-    },
+    archive: (at) => once(keyArchive(at)),
+    mute: (at) => once(keyMute(at)),
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
@@ -1113,8 +1152,10 @@
           <small class="count">{treeCount(item)}</small>
         {/if}
         <!-- Every row of the Archived view is Archived, so there it offers Unarchive instead (#491). -->
-        {#if item.archived && !inArchived}
+        {#if item.hidden === "archived" && !inArchived}
           <small class="archived">Archived</small>
+        {:else if item.hidden === "muted"}
+          <small class="archived">Muted</small>
         {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
         {#if inArchived}
@@ -1326,6 +1367,7 @@
         focusable={panes.hidden("list")}
         onmark={markByButton}
         onarchive={archiveByButton}
+        onmute={muteByButton}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -1343,6 +1385,7 @@
         {now}
         onback={back}
         onmark={markByButton}
+        marks={!detailMuted()}
         focusable={panes.hidden("list")}
       >
         {#snippet header()}{@render history(pr.number)}{/snippet}

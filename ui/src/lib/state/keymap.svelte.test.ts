@@ -92,7 +92,7 @@ describe("the key table", () => {
 
   it("lists in a context only the keys that run their action", () => {
     remapKeys({ archive: "x", mute: "x" });
-    const listed = keysIn("issue_list").map((row) => row.action);
+    const listed = keysIn("anywhere").map((row) => row.action);
     expect(listed).toContain("mute");
     expect(listed).not.toContain("archive");
   });

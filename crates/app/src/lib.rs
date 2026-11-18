@@ -354,6 +354,28 @@ fn unarchive(repository: &str, item: ItemKey, requests: State<'_, Fetching>) -> 
     Ok(())
 }
 
+/// Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
+/// once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn mute(
+    repository: &str,
+    item: ItemKey,
+    mark: SeenMark,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.mute(RepositoryName::parse(repository)?, item, mark);
+    Ok(())
+}
+
+/// Unmutes the item `item` names, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn unmute(repository: &str, item: ItemKey, requests: State<'_, Fetching>) -> Result<(), Error> {
+    requests.unmute(RepositoryName::parse(repository)?, item);
+    Ok(())
+}
+
 /// Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015).
 #[tauri::command]
 #[specta::specta]
@@ -1125,6 +1147,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             archive,
             keep_archived,
             unarchive,
+            mute,
+            unmute,
             settings,
             slow_commands::themes,
             slow_commands::preview_themes,

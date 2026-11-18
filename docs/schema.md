@@ -278,6 +278,12 @@ erDiagram
         INTEGER at
         INTEGER archived_at
     }
+    muted {
+        TEXT repository PK
+        TEXT kind PK
+        INTEGER number PK
+        INTEGER at
+    }
     first_syncs {
         TEXT repository PK
         INTEGER started_at

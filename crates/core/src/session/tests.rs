@@ -434,6 +434,28 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
 }
 
 #[test]
+fn mute_marks_the_item_seen_and_keeps_it_muted_until_unmute() {
+    let access = replying(vec![signed_in()]);
+    let drawn = hours_ago(2);
+    let issue = ItemKey::Issue { number: 7 };
+    let standalone = ItemKey::PullRequest { number: 9 };
+
+    let (_, activity, _) = after_asking("mute", access, |asked| {
+        let mark = |numbers| SeenMark {
+            numbers,
+            up_to: Some(drawn),
+        };
+        asked.mute(gcmon(), issue, mark(vec![7, 8]));
+        asked.mute(gcmon(), standalone, mark(vec![9]));
+        asked.unmute(gcmon(), standalone);
+    });
+
+    assert_eq!(activity.muted, BTreeMap::from([(issue, drawn)]));
+    let seen = BTreeMap::from([(7, drawn), (8, drawn), (9, drawn)]);
+    assert_eq!(activity.last_seen, seen);
+}
+
+#[test]
 fn mark_unseen_flags_the_item_from_now() {
     let access = replying(vec![signed_in()]);
     let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();

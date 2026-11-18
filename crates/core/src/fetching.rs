@@ -54,7 +54,7 @@ impl Item {
     }
 }
 
-/// A mark the user made on an item: seen or unseen, archived or not.
+/// A mark the user made on an item: seen or unseen, archived or not, muted or not.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Marked {
     Seen {
@@ -79,6 +79,17 @@ pub(crate) enum Marked {
         at: OffsetDateTime,
     },
     Unarchived {
+        repository: RepositoryName,
+        key: ItemKey,
+    },
+    /// Mute on the item `key` names, with the Mark Seen the window drew for it, at `at` (#492).
+    Muted {
+        repository: RepositoryName,
+        key: ItemKey,
+        mark: SeenMark,
+        at: OffsetDateTime,
+    },
+    Unmuted {
         repository: RepositoryName,
         key: ItemKey,
     },
@@ -302,6 +313,24 @@ impl Fetching {
     /// Unarchives the item `key` names.
     pub fn unarchive(&self, repository: RepositoryName, key: ItemKey) {
         self.to_session(SessionMessage::Mark(Marked::Unarchived { repository, key }));
+    }
+
+    /// Mute on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item hidden until
+    /// the user unmutes it (#492).
+    pub fn mute(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
+        let at = OffsetDateTime::now_utc();
+        let muted = Marked::Muted {
+            repository,
+            key,
+            mark,
+            at,
+        };
+        self.to_session(SessionMessage::Mark(muted));
+    }
+
+    /// Unmutes the item `key` names.
+    pub fn unmute(&self, repository: RepositoryName, key: ItemKey) {
+        self.to_session(SessionMessage::Mark(Marked::Unmuted { repository, key }));
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an

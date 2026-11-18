@@ -9,6 +9,7 @@ import {
   type CantCheck,
   type CiState,
   type FilterLine_Serialize,
+  type Hidden,
   type InboxCursor_Serialize,
   type InboxPage_Deserialize,
   type IssueItem_Serialize,
@@ -65,8 +66,9 @@ function joined(items: ListedItem[], more: ListedItem[]): ListedItem[] {
   return [...items, ...more.filter((item) => !listed.has(item.number))];
 }
 
-/** What Archive acts on: the key of an item, and its tree's part in Mark Seen as the window drew it. */
-export type Archived = { key: ItemKey; mark: SeenMark };
+/** What Archive and Mute act on: the key of an item, and its tree's part in Mark Seen as the window drew
+ * it. */
+export type Hiding = { key: ItemKey; mark: SeenMark };
 
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };
@@ -342,10 +344,11 @@ export class WorkbenchState {
     return problemIn(marking);
   }
 
-  /** The key of the item that holds line `stop`, while the list draws it Archived. */
-  archivedHolding(stop: Stop): ItemKey | undefined {
+  /** The key of the item that holds line `stop`, while the list draws it `hidden`: Archived (#490) or Muted
+   * (#492). */
+  hiddenHolding(stop: Stop, hidden: Hidden): ItemKey | undefined {
     const item = this.#itemOf(stop, this.items ?? []);
-    return item?.archived ? item.key : undefined;
+    return item?.hidden === hidden ? item.key : undefined;
   }
 
   /** Mark Unseen on Issue or PR `number`. It unarchives `archived`, the item that holds it if the window
@@ -356,16 +359,28 @@ export class WorkbenchState {
     return this.#leave(archived && this.#unarchiving(archived), marking);
   }
 
-  /** What Archive on line `stop` acts on: the item that holds the line, with its tree's part in Mark Seen. */
-  archivedBy(stop: Stop): Archived | undefined {
+  /** What Archive or Mute on line `stop` acts on: the item that holds the line, with its tree's part in Mark
+   * Seen. */
+  hidingBy(stop: Stop): Hiding | undefined {
     const item = this.#itemOf(stop, this.items ?? []);
     return item && { key: item.key, mark: item.seen.mark };
   }
 
   /** Archive on `archived`, as the window drew it (#490). Once the item leaves the list, a cursor on any of
    * its lines lands on the item after it. Says what went wrong, if anything did. */
-  async archive({ key, mark }: Archived) {
+  async archive({ key, mark }: Hiding) {
     return this.#leave(key, commands.archive(this.#repository, key, mark));
+  }
+
+  /** Mute on the item `key` names, with `mark` as the window drew it (#492). Once the item leaves the list, a
+   * cursor on any of its lines lands on the item after it. Says what went wrong, if anything did. */
+  async mute({ key, mark }: Hiding) {
+    return this.#leave(key, commands.mute(this.#repository, key, mark));
+  }
+
+  /** Unmutes the item `key` names, which stays in the list. Says what went wrong, if anything did. */
+  async unmute(key: ItemKey) {
+    return problemIn(commands.unmute(this.#repository, key));
   }
 
   /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),

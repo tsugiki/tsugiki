@@ -14,7 +14,7 @@ use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
 use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, Archive, ItemKey};
-use crate::facts::issues::IssueFacts;
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 
@@ -23,6 +23,8 @@ use crate::login::Login;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Why {
     ReviewRequested,
+    /// The user was assigned to an Issue after they muted it (#492).
+    Assigned,
     /// The PR's diff changed since the user's Review. The row names the files.
     StaleReview,
     /// Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none.
@@ -97,8 +99,23 @@ pub(crate) struct Causes {
     reviews: BTreeMap<u32, YourReview>,
     /// The items the user archived.
     archived: BTreeMap<ItemKey, Archive>,
+    /// The items the user muted, each with the moment Mute marked it seen up to.
+    muted: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The Review request or the assignment to the user that stands on each Issue and PR, acknowledged or
+    /// not.
+    asks: BTreeMap<u32, Ask>,
     /// The moment the user last acknowledged each Issue and PR.
     acknowledged: BTreeMap<u32, OffsetDateTime>,
+}
+
+/// A Review request or an assignment to the user that stands on an Issue or PR.
+#[derive(Debug, Clone)]
+struct Ask {
+    /// `Why::ReviewRequested` on a PR, which covers an assignment to someone else's PR, and `Why::Assigned`
+    /// on an Issue.
+    why: Why,
+    /// Its start, if the timeline still holds it.
+    started: Option<OffsetDateTime>,
 }
 
 impl Causes {
@@ -132,21 +149,87 @@ impl Causes {
                 by_number.extend([(number, causes)]);
             }
         }
-        let requested = facts
-            .pull_requests
-            .iter()
-            .filter(|pr| reasons(pr, viewer).contains(&WorkReason::ReviewRequest));
+        let requested: BTreeSet<u32> = (facts.pull_requests.iter())
+            .filter(|pr| reasons(pr, viewer).contains(&WorkReason::ReviewRequest))
+            .map(|pr| pr.number)
+            .collect();
+        // GitHub keeps a closed Issue's assignees, but a closed Issue asks nothing of them.
+        let assigned = (facts.issues.iter())
+            .filter(|issue| matches!(issue.state, Some(IssueState::Open) | None))
+            .filter(|issue| issue.assignees.contains(viewer))
+            .map(|issue| (issue.number, Why::Assigned));
+        let asks: BTreeMap<u32, Ask> = (requested.iter())
+            .map(|number| (*number, Why::ReviewRequested))
+            .chain(assigned)
+            .map(|(number, why)| {
+                let started = judge.asked_at(number);
+                (number, Ask { why, started })
+            })
+            .collect();
         Self {
             by_number,
-            review_requests: requested.map(|pr| pr.number).collect(),
+            asks,
+            review_requests: requested,
             stale_reviews,
             with_news,
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
             archived: facts.activity.archived.clone(),
+            muted: facts.activity.muted.clone(),
             acknowledged: facts.activity.acknowledged.clone(),
         }
+    }
+
+    /// Whether the user muted the item `key` names (#492).
+    pub(crate) fn is_muted(&self, key: ItemKey) -> bool {
+        self.muted.contains_key(&key)
+    }
+
+    /// The reasons the item `key` names, whose tree holds `numbers`, Needs attention while the user has it
+    /// muted (#492): none when they don't. Whatever else happens there, only a Review request or an
+    /// assignment to the user reaches them. Mute acknowledged those that stood, so only one that started
+    /// after it, and that the user hasn't acknowledged since, counts. A start the timeline no longer holds
+    /// counts as earlier, as `Judge::standing_from` counts it.
+    pub(crate) fn fresh_asks(&self, key: ItemKey, numbers: &[u32]) -> Vec<Cause> {
+        (self.fresh(key, numbers).into_iter())
+            .map(|(_, cause)| cause)
+            .collect()
+    }
+
+    /// The numbers of `numbers`, the tree of the item `key` names, that Need attention. While the user has
+    /// the item muted, those are the ones `fresh_asks` names.
+    pub(crate) fn needing_attention_in(&self, key: ItemKey, numbers: &[u32]) -> BTreeSet<u32> {
+        if self.is_muted(key) {
+            (self.fresh(key, numbers).into_iter())
+                .map(|(number, _)| number)
+                .collect()
+        } else {
+            (numbers.iter().copied())
+                .filter(|&number| self.needs_attention(number))
+                .collect()
+        }
+    }
+
+    /// Each of `numbers` that `fresh_asks` counts, with its cause: none unless the user muted the item.
+    fn fresh(&self, key: ItemKey, numbers: &[u32]) -> Vec<(u32, Cause)> {
+        let fresh = numbers.iter().filter_map(|&number| {
+            let muted = self.muted.get(&key)?;
+            let ask = self.asks.get(&number)?;
+            let acknowledged = self
+                .acknowledged
+                .get(&number)
+                .map_or(*muted, |at| *at.max(muted));
+            let at = ask.started.filter(|at| *at > acknowledged)?;
+            let why = ask.why.clone();
+            Some((number, Cause { at, why }))
+        });
+        fresh.collect()
+    }
+
+    /// The Issues and PRs where a Review request or an assignment to the user stands, acknowledged or not.
+    pub(crate) fn asked(&self) -> BTreeSet<u32> {
+        self.asks.keys().copied().collect()
     }
 
     /// Whether the item `key` names, whose tree holds `numbers`, is Archived (#490). The user archived it,
@@ -281,8 +364,9 @@ impl Judge<'_> {
         found.map(|event| event.at).max()
     }
 
-    /// The moment the user was last asked to review PR `number`, if its timeline still holds it.
-    fn requested_at(&self, number: u32) -> Option<OffsetDateTime> {
+    /// The moment the user was last asked to review PR `number`, or assigned to Issue or PR `number`, if its
+    /// timeline still holds it.
+    fn asked_at(&self, number: u32) -> Option<OffsetDateTime> {
         self.last_at(number, |event| {
             let kind = matches!(
                 event.kind,
@@ -327,7 +411,7 @@ impl Judge<'_> {
         let number = pull_request.number;
         let asked = reasons(pull_request, self.viewer).contains(&WorkReason::ReviewRequest);
         let requested = (asked.then_some(Why::ReviewRequested))
-            .and_then(|why| self.standing_from(pull_request, self.requested_at(number), why));
+            .and_then(|why| self.standing_from(pull_request, self.asked_at(number), why));
         let own = pull_request.author.as_ref() == Some(self.viewer);
         let open = pull_request.state == PrState::Open;
         let failed = (own && open && has_failed(pull_request.ci)).then(|| Why::CiFailed {

@@ -85,6 +85,18 @@ pub(super) const ARCHIVED_AT: &str = "
     UPDATE archived SET archived_at = at * 1000;
 ";
 
+/// The items the user muted (#492), each under the key Archive keeps its items under, with the moment Mute
+/// marked it seen up to: a Review request or an assignment that starts after it shows the item again.
+pub(super) const MUTED: &str = "
+    CREATE TABLE muted (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        kind TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (repository, kind, number)
+    ) WITHOUT ROWID;
+";
+
 const ISSUE: &str = "issue";
 const PULL_REQUEST: &str = "pull_request";
 
@@ -320,21 +332,9 @@ pub(super) fn archive(
         put_away,
     } = archiving;
     let transaction = connection.transaction()?;
-    mark_seen_in(&transaction, repository, numbers, *up_to)?;
     // A number acknowledged later than `up_to`, as by Mark Seen on another Issue its PR fixes, would
     // otherwise read as acknowledged after the archive, and so as come back.
-    let mut at = up_to.unwrap_or(now).unix_timestamp();
-    for number in numbers {
-        let acknowledged: Option<i64> = transaction
-            .query_row(
-                "SELECT acknowledged_at FROM last_seen WHERE repository = :repository AND number = :number",
-                named_params! { ":repository": repository, ":number": number },
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
-        at = at.max(acknowledged.unwrap_or(at));
-    }
+    let at = hide(&transaction, repository, (numbers, *up_to), now)?;
     let (kind, number) = key_columns(*key);
     let as_before = matches!(put_away, PutAway::AsBefore);
     let _archived = transaction.execute(
@@ -352,6 +352,118 @@ pub(super) fn archive(
         },
     )?;
     transaction.commit()
+}
+
+/// Mark Seen on `numbers` up to `up_to`, as Archive and Mute do in `transaction`. Returns the moment the item
+/// they hide is hidden from: `up_to`, or `now` when the window drew no sync, or a later moment one of
+/// `numbers` was acknowledged at.
+fn hide(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    (numbers, up_to): (&[u32], Option<OffsetDateTime>),
+    now: OffsetDateTime,
+) -> rusqlite::Result<i64> {
+    mark_seen_in(transaction, repository, numbers, up_to)?;
+    let mut at = up_to.unwrap_or(now).unix_timestamp();
+    for number in numbers {
+        let acknowledged: Option<i64> = transaction
+            .query_row(
+                "SELECT acknowledged_at FROM last_seen WHERE repository = :repository AND number = :number",
+                named_params! { ":repository": repository, ":number": number },
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        at = at.max(acknowledged.unwrap_or(at));
+    }
+    Ok(at)
+}
+
+/// What Mute writes: the item `key` names, and Mark Seen on `numbers`, the item and its tree, up to `up_to`
+/// as the window drew it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Muting {
+    pub key: ItemKey,
+    pub numbers: Vec<u32>,
+    pub up_to: Option<OffsetDateTime>,
+}
+
+/// Mute on `muting`'s item (#492): Mark Seen on its numbers, and the item kept as muted from the moment
+/// `hide` gives. Muting it again never moves that moment back.
+pub(super) fn mute(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    muting: &Muting,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let Muting {
+        key,
+        numbers,
+        up_to,
+    } = muting;
+    let transaction = connection.transaction()?;
+    let at = hide(&transaction, repository, (numbers, *up_to), now)?;
+    let (kind, number) = key_columns(*key);
+    let _muted = transaction.execute(
+        "INSERT INTO muted (repository, kind, number, at) VALUES (:repository, :kind, :number, :at)
+         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at)",
+        named_params! {
+            ":repository": repository,
+            ":kind": kind,
+            ":number": number,
+            ":at": at,
+        },
+    )?;
+    transaction.commit()
+}
+
+/// Unmutes the item `key` names, and leaves its Last seen as it is.
+pub(super) fn unmute(
+    connection: &Connection,
+    repository: &RepositoryName,
+    key: ItemKey,
+) -> rusqlite::Result<()> {
+    let (kind, number) = key_columns(key);
+    connection
+        .execute(
+            "DELETE FROM muted WHERE repository = :repository AND kind = :kind AND number = :number",
+            named_params! { ":repository": repository, ":kind": kind, ":number": number },
+        )
+        .map(drop)
+}
+
+/// The key that `kind` and `number` name, unless `kind` is a later version's, such as Dependency updates,
+/// which means nothing to this one.
+fn key_of(kind: &str, number: u32) -> Option<ItemKey> {
+    match kind {
+        ISSUE => Some(ItemKey::Issue { number }),
+        PULL_REQUEST => Some(ItemKey::PullRequest { number }),
+        _ => None,
+    }
+}
+
+/// The muted items of `items`, each with the moment Mute marked it seen up to.
+fn muted(
+    connection: &Connection,
+    repository: &RepositoryName,
+    items: Items<'_>,
+) -> rusqlite::Result<BTreeMap<ItemKey, OffsetDateTime>> {
+    let condition = items.condition("number");
+    let query =
+        format!("SELECT kind, number, at FROM muted WHERE repository = :repository {condition}");
+    let mut statement = connection.prepare(&query)?;
+    let asked = items.with(vec![(":repository", repository)]);
+    let mut rows = statement.query(asked.as_slice())?;
+    let mut found = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get("kind")?;
+        let Some(key) = key_of(&kind, row.get("number")?) else {
+            continue;
+        };
+        let UnixTime(at) = row.get("at")?;
+        let _replaced = found.insert(key, at);
+    }
+    Ok(found)
 }
 
 /// Unarchives the item `key` names, and leaves its Last seen as it is.
@@ -385,12 +497,8 @@ fn archived(
     let mut found = BTreeMap::new();
     while let Some(row) = rows.next()? {
         let kind: String = row.get("kind")?;
-        let number: u32 = row.get("number")?;
-        let key = match kind.as_str() {
-            ISSUE => ItemKey::Issue { number },
-            PULL_REQUEST => ItemKey::PullRequest { number },
-            // A later version's kind, such as Dependency updates, means nothing to this one.
-            _ => continue,
+        let Some(key) = key_of(&kind, row.get("number")?) else {
+            continue;
         };
         let UnixTime(seen_up_to) = row.get("at")?;
         let UnixMillis(archived_at) = row.get("archived_at")?;
@@ -436,7 +544,8 @@ fn moments(
     rows.collect()
 }
 
-/// The events of `items` that `viewer` reads, given when the first sync began.
+/// The events of `items` that `viewer` reads, given when the first sync began. An assignment of `viewer`
+/// counts while it stands, which the assignee tables hold, and not through its event, which outlives it.
 fn listed_events(
     connection: &Connection,
     repository: &RepositoryName,
@@ -454,6 +563,7 @@ fn listed_events(
                  UNION SELECT number FROM assignees WHERE repository = :repository AND login = :viewer
                  UNION SELECT number FROM issue_assignees WHERE repository = :repository AND login = :viewer
                  UNION SELECT number FROM activity WHERE repository = :repository AND who = :viewer
+                     AND kind <> '{ASSIGNED}'
              )))
          ORDER BY noticed_at, kind, target, who"
     );
@@ -523,6 +633,7 @@ pub(super) fn read_facts_of(
         acknowledged: moments(connection, &acknowledged, repository, items)?,
         marked_unseen: moments(connection, &marked_unseen, repository, items)?,
         archived: archived(connection, repository, items)?,
+        muted: muted(connection, repository, items)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,
         failed_checks: failed_checks::read(connection, repository, items)?,

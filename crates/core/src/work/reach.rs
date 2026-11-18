@@ -90,15 +90,17 @@ fn linked(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<Linked> {
 
 /// The numbers of the Issues and PRs Tsugiki reaches in `facts`:
 ///
-/// 1. each on the Workbench in its own right, with the Origin PR and the Backports of such a PR, and each
-///    Issue one of those fixes,
+/// 1. each on the Workbench in its own right or carrying a Review request, with the Origin PR and the
+///    Backports of such a PR, and each Issue one of those fixes,
 /// 2. each PR that fixes a reached Issue, open, merged or closed,
 /// 3. each Backport whose Origin PR is reached, and the Origin PR of each reached Backport.
 ///
 /// That holds every PR the whole Workbench shows, those in Issues' trees too.
 fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let causes = Causes::of(facts, repository.conventions);
-    let own = in_own_right(facts, repository, &causes);
+    let mut own = in_own_right(facts, repository, &causes);
+    // The Review requests view lists a PR the user marked seen, which has left the Workbench.
+    own.extend(&causes.review_requests);
     let linked = linked(facts, repository);
     let issues = facts.issues.iter().map(|issue| issue.number);
     let mut reached: BTreeSet<u32> = issues.filter(|number| own.contains(number)).collect();

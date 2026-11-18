@@ -58,8 +58,9 @@ pub(super) const MARKED_UNSEEN: &str = "
 ";
 
 /// The moment the user last acknowledged what stands on each item: a Review request, a Stale review, failed
-/// CI on an Own PR. Mark Seen moves it with Last seen, and a write to GitHub moves Last seen alone (#865).
-/// Null until the user marks the item seen, so what stood before this column still Needs attention.
+/// CI on an Own PR (#865). Mark Seen moves it with Last seen, and the write to GitHub that #395 builds is to
+/// move Last seen alone. Null until the user marks the item seen, so what stood before this column still
+/// Needs attention.
 pub(super) const ACKNOWLEDGED: &str = "ALTER TABLE last_seen ADD COLUMN acknowledged_at INTEGER;";
 
 const COMMIT: &str = "commit";

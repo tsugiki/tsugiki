@@ -248,23 +248,27 @@ impl Judge<'_> {
             .any(|event| event.kind == ActivityKind::Comment && event.who == *self.viewer)
     }
 
+    /// The moment of the newest event on item `number` that `matches`, if the facts hold one.
+    fn last_at(&self, number: u32, matches: impl Fn(&Activity) -> bool) -> Option<OffsetDateTime> {
+        let found = self.events_of(number).filter(|event| matches(event));
+        found.map(|event| event.at).max()
+    }
+
     /// The moment the user was last asked to review PR `number`, if its timeline still holds it.
     fn requested_at(&self, number: u32) -> Option<OffsetDateTime> {
-        let asked = self.events_of(number).filter(|event| {
+        self.last_at(number, |event| {
             let kind = matches!(
                 event.kind,
                 ActivityKind::ReviewRequested | ActivityKind::Assigned
             );
             kind && event.who == *self.viewer
-        });
-        asked.map(|event| event.at).max()
+        })
     }
 
-    /// The moment of the last push to PR `number` that Tsugiki saw.
+    /// The moment Tsugiki noticed the last push to PR `number`, which the store keeps apart from the
+    /// commit's own date.
     fn pushed_at(&self, number: u32) -> Option<OffsetDateTime> {
-        let pushes = self.events_of(number);
-        let pushes = pushes.filter(|event| event.kind == ActivityKind::Commit);
-        pushes.map(|event| event.at).max()
+        self.last_at(number, |event| event.kind == ActivityKind::Commit)
     }
 
     /// `why` as a cause on `pull_request` from `started`, or none once the user has acknowledged it (#865).
@@ -295,22 +299,24 @@ impl Judge<'_> {
     fn standing(&self, pull_request: &PullRequestFacts) -> Vec<Cause> {
         let number = pull_request.number;
         let asked = reasons(pull_request, self.viewer).contains(&WorkReason::ReviewRequest);
-        let requested = asked
-            .then(|| {
-                let started = self.requested_at(number);
-                self.standing_from(pull_request, started, Why::ReviewRequested)
-            })
-            .flatten();
+        let requested = (asked.then_some(Why::ReviewRequested))
+            .and_then(|why| self.standing_from(pull_request, self.requested_at(number), why));
         let own = pull_request.author.as_ref() == Some(self.viewer);
         let open = pull_request.state == PrState::Open;
-        let failed = (own && open && has_failed(pull_request.ci))
-            .then(|| {
-                let finished = self.facts.ci_finished.get(&number).copied();
-                let checks = self.failed_checks_of(number).to_vec();
-                self.standing_from(pull_request, finished, Why::CiFailed { checks })
-            })
-            .flatten();
+        let failed = (own && open && has_failed(pull_request.ci)).then(|| Why::CiFailed {
+            checks: self.failed_checks_of(number).to_vec(),
+        });
+        let failed =
+            failed.and_then(|why| self.standing_from(pull_request, self.failed_at(number), why));
         requested.into_iter().chain(failed).collect()
+    }
+
+    /// The moment PR `number`'s CI failed. The store moves its moment only when CI changes state, so a run
+    /// that fails again after a push, with no pending state synced in between, dates from the push: GitHub
+    /// reports CI on the head alone.
+    fn failed_at(&self, number: u32) -> Option<OffsetDateTime> {
+        let finished = self.facts.ci_finished.get(&number).copied();
+        finished.max(self.pushed_at(number))
     }
 
     /// Marked unseen, from the moment of the flag, whatever the user's part in the item.

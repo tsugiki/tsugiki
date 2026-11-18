@@ -385,6 +385,32 @@ fn ci_that_fails_after_mark_seen_needs_attention() {
 }
 
 #[test]
+fn ci_that_fails_again_after_a_push_needs_attention_though_no_pending_state_came_between() {
+    let world = World::new("attention-own-ci-again");
+    world.has(vec![PullRequestFacts {
+        ci: Some(CiState::Failure),
+        ..own(1)
+    }]);
+    let mut facts = world.db.reader.work_facts(&cpython()).unwrap();
+    // The store keeps whole seconds, so the moments are set apart by hand.
+    let activity = &mut facts.activity;
+    let _failed = activity.ci_finished.insert(1, hours_ago(5));
+    let _acknowledged = activity.acknowledged.insert(1, hours_ago(4));
+    let push = Activity {
+        kind: ActivityKind::Commit,
+        who: me(),
+        at: hours_ago(1),
+    };
+    let _pushed = activity.events.insert(1, vec![push]);
+
+    let workbench = Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole);
+
+    let attention = listed_at(&workbench, 1).attention.unwrap();
+    assert_eq!(attention.why, [Why::CiFailed { checks: vec![] }]);
+    world.finish();
+}
+
+#[test]
 fn failed_ci_names_the_checks_once_tsugiki_has_asked() {
     let world = World::new("attention-own-ci-names");
     world.has(vec![PullRequestFacts {

@@ -52,7 +52,7 @@ pub struct ActivityFacts {
     pub last_seen: BTreeMap<u32, OffsetDateTime>,
     /// The moment the user last acknowledged each item: a Review request, a Stale review or failed CI that
     /// started before it no longer Needs attention. Mark Seen moves it with Last seen, and a write to GitHub
-    /// doesn't.
+    /// (#395) is to leave it.
     pub acknowledged: BTreeMap<u32, OffsetDateTime>,
     /// The moment the user marked each item unseen, for the items still flagged.
     pub marked_unseen: BTreeMap<u32, OffsetDateTime>,

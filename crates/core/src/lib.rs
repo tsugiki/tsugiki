@@ -23,6 +23,7 @@ pub mod logfile;
 pub mod login;
 pub mod measurement;
 pub mod mirror;
+pub mod mirror_queue;
 pub mod mirror_source;
 pub mod misses;
 pub mod patch_ids;

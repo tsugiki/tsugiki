@@ -884,6 +884,14 @@ fn older(number: u32) -> PrHead {
     }
 }
 
+/// PR `number`'s head after a push the store hasn't heard of yet.
+fn newer(number: u32) -> PrHead {
+    PrHead {
+        commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+        ..head(number)
+    }
+}
+
 fn refspec(number: u32) -> String {
     format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*")
 }
@@ -1281,6 +1289,31 @@ fn an_opened_pr_wakes_a_stalled_worker() {
     assert_eq!(wanted.refspecs(), [refspec(1)]);
     wanted.succeed();
     mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_hand_over_of_a_head_the_mirror_holds_leaves_no_fetch_of_its_target_branch_alone() {
+    let place = Place::new("opened-settled");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(5)]);
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    requests.fetch_first(cpython.clone(), newer(5));
+    // Offline, nothing starts once the fetch has brought `head(5)`, until the hand-over below.
+    requests.follow(&Status::Offline);
+    wanted.succeed();
+    requests.fetch_heads(cpython, vec![head(5)]);
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    mirrors.wait_idle();
+    let started = starts.try_recv();
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(started.is_err(), "{:?}", started.map(|start| start.args));
 }
 
 #[test]

@@ -242,28 +242,40 @@ impl Worker {
         Instant::now().checked_add(wait)
     }
 
-    /// Starts the upkeep of the first mirror that is due, if one is. It reads the mirror's PR refs first,
-    /// to delete those of PRs no longer in Reach.
-    pub(super) fn start_upkeep(&mut self) {
+    /// The Repositories whose mirror is there and due for its upkeep, in the order the worker heard of them.
+    pub(super) fn upkeep_waiting(&self) -> Vec<RepositoryName> {
         let (Some(schedule), Ok(folders)) = (self.remotes.upkeep, &self.folders) else {
-            return;
+            return Vec::new();
         };
         let now = SystemTime::now();
-        let due = self.upkept.iter().find_map(|(repository, upkept)| {
-            let task = upkept.due(schedule, now)?;
-            let mirror = folders.mirror(repository);
-            mirror.exists().then(|| (repository.clone(), mirror, task))
-        });
-        let Some((repository, mirror, task)) = due else {
-            return;
-        };
-        let pruning = self.stale_refs(&repository, &mirror);
-        self.start_upkeep_git(Plan {
-            repository,
-            mirror,
-            pruning,
-            task,
-        });
+        (self.upkept.iter())
+            .filter(|(repository, upkept)| {
+                upkept.due(schedule, now).is_some() && folders.mirror(repository).exists()
+            })
+            .map(|(repository, _)| repository.clone())
+            .collect()
+    }
+
+    /// Starts the upkeep of `repository`'s mirror, which is due. It reads the mirror's PR refs first, to
+    /// delete those of PRs no longer in Reach.
+    pub(super) fn start_upkeep(&mut self, repository: &RepositoryName) {
+        if let Some((repository, mirror, task)) = self.upkeep_of(repository) {
+            let pruning = self.stale_refs(&repository, &mirror);
+            self.start_upkeep_git(Plan {
+                repository,
+                mirror,
+                pruning,
+                task,
+            });
+        }
+    }
+
+    /// The task due for `repository`'s mirror, with where the mirror is.
+    fn upkeep_of(&self, repository: &RepositoryName) -> Option<(RepositoryName, PathBuf, Task)> {
+        let (schedule, folders) = (self.remotes.upkeep?, self.folders.as_ref().ok()?);
+        let (repository, upkept) = (self.upkept.iter()).find(|(one, _)| one.is_same(repository))?;
+        let task = upkept.due(schedule, SystemTime::now())?;
+        Some((repository.clone(), folders.mirror(repository), task))
     }
 
     /// The PRs whose refs are in `mirror` though the last hand-over didn't reach them and the user hasn't

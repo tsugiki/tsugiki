@@ -1546,6 +1546,16 @@ fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirro
 }
 
 #[test]
+fn a_switch_whose_facts_the_store_cant_read_hands_over_nothing_and_owes_nothing() {
+    let (switched, asked, _, owed) = switch_bugs_on_losing(Some(0));
+
+    // The settings change all the same, and the next step that saves hands the Mirror its heads.
+    assert_eq!(switched, Some(bugs_switched(OnWorkbench::Off)));
+    assert!(asked.iter().all(|line| !line.contains("#8")), "{asked:?}");
+    assert_eq!(owed, BTreeSet::new());
+}
+
+#[test]
 fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let (folders, _folder) = temp_folders("switched-session");
     let store = Store::open(&folders.database()).unwrap();
@@ -2108,6 +2118,10 @@ impl Transport for QuietRepository {
         if request.operation == "Viewer" {
             return reply_ok(r#"{"data":{"viewer":{"login":"octocat"}}}"#);
         }
+        // GitHub has nothing new to say of any PR a probe asks about.
+        if request.operation == "ProbePullRequests" {
+            return answer(json!({ "repository": {} }), RATE_LIMIT);
+        }
         let none = json!({ "pageInfo": page_info(None), "nodes": [] });
         let repository = json!({
             "openIssues": { "totalCount": 900 },
@@ -2178,6 +2192,25 @@ fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
         }
     );
     assert!(after.at > Some(at));
+}
+
+#[test]
+fn opening_a_repository_has_its_refresh_read_ahead_what_one_before_this_launch_owed() {
+    let (folders, _folder) = temp_folders("opened-owed");
+    let _at = after_a_finished_sync(&folders);
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&Login::new("octocat")).unwrap();
+    let stored = vec![stored_pr(8, "octocat", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    store.owe_read_ahead(&gcmon(), vec![8]).unwrap();
+    store.close();
+    let (access, asked) = quiet_repository();
+    let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
+
+    session.fetching().sync(plain_gcmon());
+    wait_for(&asked, "RefreshRepository");
+    wait_for(&asked, "FetchPullRequestContent");
+    session.stop(PLENTY);
 }
 
 #[test]

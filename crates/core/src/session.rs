@@ -24,7 +24,7 @@ use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoa
 use crate::store::{self, HeadKept, OpenReader, ReaderToOpen, Store, StoreReader};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{SeenMark, checks_to_keep, mirror_work, reach};
+use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -522,30 +522,39 @@ fn hand_over_rules_wants(
     syncs: &Syncs,
     repository: &RepositoryName,
 ) -> Option<WorkFacts> {
-    let settings = syncs.settings(repository)?;
     let facts = store.work_facts(repository).ok()?;
-    hand_over_wants(fetching, store, settings, &facts);
+    let work = MirrorWork::of(&facts, syncs.settings(repository)?);
+    let stated = Stated {
+        repository,
+        facts: &facts,
+        work,
+    };
+    hand_over_wants(fetching, store, stated);
     Some(facts)
 }
 
-/// Hands the Mirror worker what the rules want of the Repository of `settings`, whose stored facts are
-/// `facts`, as `hand_over_heads` says.
-fn hand_over_wants(
-    fetching: &Fetching,
-    store: &Store,
-    settings: &RepositorySettings,
-    facts: &WorkFacts,
-) {
-    let repository = &settings.name;
+/// The Mirror's work in a Repository, with the stored facts the rules worked it out from.
+struct Stated<'a> {
+    repository: &'a RepositoryName,
+    facts: &'a WorkFacts,
+    work: MirrorWork,
+}
+
+/// Hands the Mirror worker what the rules want of it, as `hand_over_heads` says.
+fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
+    let Stated {
+        repository,
+        facts,
+        work,
+    } = stated;
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
     // that can't keep it says so at the next step that saves.
     let _kept = keep_last_checks(store, repository, facts);
-    let (heads, patches) = mirror_work(facts, settings);
     let want = MirrorWant {
-        heads,
+        heads: work.heads,
         reviewed,
-        patches,
+        patches: work.patches,
     };
     fetching.want(repository, want);
 }
@@ -580,13 +589,16 @@ fn settings_changed(
 
 /// The syncs read settings `now` in place of `before`. A Filter switched on puts PRs in Reach that no
 /// change on GitHub would have the Mirror fetch the head of or a refresh read ahead (#819). So the Mirror
-/// worker hears the new Reach at once, and the store owes a read of each PR newly in Reach whose
-/// Conversation it doesn't hold at the PR's head, which the next refresh reads ahead while the PR is still
-/// in Reach. One switched off takes PRs out, and the Mirror worker stops wanting their heads.
+/// worker hears the new Reach at once, and the store owes a read of each Conversation the rules say the
+/// switch owes. A refresh that finishes reads those still in Reach ahead. A first sync that finishes first
+/// forgets them, as it forgets every read owed. One switched off takes PRs out, and the Mirror worker stops
+/// wanting their heads.
 ///
-/// A store that can't read the facts leaves the heads to the next step that saves. One that can't keep what
-/// it owes leaves the Conversations to the PR view, which reads one when it opens, and the log says so.
-/// Says whether it handed the Mirror worker anything.
+/// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
+/// are lost, as no later step works them out, and the log says so. One that can't say which heads its
+/// Conversations were read at owes a read of each PR the switch puts in Reach, which costs a request apiece
+/// and loses nothing. One that can't keep what it owes loses them too, and the log says so. The PR view reads
+/// a lost Conversation when it opens. Says whether it handed the Mirror worker anything.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
@@ -594,15 +606,23 @@ fn follow_reach(
     before: &RepositorySettings,
 ) -> Option<()> {
     let repository = &now.name;
-    let facts = store.work_facts(repository).ok()?;
-    hand_over_wants(fetching, store, now, &facts);
-    let reached = reach(&facts, now);
-    let reached_before = reach(&facts, before);
-    let newly = (facts.pull_requests.iter())
-        .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
-        .map(|pr| (pr.number, pr.head.clone()))
-        .collect();
-    if let Err(problem) = store.owe_read_ahead_at(repository, newly) {
+    let facts = (store.work_facts(repository))
+        .inspect_err(|problem| {
+            log::warn!(
+                "Tsugiki couldn't read what a Filter switched on in {repository} reaches: {}",
+                problem.message
+            );
+        })
+        .ok()?;
+    let read_at = store.conversation_heads(repository).unwrap_or_default();
+    let (work, owed) = switched(&facts, &read_at, now, before);
+    let stated = Stated {
+        repository,
+        facts: &facts,
+        work,
+    };
+    hand_over_wants(fetching, store, stated);
+    if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
             "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",
             problem.message

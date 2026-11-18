@@ -1193,19 +1193,17 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     harness
         .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(2, None)])
+        .owe_read_ahead(&cpython(), vec![2])
         .unwrap();
     let mut syncs = refreshing(b_off);
-    while reviews_held(&harness, 2).is_none() {
-        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    }
+    read_ahead_up_to(&mut syncs, &harness, 2);
 
     // As the session does when the user switches "b" on.
     drop(syncs.replace_settings(filtering(&["a", "b"])));
     harness
         .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(3, None)])
+        .owe_read_ahead(&cpython(), vec![3])
         .unwrap();
     drop(run(&mut syncs, &harness));
 
@@ -1221,6 +1219,70 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     harness.finish();
 }
 
+/// Steps `syncs` until the store holds PR `number`'s Reviews.
+fn read_ahead_up_to(syncs: &mut Syncs, harness: &Harness, number: u32) {
+    while reviews_held(harness, number).is_none() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+}
+
+/// A Repository whose Filters "a" and "b" find strangers' PRs 2 and 3, of which the store owes a read.
+fn owing_two_reads(name: &str) -> Harness {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync(name, vec![quiet, approved()]);
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    stored_filter(&harness, "b", &[3]);
+    harness
+        .db
+        .store
+        .owe_read_ahead(&cpython(), vec![2, 3])
+        .unwrap();
+    harness
+}
+
+#[test]
+fn a_filter_switched_off_while_a_refresh_reads_ahead_leaves_what_it_reached_unread() {
+    let harness = owing_two_reads("switched-off-reading-ahead");
+    let mut syncs = refreshing(filtering(&["a", "b"]));
+    read_ahead_up_to(&mut syncs, &harness, 2);
+
+    let mut b_off = filtering(&["a", "b"]);
+    b_off.filters[1].on_workbench = OnWorkbench::Off;
+    drop(syncs.replace_settings(b_off));
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    assert_eq!(reviews_held(&harness, 3), None);
+    harness.finish();
+}
+
+#[test]
+fn a_conversation_the_pr_view_read_while_a_refresh_reads_ahead_isnt_read_again() {
+    let harness = owing_two_reads("read-by-the-pr-view");
+    let mut syncs = refreshing(filtering(&["a", "b"]));
+    read_ahead_up_to(&mut syncs, &harness, 2);
+
+    // As the PR view does when the user opens PR 3, with what GitHub answered for PR 2.
+    let (_, read) = harness.db.reader.pull_request_facts(&cpython(), 2).unwrap();
+    harness
+        .db
+        .store
+        .save_pull_request_content(&cpython(), 3, read.unwrap())
+        .unwrap();
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    harness.finish();
+}
+
 #[test]
 fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
@@ -1232,7 +1294,7 @@ fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     harness
         .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(2, None), (3, None)])
+        .owe_read_ahead(&cpython(), vec![2, 3])
         .unwrap();
     let mut syncs = refreshing(filtering(&["a"]));
 

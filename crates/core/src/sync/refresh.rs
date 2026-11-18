@@ -23,7 +23,7 @@ use crate::login::Login;
 use crate::repository::RepositorySize;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, SyncState};
-use crate::work::{reach, reasons};
+use crate::work::{conversations_to_read, reasons};
 
 /// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
 /// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
@@ -462,38 +462,31 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// The PRs in Reach under `repository`'s settings among those the store owes a read: those this refresh found
-/// changed, any a refresh that stopped left unread, and those a Filter switched on put in Reach with no
-/// Conversation read at their head. Their Conversations are worth reading before the user opens them, and
-/// a stranger's PR waits until then.
-pub(super) fn to_read_ahead(
-    link: &Link<'_>,
-    repository: &RepositorySettings,
-) -> Result<BTreeSet<u32>, Error> {
-    let changed = link.store.read_ahead_owed(link.repository)?;
-    if changed.is_empty() {
-        return Ok(changed);
+/// The Conversations the rules want read ahead under `repository`'s settings, from what the store holds
+/// now. With no read owed, reading the facts would cost a read of the whole Repository for nothing.
+fn to_read_ahead(link: &Link<'_>, repository: &RepositorySettings) -> Result<BTreeSet<u32>, Error> {
+    let owed = link.store.read_ahead_owed(link.repository)?;
+    if owed.is_empty() {
+        return Ok(owed);
     }
-    let reached = reach(&link.store.work_facts(link.repository)?, repository);
-    Ok(changed.intersection(&reached).copied().collect())
+    let facts = link.store.work_facts(link.repository)?;
+    Ok(conversations_to_read(&facts, &owed, repository))
 }
 
-/// Reads the Conversation of the next PR `ahead` has left, with its Reviews and their threads: about a point
-/// each, and finishes once none are left. After a change to the settings it first asks the store again,
-/// under `repository`'s settings as they are now, for the PRs it hasn't tried yet. Trouble with one PR leaves
-/// the rest to read, and the PR view reads that one when it opens. Only trouble that speaks for all of
-/// GitHub stops the refresh.
+/// Reads the Conversation of the next PR that the rules want read ahead and `ahead` hasn't tried, with its
+/// Reviews and their threads: about a point each. Finishes once none are left. It asks the rules before each
+/// read, so a PR that leaves Reach, or whose Conversation the PR view read meanwhile, isn't read. A store
+/// that can't answer fails the step, which the queue retries like any other, so the refresh doesn't finish,
+/// and forget what the store owes, on a set it couldn't read. Trouble with one PR leaves the rest to read,
+/// and the PR view reads that one when it opens. Only trouble that speaks for all of GitHub stops the
+/// refresh.
 pub(super) fn read_ahead(
     link: &Link<'_>,
     ahead: &mut Ahead,
     repository: &RepositorySettings,
 ) -> Result<Moved, Error> {
-    if ahead.left.is_none() {
-        let owed = to_read_ahead(link, repository)?;
-        ahead.left = Some(owed.difference(&ahead.tried).copied().collect());
-    }
-    let left = ahead.left.get_or_insert_default();
-    let Some(number) = left.first().copied() else {
+    let wanted = to_read_ahead(link, repository)?;
+    let Some(number) = wanted.difference(&ahead.tried).next().copied() else {
         return Ok((Step::Finished, None));
     };
     let step = match link.github.pull_request_content(link.repository, number) {
@@ -514,7 +507,6 @@ pub(super) fn read_ahead(
         }
         Err(problem) => return Err(problem),
     };
-    let _read = left.remove(&number);
     let _tried = ahead.tried.insert(number);
     Ok((step, None))
 }

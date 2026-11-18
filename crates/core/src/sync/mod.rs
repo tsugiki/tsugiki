@@ -82,17 +82,17 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish reads the Conversations of the PRs in Reach it owes a read, lowest number
-    /// first (#157).
+    /// A refresh that would finish reads the Conversations the rules want read ahead, lowest number first
+    /// (#157).
     ReadingAhead(Ahead),
 }
 
-/// The PRs a refresh reads ahead.
+/// The reading ahead a refresh has done.
+#[derive(Default)]
 struct Ahead {
-    /// Those still to read, or None once a change to the settings has the refresh ask the store again: a
-    /// Filter switched on can owe more, and one switched off takes PRs out of Reach.
-    left: Option<BTreeSet<u32>>,
-    /// Those this refresh has asked GitHub for, so it asks for each once.
+    /// The PRs this refresh has asked GitHub for, so it asks for each once, whatever the rules want next.
+    /// That's the queue's bookkeeping, not a rule: it keeps a PR whose Conversation GitHub wouldn't give
+    /// from being asked for again and again.
     tried: BTreeSet<u32>,
 }
 
@@ -314,14 +314,6 @@ impl UserWorkSync {
         sync
     }
 
-    /// The Repository's settings changed, so a read ahead under way works out again which PRs it owes a
-    /// read: a Filter switched on can owe more, and one switched off takes PRs out of Reach.
-    fn reach_changed(&mut self) {
-        if let Phase::ReadingAhead(ahead) = &mut self.phase {
-            ahead.left = None;
-        }
-    }
-
     /// A first sync's own state, if this is one.
     fn first_sync(&self) -> Option<&FirstSync> {
         match &self.kind {
@@ -491,14 +483,9 @@ impl UserWorkSync {
         }
         let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
         if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
-            // The store keeps the PRs until the refresh finishes, so a failure here leaves them to the retry.
-            let left = refresh::to_read_ahead(&link, settings)?;
-            if !left.is_empty() {
-                let tried = BTreeSet::new();
-                let left = Some(left);
-                self.phase = Phase::ReadingAhead(Ahead { left, tried });
-                return Ok(Step::Moved);
-            }
+            // Asking the rules is no request to GitHub, so this goes straight on to the first read.
+            self.phase = Phase::ReadingAhead(Ahead::default());
+            return self.advance(github, store, settings);
         }
         if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
             (&mut self.kind, &step)

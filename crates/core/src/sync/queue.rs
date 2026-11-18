@@ -196,8 +196,8 @@ impl Syncs {
 
     /// Takes the settings the settings owner handed over, `repository`'s, in place of those its syncs read,
     /// if it was opened since launch and they differ, and answers with those. Which Repository is open
-    /// stays, and nothing new is queued. A sync of it that is reading ahead works out again which PRs it
-    /// owes a read, as the new settings can reach others.
+    /// stays, and nothing new is queued. A sync of it reads ahead under the new settings from its next
+    /// step.
     pub fn replace_settings(
         &mut self,
         repository: RepositorySettings,
@@ -212,11 +212,7 @@ impl Syncs {
         if *held == repository {
             return None;
         }
-        let before = mem::replace(held, repository);
-        if let Some(queued) = self.queued_mut(&name) {
-            queued.sync.reach_changed();
-        }
-        Some(before)
+        Some(mem::replace(held, repository))
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A

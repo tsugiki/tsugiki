@@ -199,7 +199,7 @@ fn serve(
         let document = serde_json::from_value::<Uri>(document).ok();
         let result = match method {
             // A real server's output ends with its process. The test still holds a sender of the fake's, so
-            // the client would wait out its patience for the end, 5 seconds, then kill the fake.
+            // the client would wait out `EXIT_PATIENCE` for the end, then kill the fake.
             "exit" => {
                 let _gone = replies.send(None);
                 return;

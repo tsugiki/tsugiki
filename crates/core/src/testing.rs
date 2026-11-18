@@ -29,7 +29,7 @@ pub(crate) use fixture::Fixture;
 pub(crate) use tsugiki_test_git::{TempPath, temp_path};
 
 /// Adds `text` to the config of the repository whose git folder is `git_folder`, as `git config` writes it,
-/// without a git to write it: on Windows a git costs about 30 ms to start.
+/// without a git to write it, since starting one is slow on Windows (ADR 0003).
 #[cfg(test)]
 pub(crate) fn add_config(git_folder: &Path, text: &str) {
     use std::io::Write as _;

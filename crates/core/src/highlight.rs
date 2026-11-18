@@ -310,9 +310,8 @@ impl fmt::Debug for Parsed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stopped;
 
-/// The bytes a tree takes for each node `Node::descendant_count` counts. A counting allocator measured 78 to
-/// 112 bytes on CPython's largest C and Python files (`Objects/typeobject.c` took 7.2 MB, and
-/// `Lib/test/test_typing.py` 13.3 MB), and this adds what the allocator keeps beside each block (#180).
+/// The bytes a tree takes for each node `Node::descendant_count` counts: the most a counting allocator found
+/// on CPython's largest C and Python files (#217), and what the allocator keeps beside each block (#180).
 const BYTES_PER_NODE: usize = 128;
 
 impl Parsed {

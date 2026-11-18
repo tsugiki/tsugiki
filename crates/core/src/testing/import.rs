@@ -1,6 +1,6 @@
 //! Commits that one `git fast-import` writes, where adds and commits in a working copy would start a few gits
-//! each: about 30 ms for each git started on Windows. The repository's working tree and index stay as they
-//! were, as a Mirror has none.
+//! each, and starting a git is slow on Windows (ADR 0003). The repository's working tree and index stay as
+//! they were, as a Mirror has none.
 
 use std::path::Path;
 

@@ -83,7 +83,7 @@ fn above_500_open_is_large_and_loads_the_window() {
 
 #[test]
 fn the_estimate_for_cpython_agrees_with_what_was_measured() {
-    // A first sync measured about 485 points and 20.5 minutes for 4,760 items.
+    // #133 measured the first sync, and #13 the mirror's clones.
     let cpython = RepositoryCounts {
         open_issues: 6935,
         open_prs: 2308,
@@ -98,7 +98,6 @@ fn the_estimate_for_cpython_agrees_with_what_was_measured() {
         (1150..=1300).contains(&check.first_sync_seconds),
         "{check:?}"
     );
-    // Its mirror took about 3.5 minutes from GitHub alone, and about 36 s borrowing.
     let mirror = check.mirror;
     assert_eq!(mirror.mirror_mb, 891);
     assert!((200..=220).contains(&mirror.download_seconds), "{mirror:?}");

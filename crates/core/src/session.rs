@@ -540,7 +540,6 @@ fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
     let _kept = keep_last_checks(store, repository, facts);
     let want = MirrorWant {
         heads: work.heads,
-        kept: work.kept,
         reviewed,
         patches: work.patches,
     };
@@ -635,32 +634,29 @@ fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: R
     }
 }
 
-/// A mark that hides an item or shows it again in a Repository the session has opened since launch, which
-/// moves Reach (#918, #820), with the stored facts from before the store keeps it.
+/// A Mute or an Unmute in a Repository the session has opened since launch, which moves Reach (#918), with
+/// the stored facts from before the store keeps it.
 ///
-/// Mute and Archive take the item's tree out of Reach, apart from what a request or another item keeps
-/// there, so the Mirror worker stops wanting their heads. Unmute, Unarchive and Mark Unseen, which
-/// unarchives, put the tree back, which no change on GitHub would have the Mirror fetch the heads of or a
-/// refresh read ahead. So the Mirror worker hears the new Reach at once, and the store owes the reads the
-/// rules say the mark owes, as with a Filter switched on (`follow_reach`). Mark Seen leaves the move it
-/// makes to the next step that saves.
+/// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
+/// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
+/// the Mirror fetch the heads of or a refresh read ahead. So the Mirror worker hears the new Reach at once,
+/// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
 struct ReachMove<'a> {
     settings: &'a RepositorySettings,
     before: WorkFacts,
 }
 
 impl<'a> ReachMove<'a> {
-    /// The move `marked` makes, under the settings `syncs` hold: none for Mark Seen. Facts the store can't
-    /// read, before the mark or after it, leave the heads to the next step that saves, and lose the reads the
-    /// mark owes.
+    /// The move `marked` makes, under the settings `syncs` hold: none for a mark other than Mute and Unmute.
+    /// Facts the store can't read, before the mark or after it, leave the heads to the next step that saves,
+    /// and lose the reads an Unmute owes.
     fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
         let repository = match marked {
-            Marked::Muted { repository, .. }
-            | Marked::Unmuted { repository, .. }
-            | Marked::Archived { repository, .. }
-            | Marked::Unarchived { repository, .. }
-            | Marked::Unseen { repository, .. } => repository,
-            Marked::Seen { .. } => return None,
+            Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
+            Marked::Seen { .. }
+            | Marked::Unseen { .. }
+            | Marked::Archived { .. }
+            | Marked::Unarchived { .. } => return None,
         };
         let settings = syncs.settings(repository)?;
         let before = facts_for_move(store, repository)?;

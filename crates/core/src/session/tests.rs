@@ -1812,37 +1812,6 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
 }
 
 #[test]
-fn archive_takes_an_issues_heads_out_of_reach_keeping_their_refs_and_unarchive_hands_them_back() {
-    let (folders, _folder) = temp_folders("archived-session");
-    let store = Store::open(&folders.database()).unwrap();
-    stores_issue_5_with_its_prs(&store);
-    store.close();
-    let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-    };
-    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
-    let issue = ItemKey::Issue { number: 5 };
-
-    let asked = session.fetching();
-    asked.sync(cpython_gcmon());
-    asked.archive(gcmon(), issue, issue_5_seen());
-    let archived = heard.asked_through("wants heads none", PLENTY);
-    asked.unarchive(gcmon(), issue);
-    let unarchived = heard.asked_through("wants heads #8", PLENTY);
-    session.stop(PLENTY);
-    let store = Store::open(&folders.database()).unwrap();
-    let owed = store.read_ahead_owed(&gcmon()).unwrap();
-
-    let kept = "some-maintainer/gcmon keeps refs of #8, #9".to_owned();
-    assert!(archived.contains(&kept), "{archived:?}");
-    let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
-    assert!(unarchived.contains(&heads.to_owned()), "{unarchived:?}");
-    assert_eq!(owed, [8, 9].into());
-}
-
-#[test]
 fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirror_nothing() {
     let store = empty_store();
     stores_issue_5_with_its_prs(&store);

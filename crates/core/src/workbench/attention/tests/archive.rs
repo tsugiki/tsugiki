@@ -49,7 +49,10 @@ impl World {
             closings: BTreeSet::new(),
         };
         let now = OffsetDateTime::now_utc();
-        self.db.store.archive_closed(&cpython(), judged, now).unwrap();
+        self.db
+            .store
+            .archive_closed(&cpython(), judged, now)
+            .unwrap();
     }
 }
 

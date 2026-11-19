@@ -24,9 +24,6 @@ pub(super) struct Prs {
     /// The PRs of the last hand-over: those in Reach. Nothing before the first one. A want goes once it is
     /// met, so the wants can't say which PRs are in Reach.
     handed: Option<BTreeSet<u32>>,
-    /// The PRs out of Reach whose refs upkeep keeps, as the rules last said: those of the Archived trees
-    /// (#820).
-    kept: BTreeSet<u32>,
 }
 
 /// What the worker knows of one PR's head. One with nothing in it goes.
@@ -448,18 +445,11 @@ impl Prs {
         noted
     }
 
-    /// Takes `kept` as the PRs out of Reach whose refs upkeep keeps, which replaces the last.
-    pub(super) fn keep(&mut self, kept: Vec<u32>) {
-        self.kept = kept.into_iter().collect();
-    }
-
-    /// Says of a PR whether the last hand-over didn't reach it, the rules don't keep its ref and the user
-    /// hasn't opened it since launch. None before the first hand-over, which says what's in Reach.
+    /// Says of a PR whether the last hand-over didn't reach it and the user hasn't opened it since launch.
+    /// None before the first hand-over, which says what's in Reach.
     pub(super) fn out_of_reach(&self) -> Option<impl Fn(&u32) -> bool + '_> {
         let handed = self.handed.as_ref()?;
-        Some(|number: &u32| {
-            !handed.contains(number) && !self.kept.contains(number) && !self.user_opened(*number)
-        })
+        Some(|number: &u32| !handed.contains(number) && !self.user_opened(*number))
     }
 
     fn user_opened(&self, number: u32) -> bool {

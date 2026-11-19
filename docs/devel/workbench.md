@@ -116,13 +116,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Review request or an assignment to the user anywhere in the tree, acknowledged or not, keeps the whole
     tree in Reach until it ends. Unmute puts the tree back at once, as switching a Filter on does: the
     Mirror fetches its heads, and the next refresh reads ahead the Conversations Tsugiki hasn't read at
-    their heads.
-  - An Archived item's tree leaves **Reach** too, while nothing in it Needs attention (#820), apart from
-    the tree of a PR whose Review request stands, which the Review requests view lists. A PR in it that
-    another item reaches stays, as for a Muted tree. The Mirror keeps the heads of its PRs that it holds
-    and fetches none, and a Stale review check whose verdict froze with a PR stays; no new check runs on
-    them, and no Conversation of theirs is read ahead. Archive takes the tree out at once, and Unarchive and
-    Mark Unseen put it back at once, as Unmute does.
+    their heads. An Archived item stays in Reach, a closed one too.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened
     still shows when another PR in it needs attention or a Filter matches it.

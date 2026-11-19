@@ -70,7 +70,6 @@ fn a_want_hands_the_mirror_each_of_its_parts_and_then_the_heads_saved() {
     let (fetching, _incoming, heard) = handle();
     let want = MirrorWant {
         heads: vec![head(7)],
-        kept: vec![3],
         reviewed: Some(vec![ReviewedCommit {
             number: 8,
             commit: head(8).commit,
@@ -84,7 +83,6 @@ fn a_want_hands_the_mirror_each_of_its_parts_and_then_the_heads_saved() {
     assert_eq!(
         heard.asked(),
         [
-            "python/cpython keeps refs of #3",
             "python/cpython wants heads #7 at 0000000 on main",
             "python/cpython wants reviewed #8 at 0000000",
             "python/cpython wants patch-ids of none",
@@ -98,7 +96,6 @@ fn reviewed_commits_the_store_couldnt_read_leave_the_last_want_of_them() {
     let (fetching, _incoming, heard) = handle();
     let want = MirrorWant {
         heads: vec![],
-        kept: vec![],
         reviewed: None,
         patches: vec![],
     };

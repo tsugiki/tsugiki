@@ -10,8 +10,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     GitHub's answer, archives it if **Reach** held it while it was open
     ([workbench.md](workbench.md)). The database keeps each closing it saves until the sync judges it,
     right after the step that saved it, so a closing outlives a crash and waits for the next step that
-    saves. An item that reopens leaves Archived as the sync saves it. An Archived item leaves Reach, so the
-    sync reads ahead none of its Conversations and runs no Stale review check on its PRs.
+    saves. An item that reopens leaves Archived as the sync saves it. An Archived item stays in Reach, so
+    the sync keeps reading it and its PRs (#919).
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size ([ADR
   0015](../adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). A small one (up to 500 open

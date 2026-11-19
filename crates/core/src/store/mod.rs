@@ -552,9 +552,10 @@ impl Store {
         now: OffsetDateTime,
     ) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved = self.call(move |connection| {
+        let archive = move |connection: &mut Connection| {
             activity::archive_closed(connection, &repository, &judged, now)
-        })?;
+        };
+        let saved = self.call(archive)?;
         saved.map_err(saying(CANT_WRITE))
     }
 

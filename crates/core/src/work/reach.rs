@@ -155,21 +155,17 @@ impl Walk {
     }
 }
 
-/// The sets Reach joins (#918), and the Archived trees it leaves out (#820).
+/// The two sets Reach joins (#918).
 #[derive(Debug)]
 struct Reach {
     /// The walk from the Issues and PRs on the Workbench in their own right and those carrying a Review
-    /// request, with each Muted and each Archived tree cut out after its first step. A PR in such a tree
-    /// comes back when the walk reaches it otherwise: through a second Issue it fixes, or a Backport family
-    /// it shares.
-    without_hidden: BTreeSet<u32>,
-    /// The hidden trees a list still shows, so the user will open them. The tree of each Muted item where a
-    /// Review request or an assignment to the user stands, acknowledged or not: the Filters and the Review
-    /// requests view list those, and the Workbench too once the ask started after the mute. And the tree of
-    /// each Archived item where a Review request stands, which the Review requests view and the Filters list.
-    hidden_listed: BTreeSet<u32>,
-    /// The trees of the Archived items, apart from the Muted ones.
-    archived: BTreeSet<u32>,
+    /// request, with each Muted tree cut out after its first step. A PR in a Muted tree comes back when the
+    /// walk reaches it otherwise: through a second Issue it fixes, or a Backport family it shares.
+    without_muted: BTreeSet<u32>,
+    /// The tree of each Muted item where a Review request or an assignment to the user stands, acknowledged
+    /// or not. The Filters and the Review requests view list those, and the Workbench too once the ask
+    /// started after the mute, so the user will open them.
+    muted_asking: BTreeSet<u32>,
 }
 
 impl Reach {
@@ -180,109 +176,39 @@ impl Reach {
         // The Review requests view lists a PR the user marked seen, which has left the Workbench.
         starts.extend(&causes.review_requests);
         let asked = causes.asked();
-        let mut hidden = BTreeSet::new();
-        let mut hidden_listed = BTreeSet::new();
+        let mut muted = BTreeSet::new();
+        let mut muted_asking = BTreeSet::new();
         for key in causes.muted() {
             let tree = walk.tree(key);
             if !tree.is_disjoint(&asked) {
-                hidden_listed.extend(&tree);
+                muted_asking.extend(&tree);
             }
-            hidden.extend(tree);
+            muted.extend(tree);
         }
-        let mut archived = BTreeSet::new();
-        for key in causes.archived().filter(|key| !causes.is_muted(*key)) {
-            let tree = walk.tree(key);
-            let numbers: Vec<u32> = tree.iter().copied().collect();
-            if !causes.is_archived(key, &numbers) {
-                continue;
-            }
-            if !tree.is_disjoint(&causes.review_requests) {
-                hidden_listed.extend(&tree);
-            }
-            archived.extend(tree);
-        }
-        hidden.extend(&archived);
         Self {
-            without_hidden: walk.from(&starts, &hidden),
-            hidden_listed,
-            archived,
+            without_muted: walk.from(&starts, &muted),
+            muted_asking,
         }
     }
 }
 
-/// What Reach holds in a Repository, and what it leaves out of the Archived trees.
-#[derive(Debug)]
-struct Reached {
-    /// The numbers of the Issues and PRs Tsugiki reaches, the first two sets of `Reach` joined. That holds
-    /// every PR the whole Workbench shows, those in Issues' trees too.
-    numbers: BTreeSet<u32>,
-    /// The Issues and PRs of the Archived trees that Reach leaves out. The Mirror keeps their PRs' heads,
-    /// and a Stale review check whose verdict froze with a PR stays, though none runs on them while they
-    /// stay out.
-    archived: BTreeSet<u32>,
-}
-
-/// Reach in `facts`, under `repository`.
-fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> Reached {
+/// The numbers of the Issues and PRs Tsugiki reaches in `facts`, the two sets of `Reach` joined. That holds
+/// every PR the whole Workbench shows, those in Issues' trees too. An Archived item stays in it, since its
+/// Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
+fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let Reach {
-        mut without_hidden,
-        hidden_listed,
-        archived,
+        mut without_muted,
+        muted_asking,
     } = Reach::of(facts, repository);
-    without_hidden.extend(hidden_listed);
-    let archived = archived.difference(&without_hidden).copied().collect();
-    Reached {
-        numbers: without_hidden,
-        archived,
-    }
-}
-
-/// The Mirror's work in a Repository, each part the whole set, worked out from one Reach.
-#[derive(Debug, PartialEq, Eq)]
-pub struct MirrorWork {
-    /// The heads the Mirror fetches: those of the PRs in Reach, in the order of their numbers. A PR stored
-    /// before Tsugiki read heads has none to give.
-    pub heads: Vec<PrHead>,
-    /// The PRs whose refs the Mirror keeps though it fetches none of their heads: those of the Archived trees
-    /// that Reach leaves out (#820), in the order of their numbers.
-    pub kept: Vec<u32>,
-    /// The commits whose per-file patch-ids the Stale review check still needs: the reviewed commit and the
-    /// head of each PR whose head moved on from the user's Review, apart from a Bot backport, which shares
-    /// its Origin PR's review state. A merged or closed PR's check reads only while its head is among
-    /// `heads`. It runs once on the final head, and its verdict freezes with the PR.
-    pub patches: Vec<PatchesOf>,
-}
-
-impl MirrorWork {
-    /// The Mirror's work in the Repository of `repository`, whose stored facts are `facts`.
-    pub fn of(facts: &WorkFacts, repository: &RepositorySettings) -> Self {
-        Self::in_reach(facts, repository, &reach(facts, repository))
-    }
-
-    /// The Mirror's work of what `reached` says under `repository`.
-    fn in_reach(facts: &WorkFacts, repository: &RepositorySettings, reached: &Reached) -> Self {
-        let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
-        let unread = unread_sides(facts, &shared);
-        let heads = reached_heads(facts, &reached.numbers);
-        let patches = patches_to_read(unread, &heads);
-        let kept: BTreeSet<u32> = (facts.pull_requests.iter())
-            .map(|pr| pr.number)
-            .filter(|number| reached.archived.contains(number))
-            .collect();
-        Self {
-            heads,
-            kept: kept.into_iter().collect(),
-            patches,
-        }
-    }
+    without_muted.extend(muted_asking);
+    without_muted
 }
 
 /// The items whose closing archives them (#820), of `closings`, the Issues and PRs a save found closed that
 /// the store held open: each Issue, and each PR that heads its own tree as the list draws it, that Reach
 /// held while it was open. Reach goes by the stored facts with each of `closings` open again, `open`, as the
 /// sync judges them right after the step that saved them, while the facts still hold what put them in
-/// Reach, such as a Filter's results. A Muted item stays as it is, an ask in its tree or not, and so does
-/// one already Archived as it closed, which stays Archived now that it is closed.
+/// Reach, such as a Filter's results. A Muted item stays as it is, an ask in its tree or not.
 pub(crate) fn archived_by_closing(
     mut open: WorkFacts,
     repository: &RepositorySettings,
@@ -298,19 +224,52 @@ pub(crate) fn archived_by_closing(
             issue.state = Some(IssueState::Open);
         }
     }
-    let reached = reach(&open, repository).numbers;
+    let reached = reach(&open, repository);
     let walk = Walk::of(&open, repository);
     let issues = (open.issues.iter()).map(|issue| ItemKey::Issue {
         number: issue.number,
     });
-    let pull_requests = (open.pull_requests.iter())
-        .map(|pr| ItemKey::PullRequest { number: pr.number });
+    let pull_requests =
+        (open.pull_requests.iter()).map(|pr| ItemKey::PullRequest { number: pr.number });
     let muted = &open.activity.muted;
     issues
         .chain(pull_requests)
         .filter(|key| closings.contains(&key.number()) && reached.contains(&key.number()))
         .filter(|key| !muted.contains_key(key) && !walk.tree(*key).is_empty())
         .collect()
+}
+
+/// The Mirror's work in a Repository, each part the whole set, worked out from one Reach.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MirrorWork {
+    /// The heads the Mirror fetches: those of the PRs in Reach, in the order of their numbers. A PR stored
+    /// before Tsugiki read heads has none to give.
+    pub heads: Vec<PrHead>,
+    /// The commits whose per-file patch-ids the Stale review check still needs: the reviewed commit and the
+    /// head of each PR whose head moved on from the user's Review, apart from a Bot backport, which shares
+    /// its Origin PR's review state. A merged or closed PR's check reads only while its head is among
+    /// `heads`. It runs once on the final head, and its verdict freezes with the PR.
+    pub patches: Vec<PatchesOf>,
+}
+
+impl MirrorWork {
+    /// The Mirror's work in the Repository of `repository`, whose stored facts are `facts`.
+    pub fn of(facts: &WorkFacts, repository: &RepositorySettings) -> Self {
+        Self::in_reach(facts, repository, &reach(facts, repository))
+    }
+
+    /// The Mirror's work of the PRs `reached` under `repository`.
+    fn in_reach(
+        facts: &WorkFacts,
+        repository: &RepositorySettings,
+        reached: &BTreeSet<u32>,
+    ) -> Self {
+        let shared = SharedReviews::of(&facts.pull_requests, repository.conventions);
+        let unread = unread_sides(facts, &shared);
+        let heads = reached_heads(facts, reached);
+        let patches = patches_to_read(unread, &heads);
+        Self { heads, patches }
+    }
 }
 
 /// The stored facts and the settings of a Repository, which Reach is worked out from.
@@ -330,9 +289,8 @@ pub(crate) fn moved(
     read_at: &BTreeMap<u32, CommitSha>,
 ) -> (MirrorWork, Vec<u32>) {
     let ReachFrom { facts, settings } = now;
-    let reached_before = reach(before.facts, before.settings).numbers;
-    let now = reach(facts, settings);
-    let reached = &now.numbers;
+    let reached_before = reach(before.facts, before.settings);
+    let reached = reach(facts, settings);
     let read_at_head = |pr: &PullRequestFacts| {
         (pr.head.as_ref()).is_some_and(|head| read_at.get(&pr.number) == Some(head))
     };
@@ -341,7 +299,7 @@ pub(crate) fn moved(
         .filter(|pr| !read_at_head(pr))
         .map(|pr| pr.number)
         .collect();
-    (MirrorWork::in_reach(facts, settings, &now), owed)
+    (MirrorWork::in_reach(facts, settings, &reached), owed)
 }
 
 /// The Conversations worth reading ahead in the Repository of `repository`, whose stored facts are `facts`:
@@ -352,7 +310,7 @@ pub(crate) fn conversations_to_read(
     owed: &BTreeSet<u32>,
     repository: &RepositorySettings,
 ) -> BTreeSet<u32> {
-    owed.intersection(&reach(facts, repository).numbers)
+    owed.intersection(&reach(facts, repository))
         .copied()
         .collect()
 }

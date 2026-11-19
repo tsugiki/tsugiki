@@ -322,7 +322,10 @@ fn a_save_that_closes_an_open_item_keeps_its_closing_until_the_sync_judges_it() 
     };
     store.save_pull_requests(&repository, vec![closed]).unwrap();
     save_both(&store, issue_and_pr((IssueState::Open, PrState::Open), now));
-    save_both(&store, issue_and_pr((IssueState::Closed, PrState::Merged), now));
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Closed, PrState::Merged), now),
+    );
     let closings = store.closings(&repository).unwrap();
     let judged = Judged {
         archived: vec![ItemKey::Issue { number: 1 }],
@@ -338,7 +341,10 @@ fn a_save_that_closes_an_open_item_keeps_its_closing_until_the_sync_judges_it() 
         seen_up_to: now,
         archived_at: now,
     };
-    assert_eq!(after, BTreeMap::from([(ItemKey::Issue { number: 1 }, archive)]));
+    assert_eq!(
+        after,
+        BTreeMap::from([(ItemKey::Issue { number: 1 }, archive)])
+    );
     assert_eq!(judged, BTreeSet::new());
 }
 
@@ -349,7 +355,10 @@ fn an_older_read_closes_nothing() {
     let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
     let (_, open) = issue_and_pr((IssueState::Open, PrState::Open), now);
-    let (_, older) = issue_and_pr((IssueState::Open, PrState::Merged), now - Duration::hours(1));
+    let (_, older) = issue_and_pr(
+        (IssueState::Open, PrState::Merged),
+        now - Duration::hours(1),
+    );
 
     store.save_pull_requests(&repository, vec![open]).unwrap();
     store.save_pull_requests(&repository, vec![older]).unwrap();
@@ -365,15 +374,27 @@ fn an_item_that_reopens_leaves_archived_and_its_closing_goes() {
     let repository = cpython();
     let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
-    save_both(&store, issue_and_pr((IssueState::Closed, PrState::Closed), now));
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Closed, PrState::Closed), now),
+    );
     let judged = Judged {
-        archived: vec![ItemKey::Issue { number: 1 }, ItemKey::PullRequest { number: 2 }],
+        archived: vec![
+            ItemKey::Issue { number: 1 },
+            ItemKey::PullRequest { number: 2 },
+        ],
         closings: BTreeSet::new(),
     };
     store.archive_closed(&repository, judged, now).unwrap();
     // A closing of Issue 1 the sync never judged.
-    save_both(&store, issue_and_pr((IssueState::Open, PrState::Closed), now));
-    save_both(&store, issue_and_pr((IssueState::Closed, PrState::Closed), now));
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Open, PrState::Closed), now),
+    );
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Closed, PrState::Closed), now),
+    );
 
     save_both(&store, issue_and_pr((IssueState::Open, PrState::Open), now));
     let after = (store.work_facts(&repository).unwrap().activity).archived;

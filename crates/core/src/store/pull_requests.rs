@@ -169,7 +169,8 @@ fn replace(
     }
     let is_open = |state: PrState| Some(state == PrState::Open);
     let moved = StateMove::of(held.and_then(is_open), is_open(facts.state));
-    activity::follow_state(connection, repository, ItemKey::PullRequest { number }, moved)?;
+    let key = ItemKey::PullRequest { number };
+    activity::follow_state(connection, repository, key, moved)?;
     if let Some(head) = &facts.head {
         let _moved = keep_head(connection, repository, number, (head, facts.updated_at))?;
     }

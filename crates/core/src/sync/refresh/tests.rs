@@ -2293,9 +2293,15 @@ fn a_refresh_archives_an_issue_and_a_standalone_pr_it_sees_close_or_merge() {
 
     // Filter "a" put Issue 1 on the Workbench, and PR 4 was the user's. Nothing put a stranger's PR 3
     // there.
-    let keys = [ItemKey::Issue { number: 1 }, ItemKey::PullRequest { number: 4 }];
+    let keys = [
+        ItemKey::Issue { number: 1 },
+        ItemKey::PullRequest { number: 4 },
+    ];
     assert_eq!(archived(&harness), keys);
-    assert_eq!(harness.db.store.closings(&cpython()).unwrap(), BTreeSet::new());
+    assert_eq!(
+        harness.db.store.closings(&cpython()).unwrap(),
+        BTreeSet::new()
+    );
     harness.finish();
 }
 
@@ -2309,6 +2315,8 @@ fn a_refresh_archives_a_closed_issue_whose_backport_is_still_open() {
         ),
         probed(&[(10, "PENDING")]),
         no_cross_references(RATE_LIMIT),
+        // An Archived item stays in Reach, so the refresh reads ahead the Backport's Conversation.
+        approved(),
     ];
     let harness = after_a_sync("archive-backport-open", replies);
     holding_issue(&harness, 1, LONG_BEFORE);
@@ -2324,6 +2332,10 @@ fn a_refresh_archives_a_closed_issue_whose_backport_is_still_open() {
     assert_eq!(archived(&harness), [ItemKey::Issue { number: 1 }]);
     let backport = facts(&harness).pull_requests;
     assert_eq!(backport[0].state, PrState::Open);
+    assert_eq!(
+        reviews_held(&harness, 10),
+        Some(vec![ReviewState::Approved])
+    );
     harness.finish();
 }
 
@@ -2332,7 +2344,10 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
     let replies = vec![
         polled(
             &list(
-                &[issue_in(1, AFTER_IT, "CLOSED"), issue_in(2, AFTER_IT, "OPEN")],
+                &[
+                    issue_in(1, AFTER_IT, "CLOSED"),
+                    issue_in(2, AFTER_IT, "OPEN"),
+                ],
                 None,
             ),
             &list(&[], None),
@@ -2348,15 +2363,21 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
         ..issue_facts(number)
     };
     let store = &harness.db.store;
-    store.save_issues(&cpython(), vec![closed(1), closed(2)]).unwrap();
+    store
+        .save_issues(&cpython(), vec![closed(1), closed(2)])
+        .unwrap();
     stored_filter(&harness, "a", &[1, 2]);
     let keys = vec![ItemKey::Issue { number: 1 }, ItemKey::Issue { number: 2 }];
     let judged = Judged {
         archived: keys,
         closings: BTreeSet::new(),
     };
-    store.archive_closed(&cpython(), judged, moment(LAST_SYNC)).unwrap();
-    store.unarchive(&cpython(), ItemKey::Issue { number: 1 }).unwrap();
+    store
+        .archive_closed(&cpython(), judged, moment(LAST_SYNC))
+        .unwrap();
+    store
+        .unarchive(&cpython(), ItemKey::Issue { number: 1 })
+        .unwrap();
 
     drop(run(&mut refreshing(filtering(&["a"])), &harness));
 

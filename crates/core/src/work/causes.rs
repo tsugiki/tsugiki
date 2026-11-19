@@ -257,11 +257,6 @@ impl Causes {
         })
     }
 
-    /// The items the user archived or that closed, whether still Archived or come back.
-    pub(crate) fn archived(&self) -> impl Iterator<Item = ItemKey> + '_ {
-        self.archived.keys().copied()
-    }
-
     /// When the user last put away the item `key` names, if they archived it, which orders the Archived view
     /// (#491).
     pub(crate) fn archived_at(&self, key: ItemKey) -> Option<OffsetDateTime> {

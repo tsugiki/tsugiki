@@ -510,9 +510,8 @@ pub(super) fn closings(
 ) -> rusqlite::Result<BTreeSet<u32>> {
     let mut statement =
         connection.prepare("SELECT number FROM closings WHERE repository = :repository")?;
-    let rows = statement.query_map(named_params! { ":repository": repository }, |row| {
-        row.get("number")
-    })?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, |row| row.get("number"))?;
     rows.collect()
 }
 

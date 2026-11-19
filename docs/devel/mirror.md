@@ -15,8 +15,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   starts again at the next launch. A clone git finished is kept, though quitting came as it ended or another
   program held a file as Tsugiki moved it into place.
 - Tsugiki keeps each mirror in shape itself, and never changes the user's git config. Each day it deletes the
-  refs of PRs no longer in **Reach**, apart from those opened since launch and those of an **Archived**
-  tree, whose heads it keeps but no longer fetches, and runs git's
+  refs of PRs no longer in **Reach**, apart from those opened since launch, and runs git's
   incremental maintenance; each week it runs `git gc`. A mirror git says is broken is moved aside and cloned
   again, borrowing again where it can, while the status bar shows the clone. Its PRs' heads are then fetched
   again.

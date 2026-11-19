@@ -33,8 +33,6 @@ pub(crate) const NOT_CONNECTED: &str =
 pub struct MirrorWant {
     /// The heads of the PRs in Reach, to fetch.
     pub heads: Vec<PrHead>,
-    /// The PRs out of Reach whose refs upkeep keeps, those of the Archived trees (#820).
-    pub kept: Vec<u32>,
     /// The commits the user's Reviews covered, to keep, or nothing when the store couldn't read them: the
     /// Mirror worker then goes on with the last want's.
     pub reviewed: Option<Vec<ReviewedCommit>>,
@@ -439,12 +437,9 @@ impl Fetching {
     pub(crate) fn want(&self, repository: &RepositoryName, want: MirrorWant) {
         let MirrorWant {
             heads,
-            kept,
             reviewed,
             patches,
         } = want;
-        // Before the heads, so no upkeep between the two prunes a ref the PR's move out of Reach keeps.
-        self.mirrors.keep_refs(repository.clone(), kept);
         self.mirrors.fetch_heads(repository.clone(), heads);
         if let Some(reviewed) = reviewed {
             self.mirrors.keep_reviewed(repository.clone(), reviewed);

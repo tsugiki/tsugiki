@@ -107,8 +107,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     closes. Mark Seen leaves it out of Archived. The new PR alone doesn't make the Issue Need attention, so
     the row shows the Issue as it stood, and the Issue is on the Workbench only if something else puts it
     there: a Filter that reaches closed Issues, an open PR in its tree the user holds a Review on, or Needs
-    attention. A Backport of a PR Tsugiki holds carries an older change and brings nothing back, and a Muted
-    Issue stays Muted. A closed Issue stands in the Inbox at the latest update of its PRs.
+    attention. A Backport carries an older change and brings nothing back, and a Muted Issue stays Muted.
+    Only a PR that changed since the last refresh can open: one that a read of an Issue's tree, an older
+    batch or an Origin PR loads from before opens nothing. A closed Issue stands in the Inbox at the latest
+    update of its PRs.
   - **Mute** hides an item until the user unmutes it: an Issue, a Standalone PR or a Standalone Backport.
     It leaves the lists and counts an Archived item leaves, the Archived view too, whatever happens to it
     later. Mute marks the item seen as Archive does and clears Marked unseen, and on a Muted item Mark Seen

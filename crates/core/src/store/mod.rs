@@ -22,6 +22,8 @@ mod sync_state;
 
 pub use activity::{Archiving, Flagging, Judged, Muting, Opened};
 
+use pull_requests::FirstSave;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -128,7 +130,8 @@ impl Store {
 
     /// Stores PRs a refresh fetched or probed, as `save_fetched_pull_requests` does, and in the same
     /// transaction owes a read of the Conversation of each of `changed`. A refresh that stops after this has
-    /// saved them can't tell they changed, so the next one reads them ahead from here (#205).
+    /// saved them can't tell they changed, so the next one reads them ahead from here (#205). A PR the store
+    /// doesn't hold yet may have opened since the last refresh (#823).
     pub fn save_changed_pull_requests(
         &self,
         repository: &RepositoryName,
@@ -138,7 +141,8 @@ impl Store {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
             let transaction = connection.transaction()?;
-            pull_requests::save_in(&transaction, &repository, &pull_requests, &events)?;
+            let saving = (pull_requests.as_slice(), FirstSave::MayHaveOpened);
+            pull_requests::save_in(&transaction, &repository, saving, &events)?;
             sync_state::owe_read_ahead(&transaction, &repository, &changed)?;
             transaction.commit()
         })?;

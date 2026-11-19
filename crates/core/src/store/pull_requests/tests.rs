@@ -524,7 +524,8 @@ fn a_reader_doesnt_wait_for_a_write_in_progress() {
             title: "unfinished".to_owned(),
             ..facts(1)
         };
-        super::save_in(&transaction, &cpython(), &[unfinished], &[]).unwrap();
+        let saving = (std::slice::from_ref(&unfinished), FirstSave::Loaded);
+        super::save_in(&transaction, &cpython(), saving, &[]).unwrap();
         started.send(()).unwrap();
         released.recv().unwrap();
         transaction.commit().unwrap();

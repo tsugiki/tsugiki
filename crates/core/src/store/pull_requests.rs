@@ -121,7 +121,19 @@ pub(super) const BACKPORT_FACTS: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
+/// What a PR the store doesn't hold yet says as a save stores it (#823).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FirstSave {
+    /// It changed since the last refresh, so it may have opened since, and is an opening if it names an
+    /// Archived Issue.
+    MayHaveOpened,
+    /// A read of what the store lacks, such as an Issue's tree, an older batch or an Origin PR, loads it
+    /// from before, and it opened nothing.
+    Loaded,
+}
+
+/// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010). A PR
+/// the store doesn't hold yet was loaded from before.
 pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -129,32 +141,39 @@ pub(super) fn save(
     events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    save_in(&transaction, repository, pull_requests, events)?;
+    let saving = (pull_requests, FirstSave::Loaded);
+    save_in(&transaction, repository, saving, events)?;
     transaction.commit()
 }
 
-/// Does what `save` does inside a transaction the caller holds, which can save more beside it.
+/// Does what `save` does inside a transaction the caller holds, which can save more beside it, with what
+/// `first` says of each PR the store doesn't hold yet.
 pub(super) fn save_in(
     transaction: &Connection,
     repository: &RepositoryName,
-    pull_requests: &[PullRequestFacts],
+    (pull_requests, first): (&[PullRequestFacts], FirstSave),
     events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     // Before the PRs, because a commit counts differently on a PR the store holds.
     activity::save(transaction, repository, events)?;
     let mut keeper = pr_links::Keeper::new(transaction, repository)?;
     for pull_request in pull_requests {
-        replace(transaction, (repository, &mut keeper), pull_request)?;
+        replace(
+            transaction,
+            (repository, &mut keeper),
+            (pull_request, first),
+        )?;
     }
     Ok(())
 }
 
 /// Replaces what the store knew about the PR of `facts`, and the links `keeper` keeps for it, unless the
-/// store holds a newer read of it. A replica of GitHub's that lags can serve an older read.
+/// store holds a newer read of it. A replica of GitHub's that lags can serve an older read. `first` says
+/// what the PR is if the store doesn't hold it yet.
 fn replace(
     connection: &Connection,
     (repository, keeper): (&RepositoryName, &mut pr_links::Keeper<'_>),
-    facts: &PullRequestFacts,
+    (facts, first): (&PullRequestFacts, FirstSave),
 ) -> rusqlite::Result<()> {
     let number = facts.number;
     let held: Option<PrState> = connection
@@ -201,7 +220,7 @@ fn replace(
     }
     // After the cherry-picks, which it reads.
     keeper.rewrite(facts)?;
-    if held.is_none() {
+    if held.is_none() && first == FirstSave::MayHaveOpened {
         // After the links, which it reads.
         activity::note_opening(connection, repository, number)?;
     }

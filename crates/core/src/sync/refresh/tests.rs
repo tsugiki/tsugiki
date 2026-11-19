@@ -16,7 +16,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::status::Change;
-use crate::store::{Archiving, Judged, Muting, Store};
+use crate::store::{Archiving, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
@@ -2399,15 +2399,7 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
 
 /// Archives the items `keys` name as a sync does when it sees them close.
 fn archived_on_closing(harness: &Harness, keys: &[ItemKey]) {
-    let judged = Judged {
-        archived: keys.to_vec(),
-        closings: BTreeSet::new(),
-    };
-    harness
-        .db
-        .store
-        .archive_closed(&cpython(), judged, moment(LAST_SYNC))
-        .unwrap();
+    crate::store::testing::archived_on_closing(&harness.db.store, keys, moment(LAST_SYNC));
 }
 
 /// Item `key` as `view` lists it, read the way the window reads it, with `settings`.

@@ -240,19 +240,22 @@ pub(crate) fn archived_by_closing(
 }
 
 /// The Issues a PR of `openings` opened on (#823), of those `facts` hold Archived: each Issue such a PR
-/// fixes under `repository`'s Conventions, unless the PR is a Backport of a PR Tsugiki holds, which carries
-/// an older change. A Muted Issue stays as it is.
+/// fixes under `repository`'s Conventions, unless the link rules make the PR a Backport, which carries an
+/// older change, whether Tsugiki holds its Origin PR yet or not. A Muted Issue stays as it is.
 pub(crate) fn opened_on(
     facts: &WorkFacts,
     repository: &RepositorySettings,
     openings: &BTreeSet<u32>,
 ) -> Vec<u32> {
     let walk = Walk::of(facts, repository);
+    let merges = MergeCommits::of(&facts.pull_requests);
     let activity = &facts.activity;
     let put_away =
         |key: &ItemKey| activity.archived.contains_key(key) && !activity.muted.contains_key(key);
-    let own_family = |number: &&u32| walk.family.get(number) == Some(number);
-    let fixed = (openings.iter().filter(own_family)).filter_map(|number| walk.fixes.get(number));
+    let opened = (facts.pull_requests.iter())
+        .filter(|pr| openings.contains(&pr.number))
+        .filter(|pr| backport_of(pr, repository.conventions, &merges).is_none());
+    let fixed = opened.filter_map(|pr| walk.fixes.get(&pr.number));
     let fixed: BTreeSet<u32> = fixed.flatten().copied().collect();
     (fixed.into_iter())
         .filter(|number| put_away(&ItemKey::Issue { number: *number }))

@@ -538,7 +538,7 @@ pub(super) fn openings(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeSet<u32>> {
-    numbers_in(connection, "openings", repository)
+    numbers_in(connection, NumberTable::Openings, repository)
 }
 
 /// The Issues of `repository` a PR that opened brought back to the Inbox, closed or not.
@@ -546,16 +546,37 @@ pub(super) fn brought_back(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeSet<u32>> {
-    numbers_in(connection, "brought_back", repository)
+    numbers_in(connection, NumberTable::BroughtBack, repository)
+}
+
+/// A table that keeps a number of each Issue or PR it holds, and nothing beside.
+#[derive(Debug, Clone, Copy)]
+enum NumberTable {
+    Closings,
+    Openings,
+    BroughtBack,
+}
+
+impl NumberTable {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Closings => "closings",
+            Self::Openings => "openings",
+            Self::BroughtBack => "brought_back",
+        }
+    }
 }
 
 /// The numbers `table` holds of `repository`.
 fn numbers_in(
     connection: &Connection,
-    table: &str,
+    table: NumberTable,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeSet<u32>> {
-    let query = format!("SELECT number FROM {table} WHERE repository = :repository");
+    let query = format!(
+        "SELECT number FROM {} WHERE repository = :repository",
+        table.name()
+    );
     let mut statement = connection.prepare(&query)?;
     let asked = named_params! { ":repository": repository };
     let rows = statement.query_map(asked, |row| row.get("number"))?;
@@ -589,7 +610,8 @@ pub struct Opened {
 }
 
 /// Unarchives the Issues `opened` names, as Unarchive does, keeps them as brought back to the Inbox, and
-/// forgets the openings it judged, all at once.
+/// forgets the openings it judged, all at once. The sync judged from an earlier read, so an Issue the user
+/// unarchived or muted since stays as they left it.
 pub(super) fn bring_back(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -597,11 +619,17 @@ pub(super) fn bring_back(
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     for number in &opened.issues {
-        unarchive(&transaction, repository, ItemKey::Issue { number: *number })?;
-        let _kept = transaction.execute(
-            "INSERT OR IGNORE INTO brought_back (repository, number) VALUES (:repository, :number)",
-            named_params! { ":repository": repository, ":number": number },
+        let kept = transaction.execute(
+            "INSERT OR IGNORE INTO brought_back (repository, number)
+             SELECT repository, number FROM archived
+             WHERE repository = :repository AND kind = :issue AND number = :number
+                 AND NOT EXISTS (SELECT 1 FROM muted
+                     WHERE repository = :repository AND kind = :issue AND number = :number)",
+            named_params! { ":repository": repository, ":number": number, ":issue": ISSUE },
         )?;
+        if kept > 0 {
+            unarchive(&transaction, repository, ItemKey::Issue { number: *number })?;
+        }
     }
     for number in &opened.openings {
         let _forgot = transaction.execute(
@@ -631,7 +659,7 @@ pub(super) fn closings(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeSet<u32>> {
-    numbers_in(connection, "closings", repository)
+    numbers_in(connection, NumberTable::Closings, repository)
 }
 
 /// What the sync judged of the closings the store saw (#820): the items their closing archives, and the

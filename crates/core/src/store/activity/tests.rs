@@ -5,7 +5,7 @@ use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::Store;
 use crate::store::migrate::MIGRATIONS;
-use crate::store::testing::{database_before, temp_database};
+use crate::store::testing::{archived_on_closing, database_before, temp_database};
 use crate::testing::{cpython, issue_facts, pr_facts};
 
 #[test]
@@ -572,14 +572,10 @@ fn archived_closed(store: &Store, numbers: &[u32], now: OffsetDateTime) {
     };
     let issues = numbers.iter().copied().map(closed).collect();
     store.save_issues(&cpython(), issues).unwrap();
-    let judged = Judged {
-        archived: numbers
-            .iter()
-            .map(|number| ItemKey::Issue { number: *number })
-            .collect(),
-        closings: BTreeSet::new(),
-    };
-    store.archive_closed(&cpython(), judged, now).unwrap();
+    let keys: Vec<ItemKey> = (numbers.iter())
+        .map(|number| ItemKey::Issue { number: *number })
+        .collect();
+    archived_on_closing(store, &keys, now);
 }
 
 /// Open PR `number` with `title`, as of `updated_at`.
@@ -592,7 +588,7 @@ fn titled(number: u32, title: &str, updated_at: OffsetDateTime) -> PullRequestFa
 }
 
 #[test]
-fn a_pr_saved_for_the_first_time_is_an_opening_when_it_names_an_archived_issue() {
+fn a_changed_pr_saved_for_the_first_time_is_an_opening_when_it_names_an_archived_issue() {
     let (path, _folder) = temp_database("activity-openings");
     let repository = cpython();
     let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
@@ -604,16 +600,20 @@ fn a_pr_saved_for_the_first_time_is_an_opening_when_it_names_an_archived_issue()
         .save_issues(&repository, vec![issue_facts(2)])
         .unwrap();
 
-    let saved = vec![
+    let changed = vec![
         titled(10, "gh-2: Fix that", now),
         titled(11, "gh-1: Follow up", now),
         titled(12, "gh-1: Fix it", now),
     ];
-    store.save_pull_requests(&repository, saved).unwrap();
+    let saved = (changed, Vec::new());
+    (store.save_changed_pull_requests(&repository, saved, Vec::new())).unwrap();
+    let loaded = titled(13, "gh-1: Fix it long ago", now - Duration::days(900));
+    store.save_pull_requests(&repository, vec![loaded]).unwrap();
     let openings = store.openings(&repository).unwrap();
 
     store.close();
-    // Issue 2 isn't Archived, and the store held PR 12 before.
+    // Issue 2 isn't Archived, and the store held PR 12 before. PR 13 came with an Issue's tree, or with
+    // an older batch.
     assert_eq!(openings, BTreeSet::from([11]));
 }
 
@@ -623,14 +623,22 @@ fn an_issue_a_pr_brought_back_stays_back_until_archive_mute_or_a_state_move() {
     let repository = cpython();
     let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
-    archived_closed(&store, &[1, 2, 3, 4], now);
+    archived_closed(&store, &[1, 2, 3, 4, 5, 6], now);
     store
         .save_pull_requests(&repository, vec![titled(11, "gh-1, gh-2: Follow up", now)])
         .unwrap();
     let opened = Opened {
-        issues: vec![1, 2, 3, 4],
+        issues: vec![1, 2, 3, 4, 5, 6],
         openings: BTreeSet::from([11]),
     };
+    // The user muted Issue 5 and unarchived Issue 6 after the sync read what it judged.
+    let muting = Muting {
+        key: ItemKey::Issue { number: 5 },
+        numbers: vec![5],
+        up_to: Some(now),
+    };
+    store.mute(&repository, muting, now).unwrap();
+    (store.unarchive(&repository, ItemKey::Issue { number: 6 })).unwrap();
     let read_back = |store: &Store| {
         let repository = cpython();
         let read = store.call(move |connection| brought_back(connection, &repository));
@@ -664,7 +672,8 @@ fn an_issue_a_pr_brought_back_stays_back_until_archive_mute_or_a_state_move() {
 
     store.close();
     assert_eq!(back, BTreeSet::from([1, 2, 3, 4]));
-    assert_eq!(archived, BTreeMap::new());
+    let muted_stays = ItemKey::Issue { number: 5 };
+    assert_eq!(archived.into_keys().collect::<Vec<_>>(), [muted_stays]);
     assert_eq!(openings, BTreeSet::new());
     assert_eq!(after, BTreeSet::from([4]));
 }
@@ -678,6 +687,7 @@ fn an_open_issue_a_pr_brought_back_leaves_the_mark_when_it_closes() {
     store
         .save_issues(&repository, vec![issue_facts(1)])
         .unwrap();
+    archived_on_closing(&store, &[ItemKey::Issue { number: 1 }], now);
     let opened = Opened {
         issues: vec![1],
         openings: BTreeSet::new(),

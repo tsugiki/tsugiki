@@ -4,7 +4,7 @@ use super::*;
 use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::store::testing::OpenStore;
+use crate::store::testing::{OpenStore, archived_on_closing};
 use crate::store::{Archiving, Muting, Opened};
 use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
@@ -132,11 +132,13 @@ fn a_closed_issue_a_pr_brought_back_stands_at_its_prs_latest_update() {
             closed(4, ago(85)),
         ],
     );
+    let store = &world.db.store;
+    archived_on_closing(store, &[ItemKey::Issue { number: 1 }], ago(60));
     let opened = Opened {
         issues: vec![1],
         openings: BTreeSet::new(),
     };
-    world.db.store.bring_back(&cpython(), opened).unwrap();
+    store.bring_back(&cpython(), opened).unwrap();
 
     let latest = read(&world, InboxPage::Latest);
     let after = latest.older.unwrap();

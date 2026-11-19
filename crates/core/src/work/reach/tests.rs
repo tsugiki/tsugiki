@@ -574,7 +574,7 @@ fn archiving(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
 }
 
 #[test]
-fn a_pr_opens_on_each_archived_issue_it_fixes_and_a_backport_of_a_held_pr_on_none() {
+fn a_pr_opens_on_each_archived_issue_it_fixes_and_a_backport_on_none() {
     let pull_requests = vec![
         PullRequestFacts {
             title: "gh-1, gh-2, gh-3: Follow up".to_owned(),
@@ -582,17 +582,22 @@ fn a_pr_opens_on_each_archived_issue_it_fixes_and_a_backport_of_a_held_pr_on_non
         },
         colleagues(30, 4, PrState::Merged),
         bots_backport(31, "[3.14] gh-4: Fix it (GH-30)"),
+        bots_backport(32, "[3.14] gh-6: Fix it (GH-60)"),
         colleagues(40, 5, PrState::Merged),
     ];
-    let issues = vec![closed(1), issue(2), closed(3), closed(4), closed(5)];
-    let keys = [1, 2, 4, 5].map(issue_key);
+    let issues = (vec![closed(1), issue(2), closed(3), closed(4)])
+        .into_iter()
+        .chain([closed(5), closed(6)])
+        .collect();
+    let keys = [1, 2, 4, 5, 6].map(issue_key);
     let facts = archiving(facts(pull_requests, issues), &keys);
-    let openings = BTreeSet::from([20, 31, 40]);
+    let openings = BTreeSet::from([20, 31, 32, 40]);
 
     let opened = opened_on(&facts, &cpython_settings(), &openings);
 
-    // PR 20 fixes Issues 1 and 2, open or not, and Issue 3, which isn't Archived. Backport 31 carries PR
-    // 30's change to 3.14. PR 40 opened and merged between two refreshes.
+    // PR 20 fixes Issues 1 and 2, open or not, and Issue 3, which isn't Archived. Backports 31 and 32
+    // carry older changes to 3.14, whether Tsugiki holds their Origin PRs yet or not. PR 40 opened and
+    // merged between two refreshes.
     assert_eq!(opened, [1, 2, 5]);
 }
 

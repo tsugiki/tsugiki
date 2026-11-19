@@ -560,6 +560,52 @@ fn closing_leaves_a_muted_item_as_it_is_an_ask_in_its_tree_or_not() {
     assert_eq!(archived, []);
 }
 
+/// `facts` with the items `keys` name Archived.
+fn archiving(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
+    let archive = Archive {
+        seen_up_to: hours_ago(1),
+        archived_at: hours_ago(1),
+    };
+    facts
+        .activity
+        .archived
+        .extend(keys.iter().map(|key| (*key, archive)));
+    facts
+}
+
+#[test]
+fn a_pr_opens_on_each_archived_issue_it_fixes_and_a_backport_of_a_held_pr_on_none() {
+    let pull_requests = vec![
+        PullRequestFacts {
+            title: "gh-1, gh-2, gh-3: Follow up".to_owned(),
+            ..colleagues(20, 1, PrState::Open)
+        },
+        colleagues(30, 4, PrState::Merged),
+        bots_backport(31, "[3.14] gh-4: Fix it (GH-30)"),
+        colleagues(40, 5, PrState::Merged),
+    ];
+    let issues = vec![closed(1), issue(2), closed(3), closed(4), closed(5)];
+    let keys = [1, 2, 4, 5].map(issue_key);
+    let facts = archiving(facts(pull_requests, issues), &keys);
+    let openings = BTreeSet::from([20, 31, 40]);
+
+    let opened = opened_on(&facts, &cpython_settings(), &openings);
+
+    // PR 20 fixes Issues 1 and 2, open or not, and Issue 3, which isn't Archived. Backport 31 carries PR
+    // 30's change to 3.14. PR 40 opened and merged between two refreshes.
+    assert_eq!(opened, [1, 2, 5]);
+}
+
+#[test]
+fn a_pr_that_opens_on_a_muted_archived_issue_leaves_it_as_it_is() {
+    let facts = facts(vec![colleagues(20, 1, PrState::Open)], vec![closed(1)]);
+    let facts = muting(archiving(facts, &[issue_key(1)]), &[issue_key(1)]);
+
+    let opened = opened_on(&facts, &cpython_settings(), &BTreeSet::from([20]));
+
+    assert_eq!(opened, Vec::<u32>::new());
+}
+
 /// The user's PR `facts` with head `head`.
 fn at_head(head: &str, facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {

@@ -200,7 +200,12 @@ fn replace(
         save_closing_reference(connection, repository, number, *issue)?;
     }
     // After the cherry-picks, which it reads.
-    keeper.rewrite(facts)
+    keeper.rewrite(facts)?;
+    if held.is_none() {
+        // After the links, which it reads.
+        activity::note_opening(connection, repository, number)?;
+    }
+    Ok(())
 }
 
 /// Writes the facts of `facts` that `pull_requests` holds beside the head, unless the row holds a read with

@@ -1,7 +1,8 @@
 //! The Inbox's view model (#827): every open Issue of the Repository with its PRs under it, whatever their
 //! state, grouped as the Workbench groups them, and every Standalone PR that has an open PR in its tree on
-//! its own, the latest update first. The window reads it a page at a time: the items updated in the last two
-//! days, then older batches. Reading it adds nothing to Reach.
+//! its own, the latest update first. A closed Issue that a PR opening on it brought back (#823) is listed
+//! as an open one is. The window reads it a page at a time: the items updated in the last two days, then
+//! older batches. Reading it adds nothing to Reach.
 //!
 //! An item's place is the latest update in it: the Issue's own or a PR's in its tree. A page walks the
 //! updates down from where it starts, the PRs' and the open Issues', a step at a time. Each step reads the
@@ -185,7 +186,7 @@ fn read_page(
     let Some(viewer) = snapshot.viewer()? else {
         return Ok(None);
     };
-    let mut walk = Walk::new(snapshot, conventions);
+    let mut walk = Walk::new(snapshot, conventions)?;
     let chosen = match page {
         InboxPage::Latest => {
             // The store keeps whole seconds, so a page that started within a second would put an item
@@ -226,7 +227,7 @@ fn read_page(
 /// An item of the Inbox before its rows are read, with the numbers of the PRs it shows.
 #[derive(Debug, Clone)]
 enum Member {
-    /// An open Issue, with no PRs when none fixes it.
+    /// An open Issue, or a closed one a PR brought back, with no PRs when none fixes it.
     Issue { number: u32, prs: Vec<u32> },
     /// A Standalone PR with its Backports, or a Standalone Backport.
     StandalonePr { prs: Vec<u32> },
@@ -253,17 +254,26 @@ struct Walk<'s, 't> {
     /// Each PR whose links were asked for, so a PR the store lacks is asked for once.
     asked: BTreeSet<u32>,
     issues: BTreeMap<u32, IssuePlace>,
+    /// The Issues a PR that opened on them brought back (#823), which the Inbox lists closed too.
+    brought_back: BTreeSet<u32>,
 }
 
 impl<'s, 't> Walk<'s, 't> {
-    fn new(snapshot: &'s Snapshot<'t>, conventions: Conventions) -> Self {
-        Self {
+    fn new(snapshot: &'s Snapshot<'t>, conventions: Conventions) -> Result<Self, Error> {
+        Ok(Self {
             snapshot,
             conventions,
             links: BTreeMap::new(),
             asked: BTreeSet::new(),
             issues: BTreeMap::new(),
-        }
+            brought_back: snapshot.brought_back()?,
+        })
+    }
+
+    /// Whether the Inbox lists the Issue `issue` places: an open one, or one a PR that opened on it brought
+    /// back.
+    fn lists(&self, issue: &IssuePlace) -> bool {
+        issue.state == Some(IssueState::Open) || self.brought_back.contains(&issue.number)
     }
 
     /// The next `OLDER_BATCH` items after `after`, and where the batch after them starts, if any are left.
@@ -378,10 +388,7 @@ impl<'s, 't> Walk<'s, 't> {
                 .extend(read_now.into_iter().map(|issue| (issue.number, issue)));
         }
         let open: BTreeSet<u32> = (named.into_iter())
-            .filter(|number| {
-                let place = self.issues.get(number);
-                place.is_some_and(|issue| issue.state == Some(IssueState::Open))
-            })
+            .filter(|number| (self.issues.get(number)).is_some_and(|issue| self.lists(issue)))
             .collect();
         if !open.is_empty() {
             let fixing = self.snapshot.prs_fixing(&open, self.conventions)?;
@@ -426,8 +433,14 @@ impl<'s, 't> Walk<'s, 't> {
         for (number, issue) in open.iter().filter_map(|n| Some((*n, self.issues.get(n)?))) {
             let rows = under.remove(&number).unwrap_or_default();
             let updated_at = rows.iter().map(|row| row.updated_at);
+            // The walk reads the updates of open Issues alone, so a closed one a PR brought back stands at
+            // its PRs' latest update, where the walk meets it.
+            let own = match issue.state {
+                Some(IssueState::Open) => issue.updated_at,
+                _ => OffsetDateTime::UNIX_EPOCH,
+            };
             let place = InboxCursor {
-                updated_at: updated_at.fold(issue.updated_at, Ord::max),
+                updated_at: updated_at.fold(own, Ord::max),
                 number,
             };
             let prs = rows.iter().map(|row| row.number).collect();

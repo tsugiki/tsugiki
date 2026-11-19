@@ -20,7 +20,7 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, Flagging, Judged, Muting};
+pub use activity::{Archiving, Flagging, Judged, Muting, Opened};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -560,6 +560,25 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// The PRs of `repository` a save stored for the first time that name an Archived Issue, whose opening
+    /// the sync hasn't judged yet (#823).
+    pub fn openings(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::openings(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Brings back to the Inbox the Issues a PR opened on, as `opened` judges them, and forgets the openings
+    /// it judged, as `activity::bring_back` says.
+    pub fn bring_back(&self, repository: &RepositoryName, opened: Opened) -> Result<(), Error> {
+        let repository = repository.clone();
+        let bring = move |connection: &mut Connection| {
+            activity::bring_back(connection, &repository, &opened)
+        };
+        let saved = self.call(bring)?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Unarchives the item `key` names.
     pub fn unarchive(&self, repository: &RepositoryName, key: ItemKey) -> Result<(), Error> {
         let repository = repository.clone();
@@ -771,6 +790,11 @@ impl Snapshot<'_> {
     /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub fn viewer(&self) -> Result<Option<Login>, Error> {
         read_last_login(&self.transaction).map_err(saying(CANT_READ))
+    }
+
+    /// The Issues a PR that opened on them brought back to the Inbox (#823), closed or not.
+    pub fn brought_back(&self) -> Result<BTreeSet<u32>, Error> {
+        activity::brought_back(&self.transaction, &self.repository).map_err(saying(CANT_READ))
     }
 
     /// The links of each PR with these numbers that the store holds, under `conventions`, in number order.

@@ -20,7 +20,7 @@ pub(crate) use causes::{Cause, Causes};
 pub use causes::{SeenMark, Why};
 pub use reach::MirrorWork;
 pub(crate) use reach::{
-    ReachFrom, archived_by_closing, conversations_to_read, in_own_right, matched, moved,
+    ReachFrom, archived_by_closing, conversations_to_read, in_own_right, matched, moved, opened_on,
 };
 pub use reasons::WorkReason;
 pub(crate) use reasons::reasons;

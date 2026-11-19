@@ -5,7 +5,7 @@ use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::OpenStore;
-use crate::store::{Archiving, Muting};
+use crate::store::{Archiving, Muting, Opened};
 use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
 
@@ -114,6 +114,42 @@ fn a_closed_issue_leaves_with_its_prs_and_so_does_a_standalone_pr_with_none_open
     world.finish();
 
     assert_eq!(outline(&latest), [("issue", 2, vec![])]);
+}
+
+#[test]
+fn a_closed_issue_a_pr_brought_back_stands_at_its_prs_latest_update() {
+    let world = ViewWorld::new("inbox-brought-back");
+    let closed = |number, updated_at| IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue_at(number, updated_at)
+    };
+    world.has(
+        vec![pr_at(10, Some(1), ago(80)), pr_at(20, Some(4), ago(90))],
+        vec![
+            closed(1, ago(60)),
+            issue_at(2, ago(1)),
+            issue_at(3, ago(70)),
+            closed(4, ago(85)),
+        ],
+    );
+    let opened = Opened {
+        issues: vec![1],
+        openings: BTreeSet::new(),
+    };
+    world.db.store.bring_back(&cpython(), opened).unwrap();
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 2, vec![])]);
+    // The walk meets the updates of open Issues and of PRs, so the comment on Issue 1 after it closed
+    // doesn't move it. Nothing brought back the closed Issue 4.
+    assert_eq!(
+        outline(&older),
+        [("issue", 3, vec![]), ("issue", 1, vec![10])]
+    );
 }
 
 #[test]

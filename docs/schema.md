@@ -289,6 +289,14 @@ erDiagram
         TEXT repository PK
         INTEGER number PK
     }
+    openings {
+        TEXT repository PK
+        INTEGER number PK
+    }
+    brought_back {
+        TEXT repository PK
+        INTEGER number PK
+    }
     first_syncs {
         TEXT repository PK
         INTEGER started_at

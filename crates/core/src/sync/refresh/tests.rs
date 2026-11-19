@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::WorkFacts;
-use crate::facts::activity::{Activity, ActivityKind, ItemKey};
+use crate::facts::activity::{Activity, ActivityKind, ItemKey, PutAway};
 use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
@@ -16,7 +16,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::status::Change;
-use crate::store::{Judged, Muting, Store};
+use crate::store::{Archiving, Judged, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
@@ -26,6 +26,7 @@ use crate::sync::{Progress, Syncs};
 use crate::testing::{issue_facts, me, moment};
 use crate::token::Token;
 use crate::work::Why;
+use crate::workbench::inbox::{Inbox, InboxPage};
 use crate::workbench::{Hidden, ListedItem, Workbench, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -2571,5 +2572,105 @@ fn a_refresh_leaves_a_muted_pr_hidden_on_new_activity_and_shows_it_on_a_review_r
     assert_eq!(on_request.hidden, Some(Hidden::Muted));
     let why = on_request.attention.map(|attention| attention.why);
     assert_eq!(why, Some(vec![Why::ReviewRequested]));
+    harness.finish();
+}
+
+/// A harness that holds the user's Issue 1, closed and Archived on closing, whose next poll finds a
+/// colleague's new PR 5 that fixes it.
+fn a_pr_opens_on_an_archived_issue(name: &str) -> Harness {
+    let follow_up = json!({
+        "title": "gh-1: Follow up",
+        "author": { "login": "some-author" },
+        "updatedAt": AFTER_IT,
+    });
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(5, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(&[pr_node(5, &follow_up)], RATE_LIMIT),
+    ];
+    let harness = after_a_sync(name, replies);
+    let own_closed = IssueFacts {
+        author: Some(me()),
+        state: Some(IssueState::Closed),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(1)
+    };
+    (harness.db.store)
+        .save_issues(&cpython(), vec![own_closed])
+        .unwrap();
+    archived_on_closing(&harness, &[ItemKey::Issue { number: 1 }]);
+    harness
+}
+
+/// The items the Inbox of `settings` lists, the latest update first.
+fn inbox_items(harness: &Harness, settings: &RepositorySettings) -> Vec<ListedItem> {
+    let read = Inbox::read(
+        &harness.db.reader,
+        settings,
+        InboxPage::All,
+        moment(AFTER_IT),
+    );
+    read.unwrap().items
+}
+
+/// The numbers of the items the Inbox of `settings` lists, each with the PRs under it.
+fn inbox(harness: &Harness, settings: &RepositorySettings) -> Vec<Vec<u32>> {
+    let items = inbox_items(harness, settings);
+    items.iter().map(|listed| listed.item.numbers()).collect()
+}
+
+#[test]
+fn a_refresh_brings_an_archived_issue_back_to_the_inbox_when_a_pr_opens_on_it() {
+    let harness = a_pr_opens_on_an_archived_issue("pr-opens-on-archived");
+    let settings = filtering(&[]);
+    let key = ItemKey::Issue { number: 1 };
+    let before = inbox(&harness, &settings);
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    assert_eq!(before, Vec::<Vec<u32>>::new());
+    assert_eq!(archived(&harness), []);
+    assert_eq!(inbox(&harness, &settings), [vec![1, 5]]);
+    // The user opened Issue 1, and still nothing on it Needs attention, so no Filter puts it on the
+    // Workbench.
+    let attention = inbox_items(&harness, &settings).remove(0).attention;
+    assert_eq!(attention, None);
+    let on_workbench = listed(&harness, &settings, &WorkbenchView::Whole, key);
+    assert_eq!(on_workbench.map(|listed| listed.key), None);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_a_pr_brought_back_stays_out_of_archived_on_mark_seen_and_leaves_the_inbox_on_archive() {
+    let harness = a_pr_opens_on_an_archived_issue("brought-back-then-archived");
+    let settings = filtering(&[]);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let store = &harness.db.store;
+
+    store
+        .mark_seen(&cpython(), vec![1, 5], Some(moment(AFTER_IT)))
+        .unwrap();
+    let after_seen = (archived(&harness), inbox(&harness, &settings));
+    let archiving = Archiving {
+        key: ItemKey::Issue { number: 1 },
+        numbers: vec![1, 5],
+        up_to: Some(moment(AFTER_IT)),
+        put_away: PutAway::Now,
+    };
+    store
+        .archive(&cpython(), archiving, moment(AFTER_IT))
+        .unwrap();
+    let after_archive = inbox(&harness, &settings);
+    store
+        .unarchive(&cpython(), ItemKey::Issue { number: 1 })
+        .unwrap();
+
+    assert_eq!(after_seen, (vec![], vec![vec![1, 5]]));
+    assert_eq!(after_archive, Vec::<Vec<u32>>::new());
+    // Unarchive puts a closed Issue back where its state puts it, which isn't the Inbox.
+    assert_eq!(inbox(&harness, &settings), Vec::<Vec<u32>>::new());
     harness.finish();
 }

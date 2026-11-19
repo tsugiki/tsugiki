@@ -239,6 +239,26 @@ pub(crate) fn archived_by_closing(
         .collect()
 }
 
+/// The Issues a PR of `openings` opened on (#823), of those `facts` hold Archived: each Issue such a PR
+/// fixes under `repository`'s Conventions, unless the PR is a Backport of a PR Tsugiki holds, which carries
+/// an older change. A Muted Issue stays as it is.
+pub(crate) fn opened_on(
+    facts: &WorkFacts,
+    repository: &RepositorySettings,
+    openings: &BTreeSet<u32>,
+) -> Vec<u32> {
+    let walk = Walk::of(facts, repository);
+    let activity = &facts.activity;
+    let put_away =
+        |key: &ItemKey| activity.archived.contains_key(key) && !activity.muted.contains_key(key);
+    let own_family = |number: &&u32| walk.family.get(number) == Some(number);
+    let fixed = (openings.iter().filter(own_family)).filter_map(|number| walk.fixes.get(number));
+    let fixed: BTreeSet<u32> = fixed.flatten().copied().collect();
+    (fixed.into_iter())
+        .filter(|number| put_away(&ItemKey::Issue { number: *number }))
+        .collect()
+}
+
 /// The Mirror's work in a Repository, each part the whole set, worked out from one Reach.
 #[derive(Debug, PartialEq, Eq)]
 pub struct MirrorWork {

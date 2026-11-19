@@ -1099,9 +1099,9 @@ fn a_step_whose_place_cant_be_saved_keeps_its_news_for_the_next_try() {
         sync.step(&harness.github, &harness.db.store, &settings)
             .unwrap(),
     );
-    // Reading the frozen PRs, this page's save and the read of what closed land, but saving its place
-    // doesn't.
-    let (saves_once, _calls) = harness.db.store.failing_at_call(Some(3));
+    // Reading the frozen PRs, this page's save and the reads of what closed and opened land, but saving its
+    // place doesn't.
+    let (saves_once, _calls) = harness.db.store.failing_at_call(Some(4));
 
     let failed = sync.step(&harness.github, &saves_once, &settings);
     let again = sync.step(&harness.github, &saves_once, &settings).unwrap();

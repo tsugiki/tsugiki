@@ -180,6 +180,10 @@ pub(crate) fn read_git_bytes_with_env(
 /// list.
 pub(crate) fn read_blobs(folder: &Path, names: &[&str]) -> io::Result<Vec<Option<Vec<u8>>>> {
     let readable = |name: &str| !name.contains('\n') && !name.ends_with('\r');
+    // At debug: a PR's author picks the path, the user can't change it, and each read of the file says it.
+    for name in names.iter().filter(|name| !readable(name)) {
+        log::debug!("Tsugiki can't read {name:?} from git: its name has a line break");
+    }
     let input: Vec<u8> = (names.iter())
         .filter(|name| readable(name))
         .flat_map(|name| name.bytes().chain(*b"\n"))
@@ -199,7 +203,6 @@ pub(crate) fn read_blobs(folder: &Path, names: &[&str]) -> io::Result<Vec<Option
             if readable(name) {
                 blobs.next()
             } else {
-                log::warn!("Tsugiki can't read {name:?} from git: its name has a line break");
                 Some(None)
             }
         })

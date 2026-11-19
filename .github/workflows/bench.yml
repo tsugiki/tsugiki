@@ -64,7 +64,8 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - run: cargo codspeed build -p tsugiki-core
+      # The store benchmark needs `testing` (crates/core/Cargo.toml), and without it would be left out.
+      - run: cargo codspeed build -p tsugiki-core --features testing
         if: ${{ steps.scope.outputs.rust == 'true' }}
       # The command itself, not a variable it reads, so it doesn't depend on what CodSpeed's runner passes on.
       - uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3

@@ -15,11 +15,10 @@ use std::sync::Arc;
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tauri::ipc::Channel;
-use tsugiki_core::calls::PrFiles;
+use tsugiki_core::calls::{Calls, PrFiles};
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::fetching::Fetching;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
@@ -27,7 +26,6 @@ use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
 };
-use tsugiki_core::store::StoreReader;
 use tsugiki_core::theme::{ThemeLibrary, ThemePick, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
 use tsugiki_core::workbench::inbox::{Inbox, InboxPage};
@@ -41,12 +39,10 @@ use tsugiki_core::workbench::{Workbench, WorkbenchView};
 #[specta::specta]
 pub(crate) async fn check_repository(
     input: String,
-    owner: State<'_, SettingsOwner>,
-    requests: State<'_, Fetching>,
+    calls: State<'_, Calls>,
 ) -> Result<NameCheck, Error> {
-    let owner = owner.inner().clone();
-    let requests = requests.inner().clone();
-    check_aside(move || crate::check_typed_repository(&input, &owner, &requests)).await
+    let calls = calls.inner().clone();
+    check_aside(move || crate::check_typed_repository(&input, &calls)).await
 }
 
 /// Asks GitHub the disk and the time the mirror of `repository` takes, for the user to choose where it gets
@@ -55,10 +51,10 @@ pub(crate) async fn check_repository(
 #[specta::specta]
 pub(crate) async fn mirror_cost(
     repository: String,
-    requests: State<'_, Fetching>,
+    calls: State<'_, Calls>,
 ) -> Result<MirrorCost, Error> {
-    let requests = requests.inner().clone();
-    check_aside(move || crate::check_mirror_cost(&repository, &requests)).await
+    let calls = calls.inner().clone();
+    check_aside(move || crate::check_mirror_cost(&repository, &calls)).await
 }
 
 /// Runs `check`, which asks GitHub, on a thread meant for blocking. A check can wait out a stuck request, and
@@ -81,10 +77,9 @@ async fn check_aside<T: Send + 'static>(
 #[specta::specta]
 pub(crate) fn add_repository(
     repository: crate::NewRepository,
-    owner: State<'_, SettingsOwner>,
-    work: State<'_, crate::RepositoryWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Home, Error> {
-    crate::add_named_repository(repository, &owner, &work)
+    crate::add_named_repository(repository, &calls)
 }
 
 /// Puts the Filters of a Repository that search a query on the Workbench, or takes them off it, in
@@ -103,12 +98,8 @@ pub(crate) fn put_filter_on_workbench(
 /// window shows now. This waits on a small file and never on GitHub or git.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn open_repository(
-    name: &str,
-    owner: State<'_, SettingsOwner>,
-    work: State<'_, crate::RepositoryWork>,
-) -> Result<Home, Error> {
-    crate::open_named_repository(name, &owner, &work)
+pub(crate) fn open_repository(name: &str, calls: State<'_, Calls>) -> Result<Home, Error> {
+    crate::open_named_repository(name, &calls)
 }
 
 /// Says why the clone in `folder` can't lend its objects to `repository`'s mirror, or nothing if it can.
@@ -118,9 +109,9 @@ pub(crate) fn open_repository(
 pub(crate) fn check_clone(
     repository: &str,
     folder: PathBuf,
-    work: State<'_, crate::RepositoryWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Option<CloneRefusal>, Error> {
-    crate::check_named_clone(repository, &folder, &work)
+    crate::check_named_clone(repository, &folder, &calls)
 }
 
 /// Starts `repository`'s clone ahead of the others, with its objects from `source`, and saves the answer in
@@ -130,10 +121,9 @@ pub(crate) fn check_clone(
 pub(crate) fn choose_mirror_source(
     repository: &str,
     source: MirrorSource,
-    owner: State<'_, SettingsOwner>,
-    work: State<'_, crate::RepositoryWork>,
+    calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    crate::choose_named_source(repository, source, &owner, &work)
+    crate::choose_named_source(repository, source, &calls)
 }
 
 /// Opens the system's folder picker, and gives the folder the user picked, or nothing if they cancelled. It
@@ -229,11 +219,8 @@ pub(crate) fn save_theme(pick: ThemePick, owner: State<'_, SettingsOwner>) -> Re
 /// changed, as it does after every change. This waits on small files.
 #[tauri::command(async)]
 #[specta::specta]
-pub(crate) fn reread_settings(
-    owner: State<'_, SettingsOwner>,
-    work: State<'_, crate::DiffWork>,
-) -> Result<LoadedSettings, Error> {
-    crate::settings_in_force(owner.reread(), &work)
+pub(crate) fn reread_settings(calls: State<'_, Calls>) -> Result<LoadedSettings, Error> {
+    calls.reread_settings()
 }
 
 /// Saves the tables the Settings dialog's Apply changed to `settings.toml`, and the language servers to
@@ -244,10 +231,9 @@ pub(crate) fn reread_settings(
 #[specta::specta]
 pub(crate) fn apply_settings(
     changes: SettingsChanges,
-    owner: State<'_, SettingsOwner>,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<LoadedSettings, Error> {
-    crate::settings_in_force(owner.apply(changes), &work)
+    calls.apply_settings(changes)
 }
 
 /// The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
@@ -257,24 +243,22 @@ pub(crate) fn apply_settings(
 pub(crate) fn workbench(
     repository: &str,
     view: WorkbenchView,
-    owner: State<'_, SettingsOwner>,
-    reader: State<'_, StoreReader>,
+    calls: State<'_, Calls>,
 ) -> Result<Workbench, Error> {
-    crate::read_workbench(repository, &view, &owner, &reader)
+    crate::read_workbench(repository, &view, &calls)
 }
 
 /// Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
-/// PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and asks
-/// nothing of `fetching`, so the Inbox adds nothing to Reach.
+/// PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and queues
+/// nothing, so the Inbox adds nothing to Reach.
 #[tauri::command(async)]
 #[specta::specta]
 pub(crate) fn inbox(
     repository: &str,
     page: InboxPage,
-    owner: State<'_, SettingsOwner>,
-    reader: State<'_, StoreReader>,
+    calls: State<'_, Calls>,
 ) -> Result<Inbox, Error> {
-    crate::read_inbox(repository, page, &owner, &reader)
+    crate::read_inbox(repository, page, &calls)
 }
 
 /// The Issue view of Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and
@@ -284,10 +268,9 @@ pub(crate) fn inbox(
 pub(crate) fn issue(
     repository: &str,
     number: u32,
-    owner: State<'_, SettingsOwner>,
-    reader: State<'_, StoreReader>,
+    calls: State<'_, Calls>,
 ) -> Result<Option<IssueView>, Error> {
-    crate::read_issue(repository, number, &owner, &reader)
+    crate::read_issue(repository, number, &calls)
 }
 
 /// Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
@@ -297,9 +280,9 @@ pub(crate) fn issue(
 pub(crate) fn open_pull_request(
     repository: &str,
     number: u32,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    crate::open_pull_request(repository, number, &work)
+    crate::open_pull_request(repository, number, &calls)
 }
 
 /// The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
@@ -309,10 +292,9 @@ pub(crate) fn open_pull_request(
 pub(crate) fn pull_request(
     repository: &str,
     number: u32,
-    owner: State<'_, SettingsOwner>,
-    reader: State<'_, StoreReader>,
+    calls: State<'_, Calls>,
 ) -> Result<Option<PrView>, Error> {
-    crate::read_pull_request(repository, number, &owner, &reader)
+    crate::read_pull_request(repository, number, &calls)
 }
 
 /// The Issues and PRs of `repository` that quick open finds for what the user `typed`, best first, with the
@@ -322,9 +304,9 @@ pub(crate) fn pull_request(
 pub(crate) fn quick_open(
     repository: &str,
     typed: &str,
-    reader: State<'_, StoreReader>,
+    calls: State<'_, Calls>,
 ) -> Result<QuickOpenFound, Error> {
-    crate::find_items(repository, typed, &reader)
+    crate::find_items(repository, typed, &calls)
 }
 
 /// Opens an Issue or a PR on GitHub in the system browser.
@@ -349,9 +331,9 @@ pub(crate) fn open_link(address: &str) -> Result<(), Error> {
 pub(crate) fn open_server_log(
     repository: &str,
     server: ServerName,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    open_file(&crate::server_log_of(repository, server, &work)?)
+    open_file(&crate::server_log_of(repository, server, &calls)?)
 }
 
 /// Starting a program can take a moment, so this runs on the commands that can wait. No test calls it: it
@@ -382,9 +364,9 @@ fn show_in_browser(address: &WebAddress) -> Result<(), Error> {
 pub(crate) fn pull_request_files(
     repository: &str,
     number: u32,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Option<PrFiles>, Error> {
-    crate::read_pull_request_files(repository, number, &work)
+    crate::read_pull_request_files(repository, number, &calls)
 }
 
 /// Rows of a PR's diff, which come from the diff on show unless the user has opened another PR since.
@@ -392,9 +374,9 @@ pub(crate) fn pull_request_files(
 #[specta::specta]
 pub(crate) fn pull_request_rows(
     chunk: crate::DiffChunk,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Vec<DiffRow>, Error> {
-    crate::read_pull_request_rows(chunk, &work)
+    crate::read_pull_request_rows(chunk, &calls)
 }
 
 /// The spans that highlight the code in a chunk of a PR's diff, which the Files tab asks for with its rows
@@ -405,9 +387,9 @@ pub(crate) fn pull_request_rows(
 pub(crate) fn pull_request_spans(
     chunk: crate::DiffChunk,
     collapsed: Vec<u32>,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Vec<Vec<Span>>, Error> {
-    crate::read_pull_request_spans(chunk, &collapsed, &work)
+    crate::read_pull_request_spans(chunk, &collapsed, &calls)
 }
 
 /// Where the code of a PR's diff holds the text the user searches for, whatever the case, in every row:
@@ -416,9 +398,9 @@ pub(crate) fn pull_request_spans(
 #[specta::specta]
 pub(crate) fn pull_request_find(
     search: crate::DiffSearch,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<tsugiki_core::diff::Found, Error> {
-    crate::find_in_pull_request(search, &work)
+    crate::find_in_pull_request(search, &calls)
 }
 
 /// The row of a PR's diff that shows a line of one of its files (#444), or else the line at the head, which
@@ -428,9 +410,9 @@ pub(crate) fn pull_request_find(
 #[specta::specta]
 pub(crate) fn pull_request_row(
     line: crate::DiffLine,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Option<tsugiki_core::workbench::pr_files::LineInDiff>, Error> {
-    crate::read_pull_request_row(line, &work)
+    crate::read_pull_request_row(line, &calls)
 }
 
 /// Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
@@ -444,7 +426,7 @@ pub(crate) fn definitions(
     lookup: crate::DefinitionLookup,
     waiting: Channel<Waiting>,
     index: Channel<Index>,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Answer, Error> {
     let heard = Box::new(move |step| {
         // The window may have stopped listening.
@@ -454,7 +436,7 @@ pub(crate) fn definitions(
         // The window may have stopped listening.
         let _unheard = index.send(news);
     });
-    crate::look_up_definition(lookup, &work, (heard, indexed))
+    crate::look_up_definition(lookup, &calls, (heard, indexed))
 }
 
 /// Some lines of the file a hit is in, which the Definition peek shows (#439): a file of the Repository at
@@ -464,9 +446,9 @@ pub(crate) fn definitions(
 #[specta::specta]
 pub(crate) fn definition_code(
     code: crate::DefinitionCode,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<tsugiki_core::definitions::Code, Error> {
-    crate::read_definition_code(code, &work)
+    crate::read_definition_code(code, &calls)
 }
 
 /// The spans that highlight the lines `definition_code` reads, from the file parsed whole, which the
@@ -476,9 +458,9 @@ pub(crate) fn definition_code(
 #[specta::specta]
 pub(crate) fn definition_spans(
     code: crate::DefinitionCode,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Vec<Vec<Span>>, Error> {
-    crate::read_definition_spans(code, &work)
+    crate::read_definition_spans(code, &calls)
 }
 
 /// The lines a gap of a PR's diff leaves out, read from the file at the PR's head in its mirror with their
@@ -488,7 +470,7 @@ pub(crate) fn definition_spans(
 #[specta::specta]
 pub(crate) fn pull_request_lines(
     lines: crate::GapLines,
-    work: State<'_, crate::DiffWork>,
+    calls: State<'_, Calls>,
 ) -> Result<Vec<HeadLine>, Error> {
-    crate::read_pull_request_lines(lines, &work)
+    crate::read_pull_request_lines(lines, &calls)
 }

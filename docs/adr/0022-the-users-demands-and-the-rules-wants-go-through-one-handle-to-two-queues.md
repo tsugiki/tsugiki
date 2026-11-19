@@ -35,8 +35,10 @@ either. `layers.rs` holds this: `facts`, `links`, `activity` and `work` may use 
 ## One handle, two queues
 
 `fetching` takes both. `Fetching` is a handle with no thread of its own, above `mirror` and below `sync` and
-`session`, and the app and the session each hold a clone. It holds the Mirror worker's requests and the
-sending end of the session's queue, whose messages it defines.
+`session`, and the session and the core's calls each hold a clone. The app reaches it only through the
+handle in `calls`
+([ADR 0023](0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)). It
+holds the Mirror worker's requests and the sending end of the session's queue, whose messages it defines.
 
 Two queues stay behind it, each with one owner. The session runs GitHub's, one request at a time
 ([ADR 0015](0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)), and the Mirror worker runs
@@ -91,8 +93,9 @@ check, without reading a diff.
 
 ## Consequences
 
-- Each request for GitHub or the Mirror from the app or the session goes through `Fetching`. The language
-  servers' thread and text search still ask the Mirror worker where the Lookup checkout is, which is a read.
+- Each request for GitHub or the Mirror from the core's calls or the session goes through `Fetching`. The
+  language servers' thread and text search still ask the Mirror worker where the Lookup checkout is, which is
+  a read.
 - The session's own thread holds a handle, so its queue never closes by itself: dropping `Session` sends it
   a stop.
 - A want replaces the last only in what it states. When the store can't read the reviewed commits, the want

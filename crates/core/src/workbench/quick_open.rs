@@ -31,7 +31,7 @@ pub struct QuickOpenFound {
 
 /// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most in all.
 /// This reads the database and never asks GitHub.
-pub fn find(
+pub(crate) fn find(
     reader: &StoreReader,
     repository: &RepositoryName,
     typed: &str,

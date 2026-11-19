@@ -55,7 +55,8 @@ libc.workspace = true
 
 [features]
 # Makes `testing`, `github::testing` and `releases::testing`, the helpers and fakes of the core's tests,
-# reachable from other crates' tests. Only `[dev-dependencies]` turn it on, so no release build has it.
+# reachable from other crates' tests and the store benchmark. Only `[dev-dependencies]` and the benchmarks'
+# commands turn it on, so no release build has it.
 testing = ["tsugiki-token/testing"]
 
 [dev-dependencies]
@@ -86,9 +87,11 @@ harness = false
 name = "search"
 harness = false
 
+# It times the screens' reads through `testing::Reads`, as only `calls` makes them otherwise.
 [[bench]]
 name = "store"
 harness = false
+required-features = ["testing"]
 
 [lints]
 workspace = true

@@ -390,20 +390,32 @@ const LAYERS: &[Layer] = &[
         module: "calls",
         uses: &[
             "definitions",
+            "diff",
             "error",
             "facts",
             "fetching",
+            "folders",
+            "highlight",
             "latest",
+            "login",
             "mirror",
+            "mirror_source",
             "repository",
+            "repository_settings",
+            "session",
             "settings",
+            "store",
+            "work",
             "workbench",
         ],
-        why: "Answers each screen's call: it reads through a view model in `workbench`, queues through \
+        why: "The handle the app calls the core through, made from the `session`'s queues and its `store` \
+              reader. Each screen's call reads through a view model in `workbench`, queues through \
               `fetching` what the read found missing, and holds the job in an answer that waits for its \
               data. Only a Repository `settings` lists gets a clone, read through `latest` when the read \
               finds no mirror. The diff on show opens its files on the language servers through \
-              `definitions`.",
+              `definitions`, and its rows and their `highlight` come from `diff`. Each of the user's \
+              actions goes through `fetching`: a Mark Seen names what `work` marks, Mute author the \
+              `login` it mutes, and a clone the `mirror_source` it takes its objects from.",
     },
 ];
 

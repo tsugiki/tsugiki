@@ -268,7 +268,7 @@ pub struct Workbench {
 impl Workbench {
     /// Reads the view `view` of `repository`'s Workbench, its items in `order`. This waits on the database
     /// and never on a sync (ADR 0018).
-    pub fn read(
+    pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         view: &WorkbenchView,

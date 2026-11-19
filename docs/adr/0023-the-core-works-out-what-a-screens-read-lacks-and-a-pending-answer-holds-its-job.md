@@ -72,5 +72,7 @@ arguments and makes the call.
   the order they came.
 - `Fetching` and the session share the PRs whose Conversation named no head in one list behind a lock. The
   session adds a PR, and a demand for the PR's Conversation takes it off.
-- `crates/app` can still name `Fetching` and a view model's raw `read`, so nothing yet stops a command from
-  sending a demand itself.
+- `crates/app` makes each call and each of the user's actions on one handle in `calls`, which the session's
+  queues and read-only connection make. `Fetching`, the StoreReader and the view models' raw `read` are
+  crate-private, so a command can't run a query or send a demand itself. The benchmarks reach the reads
+  through the core's `testing` feature.

@@ -80,7 +80,6 @@ const answers = (bodyHtml: string) => ({
   home,
   workbench: listing(true),
   openIssue: done,
-  fetchIssue: done,
   openOnGithub: done,
   openLink: done,
   issue: ok(view(bodyHtml)),
@@ -253,7 +252,6 @@ const longIssue = async (page: Page) => {
     ...answers(paragraphs),
     workbench: workbenchPage([tree, issue(8, false)]),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: done,
   });
   await page.goto("/");

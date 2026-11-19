@@ -10,7 +10,6 @@ import PrDetail from "./PrDetail.svelte";
 const core = vi.hoisted(() => ({
   pullRequest: vi.fn(),
   openPullRequest: vi.fn(),
-  fetchPullRequest: vi.fn(),
   openOnGithub: vi.fn(),
   openLink: vi.fn(),
   pullRequestFiles: vi.fn(),
@@ -22,12 +21,12 @@ const core = vi.hoisted(() => ({
 }));
 
 vi.mock("$lib/data/bindings", async () => {
-  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  const { itemMoves, prFilesEvents } = await import("$lib/testing/fixtures");
   return {
     commands: {
       pullRequest: core.pullRequest,
       openPullRequest: core.openPullRequest,
-      fetchPullRequest: core.fetchPullRequest,
+      ...itemMoves(),
       openOnGithub: core.openOnGithub,
       openLink: core.openLink,
       pullRequestFiles: core.pullRequestFiles,

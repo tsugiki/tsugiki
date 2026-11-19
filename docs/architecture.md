@@ -77,7 +77,7 @@ flowchart LR
 
 | Thread | Owns | Where |
 |---|---|---|
-| Session | The token, the GitHub client, the sync queue, and the hour's points the client sums from each answer's cost. Takes the user's demands between sync steps, and reads ahead the Conversations the rules want. | `core/src/session.rs` |
+| Session | The token, the GitHub client, the sync queue, and the hour's points the client sums from each answer's cost. Takes the user's demands between sync steps, reads the Issue or PR on screen again each minute while the user can see it, and reads ahead the Conversations the rules want. | `core/src/session.rs` |
 | Store | The one writing SQLite connection. Only the session sends it jobs. | `core/src/store/mod.rs` |
 | StoreReader | A read-only connection that the core's calls share. | `core/src/store/mod.rs` |
 | Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep, and each Repository's Lookup checkout, which it moves to the PR on screen and tells readers where it is once it stops moving. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. It holds its queue as `fetching` says, and asks `mirror_queue` which job runs next: the user's demands first, a move of the Lookup checkout and then the heads of the PRs they opened, in a fetch of their own; then the rules' wants, each the whole set for a Repository, which replaces the last; then clones and upkeep. | `core/src/mirror.rs`, `core/src/mirror_queue.rs` |
@@ -128,9 +128,13 @@ app-wide status.
    that read.
 5. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
    the window as the `changed` event, and each open screen that shows one of those items calls its command
-   again. The settings owner's thread hands the session each Repository's settings a change saves
-   otherwise, in the order it saves them. Those a hand edit changed, as new Conventions or Filters, announce
-   a `Change` that names no item, and the Repository's lists read their items again.
+   again. No event carries a view. While an Issue or a PR is on screen, the session reads it from GitHub
+   again a minute after its last read (`session/on_screen.rs`), and the window holds no timer: it tells the
+   core when the user opens, hides, shows again or closes an item, and when the window loads, hides or
+   shows. An item that shows again after its minute came round reads at once. The settings owner's thread
+   hands the session each Repository's settings a change saves otherwise, in the order it saves them. Those
+   a hand edit changed, as new Conventions or Filters, announce a `Change` that names no item, and the
+   Repository's lists read their items again.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
 problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter

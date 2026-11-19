@@ -32,6 +32,9 @@ use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
+use on_screen::OnScreen;
+
+mod on_screen;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -94,6 +97,8 @@ pub struct Intervals {
     pub status: Duration,
     /// Refreshing the open Repository (ADR 0015).
     pub repository: Duration,
+    /// Reading an Issue or a PR the user can see again, after its last read.
+    pub on_screen: Duration,
 }
 
 impl Session {
@@ -171,6 +176,8 @@ struct Refreshes {
     fetching: Fetching,
     /// The PRs whose Conversation named no head, which `fetching` shares.
     headless: Headless,
+    /// The Issues and PRs on screen, each read again after its last read.
+    on_screen: RefCell<OnScreen>,
 }
 
 /// When the next of each kind of question is due.
@@ -227,6 +234,7 @@ impl Refreshes {
             backlog: RefCell::new(VecDeque::new()),
             fetching,
             headless,
+            on_screen: RefCell::new(OnScreen::new(intervals.on_screen)),
         }
     }
 
@@ -266,7 +274,8 @@ impl Refreshes {
                 }
                 SessionMessage::Check { .. }
                 | SessionMessage::Sync { .. }
-                | SessionMessage::Refresh => {}
+                | SessionMessage::Refresh
+                | SessionMessage::Screen(_) => {}
             }
         }
     }
@@ -277,7 +286,8 @@ impl Refreshes {
         let next_refresh = due.status.min(due.repository);
         loop {
             let hour_check = hour_check(github);
-            let wake = [syncs.ready_at(), hour_check]
+            let reread = self.on_screen.borrow().wake();
+            let wake = [syncs.ready_at(), hour_check, reread]
                 .into_iter()
                 .flatten()
                 .fold(next_refresh, Ord::min);
@@ -293,6 +303,9 @@ impl Refreshes {
                 }
                 Ok(SessionMessage::Mark(marked)) => return Turn::Mark(marked),
                 Ok(SessionMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
+                Ok(SessionMessage::Screen(moved)) => {
+                    self.on_screen.borrow_mut().moved(moved, Instant::now());
+                }
                 Ok(SessionMessage::Patched(repository, patches)) => {
                     return Turn::Patched(repository, patches);
                 }
@@ -311,20 +324,34 @@ impl Refreshes {
                 Ok(SessionMessage::Stop) | Err(RecvTimeoutError::Disconnected) => {
                     return Turn::Stop;
                 }
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= due.status => {
-                    return Turn::Refresh;
-                }
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= due.repository => {
-                    return Turn::RefreshRepository;
-                }
-                Err(RecvTimeoutError::Timeout)
-                    if hour_check.is_some_and(|at| Instant::now() >= at) =>
-                {
-                    return Turn::CheckHour;
-                }
-                Err(RecvTimeoutError::Timeout) => return Turn::SyncStep,
+                Err(RecvTimeoutError::Timeout) => return self.timed_turn(due, hour_check),
             }
         }
+    }
+
+    /// The turn whose time came: asking who is signed in first, as only that brings the session back online,
+    /// then reading again an item on screen whose minute came round, refreshing the open Repository,
+    /// checking the hour's points, and else the next sync step.
+    fn timed_turn(&self, due: Due, hour_check: Option<Instant>) -> Turn {
+        let now = Instant::now();
+        if now >= due.status {
+            return Turn::Refresh;
+        }
+        let reread = self.on_screen.borrow().due(now);
+        if let Some(read) = reread {
+            // Whether the PR has a head waits for this read, as it does for a demand's.
+            if let Fetched::PullRequest(item) = &read {
+                self.headless.forget(item);
+            }
+            return Turn::Fetch(read);
+        }
+        if now >= due.repository {
+            return Turn::RefreshRepository;
+        }
+        if hour_check.is_some_and(|at| now >= at) {
+            return Turn::CheckHour;
+        }
+        Turn::SyncStep
     }
 }
 
@@ -445,6 +472,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                     syncs.after_fetch_failure(&problem, due.status, github.clock());
                     board.set(status_after(problem, store));
                 }
+                // A failed read waits its minute too, or the session would ask GitHub again at once.
+                (refreshes.on_screen.borrow_mut()).read(fetched.item(), Instant::now());
             }
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.

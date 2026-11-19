@@ -1,21 +1,22 @@
-// What the Detail pane shows, an Issue or a PR: opened once, asked for again each time the core says its
-// Repository changed (ADR 0008), and read from GitHub about once a minute while it's on screen (ADR 0015).
-// An Issue view stays hidden while a PR from its tree is on show, and asks nobody anything until it shows.
-import { events, type ReadFailure } from "$lib/data/bindings";
+// What the Detail pane shows, an Issue or a PR: opened once, and asked for again each time the core says its
+// Repository changed (ADR 0008). The core reads it from GitHub again about once a minute while the user can
+// see it (ADR 0015), so the view tells the core when it hides, shows again and closes.
+// An Issue view stays hidden while a PR from its tree is on show, and asks the core nothing until it shows.
+import { commands, events, type ReadFailure } from "$lib/data/bindings";
 import { ask, problemIn } from "./answer";
 import { hud } from "./hud.svelte";
 
 export type { ReadFailure };
 
-const MINUTE = 60_000;
-
 /** What a command answers, as the generated bindings type it. */
 type Result<T, E> = { status: "ok"; data: T } | { status: "error"; error: E };
 
-/** How the core opens, refreshes and reads one kind of item. */
+/** A command that tells the core what the user did with an item. */
+type ItemMove = (repository: string, number: number) => Promise<Result<null, { message: string }>>;
+
+/** How the core opens and reads one kind of item. */
 export type DetailCommands<View> = {
-  open: (repository: string, number: number) => Promise<Result<null, { message: string }>>;
-  fetch: (repository: string, number: number) => Promise<Result<null, { message: string }>>;
+  open: ItemMove;
   read: (repository: string, number: number) => Promise<Result<View | null, { message: string }>>;
 };
 
@@ -32,12 +33,13 @@ export class DetailState<View extends { content: unknown }> {
   #lastQuestion = 0;
   #stopListening: (() => void) | undefined;
   #stopped = false;
-  #reading: ReturnType<typeof setInterval> | undefined;
   #hidden = false;
   /** Whether the core announced a change to the Repository while this view was hidden. */
   #missedChange = false;
-  /** Whether a minute's read from GitHub came round while this view was hidden. */
-  #missedRead = false;
+  /** Whether this view told the core the user opened its item. Until then it has nothing else to tell. */
+  #opened = false;
+  /** The last thing this view told the core, once the core has answered it. */
+  #told: Promise<unknown> = Promise.resolve();
 
   constructor(repository: string, number: number, commands: DetailCommands<View>) {
     this.#repository = repository;
@@ -79,54 +81,65 @@ export class DetailState<View extends { content: unknown }> {
       return;
     }
     this.#stopListening = stopListening;
-    this.#reading = setInterval(() => {
-      if (document.hidden) return;
-      if (this.#hidden) this.#missedRead = true;
-      else void this.#fetch();
-    }, MINUTE);
     await this.open();
   }
 
-  /** Shows what the core holds until GitHub answers, and tells the core the user opened this item. The
-   * view asks first, as opening a PR waits for git to say whether the mirror holds its head. Opening asks
-   * the core and GitHub afresh, so a hidden view has nothing left to catch up on when it shows. */
+  /** Shows what the core holds until GitHub answers, and tells the core the user opened this item, which
+   * reads it from GitHub now and about once a minute while the user can see it. The view asks first, as
+   * opening a PR waits for git to say whether the mirror holds its head. Opening asks the core and GitHub
+   * afresh, so a hidden view has nothing left to catch up on when it shows. */
   async open() {
     this.#missedChange = false;
-    this.#missedRead = false;
+    // The core counts the views of each item, which each open once, so opening again closes first.
+    this.#tell(commands.closeItem);
+    this.#opened = true;
     const asking = this.#ask();
-    await this.#say(this.#commands.open(this.#repository, this.number));
+    const opening = this.#after(() => this.#commands.open(this.#repository, this.number));
+    // Opening shows the item to the core, so a view opened while hidden says so after.
+    if (this.#hidden) this.#tell(commands.hideItem);
+    const problem = await opening;
+    if (problem !== undefined) this.error = problem;
     await asking;
   }
 
-  /** Keeps what it holds, and stops asking GitHub and the core, until `show`. */
+  /** Keeps what it holds, and stops asking the core until `show`, which stops reading it from GitHub. */
   hide() {
     this.#hidden = true;
+    this.#tell(commands.hideItem);
   }
 
-  /** Shows what it held, then asks the core again if the Repository changed meanwhile, and GitHub if a
-   * minute's read came round. */
+  /** Shows what it held, then asks the core again if the Repository changed meanwhile. The core reads the
+   * item from GitHub at once if its minute came round meanwhile. */
   show() {
     this.#hidden = false;
+    this.#tell(commands.showItem);
     if (this.#missedChange) void this.#ask();
-    if (this.#missedRead) void this.#fetch();
     this.#missedChange = false;
-    this.#missedRead = false;
   }
 
+  /** Stops listening, and tells the core the user left this item. */
   stop() {
+    this.#tell(commands.closeItem);
     this.#stopped = true;
     this.#stopListening?.();
-    clearInterval(this.#reading);
   }
 
   /** Hears each answer the core gives, once `view` holds it, for a view to pass on what it reads. */
   protected heard?(view: View | null): void;
 
-  #fetch = () => this.#say(this.#commands.fetch(this.#repository, this.number));
+  /** Tells the core the user did `move` with this item, once it has opened it. A refusal shows nothing: the
+   * user asked for none of this, and the view still holds what it read. */
+  #tell(move: ItemMove) {
+    if (this.#opened) void this.#after(() => move(this.#repository, this.number));
+  }
 
-  async #say(asked: ReturnType<DetailCommands<View>["open"]>) {
-    const problem = await problemIn(asked);
-    if (problem !== undefined) this.error = problem;
+  /** Runs `telling` once the core has answered what this view told it before, as opening a PR answers
+   * only once git has spoken, and a close sent meanwhile could reach the core first. Answers with the
+   * problem the core ran into, if any. */
+  #after(telling: () => ReturnType<ItemMove>): Promise<string | undefined> {
+    const told = this.#told.then(() => problemIn(telling));
+    this.#told = told;
+    return told;
   }
 
   async #ask() {

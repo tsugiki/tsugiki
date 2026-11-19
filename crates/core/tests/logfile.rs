@@ -125,6 +125,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
         Intervals {
             status: Duration::from_secs(3600),
             repository: Duration::from_secs(3600),
+            on_screen: Duration::from_secs(3600),
         },
     );
     session.stop(Duration::from_secs(10));

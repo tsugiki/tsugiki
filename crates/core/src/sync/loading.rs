@@ -80,8 +80,8 @@ pub(super) struct Loading {
     since: OffsetDateTime,
     /// Issues whose trees go before everything else: the user's own, and any they open.
     urgent_issues: Vec<u32>,
-    /// Each Issue that has been in `urgent_issues`. A view on screen asks about once a minute, and one read
-    /// of its tree is enough.
+    /// Each Issue that has been in `urgent_issues`. The session reads an Issue on screen again about once a
+    /// minute, and one read of its tree is enough.
     opened: BTreeSet<u32>,
     /// The urgent Issues with more cross-references to read.
     long_reads: VecDeque<LongRead>,

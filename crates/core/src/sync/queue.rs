@@ -152,8 +152,8 @@ pub struct Syncs {
     /// order it saves them. Opening a Repository takes these over the copy the command that opened it read,
     /// which a save handed over meanwhile can have outdated.
     owned: Vec<RepositorySettings>,
-    /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because a view on
-    /// screen asks about once a minute.
+    /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because the
+    /// session reads an Issue on screen again about once a minute.
     opened: BTreeSet<u32>,
     /// A wait for all of GitHub, which holds back every step.
     not_before: Option<Hold>,
@@ -449,8 +449,8 @@ impl Syncs {
         }
     }
 
-    /// Forgets that `tree`'s Issue was opened, so opening it asks again. A view on screen does that about
-    /// once a minute.
+    /// Forgets that `tree`'s Issue was opened, so opening it asks again, as does the session's read of an
+    /// Issue on screen about once a minute.
     fn give_up_on(&mut self, tree: &OpenedTree, problem: &Error) {
         let number = tree.number;
         self.opened.retain(|opened| *opened != number);

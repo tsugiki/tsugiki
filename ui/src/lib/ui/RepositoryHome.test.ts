@@ -31,10 +31,11 @@ const core = vi.hoisted(() => ({
   inbox: vi.fn(),
   issue: vi.fn(),
   openIssue: vi.fn(),
-  fetchIssue: vi.fn(),
   pullRequest: vi.fn(),
   openPullRequest: vi.fn(),
-  fetchPullRequest: vi.fn(),
+  hideItem: vi.fn(),
+  showItem: vi.fn(),
+  closeItem: vi.fn(),
   markSeen: vi.fn(),
   markUnseen: vi.fn(),
   archive: vi.fn(),
@@ -72,10 +73,11 @@ vi.mock("$lib/data/bindings", async () => {
       inbox: core.inbox,
       issue: core.issue,
       openIssue: core.openIssue,
-      fetchIssue: core.fetchIssue,
       pullRequest: core.pullRequest,
       openPullRequest: core.openPullRequest,
-      fetchPullRequest: core.fetchPullRequest,
+      hideItem: core.hideItem,
+      showItem: core.showItem,
+      closeItem: core.closeItem,
       markSeen: core.markSeen,
       markUnseen: core.markUnseen,
       archive: core.archive,
@@ -161,6 +163,7 @@ beforeEach(() => {
   core.listen.mockResolvedValue(core.stopListening);
   core.openIssue.mockResolvedValue(done);
   core.openPullRequest.mockResolvedValue(done);
+  for (const move of [core.hideItem, core.showItem, core.closeItem]) move.mockResolvedValue(done);
   core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
   core.pullRequestFind.mockResolvedValue({ status: "ok", data: { matches: [], more: false } });
   core.cloning.mockResolvedValue(null);
@@ -957,10 +960,7 @@ it("opens the Issue afresh on the way back when its view couldn't read it", asyn
   expect(core.openIssue).toHaveBeenCalledTimes(2);
 });
 
-it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gives way to another", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-  core.fetchIssue.mockResolvedValue(done);
-  core.fetchPullRequest.mockResolvedValue(done);
+it("tells the core the Issue view it keeps is hidden, and closes it when the PR gives way to another", async () => {
   const { issueRow, treeRow, prRow } = await listing();
   await fireEvent.click(issueRow);
   await screen.findByRole("region", { name: "Issue view" });
@@ -968,10 +968,16 @@ it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gi
   await fireEvent.click(treeRow);
   await screen.findByRole("region", { name: "PR view" });
 
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(core.fetchIssue).not.toHaveBeenCalled();
-  expect(core.fetchPullRequest).toHaveBeenCalledOnce();
+  await vi.waitFor(() => {
+    expect(core.hideItem).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+  });
+  expect(core.closeItem).not.toHaveBeenCalled();
   await fireEvent.click(prRow);
+  await vi.waitFor(() => {
+    expect(core.closeItem).toHaveBeenCalledTimes(2);
+  });
+  expect(core.closeItem).toHaveBeenCalledWith("python/cpython", 112564);
+  expect(core.closeItem).toHaveBeenCalledWith("python/cpython", 160662);
   // With the kept view stopped, the Issue opens afresh and listens in its place.
   await fireEvent.click(issueRow);
 
@@ -979,8 +985,7 @@ it("asks GitHub nothing for the Issue view it keeps, and stops it when the PR gi
   expect(listening()).toBe(withIssue);
 });
 
-it("stops the Issue view it keeps when it goes", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+it("stops the Issue view it keeps when it goes, and tells the core the user left both items", async () => {
   const { issueRow, treeRow } = await listing();
   await fireEvent.click(issueRow);
   await screen.findByRole("region", { name: "Issue view" });
@@ -990,6 +995,9 @@ it("stops the Issue view it keeps when it goes", async () => {
   cleanup();
 
   expect(listening()).toBe(0);
+  await vi.waitFor(() => {
+    expect(core.closeItem).toHaveBeenCalledTimes(2);
+  });
 });
 
 it("opens a Backport in the list in the PR view, with its Issue to go back to", async () => {

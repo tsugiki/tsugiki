@@ -20,8 +20,8 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::activity::ItemKey;
 use crate::facts::pull_requests::HeadInMirror;
-use crate::fetching::Fetching;
 pub use crate::fetching::Queued;
+use crate::fetching::{Fetched, Fetching, Item, ScreenMove};
 use crate::folders::Folders;
 use crate::highlight::Span;
 use crate::latest::LatestReader;
@@ -202,10 +202,10 @@ impl Calls {
         }
     }
 
-    /// The user opened PR `number`: the session reads its Conversation from GitHub, each time, and the Mirror
-    /// worker fetches its head first if it lacks it. It waits for one git, which says whether the mirror
-    /// holds the head. The Conversation is read even when the mirrors' folder can't be found. Its Last seen
-    /// stays.
+    /// The user opened PR `number`: the session reads its Conversation from GitHub, each time, and again each
+    /// minute while the user can see it, and the Mirror worker fetches its head first if it lacks it. It
+    /// waits for one git, which says whether the mirror holds the head. The Conversation is read even when
+    /// the mirrors' folder can't be found. Its Last seen stays.
     pub fn open_pull_request(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
         self.pull_request_work()
             .open_pull_request(repository, number)
@@ -340,15 +340,47 @@ impl Calls {
         self.fetching.refresh();
     }
 
-    /// The user opened Issue `number`: the session reads what it says from GitHub. Its Last seen stays: only
-    /// Mark Seen moves it. The window's minute timer reads an Issue on screen again through this too.
+    /// The user opened Issue `number`: the session reads what it says from GitHub now, and again each minute
+    /// while the user can see it. Its Last seen stays: only Mark Seen moves it.
     pub fn open_issue(&self, repository: RepositoryName, number: u32) {
-        self.fetching.fetch_issue(repository, number);
+        let item = Item { repository, number };
+        self.fetching.fetch_issue(item.repository.clone(), number);
+        (self.fetching).screen_moved(ScreenMove::Opened(Fetched::Issue(item)));
     }
 
-    /// Reads the Conversation of PR `number` on screen from GitHub again, as the window's minute timer asks.
-    pub fn fetch_pull_request(&self, repository: RepositoryName, number: u32) {
-        self.fetching.fetch_pull_request(repository, number);
+    /// Another view hides the Issue or PR `number` the user opened, as a PR from an Issue's tree hides the
+    /// Issue's: the session stops reading it each minute until it shows.
+    pub fn hide_item(&self, repository: RepositoryName, number: u32) {
+        let item = Item { repository, number };
+        self.fetching.screen_moved(ScreenMove::Hid(item));
+    }
+
+    /// The Issue or PR `number` shows again: the session reads it at once if its minute came round while it
+    /// was hidden.
+    pub fn show_item(&self, repository: RepositoryName, number: u32) {
+        let item = Item { repository, number };
+        self.fetching.screen_moved(ScreenMove::Showed(item));
+    }
+
+    /// The user left the Issue or PR `number`, whose view is gone: the session reads it each minute no more.
+    pub fn close_item(&self, repository: RepositoryName, number: u32) {
+        let item = Item { repository, number };
+        self.fetching.screen_moved(ScreenMove::Closed(item));
+    }
+
+    /// The window hid, as when the user minimised it: the session reads no item on screen until it shows.
+    pub fn window_hidden(&self) {
+        self.fetching.screen_moved(ScreenMove::WindowHid);
+    }
+
+    /// The window shows again: each item on screen whose minute came round meanwhile reads at once.
+    pub fn window_shown(&self) {
+        self.fetching.screen_moved(ScreenMove::WindowShowed);
+    }
+
+    /// The window loaded afresh, and shows: the session reads none of the items the page before had open.
+    pub fn window_loaded(&self) {
+        self.fetching.screen_moved(ScreenMove::WindowLoaded);
     }
 
     /// Mark Seen on what `mark` names.
@@ -514,12 +546,17 @@ struct PullRequestWork<'a> {
 }
 
 impl PullRequestWork<'_> {
-    /// The user opened PR `number`: the session reads its Conversation from GitHub, each time, and the Mirror
-    /// worker fetches its head first if it lacks it. It waits for one git, which says whether the mirror
-    /// holds the head. The Conversation is read even when the mirrors' folder can't be found. Its Last seen
-    /// stays.
+    /// The user opened PR `number`: the session reads its Conversation from GitHub, each time, and again each
+    /// minute while the user can see it, and the Mirror worker fetches its head first if it lacks it. It
+    /// waits for one git, which says whether the mirror holds the head. The Conversation is read even when
+    /// the mirrors' folder can't be found. Its Last seen stays.
     fn open_pull_request(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
         self.fetching.fetch_pull_request(repository.clone(), number);
+        let item = Item {
+            repository: repository.clone(),
+            number,
+        };
+        (self.fetching).screen_moved(ScreenMove::Opened(Fetched::PullRequest(item)));
         if let Some(head) = self.sources()?.head_in_mirror(repository, number)? {
             self.fetching
                 .pull_request_opened(repository.clone(), number, head);

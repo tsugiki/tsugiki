@@ -362,20 +362,49 @@ fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Re
     Ok(())
 }
 
-/// Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015).
+/// Tells the core another view hides the Issue or PR the user opened, and returns at once.
 #[tauri::command]
 #[specta::specta]
-fn fetch_pull_request(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.fetch_pull_request(RepositoryName::parse(repository)?, number);
+fn hide_item(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.hide_item(RepositoryName::parse(repository)?, number);
     Ok(())
 }
 
-/// Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015).
+/// Tells the core the Issue or PR the user opened shows again, and returns at once.
 #[tauri::command]
 #[specta::specta]
-fn fetch_issue(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.open_issue(RepositoryName::parse(repository)?, number);
+fn show_item(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.show_item(RepositoryName::parse(repository)?, number);
     Ok(())
+}
+
+/// Tells the core the user left the Issue or PR they opened, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn close_item(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.close_item(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Tells the core the window hid, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn window_hidden(calls: State<'_, Calls>) {
+    calls.window_hidden();
+}
+
+/// Tells the core the window shows again, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn window_shown(calls: State<'_, Calls>) {
+    calls.window_shown();
+}
+
+/// Tells the core the window loaded afresh, with no item open, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn window_loaded(calls: State<'_, Calls>) {
+    calls.window_loaded();
 }
 
 /// The settings Tsugiki last read, and what was wrong with their files (ADR 0014).
@@ -992,9 +1021,13 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pick_program,
             refresh,
             open_issue,
-            fetch_issue,
             slow_commands::open_pull_request,
-            fetch_pull_request,
+            hide_item,
+            show_item,
+            close_item,
+            window_hidden,
+            window_shown,
+            window_loaded,
             mark_seen,
             mark_unseen,
             archive,

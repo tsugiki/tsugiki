@@ -334,12 +334,13 @@ const LAYERS: &[Layer] = &[
             "patch_ids",
             "repository",
             "repository_settings",
+            "status",
             "work",
         ],
         why: "Takes the user's demands and the rules' wants, and hands each to the queue that owns it: the \
               Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
               above can take them. A Mark Seen names what `work` marks, and Mute author the `login` it \
-              mutes.",
+              mutes. A PR whose Conversation read failed keeps the `status` failure, for its Files tab.",
     },
     Layer {
         module: "sync",
@@ -404,6 +405,7 @@ const LAYERS: &[Layer] = &[
             "repository_settings",
             "session",
             "settings",
+            "status",
             "store",
             "work",
             "workbench",
@@ -411,11 +413,12 @@ const LAYERS: &[Layer] = &[
         why: "The handle the app calls the core through, made from the `session`'s queues and its `store` \
               reader. Each screen's call reads through a view model in `workbench`, queues through \
               `fetching` what the read found missing, and holds the job in an answer that waits for its \
-              data. Only a Repository `settings` lists gets a clone, read through `latest` when the read \
-              finds no mirror. The diff on show opens its files on the language servers through \
-              `definitions`, and its rows and their `highlight` come from `diff`. Each of the user's \
-              actions goes through `fetching`: a Mark Seen names what `work` marks, Mute author the \
-              `login` it mutes, and a clone the `mirror_source` it takes its objects from.",
+              data, or names the `status` failure of the read that would have brought it. Only a \
+              Repository `settings` lists gets a clone, read through `latest` when the read finds no \
+              mirror. The diff on show opens its files on the language servers through `definitions`, and \
+              its rows and their `highlight` come from `diff`. Each of the user's actions goes through \
+              `fetching`: a Mark Seen names what `work` marks, Mute author the `login` it mutes, and a \
+              clone the `mirror_source` it takes its objects from.",
     },
 ];
 

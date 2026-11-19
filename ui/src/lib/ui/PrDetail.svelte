@@ -1,6 +1,5 @@
 <script lang="ts">
   import { type Snippet, untrack } from "svelte";
-  import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     BESIDE_RAIL_LEAST,
@@ -22,6 +21,7 @@
   import RailSearch from "./RailSearch.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
+  import { PR_UNREAD } from "./unread-words";
   import { ago, headline, staleReviewLine } from "./workbench-row";
 
   let {
@@ -57,16 +57,6 @@
     { tab: "conversation", name: "Conversation" },
     { tab: "files", name: "Files" },
   ];
-
-  /** The Conversation tab's words before its first read lands, and why it hasn't once a read failed. */
-  const UNREAD: Record<ReadFailure | "reading", string> = {
-    reading: "Reading from GitHub…",
-    no_token:
-      "Tsugiki can't ask GitHub for the Conversation without a token. The status bar says how to sign in.",
-    waits_on_github: "The Conversation comes once GitHub answers.",
-    not_on_github: "GitHub doesn't have this PR, or your token can't see it.",
-    other: "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why.",
-  };
 
   const links = new LinkOpener();
   // Svelte sets each to null as its element goes.
@@ -268,7 +258,7 @@
               }}
             />
           {:else}
-            <p class="byline">{UNREAD[pr.failedRead ?? "reading"]}</p>
+            <p class="byline">{PR_UNREAD[pr.failedRead ?? "reading"]}</p>
           {/if}
         {:else}
           <FilesTab files={pr.files} {now} onlink={(address) => void links.openLink(address)} />

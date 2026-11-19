@@ -1590,6 +1590,19 @@ export type IssueView_Serialize = {
 export type ItemKey = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
 
 /**
+ *  The reason a read of what an Issue or a PR says failed for this item, which the session's next read of
+ *  it may mend: a `ReadFailure` less `WaitsOnGitHub`, which speaks for all of GitHub. A PR's Files tab that
+ *  waits for the head the Conversation names shows it.
+ */
+export type ItemUnread = 
+/**  Tsugiki has no token, so no read brings the item until it starts again. */
+"no_token" | 
+/**  GitHub has no such item, or the token can't see it. */
+"not_on_github" | 
+/**  Anything else that went wrong with this one read. The log says what it was. */
+"other";
+
+/**
  *  The jumps in a PR's diff while recording: each scroll that showed rows the window didn't hold, until
  *  they were on screen (#180).
  */
@@ -2352,17 +2365,18 @@ export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
 /**  What the Files tab shows. */
 export type PrFiles_Deserialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
+({ state: "cloning" }) & { why?: never } | 
 /**
  *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
  *  objects.
  */
-{ state: "asking" } | 
-/**
- *  The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
- *  names the PR's head.
- */
-{ state: "fetching" } | 
+({ state: "asking" }) & { why?: never } | 
+/**  The mirror lacks the PR's commits, and is fetching them. */
+({ state: "fetching" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
+({ state: "finding_head" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
+{ state: "unread"; why: ItemUnread } | 
 /**  The diff, whose rows the window asks for by number. */
 {
 	state: "ready",
@@ -2373,17 +2387,18 @@ export type PrFiles_Deserialize =
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
+({ state: "cloning" }) & { why?: never } | 
 /**
  *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
  *  objects.
  */
-{ state: "asking" } | 
-/**
- *  The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
- *  names the PR's head.
- */
-{ state: "fetching" } | 
+({ state: "asking" }) & { why?: never } | 
+/**  The mirror lacks the PR's commits, and is fetching them. */
+({ state: "fetching" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
+({ state: "finding_head" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
+{ state: "unread"; why: ItemUnread } | 
 /**  The diff, whose rows the window asks for by number. */
 {
 	state: "ready",

@@ -10,11 +10,12 @@ use crate::definitions::Sources;
 use crate::diff::testing::Mirrored;
 use crate::facts::pull_requests::PrHead;
 use crate::fetching::testing::{handle_with_headless, named};
-use crate::fetching::{Fetched, Headless, Item, SessionMessage};
+use crate::fetching::{Fetched, Headless, Item, NoHead, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::{LoadedSettings, Settings, SettingsFiles};
+use crate::status::ItemUnread;
 use crate::store::testing::OpenStore;
 use crate::workbench::pr_files::testing::World;
 
@@ -247,10 +248,13 @@ fn the_files_tab_of_a_pr_whose_head_tsugiki_doesnt_know_reads_its_conversation()
 
     let files = calls.pr_files();
 
-    assert!(matches!(files, Some(PrFiles::Fetching { .. })), "{files:?}");
+    assert!(
+        matches!(files, Some(PrFiles::FindingHead { .. })),
+        "{files:?}"
+    );
     assert_eq!(
         serde_json::to_value(files).unwrap(),
-        json!({ "state": "fetching" })
+        json!({ "state": "finding_head" })
     );
     assert_eq!(calls.conversations_read(), [7]);
     assert_eq!(calls.heard.clones(), [], "the mirror is there");
@@ -392,7 +396,7 @@ fn the_files_tab_of_a_pr_whose_conversation_named_no_head_asks_github_no_more() 
         repository: calls.world.repository(),
         number: 7,
     };
-    calls.headless.named_none(&read_this_launch);
+    calls.headless.note(&read_this_launch, NoHead::Unnamed);
 
     let problem = calls
         .work()
@@ -410,6 +414,34 @@ fn the_files_tab_of_a_pr_whose_conversation_named_no_head_asks_github_no_more() 
 }
 
 #[test]
+fn the_files_tab_of_a_pr_whose_conversation_read_failed_says_why_and_leaves_the_next_read_to_the_minute()
+ {
+    let calls = Setup::new("no-head-unread");
+    let mirrored = Mirrored::new("calls-no-head-unread");
+    calls.world.mirrors(&mirrored);
+    calls.world.has_pr(None, "main");
+    let read_this_launch = Item {
+        repository: calls.world.repository(),
+        number: 7,
+    };
+    calls
+        .headless
+        .note(&read_this_launch, NoHead::Unread(ItemUnread::Other));
+
+    let files = calls.work().pr_files(&calls.world.repository(), 7).unwrap();
+
+    assert_eq!(
+        files,
+        Some(PrFiles::Unread {
+            why: ItemUnread::Other
+        })
+    );
+    assert_eq!(calls.conversations_read(), [0_u32; 0]);
+    assert!(calls.heard.asked().is_empty(), "{:?}", calls.heard.asked());
+    calls.finish();
+}
+
+#[test]
 fn the_files_tab_of_a_pr_whose_conversation_an_older_tsugiki_saved_without_a_head_reads_it_again() {
     let calls = Setup::new("no-head-kept");
     let mirrored = Mirrored::new("calls-no-head-kept");
@@ -419,7 +451,10 @@ fn the_files_tab_of_a_pr_whose_conversation_an_older_tsugiki_saved_without_a_hea
 
     let files = calls.pr_files();
 
-    assert!(matches!(files, Some(PrFiles::Fetching { .. })), "{files:?}");
+    assert!(
+        matches!(files, Some(PrFiles::FindingHead { .. })),
+        "{files:?}"
+    );
     assert_eq!(calls.conversations_read(), [7]);
     calls.finish();
 }

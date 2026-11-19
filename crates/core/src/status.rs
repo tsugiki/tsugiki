@@ -69,6 +69,31 @@ pub enum ReadFailure {
     Other,
 }
 
+/// The reason a read of what an Issue or a PR says failed for this item, which the session's next read of
+/// it may mend: a `ReadFailure` less `WaitsOnGitHub`, which speaks for all of GitHub. A PR's Files tab that
+/// waits for the head the Conversation names shows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemUnread {
+    /// Tsugiki has no token, so no read brings the item until it starts again.
+    NoToken,
+    /// GitHub has no such item, or the token can't see it.
+    #[serde(rename = "not_on_github")]
+    NotOnGitHub,
+    /// Anything else that went wrong with this one read. The log says what it was.
+    Other,
+}
+
+impl From<ItemUnread> for ReadFailure {
+    fn from(why: ItemUnread) -> Self {
+        match why {
+            ItemUnread::NoToken => Self::NoToken,
+            ItemUnread::NotOnGitHub => Self::NotOnGitHub,
+            ItemUnread::Other => Self::Other,
+        }
+    }
+}
+
 /// A read of an Issue or a PR on screen that failed, so the window can say why it shows nothing new.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct FailedRead {

@@ -474,8 +474,8 @@ impl MirrorRequests {
         self.send(Message::Awaited(repository, number));
     }
 
-    /// Ends the await of PR `number`, whose Conversation named no head, so a head a sync step saves later
-    /// takes its turn with the others. Its ref stays until the next launch.
+    /// Ends the await of PR `number`, whose Conversation named no head or couldn't be read, so a head a sync
+    /// step saves later takes its turn with the others. Its ref stays until the next launch.
     pub fn no_head(&self, repository: RepositoryName, number: u32) {
         self.send(Message::Unawaited(repository, number));
     }

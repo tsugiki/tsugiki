@@ -21,7 +21,7 @@ use crate::facts::CommitSha;
 use crate::facts::activity::ItemKey;
 use crate::facts::pull_requests::HeadInMirror;
 pub use crate::fetching::Queued;
-use crate::fetching::{Fetched, Fetching, Item, ScreenMove};
+use crate::fetching::{Fetched, Fetching, Item, NoHead, ScreenMove};
 use crate::folders::Folders;
 use crate::highlight::Span;
 use crate::latest::LatestReader;
@@ -32,6 +32,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use crate::session::Session;
 use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, SettingsView};
+use crate::status::ItemUnread;
 use crate::store::StoreReader;
 use crate::work::SeenMark;
 use crate::workbench::inbox::{Inbox, InboxPage};
@@ -502,13 +503,20 @@ pub enum PrFiles {
     /// The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
     /// objects.
     Asking,
-    /// The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
-    /// names the PR's head.
+    /// The mirror lacks the PR's commits, and is fetching them.
     Fetching {
         #[serde(skip)]
         #[specta(skip)]
         fetch: Queued,
     },
+    /// Tsugiki doesn't know the PR's head, and is reading the Conversation that names it.
+    FindingHead {
+        #[serde(skip)]
+        #[specta(skip)]
+        fetch: Queued,
+    },
+    /// Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`.
+    Unread { why: ItemUnread },
     /// The diff, whose rows the window asks for by number.
     Ready {
         #[serde(flatten)]
@@ -604,18 +612,22 @@ impl PullRequestWork<'_> {
                     clone: fetching.clone_shown(repository.clone()),
                 }
             }
-            // A read GitHub answered named no head, so another would bring the same.
-            FilesRead::NoHead if fetching.named_no_head(repository, number) => {
-                return Err(Error::new(
-                    ErrorKind::NotFound,
-                    &format!(
-                        "GitHub named no head commit of PR #{number} when Tsugiki read its \
-                         Conversation, so it has no diff to show."
-                    ),
-                ));
-            }
-            FilesRead::NoHead => PrFiles::Fetching {
-                fetch: fetching.find_head(repository.clone(), number),
+            FilesRead::NoHead => match fetching.why_no_head(repository, number) {
+                // A read GitHub answered named no head, so another would bring the same.
+                Some(NoHead::Unnamed) => {
+                    return Err(Error::new(
+                        ErrorKind::NotFound,
+                        &format!(
+                            "GitHub named no head commit of PR #{number} when Tsugiki read its \
+                             Conversation, so it has no diff to show."
+                        ),
+                    ));
+                }
+                // The session reads the PR on screen again each minute, as for the Conversation tab.
+                Some(NoHead::Unread(why)) => PrFiles::Unread { why },
+                None => PrFiles::FindingHead {
+                    fetch: fetching.find_head(repository.clone(), number),
+                },
             },
             FilesRead::Missing { head, older: None } => PrFiles::Fetching {
                 fetch: fetching.fetch_head(repository.clone(), head),

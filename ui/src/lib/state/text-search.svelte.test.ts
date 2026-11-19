@@ -212,6 +212,9 @@ it("gives the search the Files tab's diff once it is ready, or why there is none
     files(fetching, { unfetched: { kind: "git", words: "timed out" }, waitsForNetwork: true }),
     // Only the PR's commits wait for the network here: a clone that does says so as `loading`.
     files({ state: "cloning" }, { waitsForNetwork: true }),
+    // The read of the Conversation that names the PR's head waits for the network, then failed.
+    files({ state: "finding_head" }, { waitsForNetwork: true }),
+    files({ state: "unread", why: "other" }),
   ]).toEqual([
     READY,
     { kind: "loading" },
@@ -222,6 +225,8 @@ it("gives the search the Files tab's diff once it is ready, or why there is none
     { kind: "failed" },
     { kind: "offline" },
     { kind: "loading" },
+    { kind: "offline" },
+    { kind: "failed" },
   ]);
 });
 

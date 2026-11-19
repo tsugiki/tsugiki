@@ -504,6 +504,7 @@ it("stops listening, even when it stops before it started", async () => {
     "headsFetched",
     "mirrorStatesChanged",
     "mirrorsHeldChanged",
+    "readFailed",
   ]);
 
   core.stopped = [];
@@ -512,7 +513,7 @@ it("stops listening, even when it stops before it started", async () => {
   early.stop();
   await loading;
 
-  expect(core.stopped).toHaveLength(6);
+  expect(core.stopped).toHaveLength(7);
   expect(core.cloning).toHaveBeenCalledTimes(1);
 });
 
@@ -1494,6 +1495,76 @@ it("hears that GitHub's ref for the PR is elsewhere without asking again, so no 
 
   expect(files.unfetched).toEqual({ kind: "behind" });
   expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+});
+
+it("asks again when the Conversation read that names the PR's head fails, and the core says why", async () => {
+  const files = await loaded({ state: "finding_head" });
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "unread", why: "not_on_github" }));
+
+  core.heard.readFailed?.({ payload: { repository: "python/peps", number: 11, why: "other" } });
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 12, why: "other" } });
+  // A failure for all of GitHub leaves the tab waiting, and asking would queue the read again.
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "waits_on_github" } });
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "not_on_github" } });
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "unread", why: "not_on_github" });
+  });
+});
+
+it("asks again when the read its first question queued fails before the answer lands", async () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFiles.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
+  const loading = files.load();
+  await vi.waitFor(() => {
+    expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  });
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "unread", why: "other" }));
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+  answer(ok({ state: "finding_head" }));
+  await loading;
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "unread", why: "other" });
+  });
+});
+
+it("asks again when a later read fails for another reason, and not for the same one", async () => {
+  const files = await loaded({ state: "unread", why: "other" });
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "unread", why: "not_on_github" }));
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "not_on_github" } });
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "unread", why: "not_on_github" });
+  });
+});
+
+it("leaves a tab that fetches a head it knows as it is when the PR's Conversation read fails", async () => {
+  const files = await loaded({ state: "fetching" });
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  expect(files.view).toEqual({ state: "fetching" });
+});
+
+it("leaves a tab with a diff as it is when the PR's Conversation read fails", async () => {
+  const files = await loaded(gapped("older"));
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  expect(files.layout.diff).toBe("older..abc");
 });
 
 it("reveals a thread asked for while the older diff holds its threads back, once the newer diff comes", async () => {

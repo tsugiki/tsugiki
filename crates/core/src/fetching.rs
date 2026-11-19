@@ -2,10 +2,11 @@
 //! the window, with demands: urgent, and the newer wins where two conflict. The rules in `work` state wants:
 //! the whole set for a Repository each time, which replaces the last.
 //!
-//! [`Fetching`] is a handle with no thread of its own, which the app and the session each hold a clone of.
-//! Two queues stay behind it, each with one owner: the session runs GitHub's, one request at a time (ADR
-//! 0015), and the Mirror worker runs git's. Each ranks the user's demands first, then the rules' wants, then
-//! its own background work, such as the sync's tiers or a Mirror's upkeep.
+//! [`Fetching`] is a handle with no thread of its own, which the session and the core's calls each hold a
+//! clone of. Only the core can name it: the app asks through `calls` (ADR 0023). Two queues stay behind it,
+//! each with one owner: the session runs GitHub's, one request at a time (ADR 0015), and the Mirror worker
+//! runs git's. Each ranks the user's demands first, then the rules' wants, then its own background work, such
+//! as the sync's tiers or a Mirror's upkeep.
 
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};

@@ -66,7 +66,7 @@ pub enum LineInDiff {
 
 /// Where the Files tab reads from: the database, the mirrors, the diff on show and the trees of its files.
 /// It asks nothing of anyone: the core's call queues what a read finds missing.
-pub struct DiffSources<'a> {
+pub(crate) struct DiffSources<'a> {
     pub reader: &'a StoreReader,
     pub folders: &'a Folders,
     pub diffs: &'a Diffs,

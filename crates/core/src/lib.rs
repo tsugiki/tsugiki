@@ -10,7 +10,7 @@ pub mod definitions;
 pub mod diff;
 pub mod error;
 pub mod facts;
-pub mod fetching;
+pub(crate) mod fetching;
 pub mod filters;
 pub mod folders;
 pub mod github;

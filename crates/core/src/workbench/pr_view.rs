@@ -30,7 +30,7 @@ pub struct PrView {
 impl PrView {
     /// Reads PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never on
     /// GitHub, so the view opens on what was last read (ADR 0018).
-    pub fn read(
+    pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         number: u32,

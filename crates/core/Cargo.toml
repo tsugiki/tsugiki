@@ -60,6 +60,8 @@ testing = ["tsugiki-token/testing"]
 
 [dev-dependencies]
 divan.workspace = true
+# The benchmarks time the screens' reads through `testing::Reads`, as only `calls` makes them otherwise.
+tsugiki-core = { workspace = true, features = ["testing"] }
 insta.workspace = true
 tsugiki-lsp = { workspace = true, features = ["testing"] }
 tsugiki-test-git.workspace = true

@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 use tauri_specta::Event;
+use tsugiki_core::calls::{CallParts, Calls};
 use tsugiki_core::definitions::{self, Definitions, ServerName};
-use tsugiki_core::diff::{Diffs, Highlighter};
 use tsugiki_core::error::Error;
 use tsugiki_core::folders::Folders;
 use tsugiki_core::github::GitHubAccess;
@@ -21,11 +21,10 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 
 use crate::first_frame;
 use crate::{
-    Changed, CloningChanged, DiffWork, FailedHeads, HeadsFetchFailed, HeadsFetched,
-    HourPointsChanged, LanguageServersChanged, LastSyncChanged, MirrorProblemChanged,
-    MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound,
-    PickPath, Picker, ReadFailed, RepositoryWork, StatusChanged, SyncActivityChanged,
-    TextSearchChanged,
+    Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
+    LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
+    MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
+    ReadFailed, StatusChanged, SyncActivityChanged, TextSearchChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -159,14 +158,13 @@ pub(crate) fn connect_core<R: Runtime>(
         status: refresh,
         repository: REPOSITORY_REFRESH,
     };
-    let diff_folders = folders.clone();
+    let call_folders = folders.clone();
     // The session hands the mirrors the rules' wants, and takes the patch-ids they read.
     let connections = Connections {
         github: outside.github,
         mirrors: mirrors.requests(),
     };
     let session = Session::start(board, folders, connections, intervals);
-    let fetching = session.fetching();
     let (checkouts, view, idle_view) = (mirrors.requests(), settings.reader(), settings.reader());
     let rows_handle = app.clone();
     let definitions = Definitions::start(definitions::Sources {
@@ -186,16 +184,15 @@ pub(crate) fn connect_core<R: Runtime>(
             log_if_unsent(LanguageServersChanged(rows.to_vec()).emit(&rows_handle));
         }),
     });
-    let diffs = DiffWork {
-        folders: diff_folders,
-        reader: session.reader(),
-        diffs: Diffs::default(),
-        fetching: fetching.clone(),
-        highlighter: Highlighter::start(),
-        definitions: definitions.clone(),
-        settings: settings.reader(),
-    };
-    assert!(app.manage(diffs), "only this manages the diffs");
+    // Starts the open Repository's sync and the clones.
+    let calls = Calls::new(
+        &session,
+        CallParts {
+            folders: call_folders,
+            settings: settings.clone(),
+            definitions: definitions.clone(),
+        },
+    );
     let search_handle = app.clone();
     // A window that starts listening too late asks `text_search_state`, which reads what the thread wrote
     // before this.
@@ -204,31 +201,8 @@ pub(crate) fn connect_core<R: Runtime>(
         Box::new(move || log_if_unsent(TextSearchChanged.emit(&search_handle))),
     );
     assert!(app.manage(search), "only this manages the text search");
-    let work = RepositoryWork {
-        fetching: fetching.clone(),
-    };
-    let view = settings.view();
-    work.start(&view.home, &view.mirror_sources);
-    // From here the owner hands the session each Repository's settings it saves otherwise, before the window
-    // can ask for a change.
-    let session_settings = fetching.clone();
-    settings.tell_session(Box::new(move |repository, by| {
-        session_settings.settings_changed(repository, by);
-    }));
-    // The Repositories added before 0.2 have no mirror yet, and get theirs after the open one's. One the user
-    // hasn't said where its objects come from asks when its turn comes.
-    for repository in &view.loaded.settings.repositories {
-        let source = view.mirror_sources.get(&repository.name).cloned();
-        fetching.clone_mirror(repository.name.clone(), source);
-    }
     assert!(app.manage(settings), "only this manages the settings");
-    assert!(app.manage(fetching), "only this manages the requests");
-    assert!(
-        app.manage(work),
-        "only this manages the work on Repositories"
-    );
-    let reader = session.reader();
-    assert!(app.manage(reader), "only this manages the reader");
+    assert!(app.manage(calls), "only this manages the calls");
     let releases = check_releases(app, check_releases_on.then_some(outside.releases));
     Core {
         session,

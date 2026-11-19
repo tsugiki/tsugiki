@@ -928,7 +928,7 @@ impl Snapshot<'_> {
 
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
 #[derive(Clone)]
-pub struct StoreReader {
+pub(crate) struct StoreReader {
     jobs: Weak<Sender<Job>>,
 }
 
@@ -999,7 +999,7 @@ impl StoreReader {
 
 /// The read-only connection before the database is ready for it. Dropping this answers what's waiting.
 #[must_use = "dropping this tells every reader that the database stopped"]
-pub struct ReaderToOpen {
+pub(crate) struct ReaderToOpen {
     jobs: Arc<Sender<Job>>,
     queue: Receiver<Job>,
 }
@@ -1007,13 +1007,13 @@ pub struct ReaderToOpen {
 /// The read-only connection, on its thread. Only this keeps the thread going, so the app's readers can't keep
 /// the file open once the session ends.
 #[must_use = "dropping this leaves the connection open until the process ends"]
-pub struct OpenReader {
+pub(crate) struct OpenReader {
     jobs: Arc<Sender<Job>>,
     thread: JoinHandle<()>,
 }
 
 /// A way to ask the read-only connection, and what opens it when `Store::open` has made the file current.
-pub fn reader() -> (ReaderToOpen, StoreReader) {
+pub(crate) fn reader() -> (ReaderToOpen, StoreReader) {
     let (jobs, queue) = mpsc::channel::<Job>();
     let jobs = Arc::new(jobs);
     let reader = StoreReader {

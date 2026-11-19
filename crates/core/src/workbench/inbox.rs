@@ -103,7 +103,7 @@ pub struct Inbox {
 
 impl Inbox {
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from the clock's now.
-    pub fn read_now(
+    pub(crate) fn read_now(
         reader: &StoreReader,
         repository: &RepositorySettings,
         page: InboxPage,
@@ -114,7 +114,7 @@ impl Inbox {
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
     /// the database and never on a sync (ADR 0018). A page whose items are all Archived gives way to the next
     /// older one, so the window never gets an empty page with more to come.
-    pub fn read(
+    pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         page: InboxPage,

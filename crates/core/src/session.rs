@@ -130,12 +130,12 @@ impl Session {
 
     /// The way to ask GitHub and the Mirrors for data. Dropping the session stops it, whatever handles are
     /// left.
-    pub fn fetching(&self) -> Fetching {
+    pub(crate) fn fetching(&self) -> Fetching {
         self.fetching.clone()
     }
 
     /// The read-only connection, which doesn't wait for anything this session is doing (ADR 0018).
-    pub fn reader(&self) -> StoreReader {
+    pub(crate) fn reader(&self) -> StoreReader {
         self.reader.clone()
     }
 

@@ -19,6 +19,9 @@ use crate::repository_settings::RepositorySettings;
 
 #[cfg(test)]
 mod fixture;
+mod reads;
+
+pub use reads::Reads;
 #[cfg(test)]
 pub(crate) mod import;
 

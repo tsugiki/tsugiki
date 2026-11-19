@@ -6,9 +6,11 @@ for up to 15 s. The window still has to draw its lists in that time:
 query 50 ms, and GitHub being down can't block the UI.
 
 So the database has two connections, each on a thread of its own. `Store` is the only writer, and only the
-session holds it. `StoreReader` is a read-only connection that the app's commands share. In WAL mode
-([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)) it can read while the session saves a
-batch. It reads each view's facts in one transaction, so a view never mixes two saves.
+session holds it. `StoreReader` is a read-only connection that the window's calls share: the app's
+commands make them on the core's handle, which holds it
+([ADR 0023](0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)). In
+WAL mode ([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)) it can read while the session
+saves a batch. It reads each view's facts in one transaction, so a view never mixes two saves.
 
 The session opens the reader after `Store` has run the migrations, and a question that arrives earlier waits
 for that. `StoreReader` holds only a weak link to its thread, so the session alone decides when that thread

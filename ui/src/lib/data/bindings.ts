@@ -222,8 +222,8 @@ export const commands = {
 	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
 	/**
 	 *  Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
-	 *  PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and asks
-	 *  nothing of `fetching`, so the Inbox adds nothing to Reach.
+	 *  PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and queues
+	 *  nothing, so the Inbox adds nothing to Reach.
 	 */
 	inbox: (repository: string, page: InboxPage_Deserialize) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page })),
 	/**

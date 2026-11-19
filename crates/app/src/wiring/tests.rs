@@ -2193,7 +2193,7 @@ fn open_logs(
     Result<Value, Value>,
     Result<Value, Value>,
 ) {
-    let opened = crate::server_log_of(CPYTHON, ServerName::Ty, &wired.webview.state::<DiffWork>());
+    let opened = crate::server_log_of(CPYTHON, ServerName::Ty, &wired.webview.state::<Calls>());
     let no_log = json!({ "repository": CPYTHON, "server": "clangd" });
     let not_a_name = json!({ "repository": "not a name", "server": "ty" });
     (

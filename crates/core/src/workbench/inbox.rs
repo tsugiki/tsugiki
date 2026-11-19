@@ -248,8 +248,9 @@ struct Chosen {
     older: Option<InboxCursor>,
 }
 
-/// What a step of the walk found: each item whose latest update it met, at its place, and the earliest
-/// update it read, or nothing once it read the last.
+/// What a step of the walk found: each item its updates or their trees show, at its place, and the earliest
+/// update it read, or nothing once it read the last. An item's place can fall outside what the step read, as
+/// for an Issue that a met PR's tree names but whose own tree didn't move.
 struct Step {
     found: Vec<(InboxCursor, Member)>,
     floor: Option<OffsetDateTime>,
@@ -352,9 +353,11 @@ impl<'s, 't> Walk<'s, 't> {
         }
     }
 
-    /// Reads the updates `updates` takes, and the trees of what they belong to, and places every item whose
-    /// latest update it met. A step that reads `at_least` updates of a kind reads no lower than the last of
-    /// them, since the next step reads on from there.
+    /// Reads the updates `updates` takes, and the trees of what they belong to, and places every item those
+    /// trees show. That takes in each open Issue they name, whose place falls below every update the step
+    /// read when its own tree didn't move. Each caller keeps only the items placed within what the step
+    /// read, and the step that reads an item's place finds it again (#891). A step that reads `at_least`
+    /// updates of a kind reads no lower than the last of them, since the next step reads on from there.
     fn step(&mut self, updates: Updates) -> Result<Step, Error> {
         let prs = self.snapshot.pull_requests_updated(updates)?;
         let issues = self.snapshot.open_issue_places(updates)?;

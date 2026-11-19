@@ -4850,7 +4850,6 @@ dependencies = [
  "tree-sitter-toml-ng",
  "tree-sitter-typescript",
  "tree-sitter-yaml",
- "tsugiki-core",
  "tsugiki-lsp",
  "tsugiki-test-git",
  "tsugiki-token",

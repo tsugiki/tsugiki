@@ -154,6 +154,37 @@ describe("pinned tools", () => {
   });
 });
 
+describe("tsugiki-core's benchmarks", () => {
+  /** The features any `[[bench]]` of tsugiki-core requires, which Cargo skips the benchmark without. */
+  const required = (): string[] => {
+    const manifest = readFileSync("../crates/core/Cargo.toml", "utf8");
+    return manifest
+      .split("[[bench]]")
+      .slice(1)
+      .flatMap((bench) => {
+        const list = /^required-features = \[(.*)\]$/m.exec(bench.split(/^\[/m)[0] ?? "")?.[1];
+        return [...(list ?? "").matchAll(/"([\w-]+)"/g)].map(([, feature]) => feature ?? "");
+      });
+  };
+
+  /** The `--features` that `command` turns on. */
+  const features = (command: string): string[] =>
+    [...command.matchAll(/--features (\S+)/g)].flatMap(([, list]) => (list ?? "").split(","));
+
+  it("require a feature only on the store benchmark, which `testing::Reads` serves", () => {
+    expect(required()).toEqual(["testing"]);
+  });
+
+  it("are built on CodSpeed and by `npm run bench` with each feature they require", () => {
+    const build = read("bench.yml").find((line) => line.includes("cargo codspeed build")) ?? "";
+    const scripts = (JSON.parse(readFileSync("../package.json", "utf8")) as { scripts: { bench: string } })
+      .scripts;
+    for (const command of [build, scripts.bench]) {
+      expect(features(command), command).toEqual(expect.arrayContaining(required()));
+    }
+  });
+});
+
 describe("the Release workflow", () => {
   it("checks each download with the command the release page gives", () => {
     const at = RELEASE.findIndex((line) => line.trim().startsWith("gh attestation verify "));

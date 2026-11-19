@@ -9,7 +9,7 @@ use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, Patc
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
 use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
-use crate::fetching::ScreenMove;
+use crate::fetching::{NoHead, ScreenMove};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
@@ -26,7 +26,7 @@ use crate::settings::ListOrder;
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
-use crate::status::{Change, FailedRead, ReadFailure};
+use crate::status::{Change, FailedRead, HeadUnread, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
@@ -826,7 +826,7 @@ fn a_conversation_that_fills_the_head_of_a_pr_answers_the_await_of_a_demand_it_m
         Some("some-maintainer/gcmon saved heads #7 at 0123abc on main"),
     );
     assert!(one.queued().is_empty(), "the demand shared the read");
-    assert!(!one.demands.named_no_head(&gcmon(), 7));
+    assert_eq!(one.demands.why_no_head(&gcmon(), 7), None);
     one.finish();
 }
 
@@ -858,13 +858,13 @@ fn a_conversation_that_names_no_head_says_so_until_a_read_names_one() {
 
     let _queued = one.demands.find_head(gcmon(), 7);
     one.read(&pr_7());
-    let after_unnamed = one.demands.named_no_head(&gcmon(), 7);
-    let other_pr = one.demands.named_no_head(&gcmon(), 8);
+    let after_unnamed = one.demands.why_no_head(&gcmon(), 7);
+    let other_pr = one.demands.why_no_head(&gcmon(), 8);
     let unawaited = one.heard.asked();
     one.read(&pr_7());
 
-    assert!(after_unnamed);
-    assert!(!other_pr);
+    assert_eq!(after_unnamed, Some(NoHead::Unnamed));
+    assert_eq!(other_pr, None);
     assert_eq!(
         unawaited,
         [
@@ -873,7 +873,42 @@ fn a_conversation_that_names_no_head_says_so_until_a_read_names_one() {
         ],
         "no read will answer the await"
     );
-    assert!(!one.demands.named_no_head(&gcmon(), 7));
+    assert_eq!(one.demands.why_no_head(&gcmon(), 7), None);
+    assert_eq!(
+        one.heard.asked().last().map(String::as_str),
+        Some("some-maintainer/gcmon saved heads #7 at 0123abc on main")
+    );
+    one.finish();
+}
+
+#[test]
+fn a_failed_conversation_read_says_why_the_pr_has_no_head_until_a_read_names_one() {
+    // GitHub first answers that it has no PR 7.
+    let one = OneRead::new(
+        "conversation-unread",
+        None,
+        vec![Value::Null, pr_content(&json!({}))],
+    );
+
+    let _queued = one.demands.find_head(gcmon(), 7);
+    one.read(&pr_7());
+    let after_failure = one.demands.why_no_head(&gcmon(), 7);
+    let unawaited = one.heard.asked();
+    one.read(&pr_7());
+
+    assert_eq!(
+        after_failure,
+        Some(NoHead::Unread(HeadUnread::NotOnGitHub))
+    );
+    assert_eq!(
+        unawaited,
+        [
+            "some-maintainer/gcmon awaits #7",
+            "some-maintainer/gcmon awaits no head of #7"
+        ],
+        "no read will answer the await"
+    );
+    assert_eq!(one.demands.why_no_head(&gcmon(), 7), None);
     assert_eq!(
         one.heard.asked().last().map(String::as_str),
         Some("some-maintainer/gcmon saved heads #7 at 0123abc on main")
@@ -889,7 +924,7 @@ fn a_new_demand_for_a_conversation_that_named_no_head_waits_for_its_read() {
 
     one.demands.fetch_pull_request(gcmon(), 7);
 
-    assert!(!one.demands.named_no_head(&gcmon(), 7));
+    assert_eq!(one.demands.why_no_head(&gcmon(), 7), None);
     one.finish();
 }
 
@@ -1047,6 +1082,25 @@ fn a_pr_read_without_the_network_waits_on_github() {
     let failed = failed_reads_of_pr_7("offline-pr", access);
 
     assert_eq!(failed, [item_7_failed(ReadFailure::WaitsOnGitHub)]);
+}
+
+#[test]
+fn a_pr_read_with_no_token_says_why_the_pr_has_no_head_before_the_window_hears() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+    let (folders, _folder) = temp_folders("no-token-head");
+    let (board, failed) = failed_reads_board();
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+
+    let _queued = session.fetching().find_head(gcmon(), 7);
+    let heard = failed.recv_timeout(PLENTY).unwrap();
+    let why = session.fetching().why_no_head(&gcmon(), 7);
+    session.stop(PLENTY);
+
+    assert_eq!(heard, item_7_failed(ReadFailure::NoToken));
+    assert_eq!(why, Some(NoHead::Unread(HeadUnread::NoToken)));
 }
 
 #[test]

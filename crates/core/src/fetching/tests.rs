@@ -1,6 +1,7 @@
 use super::testing::{handle, handle_with_headless, named};
 use super::*;
 use crate::facts::CommitSha;
+use crate::status::HeadUnread;
 use crate::testing::cpython;
 
 fn head(number: u32) -> PrHead {
@@ -19,13 +20,30 @@ fn a_pr_whose_conversation_named_no_head_twice_has_a_head_again_after_one_demand
         number,
     };
 
-    headless.named_none(&pr(7));
-    headless.named_none(&pr(8));
-    headless.named_none(&pr(7));
+    headless.note(&pr(7), NoHead::Unnamed);
+    headless.note(&pr(8), NoHead::Unnamed);
+    headless.note(&pr(7), NoHead::Unnamed);
     fetching.fetch_pull_request(cpython(), 7);
 
-    assert!(!fetching.named_no_head(&cpython(), 7));
-    assert!(fetching.named_no_head(&cpython(), 8));
+    assert_eq!(fetching.why_no_head(&cpython(), 7), None);
+    assert_eq!(fetching.why_no_head(&cpython(), 8), Some(NoHead::Unnamed));
+}
+
+#[test]
+fn a_pr_holds_why_its_last_conversation_read_left_it_with_no_head() {
+    let (fetching, _incoming, _heard, headless) = handle_with_headless();
+    let seven = Item {
+        repository: cpython(),
+        number: 7,
+    };
+
+    headless.note(&seven, NoHead::Unnamed);
+    headless.note(&seven, NoHead::Unread(HeadUnread::Other));
+
+    assert_eq!(
+        fetching.why_no_head(&cpython(), 7),
+        Some(NoHead::Unread(HeadUnread::Other))
+    );
 }
 
 #[test]

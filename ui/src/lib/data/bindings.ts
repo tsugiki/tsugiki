@@ -1130,6 +1130,18 @@ export type HeadLine = {
 };
 
 /**
+ *  The reason a read of a PR's Conversation, which names the head its Files tab waits for, failed: a
+ *  `ReadFailure` less `WaitsOnGitHub`, which leaves the tab waiting for the read once GitHub answers.
+ */
+export type HeadUnread = 
+/**  Tsugiki has no token, so no read brings the head until it starts again. */
+"no_token" | 
+/**  GitHub has no such PR, or the token can't see it. */
+"not_on_github" | 
+/**  Anything else that went wrong with this one read. The log says what it was. */
+"other";
+
+/**
  *  Sent when the mirror's worker stopped fetching PR heads it didn't bring, so a Files tab waiting for one
  *  says why and offers to try again (#233, #213).
  */
@@ -2352,17 +2364,18 @@ export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
 /**  What the Files tab shows. */
 export type PrFiles_Deserialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
+({ state: "cloning" }) & { why?: never } | 
 /**
  *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
  *  objects.
  */
-{ state: "asking" } | 
-/**
- *  The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
- *  names the PR's head.
- */
-{ state: "fetching" } | 
+({ state: "asking" }) & { why?: never } | 
+/**  The mirror lacks the PR's commits, and is fetching them. */
+({ state: "fetching" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
+({ state: "finding_head" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
+{ state: "unread"; why: HeadUnread } | 
 /**  The diff, whose rows the window asks for by number. */
 {
 	state: "ready",
@@ -2373,17 +2386,18 @@ export type PrFiles_Deserialize =
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
+({ state: "cloning" }) & { why?: never } | 
 /**
  *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
  *  objects.
  */
-{ state: "asking" } | 
-/**
- *  The mirror lacks the PR's commits, and is fetching them, or Tsugiki is reading the Conversation that
- *  names the PR's head.
- */
-{ state: "fetching" } | 
+({ state: "asking" }) & { why?: never } | 
+/**  The mirror lacks the PR's commits, and is fetching them. */
+({ state: "fetching" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
+({ state: "finding_head" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
+{ state: "unread"; why: HeadUnread } | 
 /**  The diff, whose rows the window asks for by number. */
 {
 	state: "ready",

@@ -473,6 +473,19 @@ export class PrFilesState {
         events.headsFetchFailed.listen(({ payload }) => {
           if (mine(payload.repository, payload.items)) this.unfetched = payload.why;
         }),
+        // The core keeps why the read of the Conversation that names the PR's head failed. A tab asks it when
+        // it finds the head, says why the read before failed, or has no answer yet, as its question may have
+        // queued the read. A failure for all of GitHub leaves the tab waiting, and asking would queue the
+        // read again.
+        events.readFailed.listen(({ payload }) => {
+          const view = this.view;
+          const waits =
+            view === undefined ||
+            view?.state === "finding_head" ||
+            (view?.state === "unread" && view.why !== payload.why);
+          const own = payload.why !== "waits_on_github";
+          if (own && waits && mine(payload.repository, [payload.number])) void this.ask();
+        }),
         // A sync that moves the PR's head changes its diff.
         events.changed.listen(({ payload }) => {
           if (mine(payload.repository, payload.items)) void this.ask();

@@ -24,6 +24,7 @@ use crate::mirror_source::MirrorSource;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
+use crate::status::HeadUnread;
 use crate::work::SeenMark;
 
 pub(crate) const NOT_CONNECTED: &str =
@@ -217,31 +218,41 @@ pub struct Fetching {
     headless: Headless,
 }
 
-/// The PRs whose Conversation, as the session last read it since launch, named no head, and whose
-/// Conversation no demand has asked to read since. The session adds a PR when its read names no head, and a
-/// demand for the Conversation takes the PR off, so the read it asks for decides again. Each method takes
-/// the lock for one action, and no guard leaves the type. Nothing in it can panic while it holds the lock, so
-/// it reads through a poisoned one.
+/// The reason the session's last read of a PR's Conversation since launch left the PR with no head.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoHead {
+    /// GitHub answered, and the Conversation named no head commit.
+    Unnamed,
+    /// The read failed, and no read until the next one the session makes would bring the head.
+    Unread(HeadUnread),
+}
+
+/// The PRs whose Conversation, as the session last read it since launch, left them with no head, and whose
+/// Conversation no demand has asked to read since. The session adds a PR when its read names no head or
+/// fails, and a demand for the Conversation takes the PR off, so the read it asks for decides again. Each
+/// method takes the lock for one action, and no guard leaves the type. Nothing in it can panic while it holds
+/// the lock, so it reads through a poisoned one.
 #[derive(Clone, Default)]
-pub(crate) struct Headless(Arc<Mutex<Vec<Item>>>);
+pub(crate) struct Headless(Arc<Mutex<Vec<(Item, NoHead)>>>);
 
 impl Headless {
-    /// The session's read of PR `item`'s Conversation named no head. A demand came before each read and took
-    /// the PR off, and `forget` takes off every copy, so a PR is never held twice for long.
-    pub(crate) fn named_none(&self, item: &Item) {
+    /// The session's read of PR `item`'s Conversation left it with no head, as `why` says, in place of what
+    /// the read before said.
+    pub(crate) fn note(&self, item: &Item, why: NoHead) {
         let mut items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        items.push(item.clone());
+        items.retain(|(headless, _)| !headless.is(item));
+        items.push((item.clone(), why));
     }
 
     /// PR `item` has a head, or the read of its Conversation that a demand asked for decides it.
     pub(crate) fn forget(&self, item: &Item) {
         let mut items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        items.retain(|headless| !headless.is(item));
+        items.retain(|(headless, _)| !headless.is(item));
     }
 
-    fn holds(&self, item: &Item) -> bool {
+    fn why(&self, item: &Item) -> Option<NoHead> {
         let items = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        items.iter().any(|headless| headless.is(item))
+        (items.iter()).find_map(|(headless, why)| headless.is(item).then_some(*why))
     }
 }
 
@@ -304,18 +315,18 @@ impl Fetching {
         self.to_session(SessionMessage::Screen(moved));
     }
 
-    /// Whether the session's last read of PR `number`'s Conversation since launch named no head, and no
-    /// demand has asked for another read since. A Conversation saved by an older Tsugiki, which kept no
-    /// head, hasn't been read yet.
-    pub fn named_no_head(&self, repository: &RepositoryName, number: u32) -> bool {
-        self.headless.holds(&Item {
+    /// The reason the session's last read of PR `number`'s Conversation since launch left it with no head,
+    /// or nothing when it found the head, or a demand has asked for another read since. A Conversation saved
+    /// by an older Tsugiki, which kept no head, hasn't been read yet.
+    pub(crate) fn why_no_head(&self, repository: &RepositoryName, number: u32) -> Option<NoHead> {
+        self.headless.why(&Item {
             repository: repository.clone(),
             number,
         })
     }
 
-    /// PR `number`'s Conversation named no head, or the facts hold no such PR, so nothing will answer the
-    /// Mirror worker's await of its head.
+    /// PR `number`'s Conversation named no head, its read failed, or the facts hold no such PR, so nothing
+    /// will answer the Mirror worker's await of its head.
     pub(crate) fn no_head(&self, repository: RepositoryName, number: u32) {
         self.mirrors.no_head(repository, number);
     }

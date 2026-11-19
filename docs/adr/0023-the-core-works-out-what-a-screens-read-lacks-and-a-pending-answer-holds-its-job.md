@@ -30,8 +30,10 @@ arguments and makes the call.
   then sees it: the Files tab, the Mirror's head wants, Reach, Stale review and patch-ids.
 - A job that brought nothing new ends the wait. When the session's read of a Conversation since launch
   named no head, the Files tab says so, where queuing the read again would bring the same, until a demand
-  asks for another read. A Conversation an older Tsugiki saved kept no head, so its PR's tab reads the
-  Conversation again.
+  asks for another read. A read that failed for the PR alone, or for want of a token, ends the wait too, and
+  the tab says why, in the Conversation tab's words, until the session reads the PR on screen again a
+  minute later (#782). A
+  Conversation an older Tsugiki saved kept no head, so its PR's tab reads the Conversation again.
 - A demand for a read already waiting in the session's queue, or under way until GitHub answers, shares
   that read, whose outcome, a failure too, answers both. A demand that comes after GitHub answered starts
   another. Opening a PR and its Files tab's read then ask GitHub once between them.
@@ -66,12 +68,15 @@ arguments and makes the call.
   demands before it hands the head over, so the worker hears each await they sent before the head that
   answers it. A head the store filled, or a Review of the user's that covers another commit, sends the
   rules' wants again.
-- A Conversation that names no head, or a PR the facts don't hold, ends the await. A read that fails leaves
-  it in place until a sync step names the head.
+- A Conversation that names no head, a read of it that fails for the PR alone or for want of a token, or a
+  PR the facts don't hold, ends the await. A failure that speaks for all of GitHub leaves it in place.
+- The Files tab's answer tells a wait for the Conversation, `finding_head`, from a fetch of a head Tsugiki
+  knows, so only the first asks again when the window hears that a read of the Conversation failed.
 - The session's queue keeps the messages it took off the channel while merging, ahead of the channel, in
   the order they came.
-- `Fetching` and the session share the PRs whose Conversation named no head in one list behind a lock. The
-  session adds a PR, and a demand for the PR's Conversation takes it off.
+- `Fetching` and the session share, in one list behind a lock, the PRs whose Conversation named no head or
+  failed to read, with which of the two. The session adds a PR, and a demand for the PR's Conversation, or
+  the session's next read of the PR on screen, takes it off.
 - `crates/app` makes each call and each of the user's actions on one handle in `calls`, which the session's
   queues and read-only connection make. `Fetching`, the StoreReader and the view models' raw `read` are
   crate-private, so a command can't run a query or send a demand itself. The benchmarks reach the reads

@@ -251,6 +251,20 @@ it("waits for the PR's commits", async () => {
   expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
 });
 
+it("shows the read of the Conversation that names the PR's head as a fetch of its commits", async () => {
+  await shown({ state: "finding_head" });
+  expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
+});
+
+it("says why the Conversation that names the PR's head didn't come, as the Conversation tab does", async () => {
+  await shown({ state: "unread", why: "not_on_github" });
+
+  expect(screen.getByRole("alert").textContent).toBe(
+    "GitHub doesn't have this PR, or your token can't see it.",
+  );
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+});
+
 it("says the PR's commits wait for the network while the mirror holds back git, over a failed fetch", async () => {
   core.mirrorsHeld.mockResolvedValue(true);
   const files = await shown({ state: "fetching" });

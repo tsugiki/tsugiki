@@ -69,6 +69,32 @@ pub enum ReadFailure {
     Other,
 }
 
+/// The reason a read of a PR's Conversation, which names the head its Files tab waits for, failed: a
+/// `ReadFailure` less `WaitsOnGitHub`, which leaves the tab waiting for the read once GitHub answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum HeadUnread {
+    /// Tsugiki has no token, so no read brings the head until it starts again.
+    NoToken,
+    /// GitHub has no such PR, or the token can't see it.
+    #[serde(rename = "not_on_github")]
+    NotOnGitHub,
+    /// Anything else that went wrong with this one read. The log says what it was.
+    Other,
+}
+
+impl HeadUnread {
+    /// The reason for `why`, or nothing for a failure that speaks for all of GitHub.
+    pub(crate) fn of(why: ReadFailure) -> Option<Self> {
+        match why {
+            ReadFailure::NoToken => Some(Self::NoToken),
+            ReadFailure::WaitsOnGitHub => None,
+            ReadFailure::NotOnGitHub => Some(Self::NotOnGitHub),
+            ReadFailure::Other => Some(Self::Other),
+        }
+    }
+}
+
 /// A read of an Issue or a PR on screen that failed, so the window can say why it shows nothing new.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct FailedRead {

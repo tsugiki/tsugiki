@@ -61,8 +61,10 @@ export function searchDiff(
   const view = files.view;
   if (view?.state === "ready") return { kind: "ready", base: view.base, head: view.head };
   if (view === null) return { kind: "absent" };
-  if (view?.state === "fetching" && files.waitsForNetwork) return { kind: "offline" };
-  if (files.error !== undefined || files.unfetched !== undefined) return { kind: "failed" };
+  const fetching = view?.state === "fetching" || view?.state === "finding_head";
+  if (fetching && files.waitsForNetwork) return { kind: "offline" };
+  const failed = files.error !== undefined || files.unfetched !== undefined || view?.state === "unread";
+  if (failed) return { kind: "failed" };
   return view?.state === "asking" ? { kind: "asking" } : { kind: "loading" };
 }
 

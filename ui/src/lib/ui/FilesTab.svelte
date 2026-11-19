@@ -3,13 +3,14 @@
      on since the mirror's copy, the diff before shows while the mirror fetches the newer one, with its
      threads held back and counted (#185). A fetch of the PR's head that fails says why, and so does one that
      leaves GitHub's ref somewhere else or finds none, and "Try again" asks the core once more, which hands
-     the head to the mirror again (#233, #213). While GitHub can't be reached, the mirror holds back git, and
-     the tab says the PR's commits or the mirror's clone come once GitHub answers (#390). Ctrl+F opens a
-     search over the diff's rows (#186). The header's switch, "All files | One file", fills the mode on show
-     and switches to the other, and one file at a time a bar says which file shows, "‹ 12 of 48 ›" and its
-     path (#605, #775). Beside the switch, Go to definition says it searches, or for a moment that it found
-     nothing (#444). A definition in a file the PR doesn't change opens the file view over the tab (#453). A
-     split Definition peek shows below the diff, which stays where it was (#459). -->
+     the head to the mirror again (#233, #213). A PR whose head only its Conversation names says why that
+     read failed, in the Conversation tab's words (#782). While GitHub can't be reached, the mirror holds
+     back git, and the tab says the PR's commits or the mirror's clone come once GitHub answers (#390).
+     Ctrl+F opens a search over the diff's rows (#186). The header's switch, "All files | One file", fills
+     the mode on show and switches to the other, and one file at a time a bar says which file shows, "‹ 12 of
+     48 ›" and its path (#605, #775). Beside the switch, Go to definition says it searches, or for a moment
+     that it found nothing (#444). A definition in a file the PR doesn't change opens the file view over the
+     tab (#453). A split Definition peek shows below the diff, which stays where it was (#459). -->
 <script lang="ts">
   import type { FilesMode, Page, PrFilesState, Unfetched } from "$lib/state/pr-files.svelte";
   import DiffRows from "./DiffRows.svelte";
@@ -19,6 +20,7 @@
   import MirrorQuestion from "./MirrorQuestion.svelte";
   import SplitPeek from "./SplitPeek.svelte";
   import { cloningWords } from "./synced";
+  import { PR_UNREAD } from "./unread-words";
 
   let { files, now, onlink }: { files: PrFilesState; now: Date; onlink: (address: string) => void } =
     $props();
@@ -97,7 +99,7 @@
     {:else}
       <p class="waiting">{cloningWords(files.cloning) ?? "Cloning the Repository's mirror…"}</p>
     {/if}
-  {:else if files.view?.state === "fetching"}
+  {:else if files.view?.state === "fetching" || files.view?.state === "finding_head"}
     {#if files.waitsForNetwork}
       <p class="waiting" role="status">The PR's commits come once GitHub answers.</p>
     {:else if files.unfetched !== undefined}
@@ -112,6 +114,10 @@
     {:else}
       <p class="waiting">Fetching the PR's commits…</p>
     {/if}
+  {:else if files.view?.state === "unread"}
+    <!-- The session reads the PR on screen again each minute, so there's no Try again, as on the
+         Conversation tab. -->
+    <p class="waiting" role="alert">{PR_UNREAD[files.view.why]}</p>
   {:else if files.view?.state === "ready"}
     {#if files.heldBack !== undefined && files.waitsForNetwork}
       <p class="waiting" role="status">

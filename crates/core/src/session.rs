@@ -15,7 +15,9 @@ use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
-use crate::fetching::{Fetched, Fetching, Headless, Item, Marked, MirrorWant, SessionMessage};
+use crate::fetching::{
+    Fetched, Fetching, Headless, Item, Marked, MirrorWant, NoHead, SessionMessage,
+};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
 use crate::login::Login;
@@ -23,7 +25,7 @@ use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
-use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
+use crate::status::{Change, FailedRead, HeadUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
     ReaderToOpen, Store, StoreReader,
@@ -174,7 +176,7 @@ struct Refreshes {
     backlog: RefCell<VecDeque<SessionMessage>>,
     /// The handle the session hands the rules' wants to the Mirror worker through.
     fetching: Fetching,
-    /// The PRs whose Conversation named no head, which `fetching` shares.
+    /// The PRs whose Conversation named no head or failed to read, which `fetching` shares.
     headless: Headless,
     /// The Issues and PRs on screen, each read again after its last read.
     on_screen: RefCell<OnScreen>,
@@ -254,6 +256,18 @@ impl Refreshes {
         );
     }
 
+    /// Tells the window that the read of `fetched` failed for `why`, a failure of this one read or for want
+    /// of a token. For a PR, it first tells the Files tab, which asks again once the window hears and finds
+    /// why, and ends the Mirror worker's await of the head, which no read answers until the next.
+    fn read_failed(&self, board: &mut StatusBoard, fetched: &Fetched, why: ReadFailure) {
+        let item = fetched.item();
+        if let (Fetched::PullRequest(_), Some(unread)) = (fetched, HeadUnread::of(why)) {
+            self.headless.note(item, NoHead::Unread(unread));
+            (self.fetching).no_head(item.repository.clone(), item.number);
+        }
+        board.failed_read(&failed(item, why));
+    }
+
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
     /// the one asking that the session isn't connected. Mark Seen and Mark Unseen need only the database, so
     /// they still work, and so does telling the window of a hand edit to the settings. With no syncs there
@@ -270,7 +284,7 @@ impl Refreshes {
                     keep_patches(board, store, &repository, patches);
                 }
                 SessionMessage::Fetch(fetched) => {
-                    board.failed_read(&failed(fetched.item(), ReadFailure::NoToken));
+                    self.read_failed(board, &fetched, ReadFailure::NoToken);
                 }
                 SessionMessage::Check { .. }
                 | SessionMessage::Sync { .. }
@@ -938,7 +952,8 @@ struct Reading<'a> {
 /// read that came before GitHub answered share its answer, its failure too.
 ///
 /// GitHub numbers Issues and PRs from one sequence, so they share where they are kept. If the read fails,
-/// the view goes on showing what was last read, and the window hears why. An error returned here speaks
+/// the view goes on showing what was last read, and the window hears why, as do the Mirror worker and the
+/// Files tab of a PR, which may wait for the head the Conversation names. An error returned here speaks
 /// for all of GitHub, so the status bar and the syncs need to hear it. Any other trouble is this one item's,
 /// and goes to the log.
 fn read_conversation(
@@ -949,10 +964,14 @@ fn read_conversation(
 ) -> Result<(), Error> {
     let answered = ask_github(board, read.github, fetched);
     read.queue.merge(fetched);
-    let Some(content) = answered? else {
-        return Ok(());
-    };
     let item = fetched.item();
+    let content = match answered? {
+        Ok(content) => content,
+        Err(why) => {
+            read.queue.read_failed(board, fetched, why);
+            return Ok(());
+        }
+    };
     let change = match keep_conversation(board, store, item, content) {
         None => return Ok(()),
         Some(Kept::Issue(change)) => change,
@@ -987,7 +1006,7 @@ fn hand_over_head(store: &Store, read: &Reading<'_>, item: &Item, saved: &Conver
         }
         HeadKept::Unnamed => {
             fetching.no_head(repository.clone(), item.number);
-            read.queue.headless.named_none(item);
+            read.queue.headless.note(item, NoHead::Unnamed);
         }
         HeadKept::NoFacts => {
             fetching.no_head(repository.clone(), item.number);
@@ -1004,13 +1023,14 @@ enum Kept {
     PullRequest(Change, ConversationSaved),
 }
 
-/// What an Issue or a PR says, as GitHub answered `fetched`, or nothing when the read failed for this item
-/// alone, as `read_conversation` says.
+/// What an Issue or a PR says, as GitHub answered `fetched`, or why the read failed for this item alone, as
+/// `read_conversation` says. The status bar hears a failure that speaks for all of GitHub, and this logs
+/// the others, which the caller tells the window of.
 fn ask_github(
     board: &mut StatusBoard,
     github: &GitHub,
     fetched: &Fetched,
-) -> Result<Option<Content>, Error> {
+) -> Result<Result<Content, ReadFailure>, Error> {
     let item = fetched.item();
     let (noun, read) = match fetched {
         Fetched::Issue(_) => {
@@ -1035,17 +1055,16 @@ fn ask_github(
             } else {
                 ReadFailure::Other
             };
-            board.failed_read(&failed(item, why));
             log::warn!(
                 "Tsugiki couldn't read {noun} #{} in {}: {}",
                 item.number,
                 item.repository,
                 problem.message
             );
-            return Ok(None);
+            return Ok(Err(why));
         }
     };
-    Ok(Some(content))
+    Ok(Ok(content))
 }
 
 /// Keeps `content`, what `item` says, and gives what that kept, or nothing when the store can't keep it,

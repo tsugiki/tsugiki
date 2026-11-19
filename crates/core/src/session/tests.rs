@@ -1536,6 +1536,37 @@ fn bugs_query() -> FilterQuery {
     "label:bug".to_owned().try_into().unwrap()
 }
 
+/// A save of `saved` over `replaced`, as `by` made it.
+fn saved_over(
+    replaced: RepositorySettings,
+    saved: RepositorySettings,
+    by: SavedBy,
+) -> SettingsSave {
+    SettingsSave {
+        replaced: Some(replaced),
+        saved,
+        by,
+    }
+}
+
+/// A save that added `saved` to the settings, as `by` made it.
+fn saved_new(saved: RepositorySettings, by: SavedBy) -> SettingsSave {
+    SettingsSave {
+        replaced: None,
+        saved,
+        by,
+    }
+}
+
+/// The save that switched gcmon's Bugs Filter `on`, from the other way, as `by` made it.
+fn bugs_saved(on: OnWorkbench, by: SavedBy) -> SettingsSave {
+    let before = match on {
+        OnWorkbench::On => OnWorkbench::Off,
+        OnWorkbench::Off => OnWorkbench::On,
+    };
+    saved_over(bugs_switched(before), bugs_switched(on), by)
+}
+
 #[test]
 fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread_prs() {
     let store = store_remembering("octocat");
@@ -1579,12 +1610,17 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     syncs.add(bugs_switched(OnWorkbench::Off));
     let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
 
-    let unheld = settings_changed(&fetching, &store, &mut syncs, elsewhere);
+    let unheld = settings_changed(
+        &fetching,
+        &store,
+        &mut syncs,
+        saved_new(elsewhere, SavedBy::HandEdit),
+    );
     let switched_on = settings_changed(
         &fetching,
         &store,
         &mut syncs,
-        bugs_switched(OnWorkbench::On),
+        bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
     let on = heard.asked();
     let held = syncs.settings(&gcmon()).cloned();
@@ -1593,7 +1629,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
         &fetching,
         &store,
         &mut syncs,
-        bugs_switched(OnWorkbench::Off),
+        bugs_saved(OnWorkbench::Off, SavedBy::Window),
     );
     let off = heard.asked();
 
@@ -1642,7 +1678,7 @@ fn switch_bugs_on_losing(
         &fetching,
         &lossy,
         &mut syncs,
-        bugs_switched(OnWorkbench::On),
+        bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
 
     let owed = store.read_ahead_owed(&gcmon()).unwrap();
@@ -1682,10 +1718,14 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
 
     let asked = session.fetching();
     asked.sync(bugs_switched(OnWorkbench::Off));
-    asked.settings_changed(elsewhere, SavedBy::HandEdit);
-    asked.settings_changed(bugs_switched(OnWorkbench::Off), SavedBy::HandEdit);
-    asked.settings_changed(bugs_switched(OnWorkbench::On), SavedBy::Window);
-    asked.settings_changed(regrouped, SavedBy::HandEdit);
+    asked.settings_changed(saved_new(elsewhere, SavedBy::HandEdit));
+    asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
+    asked.settings_changed(bugs_saved(OnWorkbench::On, SavedBy::Window));
+    asked.settings_changed(saved_over(
+        bugs_switched(OnWorkbench::On),
+        regrouped,
+        SavedBy::HandEdit,
+    ));
     session.stop(PLENTY);
 
     // Nothing for a Repository not opened since launch, or for settings the syncs hold already.
@@ -1709,8 +1749,8 @@ fn a_hand_edit_to_the_settings_tells_the_window_with_no_token() {
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
     let asked = session.fetching();
-    asked.settings_changed(bugs_switched(OnWorkbench::On), SavedBy::Window);
-    asked.settings_changed(bugs_switched(OnWorkbench::Off), SavedBy::HandEdit);
+    asked.settings_changed(bugs_saved(OnWorkbench::On, SavedBy::Window));
+    asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     session.stop(PLENTY);
 
     assert_eq!(
@@ -1766,9 +1806,21 @@ fn a_switch_whose_facts_the_store_cant_read_hands_over_nothing_and_owes_nothing(
     assert_eq!(owed, BTreeSet::new());
 }
 
-#[test]
-fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
-    let (folders, _folder) = temp_folders("switched-session");
+/// What a session that took a save of the settings did, as `session_taking` finds it.
+struct TookSave {
+    /// What the Mirror worker heard.
+    handed: Vec<String>,
+    /// The reads ahead the store owes in gcmon once the session stopped.
+    owed: BTreeSet<u32>,
+    /// The changes that name no item, which the window heard.
+    announced: Vec<Change>,
+}
+
+/// Starts an offline session, in a folder named after `name`, on a store whose PR 8 the Bugs Filter's
+/// stored search found and whose Conversation it never read. The session opens the Repository of the
+/// settings `opened` holds, if any, then takes `save`.
+fn session_taking(name: &str, opened: Option<RepositorySettings>, save: SettingsSave) -> TookSave {
+    let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&me()).unwrap();
     let stored = vec![stored_pr(8, "some-author", "4567def")];
@@ -1781,23 +1833,80 @@ fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
         .save_filter_results(&gcmon(), &bugs_query(), found)
         .unwrap();
     store.close();
+    let (board, changes) = board_hearing_settings();
     let (mirrors, heard) = HeardRequests::new();
     let connections = Connections {
         github: offline(),
         mirrors,
     };
-    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
-    session.fetching().sync(bugs_switched(OnWorkbench::Off));
-    session
-        .fetching()
-        .settings_changed(bugs_switched(OnWorkbench::On), SavedBy::Window);
-    let handed = heard.asked_through("wants heads #8", PLENTY);
+    if let Some(opened) = opened {
+        session.fetching().sync(opened);
+    }
+    session.fetching().settings_changed(save);
     session.stop(PLENTY);
 
+    let store = Store::open(&folders.database()).unwrap();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    store.close();
+    TookSave {
+        handed: heard.asked(),
+        owed,
+        announced: changes.try_iter().collect(),
+    }
+}
+
+const HEADS_OF_8: &str = "some-maintainer/gcmon wants heads #8 at 4567def on main";
+
+#[test]
+fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
+    let took = session_taking(
+        "switched-session",
+        Some(bugs_switched(OnWorkbench::Off)),
+        bugs_saved(OnWorkbench::On, SavedBy::Window),
+    );
+
     assert!(
-        handed.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
-        "{handed:?}"
+        took.handed.contains(&HEADS_OF_8.to_owned()),
+        "{:?}",
+        took.handed
+    );
+    assert_eq!(took.owed, [8].into());
+}
+
+#[test]
+fn a_filter_a_hand_edit_switches_on_in_a_repository_not_opened_owes_reads_quietly() {
+    // As the first change since launch, which the settings owner hands over with the settings it replaced.
+    let took = session_taking(
+        "hand-edit-unopened",
+        None,
+        bugs_saved(OnWorkbench::On, SavedBy::HandEdit),
+    );
+
+    assert_eq!(took.owed, [8].into());
+    assert!(
+        took.handed.contains(&HEADS_OF_8.to_owned()),
+        "{:?}",
+        took.handed
+    );
+    // The window lists none of gcmon's items, as it hasn't opened gcmon since launch.
+    assert_eq!(took.announced, []);
+}
+
+#[test]
+fn a_repository_a_hand_edit_adds_owes_no_reads() {
+    let took = session_taking(
+        "hand-edit-added",
+        None,
+        saved_new(bugs_switched(OnWorkbench::On), SavedBy::HandEdit),
+    );
+
+    assert_eq!(took.owed, BTreeSet::new());
+    assert!(
+        took.handed.iter().all(|line| !line.contains("#8")),
+        "{:?}",
+        took.handed
     );
 }
 

@@ -1261,10 +1261,17 @@ fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwi
     );
     let owner = SettingsOwner::start(Ok(files));
     let (sent, incoming) = mpsc::channel();
-    owner.tell_session(Box::new(move |settings: RepositorySettings, by| {
-        let switch = settings.filters[0].on_workbench;
-        sent.send((settings.name.to_string(), settings.conventions, switch, by))
-            .unwrap();
+    let said =
+        |settings: &RepositorySettings| (settings.conventions, settings.filters[0].on_workbench);
+    owner.tell_session(Box::new(move |save: SettingsSave| {
+        let replaced = save.replaced.as_ref().map(said);
+        sent.send((
+            save.saved.name.to_string(),
+            said(&save.saved),
+            replaced,
+            save.by,
+        ))
+        .unwrap();
     }));
 
     drop(owner.save_panes(PaneLayout::default()).unwrap());
@@ -1287,19 +1294,20 @@ fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwi
 
     let told: Vec<_> = incoming.try_iter().collect();
     assert_ne!(edited, file, "{file}");
+    // The first change replaced the settings the files held at launch, which the session never heard.
     assert_eq!(
         told,
         [
             (
                 "a/b".to_owned(),
-                Conventions::Github,
-                OnWorkbench::On,
+                (Conventions::Github, OnWorkbench::On),
+                Some((Conventions::Github, OnWorkbench::Off)),
                 SavedBy::Window
             ),
             (
                 "a/b".to_owned(),
-                Conventions::Cpython,
-                OnWorkbench::On,
+                (Conventions::Cpython, OnWorkbench::On),
+                Some((Conventions::Github, OnWorkbench::On)),
                 SavedBy::HandEdit
             ),
         ]

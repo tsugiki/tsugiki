@@ -98,9 +98,9 @@ impl Calls {
         let view = calls.settings.view();
         calls.start(&view);
         let fetching = calls.fetching.clone();
-        calls.settings.tell_session(Box::new(move |repository, by| {
-            fetching.settings_changed(repository, by);
-        }));
+        calls
+            .settings
+            .tell_session(Box::new(move |save| fetching.settings_changed(save)));
         for repository in &view.loaded.settings.repositories {
             let source = view.mirror_sources.get(&repository.name).cloned();
             calls.fetching.clone_mirror(repository.name.clone(), source);

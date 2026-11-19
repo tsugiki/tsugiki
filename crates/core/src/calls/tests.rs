@@ -103,11 +103,14 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
     (messages.try_iter())
         .filter_map(|message| match message {
             SessionMessage::Sync { repository } => Some(format!("sync {}", repository.name)),
-            SessionMessage::SettingsChanged(repository, by) => {
-                let filters = repository.filters.len();
+            SessionMessage::SettingsChanged(save) => {
+                let filters = |settings: &RepositorySettings| settings.filters.len();
+                let replaced = save.replaced.as_ref().map(filters);
                 Some(format!(
-                    "{} saved by {by:?}, {filters} Filter",
-                    repository.name
+                    "{} saved by {:?}, {} Filter in place of {replaced:?}",
+                    save.saved.name,
+                    save.by,
+                    filters(&save.saved)
                 ))
             }
             SessionMessage::Fetch(_)
@@ -140,8 +143,10 @@ fn the_handle_syncs_the_open_repository_and_clones_its_mirror_first_and_hands_th
 
     let calls = Calls::launched(fetching, db.reader.clone(), parts);
     let at_launch = (synced_and_saved(&session), heard.clones());
+    // The first hand edit since launch gives c/d a Filter, and adds e/f.
     let filter = "\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n";
-    fs::write(folders.settings_file(), format!("{two}{filter}")).unwrap();
+    let added = "\n[[repositories]]\nname = \"e/f\"\n";
+    fs::write(folders.settings_file(), format!("{two}{filter}{added}")).unwrap();
     let reread = calls.reread_settings().map(|loaded| loaded.problems.len());
     let after_edit = synced_and_saved(&session);
     db.close();
@@ -155,7 +160,14 @@ fn the_handle_syncs_the_open_repository_and_clones_its_mirror_first_and_hands_th
         "the open one's clone goes next"
     );
     assert_eq!(reread.unwrap(), 0, "no problems in the files");
-    assert_eq!(after_edit, ["c/d saved by HandEdit, 1 Filter"]);
+    // A Repository without Filters reads as having the two starter Filters.
+    assert_eq!(
+        after_edit,
+        [
+            "c/d saved by HandEdit, 1 Filter in place of Some(2)",
+            "e/f saved by HandEdit, 2 Filter in place of None",
+        ]
+    );
 }
 
 #[test]

@@ -29,6 +29,17 @@ pub enum SavedBy {
     HandEdit,
 }
 
+/// A save that changed a Repository's settings, as the settings owner hands it to the session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsSave {
+    /// The settings the save replaced, or none for a Repository the save added.
+    pub replaced: Option<RepositorySettings>,
+    /// The settings the save wrote.
+    pub saved: RepositorySettings,
+    /// The window or the hand edit that saved them.
+    pub by: SavedBy,
+}
+
 /// A Repository the user added, as `settings.toml` holds it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(from = "RepositoryInFile")]

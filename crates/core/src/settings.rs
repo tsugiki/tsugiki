@@ -29,7 +29,9 @@ use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::repository::RepositoryName;
-use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings, SavedBy};
+use crate::repository_settings::{
+    NameCheck, RepositoryCheck, RepositorySettings, SavedBy, SettingsSave,
+};
 use crate::theme::{
     GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
 };
@@ -1325,9 +1327,9 @@ pub struct SettingsOwner {
     commands: LatestReader<Vec<CommandId>>,
 }
 
-/// Where the owner's thread hands each Repository's settings a change saves otherwise: the session's queue,
-/// which `fetching`, above this module, owns.
-pub type SettingsSink = Box<dyn FnMut(RepositorySettings, SavedBy) + Send>;
+/// Where the owner's thread hands each Repository's settings a change saves otherwise, with those they
+/// replaced: the session's queue, which `fetching`, above this module, owns.
+pub type SettingsSink = Box<dyn FnMut(SettingsSave) + Send>;
 
 /// What the owner's thread is asked.
 enum Request {
@@ -1547,10 +1549,10 @@ impl SettingsOwner {
         self.commands.get()
     }
 
-    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with what
-    /// saved them: from the owner's thread, before it answers, in the order the changes saved. So no copy a
-    /// command read earlier can reach the session after a newer one, and a hand edit reaches it whichever
-    /// change reloaded the files first (#822).
+    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with those
+    /// they replaced and what saved them: from the owner's thread, before it answers, in the order the
+    /// changes saved. So no copy a command read earlier can reach the session after a newer one, and a hand
+    /// edit reaches it whichever change reloaded the files first (#822).
     pub fn tell_session(&self, session: SettingsSink) {
         let _sent = self.requests.send(Request::Session(session));
     }
@@ -1680,8 +1682,9 @@ impl SettingsOwner {
     }
 }
 
-/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, and keeps them as
-/// told.
+/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, with what `told`
+/// held of it, and keeps them as told. `told` starts as what the files said at launch, which the session
+/// never heard, so the first save of a Repository's settings comes with those it replaced too.
 fn tell_session(
     session: &mut SettingsSink,
     told: &mut Vec<RepositorySettings>,
@@ -1690,7 +1693,12 @@ fn tell_session(
 ) {
     for repository in repositories {
         if !told.contains(repository) {
-            session(repository.clone(), by);
+            let replaced = told.iter().find(|held| held.name.is_same(&repository.name));
+            session(SettingsSave {
+                replaced: replaced.cloned(),
+                saved: repository.clone(),
+                by,
+            });
         }
     }
     repositories.clone_into(told);

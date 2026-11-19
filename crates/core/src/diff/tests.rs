@@ -446,6 +446,40 @@ fn a_prs_news_entries_come_rendered_from_its_head() {
 }
 
 #[test]
+fn a_news_entry_whose_path_has_a_line_break_leaves_the_others_their_text() {
+    let first = "Misc/NEWS.d/next/Library/2026-11-07-10-00-00.gh-issue-1.First.rst";
+    let last = "Misc/NEWS.d/next/Library/2026-11-07-11-00-00.gh-issue-3.Last.rst";
+    let mirrored = Mirrored::with("news-line-break", |work| {
+        fs::write(work.join(first), "First.\n").unwrap();
+        fs::write(work.join(last), "Last.\n").unwrap();
+    });
+    let read = mirrored.read();
+    let entry = |path: &str| {
+        (read.diff.files().iter())
+            .find(|file| file.path == path)
+            .unwrap()
+            .clone()
+    };
+    let mut broken = entry(first);
+    // Its second line names the first entry, which git would read in the place of the last.
+    broken.path = format!(
+        "Misc/NEWS.d/next/Library/2.gh-issue-2.rst\n{}:{first}",
+        mirrored.head.as_str()
+    );
+    let files = [entry(first), broken, entry(last)];
+
+    let entries = news(&mirrored.mirror, &mirrored.head, &files);
+
+    assert_eq!(
+        entries,
+        [
+            NewsEntry::render(first, "First.\n"),
+            NewsEntry::render(last, "Last.\n"),
+        ]
+    );
+}
+
+#[test]
 fn a_pr_without_news_entries_has_none() {
     let mirrored = Mirrored::new("no-news");
 

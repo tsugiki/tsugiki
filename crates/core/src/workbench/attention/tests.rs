@@ -196,6 +196,11 @@ impl World {
         self.lists(&WorkbenchView::Whole, number)
     }
 
+    /// The items `view` folds at its end behind "Show N muted" (#824), in its order.
+    fn folded_in(&self, view: &WorkbenchView) -> Vec<u32> {
+        numbers(&self.view(view).muted)
+    }
+
     /// The reasons item `number` Needs attention, as `view` lists it.
     fn why_in(&self, view: &WorkbenchView, number: u32) -> Vec<Why> {
         let listed = listed_at(&self.view(view), number);
@@ -236,7 +241,7 @@ impl World {
         pull_request
     }
 
-    /// The Review request on `pull_request` ends, and fails unless Review requests and "Involved" drop it.
+    /// The Review request on `pull_request` ends, and fails unless Review requests drop it.
     fn request_ends(&self, pull_request: PullRequestFacts) {
         self.has(vec![PullRequestFacts {
             review_requests: vec![],
@@ -244,7 +249,6 @@ impl World {
             ..pull_request
         }]);
         assert!(!self.lists(&WorkbenchView::ReviewRequests, 1));
-        assert!(!self.lists(&filter(involved()), 1));
     }
 }
 

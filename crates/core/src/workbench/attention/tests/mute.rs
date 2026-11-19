@@ -108,8 +108,43 @@ fn an_assignment_that_stood_at_the_mute_lists_the_issue_muted_in_its_filter_only
     assert!(world.lists_muted(&filter(involved()), 5));
     assert!(!world.lists(&WorkbenchView::ReviewRequests, 5));
 
+    assert_eq!(world.count_of(&involved()), 0);
+
     world.has_issues(vec![issue(5)]);
     assert!(!world.lists(&filter(involved()), 5));
+    assert_eq!(world.folded_in(&filter(involved())), [5]);
+    world.finish();
+}
+
+#[test]
+fn a_filters_view_folds_the_muted_items_nobody_asks_the_user_about_at_its_end() {
+    let world = World::new("mute-filter-folds");
+    world.has(vec![own(1), own(2), own(3)]);
+    world.found(&mine(), &[1, 2, 3]);
+    world.found(&involved(), &[1, 2, 3]);
+
+    world.mute(1);
+    world.mute(3);
+
+    assert_eq!(numbers(&world.view(&filter(mine())).items), [2]);
+    for view in [filter(mine()), filter(involved())] {
+        assert_eq!(world.folded_in(&view), [3, 1], "by last update in {view:?}");
+        let workbench = world.view(&view);
+        let muted = workbench.muted.iter();
+        assert!(
+            muted
+                .clone()
+                .all(|listed| listed.hidden == Some(Hidden::Muted))
+        );
+        assert!(muted.clone().all(|listed| listed.attention.is_none()));
+    }
+    assert_eq!(world.count_of(&involved()), 1);
+    assert!(!world.on_workbench(1));
+    assert_eq!(world.folded_in(&WorkbenchView::Whole), Vec::<u32>::new());
+    assert_eq!(
+        world.folded_in(&WorkbenchView::ReviewRequests),
+        Vec::<u32>::new()
+    );
     world.finish();
 }
 
@@ -121,6 +156,7 @@ fn a_review_request_after_the_mute_shows_the_item_on_the_workbench_with_only_tha
     world.has_issues(vec![issue(5)]);
     world.happened(5, vec![comment(&me(), hours_ago(9))]);
     world.found(&involved(), &[5]);
+    world.found(&mine(), &[5]);
     world.mute_in(&filter(involved()), 5);
     assert!(!world.on_workbench(5));
 
@@ -138,6 +174,8 @@ fn a_review_request_after_the_mute_shows_the_item_on_the_workbench_with_only_tha
     assert_eq!(world.why(5), [Why::ReviewRequested]);
     assert_eq!(world.since(5), asked);
     assert_eq!(world.workbench().count, 1);
+    assert_eq!(world.count_of(&mine()), 1, "Mine is on the Workbench");
+    assert_eq!(world.count_of(&involved()), 0, "Involved is off it");
 
     world.has(vec![PullRequestFacts {
         updated_at: hours_ago(0),
@@ -145,6 +183,7 @@ fn a_review_request_after_the_mute_shows_the_item_on_the_workbench_with_only_tha
     }]);
     assert!(!world.on_workbench(5));
     assert!(!world.lists(&filter(involved()), 5));
+    assert_eq!(world.count_of(&mine()), 0);
     world.finish();
 }
 

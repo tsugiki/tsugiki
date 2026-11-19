@@ -2575,6 +2575,23 @@ it("says a Muted row is Muted, where Q, Shift+Q and E do nothing and M unmutes i
   expect(core.unmute).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key);
 });
 
+it("folds the Muted items at the list's end behind a line that shows and hides them", async () => {
+  const muted = { ...standalone, attention: null, hidden: "muted" };
+  core.workbench.mockResolvedValue(workbenchPage([], { muted: [muted] }));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  const fold = await screen.findByRole("button", { name: "Show 1 muted" });
+  const folded = screen.queryByRole("button", { name: "#5 Alone" });
+  const empty = screen.queryByText(/^Nothing here yet/);
+  await fireEvent.click(fold);
+  const shown = screen.getByRole("list", { name: "Muted items" });
+
+  expect([folded, empty, fold.getAttribute("aria-expanded")]).toEqual([null, null, "true"]);
+  expect(within(shown).getByRole("button", { name: "#5 Alone" })).toBeTruthy();
+  await fireEvent.click(screen.getByRole("button", { name: "Hide 1 muted" }));
+  expect(screen.queryByRole("button", { name: "#5 Alone" })).toBeNull();
+});
+
 it("offers no Mark Seen in the view of a PR whose item is Muted, as the view says, listed or not", async () => {
   core.pullRequest.mockResolvedValue({ status: "ok", data: { ...row, content: null, hidden: "muted" } });
   const { treeRow } = await listing();

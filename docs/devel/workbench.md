@@ -21,6 +21,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   wanting the heads of the PRs it alone reached, and the refresh reads none of them ahead.
 - A Filter's view goes by its search, so a Repository holds one Filter for each search: of two with the
   same search, Tsugiki reads the first.
+- A Filter's view lists everything its search found, switched on or off, as a mail client's search finds
+  archived and muted mail ([#824](https://github.com/tsugiki/tsugiki/issues/824)). An Archived item stays in
+  its place, marked Archived and not needing attention. Muted items, and those of **Muted authors**, go at
+  the end in a fold, "Show 4 muted", which a click opens and "Hide 4 muted" closes, and each view keeps
+  its fold open or closed while the Repository stays open. The cursor goes into the fold only while it
+  shows, and putting the cursor on an item in it, as going back to it does, opens it. A Muted item stays
+  in its place, marked Muted, while a Review request or an assignment to the user stands in its tree, as
+  Mute below says. The Filter's count leaves out its Archived and Muted items, and a Filter switched on
+  brings none of them onto the Workbench. Reach stays as Mute and Archive below say.
 - Adding a Repository, Maintained or not, creates two starter Filters, ordinary ones the user can edit or
   delete: "Mine" (`is:open author:@me`), switched on, and "Involved" (`is:open involves:@me -author:@me`),
   switched off. Repositories added before the switch keep their Filters, switched off, and so does a
@@ -43,8 +52,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Every row in every Issue list has an Issue or PR icon coloured by state.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
-  many items its search found, as its view lists them. For Stale reviews, it is how many PRs the view holds,
-  and for Review requests and Archived, how many items. The Inbox has no count.
+  many items its search found, as its view lists them, less the Archived and Muted ones. For Stale reviews,
+  it is how many PRs the view holds, and for Review requests and Archived, how many items. The Inbox has no
+  count.
 - **Built-in views**: Stale reviews, New activity, Review requests, Archived (the Archived items, the last
   archived first, each with Unarchive) and Muted (the Muted items with Unmute, then the Muted authors in this
   Repository and the items they hide, with Unmute author).
@@ -79,13 +89,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Hiding, all kept in Tsugiki only:
   - **Archive** puts an item away until something new needs attention there: an Issue, a Standalone PR or
     a Standalone Backport. It marks the item seen as Mark Seen does, across an Issue's whole tree, so a
-    comment from before it brings nothing back. The item leaves the Workbench, the Filters, the Inbox and
-    the Built-in views, and their counts, apart from a PR whose Review request stood at the archive: the
-    Review requests view and each Filter that matches it list it, marked Archived and not needing attention,
-    until the request ends. A Review request, failed CI or a comment that needs attention after the archive
-    brings the item back, no longer Archived, and Mark Seen then leaves it back; New activity that doesn't
-    need attention, as on an Issue the user only follows, leaves it put away, and so does Mark Seen on an
-    item the window shows Archived. Mark Unseen unarchives it.
+    comment from before it brings nothing back. The item leaves the Workbench, the Inbox and the Built-in
+    views, and their counts and the Filters' counts, apart from a PR whose Review request stood at the
+    archive: the Review requests view lists it, marked Archived and not needing attention, until the request
+    ends. Each Filter that matches it lists it in its place, marked Archived. A Review request, failed CI or
+    a comment that needs attention after the archive brings the item back, no longer Archived, and Mark Seen
+    then leaves it back; New activity that doesn't need attention, as on an Issue the user only follows,
+    leaves it put away, and so does Mark Seen on an item the window shows Archived. Mark Unseen unarchives
+    it.
     Tsugiki keeps it per Repository under a key that names the item, its kind and number, which Mute
     shares, with the moment the user put it away. The Archived view lists the items the last archived first:
     archiving an item again moves it to the top, and Mark Seen on it there leaves it in its place.
@@ -113,14 +124,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     update of its PRs.
   - **Mute** hides an item until the user unmutes it: an Issue, a Standalone PR or a Standalone Backport.
     It leaves the lists and counts an Archived item leaves, the Archived view too, whatever happens to it
-    later. Mute marks the item seen as Archive does and clears Marked unseen, and on a Muted item Mark Seen
-    and Mark Unseen do nothing. Only someone asking the user by name gets through. While a Review request
-    or an assignment to the user that stood at the mute stands, each Filter that matches the item lists it,
-    marked Muted and not needing attention, and so does the Review requests view for a PR. While one that
-    started after the mute stands, the Workbench lists the item too, marked Muted, Needing attention for that
-    alone, until the request or the assignment ends. An assignment's start is the newest the Issue's or PR's
-    timeline holds; one the timeline no longer holds counts as from before the mute. Tsugiki keeps Muted
-    items per Repository under Archive's key.
+    later, and each Filter that matches it lists it in the fold at the end of its view. Mute marks the item
+    seen as Archive does and clears Marked unseen, and on a Muted item Mark Seen and Mark Unseen do nothing.
+    Only someone asking the user by name gets through. While a Review request or an assignment to the user
+    that stood at the mute stands, each Filter that matches the item lists it in its place, marked Muted and
+    not needing attention, and so does the Review requests view for a PR. While one that started after the
+    mute stands, the Workbench lists the item too, marked Muted, Needing attention for that alone, until the
+    request or the assignment ends. An assignment's start is the newest the Issue's or PR's timeline holds;
+    one the timeline no longer holds counts as from before the mute. Tsugiki keeps Muted items per
+    Repository under Archive's key.
   - A Muted item's tree leaves **Reach** while nobody asks the user about it
     ([#918](https://github.com/tsugiki/tsugiki/issues/918)): the Mirror fetches none of its heads and
     Tsugiki reads ahead none of its Conversations, so opening one of its PRs from the Issue view or the
@@ -131,7 +143,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     their heads. An Archived item stays in Reach, a closed one too.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened
-    still shows when another PR in it needs attention or a Filter matches it.
+    still shows when another PR in it needs attention or a Filter matches it. A Filter's view lists their
+    Issues and Standalone PRs in its fold of Muted items.
 
 ## Issue tree
 

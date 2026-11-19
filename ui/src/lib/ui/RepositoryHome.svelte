@@ -1334,7 +1334,7 @@
         {/if}
       </header>
       {@render problems()}
-      {#if workbench.items?.length === 0}
+      {#if workbench.items?.length === 0 && workbench.muted.length === 0}
         <p>{EMPTY[workbench.selected.kind]}</p>
       {:else if workbench.items}
         <!-- The Inbox can hold every open item the cache does, so the browser draws only its rows on
@@ -1344,6 +1344,22 @@
             {@render listed(item)}
           {/each}
         </ul>
+        <!-- A Filter's view folds the Muted items nobody asks the user about at its end (#824). -->
+        {#if workbench.muted.length > 0}
+          <button
+            class="link muted-fold"
+            aria-expanded={workbench.mutedShown}
+            onclick={() => workbench.toggleMuted()}
+            >{`${workbench.mutedShown ? "Hide" : "Show"} ${String(workbench.muted.length)} muted`}</button
+          >
+          {#if workbench.mutedShown}
+            <ul aria-label="Muted items">
+              {#each workbench.muted as item (item.number)}
+                {@render listed(item)}
+              {/each}
+            </ul>
+          {/if}
+        {/if}
       {/if}
     </section>
     {#if detail}
@@ -1632,6 +1648,14 @@
   /* The empty view's words and the problems line up with the header. */
   .list > p {
     margin: 8px 10px;
+  }
+
+  /* The line the Muted items fold into, which lines up with the items' headlines. */
+  .muted-fold {
+    display: block;
+    padding: 7px 10px 7px 15px;
+    font-size: 12px;
+    color: var(--fg-muted);
   }
 
   /* Windows' contrast themes draw every border in their own colour, the clear ones too, and drop the

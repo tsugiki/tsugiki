@@ -341,6 +341,53 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("folds a Filter's Muted items at the list's end, where the cursor goes only while they show", async () => {
+    catchChanged();
+    const muted: ListedItem = { ...item(5), hidden: "muted" };
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([item(3)], { muted: [muted], filters: [mine] }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const stop = { number: 5, kind: "pull_request" as const, issue: undefined };
+
+    state.moveCursor(1);
+    state.moveCursor(1);
+    const folded = [state.mutedShown, state.cursor?.number, state.lists(stop), state.titleOf(5)];
+    state.toggleMuted();
+    state.moveCursor(1);
+    const shown = [state.mutedShown, state.cursor?.number];
+    const acts = [state.hiddenHolding(stop, "muted"), state.hidingBy(stop)?.key, state.seenOf(stop)];
+    state.toggleMuted();
+
+    expect(folded).toEqual([false, 3, true, "PR 5"]);
+    expect(shown).toEqual([true, 5]);
+    expect(acts).toEqual([muted.key, muted.key, muted.seen]);
+    expect([state.mutedShown, state.cursor?.number]).toEqual([false, 3]);
+    state.stop();
+  });
+
+  it("shows the folded Muted items to put the cursor on one, and each view keeps its own fold", async () => {
+    catchChanged();
+    const muted: ListedItem = { ...item(5), hidden: "muted" };
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([item(3)], { muted: [muted], filters: [mine] }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    state.moveTo({ number: 5, kind: "pull_request", issue: undefined });
+    const shown = [state.mutedShown, state.underCursor?.number];
+    state.moveTo({ number: 3, kind: "pull_request", issue: undefined });
+    await state.select(onlyMine);
+    const inFilter = state.mutedShown;
+    await state.select(whole);
+
+    expect(shown).toEqual([true, 5]);
+    expect([inFilter, state.mutedShown]).toEqual([false, true]);
+    state.stop();
+  });
+
   it("follows a PR to its new line when a change puts it under an Issue", async () => {
     const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
@@ -421,6 +468,103 @@ describe("WorkbenchState", () => {
     await reload(6);
 
     expect(state.underCursor, "it left for another reason, as a closed item does").toBeUndefined();
+    state.stop();
+  });
+
+  it("lands the cursor after a muted item once it goes into a Filter's folded Muted items, which stay folded", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.mute).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6, 7));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+
+    await state.mute({ key: item(5).key, mark: item(5).seen.mark });
+    const page = workbenchPage([6, 7].map(item), { muted: [{ ...item(5), hidden: "muted" }] });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(page);
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6, 7]);
+    });
+
+    expect([state.cursor?.number, state.mutedShown]).toEqual([6, false]);
+    state.stop();
+  });
+
+  it("lands the cursor after a muted item with the Muted items shown, and closes them once they empty", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.mute).mockResolvedValue(done);
+    const muted = (number: number): ListedItem => ({ ...item(number), hidden: "muted" });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(
+      workbenchPage([5, 6].map(item), { muted: [muted(9)] }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.toggleMuted();
+    state.moveCursor(1);
+    const answer = async (listed: number[], folded: number[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(
+        workbenchPage(listed.map(item), { muted: folded.map(muted) }),
+      );
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.muted.map((one) => one.number)).toEqual(folded);
+      });
+    };
+
+    await state.mute({ key: item(5).key, mark: item(5).seen.mark });
+    await answer([6], [5, 9]);
+    const muting = [state.cursor?.number, state.mutedShown];
+    await answer([5, 6, 9], []);
+    await answer([5, 6], [9]);
+
+    expect(muting).toEqual([6, true]);
+    expect(state.mutedShown).toBe(false);
+    state.stop();
+  });
+
+  it("lands the cursor after an item a change puts into the folded Muted items, and leaves them folded", async () => {
+    const { send } = catchChanged();
+    const landed = vi.fn();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    state.moveCursor(1);
+    const page = workbenchPage([item(6)], { muted: [{ ...item(5), hidden: "muted" }] });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(page);
+
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6]);
+    });
+
+    expect([state.cursor?.number, state.mutedShown, landed.mock.calls.length]).toEqual([6, false, 1]);
+    state.stop();
+  });
+
+  it("forgets an archive whose item a Filter's view keeps listing, Archived", async () => {
+    const { send } = catchChanged();
+    const landed = vi.fn();
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([5, 6].map(item)));
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    state.moveCursor(1);
+    const reload = async (...listed: ListedItem[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage(listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.items).toEqual(listed);
+      });
+    };
+
+    await state.archive({ key: item(5).key, mark: item(5).seen.mark });
+    await reload({ ...item(5), hidden: "archived" }, item(6));
+    const kept = state.underCursor?.number;
+    await reload(item(6));
+
+    expect(kept).toBe(5);
+    expect([state.underCursor, landed.mock.calls.length]).toEqual([undefined, 0]);
     state.stop();
   });
 

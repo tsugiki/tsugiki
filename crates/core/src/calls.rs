@@ -32,7 +32,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use crate::session::Session;
 use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, SettingsView};
-use crate::status::HeadUnread;
+use crate::status::ItemUnread;
 use crate::store::StoreReader;
 use crate::work::SeenMark;
 use crate::workbench::inbox::{Inbox, InboxPage};
@@ -516,7 +516,7 @@ pub enum PrFiles {
         fetch: Queued,
     },
     /// Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`.
-    Unread { why: HeadUnread },
+    Unread { why: ItemUnread },
     /// The diff, whose rows the window asks for by number.
     Ready {
         #[serde(flatten)]

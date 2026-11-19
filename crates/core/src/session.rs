@@ -25,7 +25,7 @@ use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
-use crate::status::{Change, FailedRead, HeadUnread, LastSync, ReadFailure, Status, StatusBoard};
+use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
     ReaderToOpen, Store, StoreReader,
@@ -256,16 +256,16 @@ impl Refreshes {
         );
     }
 
-    /// Tells the window that the read of `fetched` failed for `why`, a failure of this one read or for want
-    /// of a token. For a PR, it first tells the Files tab, which asks again once the window hears and finds
-    /// why, and ends the Mirror worker's await of the head, which no read answers until the next.
-    fn read_failed(&self, board: &mut StatusBoard, fetched: &Fetched, why: ReadFailure) {
+    /// Tells the window that the read of `fetched` failed for `why`. For a PR, it first tells the Files tab,
+    /// which asks again once the window hears and finds why, and ends the Mirror worker's await of the head,
+    /// which no read answers until the next.
+    fn read_failed(&self, board: &mut StatusBoard, fetched: &Fetched, why: ItemUnread) {
         let item = fetched.item();
-        if let (Fetched::PullRequest(_), Some(unread)) = (fetched, HeadUnread::of(why)) {
-            self.headless.note(item, NoHead::Unread(unread));
+        if let Fetched::PullRequest(_) = fetched {
+            self.headless.note(item, NoHead::Unread(why));
             (self.fetching).no_head(item.repository.clone(), item.number);
         }
-        board.failed_read(&failed(item, why));
+        board.failed_read(&failed(item, why.into()));
     }
 
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
@@ -284,7 +284,7 @@ impl Refreshes {
                     keep_patches(board, store, &repository, patches);
                 }
                 SessionMessage::Fetch(fetched) => {
-                    self.read_failed(board, &fetched, ReadFailure::NoToken);
+                    self.read_failed(board, &fetched, ItemUnread::NoToken);
                 }
                 SessionMessage::Check { .. }
                 | SessionMessage::Sync { .. }
@@ -1030,7 +1030,7 @@ fn ask_github(
     board: &mut StatusBoard,
     github: &GitHub,
     fetched: &Fetched,
-) -> Result<Result<Content, ReadFailure>, Error> {
+) -> Result<Result<Content, ItemUnread>, Error> {
     let item = fetched.item();
     let (noun, read) = match fetched {
         Fetched::Issue(_) => {
@@ -1051,9 +1051,9 @@ fn ask_github(
         }
         Err(problem) => {
             let why = if matches!(problem.kind, ErrorKind::NotFound) {
-                ReadFailure::NotOnGitHub
+                ItemUnread::NotOnGitHub
             } else {
-                ReadFailure::Other
+                ItemUnread::Other
             };
             log::warn!(
                 "Tsugiki couldn't read {noun} #{} in {}: {}",

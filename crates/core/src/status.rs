@@ -69,28 +69,27 @@ pub enum ReadFailure {
     Other,
 }
 
-/// The reason a read of a PR's Conversation, which names the head its Files tab waits for, failed: a
-/// `ReadFailure` less `WaitsOnGitHub`, which leaves the tab waiting for the read once GitHub answers.
+/// The reason a read of what an Issue or a PR says failed for this item, which the session's next read of
+/// it may mend: a `ReadFailure` less `WaitsOnGitHub`, which speaks for all of GitHub. A PR's Files tab that
+/// waits for the head the Conversation names shows it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
-pub enum HeadUnread {
-    /// Tsugiki has no token, so no read brings the head until it starts again.
+pub enum ItemUnread {
+    /// Tsugiki has no token, so no read brings the item until it starts again.
     NoToken,
-    /// GitHub has no such PR, or the token can't see it.
+    /// GitHub has no such item, or the token can't see it.
     #[serde(rename = "not_on_github")]
     NotOnGitHub,
     /// Anything else that went wrong with this one read. The log says what it was.
     Other,
 }
 
-impl HeadUnread {
-    /// The reason for `why`, or nothing for a failure that speaks for all of GitHub.
-    pub(crate) fn of(why: ReadFailure) -> Option<Self> {
+impl From<ItemUnread> for ReadFailure {
+    fn from(why: ItemUnread) -> Self {
         match why {
-            ReadFailure::NoToken => Some(Self::NoToken),
-            ReadFailure::WaitsOnGitHub => None,
-            ReadFailure::NotOnGitHub => Some(Self::NotOnGitHub),
-            ReadFailure::Other => Some(Self::Other),
+            ItemUnread::NoToken => Self::NoToken,
+            ItemUnread::NotOnGitHub => Self::NotOnGitHub,
+            ItemUnread::Other => Self::Other,
         }
     }
 }

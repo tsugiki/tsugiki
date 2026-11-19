@@ -1130,18 +1130,6 @@ export type HeadLine = {
 };
 
 /**
- *  The reason a read of a PR's Conversation, which names the head its Files tab waits for, failed: a
- *  `ReadFailure` less `WaitsOnGitHub`, which leaves the tab waiting for the read once GitHub answers.
- */
-export type HeadUnread = 
-/**  Tsugiki has no token, so no read brings the head until it starts again. */
-"no_token" | 
-/**  GitHub has no such PR, or the token can't see it. */
-"not_on_github" | 
-/**  Anything else that went wrong with this one read. The log says what it was. */
-"other";
-
-/**
  *  Sent when the mirror's worker stopped fetching PR heads it didn't bring, so a Files tab waiting for one
  *  says why and offers to try again (#233, #213).
  */
@@ -1600,6 +1588,19 @@ export type IssueView_Serialize = {
  *  Dependency updates join it as a kind of their own.
  */
 export type ItemKey = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
+
+/**
+ *  The reason a read of what an Issue or a PR says failed for this item, which the session's next read of
+ *  it may mend: a `ReadFailure` less `WaitsOnGitHub`, which speaks for all of GitHub. A PR's Files tab that
+ *  waits for the head the Conversation names shows it.
+ */
+export type ItemUnread = 
+/**  Tsugiki has no token, so no read brings the item until it starts again. */
+"no_token" | 
+/**  GitHub has no such item, or the token can't see it. */
+"not_on_github" | 
+/**  Anything else that went wrong with this one read. The log says what it was. */
+"other";
 
 /**
  *  The jumps in a PR's diff while recording: each scroll that showed rows the window didn't hold, until
@@ -2375,7 +2376,7 @@ export type PrFiles_Deserialize =
 /**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
 ({ state: "finding_head" }) & { why?: never } | 
 /**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
-{ state: "unread"; why: HeadUnread } | 
+{ state: "unread"; why: ItemUnread } | 
 /**  The diff, whose rows the window asks for by number. */
 {
 	state: "ready",
@@ -2397,7 +2398,7 @@ export type PrFiles_Serialize =
 /**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
 ({ state: "finding_head" }) & { why?: never } | 
 /**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
-{ state: "unread"; why: HeadUnread } | 
+{ state: "unread"; why: ItemUnread } | 
 /**  The diff, whose rows the window asks for by number. */
 {
 	state: "ready",

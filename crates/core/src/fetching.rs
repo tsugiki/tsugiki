@@ -24,7 +24,7 @@ use crate::mirror_source::MirrorSource;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
-use crate::status::HeadUnread;
+use crate::status::ItemUnread;
 use crate::work::SeenMark;
 
 pub(crate) const NOT_CONNECTED: &str =
@@ -224,7 +224,7 @@ pub(crate) enum NoHead {
     /// GitHub answered, and the Conversation named no head commit.
     Unnamed,
     /// The read failed, and no read until the next one the session makes would bring the head.
-    Unread(HeadUnread),
+    Unread(ItemUnread),
 }
 
 /// The PRs whose Conversation, as the session last read it since launch, left them with no head, and whose

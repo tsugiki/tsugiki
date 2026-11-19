@@ -26,7 +26,7 @@ use crate::settings::ListOrder;
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
-use crate::status::{Change, FailedRead, HeadUnread, ReadFailure};
+use crate::status::{Change, FailedRead, ItemUnread, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
@@ -896,10 +896,7 @@ fn a_failed_conversation_read_says_why_the_pr_has_no_head_until_a_read_names_one
     let unawaited = one.heard.asked();
     one.read(&pr_7());
 
-    assert_eq!(
-        after_failure,
-        Some(NoHead::Unread(HeadUnread::NotOnGitHub))
-    );
+    assert_eq!(after_failure, Some(NoHead::Unread(ItemUnread::NotOnGitHub)));
     assert_eq!(
         unawaited,
         [
@@ -1100,7 +1097,7 @@ fn a_pr_read_with_no_token_says_why_the_pr_has_no_head_before_the_window_hears()
     session.stop(PLENTY);
 
     assert_eq!(heard, item_7_failed(ReadFailure::NoToken));
-    assert_eq!(why, Some(NoHead::Unread(HeadUnread::NoToken)));
+    assert_eq!(why, Some(NoHead::Unread(ItemUnread::NoToken)));
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use super::testing::{handle, handle_with_headless, named};
 use super::*;
 use crate::facts::CommitSha;
-use crate::status::HeadUnread;
+use crate::status::ItemUnread;
 use crate::testing::cpython;
 
 fn head(number: u32) -> PrHead {
@@ -38,11 +38,11 @@ fn a_pr_holds_why_its_last_conversation_read_left_it_with_no_head() {
     };
 
     headless.note(&seven, NoHead::Unnamed);
-    headless.note(&seven, NoHead::Unread(HeadUnread::Other));
+    headless.note(&seven, NoHead::Unread(ItemUnread::Other));
 
     assert_eq!(
         fetching.why_no_head(&cpython(), 7),
-        Some(NoHead::Unread(HeadUnread::Other))
+        Some(NoHead::Unread(ItemUnread::Other))
     );
 }
 

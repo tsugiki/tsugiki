@@ -110,21 +110,6 @@ pub(crate) enum Marked {
 }
 
 impl Marked {
-    /// The Repository the mark is made in.
-    pub(crate) fn repository(&self) -> &RepositoryName {
-        match self {
-            Self::Seen { repository, .. }
-            | Self::Unseen { repository, .. }
-            | Self::Archived { repository, .. }
-            | Self::Unarchived { repository, .. }
-            | Self::Muted { repository, .. }
-            | Self::Unmuted { repository, .. } => repository,
-            Self::AuthorMuted { settings, .. } | Self::AuthorUnmuted { settings, .. } => {
-                &settings.name
-            }
-        }
-    }
-
     /// Archive on the item `key` names now, with the Mark Seen the window drew for it in `mark`, putting the
     /// item away as `put_away` says.
     fn archived(

@@ -101,7 +101,10 @@ fn a_muted_authors_items_leave_the_workbench_and_the_counts_and_fold_in_each_fil
 #[test]
 fn mute_author_marks_their_open_items_seen_and_leaves_the_closed_ones() {
     let world = World::new("mute-author-seen");
-    commented_on(&world, 1);
+    // One moment for the comment and the check, as a second can pass between two reads of the clock.
+    let commented = hours_ago(2);
+    world.has(vec![reviewed_by_me(1)]);
+    world.happened(1, vec![comment(&colleague(), commented)]);
     world.marked_unseen(1, hours_ago(1));
     let closed = PullRequestFacts {
         state: PrState::Closed,
@@ -114,7 +117,7 @@ fn mute_author_marks_their_open_items_seen_and_leaves_the_closed_ones() {
 
     world.mute_author(&colleague());
 
-    world.assert_seen_up_to(hours_ago(2));
+    world.assert_seen_up_to(commented);
     let last_seen = world
         .db
         .reader

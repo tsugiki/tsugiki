@@ -532,17 +532,20 @@ fn muted_authors(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<Vec<MutedAuthor>> {
-    let mut statement = connection.prepare(
-        "SELECT login, at FROM muted_authors WHERE repository = :repository ORDER BY login",
-    )?;
-    let rows = statement.query_map(named_params! { ":repository": repository }, |row| {
-        let UnixTime(at) = row.get("at")?;
-        Ok(MutedAuthor {
-            login: row.get("login")?,
-            at,
-        })
-    })?;
+    let query = "SELECT login, at FROM muted_authors WHERE repository = :repository ORDER BY login";
+    let mut statement = connection.prepare(query)?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, muted_author_in)?;
     rows.collect()
+}
+
+/// The Muted author in a row of `muted_authors`.
+fn muted_author_in(row: &Row<'_>) -> rusqlite::Result<MutedAuthor> {
+    let UnixTime(at) = row.get("at")?;
+    Ok(MutedAuthor {
+        login: row.get("login")?,
+        at,
+    })
 }
 
 /// What a save did to whether an Issue or a PR is open, which Archive follows (#820).

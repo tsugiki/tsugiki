@@ -654,10 +654,10 @@ impl<'a> ReachMove<'a> {
     /// and lose the reads an Unmute owes.
     fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
         let repository = match marked {
-            Marked::Muted { .. }
-            | Marked::Unmuted { .. }
-            | Marked::AuthorMuted { .. }
-            | Marked::AuthorUnmuted { .. } => marked.repository(),
+            Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
+            Marked::AuthorMuted { settings, .. } | Marked::AuthorUnmuted { settings, .. } => {
+                &settings.name
+            }
             Marked::Seen { .. }
             | Marked::Unseen { .. }
             | Marked::Archived { .. }
@@ -864,9 +864,10 @@ fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
             // The window asks again on any change, so a failed read loses only the numbers it names.
             let items = (authored_in(store, &settings, &author))
                 .inspect_err(|problem| {
+                    // `log::warn!` evaluates a call among its arguments only while a logger listens.
+                    let login = author.as_str();
                     log::warn!(
-                        "Tsugiki couldn't read what unmuting {} brings back in {repository}: {}",
-                        author.as_str(),
+                        "Tsugiki couldn't read what unmuting {login} brings back in {repository}: {}",
                         problem.message
                     );
                 })

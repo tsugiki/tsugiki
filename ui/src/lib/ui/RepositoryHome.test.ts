@@ -2652,6 +2652,20 @@ it("offers Unmute Author on a Muted author's row, where Q, Shift+Q, E and M do n
   expect(core.unmuteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author");
 });
 
+it("does nothing on M in the Detail pane before a Muted author's PR view arrives, as the list says", async () => {
+  core.pullRequest.mockReturnValue(new Promise(() => {}));
+  const theirs = { ...standalone, attention: null, hidden: "muted_author" };
+  core.workbench.mockResolvedValue(workbenchPage([theirs]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "#5 Alone" }));
+  const view = await screen.findByRole("region", { name: "PR view" });
+
+  await fireEvent.keyDown(view, { key: "m" });
+
+  expect(core.mute).not.toHaveBeenCalled();
+  expect(core.unmute).not.toHaveBeenCalled();
+});
+
 it("leaves Mute Author out of the palette on the user's own row", async () => {
   const own = { ...standalone, attention: null, author: "me", mute_author: { kind: "off" } };
   core.workbench.mockResolvedValue(workbenchPage([own]));

@@ -1860,6 +1860,42 @@ fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmu
 }
 
 #[test]
+fn mute_author_on_facts_the_store_cant_read_keeps_nothing_and_unmute_author_still_unmutes() {
+    let store = empty_store();
+    let author = Login::new("some-author");
+    let at = OffsetDateTime::now_utc();
+    let muting = AuthorMuting {
+        author: author.clone(),
+        marks: Vec::new(),
+    };
+    store.mute_author(&gcmon(), muting, at).unwrap();
+    let settings = Box::new(cpython_gcmon());
+    let other = Login::new("another-author");
+    let muted = Marked::AuthorMuted {
+        settings: settings.clone(),
+        author: other,
+        at,
+    };
+    let unmuted = Marked::AuthorUnmuted { settings, author };
+
+    // The first call of each reads the facts, and goes missing.
+    let (lossy, _calls) = store.failing_at_call(Some(0));
+    let (mute_saved, mute_change) = keep_mark(&lossy, muted);
+    let (lossy, _calls) = store.failing_at_call(Some(0));
+    let (unmute_saved, unmute_change) = keep_mark(&lossy, unmuted);
+
+    assert!(mute_saved.is_err());
+    assert!(unmute_saved.is_ok());
+    let nothing: Vec<u32> = Vec::new();
+    assert_eq!(
+        [mute_change.items, unmute_change.items],
+        [nothing.clone(), nothing]
+    );
+    let activity = store.work_facts(&gcmon()).unwrap().activity;
+    assert_eq!(activity.muted_authors, []);
+}
+
+#[test]
 fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirror_nothing() {
     let store = empty_store();
     stores_issue_5_with_its_prs(&store);

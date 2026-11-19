@@ -25,12 +25,14 @@
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
+    isMuted,
     sameStop,
     WorkbenchState,
     type Hiding,
     type ItemKey,
     type BackportRow,
     type ListedItem,
+    type MuteAuthor,
     type Seen,
     type Stop,
     type SidebarView,
@@ -379,12 +381,20 @@
     return view.hidden === "archived" ? { kind: "issue", number: view.number } : undefined;
   }
 
-  /** Whether the Detail pane's item is Muted (#492): the Issue on show, or the item that holds the PR on
-   * show, as its view knows listed or not. Until the view arrives, the list says. */
+  /** Whether the Detail pane's item is Muted, on its own (#492) or as a Muted author's (#494): the Issue on
+   * show, or the item that holds the PR on show, as its view knows listed or not. Until the view arrives, the
+   * list says. */
   function detailMuted(): boolean {
-    if (detail?.view) return detail.view.hidden === "muted";
+    if (detail?.view) return isMuted(detail.view.hidden);
     const line = detailLine();
-    return line !== undefined && workbench.hiddenHolding(line, "muted") !== undefined;
+    return line !== undefined && workbench.mutedHolding(line);
+  }
+
+  /** Whether the Detail pane's item is a Muted author's (#494), as `detailMuted` finds it. */
+  function detailByMutedAuthor(): boolean {
+    if (detail?.view) return detail.view.hidden === "muted_author";
+    const line = detailLine();
+    return line !== undefined && workbench.hiddenHolding(line, "muted_author") !== undefined;
   }
 
   /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
@@ -405,7 +415,7 @@
   function keyMarked(at: KeyTarget): Marked | undefined {
     if (forDetail(at)) return detailMarked();
     const stop = workbench.underCursor;
-    const seen = stop && !workbench.hiddenHolding(stop, "muted") && workbench.seenOf(stop);
+    const seen = stop && !workbench.mutedHolding(stop) && workbench.seenOf(stop);
     return stop && seen
       ? { stop, number: stop.number, seen, archived: workbench.hiddenHolding(stop, "archived") }
       : undefined;
@@ -499,15 +509,16 @@
 
   /** What `E` and `M` act on for a press `at`: the Detail pane's item while it holds the focus or the list is
    * hidden, as for `Q`, and otherwise the item that holds the line under the cursor. With whether that item
-   * is Muted (#492). */
-  function keyHiding(at: KeyTarget): (Hiding & { muted: boolean }) | undefined {
+   * is Muted (#492), and whether a Muted author's (#494). */
+  function keyHiding(at: KeyTarget): (Hiding & { muted: boolean; byAuthor: boolean }) | undefined {
     if (forDetail(at)) {
       const hiding = detailHiding();
-      return hiding && { ...hiding, muted: detailMuted() };
+      return hiding && { ...hiding, muted: detailMuted(), byAuthor: detailByMutedAuthor() };
     }
     const stop = workbench.underCursor;
     const hiding = stop && workbench.hidingBy(stop);
-    return stop && hiding && { ...hiding, muted: workbench.hiddenHolding(stop, "muted") !== undefined };
+    const byAuthor = stop !== undefined && workbench.hiddenHolding(stop, "muted_author") !== undefined;
+    return stop && hiding && { ...hiding, muted: workbench.mutedHolding(stop), byAuthor };
   }
 
   /** What `E` does for a press `at`: on a row of the Archived view it unarchives the item that holds the row
@@ -523,11 +534,40 @@
   }
 
   /** What `M` does for a press `at`: it unmutes a Muted item, and mutes any other, the item `keyHiding`
-   * names (#492). */
+   * names (#492). On a Muted author's item it does nothing, as Unmute author is the way back (#494). */
   function keyMute(at: KeyTarget): (() => void) | undefined {
     const hiding = keyHiding(at);
-    if (!hiding) return undefined;
+    if (!hiding || hiding.byAuthor) return undefined;
     return hiding.muted ? () => void unmute(hiding.key) : () => void mute(hiding);
+  }
+
+  /** What Mute author offers for a press `at` (#494): for the author of the Detail pane's Issue or PR while
+   * it holds the focus or the list is hidden, as for `M`, and otherwise for the author of the line under
+   * the cursor, a PR's author on a PR's line. With the line, if the list holds it. */
+  function muteAuthorAt(at: KeyTarget): { offered: MuteAuthor; stop: Stop | undefined } | undefined {
+    if (forDetail(at)) {
+      const offered = detail?.view?.mute_author;
+      return offered && { offered, stop: detailLine() };
+    }
+    const stop = workbench.underCursor;
+    const offered = stop && workbench.muteAuthorOf(stop);
+    return offered && { offered, stop };
+  }
+
+  /** What Mute author does for a press `at`: it mutes the author `muteAuthorAt` finds, or unmutes a Muted
+   * author, and does nothing on the user's own items. */
+  function keyMuteAuthor(at: KeyTarget): (() => void) | undefined {
+    const found = muteAuthorAt(at);
+    return found && muteAuthorRun(found.offered, found.stop);
+  }
+
+  /** What Mute author does with what `offered` offers, of the author of line `stop`: nothing when off. */
+  function muteAuthorRun(offered: MuteAuthor, stop: Stop | undefined): (() => void) | undefined {
+    if (offered.kind === "off") return undefined;
+    const { login } = offered;
+    return offered.kind === "mute"
+      ? () => void sayMarkProblem((opened) => opened.muteAuthor(login, stop))
+      : () => void sayMarkProblem((opened) => opened.unmuteAuthor(login));
   }
 
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
@@ -563,6 +603,12 @@
     const key = { kind: "issue" as const, number: view.number };
     if (view.hidden === "muted") void unmute(key);
     else void mute({ key, mark: view.seen.mark });
+  }
+
+  /** The Issue view's Mute author button: Mute author on the author of the Issue `view` shows, or Unmute
+   * author on a Muted author (#494). */
+  function muteAuthorByButton(view: IssueView) {
+    muteAuthorRun(view.mute_author, { number: view.number, kind: "issue", issue: undefined })?.();
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -671,9 +717,10 @@
    * what the action does, with an id so the palette's history keeps one place for both titles, or the title
    * the palette gave the command before the key table. Undefined leaves the action out of the palette where
    * its key would still run: Unfold Unchanged Files waits for files unchanged since a Stale review to be
-   * folded (#387). Each other action goes by the key table's title.
+   * folded (#387). Each other action goes by the key table's title. Each takes the press `at` the palette
+   * opened on.
    */
-  const PALETTE_NAMES: Partial<Record<Action, () => PaletteName | undefined>> = {
+  const PALETTE_NAMES: Partial<Record<Action, (at: KeyTarget) => PaletteName | undefined>> = {
     toggle_sidebar: () => ({
       title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
       id: "toggle_sidebar",
@@ -702,6 +749,10 @@
         ? { title: "View: Unfold Unchanged Files" }
         : undefined;
     },
+    mute_author: (at) => ({
+      title: muteAuthorAt(at)?.offered.kind === "unmute" ? "Unmute Author" : "Mute Author",
+      id: "mute_author",
+    }),
   };
 
   /**
@@ -717,7 +768,7 @@
     const run = SCREEN_ACTIONS[action]?.(at);
     if (run === undefined) return undefined;
     const named = PALETTE_NAMES[action];
-    const name = named ? named() : { title };
+    const name = named ? named(at) : { title };
     return name && { ...name, action, run: () => run(false) };
   }
 
@@ -913,6 +964,8 @@
     mark_unseen: marking(markUnseen),
     archive: (at) => once(keyArchive(at)),
     mute: (at) => once(keyMute(at)),
+    // It has no key unless `[keys]` gives it one (#494).
+    mute_author: (at) => once(keyMuteAuthor(at)),
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
@@ -1154,7 +1207,7 @@
         <!-- Every row of the Archived view is Archived, so there it offers Unarchive instead (#491). -->
         {#if item.hidden === "archived" && !inArchived}
           <small class="archived">Archived</small>
-        {:else if item.hidden === "muted"}
+        {:else if isMuted(item.hidden)}
           <small class="archived">Muted</small>
         {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
@@ -1384,6 +1437,7 @@
         onmark={markByButton}
         onarchive={archiveByButton}
         onmute={muteByButton}
+        onmuteauthor={muteAuthorByButton}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}

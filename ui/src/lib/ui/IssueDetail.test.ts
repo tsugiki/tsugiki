@@ -43,6 +43,7 @@ const view: IssueView = {
   title: "It crashes",
   state: "OPEN",
   people: ["issue-author"],
+  mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
@@ -102,12 +103,14 @@ const shown = async (
   onmark = vi.fn(),
   onarchive = vi.fn(),
   onmute = vi.fn(),
+  onmuteauthor = vi.fn(),
 ) => {
   core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   const issue = state;
-  render(IssueDetail, { repository: "python/cpython", issue, now: NOW, onopenpr, onmark, onarchive, onmute });
+  const on = { onopenpr, onmark, onarchive, onmute, onmuteauthor };
+  render(IssueDetail, { repository: "python/cpython", issue, now: NOW, ...on });
   state.stop();
   return state;
 };
@@ -161,20 +164,45 @@ it("offers Archive beside Mark Seen, and Unarchive on an Archived Issue", async 
   expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
 });
 
-it("offers Mute beside Archive, and on a Muted Issue only Unmute", async () => {
+/** The header's buttons, by their words. */
+const headerButtons = () =>
+  screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i }).map((button) => button.textContent);
+
+it("offers Mute beside Archive, and on a Muted Issue Unmute and Mute author", async () => {
   const onmute = vi.fn();
-  const buttons = () => screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i });
 
   await shown(view, vi.fn(), vi.fn(), vi.fn(), onmute);
-  expect(buttons().map((button) => button.textContent)).toEqual(["Archive", "Mute", "Mark Unseen"]);
+  expect(headerButtons()).toEqual(["Archive", "Mute", "Mute issue-author", "Mark Unseen"]);
   await fireEvent.click(screen.getByRole("button", { name: "Mute" }));
   expect(onmute).toHaveBeenCalledExactlyOnceWith(view);
   cleanup();
   const muted = { ...view, hidden: "muted" as const };
   await shown(muted, vi.fn(), vi.fn(), vi.fn(), onmute);
-  expect(buttons().map((button) => button.textContent)).toEqual(["Unmute"]);
+  expect(headerButtons()).toEqual(["Unmute", "Mute issue-author"]);
   await fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
   expect(onmute).toHaveBeenLastCalledWith(muted);
+});
+
+it("offers Mute author for the Issue's author, only Unmute author for a Muted author, and none for the user", async () => {
+  const onmuteauthor = vi.fn();
+  const byMuted: IssueView = {
+    ...view,
+    hidden: "muted_author",
+    mute_author: { kind: "unmute", login: "issue-author" },
+  };
+
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), onmuteauthor);
+  await fireEvent.click(screen.getByRole("button", { name: "Mute issue-author" }));
+  expect(onmuteauthor).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  await shown(byMuted, vi.fn(), vi.fn(), vi.fn(), vi.fn(), onmuteauthor);
+  expect(headerButtons()).toEqual(["Unmute issue-author"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Unmute issue-author" }));
+  expect(onmuteauthor).toHaveBeenLastCalledWith(byMuted);
+  cleanup();
+  await shown({ ...view, author: "me", mute_author: { kind: "off" } });
+  const off = screen.getByRole("button", { name: "Mute author" });
+  expect((off as HTMLButtonElement).disabled).toBe(true);
 });
 
 /** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
@@ -560,6 +588,7 @@ it("says why it can't show the Issue", async () => {
     onmark: vi.fn(),
     onarchive: vi.fn(),
     onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   });
   state.stop();
 

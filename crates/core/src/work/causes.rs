@@ -101,8 +101,14 @@ pub(crate) struct Causes {
     archived: BTreeMap<ItemKey, Archive>,
     /// The Issues and PRs closed or merged on GitHub.
     closed: BTreeSet<u32>,
-    /// The items the user muted, each with the moment Mute marked it seen up to.
+    /// The items the user muted on their own, each with the moment Mute marked it seen up to.
     muted: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The items a Muted author opened, each with the moment of the author's mute (#494).
+    by_muted_authors: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The Repository's Muted authors.
+    muted_authors: Vec<Login>,
+    /// The user signed in, whose own items Mute author leaves alone.
+    viewer: Option<Login>,
     /// The Review request or the assignment to the user that stands on each Issue and PR, acknowledged or
     /// not.
     asks: BTreeMap<u32, Ask>,
@@ -180,18 +186,54 @@ impl Causes {
             archived: facts.activity.archived.clone(),
             closed: closed(facts),
             muted: facts.activity.muted.clone(),
+            by_muted_authors: by_muted_authors(facts),
+            muted_authors: (facts.activity.muted_authors.iter())
+                .map(|muted| muted.login.clone())
+                .collect(),
+            viewer: Some(viewer.clone()),
             acknowledged: facts.activity.acknowledged.clone(),
         }
     }
 
-    /// Whether the user muted the item `key` names (#492).
+    /// Whether the item `key` names is Muted: the user muted it on its own (#492), or its author (#494).
     pub(crate) fn is_muted(&self, key: ItemKey) -> bool {
+        self.muted_at(key).is_some()
+    }
+
+    /// Whether the user muted the item `key` names on its own (#492), whatever they did to its author.
+    pub(crate) fn is_muted_on_its_own(&self, key: ItemKey) -> bool {
         self.muted.contains_key(&key)
     }
 
-    /// The items the user muted (#492).
-    pub(crate) fn muted(&self) -> impl Iterator<Item = ItemKey> + '_ {
-        self.muted.keys().copied()
+    /// Whether the user muted the author of the item `key` names (#494).
+    pub(crate) fn is_by_muted_author(&self, key: ItemKey) -> bool {
+        self.by_muted_authors.contains_key(&key)
+    }
+
+    /// Whether the user muted `author` in this Repository (#494).
+    pub(crate) fn is_muted_author(&self, author: &Login) -> bool {
+        self.muted_authors.contains(author)
+    }
+
+    /// The user signed in, if anyone has.
+    pub(crate) fn viewer(&self) -> Option<&Login> {
+        self.viewer.as_ref()
+    }
+
+    /// The Muted items, on their own or a Muted author's (#492, #494).
+    pub(crate) fn muted(&self) -> BTreeSet<ItemKey> {
+        let keys = self.muted.keys().chain(self.by_muted_authors.keys());
+        keys.copied().collect()
+    }
+
+    /// The moment the mute of the item `key` names began, if it is Muted: the later of its own mute and its
+    /// author's, as each marked what stood then seen.
+    fn muted_at(&self, key: ItemKey) -> Option<OffsetDateTime> {
+        let own = self.muted.get(&key);
+        own.into_iter()
+            .chain(self.by_muted_authors.get(&key))
+            .max()
+            .copied()
     }
 
     /// The reasons the item `key` names, whose tree holds `numbers`, Needs attention while the user has it
@@ -222,12 +264,12 @@ impl Causes {
     /// Each of `numbers` that `fresh_asks` counts, with its cause: none unless the user muted the item.
     fn fresh(&self, key: ItemKey, numbers: &[u32]) -> Vec<(u32, Cause)> {
         let fresh = numbers.iter().filter_map(|&number| {
-            let muted = self.muted.get(&key)?;
+            let muted = self.muted_at(key)?;
             let ask = self.asks.get(&number)?;
             let acknowledged = self
                 .acknowledged
                 .get(&number)
-                .map_or(*muted, |at| *at.max(muted));
+                .map_or(muted, |at| muted.max(*at));
             let at = ask.started.filter(|at| *at > acknowledged)?;
             let why = ask.why.clone();
             Some((number, Cause { at, why }))
@@ -359,6 +401,43 @@ fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
         *known = (*known).max(at);
     }
     newest
+}
+
+/// The items a Muted author opened (#494): each Issue and PR `facts` hold whose author the user muted, with
+/// the moment of the mute, those they open after it too. A PR inside another author's Issue is no item, so
+/// nothing reads its key, and it stays as it is. The user's own items never count: a mute of their login,
+/// made under another account in the same data folder, would hide them where nothing offers Unmute author.
+fn by_muted_authors(facts: &WorkFacts) -> BTreeMap<ItemKey, OffsetDateTime> {
+    let muted = &facts.activity.muted_authors;
+    if muted.is_empty() {
+        return BTreeMap::new();
+    }
+    let mute_of = |author: Option<&Login>| {
+        let author = author.filter(|author| facts.viewer.as_ref() != Some(*author))?;
+        let found = muted.iter().find(|muted| muted.login == *author);
+        found.map(|muted| muted.at)
+    };
+    let issues = (facts.issues.iter()).filter_map(|issue| {
+        let at = mute_of(issue.author.as_ref())?;
+        Some((
+            ItemKey::Issue {
+                number: issue.number,
+            },
+            at,
+        ))
+    });
+    let pull_requests = (facts.pull_requests.iter()).filter_map(|pr| {
+        let at = mute_of(pr.author.as_ref())?;
+        Some((ItemKey::PullRequest { number: pr.number }, at))
+    });
+    issues.chain(pull_requests).collect()
+}
+
+/// The Muted items `facts` hold, those the user muted on their own and those of Muted authors (#494), as
+/// `Causes::muted` names them, for a rule that reads the facts before the rest of `Causes` is built.
+pub(crate) fn muted_items(facts: &WorkFacts) -> BTreeSet<ItemKey> {
+    let own = facts.activity.muted.keys().copied();
+    own.chain(by_muted_authors(facts).into_keys()).collect()
 }
 
 /// Judges what on each Issue and PR waits on the user.

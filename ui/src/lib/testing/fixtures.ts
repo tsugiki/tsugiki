@@ -69,6 +69,7 @@ export const workbenchRow = (
   reasons: [],
   your_review: { kind: "unreviewed" },
   seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
+  mute_author: { kind: "mute", login: "pr-author" },
   ...overrides,
 });
 
@@ -86,6 +87,7 @@ export const listedIssue = (
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
+  mute_author: { kind: "mute", login: "issue-author" },
   attention: null,
   key: { kind: "issue", number },
   hidden: null,

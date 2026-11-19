@@ -285,6 +285,11 @@ erDiagram
         INTEGER number PK
         INTEGER at
     }
+    muted_authors {
+        TEXT repository PK
+        TEXT login PK
+        INTEGER at
+    }
     closings {
         TEXT repository PK
         INTEGER number PK

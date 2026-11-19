@@ -8,6 +8,7 @@ pub mod inbox;
 pub mod issue_view;
 mod issues;
 mod links;
+mod mute_author;
 pub mod pr_files;
 pub mod pr_view;
 pub mod quick_open;
@@ -16,6 +17,8 @@ mod rows;
 pub use attention::{Attention, Seen, SeenState};
 pub use filters::FilterLine;
 pub use issues::IssueItem;
+pub use mute_author::MuteAuthor;
+pub(crate) use mute_author::{Authored, authored_by};
 pub use rows::WorkbenchRow;
 
 use std::cmp::Reverse;
@@ -28,15 +31,15 @@ use time::OffsetDateTime;
 use crate::error::Error;
 use crate::facts::WorkFacts;
 use crate::facts::activity::ItemKey;
-use crate::facts::issues::IssueFacts;
-use crate::facts::pull_requests::PrLinks;
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::filters::FilterQuery;
 use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
 use crate::work::{Causes, in_own_right};
-use attention::{attention_of, seen_of, summed};
+use attention::{attention_of, summed};
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
@@ -134,6 +137,25 @@ impl WorkbenchItem {
             }
         }
     }
+
+    /// The item's part in Mark Seen, which covers its tree.
+    fn seen(&self) -> &Seen {
+        match self {
+            Self::Issue(issue) => &issue.seen,
+            Self::StandalonePr(PrTree { row, .. })
+            | Self::StandaloneBackport(BackportRow { row, .. }) => &row.seen,
+        }
+    }
+
+    /// Whether the Issue or PR that heads the item is open. An Issue stored before Tsugiki kept states
+    /// counts as open.
+    fn is_open(&self) -> bool {
+        match self {
+            Self::Issue(issue) => matches!(issue.state, Some(IssueState::Open) | None),
+            Self::StandalonePr(PrTree { row, .. })
+            | Self::StandaloneBackport(BackportRow { row, .. }) => row.state == PrState::Open,
+        }
+    }
 }
 
 /// A top-level entry of the list, with why it Needs attention, if it does.
@@ -159,15 +181,28 @@ pub enum Hidden {
     /// assignment to the user stands in its tree (#824). The Review requests view shows a PR while its
     /// request stands, and the Workbench while one that started after the mute does (#492).
     Muted,
+    /// A Muted author opened it (#494), whether or not the user muted it on its own too. Muted, and only
+    /// Unmute author brings it back: Mute, Archive and the marks do nothing on it.
+    MutedAuthor,
 }
 
 impl Hidden {
     /// The state that hides the item `key` names, whose tree holds `numbers`, as `causes` judge it, if any.
     pub(crate) fn of(causes: &Causes, key: ItemKey, numbers: &[u32]) -> Option<Self> {
-        if causes.is_muted(key) {
+        if causes.is_by_muted_author(key) {
+            Some(Self::MutedAuthor)
+        } else if causes.is_muted(key) {
             Some(Self::Muted)
         } else {
             causes.is_archived(key, numbers).then_some(Self::Archived)
+        }
+    }
+
+    /// Whether it hides a Muted item, on its own or a Muted author's.
+    pub(crate) fn is_muted(self) -> bool {
+        match self {
+            Self::Muted | Self::MutedAuthor => true,
+            Self::Archived => false,
         }
     }
 }
@@ -180,7 +215,7 @@ impl ListedItem {
         let numbers = item.numbers();
         let hidden = Hidden::of(causes, key, &numbers);
         let attention = match hidden {
-            Some(Hidden::Muted) => summed(&causes.fresh_asks(key, &numbers)),
+            Some(Hidden::Muted | Hidden::MutedAuthor) => summed(&causes.fresh_asks(key, &numbers)),
             Some(Hidden::Archived) | None => attention_of(causes, &item),
         };
         Self {
@@ -296,7 +331,7 @@ impl Workbench {
             .filter(|listed| match listed.hidden {
                 None => true,
                 Some(Hidden::Archived) => requested(listed),
-                Some(Hidden::Muted) => listed.item.is_reached_by(&asked),
+                Some(Hidden::Muted | Hidden::MutedAuthor) => listed.item.is_reached_by(&asked),
             })
             .collect();
         // A Filter's view lists all its search found, as a search finds archived mail too (#824). An
@@ -304,7 +339,7 @@ impl Workbench {
         // the user stands in its tree. The other Muted items go in a fold at the end.
         let (folded, in_place): (Vec<&ListedItem>, Vec<&ListedItem>) =
             listed.iter().partition(|listed| {
-                listed.hidden == Some(Hidden::Muted) && !listed.item.is_reached_by(&asked)
+                listed.hidden.is_some_and(Hidden::is_muted) && !listed.item.is_reached_by(&asked)
             });
         // The Workbench shows a Muted item while one that started after the mute stands, which is then all
         // it Needs attention for.
@@ -312,7 +347,7 @@ impl Workbench {
             .filter(|listed| match listed.hidden {
                 None => true,
                 Some(Hidden::Archived) => false,
-                Some(Hidden::Muted) => listed.attention.is_some(),
+                Some(Hidden::Muted | Hidden::MutedAuthor) => listed.attention.is_some(),
             })
             .collect();
         // A Filter's count leaves out what it found that the user put away (#824). One switched on counts
@@ -418,11 +453,7 @@ fn candidates(
         return Vec::new();
     };
     let linked = link(facts.pull_requests, links, repository.conventions, |pr| {
-        let (seen, review) = (
-            seen_of(causes, vec![pr.number]),
-            causes.review_of(pr.number),
-        );
-        row(pr, &viewer, review, seen)
+        row(pr, &viewer, causes)
     });
     let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
         .issues
@@ -443,12 +474,7 @@ fn candidates(
     }
     items.extend(issues.into_values().map(|(issue, mut entries)| {
         entries.sort_by_key(|entry| !entry.rows().iter().any(|row| first.contains(&row.number)));
-        let tree = entries
-            .iter()
-            .flat_map(TreeEntry::rows)
-            .map(|row| row.number);
-        let seen = seen_of(causes, std::iter::once(issue.number).chain(tree).collect());
-        issue_item(issue, entries, repository.conventions, seen)
+        issue_item(issue, entries, repository.conventions, causes)
     }));
     items
 }

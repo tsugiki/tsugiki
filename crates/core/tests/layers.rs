@@ -328,6 +328,7 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "error",
             "facts",
+            "login",
             "mirror",
             "mirror_source",
             "patch_ids",
@@ -337,7 +338,8 @@ const LAYERS: &[Layer] = &[
         ],
         why: "Takes the user's demands and the rules' wants, and hands each to the queue that owns it: the \
               Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
-              above can take them. A Mark Seen names what `work` marks.",
+              above can take them. A Mark Seen names what `work` marks, and Mute author the `login` it \
+              mutes.",
     },
     Layer {
         module: "sync",
@@ -367,6 +369,7 @@ const LAYERS: &[Layer] = &[
             "fetching",
             "folders",
             "github",
+            "login",
             "mirror",
             "patch_ids",
             "repository",
@@ -376,10 +379,12 @@ const LAYERS: &[Layer] = &[
             "sync",
             "token",
             "work",
+            "workbench",
         ],
         why: "Runs the session thread, which owns the store and the syncs and takes the messages `fetching` \
               sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
-              which it builds on the requests `mirror` gives.",
+              which it builds on the requests `mirror` gives. Mute author asks `workbench` which items of \
+              the `login` it mutes the window lists, to mark them seen.",
     },
     Layer {
         module: "calls",

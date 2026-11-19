@@ -4,10 +4,11 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
-use super::Seen;
+use super::attention::seen_of;
+use super::{MuteAuthor, Seen};
 use crate::facts::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::login::Login;
-use crate::work::{WorkReason, YourReview, reasons};
+use crate::work::{Causes, WorkReason, YourReview, reasons};
 
 /// A PR's line of the list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -28,16 +29,17 @@ pub struct WorkbenchRow {
     pub your_review: YourReview,
     /// Its part in Mark Seen, which covers this PR alone.
     pub seen: Seen,
+    /// What Mute author offers for the PR's author (#494).
+    pub mute_author: MuteAuthor,
 }
 
-/// The PR's line of the list, whatever it has to do with `viewer`, with the review state `your_review`.
-pub(super) fn row(
-    facts: PullRequestFacts,
-    viewer: &Login,
-    your_review: YourReview,
-    seen: Seen,
-) -> WorkbenchRow {
+/// The PR's line of the list, whatever it has to do with `viewer`, with its review state, its part in Mark
+/// Seen and Mute author as `causes` judge them.
+pub(super) fn row(facts: PullRequestFacts, viewer: &Login, causes: &Causes) -> WorkbenchRow {
     let reasons = reasons(&facts, viewer);
+    let your_review = causes.review_of(facts.number);
+    let seen = seen_of(causes, vec![facts.number]);
+    let mute_author = MuteAuthor::of(causes, facts.author.as_ref());
     WorkbenchRow {
         number: facts.number,
         title: facts.title,
@@ -50,6 +52,7 @@ pub(super) fn row(
         reasons,
         your_review,
         seen,
+        mute_author,
     }
 }
 

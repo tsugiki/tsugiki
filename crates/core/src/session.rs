@@ -18,18 +18,20 @@ use crate::facts::{CommitSha, WorkFacts};
 use crate::fetching::{Fetched, Fetching, Headless, Item, Marked, MirrorWant, SessionMessage};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
+use crate::login::Login;
 use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
 use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
-    self, Archiving, ConversationSaved, Flagging, HeadKept, Muting, OpenReader, ReaderToOpen,
-    Store, StoreReader,
+    self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
+    ReaderToOpen, Store, StoreReader,
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
+use crate::workbench::{Authored, authored_by};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -653,6 +655,9 @@ impl<'a> ReachMove<'a> {
     fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
         let repository = match marked {
             Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
+            Marked::AuthorMuted { settings, .. } | Marked::AuthorUnmuted { settings, .. } => {
+                &settings.name
+            }
             Marked::Seen { .. }
             | Marked::Unseen { .. }
             | Marked::Archived { .. }
@@ -838,7 +843,50 @@ fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
             let items = vec![key.number()];
             (saved, Change { repository, items })
         }
+        Marked::AuthorMuted {
+            settings,
+            author,
+            at,
+        } => {
+            let authored = authored_in(store, &settings, &author);
+            let repository = settings.name;
+            let (saved, items) = match authored {
+                Ok(Authored { marks, numbers }) => {
+                    let muting = AuthorMuting { author, marks };
+                    (store.mute_author(&repository, muting, at), numbers)
+                }
+                Err(problem) => (Err(problem), Vec::new()),
+            };
+            (saved, Change { repository, items })
+        }
+        Marked::AuthorUnmuted { settings, author } => {
+            let repository = settings.name.clone();
+            // The window asks again on any change, so a failed read loses only the numbers it names.
+            let items = (authored_in(store, &settings, &author))
+                .inspect_err(|problem| {
+                    // `log::warn!` evaluates a call among its arguments only while a logger listens.
+                    let login = author.as_str();
+                    log::warn!(
+                        "Tsugiki couldn't read what unmuting {login} brings back in {repository}: {}",
+                        problem.message
+                    );
+                })
+                .map(|authored| authored.numbers)
+                .unwrap_or_default();
+            let saved = store.unmute_author(&repository, &author);
+            (saved, Change { repository, items })
+        }
     }
+}
+
+/// What muting or unmuting `author` touches in the stored facts of the Repository `settings` name.
+fn authored_in(
+    store: &Store,
+    settings: &RepositorySettings,
+    author: &Login,
+) -> Result<Authored, Error> {
+    let facts = store.work_facts(&settings.name)?;
+    Ok(authored_by(facts, settings, author))
 }
 
 /// An Issue's or a PR's content, as GitHub answered.

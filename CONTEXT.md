@@ -202,10 +202,12 @@ stands. Kept in Tsugiki only.
 _Avoid_: Ignored, blocked
 
 **Muted author**:
-A person or bot whose Issues and **Standalone PRs** the user has hidden from one **Repository**'s
-**Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user
-follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs
-attention or a **Filter** matches it. A Review request or an assignment always shows. Kept in Tsugiki only.
+A person or bot the user has muted in one **Repository**, usually because their area is outside the user's
+interest. Their Issues, **Standalone PRs** and **Standalone Backports** count as **Muted**, those they open
+later too, and leave the **Workbench** the same way, with the same exceptions for a Review request or an
+assignment to the user. Muting the author marks their open items seen. Tsugiki works this out from the author
+and keeps no mute on each item, so unmuting the author brings their items back, and an item muted on its own
+stays Muted. Their PRs inside another author's Issue stay as they are. Kept in Tsugiki only.
 _Avoid_: Blocked user, ignored user
 
 ### Reviewing

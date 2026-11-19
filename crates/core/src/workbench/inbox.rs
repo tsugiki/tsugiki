@@ -33,7 +33,7 @@ use time::{Duration, OffsetDateTime};
 
 use super::backports::plant;
 use super::links::placed;
-use super::{ListedItem, candidates};
+use super::{Hidden, ListedItem, candidates};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
@@ -151,9 +151,18 @@ impl Inbox {
             &causes,
         );
         // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
+        // A Muted author's item stays, unless one of those takes it out too, until #825 leaves it out.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
             .map(|item| ListedItem::of(&causes, item))
-            .filter(|listed| listed.hidden.is_none())
+            .filter(|listed| match listed.hidden {
+                None => true,
+                Some(Hidden::Archived | Hidden::Muted) => false,
+                Some(Hidden::MutedAuthor) => {
+                    let key = listed.key;
+                    !causes.is_muted_on_its_own(key)
+                        && !causes.is_archived(key, &listed.item.numbers())
+                }
+            })
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);

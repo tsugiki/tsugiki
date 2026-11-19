@@ -34,6 +34,7 @@ use tsugiki_core::folders::Folders;
 use tsugiki_core::github::points::HourPoints;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
+use tsugiki_core::login::Login;
 use tsugiki_core::measurement::Measurement;
 use tsugiki_core::mirror::{
     CloneRefusal, Cloning, LookupAt, MirrorProblem, RepositoryMirror, Unfetched,
@@ -373,6 +374,33 @@ fn mute(
 #[specta::specta]
 fn unmute(repository: &str, item: ItemKey, requests: State<'_, Fetching>) -> Result<(), Error> {
     requests.unmute(RepositoryName::parse(repository)?, item);
+    Ok(())
+}
+
+/// Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
+/// the background, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn mute_author(
+    repository: &str,
+    author: Login,
+    owner: State<'_, SettingsOwner>,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.mute_author(repository_settings(repository, &owner.view())?, author);
+    Ok(())
+}
+
+/// Unmutes `author` in `repository`, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn unmute_author(
+    repository: &str,
+    author: Login,
+    owner: State<'_, SettingsOwner>,
+    requests: State<'_, Fetching>,
+) -> Result<(), Error> {
+    requests.unmute_author(repository_settings(repository, &owner.view())?, author);
     Ok(())
 }
 
@@ -1149,6 +1177,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             unarchive,
             mute,
             unmute,
+            mute_author,
+            unmute_author,
             settings,
             slow_commands::themes,
             slow_commands::preview_themes,

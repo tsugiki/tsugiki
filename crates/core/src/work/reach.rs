@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::causes::Causes;
+use super::causes::{Causes, muted_items};
 use super::origins;
 use super::reasons::{WorkReason, reasons};
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
@@ -231,11 +231,11 @@ pub(crate) fn archived_by_closing(
     });
     let pull_requests =
         (open.pull_requests.iter()).map(|pr| ItemKey::PullRequest { number: pr.number });
-    let muted = &open.activity.muted;
+    let muted = muted_items(&open);
     issues
         .chain(pull_requests)
         .filter(|key| closings.contains(&key.number()) && reached.contains(&key.number()))
-        .filter(|key| !muted.contains_key(key) && !walk.tree(*key).is_empty())
+        .filter(|key| !muted.contains(key) && !walk.tree(*key).is_empty())
         .collect()
 }
 
@@ -249,9 +249,9 @@ pub(crate) fn opened_on(
 ) -> Vec<u32> {
     let walk = Walk::of(facts, repository);
     let merges = MergeCommits::of(&facts.pull_requests);
-    let activity = &facts.activity;
+    let muted = muted_items(facts);
     let put_away =
-        |key: &ItemKey| activity.archived.contains_key(key) && !activity.muted.contains_key(key);
+        |key: &ItemKey| facts.activity.archived.contains_key(key) && !muted.contains(key);
     let opened = (facts.pull_requests.iter())
         .filter(|pr| openings.contains(&pr.number))
         .filter(|pr| backport_of(pr, repository.conventions, &merges).is_none());

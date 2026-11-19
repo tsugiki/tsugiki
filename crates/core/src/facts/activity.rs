@@ -85,6 +85,14 @@ pub enum PutAway {
     AsBefore,
 }
 
+/// A person or bot whose items the user muted in a Repository (#494).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutedAuthor {
+    pub login: Login,
+    /// The moment of the mute. A Review request or an assignment that starts after it shows their item.
+    pub at: OffsetDateTime,
+}
+
 /// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
 /// list costs no query for each item.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -103,6 +111,9 @@ pub struct ActivityFacts {
     pub archived: BTreeMap<ItemKey, Archive>,
     /// The items the user muted, each with the moment Mute marked it seen up to (#492).
     pub muted: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The Muted authors of the Repository, by login (#494). Their items count as Muted, worked out from
+    /// each item's author, so the store keeps no Mute on each of them.
+    pub muted_authors: Vec<MutedAuthor>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.

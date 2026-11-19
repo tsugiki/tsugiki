@@ -87,7 +87,10 @@ it("finds a key on macOS by Cmd, as the page shows it, and by Ctrl, as `[keys]` 
 it("finds the actions with no key by the words the page shows", async () => {
   render(KeyboardPage);
   await filter("no key");
-  expect(rows()).toEqual([["Reset Layout", "No key", "Anywhere"]]);
+  expect(rows()).toEqual([
+    ["Reset Layout", "No key", "Anywhere"],
+    ["Mute Author", "No key", "Anywhere"],
+  ]);
 });
 
 it("says so when no row holds what the box holds", async () => {

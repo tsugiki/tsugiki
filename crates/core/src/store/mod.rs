@@ -20,7 +20,7 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, Flagging, Judged, Muting, Opened};
+pub use activity::{Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, Seeing};
 
 use pull_requests::FirstSave;
 
@@ -609,6 +609,28 @@ impl Store {
     pub fn unmute(&self, repository: &RepositoryName, key: ItemKey) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| activity::unmute(connection, &repository, key))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Mute author on `muting`'s author: Mark Seen on the items it names, and the author kept as muted, as
+    /// `activity::mute_author` says.
+    pub fn mute_author(
+        &self,
+        repository: &RepositoryName,
+        muting: AuthorMuting,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self
+            .call(move |connection| activity::mute_author(connection, &repository, &muting, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unmutes `author`.
+    pub fn unmute_author(&self, repository: &RepositoryName, author: &Login) -> Result<(), Error> {
+        let (repository, author) = (repository.clone(), author.clone());
+        let saved =
+            self.call(move |connection| activity::unmute_author(connection, &repository, &author))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

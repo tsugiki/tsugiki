@@ -9,6 +9,7 @@ use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, Patc
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
 use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
+use crate::fetching::ScreenMove;
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
@@ -39,6 +40,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io;
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -272,7 +274,7 @@ fn stopped_refreshes() -> Refreshes {
     Refreshes {
         intervals: Intervals {
             status: Duration::ZERO,
-            repository: AN_HOUR,
+            ..HOURLY
         },
         incoming: mpsc::channel().1,
         ..unheard_refreshes()
@@ -325,7 +327,7 @@ fn watching_follows_github_until_told_to_stop() {
     let refreshes = Refreshes {
         intervals: Intervals {
             status: Duration::ZERO,
-            repository: AN_HOUR,
+            ..HOURLY
         },
         incoming,
         ..unheard_refreshes()
@@ -1091,6 +1093,7 @@ const AN_HOUR: Duration = Duration::from_secs(3600);
 const HOURLY: Intervals = Intervals {
     status: AN_HOUR,
     repository: AN_HOUR,
+    on_screen: AN_HOUR,
 };
 const PLENTY: Duration = Duration::from_secs(10);
 
@@ -1167,7 +1170,7 @@ fn checks_dont_put_off_the_next_refresh() {
     let refreshes = Refreshes {
         intervals: Intervals {
             status: Duration::from_millis(100),
-            repository: AN_HOUR,
+            ..HOURLY
         },
         incoming,
         ..unheard_refreshes()
@@ -2218,7 +2221,7 @@ fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
     let refreshes = Refreshes {
         intervals: Intervals {
             status: Duration::from_millis(50),
-            repository: AN_HOUR,
+            ..HOURLY
         },
         incoming,
         ..unheard_refreshes()
@@ -2246,7 +2249,7 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
         reaching(access),
         Intervals {
             status: Duration::from_millis(50),
-            repository: AN_HOUR,
+            ..HOURLY
         },
     );
     let reader = session.reader();
@@ -2614,8 +2617,8 @@ fn the_timer_refreshes_the_open_repository_again() {
     let _at = after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let every_moment = Intervals {
-        status: AN_HOUR,
         repository: Duration::from_millis(10),
+        ..HOURLY
     };
     let session = Session::start(
         quiet_board(),
@@ -2628,6 +2631,66 @@ fn the_timer_refreshes_the_open_repository_again() {
     wait_for(&asked, "RefreshRepository");
     wait_for(&asked, "RefreshRepository");
     session.stop(PLENTY);
+}
+
+/// A session that reads each item the user can see again 10 ms after its last read, and the operations
+/// it asks GitHub.
+fn reading_on_screen_often(folders: &Folders) -> (Session, Receiver<String>) {
+    let (access, asked) = quiet_repository();
+    let often = Intervals {
+        on_screen: Duration::from_millis(10),
+        ..HOURLY
+    };
+    let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), often);
+    (session, asked)
+}
+
+/// What `asked` hears within `wait`.
+fn asked_within(asked: &Receiver<String>, wait: Duration) -> Vec<String> {
+    let until = Instant::now() + wait;
+    iter::from_fn(|| {
+        asked
+            .recv_timeout(until.saturating_duration_since(Instant::now()))
+            .ok()
+    })
+    .collect()
+}
+
+#[test]
+fn the_session_reads_a_pr_on_screen_again_after_its_minute() {
+    let (folders, _folder) = temp_folders("on-screen");
+    let (session, asked) = reading_on_screen_often(&folders);
+
+    session.fetching().fetch_pull_request(gcmon(), 7);
+    // GitHub numbers Issues and PRs from one sequence, so `issue_7` names PR 7 too.
+    let opened = ScreenMove::Opened(Fetched::PullRequest(issue_7()));
+    session.fetching().screen_moved(opened);
+    wait_for(&asked, "FetchPullRequestContent");
+    wait_for(&asked, "FetchPullRequestContent");
+    session.stop(PLENTY);
+}
+
+#[test]
+fn the_session_reads_a_hidden_issue_no_more_until_it_shows_and_then_at_once() {
+    let (folders, _folder) = temp_folders("on-screen-hidden");
+    let (session, asked) = reading_on_screen_often(&folders);
+    let fetching = session.fetching();
+
+    fetching.fetch_issue(gcmon(), 7);
+    fetching.screen_moved(ScreenMove::Opened(Fetched::Issue(issue_7())));
+    fetching.screen_moved(ScreenMove::Hid(issue_7()));
+    wait_for(&asked, "FetchIssueContent");
+    let while_hidden = asked_within(&asked, Duration::from_millis(100));
+    fetching.screen_moved(ScreenMove::Showed(issue_7()));
+    wait_for(&asked, "FetchIssueContent");
+    session.stop(PLENTY);
+
+    assert!(
+        !while_hidden
+            .iter()
+            .any(|asked| asked == "FetchIssueContent"),
+        "{while_hidden:?}"
+    );
 }
 
 #[test]

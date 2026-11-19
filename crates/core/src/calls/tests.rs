@@ -9,7 +9,7 @@ use super::*;
 use crate::definitions::Sources;
 use crate::diff::testing::Mirrored;
 use crate::facts::pull_requests::PrHead;
-use crate::fetching::testing::handle_with_headless;
+use crate::fetching::testing::{handle_with_headless, named};
 use crate::fetching::{Fetched, Headless, Item, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
@@ -70,6 +70,7 @@ impl Setup {
             .filter_map(|message| match message {
                 SessionMessage::Fetch(Fetched::PullRequest(item)) => Some(item.number),
                 SessionMessage::Fetch(Fetched::Issue(_))
+                | SessionMessage::Screen(_)
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
                 | SessionMessage::Sync { .. }
@@ -109,6 +110,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
                 ))
             }
             SessionMessage::Fetch(_)
+            | SessionMessage::Screen(_)
             | SessionMessage::Stop
             | SessionMessage::Check { .. }
             | SessionMessage::Refresh
@@ -153,6 +155,63 @@ fn the_handle_syncs_the_open_repository_and_clones_its_mirror_first_and_hands_th
     );
     assert_eq!(reread.unwrap(), 0, "no problems in the files");
     assert_eq!(after_edit, ["c/d saved by HandEdit, 1 Filter"]);
+}
+
+#[test]
+fn the_window_tells_the_session_what_the_user_did_with_an_item_and_with_itself() {
+    let root = crate::testing::temp_path("calls-screen");
+    fs::create_dir_all(&root).unwrap();
+    let folders = crate::testing::one_folder(&root);
+    let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (fetching, session, _heard, _headless) = handle_with_headless();
+    let db = OpenStore::new("calls-screen-store");
+    let parts = CallParts {
+        folders: Ok(folders),
+        settings,
+        definitions: no_servers(),
+    };
+    let calls = Calls::launched(fetching, db.reader.clone(), parts);
+    let cpython = || RepositoryName::parse("python/cpython").unwrap();
+
+    calls.window_loaded();
+    calls.open_issue(cpython(), 7);
+    calls.hide_item(cpython(), 7);
+    calls.window_hidden();
+    calls.window_shown();
+    calls.show_item(cpython(), 7);
+    calls.close_item(cpython(), 7);
+    db.close();
+
+    let heard: Vec<String> = session.try_iter().map(named).collect();
+    assert_eq!(
+        heard,
+        [
+            "window loaded",
+            "Issue #7",
+            "opened Issue #7",
+            "hid #7",
+            "window hid",
+            "window showed",
+            "showed #7",
+            "closed #7",
+        ]
+    );
+}
+
+#[test]
+fn opening_a_pr_puts_it_on_screen_once_its_conversation_is_asked_for() {
+    let calls = Setup::new("open-on-screen");
+    let missing = Error::new(ErrorKind::NotFound, "No folder for the mirrors.");
+    let work = PullRequestWork {
+        sources: Err(missing),
+        ..calls.work()
+    };
+
+    let _refused = work.open_pull_request(&calls.world.repository(), 7);
+
+    let heard: Vec<String> = calls.session.try_iter().map(named).collect();
+    assert_eq!(heard, ["PR #7", "opened PR #7"]);
+    calls.finish();
 }
 
 /// Settings that list `repositories` and nothing else.

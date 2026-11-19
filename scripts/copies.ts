@@ -113,12 +113,7 @@ export const ALLOWED: readonly Allowed[] = [
   },
   {
     files: ["ui/src/lib/ui/FilesTab.test.ts", "ui/src/lib/ui/PrDetail.test.ts"],
-    tokens: [78],
-    why: "Each test file mocks the commands its subject calls, which #831 keeps in the file.",
-  },
-  {
-    files: ["ui/src/lib/ui/RepositoryHome.test.ts", "ui/src/routes/page.test.ts"],
-    tokens: [50],
+    tokens: [64],
     why: "Each test file mocks the commands its subject calls, which #831 keeps in the file.",
   },
 ];

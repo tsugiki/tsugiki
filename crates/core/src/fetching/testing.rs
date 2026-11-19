@@ -1,6 +1,6 @@
 use std::sync::mpsc::{self, Receiver};
 
-use super::{Fetched, Fetching, Headless, Marked, SessionMessage};
+use super::{Fetched, Fetching, Headless, Marked, ScreenMove, SessionMessage};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::SavedBy;
 
@@ -16,6 +16,18 @@ pub(crate) fn named(message: SessionMessage) -> String {
         SessionMessage::SettingsChanged(_, SavedBy::Window) => "switch".to_owned(),
         SessionMessage::Mark(Marked::Unseen { number, .. }) => format!("unseen #{number}"),
         SessionMessage::Stop => "stop".to_owned(),
+        SessionMessage::Screen(moved) => match moved {
+            ScreenMove::Opened(Fetched::Issue(item)) => format!("opened Issue #{}", item.number),
+            ScreenMove::Opened(Fetched::PullRequest(item)) => {
+                format!("opened PR #{}", item.number)
+            }
+            ScreenMove::Hid(item) => format!("hid #{}", item.number),
+            ScreenMove::Showed(item) => format!("showed #{}", item.number),
+            ScreenMove::Closed(item) => format!("closed #{}", item.number),
+            ScreenMove::WindowHid => "window hid".to_owned(),
+            ScreenMove::WindowShowed => "window showed".to_owned(),
+            ScreenMove::WindowLoaded => "window loaded".to_owned(),
+        },
         SessionMessage::Check { .. }
         | SessionMessage::Sync { .. }
         | SessionMessage::Mark(

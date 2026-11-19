@@ -44,10 +44,8 @@ const core = vi.hoisted(() => ({
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
   issue: vi.fn(),
   openIssue: vi.fn(),
-  fetchIssue: vi.fn(),
   pullRequest: vi.fn(),
   openPullRequest: vi.fn(),
-  fetchPullRequest: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestRows: vi.fn(),
   pullRequestSpans: vi.fn(),
@@ -80,9 +78,13 @@ const THEMES = {
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
 vi.mock("$lib/data/bindings", async () => {
-  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  const { itemMoves, prFilesEvents } = await import("$lib/testing/fixtures");
   return {
     commands: {
+      ...itemMoves(),
+      windowLoaded: async () => null,
+      windowHidden: async () => null,
+      windowShown: async () => null,
       status: async () => ({ state: "online", login: "octocat" }),
       lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
       syncActivity: async () => null,
@@ -609,7 +611,6 @@ function listOnePr() {
     workbenchPage([{ kind: "standalone_pr", ...pr, backports: [], attention: null }]),
   );
   core.openPullRequest.mockResolvedValue(done);
-  core.fetchPullRequest.mockResolvedValue(done);
   core.pullRequest.mockResolvedValue({
     status: "ok",
     data: { ...pr, content: null, shares_review_of: null, hidden: null },

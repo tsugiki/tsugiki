@@ -31,7 +31,6 @@ export class IssueViewState extends DetailState<IssueView> {
   constructor(repository: string, number: number) {
     super(repository, number, {
       open: (repository, number) => commands.openIssue(repository, number),
-      fetch: (repository, number) => commands.fetchIssue(repository, number),
       read: (repository, number) => commands.issue(repository, number),
     });
   }

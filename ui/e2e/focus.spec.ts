@@ -36,11 +36,9 @@ async function openApp(page: Page): Promise<void> {
     home,
     workbench: workbenchPage([issue], { count: 1 }),
     openIssue: done,
-    fetchIssue: done,
     openOnGithub: done,
     issue: ok(issueView),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok(prView()),
   });
   await page.goto("/");

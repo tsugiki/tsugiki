@@ -108,6 +108,14 @@ export const diffFile = (path: string, row: number, more: Partial<DiffFile> = {}
   ...more,
 });
 
+/** The `commands` of a mocked `$lib/data/bindings` that a view in the Detail pane tells the core through
+ * what the user did with its item, each answering that it did. A `vi.mock` factory takes this with
+ * `await import`, as it does `prFilesEvents`. */
+export const itemMoves = () => {
+  const answered = async () => done;
+  return { hideItem: answered, showItem: answered, closeItem: answered };
+};
+
 /** The events the Detail pane listens to while it shows a PR: its view's, and its Files tab's. */
 const PR_FILES_EVENTS = [
   "changed",

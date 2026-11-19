@@ -130,7 +130,7 @@ impl Marked {
 }
 
 /// An Issue or a PR on screen, whose conversation the session reads from GitHub.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Fetched {
     Issue(Item),
     PullRequest(Item),
@@ -152,6 +152,25 @@ impl Fetched {
     }
 }
 
+/// What the user did with an Issue or a PR in the window, or with the window itself, which says what the
+/// session reads from GitHub again each minute.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ScreenMove {
+    /// A view opened this item, which shows. Each view of an item sends one, as two can overlap while one
+    /// takes over from the other.
+    Opened(Fetched),
+    /// Another view hides this item, which stays open.
+    Hid(Item),
+    /// This item shows again.
+    Showed(Item),
+    /// A view of this item went, and the item goes off screen once all its views have.
+    Closed(Item),
+    WindowHid,
+    WindowShowed,
+    /// The window loaded afresh and shows: the views of the page before went without closing.
+    WindowLoaded,
+}
+
 /// What the session's thread is asked, which alone holds the token, the client and the store's writer. It
 /// takes each between two sync steps, so the user's demands go ahead of the sync's tiers.
 pub(crate) enum SessionMessage {
@@ -171,6 +190,8 @@ pub(crate) enum SessionMessage {
     Mark(Marked),
     /// A read of what an item says. A demand that comes while the same read waits or runs shares its outcome.
     Fetch(Fetched),
+    /// What the user did with an item on screen, or with the window.
+    Screen(ScreenMove),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
 }
@@ -275,6 +296,12 @@ impl Fetching {
         let item = Item { repository, number };
         self.headless.forget(&item);
         self.to_session(SessionMessage::Fetch(Fetched::PullRequest(item)));
+    }
+
+    /// The user did `moved` with an item on screen, or with the window: the session reads each item the user
+    /// can see from GitHub again a minute after its last read.
+    pub(crate) fn screen_moved(&self, moved: ScreenMove) {
+        self.to_session(SessionMessage::Screen(moved));
     }
 
     /// Whether the session's last read of PR `number`'s Conversation since launch named no head, and no

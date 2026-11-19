@@ -70,15 +70,23 @@ export const commands = {
 	 *  Last seen stays: only Mark Seen moves it.
 	 */
 	openIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
-	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
-	fetchIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
 	/**
 	 *  Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
 	 *  GitHub's answer comes later.
 	 */
 	openPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
-	/**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */
-	fetchPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
+	/**  Tells the core another view hides the Issue or PR the user opened, and returns at once. */
+	hideItem: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("hide_item", { repository, number })),
+	/**  Tells the core the Issue or PR the user opened shows again, and returns at once. */
+	showItem: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("show_item", { repository, number })),
+	/**  Tells the core the user left the Issue or PR they opened, and returns at once. */
+	closeItem: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("close_item", { repository, number })),
+	/**  Tells the core the window hid, and returns at once. */
+	windowHidden: () => __TAURI_INVOKE<void>("window_hidden"),
+	/**  Tells the core the window shows again, and returns at once. */
+	windowShown: () => __TAURI_INVOKE<void>("window_shown"),
+	/**  Tells the core the window loaded afresh, with no item open, and returns at once. */
+	windowLoaded: () => __TAURI_INVOKE<void>("window_loaded"),
 	/**
 	 *  Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
 	 *  Returns at once, and the `changed` event follows.

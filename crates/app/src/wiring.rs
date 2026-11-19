@@ -31,6 +31,10 @@ use crate::{
 /// hour, out of 5,000 (ADR 0015).
 const REPOSITORY_REFRESH: Duration = Duration::from_secs(180);
 
+/// How long after its last read the Issue or PR on screen is read again, while the user can see it. A read
+/// costs a point, as the user reads (ADR 0015).
+const ON_SCREEN_REFRESH: Duration = Duration::from_secs(60);
+
 /// The time between two checks of GitHub Releases for a newer version, after the one at start-up. GitHub
 /// lets one address ask 60 times an hour without a token, and this asks four times a day.
 const RELEASE_CHECK: Duration = Duration::from_secs(6 * 60 * 60);
@@ -157,6 +161,7 @@ pub(crate) fn connect_core<R: Runtime>(
     let intervals = Intervals {
         status: refresh,
         repository: REPOSITORY_REFRESH,
+        on_screen: ON_SCREEN_REFRESH,
     };
     let call_folders = folders.clone();
     // The session hands the mirrors the rules' wants, and takes the patch-ids they read.

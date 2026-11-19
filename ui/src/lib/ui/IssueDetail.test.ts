@@ -8,22 +8,24 @@ import IssueDetail from "./IssueDetail.svelte";
 const core = vi.hoisted(() => ({
   issue: vi.fn(),
   openIssue: vi.fn(),
-  fetchIssue: vi.fn(),
   openOnGithub: vi.fn(),
   openLink: vi.fn(),
   listen: vi.fn(),
 }));
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    issue: core.issue,
-    openIssue: core.openIssue,
-    fetchIssue: core.fetchIssue,
-    openOnGithub: core.openOnGithub,
-    openLink: core.openLink,
-  },
-  events: { changed: { listen: core.listen }, readFailed: { listen: core.listen } },
-}));
+vi.mock("$lib/data/bindings", async () => {
+  const { itemMoves } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      issue: core.issue,
+      openIssue: core.openIssue,
+      ...itemMoves(),
+      openOnGithub: core.openOnGithub,
+      openLink: core.openLink,
+    },
+    events: { changed: { listen: core.listen }, readFailed: { listen: core.listen } },
+  };
+});
 
 /** PR `number`'s row, merged and reviewed. */
 const row = (number: number) =>

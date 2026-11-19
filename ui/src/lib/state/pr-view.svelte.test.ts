@@ -10,7 +10,7 @@ vi.mock("$lib/data/bindings", async () => {
     commands: {
       pullRequest: vi.fn(),
       openPullRequest: vi.fn(),
-      fetchPullRequest: vi.fn(),
+      closeItem: vi.fn(),
       pullRequestFiles: vi.fn(),
       cloning: vi.fn(),
       mirrorStates: vi.fn(async () => []),
@@ -36,7 +36,7 @@ const view: PrView = {
 describe("PrViewState", () => {
   beforeEach(() => {
     vi.mocked(commands.openPullRequest).mockResolvedValue(done);
-    vi.mocked(commands.fetchPullRequest).mockResolvedValue(done);
+    vi.mocked(commands.closeItem).mockResolvedValue(done);
     vi.mocked(commands.pullRequest).mockResolvedValue(ok(view));
     vi.mocked(commands.pullRequestFiles).mockResolvedValue({ status: "ok", data: { state: "fetching" } });
     vi.mocked(commands.cloning).mockResolvedValue(null);
@@ -103,16 +103,18 @@ describe("PrViewState", () => {
     state.stop();
   });
 
-  it("reads the PR from GitHub once a minute while it's on screen", async () => {
+  it("leaves reading the PR from GitHub again to the core, and tells it once the user leaves", async () => {
     vi.useFakeTimers();
     const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     await state.load();
 
-    await vi.advanceTimersByTimeAsync(60_000);
-
-    expect(commands.fetchPullRequest).toHaveBeenCalledExactlyOnceWith("python/cpython", 11);
-    expect(commands.openPullRequest).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(120_000);
     state.stop();
+
+    await vi.waitFor(() => {
+      expect(commands.closeItem).toHaveBeenCalledExactlyOnceWith("python/cpython", 11);
+    });
+    expect(commands.openPullRequest).toHaveBeenCalledTimes(1);
   });
 
   it("hears why a read of this PR from GitHub failed, and of no other item", async () => {

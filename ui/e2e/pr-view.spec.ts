@@ -43,10 +43,8 @@ test("a PR in an Issue's tree opens in the Detail pane, switches tabs, and Esc g
     home,
     workbench: workbenchPage([issue]),
     openIssue: done,
-    fetchIssue: done,
     issue: ok(issueView),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok(view),
     pullRequestFiles: ok(
       readyFiles(3, {
@@ -174,10 +172,8 @@ const threaded = async (page: Page, at: DiffThread["at"], words: string) => {
     home,
     workbench: workbenchPage([issue]),
     openIssue: done,
-    fetchIssue: done,
     issue: ok(issueView),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok(reviewed),
     pullRequestFiles: ok(
       readyFiles(4, {
@@ -450,7 +446,6 @@ test("a PR opens one file at a time as the settings say, walks its files, and sw
     home,
     workbench: workbenchPage([issue]),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok(view),
     pullRequestFiles: ok(
       readyFiles(142, {
@@ -552,7 +547,6 @@ test("a stale PR says what changed since the Review over both tabs, and Review c
     home,
     workbench: workbenchPage([issue]),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok(stale),
     pullRequestFiles: ok(
       readyFiles(

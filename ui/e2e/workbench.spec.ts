@@ -96,7 +96,6 @@ test("an item with nothing waiting sits in the one list below what does, and Alt
     home,
     workbench: workbenchPage([review, own]),
     openIssue: done,
-    fetchIssue: done,
     issue: ok({
       ...review,
       merged: [],
@@ -108,7 +107,6 @@ test("an item with nothing waiting sits in the one list below what does, and Alt
       needs_attention: [],
     }),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok(ownView),
   });
   await page.goto("/");
@@ -265,7 +263,6 @@ async function openFarDown(page: Page) {
     home,
     workbench: workbenchPage(thirty, { count: 30 }),
     openPullRequest: done,
-    fetchPullRequest: done,
     pullRequest: ok({
       ...reviewRow,
       number: 1020,

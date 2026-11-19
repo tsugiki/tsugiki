@@ -54,7 +54,6 @@ export class PrViewState extends DetailState<PrView> {
   ) {
     super(repository, number, {
       open: (repository, number) => commands.openPullRequest(repository, number),
-      fetch: (repository, number) => commands.fetchPullRequest(repository, number),
       read: (repository, number) => commands.pullRequest(repository, number),
     });
     this.issue = issue;

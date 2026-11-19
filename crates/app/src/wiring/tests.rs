@@ -802,7 +802,12 @@ fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window(
     let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z" });
 
     drop(wired.ask("open_issue", issue_7.clone()).unwrap());
-    drop(wired.ask("fetch_issue", issue_7.clone()).unwrap());
+    for moved in ["hide_item", "show_item", "close_item"] {
+        drop(wired.ask(moved, issue_7.clone()).unwrap());
+    }
+    for moved in ["window_hidden", "window_shown", "window_loaded"] {
+        drop(wired.ask(moved, json!({})).unwrap());
+    }
     drop(
         wired
             .ask("mark_unseen", json!({ "repository": CPYTHON, "number": 8 }))
@@ -928,7 +933,7 @@ fn a_pr_read_github_cant_answer_tells_the_window_it_waits_on_github() {
     drop(
         wired
             .ask(
-                "fetch_pull_request",
+                "open_pull_request",
                 json!({ "repository": CPYTHON, "number": 7 }),
             )
             .unwrap(),
@@ -1060,7 +1065,6 @@ fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers()
         let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
         after = wired.ask("pull_request", pr.clone()).unwrap();
     }
-    drop(wired.ask("fetch_pull_request", pr).unwrap());
     drop(wired.stop());
 
     assert_eq!(before["number"], number);
@@ -1082,22 +1086,26 @@ fn a_name_that_isnt_a_repository_opens_nothing() {
     let bad = json!({ "repository": "not a name", "number": 7 });
 
     let open = wired.ask("open_issue", bad.clone()).unwrap_err();
-    let fetch = wired.ask("fetch_issue", bad.clone()).unwrap_err();
     let read = wired.ask("issue", bad.clone()).unwrap_err();
     let typed = json!({ "repository": "not a name", "typed": "7" });
     let found = wired.ask("quick_open", typed).unwrap_err();
-    let pr_errors: Vec<Value> = ["open_pull_request", "fetch_pull_request", "pull_request"]
-        .into_iter()
+    let item_commands = [
+        "open_pull_request",
+        "pull_request",
+        "hide_item",
+        "show_item",
+        "close_item",
+    ];
+    let item_errors: Vec<Value> = (item_commands.into_iter())
         .map(|command| wired.ask(command, bad.clone()).unwrap_err()["kind"].clone())
         .collect();
     let page = crate::open_github_page("not a name", GitHubItem::Issue { number: 7 }, no_browser);
     drop(wired.stop());
 
     assert_eq!(open["kind"], "not_found");
-    assert_eq!(fetch["kind"], "not_found");
     assert_eq!(read["kind"], "not_found");
     assert_eq!(found["kind"], "not_found");
-    assert_eq!(pr_errors, ["not_found", "not_found", "not_found"]);
+    assert_eq!(item_errors, ["not_found"; 5]);
     assert!(page.is_err());
 }
 

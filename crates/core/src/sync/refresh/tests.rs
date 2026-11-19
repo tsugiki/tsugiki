@@ -20,7 +20,7 @@ use crate::store::{Archiving, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
-    no_cross_references, pr_node,
+    no_cross_references, pr_node, searches_finding,
 };
 use crate::sync::{Progress, Syncs};
 use crate::testing::{issue_facts, me, moment};
@@ -1202,6 +1202,62 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
         [
             "RefreshRepository",
             "FetchChangedPullRequests",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
+fn a_filter_switched_on_during_a_first_sync_has_the_next_refresh_read_what_the_switch_owed() {
+    let hit = json!({
+        "__typename": "PullRequest",
+        "id": "id2",
+        "number": 2,
+        "updatedAt": LONG_BEFORE,
+        "repository": { "nameWithOwner": "python/cpython" },
+    });
+    let mut replies = searches_finding(&[]);
+    replies.push(searched(&[hit], None));
+    replies.push(fetched_nodes(&[strangers_pr(2, LONG_BEFORE)], RATE_LIMIT));
+    replies.push(polled(
+        &list(&[], None),
+        &list(&[], None),
+        &[search(&[], None)],
+    ));
+    replies.push(approved());
+    let harness = Harness::new("switched-mid-first-sync", replies);
+    harness.db.store.remember_login(&me()).unwrap();
+    let mut off = filtering(&["a"]);
+    off.filters[0].on_workbench = OnWorkbench::Off;
+    let mut syncs = refreshing(off);
+    while !harness.numbers().contains(&2) {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+    let first_sync_finished = harness.db.store.sync_state(&cpython()).unwrap();
+
+    // As the session does when the user switches "a" on.
+    drop(syncs.replace_settings(filtering(&["a"])));
+    harness
+        .db
+        .store
+        .owe_read_ahead(&cpython(), vec![2])
+        .unwrap();
+    drop(run(&mut syncs, &harness));
+    syncs.add(filtering(&["a"]));
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        first_sync_finished, None,
+        "the switch came during the first sync"
+    );
+    assert_eq!(
+        harness.operations()[4..],
+        [
+            "SearchFilter",
+            "FetchPullRequests",
+            "RefreshRepository",
             "FetchPullRequestContent"
         ]
     );

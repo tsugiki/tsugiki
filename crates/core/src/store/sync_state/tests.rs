@@ -69,7 +69,7 @@ fn each_kind_of_check_reads_back_as_it_was_saved() {
 }
 
 #[test]
-fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
+fn the_reads_a_refresh_owes_last_until_a_refresh_finishes() {
     let (path, _folder) = temp_database("sync-state-read-ahead");
     let store = Store::open(&path).unwrap();
     let under_way = SyncState {
@@ -101,11 +101,23 @@ fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
     store
         .save_sync_state(&cpython(), at(200, ChangeCheck::Skipped))
         .unwrap();
-    let after = store.read_ahead_owed(&cpython()).unwrap();
+    let after_a_first_sync = store.read_ahead_owed(&cpython()).unwrap();
+    store
+        .save_finished_refresh(&cpython(), at(300, ChangeCheck::Skipped))
+        .unwrap();
+    let after_a_refresh = store.read_ahead_owed(&cpython()).unwrap();
     store.close();
 
     assert_eq!(owed, BTreeSet::from([1, 3]), "PR 2's Conversation was read");
-    assert_eq!(after, BTreeSet::new(), "a finished sync owes nothing");
+    assert_eq!(
+        after_a_first_sync, owed,
+        "a finished first sync read none ahead"
+    );
+    assert_eq!(
+        after_a_refresh,
+        BTreeSet::new(),
+        "a finished refresh owes nothing"
+    );
 }
 
 fn no_conversation() -> PullRequestContent {

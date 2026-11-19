@@ -626,9 +626,8 @@ fn settings_changed(
 /// The syncs read settings `now` in place of `before`. A Filter switched on puts PRs in Reach that no
 /// change on GitHub would have the Mirror fetch the head of or a refresh read ahead (#819). So the Mirror
 /// worker hears the new Reach at once, and the store owes a read of each Conversation the rules say the
-/// switch owes. A refresh that finishes reads those still in Reach ahead. A first sync that finishes first
-/// forgets them, as it forgets every read owed. One switched off takes PRs out, and the Mirror worker stops
-/// wanting their heads.
+/// switch owes. A refresh that finishes reads those still in Reach ahead. One switched off takes PRs out, and
+/// the Mirror worker stops wanting their heads.
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
 /// are lost, as no later step works them out, and the log says so. The PR view reads a lost Conversation

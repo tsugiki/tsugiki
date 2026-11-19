@@ -135,7 +135,10 @@ pub(super) fn forget_read_ahead_of(
 }
 
 /// A finished refresh has read ahead each PR it owed, or found it out of Reach.
-fn forget_read_ahead(connection: &Connection, repository: &RepositoryName) -> rusqlite::Result<()> {
+pub(super) fn forget_read_ahead(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<()> {
     connection
         .execute(
             "DELETE FROM read_ahead WHERE repository = :repository",
@@ -209,9 +212,6 @@ pub(super) fn save(
         ChangeCheck::Untagged => (true, None),
         ChangeCheck::Tagged(etag) => (true, Some(etag)),
     };
-    if !state.refresh_under_way {
-        forget_read_ahead(connection, repository)?;
-    }
     let params = named_params! {
         ":repository": repository,
         ":started_at": state.started_at.unix_timestamp(),

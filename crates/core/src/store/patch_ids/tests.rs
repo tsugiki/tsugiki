@@ -62,8 +62,9 @@ fn reviewed_at(commit: &CommitSha) -> PullRequestContent {
 }
 
 /// A store of a database with the user signed in, and PR 1 reviewed at commit 1 and now at commit 2, and
-/// the temp folder that holds it. Close the store before the folder drops.
-fn seeded(name: &str) -> (Store, TempPath) {
+/// the temp folder that holds it. Close the store before the folder drops: bound as `(_folder, store)`, the
+/// store drops first on a panic too.
+fn seeded(name: &str) -> (TempPath, Store) {
     let (path, folder) = migrated_database(name);
     let store = Store::open(&path).unwrap();
     store.remember_login(&me()).unwrap();
@@ -77,12 +78,12 @@ fn seeded(name: &str) -> (Store, TempPath) {
             (reviewed_at(&sha_of('1')), OffsetDateTime::UNIX_EPOCH),
         )
         .unwrap();
-    (store, folder)
+    (folder, store)
 }
 
 #[test]
 fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read() {
-    let (store, _folder) = seeded("patch-ids-both");
+    let (_folder, store) = seeded("patch-ids-both");
     let unread = store.work_facts(&cpython()).unwrap().reviews;
     let reviewed = vec![file("Lib/ast.py", '1'), file("Python/clinic.h", 'f')];
     let head = vec![file("Lib/ast.py", '2')];
@@ -127,7 +128,7 @@ fn the_facts_hold_the_reviewed_commit_and_the_patch_ids_of_both_sides_once_read(
 
 #[test]
 fn a_commit_with_nothing_to_diff_is_held_with_no_files() {
-    let (store, _folder) = seeded("patch-ids-empty");
+    let (_folder, store) = seeded("patch-ids-empty");
     let empty = CommitPatches {
         of: of(&sha_of('2'), "main"),
         files: vec![],
@@ -142,7 +143,7 @@ fn a_commit_with_nothing_to_diff_is_held_with_no_files() {
 
 #[test]
 fn reading_a_commit_again_replaces_what_was_held() {
-    let (store, _folder) = seeded("patch-ids-again");
+    let (_folder, store) = seeded("patch-ids-again");
     let first = CommitPatches {
         of: of(&sha_of('2'), "main"),
         files: vec![file("Lib/ast.py", '1'), file("Lib/os.py", '3')],
@@ -165,7 +166,7 @@ fn reading_a_commit_again_replaces_what_was_held() {
 
 #[test]
 fn patch_ids_against_another_branch_or_of_a_commit_no_check_compares_stay_out() {
-    let (store, _folder) = seeded("patch-ids-other");
+    let (_folder, store) = seeded("patch-ids-other");
     let elsewhere = [of(&sha_of('2'), "3.14"), of(&sha_of('3'), "main")].map(|of| CommitPatches {
         of,
         files: vec![file("Lib/ast.py", '1')],
@@ -204,7 +205,7 @@ fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
 
 #[test]
 fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
-    let (store, _folder) = seeded("patch-ids-unchecked");
+    let (_folder, store) = seeded("patch-ids-unchecked");
     let old_git = CantCheck::OldGit {
         version: "git version 2.38.1".to_owned(),
         needed: "2.39".to_owned(),
@@ -233,7 +234,7 @@ fn the_commits_the_worker_cant_read_replace_those_it_couldnt_before() {
 
 #[test]
 fn each_reason_comes_back_as_it_was_kept() {
-    let (store, _folder) = seeded("patch-ids-reasons");
+    let (_folder, store) = seeded("patch-ids-reasons");
     let reasons = [
         CantCheck::Broken,
         CantCheck::NoGit,
@@ -257,7 +258,7 @@ fn each_reason_comes_back_as_it_was_kept() {
 
 #[test]
 fn a_new_run_forgets_why_the_worker_couldnt_read_patch_ids() {
-    let (store, _folder) = seeded("patch-ids-forget");
+    let (_folder, store) = seeded("patch-ids-forget");
     store
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::Cloning)])
         .unwrap();
@@ -271,7 +272,7 @@ fn a_new_run_forgets_why_the_worker_couldnt_read_patch_ids() {
 
 #[test]
 fn a_reason_the_store_doesnt_know_fails_the_read() {
-    let (store, _folder) = seeded("patch-ids-unknown-reason");
+    let (_folder, store) = seeded("patch-ids-unknown-reason");
     store
         .save_unchecked(&cpython(), vec![unchecked('2', CantCheck::NoGit)])
         .unwrap();
@@ -294,7 +295,7 @@ fn a_reason_the_store_doesnt_know_fails_the_read() {
 
 #[test]
 fn the_last_check_of_a_pr_brings_the_patch_ids_of_the_head_it_compared() {
-    let (store, _folder) = seeded("patch-ids-last-check");
+    let (_folder, store) = seeded("patch-ids-last-check");
     let earlier = CommitPatches {
         of: of(&sha_of('3'), "main"),
         files: vec![file("Lib/ast.py", '3')],
@@ -327,7 +328,7 @@ fn the_last_check_of_a_pr_brings_the_patch_ids_of_the_head_it_compared() {
 
 #[test]
 fn the_last_check_of_another_review_brings_no_patch_ids() {
-    let (store, _folder) = seeded("patch-ids-last-other");
+    let (_folder, store) = seeded("patch-ids-last-other");
     let earlier = CommitPatches {
         of: of(&sha_of('3'), "main"),
         files: vec![file("Lib/ast.py", '3')],

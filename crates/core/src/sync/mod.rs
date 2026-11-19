@@ -566,6 +566,7 @@ impl UserWorkSync {
         };
         match self.kind {
             Kind::Refresh => store.save_finished_refresh(&self.repository, state)?,
+            // No tree gets here: the queue drops one once its steps run out (`step_tree`).
             Kind::First(_) | Kind::Tree => store.save_sync_state(&self.repository, state)?,
         }
         Ok(LastSync {

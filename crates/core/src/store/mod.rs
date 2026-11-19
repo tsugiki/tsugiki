@@ -274,8 +274,8 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
-    /// Saves where `repository`'s syncs stand: a refresh under way, or a first sync or the read of a tree
-    /// that finished. Neither read ahead, so the reads the store owes stay owed for the next refresh (#900).
+    /// Saves where `repository`'s syncs stand: a refresh under way, or a first sync that finished. Neither
+    /// has read ahead, so the reads the store owes stay owed for the next refresh (#900).
     pub fn save_sync_state(
         &self,
         repository: &RepositoryName,

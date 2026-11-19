@@ -1232,7 +1232,11 @@ fn a_filter_switched_on_during_a_first_sync_has_the_next_refresh_read_what_the_s
     let mut off = filtering(&["a"]);
     off.filters[0].on_workbench = OnWorkbench::Off;
     let mut syncs = refreshing(off);
-    while !harness.numbers().contains(&2) {
+    for steps in 0.. {
+        if harness.numbers().contains(&2) {
+            break;
+        }
+        assert!(steps < 20, "the first sync never fetched PR 2");
         drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     let first_sync_finished = harness.db.store.sync_state(&cpython()).unwrap();

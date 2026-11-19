@@ -116,6 +116,18 @@ fn a_closed_item_is_read_no_more() {
 }
 
 #[test]
+fn closing_one_item_leaves_the_others_on_screen() {
+    let start = Instant::now();
+    let mut on_screen = opened_at(start);
+    let later = start + Duration::from_secs(10);
+    on_screen.moved(ScreenMove::Opened(Fetched::Issue(issue(8))), later);
+
+    on_screen.moved(ScreenMove::Closed(issue(7)), later);
+
+    assert_eq!(on_screen.wake(), Some(later + MINUTE));
+}
+
+#[test]
 fn an_item_stays_on_screen_until_each_view_that_opened_it_has_closed() {
     let start = Instant::now();
     let mut on_screen = opened_at(start);

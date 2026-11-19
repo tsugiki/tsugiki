@@ -14,8 +14,9 @@ use crate::github::testing::{
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::settings::ListOrder;
 use crate::status::Change;
-use crate::store::{Judged, Store};
+use crate::store::{Judged, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
@@ -24,6 +25,8 @@ use crate::sync::testing::{
 use crate::sync::{Progress, Syncs};
 use crate::testing::{issue_facts, me, moment};
 use crate::token::Token;
+use crate::work::Why;
+use crate::workbench::{Hidden, ListedItem, Workbench, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -1022,6 +1025,11 @@ fn approved() -> Result<Reply, Unreachable> {
     pull_request_answer(pull_request, RATE_LIMIT)
 }
 
+/// GitHub's answer to a read of a PR's Conversation that holds no Review or comment.
+fn quiet_conversation() -> Result<Reply, Unreachable> {
+    pull_request_answer(pr_content(&json!({})), RATE_LIMIT)
+}
+
 /// The states of the Reviews Tsugiki holds of PR `number`, or nothing if it hasn't read its Conversation.
 fn reviews_held(harness: &Harness, number: u32) -> Option<Vec<ReviewState>> {
     let (_, content) = harness
@@ -2013,42 +2021,50 @@ fn comment_after_it(who: &str) -> Activity {
     }
 }
 
-/// A merged PR by someone else that Tsugiki holds, and the poll that says it moved, with GitHub's next
-/// answer.
-fn a_merged_pr_moves(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness {
+/// PR 3 by `author`, merged, as GitHub answers with it at `updated_at`, its timeline holding `timeline`.
+fn merged_pr(author: &str, updated_at: &str, timeline: &[Value]) -> Value {
+    let changes = json!({
+        "author": { "login": author },
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": updated_at,
+        "timelineItems": { "nodes": timeline },
+    });
+    pr_node(3, &changes)
+}
+
+/// A harness that holds PR 3 by `author`, merged, whose next poll says it moved, and whose GitHub then
+/// answers `replies`.
+fn holding_a_merged_pr_that_moves(
+    name: &str,
+    author: &str,
+    replies: Vec<Result<Reply, Unreachable>>,
+) -> Harness {
     let moved = list(&[changed_pr(3, AFTER_IT)], None);
     let mut all = vec![polled(&list(&[], None), &moved, &[])];
     all.extend(replies);
     let harness = after_a_sync(name, all);
-    let held = json!({
-        "author": { "login": "some-author" },
-        "state": "MERGED",
-        "mergeCommit": { "oid": "0".repeat(40) },
-        "updatedAt": LONG_BEFORE,
-    });
-    holding_pr(&harness, &pr_node(3, &held));
-    drop(run(&mut refreshing(filtering(&[])), &harness));
+    holding_pr(&harness, &merged_pr(author, LONG_BEFORE, &[]));
     harness
 }
 
-#[test]
-fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
-    let conflict = json!({
+/// The Bot's comment at `AFTER_IT` that it could not backport a PR to 3.14.
+fn backport_conflict() -> Value {
+    json!({
         "__typename": "IssueComment",
         "createdAt": AFTER_IT,
         "author": { "__typename": "Bot", "login": "miss-islington-app" },
         "bodyText": "Sorry, I could not cleanly backport this to `3.14` due to a conflict.",
-    });
-    let after = json!({
-        "author": { "login": "some-author" },
-        "state": "MERGED",
-        "mergeCommit": { "oid": "0".repeat(40) },
-        "updatedAt": AFTER_IT,
-        "timelineItems": { "nodes": [conflict] },
-    });
-    let replies = vec![fetched_nodes(&[pr_node(3, &after)], RATE_LIMIT)];
+    })
+}
 
-    let harness = a_merged_pr_moves("merged-moved", replies);
+#[test]
+fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
+    let after = merged_pr("some-author", AFTER_IT, &[backport_conflict()]);
+    let replies = vec![fetched_nodes(&[after], RATE_LIMIT)];
+    let harness = holding_a_merged_pr_that_moves("merged-moved", "some-author", replies);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
 
     let events = harness.db.store.activity(&cpython(), 3).unwrap();
     assert_eq!(
@@ -2367,14 +2383,8 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
         .save_issues(&cpython(), vec![closed(1), closed(2)])
         .unwrap();
     stored_filter(&harness, "a", &[1, 2]);
-    let keys = vec![ItemKey::Issue { number: 1 }, ItemKey::Issue { number: 2 }];
-    let judged = Judged {
-        archived: keys,
-        closings: BTreeSet::new(),
-    };
-    store
-        .archive_closed(&cpython(), judged, moment(LAST_SYNC))
-        .unwrap();
+    let keys = [ItemKey::Issue { number: 1 }, ItemKey::Issue { number: 2 }];
+    archived_on_closing(&harness, &keys);
     store
         .unarchive(&cpython(), ItemKey::Issue { number: 1 })
         .unwrap();
@@ -2383,5 +2393,183 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
 
     // Issue 1 changed while closed, and Issue 2 reopened.
     assert_eq!(archived(&harness), []);
+    harness.finish();
+}
+
+/// Archives the items `keys` name as a sync does when it sees them close.
+fn archived_on_closing(harness: &Harness, keys: &[ItemKey]) {
+    let judged = Judged {
+        archived: keys.to_vec(),
+        closings: BTreeSet::new(),
+    };
+    harness
+        .db
+        .store
+        .archive_closed(&cpython(), judged, moment(LAST_SYNC))
+        .unwrap();
+}
+
+/// Item `key` as `view` lists it, read the way the window reads it, with `settings`.
+fn listed(
+    harness: &Harness,
+    settings: &RepositorySettings,
+    view: &WorkbenchView,
+    key: ItemKey,
+) -> Option<ListedItem> {
+    let page = Workbench::read(&harness.db.reader, settings, view, ListOrder::Attention).unwrap();
+    page.items.into_iter().find(|listed| listed.key == key)
+}
+
+/// Why item `key` Needs attention where the Workbench lists it. None, if the Workbench leaves it out or
+/// the Archived view lists it.
+fn why_back(harness: &Harness, settings: &RepositorySettings, key: ItemKey) -> Option<Vec<Why>> {
+    let back = listed(harness, settings, &WorkbenchView::Whole, key)?;
+    let archived = listed(harness, settings, &WorkbenchView::Archived, key);
+    archived.is_none().then(|| {
+        back.attention
+            .map_or_else(Vec::new, |attention| attention.why)
+    })
+}
+
+#[test]
+fn a_refresh_brings_back_a_closed_archived_issue_when_new_activity_on_it_needs_attention() {
+    let comment = json!({
+        "__typename": "IssueComment",
+        "createdAt": AFTER_IT,
+        "author": { "__typename": "User", "login": "some-author" },
+    });
+    let mut node = issue_in(1, AFTER_IT, "CLOSED");
+    node["author"] = json!({ "login": "octocat" });
+    node["timelineItems"] = json!({ "nodes": [comment] });
+    let replies = vec![
+        polled(
+            &list(&[node], None),
+            &list(&[], None),
+            &[search(&[issue_hit(1)], None)],
+        ),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archived-issue-back", replies);
+    let own_closed = IssueFacts {
+        author: Some(me()),
+        state: Some(IssueState::Closed),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(1)
+    };
+    (harness.db.store)
+        .save_issues(&cpython(), vec![own_closed])
+        .unwrap();
+    stored_filter(&harness, "a", &[1]);
+    let key = ItemKey::Issue { number: 1 };
+    archived_on_closing(&harness, &[key]);
+    let settings = filtering(&["a"]);
+    let put_away = listed(&harness, &settings, &WorkbenchView::Archived, key).is_some();
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    // The user opened Issue 1, and a colleague commented on it after it closed.
+    assert!(put_away);
+    let by = Login::new("some-author");
+    assert_eq!(
+        why_back(&harness, &settings, key),
+        Some(vec![Why::Comment { by }])
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_brings_back_an_archived_merged_pr_when_the_bot_says_its_backport_failed() {
+    let after = merged_pr("octocat", AFTER_IT, &[backport_conflict()]);
+    let replies = vec![
+        fetched_nodes(&[after], RATE_LIMIT),
+        // An Archived item stays in Reach, so the refresh reads ahead the PR's Conversation.
+        quiet_conversation(),
+    ];
+    let harness = holding_a_merged_pr_that_moves("archived-pr-back", "octocat", replies);
+    let key = ItemKey::PullRequest { number: 3 };
+    archived_on_closing(&harness, &[key]);
+    let settings = filtering(&[]);
+    let put_away = listed(&harness, &settings, &WorkbenchView::Archived, key).is_some();
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    assert!(put_away);
+    let target = "3.14".to_owned();
+    assert_eq!(
+        why_back(&harness, &settings, key),
+        Some(vec![Why::BackportFailed { target }])
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_leaves_a_muted_pr_hidden_on_new_activity_and_shows_it_on_a_review_request() {
+    const LATER: &str = "2026-11-04T11:00:00Z";
+    // A colleague's PR 3 that the user reviewed, with the Review requests and the timeline given.
+    let reviewed = |updated_at: &str, requests: &[Value], timeline: &[Value]| {
+        let changes = json!({
+            "author": { "login": "some-author" },
+            "title": "A change",
+            "updatedAt": updated_at,
+            "latestReviews": { "nodes": [{ "author": { "login": "octocat" }, "state": "COMMENTED" }] },
+            "reviewRequests": { "nodes": requests },
+            "timelineItems": { "nodes": timeline },
+        });
+        pr_node(3, &changes)
+    };
+    let comment = json!({
+        "__typename": "IssueComment",
+        "createdAt": AFTER_IT,
+        "author": { "__typename": "User", "login": "some-author" },
+        "bodyText": "One more thing.",
+    });
+    let commented = reviewed(AFTER_IT, &[], std::slice::from_ref(&comment));
+    let asked = json!({
+        "__typename": "ReviewRequestedEvent",
+        "createdAt": LATER,
+        "requestedReviewer": { "login": "octocat" },
+    });
+    let request = json!({ "requestedReviewer": { "login": "octocat" } });
+    let requested = reviewed(LATER, &[request], &[comment, asked]);
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(3, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(&[commented], RATE_LIMIT),
+        polled(&list(&[], None), &list(&[changed_pr(3, LATER)], None), &[]),
+        fetched_nodes(&[requested], RATE_LIMIT),
+        // The Review request puts the tree back in Reach, so the refresh reads ahead the Conversation.
+        quiet_conversation(),
+    ];
+    let harness = after_a_sync("muted-pr", replies);
+    holding_pr(&harness, &reviewed(LONG_BEFORE, &[], &[]));
+    let key = ItemKey::PullRequest { number: 3 };
+    let muting = Muting {
+        key,
+        numbers: vec![3],
+        up_to: Some(moment(LAST_SYNC)),
+    };
+    (harness.db.store)
+        .mute(&cpython(), muting, moment(LAST_SYNC))
+        .unwrap();
+    let settings = filtering(&[]);
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let on_comment = listed(&harness, &settings, &WorkbenchView::Whole, key);
+    let saved = harness.db.store.activity(&cpython(), 3).unwrap();
+    // The refresh started on the computer's clock, and the poll drops each PR updated before the last
+    // start, so the next poll starts from `LAST_SYNC` again.
+    synced(&harness, ChangeCheck::Skipped);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let on_request = listed(&harness, &settings, &WorkbenchView::Whole, key).unwrap();
+
+    // The user reviewed PR 3, so a colleague's comment would need attention on an item not Muted.
+    assert_eq!(saved, [comment_after_it("some-author")]);
+    assert_eq!(on_comment.map(|listed| listed.key), None);
+    assert_eq!(on_request.hidden, Some(Hidden::Muted));
+    let why = on_request.attention.map(|attention| attention.why);
+    assert_eq!(why, Some(vec![Why::ReviewRequested]));
     harness.finish();
 }

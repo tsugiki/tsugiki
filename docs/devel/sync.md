@@ -5,7 +5,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Polling is tiered and every interval is configurable:
   - The Workbench is refreshed every few minutes, fetching only what has changed since the last poll.
   - An open Issue or PR is refreshed when it is opened, and about once a minute while it stays on screen.
-  - Merged and closed PRs are fetched once and then frozen.
+  - A merged or closed PR is fetched once, and then only when a refresh's poll sees its `updatedAt` move,
+    so a comment on it, such as a Bot's that a backport failed, still arrives. The poll saves each changed
+    Issue the database holds, whatever its state.
   - A sync that sees an Issue or a Standalone PR close or merge, open in the database and closed in
     GitHub's answer, archives it if **Reach** held it while it was open
     ([workbench.md](workbench.md)). The database keeps each closing it saves until the sync judges it,

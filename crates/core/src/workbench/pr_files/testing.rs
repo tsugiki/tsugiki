@@ -77,7 +77,7 @@ impl World {
         self.view
             .db
             .store
-            .save_pull_request_content(&name, 7, content)
+            .save_pull_request_content(&name, 7, (content, time::OffsetDateTime::UNIX_EPOCH))
             .unwrap();
     }
 

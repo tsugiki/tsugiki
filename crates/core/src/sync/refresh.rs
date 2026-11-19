@@ -491,8 +491,11 @@ pub(super) fn read_ahead(
     };
     let step = match link.github.pull_request_content(link.repository, number) {
         Ok(read) => {
-            link.store
-                .save_pull_request_content(link.repository, number, read.content)?;
+            link.store.save_pull_request_content(
+                link.repository,
+                number,
+                (read.content, read.updated_at),
+            )?;
             Step::Saved {
                 touched: vec![number],
                 pause_until: pause_until(read.rate_limit),

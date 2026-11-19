@@ -21,7 +21,7 @@ use crate::repository::RepositoryName;
 /// threads, with the first 100 comments of each, cost GitHub about 104 requests: one point (ADR 0015). GitHub
 /// counts a request for each thread's comments, however many it gives. Each reply in a thread is a Review of
 /// its own on GitHub, so a busy PR needs all 100 to hold the Reviews worth showing.
-pub(super) const REVIEW_FIELDS: &str = " headRefOid reviews(last: 100) { totalCount nodes { id \
+pub(super) const REVIEW_FIELDS: &str = " updatedAt headRefOid reviews(last: 100) { totalCount nodes { id \
                                         fullDatabaseId author { login } state submittedAt bodyHTML \
                                         isMinimized minimizedReason commit { oid } } } \
                                         reviewThreads(last: 100) { nodes { id path line originalLine \
@@ -149,6 +149,8 @@ struct ThreadsWire {
 pub(super) struct PullRequestWire {
     #[serde(flatten)]
     conversation: IssueWire,
+    #[serde(with = "time::serde::rfc3339")]
+    updated_at: OffsetDateTime,
     head_ref_oid: String,
     reviews: ReviewsWire,
     review_threads: ThreadsWire,
@@ -282,6 +284,9 @@ impl From<PullRequestWire> for PullRequestContent {
 #[derive(Debug)]
 pub struct PullRequestRead {
     pub content: PullRequestContent,
+    /// GitHub's `updatedAt` for the PR at this read, which tells the store whether the head the content
+    /// names is newer than the head it keeps.
+    pub updated_at: OffsetDateTime,
     pub rate_limit: RateLimit,
 }
 
@@ -295,6 +300,7 @@ impl GitHub {
         let (wire, rate_limit): (PullRequestWire, RateLimit) =
             self.conversation(Thread::PullRequest, repository, number)?;
         Ok(PullRequestRead {
+            updated_at: wire.updated_at,
             content: wire.into(),
             rate_limit,
         })

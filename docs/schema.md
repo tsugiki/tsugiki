@@ -29,6 +29,7 @@ erDiagram
         INTEGER checks_read_at "nullable"
         TEXT head "nullable"
         TEXT base "nullable"
+        INTEGER head_at "nullable"
     }
     review_requests {
         TEXT repository PK, FK

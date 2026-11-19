@@ -84,7 +84,7 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
         review("some-reviewer", ReviewState::Dismissed, Some("ccccccc"), 2),
     ]);
     store
-        .save_pull_request_content(&cpython(), 1, moved_on)
+        .save_pull_request_content(&cpython(), 1, (moved_on, when(0)))
         .unwrap();
     let only_colleagues = with_reviews(vec![review(
         "other-reviewer",
@@ -93,7 +93,7 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
         0,
     )]);
     store
-        .save_pull_request_content(&cpython(), 2, only_colleagues)
+        .save_pull_request_content(&cpython(), 2, (only_colleagues, when(0)))
         .unwrap();
     // GitHub no longer has the commit of the user's latest Review, so an earlier one doesn't stand in.
     let lost = with_reviews(vec![
@@ -101,7 +101,7 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
         review("some-reviewer", ReviewState::ChangesRequested, None, 1),
     ]);
     store
-        .save_pull_request_content(&cpython(), 3, lost)
+        .save_pull_request_content(&cpython(), 3, (lost, when(0)))
         .unwrap();
 
     let reviewed = store.reviewed_commits(&cpython()).unwrap();
@@ -134,7 +134,7 @@ fn a_conversation_says_when_the_commit_of_the_users_latest_review_moved() {
     };
     let moved = |content| {
         (world.db.store)
-            .save_read_of_pull_request(&cpython(), 1, content)
+            .save_read_of_pull_request(&cpython(), 1, (content, when(0)))
             .unwrap()
             .reviewed_moved
     };
@@ -145,25 +145,64 @@ fn a_conversation_says_when_the_commit_of_the_users_latest_review_moved() {
     world.finish();
 }
 
-#[test]
-fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_alone() {
-    let world = World::new("conversation-head");
-    let kept = PullRequestFacts {
-        head: Some(sha("aaaaaaa")),
-        ..pr_facts(2)
-    };
-    world.has(vec![pr_facts(1), kept, pr_facts(3)]);
-    let store = &world.db.store;
-    let save = |number, content| {
-        store
-            .save_read_of_pull_request(&cpython(), number, content)
-            .unwrap()
-            .head
-    };
-    let at = |number, commit| PrHead {
+/// GitHub's `updatedAt` `seconds` after 1970.
+fn when(seconds: i64) -> OffsetDateTime {
+    OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)
+}
+
+/// PR `number` at `commit`, as a `HeadKept` names it.
+fn head_of(number: u32, commit: &str) -> PrHead {
+    PrHead {
         number,
         commit: sha(commit),
         target_branch: "main".to_owned(),
+    }
+}
+
+/// The head PR `number`'s facts keep, and the head its kept Conversation was read at.
+fn heads(world: &World, number: u32) -> (Option<CommitSha>, Option<CommitSha>) {
+    let (facts, conversation) = (world.db.reader)
+        .pull_request_facts(&cpython(), number)
+        .unwrap();
+    let facts = facts
+        .pull_requests
+        .into_iter()
+        .find(|pr| pr.number == number);
+    (
+        facts.and_then(|pr| pr.head),
+        conversation.and_then(|read| read.head),
+    )
+}
+
+#[test]
+fn a_conversation_keeps_its_head_in_a_pr_with_none_or_an_older_one() {
+    let world = World::new("conversation-head");
+    let at = |seconds, head: Option<&str>| PullRequestFacts {
+        updated_at: when(seconds),
+        head: head.map(sha),
+        ..pr_facts(2)
+    };
+    world.has(vec![
+        PullRequestFacts {
+            number: 1,
+            ..at(10, None)
+        },
+        at(10, Some("aaaaaaa")),
+        PullRequestFacts {
+            number: 3,
+            ..at(10, Some("aaaaaaa"))
+        },
+        PullRequestFacts {
+            number: 5,
+            ..at(10, None)
+        },
+    ]);
+    let store = &world.db.store;
+    let save = |number, content, seconds| {
+        store
+            .save_read_of_pull_request(&cpython(), number, (content, when(seconds)))
+            .unwrap()
+            .head
     };
     let unnamed = PullRequestContent {
         head: None,
@@ -171,28 +210,102 @@ fn a_conversation_gives_a_pr_kept_with_no_head_its_head_and_leaves_a_kept_head_a
     };
 
     assert_eq!(
-        save(1, with_reviews(vec![])),
-        HeadKept::Filled(at(1, "ccccccc"))
+        save(1, with_reviews(vec![]), 5),
+        HeadKept::Moved(head_of(1, "ccccccc")),
+        "a PR kept with no head takes the Conversation's, however old"
     );
     assert_eq!(
-        save(2, with_reviews(vec![])),
-        HeadKept::Had(at(2, "aaaaaaa")),
-        "the head the facts keep, which the Files tab asks for"
+        save(2, with_reviews(vec![]), 10),
+        HeadKept::Had(head_of(2, "aaaaaaa")),
+        "a read as old as the list's leaves its head"
     );
-    assert_eq!(save(3, unnamed), HeadKept::Unnamed);
-    assert_eq!(save(4, with_reviews(vec![])), HeadKept::NoFacts);
+    assert_eq!(
+        save(3, with_reviews(vec![]), 11),
+        HeadKept::Moved(head_of(3, "ccccccc"))
+    );
+    assert_eq!(save(5, unnamed, 11), HeadKept::Unnamed);
+    assert_eq!(save(4, with_reviews(vec![]), 11), HeadKept::NoFacts);
 
-    let head = |number| {
-        let (facts, _) = (world.db.reader)
-            .pull_request_facts(&cpython(), number)
-            .unwrap();
-        (facts.pull_requests.into_iter())
-            .find(|pr| pr.number == number)
-            .and_then(|pr| pr.head)
-    };
+    let kept = |number| heads(&world, number).0;
     assert_eq!(
-        (head(1), head(2), head(3)),
-        (Some(sha("ccccccc")), Some(sha("aaaaaaa")), None)
+        [kept(1), kept(2), kept(3), kept(5)],
+        [
+            Some(sha("ccccccc")),
+            Some(sha("aaaaaaa")),
+            Some(sha("ccccccc")),
+            None
+        ]
     );
     world.finish();
+}
+
+/// Which of a PR's two reads saves first.
+#[derive(Debug, Clone, Copy)]
+enum First {
+    List,
+    Conversation,
+}
+
+/// The head PR 1's facts keep and the head its Conversation was read at, after a list read at `list_at`
+/// naming `bbbbbbb` and a Conversation read at `conversation_at` naming `ccccccc` save in the order `first`
+/// says. The facts held `aaaaaaa` from a list read at second 1. Also what the Conversation's save did to
+/// the head.
+fn after_both(
+    first: First,
+    (list_at, conversation_at): (i64, i64),
+) -> (HeadKept, Option<CommitSha>, Option<CommitSha>) {
+    let world = World::new(&format!("both-reads-{first:?}-{list_at}"));
+    let at = |seconds, commit| PullRequestFacts {
+        updated_at: when(seconds),
+        head: Some(sha(commit)),
+        ..pr_facts(1)
+    };
+    world.has(vec![at(1, "aaaaaaa")]);
+    let list = || world.has(vec![at(list_at, "bbbbbbb")]);
+    let conversation = || {
+        (world.db.store)
+            .save_read_of_pull_request(&cpython(), 1, (with_reviews(vec![]), when(conversation_at)))
+            .unwrap()
+            .head
+    };
+    let saved = match first {
+        First::List => {
+            list();
+            conversation()
+        }
+        First::Conversation => {
+            let saved = conversation();
+            list();
+            saved
+        }
+    };
+    let (kept, read_at) = heads(&world, 1);
+    world.finish();
+    (saved, kept, read_at)
+}
+
+#[test]
+fn the_newer_reads_head_stays_whichever_saves_first() {
+    let (bbb, ccc) = (Some(sha("bbbbbbb")), Some(sha("ccccccc")));
+    let moved = HeadKept::Moved(head_of(1, "ccccccc"));
+
+    assert_eq!(
+        after_both(First::List, (10, 20)),
+        (moved.clone(), ccc.clone(), ccc.clone())
+    );
+    assert_eq!(
+        after_both(First::Conversation, (10, 20)),
+        (moved.clone(), ccc.clone(), ccc.clone())
+    );
+    // The Conversation's head names the commit its threads' lines count in, and lags the facts' until the
+    // next read of it. The rules read the facts'.
+    assert_eq!(
+        after_both(First::List, (20, 10)),
+        (
+            HeadKept::Had(head_of(1, "bbbbbbb")),
+            bbb.clone(),
+            ccc.clone()
+        )
+    );
+    assert_eq!(after_both(First::Conversation, (20, 10)), (moved, bbb, ccc));
 }

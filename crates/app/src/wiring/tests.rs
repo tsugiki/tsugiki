@@ -1809,12 +1809,14 @@ fn a_sync_fetches_the_heads_of_the_users_prs_into_the_mirror() {
     assert_eq!(head.trim(), commit);
 }
 
-/// PR #1 of cpython, someone else's, at `commit`, which no sync step reads.
+/// PR #1 of cpython, someone else's, at `commit`, which no sync step reads. The PR list read it after the
+/// recorded Conversation, so its facts keep `commit` when that Conversation saves.
 fn someone_elses_pr_1(folders: &Folders, commit: &str) {
     let pr = PullRequestFacts {
         title: "gh-1: Fix it".to_owned(),
         author: Some(Login::new("some-author")),
         head: CommitSha::parse(commit),
+        updated_at: tsugiki_core::testing::moment("2026-11-01T00:00:00Z"),
         ..pr_facts(1)
     };
     let name = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
@@ -2370,7 +2372,10 @@ fn offline_a_pr_whose_head_the_mirror_holds_shows_its_diff_highlighting_and_thre
     let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
     let name = RepositoryName::parse(CPYTHON).unwrap();
     let content = conversation_of_pr_1(&commit);
-    store.save_pull_request_content(&name, 1, content).unwrap();
+    let read_at = time::OffsetDateTime::UNIX_EPOCH;
+    store
+        .save_pull_request_content(&name, 1, (content, read_at))
+        .unwrap();
     store.close();
     let wired = Wired::start(Ok(folders), no_network());
 

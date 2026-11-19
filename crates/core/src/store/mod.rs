@@ -406,14 +406,15 @@ impl Store {
     }
 
     /// Keeps what PR `number` says, its Reviews included, in place of what was kept before. A refresh no
-    /// longer owes a read of it. A PR kept with no head takes the head the Conversation names.
+    /// longer owes a read of it. The PR's facts keep the head the Conversation names when GitHub's
+    /// `updatedAt` at this read, `read_at`, is later than at the read whose head they keep.
     pub fn save_pull_request_content(
         &self,
         repository: &RepositoryName,
         number: u32,
-        content: PullRequestContent,
+        read: (PullRequestContent, OffsetDateTime),
     ) -> Result<(), Error> {
-        let saved = self.save_read_of_pull_request(repository, number, content);
+        let saved = self.save_read_of_pull_request(repository, number, read);
         saved.map(|_kept| ())
     }
 
@@ -423,11 +424,11 @@ impl Store {
         &self,
         repository: &RepositoryName,
         number: u32,
-        content: PullRequestContent,
+        (content, read_at): (PullRequestContent, OffsetDateTime),
     ) -> Result<ConversationSaved, Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            pull_request_content::save(connection, &repository, number, &content)
+            pull_request_content::save(connection, &repository, number, (&content, read_at))
         })?;
         saved.map_err(saying(CANT_WRITE))
     }

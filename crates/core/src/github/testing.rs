@@ -193,6 +193,7 @@ pub fn pr_content(changes: &Value) -> Value {
         "comments": { "totalCount": 0, "nodes": [] },
         "reviews": { "totalCount": 0, "nodes": [] },
         "reviewThreads": { "nodes": [] },
+        "updatedAt": "2026-11-04T10:00:00Z",
         "headRefOid": "0123abc",
     });
     changed(pull_request, changes)

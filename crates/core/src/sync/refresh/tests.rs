@@ -1272,7 +1272,7 @@ fn a_conversation_the_pr_view_read_while_a_refresh_reads_ahead_isnt_read_again()
     harness
         .db
         .store
-        .save_pull_request_content(&cpython(), 3, read.unwrap())
+        .save_pull_request_content(&cpython(), 3, (read.unwrap(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
     drop(run(&mut syncs, &harness));
 

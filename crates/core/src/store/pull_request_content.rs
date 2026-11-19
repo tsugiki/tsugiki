@@ -4,10 +4,11 @@
 use std::collections::BTreeMap;
 
 use rusqlite::{OptionalExtension, Row, Transaction, named_params};
+use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
-use super::{issue_content, sync_state};
+use super::{issue_content, pull_requests, sync_state};
 use crate::facts::CommitSha;
 use crate::facts::issue_content::Comment;
 use crate::facts::pull_request_content::{
@@ -114,7 +115,7 @@ pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
     number: u32,
-    content: &PullRequestContent,
+    (content, read_at): (&PullRequestContent, OffsetDateTime),
 ) -> rusqlite::Result<ConversationSaved> {
     let transaction = connection.transaction()?;
     let reviewed_before = reviewed_commit(&transaction, repository, number)?;
@@ -143,7 +144,7 @@ pub(super) fn save(
         },
     )?;
     let kept = match &content.head {
-        Some(commit) => keep_head(&transaction, repository, number, commit)?,
+        Some(commit) => head_kept(&transaction, repository, number, (commit, read_at))?,
         None => HeadKept::Unnamed,
     };
     let mut position = 0_u32;
@@ -190,10 +191,11 @@ pub enum HeadKept {
     Unnamed,
     /// The facts hold no PR of that number, so nothing there keeps the head.
     NoFacts,
-    /// The facts held a head already, which stays: the head the Files tab asks for.
+    /// The facts keep the head they held: a read as new as the Conversation's or newer named it, or it is
+    /// the head the Conversation names. The Files tab asks for it.
     Had(PrHead),
-    /// The facts had no head, and keep the one the Conversation names.
-    Filled(PrHead),
+    /// The facts held no head or an older read's, and keep the one the Conversation names.
+    Moved(PrHead),
 }
 
 /// The commit the user's latest Review of PR `number` covered, as `reviewed_commits` says.
@@ -208,20 +210,16 @@ fn reviewed_commit(
         .map(|reviewed| reviewed.commit))
 }
 
-/// A PR stored before Tsugiki kept heads has none, and the sync reads it again only once it changes, so it
-/// takes `commit`, the head its Conversation names (#782).
-fn keep_head(
+/// Keeps `commit`, the head the Conversation read at `read_at` names, in the PR's facts if that read is the
+/// newer, as `pull_requests::keep_head` decides. A PR stored before Tsugiki kept heads has none, and the
+/// sync reads it again only once it changes, so it takes the Conversation's whatever its age (#782).
+fn head_kept(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
     number: u32,
-    commit: &CommitSha,
+    (commit, read_at): (&CommitSha, OffsetDateTime),
 ) -> rusqlite::Result<HeadKept> {
-    let asked = named_params! { ":repository": repository, ":number": number, ":head": commit };
-    let filled = transaction.execute(
-        "UPDATE pull_requests SET head = :head
-         WHERE repository = :repository AND number = :number AND head IS NULL",
-        asked,
-    )? > 0;
+    let moved = pull_requests::keep_head(transaction, repository, number, (commit, read_at))?;
     let kept: Option<(Option<CommitSha>, String)> = transaction
         .query_row(
             "SELECT head, target_branch FROM pull_requests
@@ -230,7 +228,7 @@ fn keep_head(
             |row| Ok((row.get("head")?, row.get("target_branch")?)),
         )
         .optional()?;
-    // The update leaves no PR it finds without a head.
+    // `keep_head` leaves no PR it finds without a head.
     let Some((Some(commit), target_branch)) = kept else {
         return Ok(HeadKept::NoFacts);
     };
@@ -239,8 +237,8 @@ fn keep_head(
         commit,
         target_branch,
     };
-    Ok(if filled {
-        HeadKept::Filled(head)
+    Ok(if moved {
+        HeadKept::Moved(head)
     } else {
         HeadKept::Had(head)
     })

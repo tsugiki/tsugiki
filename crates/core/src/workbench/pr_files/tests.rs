@@ -360,7 +360,7 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
             .view
             .db
             .store
-            .save_pull_request_content(&name, 7, content)
+            .save_pull_request_content(&name, 7, (content, time::OffsetDateTime::UNIX_EPOCH))
             .unwrap();
     };
     // GitHub had another head when Tsugiki read the Conversation, so its lines count elsewhere.

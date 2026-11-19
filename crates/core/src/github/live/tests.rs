@@ -68,7 +68,11 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
     let _succeeded = git.stop();
     let (closing, closed) = std::sync::mpsc::channel();
-    let _reading = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "a join would hang on the orphans this test checks for, where the timeout fails it"
+    )]
+    thread::spawn(move || {
         let mut rest = Vec::new();
         closing
             .send(io::Read::read_to_end(&mut output, &mut rest).is_ok())

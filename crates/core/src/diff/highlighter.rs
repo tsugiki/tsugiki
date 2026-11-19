@@ -319,7 +319,11 @@ impl Highlighter {
         let (writer, shelf) = shelf();
         let (jobs, incoming) = mpsc::channel();
         let worker = Worker::new(writer, cap);
-        let _ = thread::spawn(move || worker.run(&incoming));
+        #[expect(
+            unused_results,
+            reason = "the worker ends once the last `Highlighter` has gone, and holds nothing to save"
+        )]
+        thread::spawn(move || worker.run(&incoming));
         Self { jobs, shelf }
     }
 

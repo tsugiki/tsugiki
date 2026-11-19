@@ -1397,7 +1397,12 @@ impl SettingsOwner {
             .unwrap_or_default();
         let (mut commands_writer, commands) = latest::channel(published.clone());
         let (requests, incoming) = mpsc::channel::<Request>();
-        let _ = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "it ends once the last sender goes, which in the app is when the process ends: a save \
+                      under way then is lost, as in a crash"
+        )]
+        thread::spawn(move || {
             // Sends readers the palette's recent commands, unless they hold this list already.
             let mut publish_if_changed = |commands: &Vec<CommandId>| {
                 if *commands != published {

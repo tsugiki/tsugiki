@@ -41,7 +41,11 @@ struct Logger {
 impl Logger {
     fn start(path: PathBuf) -> Self {
         let (messages, queue) = mpsc::channel();
-        let _ = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "the logger lasts as long as the process, and `flush` waits for the lines sent so far"
+        )]
+        thread::spawn(move || {
             #[expect(
                 clippy::let_underscore_must_use,
                 reason = "writing a line fails too then, and the module doc says why that is dropped"

@@ -238,7 +238,11 @@ impl TextSearch {
             state: SearchState::Idle,
             current: None,
         };
-        let _ = thread::spawn(move || owner.run(&incoming));
+        #[expect(
+            unused_results,
+            reason = "it ends once this has gone and the queries it ran have ended, as the type's doc says"
+        )]
+        thread::spawn(move || owner.run(&incoming));
         Self {
             messages,
             state,
@@ -369,7 +373,11 @@ impl Owner {
         });
         self.state = SearchState::Results(Results::nothing_yet(asked.id));
         let requests = self.requests.clone();
-        let _ = thread::spawn(move || run(&asked, &requests, &cancelled, &messages));
+        #[expect(
+            unused_results,
+            reason = "a query ends by itself or on its cancel, and tells the owner through `messages`"
+        )]
+        thread::spawn(move || run(&asked, &requests, &cancelled, &messages));
     }
 
     /// Cancels the query running, if one is, whose word then changes nothing.

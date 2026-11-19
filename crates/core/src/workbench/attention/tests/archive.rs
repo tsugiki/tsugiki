@@ -97,7 +97,7 @@ fn closing_archives_an_item_that_still_needs_attention_and_marks_nothing_seen() 
 }
 
 #[test]
-fn archive_takes_an_item_off_the_workbench_and_out_of_the_filters_and_their_counts() {
+fn archive_takes_an_item_off_the_workbench_and_out_of_the_filters_counts_but_not_their_views() {
     let world = World::new("archive-leaves");
     world.has(vec![own(1), fixing(6, 5)]);
     world.has_issues(vec![issue(5)]);
@@ -110,9 +110,38 @@ fn archive_takes_an_item_off_the_workbench_and_out_of_the_filters_and_their_coun
     world.archive_in(&filter(involved()), 5);
 
     assert!(!world.on_workbench(1));
-    assert!(!world.lists(&filter(mine()), 1));
-    assert!(!world.lists(&filter(involved()), 5));
+    for (view, number) in [(filter(mine()), 1), (filter(involved()), 5)] {
+        let listed = world.listed_in(&view, number);
+        assert!(listed.is_archived(), "marked Archived in {view:?}");
+        assert_eq!(listed.attention, None);
+    }
     assert_eq!(world.count_of(&involved()), 0);
+    world.finish();
+}
+
+#[test]
+fn a_filters_view_lists_an_open_pr_it_matches_under_an_archived_issue() {
+    let world = World::new("archive-filter-finds");
+    world.has(vec![fixing_too(own(6), 5), fixing(7, 9)]);
+    world.has_issues(vec![issue(5), issue(9)]);
+    world.found(&mine(), &[6]);
+    world.found(&involved(), &[7]);
+    world.archive_in(&filter(mine()), 5);
+    world.archive_in(&filter(involved()), 9);
+
+    let listed = world.listed_in(&filter(mine()), 5);
+
+    assert!(listed.is_archived());
+    let rows: Vec<u32> = listed.item.rows().iter().map(|row| row.number).collect();
+    assert_eq!(rows, [6]);
+    assert!(!world.on_workbench(5), "Mine is on the Workbench");
+    assert_eq!(world.count_of(&mine()), 0);
+    assert!(world.listed_in(&filter(involved()), 9).is_archived());
+    assert_eq!(
+        world.count_of(&involved()),
+        0,
+        "Involved is off the Workbench"
+    );
     world.finish();
 }
 
@@ -195,10 +224,10 @@ fn a_review_request_that_stood_at_the_archive_keeps_the_pr_in_review_requests_an
         assert_eq!(listed.attention, None, "Archive acknowledged the request");
     }
     assert_eq!(world.workbench().review_requests, 1);
-    assert_eq!(world.count_of(&involved()), 1);
+    assert_eq!(world.count_of(&involved()), 0);
 
     world.request_ends(pull_request);
-    assert_eq!(world.count_of(&involved()), 0);
+    assert!(world.listed_in(&filter(involved()), 1).is_archived());
     world.finish();
 }
 

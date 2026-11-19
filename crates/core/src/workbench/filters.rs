@@ -62,10 +62,19 @@ impl<'a> FilterFacts<'a> {
         &self.results_of(query).numbers
     }
 
-    /// The Sidebar's line for each Filter, in the order the settings hold them.
-    pub(super) fn lines(&self, candidates: &[&ListedItem]) -> Vec<FilterLine> {
+    /// The Sidebar's line for each Filter, in the order the settings hold them. One on the Workbench counts
+    /// the items of `on_workbench` that Need attention, and one off it the items of `unhidden`.
+    pub(super) fn lines(
+        &self,
+        on_workbench: &[&ListedItem],
+        unhidden: &[&ListedItem],
+    ) -> Vec<FilterLine> {
         let line = |filter: &Filter| {
             let results = self.results_of(&filter.query);
+            let candidates = match filter.on_workbench {
+                OnWorkbench::On => on_workbench,
+                OnWorkbench::Off => unhidden,
+            };
             let reached = candidates
                 .iter()
                 .filter(|listed| match filter.on_workbench {

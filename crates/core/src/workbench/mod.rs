@@ -152,12 +152,12 @@ pub struct ListedItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Hidden {
-    /// Only the Review requests view and the Filters show it, for a PR whose Review request stood at the
-    /// archive (#490), and the Archived view.
+    /// Only the Filters' views show it (#824), the Review requests view for a PR whose Review request stood
+    /// at the archive (#490), and the Archived view.
     Archived,
-    /// Only the Filters show it, and the Review requests view for a PR, while a Review request or an
-    /// assignment to the user stands in its tree, and the Workbench while one that started after the mute
-    /// does (#492).
+    /// Only the Filters' views show it, in their fold of Muted items unless a Review request or an
+    /// assignment to the user stands in its tree (#824). The Review requests view shows a PR while its
+    /// request stands, and the Workbench while one that started after the mute does (#492).
     Muted,
 }
 
@@ -216,6 +216,9 @@ pub struct Workbench {
     /// The items in the list's order: by attention, what Needs attention newest first by when it started
     /// to, then the rest by last update; or by last update alone.
     pub items: Vec<ListedItem>,
+    /// The items the list folds at its end behind "Show N muted", in the list's order. In a Filter's view,
+    /// the Muted items its search found that nobody asks the user about (#824). Empty in every other view.
+    pub muted: Vec<ListedItem>,
     /// The count of items on the Workbench that Need attention.
     pub count: u32,
     /// The count of items that hold a PR carrying a Review request.
@@ -252,9 +255,11 @@ impl Workbench {
     fn ordered(mut self, order: ListOrder) -> Self {
         match order {
             ListOrder::Attention => {}
-            ListOrder::LastUpdate => self
-                .items
-                .sort_by_key(|listed| Reverse(listed.item.updated_at_and_number())),
+            ListOrder::LastUpdate => {
+                for list in [&mut self.items, &mut self.muted] {
+                    list.sort_by_key(|listed| Reverse(listed.item.updated_at_and_number()));
+                }
+            }
         }
         self
     }
@@ -285,17 +290,22 @@ impl Workbench {
         let unhidden: Vec<&ListedItem> = (listed.iter())
             .filter(|listed| listed.hidden.is_none())
             .collect();
-        // A hidden item leaves every list and its count, apart from these, each marked as hidden. The
-        // Review requests view and the Filters keep a PR whose Review request stood at the archive (#490).
-        // The Filters keep a Muted item while a Review request or an assignment to the user stands in its
-        // tree, and the Review requests view a Muted PR while its request stands (#492).
-        let kept: Vec<&ListedItem> = (listed.iter())
+        // The Review requests view keeps a PR whose Review request stood at the archive (#490), and a Muted
+        // PR while its request stands (#492), each marked as hidden.
+        let in_review_requests: Vec<&ListedItem> = (listed.iter())
             .filter(|listed| match listed.hidden {
                 None => true,
                 Some(Hidden::Archived) => requested(listed),
                 Some(Hidden::Muted) => listed.item.is_reached_by(&asked),
             })
             .collect();
+        // A Filter's view lists all its search found, as a search finds archived mail too (#824). An
+        // Archived item stays in place, and so does a Muted one while a Review request or an assignment to
+        // the user stands in its tree. The other Muted items go in a fold at the end.
+        let (folded, in_place): (Vec<&ListedItem>, Vec<&ListedItem>) =
+            listed.iter().partition(|listed| {
+                listed.hidden == Some(Hidden::Muted) && !listed.item.is_reached_by(&asked)
+            });
         // The Workbench shows a Muted item while one that started after the mute stands, which is then all
         // it Needs attention for.
         let on_workbench: Vec<&ListedItem> = (listed.iter())
@@ -305,7 +315,9 @@ impl Workbench {
                 Some(Hidden::Muted) => listed.attention.is_some(),
             })
             .collect();
-        let lines = filters.lines(&kept);
+        // A Filter's count leaves out what it found that the user put away (#824). One switched on counts
+        // what Needs attention as the Workbench does, a Muted item asked about after the mute included.
+        let lines = filters.lines(&on_workbench, &unhidden);
         let count = count_of(
             on_workbench
                 .iter()
@@ -326,14 +338,16 @@ impl Workbench {
             });
             by_attention(shown.map(|listed| (*listed).clone()).collect())
         };
-        let items = match view {
-            WorkbenchView::Filter { .. } | WorkbenchView::ReviewRequests => shown_of(&kept),
-            WorkbenchView::Whole => shown_of(&on_workbench),
-            WorkbenchView::StaleReviews => shown_of(&unhidden),
-            WorkbenchView::Archived => last_archived_first(&put_away, &causes),
+        let (items, muted) = match view {
+            WorkbenchView::Filter { .. } => (shown_of(&in_place), shown_of(&folded)),
+            WorkbenchView::ReviewRequests => (shown_of(&in_review_requests), Vec::new()),
+            WorkbenchView::Whole => (shown_of(&on_workbench), Vec::new()),
+            WorkbenchView::StaleReviews => (shown_of(&unhidden), Vec::new()),
+            WorkbenchView::Archived => (last_archived_first(&put_away, &causes), Vec::new()),
         };
         Self {
             items,
+            muted,
             count,
             review_requests,
             stale_reviews,

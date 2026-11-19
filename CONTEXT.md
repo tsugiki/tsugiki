@@ -132,8 +132,11 @@ _Avoid_: The PRs the user's work reaches
 A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match
 Issues or PRs. Its "On the Workbench" switch says whether its items go on the **Workbench**, where a
 matching PR pulls its **Issue**, and so into **Reach**. A Filter switched off is a view the user
-browses: its search still runs, and its view lists what it found. Clicking a person opens an unsaved Filter
-for what they authored, which the user can save or close.
+browses: its search still runs, and its view lists what it found. The view lists all the search found, as
+a mail client's search finds archived mail: an **Archived** item in its place, marked Archived, and the
+**Muted** items and those of **Muted authors** at the end, folded behind a line such as "Show 4 muted". Its
+count in the Sidebar leaves both out, and neither goes on the Workbench. Clicking a person opens an unsaved
+Filter for what they authored, which the user can save or close.
 _Avoid_: Query, section
 
 **Inbox**:
@@ -174,11 +177,11 @@ _Avoid_: No issue, orphan PR, unlinked PR
 
 **Archived**:
 A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until
-something new needs their attention there; then it comes back by itself. Like archiving a mail thread.
-Archiving marks the item seen and clears **Marked unseen**, so a reason to **Need attention** that starts
-after it brings the item back: New activity that Needs attention, a Review request or a CI failure. New
-activity that doesn't, as on an Issue the user only follows, leaves it archived. Mark Unseen on an Archived
-item unarchives it.
+something new needs their attention there; then it comes back by itself. Like archiving a mail thread,
+which a search still finds: each **Filter** that matches it lists it, marked Archived. Archiving marks the
+item seen and clears **Marked unseen**, so a reason to **Need attention** that starts after it brings the
+item back: New activity that Needs attention, a Review request or a CI failure. New activity that doesn't,
+as on an Issue the user only follows, leaves it archived. Mark Unseen on an Archived item unarchives it.
 An Issue or a Standalone PR that closes or merges on GitHub, while on the Workbench or in **Reach**, is
 Archived by itself, a closed Issue with an open PR too, and nothing is marked seen. A closed item stays
 Archived while nothing in its tree Needs attention: it comes back while something does, and goes back to
@@ -193,8 +196,9 @@ _Avoid_: Dismissed, done, snoozed
 A **Workbench** item the user has hidden until they unmute it, whatever happens to it. Muting marks the item
 seen, as archiving does. Only someone asking the user by name gets through: a **Review request** or an
 assignment to the user that starts after the mute shows the item on the Workbench, marked Muted, while it
-stands, and one that stood at the mute keeps it only in the **Filters** that match it and, for a PR, in
-Review requests. Kept in Tsugiki only.
+stands, and one that stood at the mute keeps it, for a PR, in Review requests. Each **Filter** that matches
+the item lists it in a fold at the end of its view, or in its place, marked Muted, while one of those
+stands. Kept in Tsugiki only.
 _Avoid_: Ignored, blocked
 
 **Muted author**:

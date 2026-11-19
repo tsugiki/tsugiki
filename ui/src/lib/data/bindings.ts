@@ -1126,14 +1126,14 @@ export type HeadsFetched = Change;
 /**  The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more. */
 export type Hidden = 
 /**
- *  Only the Review requests view and the Filters show it, for a PR whose Review request stood at the
- *  archive (#490), and the Archived view.
+ *  Only the Filters' views show it (#824), the Review requests view for a PR whose Review request stood
+ *  at the archive (#490), and the Archived view.
  */
 "archived" | 
 /**
- *  Only the Filters show it, and the Review requests view for a PR, while a Review request or an
- *  assignment to the user stands in its tree, and the Workbench while one that started after the mute
- *  does (#492).
+ *  Only the Filters' views show it, in their fold of Muted items unless a Review request or an
+ *  assignment to the user stands in its tree (#824). The Review requests view shows a PR while its
+ *  request stands, and the Workbench while one that started after the mute does (#492).
  */
 "muted";
 
@@ -3610,6 +3610,11 @@ export type Workbench_Deserialize = {
 	 *  to, then the rest by last update; or by last update alone.
 	 */
 	items: ListedItem_Deserialize[],
+	/**
+	 *  The items the list folds at its end behind "Show N muted", in the list's order. In a Filter's view,
+	 *  the Muted items its search found that nobody asks the user about (#824). Empty in every other view.
+	 */
+	muted: ListedItem_Deserialize[],
 	/**  The count of items on the Workbench that Need attention. */
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
@@ -3628,6 +3633,11 @@ export type Workbench_Serialize = {
 	 *  to, then the rest by last update; or by last update alone.
 	 */
 	items: ListedItem_Serialize[],
+	/**
+	 *  The items the list folds at its end behind "Show N muted", in the list's order. In a Filter's view,
+	 *  the Muted items its search found that nobody asks the user about (#824). Empty in every other view.
+	 */
+	muted: ListedItem_Serialize[],
 	/**  The count of items on the Workbench that Need attention. */
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */

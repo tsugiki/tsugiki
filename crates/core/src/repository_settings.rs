@@ -29,15 +29,46 @@ pub enum SavedBy {
     HandEdit,
 }
 
-/// A save that changed a Repository's settings, as the settings owner hands it to the session.
+/// A save that changed a Repository's settings, as the settings owner hands it to the session. The
+/// settings it replaced, if any, are of the same Repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsSave {
+    replaced: Option<RepositorySettings>,
+    saved: RepositorySettings,
+    by: SavedBy,
+}
+
+impl SettingsSave {
+    /// The save of `saved`, as `by` made it, over the settings of its Repository that `earlier` holds: none
+    /// for a Repository `earlier` doesn't hold, which the save added.
+    pub fn new(saved: RepositorySettings, earlier: &[RepositorySettings], by: SavedBy) -> Self {
+        let replaced = (earlier.iter()).find(|held| held.name.is_same(&saved.name));
+        Self {
+            replaced: replaced.cloned(),
+            saved,
+            by,
+        }
+    }
+
     /// The settings the save replaced, or none for a Repository the save added.
-    pub replaced: Option<RepositorySettings>,
+    pub fn replaced(&self) -> Option<&RepositorySettings> {
+        self.replaced.as_ref()
+    }
+
     /// The settings the save wrote.
-    pub saved: RepositorySettings,
+    pub fn saved(&self) -> &RepositorySettings {
+        &self.saved
+    }
+
     /// The window or the hand edit that saved them.
-    pub by: SavedBy,
+    pub fn by(&self) -> SavedBy {
+        self.by
+    }
+
+    /// The settings the save wrote, for whoever reads them from now on.
+    pub fn into_saved(self) -> RepositorySettings {
+        self.saved
+    }
 }
 
 /// A Repository the user added, as `settings.toml` holds it.

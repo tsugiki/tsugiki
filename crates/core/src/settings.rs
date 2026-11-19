@@ -1412,7 +1412,8 @@ impl SettingsOwner {
                     published.clone_from(commands);
                 }
             };
-            // The session told of each change, with each Repository's settings as it was last told them.
+            // The session told of each change, with each Repository's settings as it was last told them,
+            // those the files no longer list included.
             let mut session: Option<(SettingsSink, Vec<RepositorySettings>)> = None;
             for request in incoming {
                 let change = match request {
@@ -1684,7 +1685,10 @@ impl SettingsOwner {
 
 /// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, with what `told`
 /// held of it, and keeps them as told. `told` starts as what the files said at launch, which the session
-/// never heard, so the first save of a Repository's settings comes with those it replaced too.
+/// never heard, so the first save of a Repository's settings comes with those it replaced too. It keeps a
+/// Repository the files stop listing, as a hand edit that takes it out or a reload that finds no
+/// `settings.toml` does, so one that comes back comes with those it had. Only a Repository never told since
+/// launch counts as added.
 fn tell_session(
     session: &mut SettingsSink,
     told: &mut Vec<RepositorySettings>,
@@ -1692,16 +1696,16 @@ fn tell_session(
     by: SavedBy,
 ) {
     for repository in repositories {
-        if !told.contains(repository) {
-            let replaced = told.iter().find(|held| held.name.is_same(&repository.name));
-            session(SettingsSave {
-                replaced: replaced.cloned(),
-                saved: repository.clone(),
-                by,
-            });
+        let save = SettingsSave::new(repository.clone(), told, by);
+        if save.replaced() == Some(repository) {
+            continue;
+        }
+        session(save);
+        match (told.iter_mut()).find(|held| held.name.is_same(&repository.name)) {
+            Some(held) => repository.clone_into(held),
+            None => told.push(repository.clone()),
         }
     }
-    repositories.clone_into(told);
 }
 
 /// Hands `saved` to whoever asked the owner's thread.

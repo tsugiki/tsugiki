@@ -10,8 +10,8 @@ pub(crate) fn named(message: SessionMessage) -> String {
         SessionMessage::Fetch(Fetched::Issue(item)) => format!("Issue #{}", item.number),
         SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
         SessionMessage::Refresh => "refresh".to_owned(),
-        SessionMessage::SettingsChanged(save) => match save.by {
-            SavedBy::HandEdit => format!("settings of {}", save.saved.name),
+        SessionMessage::SettingsChanged(save) => match save.by() {
+            SavedBy::HandEdit => format!("settings of {}", save.saved().name),
             SavedBy::Window => "switch".to_owned(),
         },
         SessionMessage::Mark(Marked::Unseen { number, .. }) => format!("unseen #{number}"),

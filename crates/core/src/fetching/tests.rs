@@ -137,11 +137,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.fetch_issue(cpython(), 7);
     fetching.fetch_pull_request(cpython(), 8);
     fetching.refresh();
-    let saved = |by| SettingsSave {
-        replaced: None,
-        saved: RepositorySettings::new(cpython()),
-        by,
-    };
+    let saved = |by| SettingsSave::new(RepositorySettings::new(cpython()), &[], by);
     fetching.settings_changed(saved(SavedBy::HandEdit));
     fetching.settings_changed(saved(SavedBy::Window));
     fetching.mark_unseen(cpython(), 9, None);

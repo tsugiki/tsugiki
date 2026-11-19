@@ -105,12 +105,12 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             SessionMessage::Sync { repository } => Some(format!("sync {}", repository.name)),
             SessionMessage::SettingsChanged(save) => {
                 let filters = |settings: &RepositorySettings| settings.filters.len();
-                let replaced = save.replaced.as_ref().map(filters);
+                let replaced = save.replaced().map(filters);
                 Some(format!(
                     "{} saved by {:?}, {} Filter in place of {replaced:?}",
-                    save.saved.name,
-                    save.by,
-                    filters(&save.saved)
+                    save.saved().name,
+                    save.by(),
+                    filters(save.saved())
                 ))
             }
             SessionMessage::Fetch(_)

@@ -321,10 +321,10 @@ fn a_filter_switched_on_owes_the_conversations_it_reaches_unless_read_at_their_h
 
     // PR 14's Conversation was read at its head, PR 15's at an older one, and PR 13's head is unknown.
     assert_eq!(owed_on, [12, 13, 15]);
-    let fetched: Vec<u32> = on.heads.iter().map(|head| head.number).collect();
+    let fetched: Vec<u32> = on.unwrap().heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [11, 12, 14, 15]);
     assert_eq!(owed_off, Vec::<u32>::new());
-    assert_eq!(off, MirrorWork::of(&facts, &before));
+    assert_eq!(off, Some(MirrorWork::of(&facts, &before)));
     // PR 20 is owed a read, but out of Reach either way.
     assert_eq!(to_read_on, BTreeSet::from([11, 12, 13, 15]));
     assert_eq!(to_read_off, BTreeSet::from([11]));
@@ -728,9 +728,43 @@ fn unmute_owes_the_conversations_it_puts_back_in_reach_unless_read_at_their_head
 
     let (work, owed) = moved(from(&muted), from(&unmuted), &read_at);
 
+    let work = work.unwrap();
     let fetched: Vec<u32> = work.heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [11, 12, 20, 30]);
     // PR 12's Conversation was read at its head, and PR 20 was in Reach all along.
     assert_eq!(owed, [11, 30]);
     assert_eq!(work, MirrorWork::of(&unmuted, &settings));
+}
+
+#[test]
+fn a_move_that_leaves_the_mirrors_work_as_it_was_hands_over_none() {
+    let before = cpython_settings();
+    let mut renamed = before.clone();
+    renamed.filters[0].name = "Something else".to_owned().try_into().unwrap();
+    let mut switched = before.clone();
+    switched.filters[1].on_workbench = OnWorkbench::On;
+    let strangers = |number: u32, head: &str| {
+        let pr = PullRequestFacts {
+            number,
+            ..stranger()
+        };
+        at_head(head, pr)
+    };
+    let pull_requests = vec![strangers(12, "2222222"), strangers(13, "3333333")];
+    let facts = found_by_two_filters(&before, (&[12], &[13]), facts(pull_requests, vec![]));
+    let from = |settings| ReachFrom {
+        facts: &facts,
+        settings,
+    };
+
+    let (work, owed) = moved(from(&before), from(&renamed), &BTreeMap::new());
+    let (switched_work, _) = moved(from(&before), from(&switched), &BTreeMap::new());
+
+    // The renamed Filter still finds PR 12, so the Mirror worker fetches the same heads.
+    assert_eq!(work, None);
+    assert_eq!(owed, Vec::<u32>::new());
+    let fetched: Vec<u32> = (switched_work.unwrap().heads.iter())
+        .map(|head| head.number)
+        .collect();
+    assert_eq!(fetched, [12, 13]);
 }

@@ -305,12 +305,13 @@ pub(crate) struct ReachFrom<'a> {
 /// The Mirror's work after Reach moved from `before` to `now`, and the PRs whose Conversations are owed a
 /// read from now on: those `now` puts in Reach, apart from each whose Conversation `read_at` says was read at
 /// its head. A Filter switched on (#819) and an Unmute (#918) move it so, and no change on GitHub would owe a
-/// read of theirs.
+/// read of theirs. The work is none when it's the work before the move, as with new Filter names: the move
+/// gives the Mirror worker nothing new to fetch or stop fetching.
 pub(crate) fn moved(
     before: ReachFrom<'_>,
     now: ReachFrom<'_>,
     read_at: &BTreeMap<u32, CommitSha>,
-) -> (MirrorWork, Vec<u32>) {
+) -> (Option<MirrorWork>, Vec<u32>) {
     let ReachFrom { facts, settings } = now;
     let reached_before = reach(before.facts, before.settings);
     let reached = reach(facts, settings);
@@ -322,7 +323,9 @@ pub(crate) fn moved(
         .filter(|pr| !read_at_head(pr))
         .map(|pr| pr.number)
         .collect();
-    (MirrorWork::in_reach(facts, settings, &reached), owed)
+    let work = MirrorWork::in_reach(facts, settings, &reached);
+    let work_before = MirrorWork::in_reach(before.facts, before.settings, &reached_before);
+    ((work != work_before).then_some(work), owed)
 }
 
 /// The Conversations worth reading ahead in the Repository of `repository`, whose stored facts are `facts`:

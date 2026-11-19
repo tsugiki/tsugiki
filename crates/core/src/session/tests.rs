@@ -1536,35 +1536,13 @@ fn bugs_query() -> FilterQuery {
     "label:bug".to_owned().try_into().unwrap()
 }
 
-/// A save of `saved` over `replaced`, as `by` made it.
-fn saved_over(
-    replaced: RepositorySettings,
-    saved: RepositorySettings,
-    by: SavedBy,
-) -> SettingsSave {
-    SettingsSave {
-        replaced: Some(replaced),
-        saved,
-        by,
-    }
-}
-
-/// A save that added `saved` to the settings, as `by` made it.
-fn saved_new(saved: RepositorySettings, by: SavedBy) -> SettingsSave {
-    SettingsSave {
-        replaced: None,
-        saved,
-        by,
-    }
-}
-
 /// The save that switched gcmon's Bugs Filter `on`, from the other way, as `by` made it.
 fn bugs_saved(on: OnWorkbench, by: SavedBy) -> SettingsSave {
     let before = match on {
         OnWorkbench::On => OnWorkbench::Off,
         OnWorkbench::Off => OnWorkbench::On,
     };
-    saved_over(bugs_switched(before), bugs_switched(on), by)
+    SettingsSave::new(bugs_switched(on), &[bugs_switched(before)], by)
 }
 
 #[test]
@@ -1614,7 +1592,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
         &fetching,
         &store,
         &mut syncs,
-        saved_new(elsewhere, SavedBy::HandEdit),
+        SettingsSave::new(elsewhere, &[], SavedBy::HandEdit),
     );
     let switched_on = settings_changed(
         &fetching,
@@ -1718,12 +1696,12 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
 
     let asked = session.fetching();
     asked.sync(bugs_switched(OnWorkbench::Off));
-    asked.settings_changed(saved_new(elsewhere, SavedBy::HandEdit));
+    asked.settings_changed(SettingsSave::new(elsewhere, &[], SavedBy::HandEdit));
     asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     asked.settings_changed(bugs_saved(OnWorkbench::On, SavedBy::Window));
-    asked.settings_changed(saved_over(
-        bugs_switched(OnWorkbench::On),
+    asked.settings_changed(SettingsSave::new(
         regrouped,
+        &[bugs_switched(OnWorkbench::On)],
         SavedBy::HandEdit,
     ));
     session.stop(PLENTY);
@@ -1816,10 +1794,15 @@ struct TookSave {
     announced: Vec<Change>,
 }
 
-/// Starts an offline session, in a folder named after `name`, on a store whose PR 8 the Bugs Filter's
-/// stored search found and whose Conversation it never read. The session opens the Repository of the
-/// settings `opened` holds, if any, then takes `save`.
-fn session_taking(name: &str, opened: Option<RepositorySettings>, save: SettingsSave) -> TookSave {
+/// Starts a session that reaches GitHub through `github`, in a folder named after `name`, on a store whose
+/// PR 8 the Bugs Filter's stored search found and whose Conversation it never read. The session opens the
+/// Repository of the settings `opened` holds, if any, then takes `save`.
+fn session_taking(
+    name: &str,
+    github: GitHubAccess,
+    opened: Option<RepositorySettings>,
+    save: SettingsSave,
+) -> TookSave {
     let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&me()).unwrap();
@@ -1835,10 +1818,7 @@ fn session_taking(name: &str, opened: Option<RepositorySettings>, save: Settings
     store.close();
     let (board, changes) = board_hearing_settings();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections {
-        github: offline(),
-        mirrors,
-    };
+    let connections = Connections { github, mirrors };
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     if let Some(opened) = opened {
@@ -1863,6 +1843,7 @@ const HEADS_OF_8: &str = "some-maintainer/gcmon wants heads #8 at 4567def on mai
 fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let took = session_taking(
         "switched-session",
+        offline(),
         Some(bugs_switched(OnWorkbench::Off)),
         bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
@@ -1880,6 +1861,7 @@ fn a_filter_a_hand_edit_switches_on_in_a_repository_not_opened_owes_reads_quietl
     // As the first change since launch, which the settings owner hands over with the settings it replaced.
     let took = session_taking(
         "hand-edit-unopened",
+        offline(),
         None,
         bugs_saved(OnWorkbench::On, SavedBy::HandEdit),
     );
@@ -1898,8 +1880,9 @@ fn a_filter_a_hand_edit_switches_on_in_a_repository_not_opened_owes_reads_quietl
 fn a_repository_a_hand_edit_adds_owes_no_reads() {
     let took = session_taking(
         "hand-edit-added",
+        offline(),
         None,
-        saved_new(bugs_switched(OnWorkbench::On), SavedBy::HandEdit),
+        SettingsSave::new(bugs_switched(OnWorkbench::On), &[], SavedBy::HandEdit),
     );
 
     assert_eq!(took.owed, BTreeSet::new());
@@ -1907,6 +1890,57 @@ fn a_repository_a_hand_edit_adds_owes_no_reads() {
         took.handed.iter().all(|line| !line.contains("#8")),
         "{:?}",
         took.handed
+    );
+}
+
+#[test]
+fn a_save_that_leaves_reach_as_it_was_hands_the_mirror_nothing() {
+    let renamed = |settings: RepositorySettings| {
+        let mut renamed = settings;
+        renamed.filters[0].name = "Defects".to_owned().try_into().unwrap();
+        renamed
+    };
+    let on = bugs_switched(OnWorkbench::On);
+
+    let took = session_taking(
+        "renamed-filter",
+        offline(),
+        None,
+        SettingsSave::new(renamed(on.clone()), &[on], SavedBy::HandEdit),
+    );
+
+    // The Mirror worker would have heard PR 8's head again, from facts that can be days old.
+    assert_eq!(took.handed, Vec::<String>::new());
+    assert_eq!(took.owed, BTreeSet::new());
+}
+
+#[test]
+fn a_session_with_no_token_follows_the_reach_a_hand_edit_moves() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+
+    let took = session_taking(
+        "hand-edit-no-token",
+        access,
+        None,
+        bugs_saved(OnWorkbench::On, SavedBy::HandEdit),
+    );
+
+    assert_eq!(took.owed, [8].into());
+    assert!(
+        took.handed.contains(&HEADS_OF_8.to_owned()),
+        "{:?}",
+        took.handed
+    );
+    // With no syncs to compare, the window hears of each hand edit.
+    assert_eq!(
+        took.announced,
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
     );
 }
 

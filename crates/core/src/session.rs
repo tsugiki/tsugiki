@@ -275,14 +275,16 @@ impl Refreshes {
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
     /// the one asking that the session isn't connected. Mark Seen and Mark Unseen need only the database, so
     /// they still work, and so does telling the window of a hand edit to the settings. With no syncs there
-    /// is no copy to compare, but the settings owner hands over only settings that changed.
+    /// is no copy to compare, but the settings owner hands over only settings that changed. Reach follows
+    /// a change of the settings as it does with a token, which needs only the database and the Mirror.
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
                 SessionMessage::Mark(marked) => mark(board, store, marked),
                 SessionMessage::SettingsChanged(save) => {
-                    announce_settings(board, &save.saved.name, save.by);
+                    follow_save(&self.fetching, store, &save);
+                    announce_settings(board, &save.saved().name, save.by());
                 }
                 SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
@@ -463,7 +465,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::SettingsChanged(save) => {
-                let (repository, by) = (save.saved.name.clone(), save.by);
+                let (repository, by) = (save.saved().name.clone(), save.by());
                 if settings_changed(&refreshes.fetching, store, &mut syncs, save).is_some() {
                     announce_settings(board, &repository, by);
                 }
@@ -607,21 +609,27 @@ fn announce_settings(board: &mut StatusBoard, repository: &RepositoryName, by: S
     }
 }
 
-/// The settings owner made `save`. Reach follows the move from the settings it replaced, whether or not the
-/// session has opened the Repository since launch: a hand edit can switch a Filter on in any Repository, and
-/// once the user opens it, its refreshes read ahead only what the store owes (#901). A Repository the save
-/// added has no move to follow. The syncs read the saved settings from now on, if the session has opened
-/// the Repository since launch and holds other settings of it. Answers with those it held then.
+/// The settings owner made `save`, which Reach follows (`follow_save`). The syncs read the saved settings
+/// from now on, if the session has opened the Repository since launch and holds other settings of it.
+/// Answers with those it held then.
 fn settings_changed(
     fetching: &Fetching,
     store: &Store,
     syncs: &mut Syncs,
     save: SettingsSave,
 ) -> Option<RepositorySettings> {
-    if let Some(replaced) = &save.replaced {
-        let _followed = follow_reach(fetching, store, &save.saved, replaced);
+    follow_save(fetching, store, &save);
+    syncs.replace_settings(save.into_saved())
+}
+
+/// Reach follows the move `save` made from the settings it replaced, whether or not the session has opened
+/// the Repository since launch: a hand edit can switch a Filter on in any Repository, and once the user
+/// opens it, its refreshes read ahead only what the store owes (#901). A Repository the save added has no
+/// move to follow.
+fn follow_save(fetching: &Fetching, store: &Store, save: &SettingsSave) {
+    if let Some(replaced) = save.replaced() {
+        let _followed = follow_reach(fetching, store, save.saved(), replaced);
     }
-    syncs.replace_settings(save.saved)
 }
 
 /// A Repository's settings say `now` in place of `before`. A Filter switched on puts PRs in Reach that no
@@ -633,7 +641,7 @@ fn settings_changed(
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
 /// are lost, as no later step works them out, and the log says so. The PR view reads a lost Conversation
-/// when it opens. Says whether it handed the Mirror worker anything.
+/// when it opens. Says whether it read the facts.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
@@ -662,20 +670,22 @@ fn facts_for_move(store: &Store, repository: &RepositoryName) -> Option<WorkFact
         .ok()
 }
 
-/// Hands the Mirror worker its work after Reach moved from `before` to `now`, and has the store owe the
-/// reads ahead the move owes, as `moved` works them out. A store that can't say which heads its
-/// Conversations were read at owes a read of each PR the move puts in Reach, which costs a request apiece
-/// and loses nothing. One that can't keep what it owes loses them, and the log says so.
+/// Hands the Mirror worker its work after Reach moved from `before` to `now`, unless the move left it as it
+/// was, and has the store owe the reads ahead the move owes, as `moved` works them out. A store that can't
+/// say which heads its Conversations were read at owes a read of each PR the move puts in Reach, which costs
+/// a request apiece and loses nothing. One that can't keep what it owes loses them, and the log says so.
 fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: ReachFrom<'_>) {
     let repository = &now.settings.name;
     let read_at = store.conversation_heads(repository).unwrap_or_default();
     let (work, owed) = moved(before, now, &read_at);
-    let stated = Stated {
-        repository,
-        facts: now.facts,
-        work,
-    };
-    hand_over_wants(fetching, store, stated);
+    if let Some(work) = work {
+        let stated = Stated {
+            repository,
+            facts: now.facts,
+            work,
+        };
+        hand_over_wants(fetching, store, stated);
+    }
     if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
             "Tsugiki couldn't keep the reads ahead owed in {repository}: {}",

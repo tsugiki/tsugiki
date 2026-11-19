@@ -31,6 +31,11 @@ pub(super) fn temp_database(name: &str) -> (PathBuf, TempPath) {
 
 /// A database in a new temp folder, as [`temp_database`] makes it, at the age before the migration `sql`,
 /// holding what the SQL statements `rows` insert: a store of that age can't run today's saves.
+/// The moment `seconds` after 1970, as a GitHub `updatedAt` a test orders reads by.
+pub(super) fn at_second(seconds: i64) -> OffsetDateTime {
+    OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)
+}
+
 pub(super) fn database_before(name: &str, sql: &str, rows: &str) -> (PathBuf, TempPath) {
     let (path, folder) = temp_database(name);
     let before = MIGRATIONS.iter().position(|step| step.sql == sql).unwrap();

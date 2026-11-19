@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use rusqlite::types::FromSql;
-use rusqlite::{OptionalExtension, Statement, ToSql, named_params};
+use rusqlite::{Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
 use super::{Connection, TitledItem, TitledKind};
@@ -75,7 +75,8 @@ pub(super) const HEADS: &str = "ALTER TABLE pull_requests ADD COLUMN head TEXT;"
 
 /// GitHub's `updatedAt` at the read whose head the row keeps, a PR list's or a Conversation's (#905). A
 /// read whose `updatedAt` is later replaces the head. A head kept before this counts from the PR's last list
-/// read, which wrote it or was the newest read when a Conversation filled it in (#782).
+/// read. A head a Conversation filled in (#782) may come from a later read, which the store kept no time of,
+/// so a lagging list read between the two can still replace it once.
 pub(super) const HEAD_AT: &str = "
     ALTER TABLE pull_requests ADD COLUMN head_at INTEGER;
     UPDATE pull_requests SET head_at = updated_at WHERE head IS NOT NULL;
@@ -245,36 +246,36 @@ fn save_pull_request(
     Ok(written > 0)
 }
 
-/// Keeps `head` as PR `number`'s head when the read that names it, whose `updatedAt` is `read_at`, is later
-/// than the read whose head the row keeps, or the row keeps none. A tie leaves the head. Both reads that name
-/// a head, the PR list and the Conversation, write it here, so the store holds the newer one's. Says whether
-/// the head moved to another commit.
+/// Keeps `head` as PR `number`'s head when the read that names it, whose `updatedAt` is `updated_at`, is
+/// later than the read whose head the row keeps, or the row keeps none. A tie leaves the head. Both reads
+/// that name a head, the PR list and the Conversation, write it here, so the store holds the newer one's.
+/// Says whether the head moved to another commit.
 pub(super) fn keep_head(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
-    (head, read_at): (&CommitSha, OffsetDateTime),
+    (head, updated_at): (&CommitSha, OffsetDateTime),
 ) -> rusqlite::Result<bool> {
-    let asked = named_params! { ":repository": repository, ":number": number };
-    let before: Option<Option<CommitSha>> = connection
-        .query_row(
-            "SELECT head FROM pull_requests WHERE repository = :repository AND number = :number",
-            asked,
-            |row| row.get("head"),
-        )
-        .optional()?;
-    let replaced = connection.execute(
-        "UPDATE pull_requests SET head = :head, head_at = :read_at
+    let asked = named_params! {
+        ":repository": repository,
+        ":number": number,
+        ":head": head,
+        ":updated_at": updated_at.unix_timestamp(),
+    };
+    let moved = connection.execute(
+        "UPDATE pull_requests SET head = :head, head_at = :updated_at
          WHERE repository = :repository AND number = :number
-           AND (head_at IS NULL OR head_at < :read_at)",
-        named_params! {
-            ":repository": repository,
-            ":number": number,
-            ":head": head,
-            ":read_at": read_at.unix_timestamp(),
-        },
+           AND (head_at IS NULL OR head_at < :updated_at) AND head IS NOT :head",
+        asked,
     )? > 0;
-    Ok(replaced && before.flatten().as_ref() != Some(head))
+    // The same head, named by a newer read, dates from that read.
+    let _dated = connection.execute(
+        "UPDATE pull_requests SET head_at = :updated_at
+         WHERE repository = :repository AND number = :number AND head = :head
+           AND head_at < :updated_at",
+        asked,
+    )?;
+    Ok(moved)
 }
 
 fn forget_review_requests(

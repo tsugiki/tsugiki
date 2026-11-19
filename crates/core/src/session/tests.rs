@@ -1427,7 +1427,14 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     // The user reviewed someone else's PR at a commit it has since moved on from.
     let reviewed = CommitSha::parse("0123abc").unwrap();
     store
-        .save_pull_request_content(&gcmon(), 8, (reviewed_by("octocat", &reviewed), EPOCH))
+        .save_pull_request_content(
+            &gcmon(),
+            8,
+            (
+                reviewed_by("octocat", &reviewed),
+                OffsetDateTime::UNIX_EPOCH,
+            ),
+        )
         .unwrap();
     store.close();
     let (mirrors, heard) = HeardRequests::new();
@@ -1499,7 +1506,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     let read_at = |number: u32, head: &str| {
         let content = reviewed_by("some-reviewer", &CommitSha::parse(head).unwrap());
         store
-            .save_pull_request_content(&gcmon(), number, (content, EPOCH))
+            .save_pull_request_content(&gcmon(), number, (content, OffsetDateTime::UNIX_EPOCH))
             .unwrap();
     };
     read_at(9, "89abcde");
@@ -1854,7 +1861,14 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
         .unwrap();
     let reviewed = CommitSha::parse("0123abc").unwrap();
     store
-        .save_pull_request_content(&gcmon(), 8, (reviewed_by("octocat", &reviewed), EPOCH))
+        .save_pull_request_content(
+            &gcmon(),
+            8,
+            (
+                reviewed_by("octocat", &reviewed),
+                OffsetDateTime::UNIX_EPOCH,
+            ),
+        )
         .unwrap();
     let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'a')];
     store.save_patch_ids(&gcmon(), both).unwrap();
@@ -1924,7 +1938,14 @@ fn keeping_patches(
     store.save_pull_requests(&gcmon(), stored).unwrap();
     let reviewed = CommitSha::parse("0123abc").unwrap();
     store
-        .save_pull_request_content(&gcmon(), 8, (reviewed_by("octocat", &reviewed), EPOCH))
+        .save_pull_request_content(
+            &gcmon(),
+            8,
+            (
+                reviewed_by("octocat", &reviewed),
+                OffsetDateTime::UNIX_EPOCH,
+            ),
+        )
         .unwrap();
     let left = UncheckedCommit {
         of: on_main("fedcba9"),
@@ -2036,10 +2057,6 @@ fn patch_ids_the_store_cant_keep_show_its_problem() {
         assert!(matches!(showing(&seen), Status::Problem { .. }));
     }
 }
-
-/// GitHub's `updatedAt` at the tests' reads of a Conversation: older than any list read, so the head the
-/// PR's facts keep stays.
-const EPOCH: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
 
 /// A PR's Conversation with one Review by `author`, of `commit`.
 fn reviewed_by(author: &str, commit: &CommitSha) -> PullRequestContent {

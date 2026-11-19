@@ -1,8 +1,6 @@
 use std::collections::BTreeSet;
 
-use time::{Duration, OffsetDateTime};
-
-use super::super::testing::{migrated, temp_database};
+use super::super::testing::{at_second, migrated, temp_database};
 use super::super::{Connection, MIGRATIONS, Store, issues, open_with, pull_requests};
 use super::*;
 use crate::facts::issues::IssueFacts;
@@ -11,14 +9,10 @@ use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
 use crate::testing::{cpython, issue_facts, pr_facts, sha};
 
-fn at(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::UNIX_EPOCH + Duration::seconds(seconds)
-}
-
 fn pr(number: u32, title: &str) -> PullRequestFacts {
     PullRequestFacts {
         title: title.to_owned(),
-        updated_at: at(i64::from(number)),
+        updated_at: at_second(i64::from(number)),
         ..pr_facts(number)
     }
 }
@@ -46,7 +40,7 @@ fn merged_as(number: u32, title: &str, commit: &str) -> PullRequestFacts {
 
 fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        updated_at: at(i64::from(number)),
+        updated_at: at_second(i64::from(number)),
         ..issue_facts(number)
     }
 }
@@ -522,7 +516,7 @@ fn each_read_and_write_of_the_links_finds_its_rows_by_a_key_or_an_index() {
     let naming = naming_origins(&connection, &name, conventions, &listed).unwrap();
     let whole = pull_requests::read(&connection, &name, super::super::Items::Numbered(&listed));
     let before = Updates::Before {
-        before: at(100),
+        before: at_second(100),
         at_least: 1,
     };
     let walked = updated(&connection, &name, before).unwrap();
@@ -551,7 +545,7 @@ fn a_walk_reads_at_least_what_it_asks_for_and_the_rest_of_the_last_second() {
     let prs: Vec<PullRequestFacts> = [(1, 50), (2, 40), (3, 40), (4, 30), (5, 20)]
         .into_iter()
         .map(|(number, seconds)| PullRequestFacts {
-            updated_at: at(seconds),
+            updated_at: at_second(seconds),
             ..pr(number, "Fix it")
         })
         .collect();
@@ -562,7 +556,7 @@ fn a_walk_reads_at_least_what_it_asks_for_and_the_rest_of_the_last_second() {
     };
 
     let before = |seconds: i64, at_least: u32| Updates::Before {
-        before: at(seconds),
+        before: at_second(seconds),
         at_least,
     };
     assert_eq!(
@@ -575,5 +569,5 @@ fn a_walk_reads_at_least_what_it_asks_for_and_the_rest_of_the_last_second() {
         [4, 5],
         "fewer than asked means none are left"
     );
-    assert_eq!(numbers(Updates::Since(at(40))), [1, 3, 2]);
+    assert_eq!(numbers(Updates::Since(at_second(40))), [1, 3, 2]);
 }

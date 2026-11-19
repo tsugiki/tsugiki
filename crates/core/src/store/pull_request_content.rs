@@ -110,12 +110,13 @@ pub(super) const DATABASE_IDS: &str = "
     ALTER TABLE review_thread_comments ADD COLUMN database_id INTEGER;
 ";
 
-/// Replaces what's kept of PR `number` with `content`, in one transaction.
+/// Replaces what's kept of PR `number` with `content`, read when GitHub's `updatedAt` for it was
+/// `updated_at`, in one transaction.
 pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
     number: u32,
-    (content, read_at): (&PullRequestContent, OffsetDateTime),
+    (content, updated_at): (&PullRequestContent, OffsetDateTime),
 ) -> rusqlite::Result<ConversationSaved> {
     let transaction = connection.transaction()?;
     let reviewed_before = reviewed_commit(&transaction, repository, number)?;
@@ -144,7 +145,7 @@ pub(super) fn save(
         },
     )?;
     let kept = match &content.head {
-        Some(commit) => head_kept(&transaction, repository, number, (commit, read_at))?,
+        Some(commit) => head_kept(&transaction, repository, number, (commit, updated_at))?,
         None => HeadKept::Unnamed,
     };
     let mut position = 0_u32;
@@ -210,16 +211,17 @@ fn reviewed_commit(
         .map(|reviewed| reviewed.commit))
 }
 
-/// Keeps `commit`, the head the Conversation read at `read_at` names, in the PR's facts if that read is the
-/// newer, as `pull_requests::keep_head` decides. A PR stored before Tsugiki kept heads has none, and the
-/// sync reads it again only once it changes, so it takes the Conversation's whatever its age (#782).
+/// Keeps `commit`, the head a Conversation read at GitHub's `updatedAt` `updated_at` names, in the PR's
+/// facts if that read is the newer, as `pull_requests::keep_head` decides. A PR stored before Tsugiki kept
+/// heads has none, and the sync reads it again only once it changes, so it takes the Conversation's whatever
+/// its age (#782).
 fn head_kept(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
     number: u32,
-    (commit, read_at): (&CommitSha, OffsetDateTime),
+    (commit, updated_at): (&CommitSha, OffsetDateTime),
 ) -> rusqlite::Result<HeadKept> {
-    let moved = pull_requests::keep_head(transaction, repository, number, (commit, read_at))?;
+    let moved = pull_requests::keep_head(transaction, repository, number, (commit, updated_at))?;
     let kept: Option<(Option<CommitSha>, String)> = transaction
         .query_row(
             "SELECT head, target_branch FROM pull_requests

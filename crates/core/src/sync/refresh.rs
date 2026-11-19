@@ -354,10 +354,13 @@ pub(super) fn fetch_changed(
         .fetch_pull_requests(PrFetch::Changed, &changed.ids, FETCH_BATCH)?;
     let stored = stored_pull_requests(link)?;
     let viewer = link.store.last_login()?;
-    let moved: Vec<&PullRequestFacts> = batch
-        .pull_requests
-        .iter()
-        .filter(|pr| stored.get(&pr.number) != Some(*pr))
+    // The store keeps a read older than its own, from a replica of GitHub's that lags, out.
+    let moved: Vec<&PullRequestFacts> = (batch.pull_requests.iter())
+        .filter(|pr| {
+            stored
+                .get(&pr.number)
+                .is_none_or(|kept| kept != *pr && kept.updated_at <= pr.updated_at)
+        })
         .collect();
     let touched: Vec<u32> = moved.iter().map(|pr| pr.number).collect();
     link.store.save_changed_pull_requests(

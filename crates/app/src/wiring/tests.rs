@@ -2372,9 +2372,9 @@ fn offline_a_pr_whose_head_the_mirror_holds_shows_its_diff_highlighting_and_thre
     let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
     let name = RepositoryName::parse(CPYTHON).unwrap();
     let content = conversation_of_pr_1(&commit);
-    let read_at = time::OffsetDateTime::UNIX_EPOCH;
+    let updated_at = time::OffsetDateTime::UNIX_EPOCH;
     store
-        .save_pull_request_content(&name, 1, (content, read_at))
+        .save_pull_request_content(&name, 1, (content, updated_at))
         .unwrap();
     store.close();
     let wired = Wired::start(Ok(folders), no_network());

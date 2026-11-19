@@ -988,8 +988,8 @@ fn keep_conversation(
         Content::Issue(content) => {
             (store.save_issue_content(repository, *number, content)).map(|()| Kept::Issue(change))
         }
-        Content::PullRequest(content, read_at) => {
-            (store.save_read_of_pull_request(repository, *number, (content, read_at)))
+        Content::PullRequest(content, updated_at) => {
+            (store.save_read_of_pull_request(repository, *number, (content, updated_at)))
                 .map(|saved| Kept::PullRequest(change, saved))
         }
     };

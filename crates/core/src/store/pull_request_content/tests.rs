@@ -6,7 +6,7 @@ use crate::facts::pull_requests::{PullRequestFacts, ReviewedCommit};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::store::Store;
-use crate::store::testing::{OpenStore, World, database_before, temp_database};
+use crate::store::testing::{OpenStore, World, at_second, database_before, temp_database};
 use crate::testing::{cpython, pr_facts, sha};
 
 #[test]
@@ -84,7 +84,7 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
         review("some-reviewer", ReviewState::Dismissed, Some("ccccccc"), 2),
     ]);
     store
-        .save_pull_request_content(&cpython(), 1, (moved_on, when(0)))
+        .save_pull_request_content(&cpython(), 1, (moved_on, at_second(0)))
         .unwrap();
     let only_colleagues = with_reviews(vec![review(
         "other-reviewer",
@@ -93,7 +93,7 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
         0,
     )]);
     store
-        .save_pull_request_content(&cpython(), 2, (only_colleagues, when(0)))
+        .save_pull_request_content(&cpython(), 2, (only_colleagues, at_second(0)))
         .unwrap();
     // GitHub no longer has the commit of the user's latest Review, so an earlier one doesn't stand in.
     let lost = with_reviews(vec![
@@ -101,7 +101,7 @@ fn the_users_review_is_their_latest_in_any_state_and_names_the_commit_it_covered
         review("some-reviewer", ReviewState::ChangesRequested, None, 1),
     ]);
     store
-        .save_pull_request_content(&cpython(), 3, (lost, when(0)))
+        .save_pull_request_content(&cpython(), 3, (lost, at_second(0)))
         .unwrap();
 
     let reviewed = store.reviewed_commits(&cpython()).unwrap();
@@ -134,7 +134,7 @@ fn a_conversation_says_when_the_commit_of_the_users_latest_review_moved() {
     };
     let moved = |content| {
         (world.db.store)
-            .save_read_of_pull_request(&cpython(), 1, (content, when(0)))
+            .save_read_of_pull_request(&cpython(), 1, (content, at_second(0)))
             .unwrap()
             .reviewed_moved
     };
@@ -143,11 +143,6 @@ fn a_conversation_says_when_the_commit_of_the_users_latest_review_moved() {
     assert!(!moved(reviewed("aaaaaaa")), "the same Review read again");
     assert!(moved(reviewed("bbbbbbb")), "a Review of a newer commit");
     world.finish();
-}
-
-/// GitHub's `updatedAt` `seconds` after 1970.
-fn when(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)
 }
 
 /// PR `number` at `commit`, as a `HeadKept` names it.
@@ -178,7 +173,7 @@ fn heads(world: &World, number: u32) -> (Option<CommitSha>, Option<CommitSha>) {
 fn a_conversation_keeps_its_head_in_a_pr_with_none_or_an_older_one() {
     let world = World::new("conversation-head");
     let at = |seconds, head: Option<&str>| PullRequestFacts {
-        updated_at: when(seconds),
+        updated_at: at_second(seconds),
         head: head.map(sha),
         ..pr_facts(2)
     };
@@ -200,7 +195,7 @@ fn a_conversation_keeps_its_head_in_a_pr_with_none_or_an_older_one() {
     let store = &world.db.store;
     let save = |number, content, seconds| {
         store
-            .save_read_of_pull_request(&cpython(), number, (content, when(seconds)))
+            .save_read_of_pull_request(&cpython(), number, (content, at_second(seconds)))
             .unwrap()
             .head
     };
@@ -239,7 +234,7 @@ fn a_conversation_keeps_its_head_in_a_pr_with_none_or_an_older_one() {
     world.finish();
 }
 
-/// Which of a PR's two reads saves first.
+/// The read of a PR that saves first: its list read or its Conversation.
 #[derive(Debug, Clone, Copy)]
 enum First {
     List,
@@ -256,7 +251,7 @@ fn after_both(
 ) -> (HeadKept, Option<CommitSha>, Option<CommitSha>) {
     let world = World::new(&format!("both-reads-{first:?}-{list_at}"));
     let at = |seconds, commit| PullRequestFacts {
-        updated_at: when(seconds),
+        updated_at: at_second(seconds),
         head: Some(sha(commit)),
         ..pr_facts(1)
     };
@@ -264,7 +259,11 @@ fn after_both(
     let list = || world.has(vec![at(list_at, "bbbbbbb")]);
     let conversation = || {
         (world.db.store)
-            .save_read_of_pull_request(&cpython(), 1, (with_reviews(vec![]), when(conversation_at)))
+            .save_read_of_pull_request(
+                &cpython(),
+                1,
+                (with_reviews(vec![]), at_second(conversation_at)),
+            )
             .unwrap()
             .head
     };

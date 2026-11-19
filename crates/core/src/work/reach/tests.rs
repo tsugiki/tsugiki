@@ -3,10 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
-use crate::facts::activity::{ActivityFacts, Archive, ItemKey};
+use crate::facts::activity::{ActivityFacts, Archive, ItemKey, MutedAuthor};
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::login::Login;
 use crate::testing::{cpython_settings, hours_ago, sha};
 use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
@@ -338,6 +339,77 @@ fn muting(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
 
 fn issue_key(number: u32) -> ItemKey {
     ItemKey::Issue { number }
+}
+
+/// `facts` with `author` a Muted author, as of an hour ago (#494).
+fn muting_author(mut facts: WorkFacts, author: &str) -> WorkFacts {
+    let login = Login::new(author);
+    let muted = MutedAuthor {
+        login,
+        at: hours_ago(1),
+    };
+    facts.activity.muted_authors.push(muted);
+    facts
+}
+
+/// Issue `number`, which `author` opened.
+fn opened_by(author: &str, number: u32) -> IssueFacts {
+    IssueFacts {
+        author: Some(Login::new(author)),
+        ..issue(number)
+    }
+}
+
+#[test]
+fn a_muted_authors_trees_leave_reach_unless_an_ask_stands_in_them() {
+    let pull_requests = vec![
+        fixing(10, 1),
+        colleagues(20, 2, PrState::Open),
+        PullRequestFacts {
+            review_requests: vec![me()],
+            ..colleagues(30, 3, PrState::Open)
+        },
+        fixing(40, 4),
+    ];
+    let issues = vec![
+        opened_by("issue-author", 1),
+        opened_by("issue-author", 2),
+        opened_by("issue-author", 3),
+        opened_by("another-author", 4),
+    ];
+    let facts = muting_author(facts(pull_requests, issues), "Issue-Author");
+
+    let sets = Reach::of(&facts, &cpython_settings());
+
+    // The user's PR 10 sits in Issue 1's tree, so it leaves with it. The Review request on PR 30 keeps
+    // Issue 3's tree.
+    assert_eq!(sets.without_muted, BTreeSet::from([4, 40]));
+    assert_eq!(sets.muted_asking, BTreeSet::from([3, 30]));
+}
+
+#[test]
+fn closing_or_a_pr_opening_leaves_a_muted_authors_item_as_it_is() {
+    let open = |facts: IssueFacts| IssueFacts {
+        state: Some(IssueState::Open),
+        ..facts
+    };
+    let muted = || {
+        let pull_requests = vec![fixing(5, 7), colleagues(20, 1, PrState::Open)];
+        let issues = vec![
+            open(opened_by("issue-author", 7)),
+            opened_by("issue-author", 1),
+        ];
+        let facts = facts(pull_requests, issues);
+        muting_author(archiving(facts, &[issue_key(1)]), "issue-author")
+    };
+    let settings = cpython_settings();
+
+    // The user's PR 5 holds Issue 7 in Reach, and PR 20 opens on Archived Issue 1.
+    let archived = archived_by_closing(muted(), &settings, &BTreeSet::from([7]));
+    let opened = opened_on(&muted(), &settings, &BTreeSet::from([20]));
+
+    assert_eq!(archived, []);
+    assert_eq!(opened, Vec::<u32>::new());
 }
 
 #[test]

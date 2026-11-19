@@ -4,7 +4,7 @@
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
-  import { treeRows, type TreeEntry } from "$lib/state/workbench.svelte";
+  import { isMuted, treeRows, type MuteAuthor, type TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
@@ -20,6 +20,7 @@
     onmark,
     onarchive,
     onmute,
+    onmuteauthor,
     focusable = false,
     header,
   }: {
@@ -34,6 +35,9 @@
     onarchive: (view: IssueView) => void;
     /** Mute, or Unmute on a Muted Issue, as the header's button offers for the view on show (#492). */
     onmute: (view: IssueView) => void;
+    /** Mute author on the Issue's author, or Unmute author on a Muted author, as the header's button offers
+     * for the view on show (#494). */
+    onmuteauthor: (view: IssueView) => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -50,6 +54,12 @@
     not_on_github: "GitHub doesn't have this Issue, or your token can't see it.",
     other: "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why.",
   };
+
+  /** The Mute author button's words for what `offered` offers: the author it mutes or unmutes (#494). */
+  const muteAuthorWords = (offered: MuteAuthor) =>
+    offered.kind === "off"
+      ? "Mute author"
+      : `${offered.kind === "mute" ? "Mute" : "Unmute"} ${offered.login}`;
 
   /** The words for an Issue Tsugiki doesn't hold, such as one a link named, and why once a read failed. */
   const notHeld = (number: number, why: ReadFailure | undefined) => {
@@ -143,7 +153,7 @@
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
     {@const by = opened(view)}
-    {@const muted = view.hidden === "muted"}
+    {@const muted = isMuted(view.hidden)}
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
@@ -167,7 +177,8 @@
             {/each}
           </ul>
         {/if}
-        <!-- A Muted Issue offers Unmute and nothing else (#492). -->
+        <!-- A Muted Issue offers Unmute and Mute author (#492), and a Muted author's Issue only Unmute author
+             (#494). Mute author is off on the user's own Issue. -->
         <MarkButton seen={view.seen} {onmark} marks={!muted}>
           {#if !muted}
             <button
@@ -176,10 +187,18 @@
               }}>{view.hidden === "archived" ? "Unarchive" : "Archive"}</button
             >
           {/if}
+          {#if view.hidden !== "muted_author"}
+            <button
+              onclick={() => {
+                onmute(view);
+              }}>{muted ? "Unmute" : "Mute"}</button
+            >
+          {/if}
           <button
+            disabled={view.mute_author.kind === "off"}
             onclick={() => {
-              onmute(view);
-            }}>{muted ? "Unmute" : "Mute"}</button
+              onmuteauthor(view);
+            }}>{muteAuthorWords(view.mute_author)}</button
           >
         </MarkButton>
       </div>

@@ -5,7 +5,7 @@ use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::{OpenStore, archived_on_closing};
-use crate::store::{Archiving, Muting, Opened};
+use crate::store::{Archiving, AuthorMuting, Muting, Opened};
 use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
 
@@ -361,6 +361,56 @@ fn mute_takes_an_item_out() {
     world.finish();
 
     assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
+}
+
+#[test]
+fn a_muted_authors_items_stay_unless_muted_or_archived_on_their_own() {
+    let world = ViewWorld::new("inbox-muted-author");
+    world.has(
+        vec![
+            pr_at(20, None, ago(1)),
+            pr_at(21, None, ago(3)),
+            pr_at(22, None, ago(4)),
+        ],
+        vec![issue_at(1, ago(2))],
+    );
+    let muting = Muting {
+        key: ItemKey::PullRequest { number: 21 },
+        numbers: vec![21],
+        up_to: Some(ago(0)),
+    };
+    world.db.store.mute(&cpython(), muting, now()).unwrap();
+    let archiving = Archiving {
+        key: ItemKey::PullRequest { number: 22 },
+        numbers: vec![22],
+        up_to: Some(ago(0)),
+        put_away: PutAway::Now,
+    };
+    world
+        .db
+        .store
+        .archive(&cpython(), archiving, now())
+        .unwrap();
+    let author = stranger().author.unwrap();
+    let muting = AuthorMuting {
+        author,
+        marks: Vec::new(),
+    };
+    world
+        .db
+        .store
+        .mute_author(&cpython(), muting, now())
+        .unwrap();
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    // #825 is to leave out a Muted author's items, behind a switch.
+    assert_eq!(
+        outline(&latest),
+        [("standalone", 20, vec![]), ("issue", 1, vec![])]
+    );
+    assert_eq!(latest.items[0].hidden, Some(Hidden::MutedAuthor));
 }
 
 #[test]

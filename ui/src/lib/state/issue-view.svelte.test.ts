@@ -14,6 +14,7 @@ const view = (title: string): IssueView => ({
   title,
   state: "OPEN",
   people: ["issue-author"],
+  mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [],
   merged: [],

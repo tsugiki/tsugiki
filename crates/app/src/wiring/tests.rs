@@ -881,6 +881,28 @@ fn mute_and_unmute_tell_the_window() {
 }
 
 #[test]
+fn mute_author_and_unmute_author_tell_the_window() {
+    let (folders, _root) = temp_folders("wired-mute-author");
+    let wired = Wired::start(Ok(folders), no_network());
+    let asked = json!({ "repository": CPYTHON, "author": "some-author" });
+
+    drop(wired.ask("mute_author", asked.clone()).unwrap());
+    let muted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.ask("unmute_author", asked).unwrap());
+    let unmuted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let refused = wired.ask(
+        "mute_author",
+        json!({ "repository": "no-slash", "author": "a" }),
+    );
+    drop(wired.stop());
+
+    // The store holds none of their items yet.
+    assert_eq!(muted, json!({ "repository": CPYTHON, "items": [] }));
+    assert_eq!(unmuted, muted);
+    assert!(refused.is_err(), "a Repository name that isn't one");
+}
+
+#[test]
 fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
     let (folders, _root) = temp_folders("wired-bad-mark");
     let wired = Wired::start(Ok(folders), no_network());

@@ -10,13 +10,13 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
-use crate::store::Archiving;
+use crate::store::{Archiving, AuthorMuting, Seeing};
 use crate::testing::cpython;
-use crate::work::YourReview;
-use crate::workbench::WorkbenchRow;
+use crate::work::{SeenMark, YourReview};
 use crate::workbench::testing::{
-    ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
+    ViewWorld, backport, bots_backport, first_issue, fixing, issue, me, workbench,
 };
+use crate::workbench::{MuteAuthor, WorkbenchRow};
 
 fn merged(facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {
@@ -199,6 +199,40 @@ fn the_view_says_whether_the_issue_is_muted() {
     world.finish();
 
     assert_eq!((muted.hidden, after.hidden), (Some(Hidden::Muted), None));
+}
+
+#[test]
+fn the_view_offers_mute_author_for_its_issues_author_and_says_once_they_are_muted() {
+    let world = ViewWorld::new("issue-view-muted-author");
+    let author = Login::new("issue-author");
+    world.has(vec![fixing(10, 1)], vec![issue(1)]);
+    let before = view(&world, 1).unwrap();
+
+    let SeenMark { numbers, up_to } = before.issue.seen.mark.clone();
+    let muting = AuthorMuting {
+        author: author.clone(),
+        marks: vec![Seeing { numbers, up_to }],
+    };
+    let now = OffsetDateTime::now_utc();
+    world.db.store.mute_author(&cpython(), muting, now).unwrap();
+    let muted = view(&world, 1).unwrap();
+    let own = IssueFacts {
+        author: Some(me()),
+        ..issue(2)
+    };
+    world.has(vec![], vec![own]);
+    let mine = view(&world, 2).unwrap();
+    world.finish();
+
+    let login = author.clone();
+    assert_eq!(before.issue.mute_author, MuteAuthor::Mute { login });
+    assert_eq!(before.hidden, None);
+    assert_eq!(
+        muted.issue.mute_author,
+        MuteAuthor::Unmute { login: author }
+    );
+    assert_eq!(muted.hidden, Some(Hidden::MutedAuthor));
+    assert_eq!(mine.issue.mute_author, MuteAuthor::Off);
 }
 
 #[test]

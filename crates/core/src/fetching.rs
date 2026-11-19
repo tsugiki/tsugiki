@@ -17,6 +17,7 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, ReviewedCommit};
+use crate::login::Login;
 use crate::mirror::{CloneRefusal, LookupAt, MirrorRequests};
 use crate::mirror_source::MirrorSource;
 use crate::patch_ids::PatchReads;
@@ -93,9 +94,37 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         key: ItemKey,
     },
+    /// Mute author on `author` in the Repository `settings` name, at `at` (#494). The session finds their
+    /// open items, whose trees the mute marks seen, by the link rules under those settings.
+    AuthorMuted {
+        settings: Box<RepositorySettings>,
+        author: Login,
+        at: OffsetDateTime,
+    },
+    /// Unmute author on `author` in the Repository `settings` name, under whose settings the session finds
+    /// the items that come back.
+    AuthorUnmuted {
+        settings: Box<RepositorySettings>,
+        author: Login,
+    },
 }
 
 impl Marked {
+    /// The Repository the mark is made in.
+    pub(crate) fn repository(&self) -> &RepositoryName {
+        match self {
+            Self::Seen { repository, .. }
+            | Self::Unseen { repository, .. }
+            | Self::Archived { repository, .. }
+            | Self::Unarchived { repository, .. }
+            | Self::Muted { repository, .. }
+            | Self::Unmuted { repository, .. } => repository,
+            Self::AuthorMuted { settings, .. } | Self::AuthorUnmuted { settings, .. } => {
+                &settings.name
+            }
+        }
+    }
+
     /// Archive on the item `key` names now, with the Mark Seen the window drew for it in `mark`, putting the
     /// item away as `put_away` says.
     fn archived(
@@ -331,6 +360,24 @@ impl Fetching {
     /// Unmutes the item `key` names.
     pub fn unmute(&self, repository: RepositoryName, key: ItemKey) {
         self.to_session(SessionMessage::Mark(Marked::Unmuted { repository, key }));
+    }
+
+    /// Mute author on `author` in the Repository `settings` name (#494): their items count as Muted, and
+    /// the session marks their open items seen in the background, finding them under `settings`.
+    pub fn mute_author(&self, settings: RepositorySettings, author: Login) {
+        let muted = Marked::AuthorMuted {
+            settings: Box::new(settings),
+            author,
+            at: OffsetDateTime::now_utc(),
+        };
+        self.to_session(SessionMessage::Mark(muted));
+    }
+
+    /// Unmutes `author` in the Repository `settings` name.
+    pub fn unmute_author(&self, settings: RepositorySettings, author: Login) {
+        let settings = Box::new(settings);
+        let unmuted = Marked::AuthorUnmuted { settings, author };
+        self.to_session(SessionMessage::Mark(unmuted));
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an

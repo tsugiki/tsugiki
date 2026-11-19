@@ -544,6 +544,71 @@ fn a_muted_item_survives_a_restart_and_mute_marks_its_tree_seen() {
 }
 
 #[test]
+fn a_muted_author_survives_a_restart_and_mute_author_marks_their_items_seen() {
+    let (path, _folder) = temp_database("activity-muted-author");
+    let repository = cpython();
+    let drawn = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let now = drawn + Duration::hours(2);
+    let later = now + Duration::hours(1);
+    let store = Store::open(&path).unwrap();
+    store
+        .mark_unseen(&repository, Flagging::on(7), drawn)
+        .unwrap();
+    let issue = Seeing {
+        numbers: vec![7, 8],
+        up_to: Some(drawn),
+    };
+    let standalone = Seeing {
+        numbers: vec![9],
+        up_to: None,
+    };
+    let author = Login::new("some-author");
+    let muting = AuthorMuting {
+        author: author.clone(),
+        marks: vec![issue, standalone],
+    };
+    store.mute_author(&repository, muting.clone(), now).unwrap();
+    store.mute_author(&repository, muting, drawn).unwrap();
+    let other = Login::new("another-author");
+    let marks = Vec::new();
+    let muting = AuthorMuting {
+        author: other.clone(),
+        marks,
+    };
+    store.mute_author(&repository, muting, later).unwrap();
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+    let restarted = store.work_facts(&repository).unwrap().activity;
+    // Logins ignore case, as GitHub's do.
+    store
+        .unmute_author(&repository, &Login::new("Another-Author"))
+        .unwrap();
+    let after = store.work_facts(&repository).unwrap().activity;
+    let elsewhere = RepositoryName::parse("python/mypy").unwrap();
+    let in_another = store.work_facts(&elsewhere).unwrap().activity;
+
+    store.close();
+    let muted = |login: &Login, at| MutedAuthor {
+        login: login.clone(),
+        at,
+    };
+    assert_eq!(
+        restarted.muted_authors,
+        [muted(&other, later), muted(&author, now)],
+        "a second mute never moves the moment back"
+    );
+    assert_eq!(
+        restarted.last_seen,
+        BTreeMap::from([(7, drawn), (8, drawn)])
+    );
+    assert_eq!(restarted.marked_unseen, BTreeMap::new());
+    assert_eq!(restarted.muted, BTreeMap::new(), "no Mute on each item");
+    assert_eq!(after.muted_authors, [muted(&author, now)]);
+    assert_eq!(in_another.muted_authors, []);
+}
+
+#[test]
 fn a_muted_kind_from_a_later_version_is_left_alone() {
     let (path, _folder) = temp_database("activity-later-muted");
     let repository = cpython();
@@ -615,6 +680,40 @@ fn a_changed_pr_saved_for_the_first_time_is_an_opening_when_it_names_an_archived
     // Issue 2 isn't Archived, and the store held PR 12 before. PR 13 came with an Issue's tree, or with
     // an older batch.
     assert_eq!(openings, BTreeSet::from([11]));
+}
+
+#[test]
+fn a_pr_that_opens_leaves_a_muted_authors_archived_issue_archived() {
+    let (path, _folder) = temp_database("activity-brought-back-muted-author");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    archived_closed(&store, &[1, 2], now);
+    let theirs = IssueFacts {
+        author: Some(Login::new("Some-Author")),
+        state: Some(IssueState::Closed),
+        ..issue_facts(1)
+    };
+    store.save_issues(&repository, vec![theirs]).unwrap();
+    let opened = Opened {
+        issues: vec![1, 2],
+        openings: BTreeSet::new(),
+    };
+    // The user muted the author of Issue 1 after the sync read what it judged.
+    let muting = AuthorMuting {
+        author: Login::new("some-author"),
+        marks: Vec::new(),
+    };
+    store.mute_author(&repository, muting, now).unwrap();
+
+    store.bring_back(&repository, opened).unwrap();
+
+    let archived = (store.work_facts(&repository).unwrap().activity).archived;
+    store.close();
+    assert_eq!(
+        archived.into_keys().collect::<Vec<_>>(),
+        [ItemKey::Issue { number: 1 }]
+    );
 }
 
 #[test]

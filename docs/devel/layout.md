@@ -98,7 +98,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       time in its tooltip, how many comments it has, and whom it is assigned to, if anyone. Under it the
       Issue's labels show as plain chips in name order, as GitHub lists them, beside a row of buttons:
       Archive, which archives the Issue on show and reads Unarchive on an Archived Issue, Mute, which mutes
-      it, then Mark Seen. A Muted Issue shows only Unmute. An Issue with no labels shows no chips. Each
+      it, "Mute <author>", which mutes the Issue's author and is off on the user's own Issue, then Mark
+      Seen. A Muted Issue shows only Unmute and "Mute <author>", and a Muted author's Issue only
+      "Unmute <author>". An Issue with no labels shows no chips. Each
       Origin PR's Backports are folded into one line that gives their branches and states. A row between
       the "Origin PRs" heading and the tree counts the PRs by state, as
       `Open 2 · Draft 0 · Merged 1 · Closed 0 · Bold: Needs attention 1`: each state's icon, its word, then

@@ -17,6 +17,7 @@ import {
   type ItemKey,
   type ListedItem_Serialize,
   type ListOrder,
+  type MuteAuthor,
   type PrState,
   type SeenMark_Serialize,
   type Seen_Serialize,
@@ -49,12 +50,16 @@ export type {
   CiState,
   IssueState,
   ItemKey,
+  MuteAuthor,
   PrState,
   WorkbenchView,
   WorkReason,
   Why,
   YourReview,
 };
+
+/** Whether `hidden` hides a Muted item, on its own (#492) or as a Muted author's (#494). */
+export const isMuted = (hidden: Hidden | null | undefined) => hidden === "muted" || hidden === "muted_author";
 
 /** A line of the Sidebar whose items the list shows: a view of the Workbench, or the Inbox (#822). */
 export type SidebarView = WorkbenchView | { kind: "inbox" };
@@ -348,15 +353,25 @@ export class WorkbenchState {
 
   /** The part in Mark Seen of line `stop`: an Issue's covers its tree, and a PR's the PR alone. */
   seenOf(stop: Stop): Seen | undefined {
+    return this.#lineOf(stop)?.seen;
+  }
+
+  /** What Mute author offers on line `stop` for the author of its Issue or PR (#494). */
+  muteAuthorOf(stop: Stop): MuteAuthor | undefined {
+    return this.#lineOf(stop)?.mute_author;
+  }
+
+  /** What line `stop` draws: its item's own line, or a PR or Backport in the item's tree. */
+  #lineOf(stop: Stop): Pick<WorkbenchRow, "seen" | "mute_author"> | undefined {
     const item = this.#itemOf(stop, this.#everything);
-    if (item?.number === stop.number) return item.seen;
+    if (item?.number === stop.number) return item;
     const rows =
       item?.kind === "issue"
         ? treeRows(item.pull_requests)
         : item?.kind === "standalone_pr"
           ? item.backports
           : [];
-    return rows.find((row) => row.number === stop.number)?.seen;
+    return rows.find((row) => row.number === stop.number);
   }
 
   /** Mark Seen with `mark`, as the window drew it. Of an item the window draws `archived`, it goes through
@@ -370,10 +385,16 @@ export class WorkbenchState {
   }
 
   /** The key of the item that holds line `stop`, while the list draws it `hidden`: Archived (#490) or Muted
-   * (#492). */
+   * (#492), or a Muted author's (#494). */
   hiddenHolding(stop: Stop, hidden: Hidden): ItemKey | undefined {
     const item = this.#itemOf(stop, this.#everything);
     return item?.hidden === hidden ? item.key : undefined;
+  }
+
+  /** Whether the list draws the item that holds line `stop` Muted, on its own (#492) or as a Muted author's
+   * (#494). */
+  mutedHolding(stop: Stop): boolean {
+    return isMuted(this.#itemOf(stop, this.#everything)?.hidden);
   }
 
   /** Mark Unseen on Issue or PR `number`. It unarchives `archived`, the item that holds it if the window
@@ -406,6 +427,20 @@ export class WorkbenchState {
   /** Unmutes the item `key` names, which stays in the list. Says what went wrong, if anything did. */
   async unmute(key: ItemKey) {
     return problemIn(commands.unmute(this.#repository, key));
+  }
+
+  /** Mute author on `login`, the author of line `stop` if the list holds one (#494). Their items leave the
+   * list, and once the item that holds the line leaves, as it does when they opened it, a cursor on any of
+   * its lines lands on the item after it. Says what went wrong, if anything did. */
+  async muteAuthor(login: string, stop: Stop | undefined) {
+    const item = stop && this.#itemOf(stop, this.#everything);
+    const theirs = item?.mute_author.kind === "mute" && item.mute_author.login === login;
+    return this.#leave(theirs ? item.key : undefined, commands.muteAuthor(this.#repository, login));
+  }
+
+  /** Unmutes the author `login`, whose items come back. Says what went wrong, if anything did. */
+  async unmuteAuthor(login: string) {
+    return problemIn(commands.unmuteAuthor(this.#repository, login));
   }
 
   /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),

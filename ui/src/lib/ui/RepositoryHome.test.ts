@@ -8,6 +8,7 @@ import { keyTarget } from "./keys";
 import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
+import type { MuteAuthor } from "$lib/state/workbench.svelte";
 import { done, ok, readyFiles, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
@@ -41,6 +42,8 @@ const core = vi.hoisted(() => ({
   unarchive: vi.fn(),
   mute: vi.fn(),
   unmute: vi.fn(),
+  muteAuthor: vi.fn(),
+  unmuteAuthor: vi.fn(),
   putFilterOnWorkbench: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
@@ -80,6 +83,8 @@ vi.mock("$lib/data/bindings", async () => {
       unarchive: core.unarchive,
       mute: core.mute,
       unmute: core.unmute,
+      muteAuthor: core.muteAuthor,
+      unmuteAuthor: core.unmuteAuthor,
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       openOnGithub: core.openOnGithub,
       pullRequestFiles: core.pullRequestFiles,
@@ -118,6 +123,7 @@ const row = workbenchRow(160662, {
     mark: { numbers: [160662], up_to: "2026-11-04T10:00:00Z" },
     state: "new_activity",
   },
+  mute_author: { kind: "mute", login: "some-author" },
 });
 
 const issue = {
@@ -132,6 +138,7 @@ const issue = {
     mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z" },
     state: "new_activity",
   },
+  mute_author: { kind: "mute", login: "issue-author" } as MuteAuthor,
   key: { kind: "issue", number: 112564 },
   hidden: null,
 };
@@ -172,6 +179,8 @@ beforeEach(() => {
   core.unarchive.mockResolvedValue(done);
   core.mute.mockResolvedValue(done);
   core.unmute.mockResolvedValue(done);
+  core.muteAuthor.mockResolvedValue(done);
+  core.unmuteAuthor.mockResolvedValue(done);
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -189,6 +198,7 @@ beforeEach(() => {
       needs_attention: [],
       content: null,
       seen: issue.seen,
+      mute_author: issue.mute_author,
       hidden: null,
     },
   });
@@ -724,6 +734,7 @@ it("says how long ago each comment in the Detail pane came", async () => {
       labels: [],
       needs_attention: [],
       seen: issue.seen,
+      mute_author: issue.mute_author,
       content: {
         body_html: "<p>It crashes</p>",
         comments: [
@@ -829,6 +840,7 @@ it("keeps the merged PRs unfolded after one of them opens and Esc comes back", a
       needs_attention: [],
       content: null,
       seen: issue.seen,
+      mute_author: issue.mute_author,
     },
   });
   const { issueRow } = await listing();
@@ -2573,6 +2585,110 @@ it("says a Muted row is Muted, where Q, Shift+Q and E do nothing and M unmutes i
   expect(core.archive).not.toHaveBeenCalled();
   expect(core.mute).not.toHaveBeenCalled();
   expect(core.unmute).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key);
+});
+
+it("mutes from the palette the author of the line under the cursor, a PR's author on a PR's line", async () => {
+  const { component, treeRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  const onPr = paletteRow(component, "mute_author", treeRow);
+
+  onPr?.run();
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+  const onIssue = paletteRow(component, "mute_author", treeRow);
+
+  expect(onPr?.title).toBe("Mute Author");
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author");
+  expect(onIssue?.title).toBe("Mute Author");
+  onIssue?.run();
+  expect(core.muteAuthor).toHaveBeenLastCalledWith("python/cpython", "issue-author");
+});
+
+it("lands the cursor on the next row once Mute author takes the item under it away", async () => {
+  const changed = catchEveryListener();
+  const { component, issueRow } = await listing();
+  issueRow.focus();
+  await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
+
+  paletteRow(component, "mute_author", issueRow)?.run();
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+
+  const landed = await screen.findByRole("button", { name: "#5 Alone" });
+  await vi.waitFor(() => {
+    expect(landed.getAttribute("aria-current")).toBe("true");
+  });
+});
+
+it("offers Unmute Author on a Muted author's row, where Q, Shift+Q, E and M do nothing", async () => {
+  const theirs = {
+    ...standalone,
+    attention: null,
+    hidden: "muted_author",
+    mute_author: { kind: "unmute", login: "some-author" },
+  };
+  core.workbench.mockResolvedValue(workbenchPage([theirs]));
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+
+  for (const key of [{ key: "q" }, { key: "Q", shiftKey: true }, { key: "e" }, { key: "m" }]) {
+    await fireEvent.keyDown(row, key);
+  }
+  const command = paletteRow(component, "mute_author", row);
+  command?.run();
+
+  expect(within(screen.getByRole("listitem")).getByText("Muted")).toBeTruthy();
+  for (const mark of [core.markSeen, core.markUnseen, core.archive, core.mute, core.unmute]) {
+    expect(mark).not.toHaveBeenCalled();
+  }
+  expect(command?.title).toBe("Unmute Author");
+  expect(core.unmuteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author");
+});
+
+it("leaves Mute Author out of the palette on the user's own row", async () => {
+  const own = { ...standalone, attention: null, author: "me", mute_author: { kind: "off" } };
+  core.workbench.mockResolvedValue(workbenchPage([own]));
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  const row = await screen.findByRole("button", { name: "#5 Alone" });
+  row.focus();
+  await fireEvent.keyDown(row, { key: "ArrowDown" });
+
+  expect(paletteRow(component, "mute_author", row)).toBeUndefined();
+});
+
+it("mutes the author of the Issue on show from its button, the list follows, and the button turns into Unmute", async () => {
+  const changed = catchEveryListener();
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Mute issue-author" }));
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "issue-author");
+  const shown = await core.issue.mock.results[0]?.value;
+  const unmute: MuteAuthor = { kind: "unmute", login: "issue-author" };
+  core.issue.mockResolvedValue({
+    ...shown,
+    data: { ...shown.data, hidden: "muted_author", mute_author: unmute },
+  });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+  const button = await screen.findByRole("button", { name: "Unmute issue-author" });
+
+  const list = within(issueList() as HTMLElement);
+  expect(list.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^(Mute|Unmute|Archive)$/ })).toBeNull();
+  await fireEvent.click(button);
+  expect(core.unmuteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "issue-author");
 });
 
 it("folds the Muted items at the list's end behind a line that shows and hides them", async () => {

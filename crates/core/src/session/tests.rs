@@ -1812,6 +1812,54 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
 }
 
 #[test]
+fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmute_hands_them_back()
+{
+    let (folders, _folder) = temp_folders("muted-author-session");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    let author = Login::new("some-author");
+    let opened = IssueFacts {
+        author: Some(author.clone()),
+        updated_at: hours_ago(3),
+        ..issue_facts(5)
+    };
+    store.save_issues(&gcmon(), vec![opened]).unwrap();
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+    };
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+
+    let asked = session.fetching();
+    asked.sync(cpython_gcmon());
+    asked.mute_author(cpython_gcmon(), author.clone());
+    let muted = heard.asked_through("wants heads none", PLENTY);
+    let change = changes.recv_timeout(PLENTY).unwrap();
+    let store = session.reader();
+    let activity = store.work_facts(&gcmon()).unwrap().activity;
+    asked.unmute_author(cpython_gcmon(), author);
+    let unmuted = heard.asked_through("wants heads #8", PLENTY);
+    session.stop(PLENTY);
+
+    assert!(
+        muted.contains(&"some-maintainer/gcmon wants heads none".to_owned()),
+        "{muted:?}"
+    );
+    assert_eq!(change.items, [5, 8, 9], "their Issue and its tree");
+    let at = activity
+        .muted_authors
+        .first()
+        .map(|muted| muted.login.as_str());
+    assert_eq!(at, Some("some-author"));
+    assert_eq!(activity.last_seen.keys().collect::<Vec<_>>(), [&5, &8, &9]);
+    let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
+    assert!(unmuted.contains(&heads.to_owned()), "{unmuted:?}");
+}
+
+#[test]
 fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirror_nothing() {
     let store = empty_store();
     stores_issue_5_with_its_prs(&store);

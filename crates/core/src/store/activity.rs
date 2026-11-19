@@ -11,7 +11,7 @@ use super::Connection;
 use super::columns::{Items, UnixMillis, UnixTime};
 use super::failed_checks;
 use crate::facts::activity::{
-    Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, PutAway,
+    Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, MutedAuthor, PutAway,
 };
 use crate::login::Login;
 use crate::repository::RepositoryName;
@@ -94,6 +94,18 @@ pub(super) const MUTED: &str = "
         number INTEGER NOT NULL,
         at INTEGER NOT NULL,
         PRIMARY KEY (repository, kind, number)
+    ) WITHOUT ROWID;
+";
+
+/// The people and bots whose items the user muted in each Repository (#494), with the moment of the mute: a
+/// Review request or an assignment that starts after it shows their item again. Their items count as Muted
+/// from the author each holds, so no row of `muted` stands for them.
+pub(super) const MUTED_AUTHORS: &str = "
+    CREATE TABLE muted_authors (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        login TEXT NOT NULL COLLATE NOCASE,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (repository, login)
     ) WITHOUT ROWID;
 ";
 
@@ -462,6 +474,77 @@ pub(super) fn unmute(
         .map(drop)
 }
 
+/// Mark Seen on `numbers` up to `up_to`, as the window would draw it: one of Mute author's marks (#494).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seeing {
+    pub numbers: Vec<u32>,
+    pub up_to: Option<OffsetDateTime>,
+}
+
+/// What Mute author writes (#494): the author, and Mark Seen on each open item they opened, its tree
+/// included, as Mute marks one item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthorMuting {
+    pub author: Login,
+    pub marks: Vec<Seeing>,
+}
+
+/// Mute author on `muting`'s author (#494): Mark Seen on each of `marks`, and the author kept as muted from
+/// `now`. Muting them again never moves that moment back.
+pub(super) fn mute_author(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    muting: &AuthorMuting,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    for Seeing { numbers, up_to } in &muting.marks {
+        mark_seen_in(&transaction, repository, numbers, *up_to)?;
+    }
+    let _muted = transaction.execute(
+        "INSERT INTO muted_authors (repository, login, at) VALUES (:repository, :login, :at)
+         ON CONFLICT (repository, login) DO UPDATE SET at = MAX(at, excluded.at)",
+        named_params! {
+            ":repository": repository,
+            ":login": muting.author,
+            ":at": now.unix_timestamp(),
+        },
+    )?;
+    transaction.commit()
+}
+
+/// Unmutes `author`, and leaves Last seen as it is. An item the user muted on its own stays Muted.
+pub(super) fn unmute_author(
+    connection: &Connection,
+    repository: &RepositoryName,
+    author: &Login,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM muted_authors WHERE repository = :repository AND login = :login",
+            named_params! { ":repository": repository, ":login": author },
+        )
+        .map(drop)
+}
+
+/// The Muted authors of `repository`, by login.
+fn muted_authors(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<Vec<MutedAuthor>> {
+    let mut statement = connection.prepare(
+        "SELECT login, at FROM muted_authors WHERE repository = :repository ORDER BY login",
+    )?;
+    let rows = statement.query_map(named_params! { ":repository": repository }, |row| {
+        let UnixTime(at) = row.get("at")?;
+        Ok(MutedAuthor {
+            login: row.get("login")?,
+            at,
+        })
+    })?;
+    rows.collect()
+}
+
 /// What a save did to whether an Issue or a PR is open, which Archive follows (#820).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum StateMove {
@@ -611,7 +694,8 @@ pub struct Opened {
 
 /// Unarchives the Issues `opened` names, as Unarchive does, keeps them as brought back to the Inbox, and
 /// forgets the openings it judged, all at once. The sync judged from an earlier read, so an Issue the user
-/// unarchived or muted since stays as they left it.
+/// unarchived or muted since stays as they left it, and so does one whose author they muted since (#494).
+/// `muted_authors.login` stands on the left of the join, so its NOCASE compares the logins.
 pub(super) fn bring_back(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -624,7 +708,11 @@ pub(super) fn bring_back(
              SELECT repository, number FROM archived
              WHERE repository = :repository AND kind = :issue AND number = :number
                  AND NOT EXISTS (SELECT 1 FROM muted
-                     WHERE repository = :repository AND kind = :issue AND number = :number)",
+                     WHERE repository = :repository AND kind = :issue AND number = :number)
+                 AND NOT EXISTS (SELECT 1 FROM muted_authors JOIN issues
+                     ON issues.repository = muted_authors.repository
+                         AND muted_authors.login = issues.author
+                     WHERE muted_authors.repository = :repository AND issues.number = :number)",
             named_params! { ":repository": repository, ":number": number, ":issue": ISSUE },
         )?;
         if kept > 0 {
@@ -904,6 +992,7 @@ pub(super) fn read_facts_of(
         marked_unseen: moments(connection, &marked_unseen, repository, items)?,
         archived: archived(connection, repository, items)?,
         muted: muted(connection, repository, items)?,
+        muted_authors: muted_authors(connection, repository)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,
         failed_checks: failed_checks::read(connection, repository, items)?,

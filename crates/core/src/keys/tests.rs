@@ -413,6 +413,10 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
         &[Action::Mute],
     ),
     (
+        "Mute or unmute the author of the row under the cursor or of the Detail pane's item, by focus",
+        &[Action::MuteAuthor],
+    ),
+    (
         "Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus",
         &[Action::MarkSeen, Action::MarkUnseen],
     ),

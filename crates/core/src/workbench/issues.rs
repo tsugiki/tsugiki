@@ -4,10 +4,12 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
-use super::{Seen, TreeEntry, WorkbenchItem};
+use super::attention::seen_of;
+use super::{MuteAuthor, Seen, TreeEntry, WorkbenchItem};
 use crate::conventions::Conventions;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::login::Login;
+use crate::work::Causes;
 
 /// An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -25,14 +27,23 @@ pub struct IssueItem {
     pub pull_requests: Vec<TreeEntry>,
     /// Its part in Mark Seen, which covers the Issue and every PR in its tree.
     pub seen: Seen,
+    /// What Mute author offers for the Issue's author (#494).
+    pub mute_author: MuteAuthor,
 }
 
+/// The Issue `issue` with its tree `pull_requests`, its part in Mark Seen and Mute author as `causes` judge
+/// them.
 pub(super) fn issue_item(
     issue: IssueFacts,
     pull_requests: Vec<TreeEntry>,
     conventions: Conventions,
-    seen: Seen,
+    causes: &Causes,
 ) -> WorkbenchItem {
+    let tree = (pull_requests.iter())
+        .flat_map(TreeEntry::rows)
+        .map(|row| row.number);
+    let seen = seen_of(causes, std::iter::once(issue.number).chain(tree).collect());
+    let mute_author = MuteAuthor::of(causes, issue.author.as_ref());
     let people = people(&issue, &pull_requests, conventions);
     let updated_at = pull_requests
         .iter()
@@ -47,6 +58,7 @@ pub(super) fn issue_item(
         updated_at,
         pull_requests,
         seen,
+        mute_author,
     })
 }
 

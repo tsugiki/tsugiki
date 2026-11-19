@@ -2,6 +2,7 @@
 
 mod archive;
 mod mute;
+mod mute_author;
 
 use std::collections::BTreeMap;
 

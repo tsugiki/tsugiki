@@ -108,6 +108,13 @@ export const commands = {
 	mute: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, item, mark })),
 	/**  Unmutes the item `item` names, and returns at once. */
 	unmute: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute", { repository, item })),
+	/**
+	 *  Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
+	 *  the background, and the `changed` event follows.
+	 */
+	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
+	/**  Unmutes `author` in `repository`, and returns at once. */
+	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -361,7 +368,7 @@ export type About = {
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
  *  `local_mark`.
  */
-export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
+export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mute_author" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
 
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
@@ -1135,7 +1142,12 @@ export type Hidden =
  *  assignment to the user stands in its tree (#824). The Review requests view shows a PR while its
  *  request stands, and the Workbench while one that started after the mute does (#492).
  */
-"muted";
+"muted" | 
+/**
+ *  A Muted author opened it (#494), whether or not the user muted it on its own too. Muted, and only
+ *  Unmute author brings it back: Mute, Archive and the marks do nothing on it.
+ */
+"muted_author";
 
 /**  The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it. */
 export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
@@ -1466,6 +1478,8 @@ export type IssueItem_Deserialize = {
 	pull_requests: TreeEntry_Deserialize[],
 	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
 	seen: Seen_Deserialize,
+	/**  What Mute author offers for the Issue's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
@@ -1481,6 +1495,8 @@ export type IssueItem_Serialize = {
 	pull_requests: TreeEntry_Serialize[],
 	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
 	seen: Seen_Serialize,
+	/**  What Mute author offers for the Issue's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
@@ -2026,6 +2042,15 @@ export type Miss_Serialize =
 { kind: "long_frame"; ms: number | null; scripts: Script_Serialize[] } | 
 /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
 { kind: "capped"; of: MissKind; limit: number };
+
+/**  What Mute author offers on a row for the author of its Issue or PR. */
+export type MuteAuthor = 
+/**  Nothing: the user opened it, or its author's account has gone. */
+{ kind: "off" } | 
+/**  Mute author mutes `login`. */
+{ kind: "mute"; login: Login } | 
+/**  `login` is a Muted author, and Unmute author unmutes them. */
+{ kind: "unmute"; login: Login };
 
 /**  What Add repository learns about the name the user typed. */
 export type NameCheck = NameCheck_Serialize | NameCheck_Deserialize;
@@ -3578,6 +3603,8 @@ export type WorkbenchRow_Deserialize = {
 	your_review: YourReview,
 	/**  Its part in Mark Seen, which covers this PR alone. */
 	seen: Seen_Deserialize,
+	/**  What Mute author offers for the PR's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  A PR's line of the list. */
@@ -3596,6 +3623,8 @@ export type WorkbenchRow_Serialize = {
 	your_review: YourReview,
 	/**  Its part in Mark Seen, which covers this PR alone. */
 	seen: Seen_Serialize,
+	/**  What Mute author offers for the PR's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  The list the window asks for. */

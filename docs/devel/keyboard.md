@@ -36,6 +36,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Reset the layout | the command palette |
 | Archive, the row under the cursor or the Detail pane's item, by focus | `E` |
 | Mute, the row under the cursor or the Detail pane's item, by focus | `M` |
+| Mute or unmute the author of the row under the cursor or of the Detail pane's item, by focus | the command palette |
 | Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus | `Q` / `Shift+Q` |
 | Settings | `Ctrl+,`, or the command palette |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |

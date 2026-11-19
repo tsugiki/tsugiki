@@ -108,6 +108,23 @@ pub(super) const CLOSINGS: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The PRs a save stored for the first time that name an Archived Issue (#823), until the sync judges
+/// whether each opened on that Issue under the Repository's Conventions, as it judges closings. And the
+/// Issues a PR that opened brought back to the Inbox, which lists them while closed, until the user archives
+/// or mutes them, or they open or close.
+pub(super) const OPENINGS: &str = "
+    CREATE TABLE openings (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+    CREATE TABLE brought_back (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+";
+
 const ISSUE: &str = "issue";
 const PULL_REQUEST: &str = "pull_request";
 
@@ -362,6 +379,7 @@ pub(super) fn archive(
             ":as_before": as_before,
         },
     )?;
+    forget_brought_back(&transaction, repository, *key)?;
     transaction.commit()
 }
 
@@ -425,6 +443,7 @@ pub(super) fn mute(
             ":at": at,
         },
     )?;
+    forget_brought_back(&transaction, repository, *key)?;
     transaction.commit()
 }
 
@@ -467,7 +486,8 @@ impl StateMove {
 }
 
 /// Keeps what `moved` did to the Issue or PR `key` names. A closing waits for the sync to judge it. An item
-/// that opens again leaves Archived, however it came there, and a closing of it still unjudged goes.
+/// that opens again leaves Archived, however it came there, and a closing of it still unjudged goes. Either
+/// move ends what a PR that opened did to an Issue (#823): the Inbox lists it as its state says.
 pub(super) fn follow_state(
     connection: &Connection,
     repository: &RepositoryName,
@@ -475,18 +495,149 @@ pub(super) fn follow_state(
     moved: StateMove,
 ) -> rusqlite::Result<()> {
     match moved {
-        StateMove::Closed => connection
-            .execute(
-                "INSERT OR IGNORE INTO closings (repository, number) VALUES (:repository, :number)",
-                named_params! { ":repository": repository, ":number": key.number() },
-            )
-            .map(drop),
+        StateMove::Closed => {
+            forget_brought_back(connection, repository, key)?;
+            connection
+                .execute(
+                    "INSERT OR IGNORE INTO closings (repository, number) VALUES (:repository, :number)",
+                    named_params! { ":repository": repository, ":number": key.number() },
+                )
+                .map(drop)
+        }
         StateMove::Reopened => {
+            forget_brought_back(connection, repository, key)?;
             forget_closing(connection, repository, key.number())?;
             unarchive(connection, repository, key)
         }
         StateMove::Stayed => Ok(()),
     }
+}
+
+/// Keeps PR `number`, which a save stored for the first time, as an opening the sync judges (#823), if it
+/// names an Archived Issue under any Conventions. Call it once the PR's links are kept.
+pub(super) fn note_opening(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO openings (repository, number)
+             SELECT pr_fixes.repository, pr_fixes.number FROM pr_fixes JOIN archived
+                 ON archived.repository = pr_fixes.repository AND archived.kind = :issue
+                     AND archived.number = pr_fixes.issue
+             WHERE pr_fixes.repository = :repository AND pr_fixes.number = :number",
+            named_params! { ":repository": repository, ":number": number, ":issue": ISSUE },
+        )
+        .map(drop)
+}
+
+/// The PRs of `repository` that opened on an Archived Issue, as a save saw them, whose opening the sync
+/// hasn't judged yet.
+pub(super) fn openings(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    numbers_in(connection, NumberTable::Openings, repository)
+}
+
+/// The Issues of `repository` a PR that opened brought back to the Inbox, closed or not.
+pub(super) fn brought_back(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    numbers_in(connection, NumberTable::BroughtBack, repository)
+}
+
+/// A table that keeps a number of each Issue or PR it holds, and nothing beside.
+#[derive(Debug, Clone, Copy)]
+enum NumberTable {
+    Closings,
+    Openings,
+    BroughtBack,
+}
+
+impl NumberTable {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Closings => "closings",
+            Self::Openings => "openings",
+            Self::BroughtBack => "brought_back",
+        }
+    }
+}
+
+/// The numbers `table` holds of `repository`.
+fn numbers_in(
+    connection: &Connection,
+    table: NumberTable,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let query = format!(
+        "SELECT number FROM {} WHERE repository = :repository",
+        table.name()
+    );
+    let mut statement = connection.prepare(&query)?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, |row| row.get("number"))?;
+    rows.collect()
+}
+
+/// Forgets that a PR that opened brought back the item `key` names, if it is an Issue that one did.
+fn forget_brought_back(
+    connection: &Connection,
+    repository: &RepositoryName,
+    key: ItemKey,
+) -> rusqlite::Result<()> {
+    let ItemKey::Issue { number } = key else {
+        return Ok(());
+    };
+    connection
+        .execute(
+            "DELETE FROM brought_back WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+/// What the sync judged of the PRs a save saw open on Archived Issues (#823): the Issues they opened on
+/// under the Repository's Conventions, which come back to the Inbox, and the openings it judged, which the
+/// store forgets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Opened {
+    pub issues: Vec<u32>,
+    pub openings: BTreeSet<u32>,
+}
+
+/// Unarchives the Issues `opened` names, as Unarchive does, keeps them as brought back to the Inbox, and
+/// forgets the openings it judged, all at once. The sync judged from an earlier read, so an Issue the user
+/// unarchived or muted since stays as they left it.
+pub(super) fn bring_back(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    opened: &Opened,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    for number in &opened.issues {
+        let kept = transaction.execute(
+            "INSERT OR IGNORE INTO brought_back (repository, number)
+             SELECT repository, number FROM archived
+             WHERE repository = :repository AND kind = :issue AND number = :number
+                 AND NOT EXISTS (SELECT 1 FROM muted
+                     WHERE repository = :repository AND kind = :issue AND number = :number)",
+            named_params! { ":repository": repository, ":number": number, ":issue": ISSUE },
+        )?;
+        if kept > 0 {
+            unarchive(&transaction, repository, ItemKey::Issue { number: *number })?;
+        }
+    }
+    for number in &opened.openings {
+        let _forgot = transaction.execute(
+            "DELETE FROM openings WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )?;
+    }
+    transaction.commit()
 }
 
 /// Forgets the closing of Issue or PR `number`, if the store keeps one.
@@ -508,11 +659,7 @@ pub(super) fn closings(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeSet<u32>> {
-    let mut statement =
-        connection.prepare("SELECT number FROM closings WHERE repository = :repository")?;
-    let asked = named_params! { ":repository": repository };
-    let rows = statement.query_map(asked, |row| row.get("number"))?;
-    rows.collect()
+    numbers_in(connection, NumberTable::Closings, repository)
 }
 
 /// What the sync judged of the closings the store saw (#820): the items their closing archives, and the

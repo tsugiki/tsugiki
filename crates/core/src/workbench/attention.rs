@@ -79,7 +79,7 @@ pub(super) fn summed<'a>(found: impl IntoIterator<Item = &'a Cause>) -> Option<A
 
 impl WorkbenchItem {
     /// The numbers of what this item shows.
-    pub(super) fn numbers(&self) -> Vec<u32> {
+    pub(crate) fn numbers(&self) -> Vec<u32> {
         match self {
             Self::Issue(issue) => issue.numbers(),
             Self::StandalonePr(_) | Self::StandaloneBackport(_) => {

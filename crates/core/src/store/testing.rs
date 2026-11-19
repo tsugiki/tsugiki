@@ -29,6 +29,15 @@ pub(super) fn temp_database(name: &str) -> (PathBuf, TempPath) {
     (folder.join("tsugiki.db"), folder)
 }
 
+/// Archives the items of CPython that `keys` name as a sync does when it sees them close, put away `now`.
+pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDateTime) {
+    let judged = Judged {
+        archived: keys.to_vec(),
+        closings: BTreeSet::new(),
+    };
+    store.archive_closed(&cpython(), judged, now).unwrap();
+}
+
 /// A database in a new temp folder, as [`temp_database`] makes it, at the age before the migration `sql`,
 /// holding what the SQL statements `rows` insert: a store of that age can't run today's saves.
 /// The moment `seconds` after 1970, as a GitHub `updatedAt` a test orders reads by.

@@ -140,7 +140,8 @@ _Avoid_: Query, section
 Every open item of a **Repository** that the user hasn't triaged, as a mail client's inbox holds the mail
 not yet filed: each open **Issue** with its PRs under it, merged and closed ones too, grouped as on the
 **Workbench**, and each **Standalone PR** with an open PR in its tree on its own, the latest update first. An
-item that closes leaves it. It starts with the last
+item that closes leaves it. A PR that opens on an **Archived** Issue brings the Issue back to it, closed or
+not, until the user archives or mutes it. It starts with the last
 two days and reads older items from the cache as the user scrolls. It adds nothing to **Reach**. It is where
 the user finds an Issue to read, comment on or pin, or a PR to open.
 _Avoid_: All issues, Issue browser, backlog
@@ -182,6 +183,9 @@ An Issue or a Standalone PR that closes or merges on GitHub, while on the Workbe
 Archived by itself, a closed Issue with an open PR too, and nothing is marked seen. A closed item stays
 Archived while nothing in its tree Needs attention: it comes back while something does, and goes back to
 Archived after Mark Seen. Reopening takes it out of Archived, and so does Unarchive until it closes again.
+A PR that opens on an Archived Issue unarchives it, as Unarchive does, and brings it back to the **Inbox**.
+The new PR alone doesn't make it Need attention, so it is on the Workbench only if something else puts it
+there. A **Backport** carries an older change and brings nothing back.
 Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 

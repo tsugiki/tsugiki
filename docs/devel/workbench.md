@@ -30,8 +30,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - The **Inbox** lists every open item of the Repository the user hasn't triaged: each open Issue with its PRs
   under it, grouped as on the Workbench, and each Standalone PR on its own, the latest update first. It has
   no Issues or PRs switch, and no switch of order. Pin, Archive and Mute each take an item out, and so does
-  the item closing, at the next refresh. **Muted authors**' items stay out unless the user turns on "Show
-  muted". It starts with the items updated in the last two days, and scrolling to the end of the list reads
+  the item closing, at the next refresh. A PR that opens on an Archived Issue brings the Issue back, closed
+  or not, as "A PR that opens on an Archived Issue" below says. **Muted authors**' items stay out unless
+  the user turns on "Show muted". It starts with the items updated in the last two days, and scrolling to
+  the end of the list reads
   the next older batch from the cache. The window builds a row for each item of the batches read so far,
   and the browser lays out and paints only the rows on screen, so the Inbox of a cache the size of
   CPython's scrolls as a small one does. A change reads the batches on show again in one query, which
@@ -99,6 +101,16 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     tree Needs attention, and comes back while something does; Mark Seen then puts it back in Archived. An
     item that reopens leaves Archived. Unarchive keeps a closed item out of Archived until it reopens and
     closes again. A Muted item stays Muted.
+  - **A PR that opens on an Archived Issue** ([#823](https://github.com/tsugiki/tsugiki/issues/823)), such
+    as a follow-up on an Issue closed long ago, unarchives the Issue as Unarchive does, and brings it back
+    to the Inbox as a row with its PRs, closed or not, until the user archives or mutes it, or it reopens or
+    closes. Mark Seen leaves it out of Archived. The new PR alone doesn't make the Issue Need attention, so
+    the row shows the Issue as it stood, and the Issue is on the Workbench only if something else puts it
+    there: a Filter that reaches closed Issues, an open PR in its tree the user holds a Review on, or Needs
+    attention. A Backport carries an older change and brings nothing back, and a Muted Issue stays Muted.
+    Only a PR that changed since the last refresh can open: one that a read of an Issue's tree, an older
+    batch or an Origin PR loads from before opens nothing. A closed Issue stands in the Inbox at the latest
+    update of its PRs.
   - **Mute** hides an item until the user unmutes it: an Issue, a Standalone PR or a Standalone Backport.
     It leaves the lists and counts an Archived item leaves, the Archived view too, whatever happens to it
     later. Mute marks the item seen as Archive does and clears Marked unseen, and on a Muted item Mark Seen

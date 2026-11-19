@@ -34,8 +34,8 @@ use crate::login::Login;
 use crate::repository::{RepositoryName, WINDOW_DAYS};
 use crate::repository_settings::RepositorySettings;
 use crate::status::{LastSync, LoadProgress, SyncPart};
-use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Store, SyncState};
-use crate::work::archived_by_closing;
+use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Opened, Store, SyncState};
+use crate::work::{archived_by_closing, opened_on};
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
 use issues::{fetch_issues, fetch_named_issues};
@@ -291,6 +291,26 @@ fn archive_closings(
     store.archive_closed(repository, judged, OffsetDateTime::now_utc())
 }
 
+/// Brings back to the Inbox each Archived Issue of `repository` that a PR `step` saved opened on (#823),
+/// under its `settings`, as `opened_on` judges it, and forgets the openings. Only a step that saved can have
+/// seen a PR open. A failure leaves the openings to the next step that saves.
+fn bring_back_opened_on(
+    store: &Store,
+    (repository, settings): (&RepositoryName, &RepositorySettings),
+    step: &Step,
+) -> Result<(), Error> {
+    if !matches!(step, Step::Saved { .. }) {
+        return Ok(());
+    }
+    let openings = store.openings(repository)?;
+    if openings.is_empty() {
+        return Ok(());
+    }
+    let facts = store.work_facts(repository)?;
+    let issues = opened_on(&facts, settings, &openings);
+    store.bring_back(repository, Opened { issues, openings })
+}
+
 /// The clients and the Repository a sync's phases work with.
 struct Link<'a> {
     github: &'a GitHub,
@@ -361,6 +381,13 @@ impl UserWorkSync {
         if let Err(problem) = archive_closings(store, (&self.repository, settings), &step) {
             log::warn!(
                 "Tsugiki couldn't archive what closed in {}: {}",
+                self.repository,
+                problem.message
+            );
+        }
+        if let Err(problem) = bring_back_opened_on(store, (&self.repository, settings), &step) {
+            log::warn!(
+                "Tsugiki couldn't bring back the Issues a PR opened on in {}: {}",
                 self.repository,
                 problem.message
             );

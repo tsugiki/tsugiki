@@ -163,6 +163,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 34,
         sql: super::activity::CLOSINGS,
     },
+    Migration {
+        version: 35,
+        sql: super::activity::OPENINGS,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

@@ -14,6 +14,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     right after the step that saved it, so a closing outlives a crash and waits for the next step that
     saves. An item that reopens leaves Archived as the sync saves it. An Archived item stays in Reach, so
     the sync keeps reading it and its PRs (#919).
+  - A refresh sees a new PR when it loads the PRs that changed since the last one. The database keeps as
+    an opening each of those PRs it saves for the first time that names an Archived Issue under any
+    Conventions. A PR that a read of an Issue's tree, an older batch or an Origin PR saves for the first time
+    was there before, and opens nothing. The sync judges the openings as it judges closings: it links each
+    PR that isn't a Backport to the Issues it fixes under the Repository's Conventions and brings each such
+    Archived Issue back to the Inbox ([workbench.md](workbench.md), #823). GitHub's poll gives no time a PR
+    opened, so an old PR the cache lacks that changes counts as one that opened.
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size ([ADR
   0015](../adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). A small one (up to 500 open

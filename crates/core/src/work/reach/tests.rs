@@ -613,15 +613,20 @@ fn closing_archives_each_issue_and_standalone_pr_that_reach_held_while_open() {
 }
 
 #[test]
-fn closing_leaves_a_muted_item_as_it_is() {
+fn closing_leaves_a_muted_item_as_it_is_an_ask_in_its_tree_or_not() {
     let merged = PullRequestFacts {
         state: PrState::Merged,
         ..mine(5)
     };
-    let key = ItemKey::PullRequest { number: 5 };
-    let facts = muting(facts(vec![merged], vec![]), &[key]);
+    // The assignment keeps Issue 7 in Reach while it is Muted.
+    let assigned = IssueFacts {
+        state: Some(IssueState::Closed),
+        ..assigned_issue(7)
+    };
+    let keys = [ItemKey::PullRequest { number: 5 }, issue_key(7)];
+    let facts = muting(facts(vec![merged], vec![assigned]), &keys);
 
-    let archived = archived_by_closing(facts, &cpython_settings(), &BTreeSet::from([5]));
+    let archived = archived_by_closing(facts, &cpython_settings(), &BTreeSet::from([5, 7]));
 
     assert_eq!(archived, []);
 }

@@ -279,11 +279,10 @@ impl MirrorWork {
 
 /// The items whose closing archives them (#820), of `closings`, the Issues and PRs a save found closed that
 /// the store held open: each Issue, and each PR that heads its own tree as the list draws it, that Reach
-/// held while it was open. Reach goes by the stored facts with each of `closings` open again, `open`, as
-/// the sync judges
-/// them right after the step that saved them, while the facts still hold what put them in Reach, such as a
-/// Filter's results. A Muted item stays as it is, and so does one already Archived as it closed, which stays
-/// Archived now that it is closed.
+/// held while it was open. Reach goes by the stored facts with each of `closings` open again, `open`, as the
+/// sync judges them right after the step that saved them, while the facts still hold what put them in
+/// Reach, such as a Filter's results. A Muted item stays as it is, an ask in its tree or not, and so does
+/// one already Archived as it closed, which stays Archived now that it is closed.
 pub(crate) fn archived_by_closing(
     mut open: WorkFacts,
     repository: &RepositorySettings,
@@ -306,10 +305,11 @@ pub(crate) fn archived_by_closing(
     });
     let pull_requests = (open.pull_requests.iter())
         .map(|pr| ItemKey::PullRequest { number: pr.number });
+    let muted = &open.activity.muted;
     issues
         .chain(pull_requests)
         .filter(|key| closings.contains(&key.number()) && reached.contains(&key.number()))
-        .filter(|key| !walk.tree(*key).is_empty())
+        .filter(|key| !muted.contains_key(key) && !walk.tree(*key).is_empty())
         .collect()
 }
 

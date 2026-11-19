@@ -474,23 +474,33 @@ pub(super) fn follow_state(
     key: ItemKey,
     moved: StateMove,
 ) -> rusqlite::Result<()> {
-    let item = named_params! { ":repository": repository, ":number": key.number() };
     match moved {
         StateMove::Closed => connection
             .execute(
                 "INSERT OR IGNORE INTO closings (repository, number) VALUES (:repository, :number)",
-                item,
+                named_params! { ":repository": repository, ":number": key.number() },
             )
             .map(drop),
         StateMove::Reopened => {
-            let _forgotten = connection.execute(
-                "DELETE FROM closings WHERE repository = :repository AND number = :number",
-                item,
-            )?;
+            forget_closing(connection, repository, key.number())?;
             unarchive(connection, repository, key)
         }
         StateMove::Stayed => Ok(()),
     }
+}
+
+/// Forgets the closing of Issue or PR `number`, if the store keeps one.
+fn forget_closing(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM closings WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
 }
 
 /// The Issues and PRs of `repository` whose closing the sync hasn't judged yet.
@@ -541,10 +551,7 @@ pub(super) fn archive_closed(
         )?;
     }
     for number in &judged.closings {
-        let _judged = transaction.execute(
-            "DELETE FROM closings WHERE repository = :repository AND number = :number",
-            named_params! { ":repository": repository, ":number": number },
-        )?;
+        forget_closing(&transaction, repository, *number)?;
     }
     transaction.commit()
 }

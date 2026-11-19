@@ -418,6 +418,17 @@ fn the_first_words_are_cut_to_fit_a_line() {
 }
 
 #[test]
+fn a_read_says_when_github_last_changed_the_pr_which_dates_its_head() {
+    let pr = pr_content(&json!({ "updatedAt": "2026-11-05T12:00:00Z", "headRefOid": "89abcde" }));
+    let (script, _asked) = Scripted::new(vec![pull_request_answer(pr, RATE_LIMIT)]);
+
+    let read = github(script).pull_request_content(&cpython(), 7).unwrap();
+
+    assert_eq!(read.updated_at, moment("2026-11-05T12:00:00Z"));
+    assert_eq!(read.content.head, CommitSha::parse("89abcde"));
+}
+
+#[test]
 fn a_pr_github_doesnt_have_is_not_found() {
     let (script, asked) = Scripted::new(vec![pull_request_answer(Value::Null, RATE_LIMIT)]);
     let github = github(script);

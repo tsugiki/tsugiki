@@ -7,6 +7,8 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use time::OffsetDateTime;
+
 use crate::error::{Error, ErrorKind};
 use crate::facts::activity::ItemKey;
 use crate::facts::issue_content::IssueContent;
@@ -842,7 +844,8 @@ fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
 /// An Issue's or a PR's content, as GitHub answered.
 enum Content {
     Issue(IssueContent),
-    PullRequest(PullRequestContent),
+    /// A PR's, and GitHub's `updatedAt` for it at the read.
+    PullRequest(PullRequestContent, OffsetDateTime),
 }
 
 /// What a read of a conversation asks: GitHub, the session's queue, whose demands for the same read share
@@ -887,20 +890,21 @@ fn read_conversation(
 
 /// Tells the Mirror worker and the Files tab what keeping PR `item`'s Conversation did, as `saved` says.
 ///
-/// The Conversation names the PR's head, and the worker hears the head the facts keep is saved, so a PR the
-/// user opened before Tsugiki knew its head gets it first. The demands were merged before this, so the
-/// worker hears each await their screens sent before the head that answers it. A Conversation that names
-/// no head, or a PR the facts don't hold, ends the await. A head the store filled, or a Review of the
-/// user's that covers another commit, changes what the rules want, so the worker hears their wants again
-/// first.
+/// The Conversation names the PR's head, and the worker hears the head the facts keep is saved: the newer
+/// read's, the list's or this one's. A PR the user opened before Tsugiki knew its head gets it first, and a
+/// PR pushed to since the last list read gets the newer head before the next. The demands were merged
+/// before this, so the worker hears each await their screens sent before the head that answers it. A
+/// Conversation that names no head, or a PR the facts don't hold, ends the await. A head that moved, or a
+/// Review of the user's that covers another commit, changes what the rules want, so the worker hears their
+/// wants again first.
 fn hand_over_head(store: &Store, read: &Reading<'_>, item: &Item, saved: &ConversationSaved) {
     let fetching = &read.queue.fetching;
     let repository = &item.repository;
-    if matches!(saved.head, HeadKept::Filled(_)) || saved.reviewed_moved {
+    if matches!(saved.head, HeadKept::Moved(_)) || saved.reviewed_moved {
         let _wanted = hand_over_rules_wants(fetching, store, read.syncs, repository);
     }
     match &saved.head {
-        HeadKept::Filled(head) | HeadKept::Had(head) => {
+        HeadKept::Moved(head) | HeadKept::Had(head) => {
             fetching.heads_saved(repository, vec![head.clone()]);
             read.queue.headless.forget(item);
         }
@@ -938,7 +942,8 @@ fn ask_github(
         }
         Fetched::PullRequest(_) => {
             let read = github.pull_request_content(&item.repository, item.number);
-            ("PR", read.map(|read| Content::PullRequest(read.content)))
+            let read = read.map(|read| Content::PullRequest(read.content, read.updated_at));
+            ("PR", read)
         }
     };
     let content = match read {
@@ -983,9 +988,10 @@ fn keep_conversation(
         Content::Issue(content) => {
             (store.save_issue_content(repository, *number, content)).map(|()| Kept::Issue(change))
         }
-        Content::PullRequest(content) => (store
-            .save_read_of_pull_request(repository, *number, content))
-        .map(|saved| Kept::PullRequest(change, saved)),
+        Content::PullRequest(content, updated_at) => {
+            (store.save_read_of_pull_request(repository, *number, (content, updated_at)))
+                .map(|saved| Kept::PullRequest(change, saved))
+        }
     };
     match kept {
         Ok(kept) => Some(kept),

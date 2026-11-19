@@ -206,7 +206,7 @@ fn saving_a_pr_again_replaces_what_was_known() {
         closing_issues: vec![],
         merge_commit: None,
         base: None,
-        head: None,
+        head: Some(sha("fedcba98")),
         off_default: None,
         ..at(2, facts(1))
     };
@@ -218,6 +218,86 @@ fn saving_a_pr_again_replaces_what_was_known() {
     db.close();
 
     assert_eq!(read.pull_requests, [changed]);
+}
+
+#[test]
+fn a_list_read_older_than_the_row_leaves_it_as_it_is() {
+    let db = OpenStore::new("pr-older-read");
+    let newer = at(20, facts(1));
+    db.store
+        .save_pull_requests(&cpython(), vec![newer.clone()])
+        .unwrap();
+    let older = PullRequestFacts {
+        title: "gh-1: Fix it badly".to_owned(),
+        ci: Some(CiState::Failure),
+        labels: vec![],
+        head: Some(sha("01234567")),
+        ..at(10, facts(1))
+    };
+
+    db.store
+        .save_pull_requests(&cpython(), vec![older])
+        .unwrap();
+    let read = db.store.pull_requests(&cpython()).unwrap();
+    db.close();
+
+    assert_eq!(read, [newer]);
+}
+
+#[test]
+fn a_read_as_old_as_the_row_replaces_its_facts_and_leaves_its_head() {
+    let db = OpenStore::new("pr-tied-read");
+    let kept = at(20, facts(1));
+    db.store
+        .save_pull_requests(&cpython(), vec![kept.clone()])
+        .unwrap();
+    // A probe reads CI while `updatedAt` stays.
+    let tied = PullRequestFacts {
+        ci: Some(CiState::Failure),
+        head: Some(sha("01234567")),
+        ..kept.clone()
+    };
+
+    db.store.save_pull_requests(&cpython(), vec![tied]).unwrap();
+    let read = db.store.pull_requests(&cpython()).unwrap();
+    db.close();
+
+    let probed = PullRequestFacts {
+        ci: Some(CiState::Failure),
+        ..kept
+    };
+    assert_eq!(read, [probed]);
+}
+
+#[test]
+fn a_head_kept_before_the_migration_counts_from_the_prs_update() {
+    let (path, _folder) = database_before(
+        "pr-before-head-at",
+        super::HEAD_AT,
+        "INSERT INTO pull_requests (repository, number, title, state, is_draft, author, target_branch, ci,
+                                    updated_at, head)
+         VALUES ('python/cpython', 1, 'gh-1: Fix it', 'OPEN', 0, 'some-author', 'main', NULL, 20,
+                 '89abcdef')",
+    );
+    let store = Store::open(&path).unwrap();
+    let read_at = |seconds| PullRequestFacts {
+        head: Some(sha("01234567")),
+        ..at(seconds, facts(1))
+    };
+    let head = || store.pull_requests(&cpython()).unwrap()[0].head.clone();
+
+    store
+        .save_pull_requests(&cpython(), vec![read_at(20)])
+        .unwrap();
+    let tied = head();
+    store
+        .save_pull_requests(&cpython(), vec![read_at(21)])
+        .unwrap();
+    let later = head();
+    store.close();
+
+    assert_eq!(tied, Some(sha("89abcdef")));
+    assert_eq!(later, Some(sha("01234567")));
 }
 
 #[test]

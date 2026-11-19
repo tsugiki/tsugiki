@@ -6,7 +6,6 @@ use crate::facts::pull_request_content::PullRequestContent;
 use crate::store::Store;
 use crate::store::testing::temp_database;
 use crate::testing::cpython;
-
 fn at(seconds: i64, check: ChangeCheck) -> SyncState {
     let started_at = OffsetDateTime::from_unix_timestamp(seconds).unwrap();
     SyncState {
@@ -89,7 +88,11 @@ fn the_reads_a_refresh_owes_last_until_a_sync_finishes() {
         .unwrap();
     store.save_sync_state(&cpython(), under_way).unwrap();
     store
-        .save_pull_request_content(&cpython(), 2, no_conversation())
+        .save_pull_request_content(
+            &cpython(),
+            2,
+            (no_conversation(), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
     store.close();
 
@@ -129,13 +132,25 @@ fn the_store_says_what_it_owes_and_the_head_each_conversation_was_read_at() {
         ..no_conversation()
     };
     store
-        .save_pull_request_content(&cpython(), 2, read_at("0123abc"))
+        .save_pull_request_content(
+            &cpython(),
+            2,
+            (read_at("0123abc"), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
     store
-        .save_pull_request_content(&cpython(), 3, read_at("89abcde"))
+        .save_pull_request_content(
+            &cpython(),
+            3,
+            (read_at("89abcde"), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
     store
-        .save_pull_request_content(&cpython(), 4, no_conversation())
+        .save_pull_request_content(
+            &cpython(),
+            4,
+            (no_conversation(), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
 
     store.owe_read_ahead(&cpython(), vec![1, 3]).unwrap();

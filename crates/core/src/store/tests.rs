@@ -304,7 +304,9 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         head: CommitSha::parse("0123abc"),
         pending: vec![drafted],
     };
-    let _kept = pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
+    let updated_at = OffsetDateTime::UNIX_EPOCH;
+    let _kept =
+        pull_request_content::save(connection, &cpython, 1, (&reviewed, updated_at)).unwrap();
     let patched = ["0123abc", "4567def"].map(|commit| crate::facts::patch_ids::CommitPatches {
         of: crate::facts::patch_ids::PatchesOf {
             commit: CommitSha::parse(commit).unwrap(),

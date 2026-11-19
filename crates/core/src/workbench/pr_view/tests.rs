@@ -1,3 +1,5 @@
+use time::OffsetDateTime;
+
 use super::testing::reviewed;
 use super::*;
 use crate::facts::pull_requests::PullRequestFacts;
@@ -82,7 +84,11 @@ fn a_pr_shows_its_reviews_oldest_first_with_their_threads_as_last_read() {
     world
         .db
         .store
-        .save_pull_request_content(&world.settings().name, 9, reviewed())
+        .save_pull_request_content(
+            &world.settings().name,
+            9,
+            (reviewed(), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
 
     let view = view(&world, 9).unwrap();
@@ -105,7 +111,11 @@ fn the_window_gets_githubs_number_for_each_comment_and_review() {
     world
         .db
         .store
-        .save_pull_request_content(&world.settings().name, 9, reviewed())
+        .save_pull_request_content(
+            &world.settings().name,
+            9,
+            (reviewed(), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
 
     let sent = serde_json::to_value(view(&world, 9).unwrap()).unwrap();
@@ -137,7 +147,7 @@ fn each_read_of_a_pr_replaces_its_reviews() {
     world
         .db
         .store
-        .save_pull_request_content(&name, 9, reviewed())
+        .save_pull_request_content(&name, 9, (reviewed(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
     let mut again = reviewed();
     drop(again.reviews.remove(0));
@@ -146,7 +156,7 @@ fn each_read_of_a_pr_replaces_its_reviews() {
     world
         .db
         .store
-        .save_pull_request_content(&name, 9, again.clone())
+        .save_pull_request_content(&name, 9, (again.clone(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
 
     assert_eq!(view(&world, 9).unwrap().content, Some(again));

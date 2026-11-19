@@ -799,6 +799,29 @@ fn a_fetch_that_brings_what_tsugiki_holds_says_nothing() {
 }
 
 #[test]
+fn a_fetch_older_than_what_tsugiki_holds_says_nothing_and_owes_no_read() {
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(1, AFTER_IT)], None),
+            &[],
+        ),
+        // A replica of GitHub's that lags.
+        fetched_nodes(&[strangers_pr(1, LONG_BEFORE)], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("older-again", replies);
+    holding_pr(&harness, &strangers_pr(1, LAST_SYNC));
+    let mut syncs = refreshing(filtering(&[]));
+
+    let changes = run(&mut syncs, &harness);
+
+    assert_eq!(changes, []);
+    let owed = harness.db.store.read_ahead_owed(&cpython()).unwrap();
+    assert_eq!(owed, BTreeSet::new());
+    harness.finish();
+}
+
+#[test]
 fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
     let replies = vec![
         polled(
@@ -1272,7 +1295,7 @@ fn a_conversation_the_pr_view_read_while_a_refresh_reads_ahead_isnt_read_again()
     harness
         .db
         .store
-        .save_pull_request_content(&cpython(), 3, read.unwrap())
+        .save_pull_request_content(&cpython(), 3, (read.unwrap(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
     drop(run(&mut syncs, &harness));
 

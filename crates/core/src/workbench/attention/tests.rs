@@ -1229,7 +1229,7 @@ impl World {
         };
         self.db
             .store
-            .save_pull_request_content(&cpython(), number, content)
+            .save_pull_request_content(&cpython(), number, (content, OffsetDateTime::UNIX_EPOCH))
             .unwrap();
     }
 }

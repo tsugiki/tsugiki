@@ -69,7 +69,11 @@ fn seeded(name: &str) -> OpenStore {
         .save_pull_requests(&cpython(), vec![pull_request(1, &sha_of('2'))])
         .unwrap();
     db.store
-        .save_pull_request_content(&cpython(), 1, reviewed_at(&sha_of('1')))
+        .save_pull_request_content(
+            &cpython(),
+            1,
+            (reviewed_at(&sha_of('1')), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
     db
 }

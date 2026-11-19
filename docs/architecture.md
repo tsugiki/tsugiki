@@ -115,9 +115,10 @@ Tauri's managed state.
    The Files tab's read says what the Mirror lacks and which diff it shows. Its call queues the clone of a
    Repository the settings list, the PR's head first when the Mirror lacks it, or a read of the PR's
    Conversation when Tsugiki knows no head, and moves the Lookup checkout to the diff's ends, where text
-   search looks for it. Opening a PR reads its Conversation each time. The store keeps the head a
-   Conversation names for a PR kept with none, and a demand for a read already waiting in the session's
-   queue, or under way until GitHub answers, shares that read.
+   search looks for it. Opening a PR reads its Conversation each time. The store keeps one head per PR,
+   the one named by the newer of the PR list's read and the Conversation's, by GitHub's `updatedAt`. A
+   demand for a read already waiting in the session's queue, or under way until GitHub answers, shares
+   that read.
 5. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
    the window as the `changed` event, and each open screen that shows one of those items calls its command
    again. The settings owner's thread hands the session each Repository's settings a change saves

@@ -892,12 +892,10 @@ fn a_new_demand_for_a_conversation_that_named_no_head_waits_for_its_read() {
 }
 
 #[test]
-fn a_conversation_of_a_pr_whose_facts_hold_another_head_hands_over_the_facts_head() {
-    let one = OneRead::new(
-        "conversation-other-head",
-        Some("4567def"),
-        vec![pr_content(&json!({}))],
-    );
+fn a_conversation_no_newer_than_the_facts_hands_over_the_facts_head() {
+    // As old as the PR list's read of PR 7.
+    let as_old = pr_content(&json!({ "updatedAt": "1970-01-01T00:00:01Z" }));
+    let one = OneRead::new("conversation-other-head", Some("4567def"), vec![as_old]);
 
     one.read(&pr_7());
 
@@ -905,6 +903,29 @@ fn a_conversation_of_a_pr_whose_facts_hold_another_head_hands_over_the_facts_hea
         one.heard.asked(),
         ["some-maintainer/gcmon saved heads #7 at 4567def on main"],
         "the head the Files tab asks for"
+    );
+    one.finish();
+}
+
+#[test]
+fn a_conversation_newer_than_the_facts_hands_over_its_head_and_the_rules_wants_again() {
+    let one = OneRead::new(
+        "conversation-newer-head",
+        Some("4567def"),
+        vec![pr_content(&json!({}))],
+    );
+
+    one.read(&pr_7());
+
+    let handed = one.heard.asked();
+    assert!(
+        handed.iter().any(|asked| asked.contains("wants heads")),
+        "the moved head changes what the rules want: {handed:?}"
+    );
+    assert_eq!(
+        handed.last().map(String::as_str),
+        Some("some-maintainer/gcmon saved heads #7 at 0123abc on main"),
+        "pushed to since the PR list's read"
     );
     one.finish();
 }
@@ -1406,7 +1427,14 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     // The user reviewed someone else's PR at a commit it has since moved on from.
     let reviewed = CommitSha::parse("0123abc").unwrap();
     store
-        .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
+        .save_pull_request_content(
+            &gcmon(),
+            8,
+            (
+                reviewed_by("octocat", &reviewed),
+                OffsetDateTime::UNIX_EPOCH,
+            ),
+        )
         .unwrap();
     store.close();
     let (mirrors, heard) = HeardRequests::new();
@@ -1478,7 +1506,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     let read_at = |number: u32, head: &str| {
         let content = reviewed_by("some-reviewer", &CommitSha::parse(head).unwrap());
         store
-            .save_pull_request_content(&gcmon(), number, content)
+            .save_pull_request_content(&gcmon(), number, (content, OffsetDateTime::UNIX_EPOCH))
             .unwrap();
     };
     read_at(9, "89abcde");
@@ -1833,7 +1861,14 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
         .unwrap();
     let reviewed = CommitSha::parse("0123abc").unwrap();
     store
-        .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
+        .save_pull_request_content(
+            &gcmon(),
+            8,
+            (
+                reviewed_by("octocat", &reviewed),
+                OffsetDateTime::UNIX_EPOCH,
+            ),
+        )
         .unwrap();
     let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'a')];
     store.save_patch_ids(&gcmon(), both).unwrap();
@@ -1903,7 +1938,14 @@ fn keeping_patches(
     store.save_pull_requests(&gcmon(), stored).unwrap();
     let reviewed = CommitSha::parse("0123abc").unwrap();
     store
-        .save_pull_request_content(&gcmon(), 8, reviewed_by("octocat", &reviewed))
+        .save_pull_request_content(
+            &gcmon(),
+            8,
+            (
+                reviewed_by("octocat", &reviewed),
+                OffsetDateTime::UNIX_EPOCH,
+            ),
+        )
         .unwrap();
     let left = UncheckedCommit {
         of: on_main("fedcba9"),

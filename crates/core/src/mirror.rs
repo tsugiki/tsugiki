@@ -1406,9 +1406,8 @@ impl Worker {
         if free < needed && has_broken(mirror) {
             delete_broken(repository, mirror);
             // A broken mirror that couldn't be deleted gave back no room.
-            if !has_broken(mirror) {
-                free = self.free_space(root)?;
-            }
+            let gone = !has_broken(mirror);
+            free = (gone.then(|| self.free_space(root)).transpose()?).unwrap_or(free);
         }
         Ok((free < needed).then(|| MirrorProblem::DiskShort {
             repository: repository.clone(),

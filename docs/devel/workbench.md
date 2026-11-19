@@ -3,8 +3,8 @@
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 
 - The **Workbench** lists each **Issue** that a **Filter** switched on the Workbench reaches, each **Pinned
-  issue**, and each Issue with an open PR the user holds a **Review** on. An Issue being closed on GitHub
-  does not remove it.
+  issue**, and each Issue with an open PR the user holds a **Review** on. An Issue that closes on GitHub
+  leaves it for Archived, as "Closing archives" below says.
 - **Filters** are written in raw GitHub search syntax, with `repo:` of the current Repository added
   implicitly. They run with GitHub's advanced search, which is the only mode that understands `OR` and
   parentheses.
@@ -90,6 +90,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Unarchive, or `E` on its row there, puts the item back wherever its state puts it. Mark Unseen on any of
     its rows there unarchives the item and flags that row's Issue or PR Marked unseen, so it comes back
     Needing attention.
+  - **Closing archives** ([#820](https://github.com/tsugiki/tsugiki/issues/820)): an Issue or a Standalone
+    PR that closes or merges on GitHub goes to Archived by itself, put away when the sync sees it close, if
+    the Workbench or **Reach** held it while it was open, a Filter's find included. A closed Issue with an
+    open PR, such as a Backport or the user's own PR, archives too. An open Issue keeps its merged and
+    closed PRs in its tree. Closing marks nothing seen, so what needed attention at the closing keeps the
+    item on the Workbench. A closed Archived item, however it got there, stays put away while nothing in its
+    tree Needs attention, and comes back while something does; Mark Seen then puts it back in Archived. An
+    item that reopens leaves Archived. Unarchive keeps a closed item out of Archived until it reopens and
+    closes again. A Muted item stays Muted.
   - **Mute** hides an item until the user unmutes it: an Issue, a Standalone PR or a Standalone Backport.
     It leaves the lists and counts an Archived item leaves, the Archived view too, whatever happens to it
     later. Mute marks the item seen as Archive does and clears Marked unseen, and on a Muted item Mark Seen
@@ -107,7 +116,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Review request or an assignment to the user anywhere in the tree, acknowledged or not, keeps the whole
     tree in Reach until it ends. Unmute puts the tree back at once, as switching a Filter on does: the
     Mirror fetches its heads, and the next refresh reads ahead the Conversations Tsugiki hasn't read at
-    their heads. An Archived item stays in Reach.
+    their heads. An Archived item stays in Reach, a closed one too.
   - **Mute author** hides the Issues and Standalone PRs a person or bot opened, in the current Repository
     only. Their PRs inside a followed Issue stay listed without needing attention, and an Issue they opened
     still shows when another PR in it needs attention or a Filter matches it.

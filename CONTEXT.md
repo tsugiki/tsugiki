@@ -178,6 +178,10 @@ Archiving marks the item seen and clears **Marked unseen**, so a reason to **Nee
 after it brings the item back: New activity that Needs attention, a Review request or a CI failure. New
 activity that doesn't, as on an Issue the user only follows, leaves it archived. Mark Unseen on an Archived
 item unarchives it.
+An Issue or a Standalone PR that closes or merges on GitHub, while on the Workbench or in **Reach**, is
+Archived by itself, a closed Issue with an open PR too, and nothing is marked seen. A closed item stays
+Archived while nothing in its tree Needs attention: it comes back while something does, and goes back to
+Archived after Mark Seen. Reopening takes it out of Archived, and so does Unarchive until it closes again.
 Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 

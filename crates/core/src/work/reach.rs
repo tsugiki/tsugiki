@@ -10,8 +10,9 @@ use super::reasons::{WorkReason, reasons};
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
 use crate::facts::activity::ItemKey;
 use crate::facts::filters::FilterResults;
+use crate::facts::issues::IssueState;
 use crate::facts::patch_ids::PatchesOf;
-use crate::facts::pull_requests::{PrHead, PullRequestFacts};
+use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
@@ -201,6 +202,41 @@ fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     } = Reach::of(facts, repository);
     without_muted.extend(muted_asking);
     without_muted
+}
+
+/// The items whose closing archives them (#820), of `closings`, the Issues and PRs a save found closed that
+/// the store held open: each Issue, and each PR that heads its own tree as the list draws it, that Reach
+/// held while it was open. Reach goes by the stored facts with each of `closings` open again, `open`, as the
+/// sync judges them right after the step that saved them, while the facts still hold what put them in
+/// Reach, such as a Filter's results. A Muted item stays as it is, an ask in its tree or not.
+pub(crate) fn archived_by_closing(
+    mut open: WorkFacts,
+    repository: &RepositorySettings,
+    closings: &BTreeSet<u32>,
+) -> Vec<ItemKey> {
+    for pr in &mut open.pull_requests {
+        if closings.contains(&pr.number) {
+            pr.state = PrState::Open;
+        }
+    }
+    for issue in &mut open.issues {
+        if closings.contains(&issue.number) {
+            issue.state = Some(IssueState::Open);
+        }
+    }
+    let reached = reach(&open, repository);
+    let walk = Walk::of(&open, repository);
+    let issues = (open.issues.iter()).map(|issue| ItemKey::Issue {
+        number: issue.number,
+    });
+    let pull_requests =
+        (open.pull_requests.iter()).map(|pr| ItemKey::PullRequest { number: pr.number });
+    let muted = &open.activity.muted;
+    issues
+        .chain(pull_requests)
+        .filter(|key| closings.contains(&key.number()) && reached.contains(&key.number()))
+        .filter(|key| !muted.contains_key(key) && !walk.tree(*key).is_empty())
+        .collect()
 }
 
 /// The Mirror's work in a Repository, each part the whole set, worked out from one Reach.

@@ -3,13 +3,14 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{ToSql, named_params};
+use rusqlite::{OptionalExtension, ToSql, named_params};
 
+use super::activity::StateMove;
 use super::columns::{Items, Numbers, UnixTime};
 use super::pr_links::{Updates, bound};
 use super::{Connection, TitledItem, TitledKind};
 use super::{activity, pull_requests};
-use crate::facts::activity::ItemActivity;
+use crate::facts::activity::{ItemActivity, ItemKey};
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::labels::Label;
 use crate::login::Login;
@@ -75,7 +76,29 @@ pub(super) fn save(
     transaction.commit()
 }
 
+/// Writes `issue`'s row, and has Archive follow a closing or a reopening (#820).
 fn save_issue(
+    connection: &Connection,
+    repository: &RepositoryName,
+    issue: &IssueFacts,
+) -> rusqlite::Result<()> {
+    let held: Option<Option<IssueState>> = connection
+        .query_row(
+            "SELECT state FROM issues WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": issue.number },
+            |row| row.get("state"),
+        )
+        .optional()?;
+    let is_open = |state: Option<IssueState>| state.map(|state| state == IssueState::Open);
+    let moved = StateMove::of(held.and_then(is_open), is_open(issue.state));
+    let key = ItemKey::Issue {
+        number: issue.number,
+    };
+    write_issue(connection, repository, issue)?;
+    activity::follow_state(connection, repository, key, moved)
+}
+
+fn write_issue(
     connection: &Connection,
     repository: &RepositoryName,
     issue: &IssueFacts,

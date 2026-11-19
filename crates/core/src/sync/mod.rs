@@ -34,7 +34,8 @@ use crate::login::Login;
 use crate::repository::{RepositoryName, WINDOW_DAYS};
 use crate::repository_settings::RepositorySettings;
 use crate::status::{LastSync, LoadProgress, SyncPart};
-use crate::store::{ChangeCheck, FirstSyncPlace, Store, SyncState};
+use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Store, SyncState};
+use crate::work::archived_by_closing;
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
 use issues::{fetch_issues, fetch_named_issues};
@@ -269,6 +270,27 @@ impl Step {
     }
 }
 
+/// Archives each item of `repository` whose closing `step` saved (#820), under its `settings`, as
+/// `archived_by_closing` judges it, and forgets the closings. Only a step that saved can have closed one.
+/// A failure leaves the closings to the next step that saves.
+fn archive_closings(
+    store: &Store,
+    (repository, settings): (&RepositoryName, &RepositorySettings),
+    step: &Step,
+) -> Result<(), Error> {
+    if !matches!(step, Step::Saved { .. }) {
+        return Ok(());
+    }
+    let closings = store.closings(repository)?;
+    if closings.is_empty() {
+        return Ok(());
+    }
+    let facts = store.work_facts(repository)?;
+    let archived = archived_by_closing(facts, settings, &closings);
+    let judged = Judged { archived, closings };
+    store.archive_closed(repository, judged, OffsetDateTime::now_utc())
+}
+
 /// The clients and the Repository a sync's phases work with.
 struct Link<'a> {
     github: &'a GitHub,
@@ -335,6 +357,14 @@ impl UserWorkSync {
             Some(step) => step,
             None => self.advance(github, store, settings)?,
         };
+        // The window must hear of what the step saved, and the closings wait for the next step that saves.
+        if let Err(problem) = archive_closings(store, (&self.repository, settings), &step) {
+            log::warn!(
+                "Tsugiki couldn't archive what closed in {}: {}",
+                self.repository,
+                problem.message
+            );
+        }
         match self.save_place(store) {
             Ok(()) => Ok(step),
             Err(problem) => {

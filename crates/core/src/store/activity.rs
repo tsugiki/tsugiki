@@ -2,7 +2,7 @@
 //! first sync began. Issues and PRs share their numbers in a Repository, so a number says which item a row is
 //! about.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 use time::OffsetDateTime;
@@ -94,6 +94,17 @@ pub(super) const MUTED: &str = "
         number INTEGER NOT NULL,
         at INTEGER NOT NULL,
         PRIMARY KEY (repository, kind, number)
+    ) WITHOUT ROWID;
+";
+
+/// The Issues and PRs a save found closed that the store held open (#820), until the sync judges whether
+/// each closing archives an item. The sync judges right after the step that saved them, while the facts
+/// still say what put the item in Reach, and a closing left unjudged waits for the next step that saves.
+pub(super) const CLOSINGS: &str = "
+    CREATE TABLE closings (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
     ) WITHOUT ROWID;
 ";
 
@@ -430,6 +441,118 @@ pub(super) fn unmute(
             named_params! { ":repository": repository, ":kind": kind, ":number": number },
         )
         .map(drop)
+}
+
+/// What a save did to whether an Issue or a PR is open, which Archive follows (#820).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StateMove {
+    /// The store held it open, and the save closed or merged it.
+    Closed,
+    /// The store held it closed or merged, and the save opened it again.
+    Reopened,
+    /// It stayed open or closed, or the store held no state of it.
+    Stayed,
+}
+
+impl StateMove {
+    /// The move from `was_open`, what the store held, to `is_open`, what the save says. `None` is a state
+    /// the store doesn't know.
+    pub(super) fn of(was_open: Option<bool>, is_open: Option<bool>) -> Self {
+        match (was_open, is_open) {
+            (Some(true), Some(false)) => Self::Closed,
+            (Some(false), Some(true)) => Self::Reopened,
+            _ => Self::Stayed,
+        }
+    }
+}
+
+/// Keeps what `moved` did to the Issue or PR `key` names. A closing waits for the sync to judge it. An item
+/// that opens again leaves Archived, however it came there, and a closing of it still unjudged goes.
+pub(super) fn follow_state(
+    connection: &Connection,
+    repository: &RepositoryName,
+    key: ItemKey,
+    moved: StateMove,
+) -> rusqlite::Result<()> {
+    match moved {
+        StateMove::Closed => connection
+            .execute(
+                "INSERT OR IGNORE INTO closings (repository, number) VALUES (:repository, :number)",
+                named_params! { ":repository": repository, ":number": key.number() },
+            )
+            .map(drop),
+        StateMove::Reopened => {
+            forget_closing(connection, repository, key.number())?;
+            unarchive(connection, repository, key)
+        }
+        StateMove::Stayed => Ok(()),
+    }
+}
+
+/// Forgets the closing of Issue or PR `number`, if the store keeps one.
+fn forget_closing(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM closings WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+/// The Issues and PRs of `repository` whose closing the sync hasn't judged yet.
+pub(super) fn closings(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let mut statement =
+        connection.prepare("SELECT number FROM closings WHERE repository = :repository")?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, |row| row.get("number"))?;
+    rows.collect()
+}
+
+/// What the sync judged of the closings the store saw (#820): the items their closing archives, and the
+/// closings it judged, which the store forgets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Judged {
+    pub archived: Vec<ItemKey>,
+    pub closings: BTreeSet<u32>,
+}
+
+/// Archives the items `judged` names, put away `now`, and forgets the closings it judged, all at once. It
+/// marks nothing seen, so what needed attention at the closing still does, and keeps the item back. An item
+/// the user archived before keeps the moment they marked it seen up to, and moves to the top of the
+/// Archived view.
+pub(super) fn archive_closed(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    judged: &Judged,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    for key in &judged.archived {
+        let (kind, number) = key_columns(*key);
+        let _archived = transaction.execute(
+            "INSERT INTO archived (repository, kind, number, at, archived_at)
+             VALUES (:repository, :kind, :number, :at, :now)
+             ON CONFLICT (repository, kind, number) DO UPDATE SET archived_at = excluded.archived_at",
+            named_params! {
+                ":repository": repository,
+                ":kind": kind,
+                ":number": number,
+                ":at": now.unix_timestamp(),
+                ":now": UnixMillis(now),
+            },
+        )?;
+    }
+    for number in &judged.closings {
+        forget_closing(&transaction, repository, *number)?;
+    }
+    transaction.commit()
 }
 
 /// The key that `kind` and `number` name, unless `kind` is a later version's, such as Dependency updates,

@@ -1,10 +1,12 @@
 use time::Duration;
 
 use super::*;
+use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::Store;
 use crate::store::migrate::MIGRATIONS;
 use crate::store::testing::{database_before, temp_database};
-use crate::testing::cpython;
+use crate::testing::{cpython, issue_facts, pr_facts};
 
 #[test]
 fn a_file_from_before_new_activity_counts_from_its_last_sync() {
@@ -281,6 +283,126 @@ fn mark_unseen_unarchives_the_item() {
     store.close();
     assert_eq!(after.archived, BTreeMap::new());
     assert_eq!(after.marked_unseen, BTreeMap::from([(7, now)]));
+}
+
+/// Issue 1 and PR 2, each in `state`, as of `updated_at`.
+fn issue_and_pr(
+    (issue, pr): (IssueState, PrState),
+    updated_at: OffsetDateTime,
+) -> (IssueFacts, PullRequestFacts) {
+    let issue = IssueFacts {
+        state: Some(issue),
+        updated_at,
+        ..issue_facts(1)
+    };
+    let pull_request = PullRequestFacts {
+        state: pr,
+        updated_at,
+        ..pr_facts(2)
+    };
+    (issue, pull_request)
+}
+
+/// Saves `issue` and `pull_request` into `store`.
+fn save_both(store: &Store, (issue, pull_request): (IssueFacts, PullRequestFacts)) {
+    store.save_issues(&cpython(), vec![issue]).unwrap();
+    (store.save_pull_requests(&cpython(), vec![pull_request])).unwrap();
+}
+
+#[test]
+fn a_save_that_closes_an_open_item_keeps_its_closing_until_the_sync_judges_it() {
+    let (path, _folder) = temp_database("activity-closings");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    // PR 3 comes closed, and was never open in the store.
+    let closed = PullRequestFacts {
+        state: PrState::Closed,
+        ..pr_facts(3)
+    };
+    store.save_pull_requests(&repository, vec![closed]).unwrap();
+    save_both(&store, issue_and_pr((IssueState::Open, PrState::Open), now));
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Closed, PrState::Merged), now),
+    );
+    let closings = store.closings(&repository).unwrap();
+    let judged = Judged {
+        archived: vec![ItemKey::Issue { number: 1 }],
+        closings: BTreeSet::from([1, 2]),
+    };
+    store.archive_closed(&repository, judged, now).unwrap();
+    let after = (store.work_facts(&repository).unwrap().activity).archived;
+    let judged = store.closings(&repository).unwrap();
+
+    store.close();
+    assert_eq!(closings, BTreeSet::from([1, 2]));
+    let archive = Archive {
+        seen_up_to: now,
+        archived_at: now,
+    };
+    assert_eq!(
+        after,
+        BTreeMap::from([(ItemKey::Issue { number: 1 }, archive)])
+    );
+    assert_eq!(judged, BTreeSet::new());
+}
+
+#[test]
+fn an_older_read_closes_nothing() {
+    let (path, _folder) = temp_database("activity-closings-older");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    let (_, open) = issue_and_pr((IssueState::Open, PrState::Open), now);
+    let (_, older) = issue_and_pr(
+        (IssueState::Open, PrState::Merged),
+        now - Duration::hours(1),
+    );
+
+    store.save_pull_requests(&repository, vec![open]).unwrap();
+    store.save_pull_requests(&repository, vec![older]).unwrap();
+    let closings = store.closings(&repository).unwrap();
+
+    store.close();
+    assert_eq!(closings, BTreeSet::new());
+}
+
+#[test]
+fn an_item_that_reopens_leaves_archived_and_its_closing_goes() {
+    let (path, _folder) = temp_database("activity-reopens");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Closed, PrState::Closed), now),
+    );
+    let judged = Judged {
+        archived: vec![
+            ItemKey::Issue { number: 1 },
+            ItemKey::PullRequest { number: 2 },
+        ],
+        closings: BTreeSet::new(),
+    };
+    store.archive_closed(&repository, judged, now).unwrap();
+    // A closing of Issue 1 the sync never judged.
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Open, PrState::Closed), now),
+    );
+    save_both(
+        &store,
+        issue_and_pr((IssueState::Closed, PrState::Closed), now),
+    );
+
+    save_both(&store, issue_and_pr((IssueState::Open, PrState::Open), now));
+    let after = (store.work_facts(&repository).unwrap().activity).archived;
+    let closings = store.closings(&repository).unwrap();
+
+    store.close();
+    assert_eq!(after, BTreeMap::new());
+    assert_eq!(closings, BTreeSet::new());
 }
 
 #[test]

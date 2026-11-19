@@ -1,9 +1,11 @@
 //! Archive (#490) as scenarios in the glossary's words: an item put away until something new Needs attention
 //! there, read the way the window reads it.
 
+use std::collections::BTreeSet;
+
 use super::*;
 use crate::facts::activity::PutAway;
-use crate::store::Archiving;
+use crate::store::{Archiving, Judged};
 
 impl World {
     /// Archive on item `number`'s line of `view`, as the window drew it.
@@ -39,6 +41,59 @@ impl World {
     fn archive(&self, number: u32) {
         self.archive_in(&WorkbenchView::Whole, number);
     }
+
+    /// Archives the item `key` names as the sync does when it sees the item close (#820).
+    fn archive_closed(&self, key: ItemKey) {
+        let judged = Judged {
+            archived: vec![key],
+            closings: BTreeSet::new(),
+        };
+        let now = OffsetDateTime::now_utc();
+        self.db
+            .store
+            .archive_closed(&cpython(), judged, now)
+            .unwrap();
+    }
+}
+
+#[test]
+fn a_closed_item_comes_back_while_it_needs_attention_and_goes_back_to_archived_after() {
+    let world = World::new("archive-closed-back");
+    world.has(vec![PullRequestFacts {
+        state: PrState::Merged,
+        ..own(1)
+    }]);
+    world.archive_closed(ItemKey::PullRequest { number: 1 });
+    let archived = world.lists(&WorkbenchView::Archived, 1);
+
+    world.happened(1, vec![comment(&colleague(), hours_ago(1))]);
+    let back = world.on_workbench(1);
+    world.mark_seen(world.seen(1));
+
+    assert!(archived);
+    assert!(back);
+    assert!(!world.on_workbench(1));
+    assert!(world.lists(&WorkbenchView::Archived, 1));
+    world.finish();
+}
+
+#[test]
+fn closing_archives_an_item_that_still_needs_attention_and_marks_nothing_seen() {
+    let world = World::new("archive-closed-unseen");
+    let _commented = world.has_a_flagged_comment();
+    world.has(vec![PullRequestFacts {
+        state: PrState::Merged,
+        ..own(1)
+    }]);
+
+    world.archive_closed(ItemKey::PullRequest { number: 1 });
+
+    assert!(world.on_workbench(1));
+    assert!(!world.lists(&WorkbenchView::Archived, 1));
+    let facts = world.db.reader.work_facts(&cpython()).unwrap().activity;
+    assert_eq!(facts.last_seen.get(&1), None);
+    assert!(facts.marked_unseen.contains_key(&1));
+    world.finish();
 }
 
 #[test]

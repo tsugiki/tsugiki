@@ -285,6 +285,10 @@ erDiagram
         INTEGER number PK
         INTEGER at
     }
+    closings {
+        TEXT repository PK
+        INTEGER number PK
+    }
     first_syncs {
         TEXT repository PK
         INTEGER started_at

@@ -97,8 +97,10 @@ pub(crate) struct Causes {
     marked_unseen: BTreeSet<u32>,
     /// Where the user's Review of each PR stands. A PR missing here is Unreviewed.
     reviews: BTreeMap<u32, YourReview>,
-    /// The items the user archived.
+    /// The items the user archived, and those archived as they closed (#820).
     archived: BTreeMap<ItemKey, Archive>,
+    /// The Issues and PRs closed or merged on GitHub.
+    closed: BTreeSet<u32>,
     /// The items the user muted, each with the moment Mute marked it seen up to.
     muted: BTreeMap<ItemKey, OffsetDateTime>,
     /// The Review request or the assignment to the user that stands on each Issue and PR, acknowledged or
@@ -176,6 +178,7 @@ impl Causes {
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
             archived: facts.activity.archived.clone(),
+            closed: closed(facts),
             muted: facts.activity.muted.clone(),
             acknowledged: facts.activity.acknowledged.clone(),
         }
@@ -238,16 +241,18 @@ impl Causes {
     }
 
     /// Whether the item `key` names, whose tree holds `numbers`, is Archived (#490). The user archived it,
-    /// and it stays put away until something in its tree Needs attention again. It then comes back, and
-    /// stays back once the user marks it seen past the moment of the archive, as Mark Seen moves the moment
-    /// they acknowledged it on.
+    /// or it closed (#820), and it stays put away until something in its tree Needs attention again. An
+    /// open item then comes back, and stays back once the user marks it seen past the moment of the archive,
+    /// as Mark Seen moves the moment they acknowledged it on. A closed one goes back to Archived once nothing
+    /// in its tree Needs attention, as nothing else would show it.
     pub(crate) fn is_archived(&self, key: ItemKey, numbers: &[u32]) -> bool {
         let Some(archive) = self.archived.get(&key) else {
             return false;
         };
+        let closed = self.closed.contains(&key.number());
         numbers.iter().all(|number| {
             let acknowledged = self.acknowledged.get(number);
-            let seen = acknowledged.is_none_or(|at| *at <= archive.seen_up_to);
+            let seen = closed || acknowledged.is_none_or(|at| *at <= archive.seen_up_to);
             !self.needs_attention(*number) && seen
         })
     }
@@ -312,6 +317,18 @@ fn stale_reviews(
         pr.state == PrState::Open && !colleagues_draft && !borrowed && stale
     });
     waiting.map(|pr| pr.number).collect()
+}
+
+/// The Issues and PRs `facts` hold closed or merged. An Issue saved before Tsugiki kept states counts as
+/// open, as it does for an assignment.
+fn closed(facts: &WorkFacts) -> BTreeSet<u32> {
+    let pull_requests = (facts.pull_requests.iter())
+        .filter(|pr| pr.state != PrState::Open)
+        .map(|pr| pr.number);
+    let issues = (facts.issues.iter())
+        .filter(|issue| !matches!(issue.state, Some(IssueState::Open) | None))
+        .map(|issue| issue.number);
+    pull_requests.chain(issues).collect()
 }
 
 /// The newest moment `facts` hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 use crate::facts::activity::{ActivityFacts, Archive, ItemKey};
-use crate::facts::issues::IssueFacts;
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::testing::{cpython_settings, hours_ago, sha};
@@ -503,6 +503,61 @@ fn an_archived_item_stays_in_reach() {
 
     // The Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
     assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::from([1, 10]));
+}
+
+fn closed(number: u32) -> IssueFacts {
+    IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue(number)
+    }
+}
+
+#[test]
+fn closing_archives_each_issue_and_standalone_pr_that_reach_held_while_open() {
+    let merged = |facts: PullRequestFacts| PullRequestFacts {
+        state: PrState::Merged,
+        ..facts
+    };
+    let pull_requests = vec![
+        merged(fixing(10, 1)),
+        merged(mine(5)),
+        PullRequestFacts {
+            number: 30,
+            title: "Tidy up".to_owned(),
+            state: PrState::Closed,
+            ..stranger()
+        },
+        merged(fixing(40, 4)),
+    ];
+    let issues = vec![closed(1), closed(3), issue(4)];
+    let facts = facts(pull_requests, issues);
+    let closings = BTreeSet::from([1, 3, 5, 10, 30, 40]);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &closings);
+
+    // PR 10 merged and closed Issue 1, both the user's work while open. PR 5 stood alone. Nothing put
+    // Issue 3 or a stranger's PR 30 on the Workbench, and PRs 10 and 40 sit under their Issues, which stay
+    // open in Issue 4's case.
+    assert_eq!(archived, [issue_key(1), ItemKey::PullRequest { number: 5 }]);
+}
+
+#[test]
+fn closing_leaves_a_muted_item_as_it_is_an_ask_in_its_tree_or_not() {
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..mine(5)
+    };
+    // The assignment keeps Issue 7 in Reach while it is Muted.
+    let assigned = IssueFacts {
+        state: Some(IssueState::Closed),
+        ..assigned_issue(7)
+    };
+    let keys = [ItemKey::PullRequest { number: 5 }, issue_key(7)];
+    let facts = muting(facts(vec![merged], vec![assigned]), &keys);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &BTreeSet::from([5, 7]));
+
+    assert_eq!(archived, []);
 }
 
 /// The user's PR `facts` with head `head`.

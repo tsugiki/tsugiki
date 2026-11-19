@@ -197,7 +197,8 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
-    /// The merged and closed PRs of `repository`, which a sync doesn't fetch again (ADR 0011).
+    /// The merged and closed PRs of `repository`, which only a refresh that sees one move fetches again
+    /// (ADR 0011).
     pub fn frozen_pull_requests(
         &self,
         repository: &RepositoryName,

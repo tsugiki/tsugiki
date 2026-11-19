@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -51,9 +51,27 @@ pub fn git(dir: &Path, args: &[&str]) -> String {
     git_reading(dir, args, &[])
 }
 
+/// Runs git in `dir` for what it does, as [`git`] does, and leaves what it printed.
+pub fn run_git(dir: &Path, args: &[&str]) {
+    assert_succeeded(args, &ran(dir, args, &[]));
+}
+
 /// [`git`], with `input` on git's stdin, as `git fast-import` reads a whole history from one stream. git
 /// reads all of it before it says much, so this writes it all before it reads what git printed.
 pub fn git_reading(dir: &Path, args: &[&str], input: &[u8]) -> String {
+    let ran = ran(dir, args, input);
+    assert_succeeded(args, &ran);
+    String::from_utf8(ran.output.stdout).unwrap()
+}
+
+/// A git that has ended: what it printed, and how the write of its input went.
+struct Ran {
+    output: Output,
+    written: io::Result<()>,
+}
+
+/// Runs git in `dir` with `args`, and `input` on its stdin, until it ends.
+fn ran(dir: &Path, args: &[&str], input: &[u8]) -> Ran {
     let mut command = Command::new("git");
     for name in ELSEWHERE {
         let _ = command.env_remove(name);
@@ -67,17 +85,26 @@ pub fn git_reading(dir: &Path, args: &[&str], input: &[u8]) -> String {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // A git that ends early closes its stdin, and then what it said tells more than the failed write.
     let written = child.stdin.take().unwrap().write_all(input);
     let output = child.wait_with_output().unwrap();
+    Ran { output, written }
+}
+
+/// Ends the test with what git said if the git `ran` with `args` failed, or took less than its input.
+fn assert_succeeded(args: &[&str], ran: &Ran) {
+    let output = &ran.output;
+    // A git that ends early closes its stdin, and then what it said tells more than the failed write.
     assert!(
         output.status.success(),
         "git {args:?}: {}{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    written.unwrap();
-    String::from_utf8(output.stdout).unwrap()
+    assert!(
+        ran.written.is_ok(),
+        "git {args:?} took less than its input: {:?}",
+        ran.written
+    );
 }
 
 /// Makes a bare repository for `name`, an `owner/name`, under `remotes` where GitHub keeps it:
@@ -96,19 +123,19 @@ pub fn remote(remotes: &Path, name: &str) {
         let folder = temp_path(&format!("remote-{build}"));
         let (work, bare) = (work(&folder, name), bare(&folder, name));
         fs::create_dir_all(&work).unwrap();
-        let _ = git(&work, &["init", "-q", "-b", "main"]);
+        run_git(&work, &["init", "-q", "-b", "main"]);
         fs::write(
             work.join("README.rst"),
             "This is Python version 3.15.0 alpha 0\n",
         )
         .unwrap();
-        let _ = git(&work, &["add", "README.rst"]);
-        let _ = git(&work, &["commit", "-qm", "One"]);
-        let _ = git(&work, &["tag", "v3.15.0a0"]);
+        run_git(&work, &["add", "README.rst"]);
+        run_git(&work, &["commit", "-qm", "One"]);
+        run_git(&work, &["tag", "v3.15.0a0"]);
         let (from, to) = (work.to_string_lossy(), bare.to_string_lossy());
-        let _ = git(&folder, &["clone", "-q", "--bare", &from, &to]);
+        run_git(&folder, &["clone", "-q", "--bare", &from, &to]);
         // A copy would point `origin` at the working copy this folder held.
-        let _ = git(&bare, &["remote", "remove", "origin"]);
+        run_git(&bare, &["remote", "remove", "origin"]);
         let built = Arc::new((Snapshot::of(&work), Snapshot::of(&bare)));
         let mut all = BUILT.lock().unwrap();
         Arc::clone(all.entry(name.to_owned()).or_insert(built))
@@ -135,12 +162,16 @@ pub fn pull_request(remotes: &Path, name: &str, number: u32) -> String {
         .to_owned()
 }
 
-/// Commits all that changed in the working copy at `dir`, or nothing if nothing did, with `message`, and
-/// gives the commit.
+/// Commits all that changed in the working copy at `dir`, as [`commit_all`] does, and gives the commit.
 pub fn commit(dir: &Path, message: &str) -> String {
-    let _ = git(dir, &["add", "-A"]);
-    let _ = git(dir, &["commit", "-q", "--allow-empty", "-m", message]);
+    commit_all(dir, message);
     git(dir, &["rev-parse", "HEAD"]).trim().to_owned()
+}
+
+/// Commits all that changed in the working copy at `dir`, or nothing if nothing did, with `message`.
+fn commit_all(dir: &Path, message: &str) {
+    run_git(dir, &["add", "-A"]);
+    run_git(dir, &["commit", "-q", "--allow-empty", "-m", message]);
 }
 
 /// Makes a bare repository at `mirror`, as a Mirror holds a PR, whose `main` holds the files `base`, each a
@@ -172,17 +203,17 @@ pub fn mirror_with_branch(
         return built.pr.clone();
     }
     fs::create_dir_all(work).unwrap();
-    let _ = git(work, &["init", "-q", "-b", "main"]);
+    run_git(work, &["init", "-q", "-b", "main"]);
     write_files(work, base);
-    let _ = commit(work, "Base");
-    let _ = git(work, &["switch", "-qc", "pr"]);
+    commit_all(work, "Base");
+    run_git(work, &["switch", "-qc", "pr"]);
     write_files(work, head);
     let pr = commit(work, "PR");
     fs::create_dir_all(mirror.parent().unwrap()).unwrap();
     let (from, to) = (work.to_string_lossy(), mirror.to_string_lossy());
-    let _ = git(work, &["clone", "-q", "--bare", &from, &to]);
+    run_git(work, &["clone", "-q", "--bare", &from, &to]);
     // A copy would point `origin` at the folder of the test that built it, which may be gone.
-    let _ = git(mirror, &["remote", "remove", "origin"]);
+    run_git(mirror, &["remote", "remove", "origin"]);
     remove(work);
     let built = Built {
         mirror: Snapshot::of(mirror),
@@ -336,17 +367,26 @@ const CHECK_AGAIN: Duration = Duration::from_millis(20);
 /// Whether `check` holds within `patience`. It checks again every little while, and gives up on the first
 /// check that fails once `patience` is up.
 pub fn within(patience: Duration, mut check: impl FnMut() -> bool) -> bool {
+    let mut held = false;
+    wait_until(patience, || {
+        held = check();
+        held
+    });
+    held
+}
+
+/// Checks `check` as [`within`] does, until it holds or `patience` is up, for a test that then asserts what
+/// it waited for and can say more than that it failed.
+pub fn wait_until(patience: Duration, mut check: impl FnMut() -> bool) {
     let until = Instant::now() + patience;
     // No line here runs only on a second check, which a fast machine never makes.
     let pauses = iter::once(Duration::ZERO).chain(iter::repeat(CHECK_AGAIN));
-    pauses
-        .map(|pause| {
-            thread::sleep(pause);
-            (check(), Instant::now() >= until)
-        })
-        .find(|(held, late)| *held || *late)
-        .unwrap()
-        .0
+    for pause in pauses {
+        thread::sleep(pause);
+        if check() || Instant::now() >= until {
+            break;
+        }
+    }
 }
 
 /// Where `remotes` are, as a `file://` URL that ends in a slash. git reports progress over it as it does

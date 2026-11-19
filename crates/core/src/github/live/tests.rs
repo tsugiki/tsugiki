@@ -44,7 +44,7 @@ fn reading_no_blob_asks_git_for_nothing() {
 fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let folder = crate::testing::temp_path("stop-git");
     // An alias runs at the top of its repository, so this one needs its own.
-    let _ = tsugiki_test_git::git(
+    tsugiki_test_git::run_git(
         folder.parent().unwrap(),
         &["init", "-q", &folder.to_string_lossy()],
     );
@@ -66,7 +66,7 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let mut output = io::BufReader::new(output);
     let mut line = String::new();
     let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
-    let _succeeded = git.stop();
+    git.stop();
     let (closing, closed) = std::sync::mpsc::channel();
     #[expect(
         unused_results,

@@ -205,16 +205,14 @@ impl ViewWorld {
     }
 
     /// Mute on Issue `number`, whose tree holds `numbers`, from now.
-    pub(crate) fn mute_issue(&self, number: u32, numbers: Vec<u32>) -> ItemKey {
-        let key = ItemKey::Issue { number };
+    pub(crate) fn mute_issue(&self, number: u32, numbers: Vec<u32>) {
         let muting = Muting {
-            key,
+            key: ItemKey::Issue { number },
             numbers,
             up_to: None,
         };
         let now = OffsetDateTime::now_utc();
         self.db.store.mute(&cpython(), muting, now).unwrap();
-        key
     }
 
     pub(crate) fn finish(self) {

@@ -221,19 +221,13 @@ fn head_kept(
     number: u32,
     (commit, updated_at): (&CommitSha, OffsetDateTime),
 ) -> rusqlite::Result<HeadKept> {
-    let moved = pull_requests::keep_head(transaction, repository, number, (commit, updated_at))?;
-    let kept: Option<(Option<CommitSha>, String)> = transaction
-        .query_row(
-            "SELECT head, target_branch FROM pull_requests
-             WHERE repository = :repository AND number = :number",
-            named_params! { ":repository": repository, ":number": number },
-            |row| Ok((row.get("head")?, row.get("target_branch")?)),
-        )
-        .optional()?;
+    let before = stored_head(transaction, repository, number)?;
+    pull_requests::keep_head(transaction, repository, number, (commit, updated_at))?;
     // `keep_head` leaves no PR it finds without a head.
-    let Some((Some(commit), target_branch)) = kept else {
+    let Some((Some(commit), target_branch)) = stored_head(transaction, repository, number)? else {
         return Ok(HeadKept::NoFacts);
     };
+    let moved = before.and_then(|(head, _)| head).as_ref() != Some(&commit);
     let head = PrHead {
         number,
         commit,
@@ -244,6 +238,22 @@ fn head_kept(
     } else {
         HeadKept::Had(head)
     })
+}
+
+/// PR `number`'s head and Target branch as the store keeps them, if it holds the PR.
+fn stored_head(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<(Option<CommitSha>, String)>> {
+    transaction
+        .query_row(
+            "SELECT head, target_branch FROM pull_requests
+             WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+            |row| Ok((row.get("head")?, row.get("target_branch")?)),
+        )
+        .optional()
 }
 
 fn save_review(

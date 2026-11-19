@@ -7,10 +7,6 @@
     clippy::unwrap_used,
     reason = "a failed step of a fake server ends the test"
 )]
-#![expect(
-    clippy::indexing_slicing,
-    reason = "a field a message lacks reads as null, which the failed assertion shows"
-)]
 
 use std::io::{self, BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -135,6 +131,11 @@ impl Process for FakeProcess {
 
     fn kill(&mut self) {
         let _unheard = self.killed.send(());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "only `wait` gives how the process ended, and a test that dropped its end has ended it"
+        )]
+        let _ = self.exit.recv();
     }
 }
 
@@ -190,12 +191,17 @@ pub fn initialized_with(
     fake.reply(&asked, json!({"capabilities": capabilities}));
     let (server, info) = initializing.join().unwrap().unwrap();
     assert_eq!(info, None);
-    let _initialized = fake.expect("initialized");
+    fake.assert_next("initialized");
     (server, events, fake)
 }
 
 pub fn uri(text: &str) -> Uri {
     Uri::try_from(text.to_owned()).unwrap()
+}
+
+/// Fails the test unless `message` is `method`.
+fn assert_method(message: &Value, method: &str) {
+    assert_eq!(message["method"], method, "{message}");
 }
 
 /// The characters `from` up to `to` of line `line`.
@@ -232,8 +238,13 @@ impl Fake {
     /// The next message, which must be `method`.
     pub fn expect(&mut self, method: &str) -> Value {
         let message = self.next();
-        assert_eq!(message["method"], method, "{message}");
+        assert_method(&message, method);
         message
+    }
+
+    /// Fails the test unless the next message is `method`.
+    pub fn assert_next(&mut self, method: &str) {
+        assert_method(&self.next(), method);
     }
 
     pub fn send(&mut self, message: &Value) {

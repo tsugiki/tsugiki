@@ -6,7 +6,7 @@ use super::*;
 #[test]
 #[should_panic(expected = "diff --git a/Cargo.toml b/src/lib.rs")]
 fn a_test_git_that_fails_ends_the_test_with_what_it_printed() {
-    let _ = tsugiki_test_git::git(
+    tsugiki_test_git::run_git(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
         &[
             "diff",

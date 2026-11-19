@@ -280,7 +280,7 @@ fn foreign_keys_are_enforced_again_after_a_migration_whatever_happened() {
 
     run(&mut connection, &path, &[V1, PARENTS]).unwrap();
     assert!(enforces_foreign_keys(&connection));
-    let _problem = run(&mut connection, &path, &[V1, PARENTS, ORPHAN]).unwrap_err();
+    assert!(run(&mut connection, &path, &[V1, PARENTS, ORPHAN]).is_err());
     assert!(enforces_foreign_keys(&connection));
 
     drop(connection);

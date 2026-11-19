@@ -191,7 +191,7 @@ fn replace(
     let key = ItemKey::PullRequest { number };
     activity::follow_state(connection, repository, key, moved)?;
     if let Some(head) = &facts.head {
-        let _moved = keep_head(connection, repository, number, (head, facts.updated_at))?;
+        keep_head(connection, repository, number, (head, facts.updated_at))?;
     }
     forget_review_requests(connection, repository, number)?;
     forget_latest_reviews(connection, repository, number)?;
@@ -285,13 +285,12 @@ fn save_pull_request(
 /// Keeps `head` as PR `number`'s head when the read that names it, whose `updatedAt` is `updated_at`, is
 /// later than the read whose head the row keeps, or the row keeps none. A tie leaves the head. Both reads
 /// that name a head, the PR list and the Conversation, write it here, so the store holds the newer one's.
-/// Says whether the head moved to another commit.
 pub(super) fn keep_head(
     connection: &Connection,
     repository: &RepositoryName,
     number: u32,
     (head, updated_at): (&CommitSha, OffsetDateTime),
-) -> rusqlite::Result<bool> {
+) -> rusqlite::Result<()> {
     let asked = named_params! {
         ":repository": repository,
         ":number": number,
@@ -304,15 +303,16 @@ pub(super) fn keep_head(
            AND (head_at IS NULL OR head_at < :updated_at) AND head IS NOT :head",
         asked,
     );
-    let moved = moved? > 0;
     // The same head, named by a newer read, dates from that read.
-    let dated = connection.execute(
-        "UPDATE pull_requests SET head_at = :updated_at
-         WHERE repository = :repository AND number = :number AND head = :head
-           AND head_at < :updated_at",
-        asked,
-    );
-    dated.map(|_dated| moved)
+    let dated = moved.and_then(|_moved| {
+        connection.execute(
+            "UPDATE pull_requests SET head_at = :updated_at
+             WHERE repository = :repository AND number = :number AND head = :head
+               AND head_at < :updated_at",
+            asked,
+        )
+    });
+    dated.map(drop)
 }
 
 fn forget_review_requests(

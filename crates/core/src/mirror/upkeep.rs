@@ -183,21 +183,19 @@ pub(super) fn says_broken(words: &str) -> bool {
     SIGNS.iter().any(|sign| unquoted.contains(sign))
 }
 
-/// Deletes the broken mirror beside `repository`'s `mirror`, if there is one, and says whether it did.
-pub(super) fn delete_broken(repository: &RepositoryName, mirror: &Path) -> bool {
-    let broken = mirror.with_file_name(BROKEN);
-    if !broken.exists() {
-        return false;
+/// Whether a broken mirror waits beside `mirror`.
+pub(super) fn has_broken(mirror: &Path) -> bool {
+    mirror.with_file_name(BROKEN).exists()
+}
+
+/// Deletes the broken mirror beside `repository`'s `mirror`, if there is one.
+pub(super) fn delete_broken(repository: &RepositoryName, mirror: &Path) {
+    if !has_broken(mirror) {
+        return;
     }
-    match fs::remove_dir_all(&broken) {
-        Ok(()) => {
-            log::info!("Tsugiki deleted {repository}'s broken mirror");
-            true
-        }
-        Err(cause) => {
-            log::warn!("Tsugiki can't delete {repository}'s broken mirror: {cause}");
-            false
-        }
+    match fs::remove_dir_all(mirror.with_file_name(BROKEN)) {
+        Ok(()) => log::info!("Tsugiki deleted {repository}'s broken mirror"),
+        Err(cause) => log::warn!("Tsugiki can't delete {repository}'s broken mirror: {cause}"),
     }
 }
 
@@ -382,7 +380,7 @@ impl Worker {
     /// Notes a new clone of `repository` at `mirror`, whose upkeep starts afresh, and deletes the broken
     /// mirror it replaces, if there was one.
     pub(super) fn cloned_afresh(&mut self, repository: &RepositoryName, mirror: &Path) {
-        let _deleted = delete_broken(repository, mirror);
+        delete_broken(repository, mirror);
         // The worker heard of each Repository whose mirror it keeps before it cloned it.
         if let Some((_, upkept)) = (self.upkept.iter_mut()).find(|(one, _)| one.is_same(repository))
         {

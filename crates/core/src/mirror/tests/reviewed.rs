@@ -11,7 +11,7 @@ impl Place {
     fn dropped_commit(&self, name: &RepositoryName, number: u32) -> CommitSha {
         let commit = self.pull_request(name, number);
         let bare = self.remotes.join(format!("{name}.git"));
-        let _ = git(
+        run_git(
             &bare,
             &["update-ref", "-d", &format!("refs/pull/{number}/head")],
         );
@@ -54,7 +54,7 @@ impl Place {
         self.remote(name);
         let (mirrors, announced) = self.start();
         mirrors.requests().clone_mirror(name.clone(), download());
-        let _clone = one_clone(&announced);
+        clone_ended(&announced);
         mirrors
     }
 }

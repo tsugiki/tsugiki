@@ -57,7 +57,7 @@ impl Place {
         let mirrors = Mirrors::start(Ok(self.folders.clone()), self.clone_source(), announce);
         let (patched, unchecked) = hear_patches(&mirrors);
         mirrors.requests().clone_mirror(name.clone(), download());
-        let _clone = one_clone(&announced);
+        clone_ended(&announced);
         (mirrors, patched, unchecked, pull_request)
     }
 

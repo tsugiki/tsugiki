@@ -144,7 +144,7 @@ fn a_server_that_doesn_t_answer_initialize_in_time_is_killed() {
         fallback: None,
     };
     let initializing = initialize(starting, init, Duration::from_millis(50));
-    let _asked = fake.expect("initialize");
+    fake.assert_next("initialize");
     let Err(error) = initializing.join().unwrap() else {
         panic!("initialized")
     };
@@ -284,7 +284,7 @@ fn a_refusal_before_the_answer_to_initialize_is_pushed_once_the_answer_says_the_
     fake.reply(&asked, json!({"capabilities": capabilities}));
 
     let _initialized = initializing.join().unwrap().unwrap();
-    let _sent = fake.expect("initialized");
+    fake.assert_next("initialized");
     let removed = fake.expect("workspace/didChangeWorkspaceFolders");
     assert_eq!(removed["params"]["event"]["added"], json!([]));
     let added = fake.expect("workspace/didChangeWorkspaceFolders");
@@ -314,7 +314,7 @@ fn a_refusal_before_the_answer_to_initialize_isn_t_pushed_when_the_answer_says_t
     fake.reply(&asked, json!({"capabilities": {}}));
 
     let _initialized = initializing.join().unwrap().unwrap();
-    let _sent = fake.expect("initialized");
+    fake.assert_next("initialized");
     // The next message the client writes is its answer, with nothing pushed before it.
     assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
 }
@@ -335,7 +335,7 @@ fn a_refusal_after_shutdown_has_gone_out_switches_the_settings_and_pushes_nothin
     // LSP lets the client send `exit` alone after `shutdown`: the next message it writes is its answer.
     assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));
     fake.reply(&asked, Value::Null);
-    let _exit = fake.expect("exit");
+    fake.assert_next("exit");
     fake.exit(Some(0));
 }
 
@@ -502,7 +502,7 @@ fn a_cancelled_request_fails_and_the_server_s_late_answer_is_dropped() {
 fn stop_sends_exit_once_the_server_agrees_and_the_exit_is_reported() {
     let (server, events, mut fake) = initialized(json!({}));
     let document = server.open(uri("file:///w/a.py"), Language::Python, "x = 1\n");
-    let _opened = fake.expect("textDocument/didOpen");
+    fake.assert_next("textDocument/didOpen");
     server.stop(PATIENCE);
     let asked = fake.expect("shutdown");
     assert!(asked.get("params").is_none(), "{asked}");
@@ -542,7 +542,7 @@ fn a_stopped_server_that_ignores_exit_is_killed_once_the_patience_has_passed_sin
     // come 800 ms after `exit`. The 800 ms left of the first patience leave room for a slow machine.
     thread::sleep(Duration::from_millis(400));
     fake.reply(&asked, Value::Null);
-    let _exit = fake.expect("exit");
+    fake.assert_next("exit");
     let exited = Instant::now();
     fake.killed.recv_timeout(PATIENCE).unwrap();
     let waited = exited.elapsed();
@@ -554,7 +554,7 @@ fn a_stopped_server_that_doesn_t_agree_is_killed_once_the_patience_has_passed() 
     let (server, _events, mut fake) = initialized(json!({}));
     let asked = Instant::now();
     server.stop(Duration::from_millis(100));
-    let _asked = fake.expect("shutdown");
+    fake.assert_next("shutdown");
     fake.killed.recv_timeout(PATIENCE).unwrap();
     assert!(asked.elapsed() >= Duration::from_millis(100));
     fake.reap(None);
@@ -589,7 +589,7 @@ fn stopping_a_server_that_has_ended_kills_nothing() {
 fn a_server_that_exits_during_a_request_fails_it_and_reports_its_error_output() {
     let (server, events, mut fake) = initialized(json!({}));
     let pending = somewhere(&server);
-    let _asked = fake.expect("textDocument/definition");
+    fake.assert_next("textDocument/definition");
     fake.write_errors("thread 'main' panicked at src/lib.rs:1:1\n");
     fake.exit(Some(101));
 
@@ -648,7 +648,7 @@ fn the_server_s_error_output_goes_to_its_log_as_it_comes() {
     fake.write_errors("starting\n");
     fake.write_errors("ready\n");
     fake.exit(Some(0));
-    let _exited = next_event(&events);
+    assert!(matches!(next_event(&events), Event::Exited(_)));
 
     assert_eq!(*log.written.lock().unwrap(), b"starting\nready\n");
 }
@@ -675,7 +675,7 @@ fn a_log_that_fails_takes_nothing_more_and_the_exit_still_has_the_tail() {
 fn a_message_cut_short_ends_the_server_s_output() {
     let (server, events, mut fake) = initialized(json!({}));
     let pending = somewhere(&server);
-    let _asked = fake.expect("textDocument/definition");
+    fake.assert_next("textDocument/definition");
     fake.send_raw(b"Content-Length: 50\r\n\r\n{\"id\":");
     fake.exit(Some(1));
     assert!(matches!(pending.wait(), Err(RequestError::Exited)));
@@ -774,7 +774,7 @@ fn dropping_the_server_kills_it_and_fails_what_waits() {
     let (server, _events, mut fake) = initialized(json!({}));
     // A definition, as in the cancel test, so one instance of `wait_timeout` runs each of its arms.
     let pending = somewhere(&server);
-    let _asked = fake.expect("textDocument/definition");
+    fake.assert_next("textDocument/definition");
     drop(server);
     fake.killed.recv_timeout(PATIENCE).unwrap();
     assert!(matches!(

@@ -501,7 +501,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::SyncStep => match syncs.step(&github, store) {
                 Ok(Some(Progress::Changed(change))) => {
                     if !change.items.is_empty() {
-                        let _handed = hand_over_heads(&refreshes.fetching, store, &syncs, &change);
+                        hand_over_heads(&refreshes.fetching, store, &syncs, &change);
                     }
                     board.changed(&change);
                 }
@@ -527,16 +527,13 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
 /// read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
 /// store that can't answer just saved, and the next step that saves says if it is in trouble, and hands the
 /// heads. The heads go though the reviewed commits can't be read, and those wait for a step whose read works.
-/// Says whether it handed anything over.
-fn hand_over_heads(
-    fetching: &Fetching,
-    store: &Store,
-    syncs: &Syncs,
-    saved: &Change,
-) -> Option<()> {
+fn hand_over_heads(fetching: &Fetching, store: &Store, syncs: &Syncs, saved: &Change) {
     let repository = &saved.repository;
-    let facts = hand_over_rules_wants(fetching, store, syncs, repository)?;
-    let saved_heads = (facts.pull_requests.iter())
+    let Some(synced) = synced_facts(store, syncs, repository) else {
+        return;
+    };
+    hand_over_rules_wants(fetching, store, &synced);
+    let saved_heads = (synced.facts.pull_requests.iter())
         .filter(|pr| saved.items.contains(&pr.number))
         .filter_map(|pr| {
             Some(PrHead {
@@ -546,27 +543,38 @@ fn hand_over_heads(
             })
         });
     fetching.heads_saved(repository, saved_heads.collect());
-    Some(())
 }
 
-/// Hands the Mirror worker what the rules want of `repository`, if it syncs, from its stored facts, which
-/// it gives back. Nothing goes if the store can't read them.
-fn hand_over_rules_wants(
-    fetching: &Fetching,
+/// A Repository that syncs, with its stored facts and the settings the syncs read it by.
+struct Synced<'a> {
+    repository: &'a RepositoryName,
+    facts: WorkFacts,
+    settings: &'a RepositorySettings,
+}
+
+/// `repository` with its facts and settings, if it syncs and the store can read its facts.
+fn synced_facts<'a>(
     store: &Store,
-    syncs: &Syncs,
-    repository: &RepositoryName,
-) -> Option<WorkFacts> {
+    syncs: &'a Syncs,
+    repository: &'a RepositoryName,
+) -> Option<Synced<'a>> {
     let settings = syncs.settings(repository)?;
     let facts = store.work_facts(repository).ok()?;
-    let work = MirrorWork::of(&facts, settings);
-    let stated = Stated {
+    Some(Synced {
         repository,
-        facts: &facts,
-        work,
+        facts,
+        settings,
+    })
+}
+
+/// Hands the Mirror worker what the rules want of the `synced` Repository, from its stored facts.
+fn hand_over_rules_wants(fetching: &Fetching, store: &Store, synced: &Synced<'_>) {
+    let stated = Stated {
+        repository: synced.repository,
+        facts: &synced.facts,
+        work: MirrorWork::of(&synced.facts, synced.settings),
     };
     hand_over_wants(fetching, store, stated);
-    Some(facts)
 }
 
 /// The Mirror's work in a Repository, with the stored facts the rules worked it out from.
@@ -585,8 +593,13 @@ fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
     } = stated;
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
-    // that can't keep it says so at the next step that saves.
-    let _kept = keep_last_checks(store, repository, facts);
+    // that can't keep it says so in the log, and in the status bar at the next step that saves.
+    if let Err(problem) = keep_last_checks(store, repository, facts) {
+        log::warn!(
+            "Tsugiki couldn't keep the last Stale review checks in {repository}: {}",
+            problem.message
+        );
+    }
     let want = MirrorWant {
         heads: work.heads,
         reviewed,
@@ -619,7 +632,7 @@ fn settings_changed(
 ) -> Option<RepositorySettings> {
     let now = settings.clone();
     let before = syncs.replace_settings(settings)?;
-    let _followed = follow_reach(fetching, store, &now, &before);
+    follow_reach(fetching, store, &now, &before);
     Some(before)
 }
 
@@ -632,20 +645,21 @@ fn settings_changed(
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
 /// are lost, as no later step works them out, and the log says so. The PR view reads a lost Conversation
-/// when it opens. Says whether it handed the Mirror worker anything.
+/// when it opens.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
     now: &RepositorySettings,
     before: &RepositorySettings,
-) -> Option<()> {
-    let facts = facts_for_move(store, &now.name)?;
+) {
+    let Some(facts) = facts_for_move(store, &now.name) else {
+        return;
+    };
     let from = |settings| ReachFrom {
         facts: &facts,
         settings,
     };
     follow_move(fetching, store, from(before), from(now));
-    Some(())
 }
 
 /// The stored facts of `repository`, which a move of Reach goes by. A store that can't read them says so in
@@ -1000,8 +1014,10 @@ fn read_conversation(
 fn hand_over_head(store: &Store, read: &Reading<'_>, item: &Item, saved: &ConversationSaved) {
     let fetching = &read.queue.fetching;
     let repository = &item.repository;
-    if matches!(saved.head, HeadKept::Moved(_)) || saved.reviewed_moved {
-        let _wanted = hand_over_rules_wants(fetching, store, read.syncs, repository);
+    if (matches!(saved.head, HeadKept::Moved(_)) || saved.reviewed_moved)
+        && let Some(synced) = synced_facts(store, read.syncs, repository)
+    {
+        hand_over_rules_wants(fetching, store, &synced);
     }
     match &saved.head {
         HeadKept::Moved(head) | HeadKept::Had(head) => {

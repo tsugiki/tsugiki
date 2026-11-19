@@ -22,11 +22,11 @@ use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::releases::testing::{offline, release};
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::RepositorySettings;
-use tsugiki_core::settings::SettingsFiles;
+use tsugiki_core::settings::{Home, SettingsFiles};
 use tsugiki_core::testing::pr_facts;
 use tsugiki_core::token::Token;
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_test_git::{TempPath, git, mirror_with_branch, ty, within};
+use tsugiki_test_git::{TempPath, mirror_with_branch, run_git, ty, wait_until};
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -184,6 +184,13 @@ impl Wired {
             },
         )
         .map(|answer| answer.deserialize().unwrap())
+    }
+
+    /// Calls `command` with `arguments`, as [`Wired::ask`] does, for what it does, and fails the test unless
+    /// it succeeds.
+    fn call(&self, command: &str, arguments: Value) {
+        let answer = self.ask(command, arguments);
+        assert!(answer.is_ok(), "{command} failed: {answer:?}");
     }
 
     fn stop(self) -> Self {
@@ -740,11 +747,9 @@ fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
 fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     let (folders, _root) = temp_folders("wired-switch");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let peps = json!({ "name": "python/peps", "source": { "kind": "download" } });
-    let _ = wired
-        .ask("add_repository", json!({ "repository": peps }))
-        .unwrap();
+    wired.call("add_repository", json!({ "repository": peps }));
 
     let opened = wired.ask("open_repository", json!({ "name": "Python/CPython" }));
     let home = wired.ask("home", json!({})).unwrap();
@@ -989,7 +994,7 @@ fn heard_until_null(events: &Receiver<Value>) -> Vec<Value> {
 fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_marks_seen() {
     let (folders, _root) = temp_folders("wired-offline-start");
     let wired = Wired::start(Ok(folders.clone()), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let synced = workbench_after_sync(&wired);
     let number = issue_over(&synced, 154_019)["number"].clone();
     let issue = json!({ "repository": CPYTHON, "number": number });
@@ -1048,7 +1053,7 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
 fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers() {
     let (folders, _root) = temp_folders("wired-open-pr");
     let wired = Wired::start(Ok(folders), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let number = workbench["items"]
         .as_array()
@@ -1225,7 +1230,7 @@ fn inbox_pages(wired: &Wired) -> Vec<Value> {
 fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
     let (folders, _root) = temp_folders("wired-inbox");
     let wired = Wired::start(Ok(folders), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let pages = inbox_pages(&wired);
     let bad = json!({ "repository": "not a name", "page": { "kind": "latest" } });
@@ -1292,7 +1297,7 @@ fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
 fn the_app_syncs_the_repository_it_reopens() {
     let (folders, _root) = temp_folders("wired-reopen");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     drop(wired.stop());
 
     let reopened = Wired::start(Ok(folders), recordings());
@@ -1307,7 +1312,7 @@ fn a_filter_edited_in_the_file_shows_in_the_sidebar_and_the_workbench_after_a_re
     const EDITED: &str = "is:open author:@me label:type-bug";
     let (folders, _root) = temp_folders("wired-filter-edit");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     drop(wired.stop());
     let settings = std::fs::read_to_string(folders.settings_file()).unwrap();
     let edited = settings
@@ -1412,7 +1417,7 @@ fn first_issue(workbench: &Value) -> &Value {
 fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
     let (folders, _root) = temp_folders("wired-refresh");
     let wired = Wired::start(Ok(folders.clone()), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let never = wired.last_syncs.recv_timeout(PLENTY).unwrap();
     let first = wired.last_syncs.recv_timeout(PLENTY).unwrap();
@@ -1445,7 +1450,7 @@ fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
 fn an_add_syncs_what_waits_on_the_user_and_the_status_bar_hears_each_part() {
     let (folders, _root) = temp_folders("wired-activity");
     let wired = Wired::start(Ok(folders), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
 
     // The activity ends with a null.
@@ -1539,13 +1544,18 @@ fn clones(wired: &Wired, count: usize) -> Vec<Vec<Value>> {
         .collect()
 }
 
+/// Waits until the clone under way has ended, as the webview hears it.
+fn clone_ended(wired: &Wired) {
+    while !wired.clonings.recv_timeout(PLENTY).unwrap().is_null() {}
+}
+
 #[test]
 fn adding_a_repository_shows_its_clone_until_it_ends() {
     let (folders, root) = temp_folders("wiring-clone");
     let remotes = remotes(&root, &[CPYTHON]);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let clone = clones(&wired, 1).remove(0);
     let asked = wired.ask("cloning", json!({})).unwrap();
     drop(wired.stop());
@@ -1569,7 +1579,7 @@ fn the_window_hears_each_mirrors_state_as_it_changes_and_can_ask_for_it() {
     let remotes = remotes(&root, &[CPYTHON]);
     let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let ready = json!([{ "repository": CPYTHON, "state": { "state": "ready" } }]);
     let mut heard = Vec::new();
     while heard.last() != Some(&ready) {
@@ -1599,10 +1609,10 @@ fn a_disk_short_of_room_for_a_clone_says_so_and_check_again_looks_once_more() {
     );
     let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let short = wired.problems.recv_timeout(PLENTY).unwrap();
     let asked = wired.ask("mirror_problem", json!({})).unwrap();
-    let _ = wired.ask("check_mirrors_again", json!({})).unwrap();
+    wired.call("check_mirrors_again", json!({}));
     let measured = measures
         .recv_timeout(PLENTY)
         .and(measures.recv_timeout(PLENTY));
@@ -1625,15 +1635,8 @@ fn a_disk_short_of_room_for_a_clone_says_so_and_check_again_looks_once_more() {
 #[test]
 fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_the_answer() {
     let (folders, root) = temp_folders("wiring-borrow");
-    let mut files = SettingsFiles::load(folders.clone());
     let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
-    let _ = files
-        .add_repository(
-            &RepositorySettings::new(cpython.clone()),
-            &MirrorSource::Download,
-            time::OffsetDateTime::now_utc(),
-        )
-        .unwrap();
+    added_before_launch(&folders, &[CPYTHON]);
     // As 0.1 left it: the Repository, and no answer.
     std::fs::write(
         folders.machine_file(),
@@ -1643,7 +1646,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
     let remotes = remotes(&root, &[CPYTHON]);
     let lender = root.join("user-cpython");
     let url = remotes.url(&cpython);
-    let _ = git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
+    run_git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
     let picked = lender.clone();
     let wired = Wired::start_picking(
         Ok(folders.clone()),
@@ -1689,15 +1692,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
 #[test]
 fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
     let (folders, root) = temp_folders("wiring-answer-unsaved");
-    let mut files = SettingsFiles::load(folders.clone());
-    let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
-    let _ = files
-        .add_repository(
-            &RepositorySettings::new(cpython.clone()),
-            &MirrorSource::Download,
-            time::OffsetDateTime::now_utc(),
-        )
-        .unwrap();
+    added_before_launch(&folders, &[CPYTHON]);
     std::fs::write(
         folders.machine_file(),
         "last_repository = \"python/cpython\"\n",
@@ -1741,13 +1736,17 @@ fn added_before_launch(folders: &Folders, names: &[&str]) {
     let mut files = SettingsFiles::load(folders.clone());
     for name in names {
         let name = RepositoryName::parse(name).unwrap();
-        let _ = files
+        let home = files
             .add_repository(
-                &RepositorySettings::new(name),
+                &RepositorySettings::new(name.clone()),
                 &MirrorSource::Download,
                 time::OffsetDateTime::now_utc(),
             )
             .unwrap();
+        assert!(
+            matches!(&home, Home::Repository { repository, .. } if repository.name == name),
+            "{home:?}"
+        );
     }
 }
 
@@ -1828,11 +1827,11 @@ fn a_sync_fetches_the_heads_of_the_users_prs_into_the_mirror() {
     let commit = pull_request_on(&root, CPYTHON, 157_178);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let _clone = clones(&wired, 1);
+    wired.call("add_repository", add_cpython());
+    clone_ended(&wired);
     let mirror = folders.mirror(&tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap());
     let fetched = mirror.join("refs/tsugiki/pull/157178/head");
-    let _fetched = within(PLENTY, || fetched.exists());
+    wait_until(PLENTY, || fetched.exists());
     drop(wired.stop());
     let head = std::fs::read_to_string(&fetched).unwrap_or_default();
 
@@ -1878,8 +1877,8 @@ fn opening_a_pr_fetches_its_head_first_and_its_files_tab_then_reads_its_diff_in_
     let commit = pull_request_on(&root, CPYTHON, 1);
     someone_elses_pr_1(&folders, &commit);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let _clone = clones(&wired, 1);
+    wired.call("add_repository", add_cpython());
+    clone_ended(&wired);
     let files = || {
         wired.ask(
             "pull_request_files",
@@ -1979,8 +1978,8 @@ fn a_failed_fetch_of_a_prs_head_reaches_the_window_with_why() {
     let commit = pull_request_on(&root, CPYTHON, 1);
     someone_elses_pr_1(&folders, &commit);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let _clone = clones(&wired, 1);
+    wired.call("add_repository", add_cpython());
+    clone_ended(&wired);
     // GitHub's copy goes after the clone, so the fetch of the head fails.
     let bare = root.join("remotes").join(format!("{CPYTHON}.git"));
     std::fs::remove_dir_all(bare).unwrap();

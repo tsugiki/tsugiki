@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tsugiki_core::facts::CommitSha;
 use tsugiki_core::mirror::{LookupAt, LookupCheckout};
 use tsugiki_core::search::{Case, End, Query, Syntax, Words, search_checkout};
-use tsugiki_test_git::git;
+use tsugiki_test_git::run_git;
 
 fn main() {
     divan::main();
@@ -85,8 +85,8 @@ impl Tree {
             .join(format!("bench-search-{name}-{}", std::process::id()));
         drop(fs::remove_dir_all(&folder));
         fs::create_dir_all(&folder).expect("a folder for the tree");
-        let _ = git(&folder, &["init", "-q", "-b", "main"]);
-        let _ = git(&folder, &["config", "core.autocrlf", "false"]);
+        run_git(&folder, &["init", "-q", "-b", "main"]);
+        run_git(&folder, &["config", "core.autocrlf", "false"]);
         for file in 0..FILES {
             write(&folder, file, "base");
         }
@@ -95,7 +95,7 @@ impl Tree {
             write(&folder, file * (FILES / CHANGED), "head");
         }
         let head = commit(&folder, "head");
-        let _ = git(&folder, &["checkout", "-q", "--detach", base.as_str()]);
+        run_git(&folder, &["checkout", "-q", "--detach", base.as_str()]);
         Self {
             checkout: LookupCheckout {
                 folder: folder.clone(),

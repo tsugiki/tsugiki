@@ -305,8 +305,19 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         pending: vec![drafted],
     };
     let updated_at = OffsetDateTime::UNIX_EPOCH;
-    let _kept =
+    let saved =
         pull_request_content::save(connection, &cpython, 1, (&reviewed, updated_at)).unwrap();
+    // The list read the PR as late as the Conversation, so the head stays the list's.
+    let head = crate::facts::pull_requests::PrHead {
+        number: 1,
+        commit: CommitSha::parse("4567def").unwrap(),
+        target_branch: "main".to_owned(),
+    };
+    let kept = pull_request_content::ConversationSaved {
+        head: pull_request_content::HeadKept::Had(head),
+        reviewed_moved: true,
+    };
+    assert_eq!(saved, kept);
     let patched = ["0123abc", "4567def"].map(|commit| crate::facts::patch_ids::CommitPatches {
         of: crate::facts::patch_ids::PatchesOf {
             commit: CommitSha::parse(commit).unwrap(),

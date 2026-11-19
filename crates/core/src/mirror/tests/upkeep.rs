@@ -476,7 +476,7 @@ fn a_real_mirror_keeps_reviewed_refs_drops_those_of_prs_gone_and_gets_maintenanc
         .into();
     let (mirrors, announced) = place.start_live_keeping();
     mirrors.requests().clone_mirror(hello.clone(), download());
-    let _clone = one_clone(&announced);
+    clone_ended(&announced);
     mirrors.requests().fetch_heads(hello.clone(), heads.clone());
     // PR 2 keeps a reviewed ref once it leaves the work, and PR 3's commit is left with no ref at all.
     let review = reviewed(2, &heads[1].commit);

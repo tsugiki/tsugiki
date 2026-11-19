@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::run_git;
 
 use super::testing::{Mirrored, OLD_NEWS};
 use super::*;
@@ -172,7 +172,7 @@ fn a_diff_against_another_branch_or_from_another_base_is_read_again() {
 fn a_diff_from_a_base_reads_from_that_base_whatever_the_branch_says() {
     let mirrored = Mirrored::new("from-base");
     let first = mirrored.read();
-    let _ = git(
+    run_git(
         &mirrored.mirror,
         &["branch", "3.14", mirrored.head.as_str()],
     );
@@ -384,7 +384,7 @@ fn only_the_target_branch_s_attributes_count_and_an_index_a_run_left_goes() {
     let mirrored = Mirrored::new("own-attributes");
     let own = mirrored.root.join("own.attributes");
     fs::write(&own, "Modules/** linguist-generated\n").unwrap();
-    let _ = git(
+    run_git(
         &mirrored.mirror,
         &["config", "core.attributesFile", &own.to_string_lossy()],
     );
@@ -434,7 +434,7 @@ fn a_prs_news_entries_come_rendered_from_its_head() {
     let mirrored = Mirrored::with("news", |work| {
         fs::write(work.join(entry), "Fix :func:`ast.parse`.\n").unwrap();
         fs::write(work.join("Misc/NEWS.d/3.14.0.rst"), "Released.\n").unwrap();
-        let _ = git(work, &["rm", "-q", OLD_NEWS]);
+        run_git(work, &["rm", "-q", OLD_NEWS]);
     });
 
     let read = mirrored.read();

@@ -199,7 +199,7 @@ fn save_pull_request(
     repository: &RepositoryName,
     facts: &PullRequestFacts,
 ) -> rusqlite::Result<bool> {
-    let written = connection.execute(
+    let saved = connection.execute(
         "INSERT INTO pull_requests
                  (repository, number, title, state, is_draft, author, target_branch, ci, updated_at,
                   off_default_description, merge_commit, base, ci_finished_at)
@@ -242,8 +242,8 @@ fn save_pull_request(
             ":base": facts.base,
             ":now": OffsetDateTime::now_utc().unix_timestamp(),
         },
-    )?;
-    Ok(written > 0)
+    );
+    saved.map(|written| written > 0)
 }
 
 /// Keeps `head` as PR `number`'s head when the read that names it, whose `updatedAt` is `updated_at`, is
@@ -267,15 +267,16 @@ pub(super) fn keep_head(
          WHERE repository = :repository AND number = :number
            AND (head_at IS NULL OR head_at < :updated_at) AND head IS NOT :head",
         asked,
-    )? > 0;
+    );
+    let moved = moved? > 0;
     // The same head, named by a newer read, dates from that read.
-    let _dated = connection.execute(
+    let dated = connection.execute(
         "UPDATE pull_requests SET head_at = :updated_at
          WHERE repository = :repository AND number = :number AND head = :head
            AND head_at < :updated_at",
         asked,
-    )?;
-    Ok(moved)
+    );
+    dated.map(|_dated| moved)
 }
 
 fn forget_review_requests(

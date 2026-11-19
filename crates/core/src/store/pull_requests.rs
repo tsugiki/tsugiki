@@ -4,12 +4,13 @@
 use std::collections::BTreeMap;
 
 use rusqlite::types::FromSql;
-use rusqlite::{Statement, ToSql, named_params};
+use rusqlite::{OptionalExtension, Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
+use super::activity::StateMove;
 use super::{Connection, TitledItem, TitledKind};
 use crate::facts::CommitSha;
-use crate::facts::activity::ItemActivity;
+use crate::facts::activity::{ItemActivity, ItemKey};
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
@@ -156,9 +157,19 @@ fn replace(
     facts: &PullRequestFacts,
 ) -> rusqlite::Result<()> {
     let number = facts.number;
+    let held: Option<PrState> = connection
+        .query_row(
+            "SELECT state FROM pull_requests WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+            |row| row.get("state"),
+        )
+        .optional()?;
     if !save_pull_request(connection, repository, facts)? {
         return Ok(());
     }
+    let is_open = |state: PrState| Some(state == PrState::Open);
+    let moved = StateMove::of(held.and_then(is_open), is_open(facts.state));
+    activity::follow_state(connection, repository, ItemKey::PullRequest { number }, moved)?;
     if let Some(head) = &facts.head {
         let _moved = keep_head(connection, repository, number, (head, facts.updated_at))?;
     }

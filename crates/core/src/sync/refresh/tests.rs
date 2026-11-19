@@ -1,7 +1,7 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::WorkFacts;
-use crate::facts::activity::{Activity, ActivityKind};
+use crate::facts::activity::{Activity, ActivityKind, ItemKey};
 use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
@@ -15,7 +15,7 @@ use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport,
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::status::Change;
-use crate::store::Store;
+use crate::store::{Judged, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
@@ -2244,5 +2244,123 @@ fn a_change_under_two_minutes_old_by_githubs_clock_keeps_its_item_in_the_filter(
 
     let results = &facts(&harness).filters[&query("a")];
     assert_eq!(results.numbers, BTreeSet::from([1, 2]));
+    harness.finish();
+}
+
+/// Issue `number` as the poll lists it, updated at `updated_at`, in `state`.
+fn issue_in(number: u32, updated_at: &str, state: &str) -> Value {
+    let mut node = issue_node(number, updated_at);
+    node["state"] = json!(state);
+    node
+}
+
+/// The keys of the items `harness` holds Archived.
+fn archived(harness: &Harness) -> Vec<ItemKey> {
+    facts(harness).activity.archived.into_keys().collect()
+}
+
+#[test]
+fn a_refresh_archives_an_issue_and_a_standalone_pr_it_sees_close_or_merge() {
+    let merged = json!({
+        "title": "Tidy up",
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": AFTER_IT,
+    });
+    let closed = json!({
+        "title": "A change",
+        "author": { "login": "some-author" },
+        "state": "CLOSED",
+        "updatedAt": AFTER_IT,
+    });
+    let replies = vec![
+        polled(
+            &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
+            &list(&[changed_pr(3, AFTER_IT), changed_pr(4, AFTER_IT)], None),
+            &[search(&[], None)],
+        ),
+        fetched_nodes(&[pr_node(3, &closed), pr_node(4, &merged)], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-closing", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    stored_filter(&harness, "a", &[1]);
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    let tidy = json!({ "title": "Tidy up", "updatedAt": LONG_BEFORE });
+    holding_pr(&harness, &own_open_pr(4, &tidy));
+
+    drop(run(&mut refreshing(filtering(&["a"])), &harness));
+
+    // Filter "a" put Issue 1 on the Workbench, and PR 4 was the user's. Nothing put a stranger's PR 3
+    // there.
+    let keys = [ItemKey::Issue { number: 1 }, ItemKey::PullRequest { number: 4 }];
+    assert_eq!(archived(&harness), keys);
+    assert_eq!(harness.db.store.closings(&cpython()).unwrap(), BTreeSet::new());
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_archives_a_closed_issue_whose_backport_is_still_open() {
+    let replies = vec![
+        polled(
+            &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
+            &list(&[], None),
+            &[],
+        ),
+        probed(&[(10, "PENDING")]),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-backport-open", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    let backport = json!({
+        "title": "[3.14] gh-1: Fix it (GH-9)",
+        "baseRefName": "3.14",
+        "updatedAt": LONG_BEFORE,
+    });
+    holding_pr(&harness, &own_open_pr(10, &backport));
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(archived(&harness), [ItemKey::Issue { number: 1 }]);
+    let backport = facts(&harness).pull_requests;
+    assert_eq!(backport[0].state, PrState::Open);
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopens() {
+    let replies = vec![
+        polled(
+            &list(
+                &[issue_in(1, AFTER_IT, "CLOSED"), issue_in(2, AFTER_IT, "OPEN")],
+                None,
+            ),
+            &list(&[], None),
+            &[search(&[issue_hit(1), issue_hit(2)], None)],
+        ),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-reopens", replies);
+    let closed = |number| IssueFacts {
+        state: Some(IssueState::Closed),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(number)
+    };
+    let store = &harness.db.store;
+    store.save_issues(&cpython(), vec![closed(1), closed(2)]).unwrap();
+    stored_filter(&harness, "a", &[1, 2]);
+    let keys = vec![ItemKey::Issue { number: 1 }, ItemKey::Issue { number: 2 }];
+    let judged = Judged {
+        archived: keys,
+        closings: BTreeSet::new(),
+    };
+    store.archive_closed(&cpython(), judged, moment(LAST_SYNC)).unwrap();
+    store.unarchive(&cpython(), ItemKey::Issue { number: 1 }).unwrap();
+
+    drop(run(&mut refreshing(filtering(&["a"])), &harness));
+
+    // Issue 1 changed while closed, and Issue 2 reopened.
+    assert_eq!(archived(&harness), []);
     harness.finish();
 }

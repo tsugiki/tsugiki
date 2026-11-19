@@ -6,6 +6,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - The Workbench is refreshed every few minutes, fetching only what has changed since the last poll.
   - An open Issue or PR is refreshed when it is opened, and about once a minute while it stays on screen.
   - Merged and closed PRs are fetched once and then frozen.
+  - A sync that sees an Issue or a Standalone PR close or merge, open in the database and closed in
+    GitHub's answer, archives it if **Reach** held it while it was open
+    ([workbench.md](workbench.md)). The database keeps each closing it saves until the sync judges it,
+    right after the step that saved it, so a closing outlives a crash and waits for the next step that
+    saves. An item that reopens leaves Archived as the sync saves it. An Archived item leaves Reach, so the
+    sync reads ahead none of its Conversations and runs no Stale review check on its PRs.
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size ([ADR
   0015](../adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). A small one (up to 500 open

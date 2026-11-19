@@ -20,7 +20,7 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, Flagging, Muting};
+pub use activity::{Archiving, Flagging, Judged, Muting};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
@@ -532,6 +532,29 @@ impl Store {
         let repository = repository.clone();
         let saved = self
             .call(move |connection| activity::archive(connection, &repository, &archiving, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The Issues and PRs of `repository` a save found closed that the store held open, whose closing the
+    /// sync hasn't judged yet (#820).
+    pub fn closings(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::closings(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Archives the items whose closing `judged` says archives them, put away `now`, and forgets the
+    /// closings it judged, as `activity::archive_closed` says.
+    pub fn archive_closed(
+        &self,
+        repository: &RepositoryName,
+        judged: Judged,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            activity::archive_closed(connection, &repository, &judged, now)
+        })?;
         saved.map_err(saying(CANT_WRITE))
     }
 

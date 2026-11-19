@@ -332,6 +332,8 @@ enum Message {
     Clone(RepositoryName, Turn, Option<MirrorSource>),
     /// The heads of the PRs in a Repository's Reach, as the store has them now.
     Heads(RepositoryName, Vec<PrHead>),
+    /// The PRs out of a Repository's Reach whose refs upkeep keeps (#820).
+    Kept(RepositoryName, Vec<u32>),
     /// The commits the user's Reviews in a Repository covered, as the store has them now.
     Reviewed(RepositoryName, Vec<ReviewedCommit>),
     /// The commits in a Repository whose patch-ids the Stale review check needs and the store lacks.
@@ -432,6 +434,12 @@ impl MirrorRequests {
     /// waiting isn't fetched. It leaves the head of a PR the user opened as it was.
     pub fn fetch_heads(&self, repository: RepositoryName, heads: Vec<PrHead>) {
         self.send(Message::Heads(repository, heads));
+    }
+
+    /// Keeps the refs of the PRs in `kept` in `repository`'s mirror though they're out of Reach: upkeep
+    /// deletes none of them, and none is fetched. `kept` is the whole set, so it replaces the last.
+    pub fn keep_refs(&self, repository: RepositoryName, kept: Vec<u32>) {
+        self.send(Message::Kept(repository, kept));
     }
 
     /// Keeps each commit in `reviewed` under `refs/tsugiki/reviewed/N` in `repository`'s mirror, once its
@@ -599,6 +607,11 @@ impl HeardRequests {
             Message::Heads(repository, wanted) => {
                 Ok(format!("{repository} wants heads {}", heads(&wanted)))
             }
+            // Most tests keep no ref out of Reach, and hear nothing of it.
+            Message::Kept(repository, kept) if !kept.is_empty() => {
+                let kept = kept.iter().map(|number| format!("#{number}"));
+                Ok(format!("{repository} keeps refs of {}", listed(kept)))
+            }
             Message::Reviewed(repository, reviewed) => {
                 let reviewed = (reviewed.iter())
                     .map(|one| format!("#{} at {}", one.number, short(&one.commit)));
@@ -621,6 +634,7 @@ impl HeardRequests {
                 Ok(format!("{repository} awaits no head of #{number}"))
             }
             other @ (Message::Clone(..)
+            | Message::Kept(..)
             | Message::PatchesTo(_)
             | Message::First(..)
             | Message::LookUp(..)
@@ -999,6 +1013,9 @@ impl Worker {
                 Ok(Message::Reviewed(repository, reviewed)) => {
                     self.wake();
                     self.hand_over_reviewed(&repository, reviewed);
+                }
+                Ok(Message::Kept(repository, kept)) => {
+                    self.change_heads(&repository, |known| known.prs.keep(kept));
                 }
                 Ok(Message::Patches(repository, wanted)) => {
                     self.hand_over_patches(&repository, wanted);

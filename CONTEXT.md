@@ -120,12 +120,14 @@ The Issues and PRs Tsugiki keeps ready to open in a **Repository**: their heads 
 Conversations read ahead. It is worked out from the **Workbench** and the links between Issues and PRs, never
 from the rows the list draws. It holds each Issue and PR on the Workbench in its own right or carrying a
 **Review request**, with the Origin PR and the Backports of such a PR, and each Issue one of those fixes,
-less each **Muted** item's tree; then each PR that fixes a reached Issue, through the Repository's
-**Conventions**, whether open, merged or closed; then each **Backport** whose **Origin PR** is reached, and
-the Origin PR of each reached Backport; and no more. So a PR in a Muted tree comes back when it fixes a
-reached Issue or shares a reached Backport family. Reach also holds the tree of each Muted item where a
-Review request or an assignment to the user stands, acknowledged or not. An **Archived** item stays in it.
-An item that only a **Filter** switched off the Workbench finds stays out of it.
+less each **Muted** and each **Archived** item's tree; then each PR that fixes a reached Issue, through the
+Repository's **Conventions**, whether open, merged or closed; then each **Backport** whose **Origin PR** is
+reached, and the Origin PR of each reached Backport; and no more. So a PR in a Muted or Archived tree comes
+back when it fixes a reached Issue or shares a reached Backport family. Reach also holds the tree of each
+Muted item where a Review request or an assignment to the user stands, acknowledged or not, and of each
+Archived item where a Review request stands. The **Mirror** keeps the heads of an Archived tree's PRs it
+already holds, and fetches none. An item that only a **Filter** switched off the Workbench finds stays out
+of it.
 _Avoid_: The PRs the user's work reaches
 
 **Filter**:
@@ -178,6 +180,10 @@ Archiving marks the item seen and clears **Marked unseen**, so a reason to **Nee
 after it brings the item back: New activity that Needs attention, a Review request or a CI failure. New
 activity that doesn't, as on an Issue the user only follows, leaves it archived. Mark Unseen on an Archived
 item unarchives it.
+An Issue or a Standalone PR that closes or merges on GitHub, while on the Workbench or in **Reach**, is
+Archived by itself, a closed Issue with an open PR too, and nothing is marked seen. A closed item stays
+Archived while nothing in its tree Needs attention: it comes back while something does, and goes back to
+Archived after Mark Seen. Reopening takes it out of Archived, and so does Unarchive until it closes again.
 Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 

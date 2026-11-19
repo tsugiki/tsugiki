@@ -454,7 +454,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
         ..facts(pull_requests, reviews)
     };
 
-    let MirrorWork { heads, patches } = MirrorWork::of(&facts, &cpython_settings());
+    let MirrorWork { heads, patches, .. } = MirrorWork::of(&facts, &cpython_settings());
 
     let fetched: Vec<u32> = heads.iter().map(|head| head.number).collect();
     assert_eq!(fetched, [1, 5]);

@@ -4,14 +4,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
 use crate::facts::activity::{ActivityFacts, Archive, ItemKey};
-use crate::facts::issues::IssueFacts;
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::testing::{cpython_settings, hours_ago, sha};
 use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
-    assigned_issue, backport, bots_backport, fixing, issue, me, mine, rows_of, someone, stranger,
-    view_of,
+    assigned_issue, backport, bots_backport, fixing, issue, me, mine, own, rows_of, someone,
+    stranger, view_of,
 };
 
 fn facts(pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) -> WorkFacts {
@@ -48,7 +48,8 @@ fn a_pr_in_a_reached_issues_tree_is_reached_open_merged_or_closed() {
     let reached = reach(
         &facts(pull_requests, vec![issue(1), issue(2)]),
         &cpython_settings(),
-    );
+    )
+    .numbers;
 
     // The user's PR 10 puts Issue 1 on the Workbench. Nothing puts Issue 2 there.
     assert_eq!(reached, BTreeSet::from([1, 10, 11, 12, 13]));
@@ -69,7 +70,7 @@ fn a_review_request_the_user_marked_seen_leaves_the_workbench_and_stays_in_reach
     let causes = Causes::of(&facts, settings.conventions);
 
     assert_eq!(in_own_right(&facts, &settings, &causes), BTreeSet::new());
-    assert_eq!(reach(&facts, &settings), BTreeSet::from([5]));
+    assert_eq!(reach(&facts, &settings).numbers, BTreeSet::from([5]));
 }
 
 #[test]
@@ -96,7 +97,7 @@ fn a_backport_of_a_reached_pr_is_reached_and_so_is_the_origin_pr_of_a_reached_ba
         bots_backport(41, "[3.14] Tidy up more (GH-40)"),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings());
+    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings()).numbers;
 
     // The user's PR 20 reaches its Backport 21. The Review request on Backport 31 reaches its Origin PR 30,
     // and through it Backport 32.
@@ -111,7 +112,7 @@ fn an_issue_that_a_backport_of_the_users_pr_fixes_is_reached_with_its_tree() {
         colleagues(30, 5, PrState::Open),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![issue(5)]), &cpython_settings());
+    let reached = reach(&facts(pull_requests, vec![issue(5)]), &cpython_settings()).numbers;
 
     // The list draws PR 20 with its Backport under Issue 5, beside PR 30.
     assert_eq!(reached, BTreeSet::from([5, 20, 21, 30]));
@@ -133,7 +134,7 @@ fn a_backport_of_a_backport_brings_no_family_of_its_own() {
         asked,
     ];
 
-    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings());
+    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings()).numbers;
 
     // A tree stays two levels deep, so Backport 42 stands on its own, as the list draws it.
     assert_eq!(reached, BTreeSet::from([42]));
@@ -181,7 +182,7 @@ fn reach_holds_every_pr_the_whole_workbench_shows() {
         .map(|row| row.number)
         .collect();
 
-    let reached = reach(&facts(pull_requests, issues), &cpython_settings());
+    let reached = reach(&facts(pull_requests, issues), &cpython_settings()).numbers;
 
     assert_eq!(rows, BTreeSet::from([10, 11, 20, 21, 30, 60, 61, 62, 63]));
     assert!(rows.is_subset(&reached), "{rows:?} in {reached:?}");
@@ -210,7 +211,7 @@ fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
         ..facts(pull_requests, vec![issue(2), issue(3)])
     };
 
-    assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
+    assert_eq!(reach(&facts, &repository).numbers, BTreeSet::from([2, 11]));
 }
 
 /// `facts`, in which the first of `repository`'s Filters, which is on, finds `on`, and the second, which is
@@ -252,7 +253,7 @@ fn a_filter_switched_on_reaches_its_find_and_one_switched_off_reaches_nothing() 
     );
 
     // Issue 3 and its PR 12 stay out: Tsugiki fetches no head and reads ahead no Conversation for them.
-    assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
+    assert_eq!(reach(&facts, &repository).numbers, BTreeSet::from([2, 11]));
 }
 
 #[test]
@@ -262,7 +263,7 @@ fn nothing_is_reached_before_anyone_signs_in() {
         ..facts(vec![fixing(10, 1)], vec![issue(1)])
     };
 
-    assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::new());
+    assert_eq!(reach(&facts, &cpython_settings()).numbers, BTreeSet::new());
 }
 
 #[test]
@@ -363,10 +364,10 @@ fn a_muted_tree_leaves_reach_and_a_pr_another_item_links_to_comes_back() {
     // The user's PR 10 is in Issue 1's tree, so it leaves with it. PR 12 comes back as it fixes Issue 2, and
     // PR 30 as its Backport 31 fixes Issue 3.
     assert_eq!(
-        sets.without_muted,
+        sets.without_hidden,
         BTreeSet::from([2, 3, 12, 20, 30, 31, 40])
     );
-    assert_eq!(sets.muted_asking, BTreeSet::new());
+    assert_eq!(sets.hidden_listed, BTreeSet::new());
 }
 
 #[test]
@@ -384,7 +385,7 @@ fn a_start_in_a_muted_tree_keeps_the_trees_it_shares_with_unmuted_items() {
     let issues = [1, 2, 3].map(issue).to_vec();
     let facts = muting(facts(pull_requests, issues), &[issue_key(1)]);
 
-    let reached = reach(&facts, &cpython_settings());
+    let reached = reach(&facts, &cpython_settings()).numbers;
 
     // The user's PR 12 puts Issue 2 on the Workbench as well as Muted Issue 1, and their PR 30 puts Issue 3
     // there with its Backport 31, which fixes Issue 1 too.
@@ -405,7 +406,7 @@ fn a_muted_prs_key_names_no_tree_once_the_pr_sits_under_an_issue_or_an_origin_pr
     let keys = [50, 41].map(|number| ItemKey::PullRequest { number });
     let facts = muting(facts(pull_requests, vec![issue(1)]), &keys);
 
-    let reached = reach(&facts, &cpython_settings());
+    let reached = reach(&facts, &cpython_settings()).numbers;
 
     // The user muted PRs 50 and 41 while they stood alone, before a title edit linked PR 50 to Issue 1 and
     // a sync fetched PR 41's Origin PR. The list draws them under items the user hasn't muted.
@@ -445,12 +446,12 @@ fn a_muted_item_where_an_ask_stands_stays_in_reach_with_its_tree_until_the_ask_e
     let unassigned = Reach::of(&facts, &settings);
 
     // Muted Issue 2 asks nothing of the user.
-    assert_eq!(asking.without_muted, BTreeSet::new());
+    assert_eq!(asking.without_hidden, BTreeSet::new());
     assert_eq!(
-        asking.muted_asking,
+        asking.hidden_listed,
         BTreeSet::from([1, 5, 6, 11, 12, 61, 62])
     );
-    assert_eq!(unassigned.muted_asking, BTreeSet::from([5, 6, 61, 62]));
+    assert_eq!(unassigned.hidden_listed, BTreeSet::from([5, 6, 61, 62]));
 }
 
 #[test]
@@ -466,9 +467,9 @@ fn reach_joins_the_items_without_the_muted_ones_and_the_muted_ones_that_ask() {
 
     let sets = Reach::of(&facts, &settings);
 
-    assert_eq!(sets.without_muted, BTreeSet::from([20]));
-    assert_eq!(sets.muted_asking, BTreeSet::from([1, 11]));
-    assert_eq!(reach(&facts, &settings), BTreeSet::from([1, 11, 20]));
+    assert_eq!(sets.without_hidden, BTreeSet::from([20]));
+    assert_eq!(sets.hidden_listed, BTreeSet::from([1, 11]));
+    assert_eq!(reach(&facts, &settings).numbers, BTreeSet::from([1, 11, 20]));
 }
 
 #[test]
@@ -489,20 +490,140 @@ fn the_walk_stops_at_a_second_issue_that_a_pr_of_a_reached_issue_fixes() {
     );
 
     // A walk that went on would chain Issue 1's tree to Issue 2's through PR 11.
-    assert_eq!(reach(&facts, &repository), BTreeSet::from([1, 11]));
+    assert_eq!(reach(&facts, &repository).numbers, BTreeSet::from([1, 11]));
 }
 
-#[test]
-fn an_archived_item_stays_in_reach() {
-    let mut facts = facts(vec![fixing(10, 1)], vec![issue(1)]);
+/// `facts` with the items `keys` name Archived, as of an hour ago.
+fn archiving(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
     let archive = Archive {
         seen_up_to: hours_ago(1),
         archived_at: hours_ago(1),
     };
-    facts.activity.archived.extend([(issue_key(1), archive)]);
+    facts
+        .activity
+        .archived
+        .extend(keys.iter().map(|key| (*key, archive)));
+    facts
+}
 
-    // The Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
-    assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::from([1, 10]));
+fn closed(number: u32) -> IssueFacts {
+    IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue(number)
+    }
+}
+
+#[test]
+fn an_archived_issue_and_its_prs_leave_reach_and_the_mirror_keeps_their_refs() {
+    let pull_requests = vec![
+        at_head("1010101", own(bots_backport(10, "[3.14] gh-1: Fix it (GH-11)"))),
+        at_head("1111111", colleagues(11, 1, PrState::Merged)),
+        at_head(
+            "1212121",
+            PullRequestFacts {
+                number: 12,
+                title: "gh-1, gh-2: Fix both".to_owned(),
+                ..stranger()
+            },
+        ),
+        at_head("2020202", fixing(20, 2)),
+    ];
+    let facts = archiving(
+        facts(pull_requests, vec![closed(1), issue(2)]),
+        &[issue_key(1)],
+    );
+    let settings = cpython_settings();
+
+    let reached = reach(&facts, &settings);
+    let work = MirrorWork::of(&facts, &settings);
+
+    // The user's open Backport 10 is in Issue 1's tree, so it leaves with it. PR 12 comes back, as it fixes
+    // Issue 2 too, which the user's PR 20 puts on the Workbench.
+    assert_eq!(reached.numbers, BTreeSet::from([2, 12, 20]));
+    let fetched: Vec<u32> = work.heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [12, 20]);
+    assert_eq!(work.kept, [10, 11]);
+}
+
+#[test]
+fn an_archived_item_comes_back_to_reach_while_something_in_it_needs_attention() {
+    let pull_requests = vec![fixing(10, 1), colleagues(11, 1, PrState::Merged)];
+    let mut facts = archiving(facts(pull_requests, vec![closed(1)]), &[issue_key(1)]);
+    facts.activity.marked_unseen.extend([(11, hours_ago(0))]);
+    let settings = cpython_settings();
+
+    let back = reach(&facts, &settings);
+    facts.activity.marked_unseen.clear();
+    let away = reach(&facts, &settings);
+
+    assert_eq!(back.numbers, BTreeSet::from([1, 10, 11]));
+    assert_eq!(away.numbers, BTreeSet::new());
+}
+
+#[test]
+fn an_archived_pr_whose_review_request_stands_stays_in_reach() {
+    let requested = PullRequestFacts {
+        number: 5,
+        title: "Tidy up".to_owned(),
+        review_requests: vec![me()],
+        ..stranger()
+    };
+    let mut facts = facts(vec![requested], vec![]);
+    // Archive acknowledges the request, which stands all the same.
+    facts.activity.acknowledged.extend([(5, hours_ago(2))]);
+    let facts = archiving(facts, &[ItemKey::PullRequest { number: 5 }]);
+
+    let sets = Reach::of(&facts, &cpython_settings());
+
+    // The Review requests view lists it, marked Archived.
+    assert_eq!(sets.without_hidden, BTreeSet::new());
+    assert_eq!(sets.hidden_listed, BTreeSet::from([5]));
+}
+
+#[test]
+fn closing_archives_each_issue_and_standalone_pr_that_reach_held_while_open() {
+    let merged = |facts: PullRequestFacts| PullRequestFacts {
+        state: PrState::Merged,
+        ..facts
+    };
+    let pull_requests = vec![
+        merged(fixing(10, 1)),
+        merged(mine(5)),
+        PullRequestFacts {
+            number: 30,
+            title: "Tidy up".to_owned(),
+            state: PrState::Closed,
+            ..stranger()
+        },
+        merged(fixing(40, 4)),
+    ];
+    let issues = vec![closed(1), closed(3), issue(4)];
+    let facts = facts(pull_requests, issues);
+    let closings = BTreeSet::from([1, 3, 5, 10, 30, 40]);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &closings);
+
+    // PR 10 merged and closed Issue 1, both the user's work while open. PR 5 stood alone. Nothing put
+    // Issue 3 or a stranger's PR 30 on the Workbench, and PRs 10 and 40 sit under their Issues, which stay
+    // open in Issue 4's case.
+    assert_eq!(
+        archived,
+        [issue_key(1), ItemKey::PullRequest { number: 5 }]
+    );
+}
+
+#[test]
+fn closing_leaves_a_muted_item_as_it_is() {
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..mine(5)
+    };
+    let key = ItemKey::PullRequest { number: 5 };
+    let facts = muting(facts(vec![merged], vec![]), &[key]);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &BTreeSet::from([5]));
+
+    assert_eq!(archived, []);
 }
 
 /// The user's PR `facts` with head `head`.

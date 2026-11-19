@@ -203,6 +203,21 @@ fn upkeep_prunes_only_prs_out_of_reach_that_the_user_hasnt_opened() {
 }
 
 #[test]
+fn upkeep_keeps_the_refs_the_rules_keep_out_of_reach_until_they_stop() {
+    let mut prs = Prs::default();
+    prs.hand_over(vec![at(1, 'a')]);
+    prs.keep(vec![2]);
+
+    let kept: Vec<u32> = [1, 2, 3].into_iter().filter(prs.out_of_reach().unwrap()).collect();
+    prs.keep(vec![]);
+    let dropped: Vec<u32> = [1, 2, 3].into_iter().filter(prs.out_of_reach().unwrap()).collect();
+
+    assert_eq!(kept, [3]);
+    assert_eq!(dropped, [2, 3]);
+    assert_eq!(prs.wanted(Instant::now()).collect::<Vec<_>>(), [at(1, 'a')]);
+}
+
+#[test]
 fn a_pr_back_in_reach_whose_ref_upkeep_pruned_meanwhile_is_fetched_again() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(1, 'a'), at(2, 'b')]);

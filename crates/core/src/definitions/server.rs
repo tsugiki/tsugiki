@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -173,19 +174,28 @@ impl Stopping {
     /// Waits until the server's process has ended, or until `until`. The events end once the client has
     /// killed it.
     pub(super) fn wait(self, until: Instant) {
-        let _exit = exit_by(&self.0, until);
+        (events_until(&self.0, until))
+            .take_while(|event| !matches!(event, Event::Exited(_)))
+            .for_each(drop);
     }
 }
 
 /// How the server whose `events` these are exited, once it has, waiting until `until` at most. Nothing if
 /// it hasn't by then, or its events ended without it, as when it was killed.
 fn exit_by(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
-    while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
+    for event in events_until(events, until) {
         if let Event::Exited(exit) = event {
             return Some(exit);
         }
     }
     None
+}
+
+/// The `events` of a server as they come, until `until` or until they end.
+fn events_until(events: &Receiver<Event>, until: Instant) -> impl Iterator<Item = Event> {
+    iter::from_fn(move || {
+        (events.recv_timeout(until.saturating_duration_since(Instant::now()))).ok()
+    })
 }
 
 /// A file the PR changes, open on the server, with its text at the head and at the base. A file the PR adds
@@ -438,7 +448,12 @@ impl LanguageServer {
 
     /// Asks the server to stop with `shutdown` and `exit`, and returns at once. One that hasn't agreed within
     /// [`EXIT_PATIENCE`], or hasn't exited [`EXIT_PATIENCE`] after `exit`, is killed.
-    pub(super) fn stop(self) -> Stopping {
+    pub(super) fn stop(self) {
+        self.server.stop(EXIT_PATIENCE);
+    }
+
+    /// Asks the server to stop, as [`LanguageServer::stop`] does, and gives what waits for its end.
+    pub(super) fn stopping(self) -> Stopping {
         self.server.stop(EXIT_PATIENCE);
         Stopping(self.events)
     }

@@ -41,7 +41,7 @@ use patches::Patches;
 use reviewed::{KeepReviewed, Reviews};
 pub use source::CloneRefusal;
 use source::{GITHUB_PREFIXES, lender};
-use upkeep::{Schedule, Upkeep, Upkept, delete_broken, says_broken};
+use upkeep::{Schedule, Upkeep, Upkept, delete_broken, has_broken, says_broken};
 
 /// How far a clone has got, from what `git clone --progress` writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -828,7 +828,7 @@ trait Run: Send {
     fn succeeded(&mut self) -> bool;
     /// Ends git and the helpers it started, and says if git had ended before the stop, having done what it
     /// was asked.
-    fn stop(&mut self) -> bool;
+    fn stop_finished(&mut self) -> bool;
 }
 
 struct LiveGit;
@@ -856,8 +856,8 @@ impl Run for live::StartedGit {
         Self::succeeded(self)
     }
 
-    fn stop(&mut self) -> bool {
-        Self::stop(self)
+    fn stop_finished(&mut self) -> bool {
+        Self::stop_finished(self)
     }
 }
 
@@ -1042,31 +1042,29 @@ impl Worker {
                 Ok(Message::Stop) | Err(_) => break,
             }
         }
-        match self.job.take() {
+        let Some(job) = self.job.take() else {
+            return;
+        };
+        let (mut git, cloned) = match job {
             // The stop can come as git ends having cloned it all, and the next launch moves that clone.
-            Some(Job::Clone(Clone {
-                mut git,
+            Job::Clone(Clone {
+                git,
                 cloning,
                 partial,
                 ..
-            })) => {
-                // The mark goes before the wait for helpers, which can outlast the time quitting gives.
-                if git.stop() {
-                    mark_cloned(&cloning.repository, &partial);
-                }
-                wait_for_helpers(incoming);
-            }
-            Some(
-                Job::Fetch(Fetch { mut git, .. })
-                | Job::Reviewed(KeepReviewed { mut git, .. })
-                | Job::Upkeep(Upkeep { mut git, .. })
-                | Job::Lookup(Move { mut git, .. }),
-            ) => {
-                let _succeeded = git.stop();
-                wait_for_helpers(incoming);
-            }
-            None => {}
+            }) => (git, Some((cloning.repository, partial))),
+            Job::Fetch(Fetch { git, .. })
+            | Job::Reviewed(KeepReviewed { git, .. })
+            | Job::Upkeep(Upkeep { git, .. })
+            | Job::Lookup(Move { git, .. }) => (git, None),
+        };
+        // The mark goes before the wait for helpers, which can outlast the time quitting gives.
+        if git.stop_finished()
+            && let Some((repository, partial)) = cloned
+        {
+            mark_cloned(&repository, &partial);
         }
+        wait_for_helpers(incoming);
     }
 
     fn wait(&mut self, repository: RepositoryName, turn: Turn, source: Option<MirrorSource>) {
@@ -1405,8 +1403,11 @@ impl Worker {
         let size = (self.remotes.size_of)(repository).map_err(|problem| problem.message)?;
         let needed = size.saturating_add(ROOM_TO_SPARE);
         let mut free = self.free_space(root)?;
-        if free < needed && delete_broken(repository, mirror) {
-            free = self.free_space(root)?;
+        if free < needed && has_broken(mirror) {
+            delete_broken(repository, mirror);
+            // A broken mirror that couldn't be deleted gave back no room.
+            let gone = !has_broken(mirror);
+            free = (gone.then(|| self.free_space(root)).transpose()?).unwrap_or(free);
         }
         Ok((free < needed).then(|| MirrorProblem::DiskShort {
             repository: repository.clone(),
@@ -1863,8 +1864,8 @@ fn mark_cloned(repository: &RepositoryName, partial: &Path) {
 const HELPERS_PATIENCE: Duration = Duration::from_secs(5);
 
 /// Waits for the error output of the git stopped last to close, up to `HELPERS_PATIENCE`. Each helper holds
-/// it, so it closes once the last of them has ended. `Run::stop` waits for git, and on Windows the job
-/// object's wait returns before the helpers it killed have ended (#208).
+/// it, so it closes once the last of them has ended. `Run::stop_finished` waits for git, and on Windows the
+/// job object's wait returns before the helpers it killed have ended (#208).
 fn wait_for_helpers(incoming: &Receiver<Message>) {
     let deadline = Instant::now() + HELPERS_PATIENCE;
     loop {

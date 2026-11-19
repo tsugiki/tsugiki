@@ -40,7 +40,7 @@ fn a_pr_says_whether_the_item_that_holds_it_is_muted() {
     world.has(vec![fixing(5, 1)], vec![issue(1)]);
     assert_eq!(view(&world, 5).unwrap().hidden, None);
 
-    let _key = world.mute_issue(1, vec![1, 5]);
+    world.mute_issue(1, vec![1, 5]);
 
     assert_eq!(view(&world, 5).unwrap().hidden, Some(Hidden::Muted));
     world.finish();

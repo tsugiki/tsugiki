@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tsugiki_test_git::{git, within};
+use tsugiki_test_git::{git, run_git};
 
 use super::*;
 use crate::error::ErrorKind;
@@ -110,6 +110,11 @@ fn one_clone(announced: &Receiver<Option<Cloning>>) -> Vec<Cloning> {
         clone.push(cloning);
     }
     clone
+}
+
+/// Waits until the clone the worker announces has ended.
+fn clone_ended(announced: &Receiver<Option<Cloning>>) {
+    while announced.recv_timeout(PLENTY).unwrap().is_some() {}
 }
 
 #[test]
@@ -616,7 +621,7 @@ impl Run for FakeRun {
     }
 
     /// Says git succeeded if the test said so before the stop.
-    fn stop(&mut self) -> bool {
+    fn stop_finished(&mut self) -> bool {
         // A test that has stopped listening doesn't hear the stop.
         let _unheard = self.stopping.send(());
         self.output.close();
@@ -913,7 +918,7 @@ fn reviewed(number: u32, commit: &CommitSha) -> ReviewedCommit {
 
 /// Waits until `done` says so, or a minute has gone.
 fn wait_until(done: impl FnMut() -> bool) {
-    let _done = within(PLENTY, done);
+    tsugiki_test_git::wait_until(PLENTY, done);
 }
 
 #[test]
@@ -1836,11 +1841,11 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     place.remote(&hello);
     let (mirrors, announced) = place.start();
     mirrors.requests().clone_mirror(hello.clone(), download());
-    let _clone = one_clone(&announced);
+    clone_ended(&announced);
     let commit = place.pull_request(&hello, 1);
     let mirror = place.folders.mirror(&hello);
     // What an earlier fetch left of a PR whose head GitHub has since dropped.
-    let _ = git(&mirror, &["update-ref", "refs/tsugiki/pull/2/head", "HEAD"]);
+    run_git(&mirror, &["update-ref", "refs/tsugiki/pull/2/head", "HEAD"]);
     let dropped = mirror.join("refs/tsugiki/pull/2/head");
 
     let heads = vec![
@@ -2142,7 +2147,7 @@ mod problems {
         fs::create_dir_all(&mirror).unwrap();
         fs::write(mirror.join("in-the-way"), "").unwrap();
         clone.succeed();
-        let _ = one_clone(&announced);
+        clone_ended(&announced);
         fs::remove_dir_all(&mirror).unwrap();
         mirrors.requests().clone_mirror_next(hello, download());
         mirrors.stop_cleanly(PLENTY);

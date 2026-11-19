@@ -11,7 +11,7 @@ impl Place {
     fn user_clone(&self, name: &RepositoryName) -> PathBuf {
         self.remote(name);
         let (folder, url) = self.user_folder(name);
-        let _ = git(
+        run_git(
             &self.remotes,
             &["clone", "-q", &url, &folder.to_string_lossy()],
         );
@@ -137,7 +137,7 @@ fn a_worktree_lends_the_git_folder_of_the_clone_it_belongs_to() {
     let hello = named("octo-org/hello");
     let folder = place.user_clone(&hello);
     let worktree = folder.with_file_name("user-hello-feature");
-    let _ = git(
+    run_git(
         &folder,
         &["worktree", "add", "-q", &worktree.to_string_lossy()],
     );
@@ -166,7 +166,7 @@ fn a_folder_that_cant_lend_is_refused_with_the_reason() {
     let elsewhere = lender(&LiveGit, &prefixes, &clone, &other);
     fs::write(clone.join(".git/shallow"), "").unwrap();
     let shallow = lender(&LiveGit, &prefixes, &clone, &hello);
-    let _ = git(&clone, &["remote", "remove", "origin"]);
+    run_git(&clone, &["remote", "remove", "origin"]);
     let no_remote = lender(&LiveGit, &prefixes, &clone, &hello);
 
     assert_eq!(missing, Err(CloneRefusal::NotAFolder));

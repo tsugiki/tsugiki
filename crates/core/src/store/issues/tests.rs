@@ -202,9 +202,9 @@ fn a_time_tsugiki_cant_understand_is_a_read_error() {
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
     store.save_issues(&cpython(), vec![issue(1)]).unwrap();
-    let _ = store
+    store
         .call(|connection| {
-            connection.execute("UPDATE issues SET updated_at = 9223372036854775807", [])
+            (connection.execute("UPDATE issues SET updated_at = 9223372036854775807", [])).map(drop)
         })
         .unwrap()
         .unwrap();

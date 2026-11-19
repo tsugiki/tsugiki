@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::run_git;
 
 use super::import::{self, Change, Commit, Mode};
 use super::{TempPath, add_config, temp_path};
@@ -44,7 +44,7 @@ impl Fixture {
         let root = temp_path(name);
         let mirror = root.join("mirror");
         fs::create_dir_all(&mirror).unwrap();
-        let _ = git(&mirror, &["init", "-q", "-b", "main"]);
+        run_git(&mirror, &["init", "-q", "-b", "main"]);
         // What `git config core.autocrlf false` writes, without a git to write it. The checkout reads it, so
         // it holds the bytes the commits do on a machine whose git turns LF into CRLF.
         add_config(&mirror.join(".git"), "[core]\n\tautocrlf = false\n");
@@ -63,11 +63,11 @@ impl Fixture {
             &folder_arg,
             base_commit.as_str(),
         ];
-        let _ = git(&mirror, &at);
+        run_git(&mirror, &at);
         if !added.is_empty() {
             let mut args = vec!["checkout", head_commit.as_str(), "--"];
             args.extend(added);
-            let _ = git(&folder, &args);
+            run_git(&folder, &args);
         }
         Self {
             mirror,

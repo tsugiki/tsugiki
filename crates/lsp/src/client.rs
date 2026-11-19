@@ -53,7 +53,7 @@ pub struct Streams {
 pub trait Process: Send {
     /// Waits for the process to end, and gives its exit code if it had one.
     fn wait(&mut self) -> Option<i32>;
-    /// Ends the process now.
+    /// Ends the process now, and waits until it has ended.
     fn kill(&mut self);
 }
 
@@ -615,7 +615,6 @@ impl Owner {
         self.waiting.clear();
         if self.life != Life::Exited {
             self.process.kill();
-            let _code = self.process.wait();
         }
     }
 

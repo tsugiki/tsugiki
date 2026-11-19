@@ -10,7 +10,7 @@
 use std::ffi::OsStr;
 use std::io::{self, Write};
 use std::path::Path;
-use std::process::{ChildStderr, Command, Stdio};
+use std::process::{ChildStderr, Command, ExitStatus, Stdio};
 use std::thread;
 #[cfg(not(windows))]
 use std::time::{Duration, Instant};
@@ -74,7 +74,7 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit
     match git.0.stderr().take() {
         Some(progress) => Ok((git, progress)),
         None => {
-            let _succeeded = git.stop();
+            git.stop();
             Err(io::Error::other("git's error output wasn't piped"))
         }
     }
@@ -89,11 +89,26 @@ impl StartedGit {
         self.0.wait().is_ok_and(|status| status.success())
     }
 
-    /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. Says if
-    /// git had ended before the kill, having done what it was asked. A helper can take a moment longer to
-    /// end, and git's error output closes once the last one has. Off Windows, killing the helpers that
-    /// started meanwhile can add up to `STRAGGLERS_PATIENCE`. A failure leaves a trace.
-    pub(crate) fn stop(&mut self) -> bool {
+    /// Ends git and its helpers, so none goes on downloading after Tsugiki quits, and waits for git. A helper
+    /// can take a moment longer to end, and git's error output closes once the last one has. Off Windows,
+    /// killing the helpers that started meanwhile can add up to `STRAGGLERS_PATIENCE`. A failure leaves a
+    /// trace.
+    pub(crate) fn stop(&mut self) {
+        if let Err(cause) = self.end() {
+            unwaited(&cause);
+        }
+    }
+
+    /// Stops git as [`StartedGit::stop`] does, and says if git had ended before the kill, having done what
+    /// it was asked.
+    pub(crate) fn stop_finished(&mut self) -> bool {
+        (self.end())
+            .inspect_err(unwaited)
+            .is_ok_and(|status| status.success())
+    }
+
+    /// Ends git and its helpers, as [`StartedGit::stop`] says, and gives how git ended.
+    fn end(&mut self) -> io::Result<ExitStatus> {
         if let Err(cause) = self.0.start_kill() {
             log::warn!("Tsugiki can't stop git's helpers: {cause}");
             // git at least, so the wait doesn't last until git ends on its own.
@@ -101,16 +116,10 @@ impl StartedGit {
                 log::warn!("Tsugiki can't stop git: {cause}");
             }
         }
-        let succeeded = match self.0.wait() {
-            Ok(status) => status.success(),
-            Err(cause) => {
-                log::warn!("Tsugiki can't wait for git: {cause}");
-                false
-            }
-        };
+        let ended = self.0.wait();
         #[cfg(not(windows))]
         self.end_stragglers();
-        succeeded
+        ended
     }
 
     /// Kills git's process group again until nobody is left in it. macOS kills the processes it finds in
@@ -139,6 +148,11 @@ impl StartedGit {
             thread::sleep(Duration::from_millis(10));
         }
     }
+}
+
+/// Logs that Tsugiki couldn't wait for git to end, for `cause`.
+fn unwaited(cause: &io::Error) {
+    log::warn!("Tsugiki can't wait for git: {cause}");
 }
 
 /// The time `StartedGit::stop` spends killing helpers that started while it killed the others. Short beside

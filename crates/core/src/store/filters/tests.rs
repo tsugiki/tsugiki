@@ -224,9 +224,10 @@ fn a_stored_search_tsugiki_cant_understand_is_a_read_error() {
     db.store
         .save_filter_results(&cpython(), &query("a"), found(&[1]))
         .unwrap();
-    let _ = db
-        .store
-        .call(|connection| connection.execute("UPDATE filter_matches SET number = 'one'", []))
+    db.store
+        .call(|connection| {
+            (connection.execute("UPDATE filter_matches SET number = 'one'", [])).map(drop)
+        })
         .unwrap()
         .unwrap();
 

@@ -615,9 +615,10 @@ fn a_row_tsugiki_cant_understand_is_a_read_error() {
     db.store
         .save_pull_requests(&cpython(), vec![at(1, facts(1))])
         .unwrap();
-    let _ = db
-        .store
-        .call(|connection| connection.execute("UPDATE pull_requests SET ci = 'SOMETHING NEW'", []))
+    db.store
+        .call(|connection| {
+            (connection.execute("UPDATE pull_requests SET ci = 'SOMETHING NEW'", [])).map(drop)
+        })
         .unwrap()
         .unwrap();
 

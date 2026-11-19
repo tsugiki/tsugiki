@@ -192,8 +192,9 @@ fn the_view_says_whether_the_issue_is_muted() {
     let world = ViewWorld::new("issue-view-muted");
     world.has(vec![fixing(10, 1)], vec![issue(1)]);
 
-    let key = mute(&world, 1);
+    mute(&world, 1);
     let muted = view(&world, 1).unwrap();
+    let key = ItemKey::Issue { number: 1 };
     world.db.store.unmute(&cpython(), key).unwrap();
     let after = view(&world, 1).unwrap();
     world.finish();
@@ -249,14 +250,14 @@ fn a_muted_issue_names_no_pr_for_a_review_request_that_stood_at_the_mute() {
         BTreeSet::from([5])
     );
 
-    let _key = mute(&world, 1);
+    mute(&world, 1);
 
     assert_eq!(view(&world, 1).unwrap().needs_attention, BTreeSet::new());
     world.finish();
 }
 
-/// Mute on Issue `number` as its view draws it now. Gives the item's key.
-fn mute(world: &ViewWorld, number: u32) -> ItemKey {
+/// Mute on Issue `number` as its view draws it now.
+fn mute(world: &ViewWorld, number: u32) {
     let numbers = view(world, number).unwrap().issue.seen.mark.numbers;
     world.mute_issue(number, numbers)
 }

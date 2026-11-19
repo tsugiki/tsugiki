@@ -600,7 +600,11 @@ fn watch(
     // A thread of their own hands the events on, so the watcher hears a file opened while it waits.
     let (hears, heard) = mpsc::channel();
     let forwards = hears.clone();
-    let _forwards = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "it ends when the server's events end, or when the watcher has gone"
+    )]
+    thread::spawn(move || {
         let _gone = (events.into_iter().map(Heard::Event))
             .chain([Heard::Ended])
             .try_for_each(|heard| forwards.send(heard));
@@ -621,7 +625,11 @@ fn watch(
         told: (first, Instant::now()),
         latest: first,
     };
-    let _reads = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "it ends when the server's events end, or when nothing reads them"
+    )]
+    thread::spawn(move || {
         loop {
             let event = match heard.recv_timeout(watcher.wait()) {
                 Ok(Heard::Event(event)) => event,
@@ -653,7 +661,11 @@ fn watch(
 /// and tells `news` of each problem they show, until nothing sends any more.
 fn read_headers(mut headers: Headers, news: OnNews) -> Sender<Diagnostics> {
     let (sends, diagnosed) = mpsc::channel::<Diagnostics>();
-    let _reads = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "it ends when the watcher drops the sender this gives"
+    )]
+    thread::spawn(move || {
         for diagnostics in diagnosed {
             if let Some(problem) = headers.problem(&diagnostics) {
                 news(News::Troubled(problem));

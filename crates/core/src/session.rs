@@ -123,7 +123,11 @@ impl Session {
         let (to_open, reader) = store::reader();
         let database = Database { folders, to_open };
         let refreshes = Refreshes::new(intervals, incoming, fetching.clone(), headless);
-        let _ = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "`stop` waits for `finishing` to go, with a patience a join can't take"
+        )]
+        thread::spawn(move || {
             // `stop` learns the session is over when this goes, however the thread ends.
             let _finishing = finishing;
             run(&mut board, database, access, &refreshes);

@@ -554,7 +554,7 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
     let kept = owner.servers.contains_key(&ty_of(cpython()));
     // The thread waits for its next message only until ty has been idle that long, and then stops it.
     let own = owner.own.clone();
-    let _later = thread::spawn(move || {
+    let later = thread::spawn(move || {
         thread::sleep(idle * 2);
         let _unheard = own.send(Message::Cancel(Ticket(9)));
     });
@@ -566,6 +566,7 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
         }
         let _goes_on = owner.handle(message);
     };
+    later.join().unwrap();
     let stopped = owner.servers.is_empty();
     let idle_row = ty_row(&owner.told);
     let again = ask(&mut owner, &at_head, Ticket(2));

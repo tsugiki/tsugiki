@@ -65,7 +65,11 @@ pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit
     // A git that stops reading says why on its error output. Closing the input tells git that is all.
     if let Some(mut stdin) = git.0.stdin().take() {
         let input = input.to_vec();
-        let _ = thread::spawn(move || drop(stdin.write_all(&input)));
+        #[expect(
+            unused_results,
+            reason = "the write ends once git has read the input or gone, and git says why it stopped reading"
+        )]
+        thread::spawn(move || drop(stdin.write_all(&input)));
     }
     match git.0.stderr().take() {
         Some(progress) => Ok((git, progress)),
@@ -224,7 +228,11 @@ fn git_bytes(mut command: Command, input: Vec<u8>) -> io::Result<Vec<u8>> {
     // On a thread of its own, so a git that writes before it has read everything can't leave both waiting on
     // a full pipe. Closing the input tells git that is all.
     if let Some(mut stdin) = git.stdin.take() {
-        let _ = thread::spawn(move || drop(stdin.write_all(&input)));
+        #[expect(
+            unused_results,
+            reason = "the write ends once git has read the input or gone, and git says why it failed"
+        )]
+        thread::spawn(move || drop(stdin.write_all(&input)));
     }
     let output = git.wait_with_output()?;
     git_output(&output).map(<[u8]>::to_vec)

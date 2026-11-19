@@ -97,7 +97,11 @@ impl FakeClangd {
             Ended(ends.exit, Arc::clone(&code)),
         );
         let mut writes = ends.writes;
-        let _writes = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "it ends once the fake and its reading thread have let go of `says`"
+        )]
+        thread::spawn(move || {
             write_messages(&mut writes, &said);
             crashed.end();
         });
@@ -106,7 +110,11 @@ impl FakeClangd {
         let documents = Arc::new(Mutex::new(Vec::new()));
         let logs = Arc::clone(&documents);
         let mut reads = ends.reads;
-        let _reads = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "it ends when the client closes its input, as a server's process would"
+        )]
+        thread::spawn(move || {
             serve(&mut reads, &replies, (&answers, &counts, &logs), initialize);
             // Its error output ends with it.
             ended.end();

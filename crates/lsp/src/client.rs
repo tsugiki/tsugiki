@@ -318,12 +318,24 @@ impl Server {
         } = streams;
         let (errors_open, errors_closed) = mpsc::channel::<()>();
         let reads = inputs.clone();
-        let _errors = thread::spawn(move || read_errors((errors, log), &reads, errors_open));
+        #[expect(
+            unused_results,
+            reason = "it ends when the server's error output closes, once the server exits or is killed"
+        )]
+        thread::spawn(move || read_errors((errors, log), &reads, errors_open));
         let reads = inputs.clone();
-        let _output = thread::spawn(move || read_output(output, &errors_closed, &reads));
+        #[expect(
+            unused_results,
+            reason = "it ends when the server's output closes, once the server exits or is killed"
+        )]
+        thread::spawn(move || read_output(output, &errors_closed, &reads));
         let (writes, bodies) = mpsc::channel();
         let writer = inputs.clone();
-        let _input = thread::spawn(move || write_input(input, &bodies, &writer));
+        #[expect(
+            unused_results,
+            reason = "it ends when the owner drops `writes`, or when the server stops reading"
+        )]
+        thread::spawn(move || write_input(input, &bodies, &writer));
         let owner = Owner {
             writes,
             process,
@@ -336,7 +348,12 @@ impl Server {
             tail: Vec::new(),
             life: Life::Running,
         };
-        let _owner = thread::spawn(move || owner.run(&received));
+        #[expect(
+            unused_results,
+            reason = "`stop` and a drop return at once, and the thread ends once the server has exited or \
+                      been killed"
+        )]
+        thread::spawn(move || owner.run(&received));
         (
             Starting(Self {
                 inputs,

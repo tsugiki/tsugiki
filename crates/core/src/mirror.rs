@@ -1791,7 +1791,11 @@ impl Worker {
     /// Reads git's error output on a thread of its own, which tells the worker when git ends.
     fn listen(&self, output: Box<dyn Read + Send>) {
         let messages = self.messages.clone();
-        let _ = thread::spawn(move || read_progress_until_done(output, &messages));
+        #[expect(
+            unused_results,
+            reason = "it ends with git's error output, and its last message tells the worker so"
+        )]
+        thread::spawn(move || read_progress_until_done(output, &messages));
     }
 
     fn moved_on(&mut self, progress: CloneProgress) {

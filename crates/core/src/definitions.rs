@@ -292,7 +292,11 @@ impl Definitions {
         let (owner, rows) = Owner::new(sources);
         let messages = Arc::new(Messages(owner.own.clone()));
         let files = Arc::clone(&owner.files);
-        let _owner = thread::spawn(move || owner.run());
+        #[expect(
+            unused_results,
+            reason = "it ends on `Message::Stop`, which `stop` waits for with a patience a join can't take"
+        )]
+        thread::spawn(move || owner.run());
         Self {
             messages,
             files,
@@ -793,7 +797,11 @@ impl Owner {
             if let Some(path) = path {
                 let _new = self.health.insert(name, Health::checking());
                 let own = self.own.clone();
-                let _checks = thread::spawn(move || {
+                #[expect(
+                    unused_results,
+                    reason = "the check ends by itself, and an owner that has gone doesn't need its word"
+                )]
+                thread::spawn(move || {
                     let found = health::check(name, &path);
                     // The thread ends once it has stopped.
                     let _unheard = own.send(Message::Checked(name, path, found));
@@ -1053,7 +1061,11 @@ impl Owner {
         let id = self.asked;
         let canceller = pending.canceller();
         let own = self.own.clone();
-        let _waits = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "it ends once the server answers, the request is cancelled or the server ends"
+        )]
+        thread::spawn(move || {
             let answer = pending.wait().map(|definitions| hits.of(definitions));
             // The thread ends once it has stopped.
             let _unheard = own.send(Message::Answered(id, answer));

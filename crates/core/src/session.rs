@@ -524,12 +524,12 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
 
 /// Hands the Mirror worker what the rules want of the `synced` Repository a step just saved facts of: the
 /// heads of the PRs in its Reach, the commit each of the user's Reviews there covered, and the commits whose
-/// patch-ids the Stale review check needs and the store lacks. Then the heads the step saved, so a PR the user
-/// opened before its head was known gets its head first. It keeps the last check of each PR whose sides are
-/// both read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep
-/// yet. A store that can't answer just saved, and the next step that saves says if it is in trouble, and
-/// hands the heads. The heads go though the reviewed commits can't be read, and those wait for a step whose
-/// read works.
+/// patch-ids the Stale review check needs and the store lacks. Then the heads the step saved, so a PR the
+/// user opened before its head was known gets its head first. It keeps the last check of each PR whose sides
+/// are both read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't
+/// keep yet. A store that can't answer just saved, and the next step that saves says if it is in trouble,
+/// and hands the heads. The heads go though the reviewed commits can't be read, and those wait for a step
+/// whose read works.
 fn hand_over_heads(fetching: &Fetching, store: &Store, synced: &Synced<'_>, saved: &Change) {
     hand_over_rules_wants(fetching, store, synced);
     let saved_heads = (synced.facts.pull_requests.iter())

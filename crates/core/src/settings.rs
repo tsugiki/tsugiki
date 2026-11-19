@@ -1099,12 +1099,7 @@ impl SettingsFiles {
             .iter()
             .filter_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
         // A name the user wrote twice, in either file, comes once.
-        let mut order: Vec<&RepositorySettings> = Vec::with_capacity(repositories.len());
-        for repository in reopened.chain(repositories) {
-            if !order.iter().any(|one| one.name.is_same(&repository.name)) {
-                order.push(repository);
-            }
-        }
+        let order = first_of_each(reopened.chain(repositories));
         match order.split_first() {
             Some((&repository, others)) => Home::Repository {
                 repository: repository.clone(),
@@ -1684,18 +1679,20 @@ impl SettingsOwner {
 }
 
 /// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, with what `told`
-/// held of it, and keeps them as told. `told` starts as what the files said at launch, which the session
-/// never heard, so the first save of a Repository's settings comes with those it replaced too. It keeps a
+/// held of it, and keeps them as told. Of a Repository written twice, the first counts, as in `home`.
+///
+/// `told` starts as what the files said when the session asked to hear, at launch, which the session never
+/// heard. So the first save of a Repository's settings comes with those it replaced too. Files that
+/// couldn't be read then list no Repository, and each comes as added once they can. `told` keeps a
 /// Repository the files stop listing, as a hand edit that takes it out or a reload that finds no
-/// `settings.toml` does, so one that comes back comes with those it had. Only a Repository never told since
-/// launch counts as added.
+/// `settings.toml` does, so one that comes back comes with those it had.
 fn tell_session(
     session: &mut SettingsSink,
     told: &mut Vec<RepositorySettings>,
     repositories: &[RepositorySettings],
     by: SavedBy,
 ) {
-    for repository in repositories {
+    for repository in first_of_each(repositories) {
         let save = SettingsSave::new(repository.clone(), told, by);
         if save.replaced() == Some(repository) {
             continue;
@@ -1706,6 +1703,20 @@ fn tell_session(
             None => told.push(repository.clone()),
         }
     }
+}
+
+/// Each of `repositories` whose name none before it holds, in any case: of a Repository the user wrote
+/// twice, the first.
+fn first_of_each<'a>(
+    repositories: impl IntoIterator<Item = &'a RepositorySettings>,
+) -> Vec<&'a RepositorySettings> {
+    let mut first: Vec<&RepositorySettings> = Vec::new();
+    for repository in repositories {
+        if !first.iter().any(|one| one.name.is_same(&repository.name)) {
+            first.push(repository);
+        }
+    }
+    first
 }
 
 /// Hands `saved` to whoever asked the owner's thread.

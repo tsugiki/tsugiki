@@ -1313,6 +1313,39 @@ fn a_repository_the_files_drop_and_list_again_comes_back_with_the_settings_it_ha
 }
 
 #[test]
+fn of_a_repository_written_twice_the_session_hears_of_the_first() {
+    let a_b = |switch: &str| {
+        format!(
+            "\n[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \"label:bug\"\n{switch}"
+        )
+    };
+    let on = "on_workbench = true\n";
+    let (files, folders, _root) =
+        settings_saying("owner-tells-twice", &format!("{}{}", a_b(""), a_b(on)));
+    let owner = SettingsOwner::start(Ok(files));
+    let incoming = telling_session(&owner);
+
+    // Each reload reads both, and the second would undo what the first said.
+    drop(owner.reread().unwrap());
+    drop(owner.reread().unwrap());
+    fs::write(folders.settings_file(), format!("{}{}", a_b(on), a_b(""))).unwrap();
+    drop(owner.reread().unwrap());
+    drop(owner.reread().unwrap());
+    drop(owner);
+
+    assert_eq!(
+        incoming.try_iter().collect::<Vec<_>>(),
+        [(
+            "a/b".to_owned(),
+            (Conventions::Github, OnWorkbench::On),
+            Some((Conventions::Github, OnWorkbench::Off)),
+            SavedBy::HandEdit
+        )]
+    );
+}
+
+#[test]
 fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwise_in_save_order() {
     let (files, folders, _root) = settings_saying(
         "owner-tells-session",

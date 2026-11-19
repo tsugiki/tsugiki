@@ -27,7 +27,7 @@ use crate::store::{
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{MirrorWork, SeenMark, checks_to_keep, switched};
+use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -421,7 +421,10 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                     announce_settings(board, &repository, by);
                 }
             }
-            Turn::Mark(marked) => mark(board, store, marked),
+            Turn::Mark(marked) => {
+                let moved = ReachMove::of(&marked, store, &syncs);
+                mark_moving_reach(board, store, &refreshes.fetching, (marked, moved));
+            }
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
             Turn::CheckHour => {}
@@ -577,40 +580,97 @@ fn settings_changed(
 /// wanting their heads.
 ///
 /// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
-/// are lost, as no later step works them out, and the log says so. One that can't say which heads its
-/// Conversations were read at owes a read of each PR the switch puts in Reach, which costs a request apiece
-/// and loses nothing. One that can't keep what it owes loses them too, and the log says so. The PR view reads
-/// a lost Conversation when it opens. Says whether it handed the Mirror worker anything.
+/// are lost, as no later step works them out, and the log says so. The PR view reads a lost Conversation
+/// when it opens. Says whether it handed the Mirror worker anything.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
     now: &RepositorySettings,
     before: &RepositorySettings,
 ) -> Option<()> {
-    let repository = &now.name;
-    let facts = (store.work_facts(repository))
+    let facts = facts_for_move(store, &now.name)?;
+    let from = |settings| ReachFrom {
+        facts: &facts,
+        settings,
+    };
+    follow_move(fetching, store, from(before), from(now));
+    Some(())
+}
+
+/// The stored facts of `repository`, which a move of Reach goes by. A store that can't read them says so in
+/// the log.
+fn facts_for_move(store: &Store, repository: &RepositoryName) -> Option<WorkFacts> {
+    (store.work_facts(repository))
         .inspect_err(|problem| {
             log::warn!(
-                "Tsugiki couldn't read what a Filter switched on in {repository} reaches: {}",
+                "Tsugiki couldn't read what moved Reach in {repository}: {}",
                 problem.message
             );
         })
-        .ok()?;
+        .ok()
+}
+
+/// Hands the Mirror worker its work after Reach moved from `before` to `now`, and has the store owe the
+/// reads ahead the move owes, as `moved` works them out. A store that can't say which heads its
+/// Conversations were read at owes a read of each PR the move puts in Reach, which costs a request apiece
+/// and loses nothing. One that can't keep what it owes loses them, and the log says so.
+fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: ReachFrom<'_>) {
+    let repository = &now.settings.name;
     let read_at = store.conversation_heads(repository).unwrap_or_default();
-    let (work, owed) = switched(&facts, &read_at, now, before);
+    let (work, owed) = moved(before, now, &read_at);
     let stated = Stated {
         repository,
-        facts: &facts,
+        facts: now.facts,
         work,
     };
     hand_over_wants(fetching, store, stated);
     if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
-            "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",
+            "Tsugiki couldn't keep the reads ahead owed in {repository}: {}",
             problem.message
         );
     }
-    Some(())
+}
+
+/// A Mute or an Unmute in a Repository the session has opened since launch, which moves Reach (#918), with
+/// the stored facts from before the store keeps it.
+///
+/// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
+/// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
+/// the Mirror fetch the heads of or a refresh read ahead. So the Mirror worker hears the new Reach at once,
+/// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
+struct ReachMove<'a> {
+    settings: &'a RepositorySettings,
+    before: WorkFacts,
+}
+
+impl<'a> ReachMove<'a> {
+    /// The move `marked` makes, under the settings `syncs` hold: none for a mark other than Mute and Unmute.
+    /// Facts the store can't read, before the mark or after it, leave the heads to the next step that saves,
+    /// and lose the reads an Unmute owes.
+    fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
+        let repository = match marked {
+            Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
+            Marked::Seen { .. }
+            | Marked::Unseen { .. }
+            | Marked::Archived { .. }
+            | Marked::Unarchived { .. } => return None,
+        };
+        let settings = syncs.settings(repository)?;
+        let before = facts_for_move(store, repository)?;
+        Some(Self { settings, before })
+    }
+
+    /// Has the Mirror worker follow the move, once the store kept the mark. Reach after it goes by the facts
+    /// the store kept.
+    fn follow(self, fetching: &Fetching, store: &Store) {
+        let Self { settings, before } = self;
+        let Some(now) = facts_for_move(store, &settings.name) else {
+            return;
+        };
+        let from = |facts| ReachFrom { facts, settings };
+        follow_move(fetching, store, from(&before), from(&now));
+    }
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose
@@ -676,7 +736,38 @@ fn keep_last_checks(
 
 /// Keeps what the user marked, and tells the window, whose lists go by it.
 fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
-    let (saved, change) = match marked {
+    let (saved, change) = keep_mark(store, marked);
+    tell_marked(board, saved, &change);
+}
+
+/// Keeps what the user marked, as `mark` does, and has the Mirror worker follow the move of Reach that
+/// `moved` says the mark makes, if the store kept it.
+fn mark_moving_reach(
+    board: &mut StatusBoard,
+    store: &Store,
+    fetching: &Fetching,
+    (marked, moved): (Marked, Option<ReachMove<'_>>),
+) {
+    let (saved, change) = keep_mark(store, marked);
+    if saved.is_ok()
+        && let Some(moved) = moved
+    {
+        moved.follow(fetching, store);
+    }
+    tell_marked(board, saved, &change);
+}
+
+/// Tells the window of `change`, which a mark made, or the status bar why the store couldn't keep it.
+fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Change) {
+    match saved {
+        Ok(()) => board.changed(change),
+        Err(problem) => board.set(Status::Problem { problem }),
+    }
+}
+
+/// Keeps what the user marked, with the change to tell the window of.
+fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
+    match marked {
         Marked::Seen { repository, mark } => {
             let SeenMark { numbers, up_to } = mark;
             let change = Change {
@@ -745,10 +836,6 @@ fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
             let items = vec![key.number()];
             (saved, Change { repository, items })
         }
-    };
-    match saved {
-        Ok(()) => board.changed(&change),
-        Err(problem) => board.set(Status::Problem { problem }),
     }
 }
 

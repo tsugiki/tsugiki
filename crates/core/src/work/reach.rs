@@ -8,6 +8,7 @@ use super::causes::Causes;
 use super::origins;
 use super::reasons::{WorkReason, reasons};
 use super::review_state::{SharedReviews, patches_to_read, unread_sides};
+use crate::facts::activity::ItemKey;
 use crate::facts::filters::FilterResults;
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{PrHead, PullRequestFacts};
@@ -54,75 +55,152 @@ pub(crate) fn in_own_right(
     own
 }
 
-/// A PR with the links Reach follows.
-struct Linked {
-    number: u32,
-    /// The Issues it fixes. Only a number the sync fetched as an Issue counts.
-    fixes: BTreeSet<u32>,
-    /// The Origin PR its family goes by: its own number, or for a Backport its Origin PR's, when Tsugiki
-    /// has that PR and it isn't a Backport too. A tree stays two levels deep, as the list draws it.
-    family: u32,
+/// The links between `facts`' Issues and PRs, which Reach walks, indexed both ways: a walk costs in
+/// proportion to what it reaches, once per Muted item too.
+#[derive(Default)]
+struct Walk {
+    /// The numbers of the Issues.
+    issues: BTreeSet<u32>,
+    /// The Origin PR each PR's family goes by: its own number, or for a Backport its Origin PR's, when
+    /// Tsugiki has that PR and it isn't a Backport too. A tree stays two levels deep, as the list draws it.
+    family: BTreeMap<u32, u32>,
+    /// The PRs of each family, by the Origin PR it goes by.
+    members: BTreeMap<u32, Vec<u32>>,
+    /// The Issues each PR fixes. Only a number the sync fetched as an Issue counts.
+    fixes: BTreeMap<u32, BTreeSet<u32>>,
+    /// The PRs that fix each Issue.
+    fixing: BTreeMap<u32, Vec<u32>>,
 }
 
-/// Each of `facts`' PRs with the Issues it fixes and its family.
-fn linked(facts: &WorkFacts, repository: &RepositorySettings) -> Vec<Linked> {
-    let issues: BTreeSet<u32> = facts.issues.iter().map(|issue| issue.number).collect();
-    let merges = MergeCommits::of(&facts.pull_requests);
-    let links: Vec<_> = (facts.pull_requests.iter())
-        .map(|pr| (pr, backport_of(pr, repository.conventions, &merges)))
-        .collect();
-    let origins = origins(links.iter().map(|(pr, link)| (pr.number, link.as_ref())));
-    let linked = links.into_iter().map(|(pr, link)| {
-        let origin = link.map(|link| link.origin);
-        Linked {
-            number: pr.number,
-            fixes: fixed_numbers(pr, repository)
-                .intersection(&issues)
-                .copied()
-                .collect(),
-            family: origin
+impl Walk {
+    fn of(facts: &WorkFacts, repository: &RepositorySettings) -> Self {
+        let mut walk = Self {
+            issues: facts.issues.iter().map(|issue| issue.number).collect(),
+            ..Self::default()
+        };
+        let merges = MergeCommits::of(&facts.pull_requests);
+        let links: Vec<_> = (facts.pull_requests.iter())
+            .map(|pr| (pr, backport_of(pr, repository.conventions, &merges)))
+            .collect();
+        let origins = origins(links.iter().map(|(pr, link)| (pr.number, link.as_ref())));
+        for (pr, link) in links {
+            let family = (link.map(|link| link.origin))
                 .filter(|origin| origins.contains(origin))
-                .unwrap_or(pr.number),
+                .unwrap_or(pr.number);
+            let fixed = fixed_numbers(pr, repository);
+            let fixes: BTreeSet<u32> = fixed.intersection(&walk.issues).copied().collect();
+            for issue in &fixes {
+                walk.fixing.entry(*issue).or_default().push(pr.number);
+            }
+            walk.members.entry(family).or_default().push(pr.number);
+            walk.family.extend([(pr.number, family)]);
+            walk.fixes.extend([(pr.number, fixes)]);
         }
-    });
-    linked.collect()
+        walk
+    }
+
+    /// The PRs of the families of the PRs among `numbers`.
+    fn in_families_of<'a>(&self, numbers: impl IntoIterator<Item = &'a u32>) -> BTreeSet<u32> {
+        let families: BTreeSet<u32> = (numbers.into_iter())
+            .filter_map(|number| self.family.get(number).copied())
+            .collect();
+        let members = families
+            .iter()
+            .filter_map(|family| self.members.get(family));
+        members.flatten().copied().collect()
+    }
+
+    /// The numbers of the Issues and PRs the walk reaches from `starts`, three steps deep and no deeper,
+    /// those of `cut` taken out after the first:
+    ///
+    /// 1. each of `starts`, with the Origin PR and the Backports of such a PR, and each Issue one of those
+    ///    fixes,
+    /// 2. each PR that fixes a reached Issue, open, merged or closed,
+    /// 3. each Backport whose Origin PR is reached, and the Origin PR of each reached Backport.
+    ///
+    /// A PR that fixes a reached Issue and a second one brings in neither the second Issue nor its PRs. A
+    /// walk that ran until it found nothing new would chain trees through each Issue they share, and pull in
+    /// much of a Repository the size of CPython. Each step takes each number on its own, so the walks from
+    /// two sets joined reach what the walk from their union does.
+    fn from(&self, starts: &BTreeSet<u32>, cut: &BTreeSet<u32>) -> BTreeSet<u32> {
+        let mut reached: BTreeSet<u32> = self.issues.intersection(starts).copied().collect();
+        for pr in self.in_families_of(starts) {
+            reached.extend([pr]);
+            reached.extend(self.fixes.get(&pr).into_iter().flatten());
+        }
+        reached.retain(|number| !cut.contains(number));
+        let fixing = reached.iter().filter_map(|issue| self.fixing.get(issue));
+        let fixing: Vec<u32> = fixing.flatten().copied().collect();
+        reached.extend(fixing);
+        let in_families = self.in_families_of(&reached);
+        reached.extend(in_families);
+        reached
+    }
+
+    /// The tree of the item `key` names: what the walk reaches from it alone, which Mute takes out. A PR
+    /// heads an item only while it heads its family and its tree holds no Issue, as the list draws it: the
+    /// key of one that has since come to sit under an Issue or an Origin PR names no tree.
+    fn tree(&self, key: ItemKey) -> BTreeSet<u32> {
+        let number = key.number();
+        let tree = self.from(&BTreeSet::from([number]), &BTreeSet::new());
+        let heads = |tree: &BTreeSet<u32>| {
+            self.family.get(&number) == Some(&number) && tree.is_disjoint(&self.issues)
+        };
+        match key {
+            ItemKey::Issue { .. } => tree,
+            ItemKey::PullRequest { .. } if heads(&tree) => tree,
+            ItemKey::PullRequest { .. } => BTreeSet::new(),
+        }
+    }
 }
 
-/// The numbers of the Issues and PRs Tsugiki reaches in `facts`:
-///
-/// 1. each on the Workbench in its own right or carrying a Review request, with the Origin PR and the
-///    Backports of such a PR, and each Issue one of those fixes,
-/// 2. each PR that fixes a reached Issue, open, merged or closed,
-/// 3. each Backport whose Origin PR is reached, and the Origin PR of each reached Backport.
-///
-/// That holds every PR the whole Workbench shows, those in Issues' trees too.
-fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
-    let causes = Causes::of(facts, repository.conventions);
-    let mut own = in_own_right(facts, repository, &causes);
-    // The Review requests view lists a PR the user marked seen, which has left the Workbench.
-    own.extend(&causes.review_requests);
-    let linked = linked(facts, repository);
-    let issues = facts.issues.iter().map(|issue| issue.number);
-    let mut reached: BTreeSet<u32> = issues.filter(|number| own.contains(number)).collect();
-    let families_of = |reached: &BTreeSet<u32>| -> BTreeSet<u32> {
-        let members = linked.iter().filter(|pr| reached.contains(&pr.number));
-        members.map(|pr| pr.family).collect()
-    };
-    let own_families = families_of(&own);
-    let in_own_families = linked.iter().filter(|pr| own_families.contains(&pr.family));
-    for pr in in_own_families {
-        reached.extend([pr.number]);
-        reached.extend(&pr.fixes);
+/// The two sets Reach joins (#918).
+#[derive(Debug)]
+struct Reach {
+    /// The walk from the Issues and PRs on the Workbench in their own right and those carrying a Review
+    /// request, with each Muted tree cut out after its first step. A PR in a Muted tree comes back when the
+    /// walk reaches it otherwise: through a second Issue it fixes, or a Backport family it shares.
+    without_muted: BTreeSet<u32>,
+    /// The tree of each Muted item where a Review request or an assignment to the user stands, acknowledged
+    /// or not. The Filters and the Review requests view list those, and the Workbench too once the ask
+    /// started after the mute, so the user will open them.
+    muted_asking: BTreeSet<u32>,
+}
+
+impl Reach {
+    fn of(facts: &WorkFacts, repository: &RepositorySettings) -> Self {
+        let causes = Causes::of(facts, repository.conventions);
+        let walk = Walk::of(facts, repository);
+        let mut starts = in_own_right(facts, repository, &causes);
+        // The Review requests view lists a PR the user marked seen, which has left the Workbench.
+        starts.extend(&causes.review_requests);
+        let asked = causes.asked();
+        let mut muted = BTreeSet::new();
+        let mut muted_asking = BTreeSet::new();
+        for key in causes.muted() {
+            let tree = walk.tree(key);
+            if !tree.is_disjoint(&asked) {
+                muted_asking.extend(&tree);
+            }
+            muted.extend(tree);
+        }
+        Self {
+            without_muted: walk.from(&starts, &muted),
+            muted_asking,
+        }
     }
-    let fixing: Vec<u32> = (linked.iter())
-        .filter(|pr| pr.fixes.iter().any(|issue| reached.contains(issue)))
-        .map(|pr| pr.number)
-        .collect();
-    reached.extend(fixing);
-    let families = families_of(&reached);
-    let in_families = linked.iter().filter(|pr| families.contains(&pr.family));
-    reached.extend(in_families.map(|pr| pr.number).collect::<Vec<_>>());
-    reached
+}
+
+/// The numbers of the Issues and PRs Tsugiki reaches in `facts`, the two sets of `Reach` joined. That holds
+/// every PR the whole Workbench shows, those in Issues' trees too. An Archived item stays in it, since its
+/// Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
+fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
+    let Reach {
+        mut without_muted,
+        muted_asking,
+    } = Reach::of(facts, repository);
+    without_muted.extend(muted_asking);
+    without_muted
 }
 
 /// The Mirror's work in a Repository, each part the whole set, worked out from one Reach.
@@ -158,17 +236,25 @@ impl MirrorWork {
     }
 }
 
-/// The Mirror's work under settings `now`, which replace `before`, and the PRs whose Conversations are owed
-/// a read from now on: those `now` puts in Reach, apart from each whose Conversation `read_at` says was read
-/// at its head. No change on GitHub would owe a read of theirs (#819).
-pub(crate) fn switched(
-    facts: &WorkFacts,
+/// The stored facts and the settings of a Repository, which Reach is worked out from.
+#[derive(Clone, Copy)]
+pub(crate) struct ReachFrom<'a> {
+    pub(crate) facts: &'a WorkFacts,
+    pub(crate) settings: &'a RepositorySettings,
+}
+
+/// The Mirror's work after Reach moved from `before` to `now`, and the PRs whose Conversations are owed a
+/// read from now on: those `now` puts in Reach, apart from each whose Conversation `read_at` says was read at
+/// its head. A Filter switched on (#819) and an Unmute (#918) move it so, and no change on GitHub would owe a
+/// read of theirs.
+pub(crate) fn moved(
+    before: ReachFrom<'_>,
+    now: ReachFrom<'_>,
     read_at: &BTreeMap<u32, CommitSha>,
-    now: &RepositorySettings,
-    before: &RepositorySettings,
 ) -> (MirrorWork, Vec<u32>) {
-    let reached = reach(facts, now);
-    let reached_before = reach(facts, before);
+    let ReachFrom { facts, settings } = now;
+    let reached_before = reach(before.facts, before.settings);
+    let reached = reach(facts, settings);
     let read_at_head = |pr: &PullRequestFacts| {
         (pr.head.as_ref()).is_some_and(|head| read_at.get(&pr.number) == Some(head))
     };
@@ -177,7 +263,7 @@ pub(crate) fn switched(
         .filter(|pr| !read_at_head(pr))
         .map(|pr| pr.number)
         .collect();
-    (MirrorWork::in_reach(facts, now, &reached), owed)
+    (MirrorWork::in_reach(facts, settings, &reached), owed)
 }
 
 /// The Conversations worth reading ahead in the Repository of `repository`, whose stored facts are `facts`:

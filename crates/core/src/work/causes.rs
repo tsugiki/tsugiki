@@ -186,6 +186,11 @@ impl Causes {
         self.muted.contains_key(&key)
     }
 
+    /// The items the user muted (#492).
+    pub(crate) fn muted(&self) -> impl Iterator<Item = ItemKey> + '_ {
+        self.muted.keys().copied()
+    }
+
     /// The reasons the item `key` names, whose tree holds `numbers`, Needs attention while the user has it
     /// muted (#492): none when they don't. Whatever else happens there, only a Review request or an
     /// assignment to the user reaches them. Mute acknowledged those that stood, so only one that started

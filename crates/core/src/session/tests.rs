@@ -29,7 +29,8 @@ use crate::status::{Change, FailedRead, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
-    TempPath, cpython, cpython_settings, hours_ago, me, one_folder, pr_facts, recordings,
+    TempPath, cpython, cpython_settings, hours_ago, issue_facts, me, one_folder, pr_facts,
+    recordings,
 };
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
@@ -1716,6 +1717,99 @@ fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
         handed.contains(&"some-maintainer/gcmon wants heads #8 at 4567def on main".to_owned()),
         "{handed:?}"
     );
+}
+
+/// Has `store` hold Issue 5, which the user's PR 8 and someone else's PR 9 fix, for the user to mute.
+fn stores_issue_5_with_its_prs(store: &Store) {
+    store.remember_login(&me()).unwrap();
+    store.save_issues(&gcmon(), vec![issue_facts(5)]).unwrap();
+    let fixing_5 = |number: u32, author: &str, head: &str| PullRequestFacts {
+        title: "gh-5: Fix it".to_owned(),
+        ..stored_pr(number, author, head)
+    };
+    let stored = vec![
+        fixing_5(8, "octocat", "4567def"),
+        fixing_5(9, "some-author", "89abcde"),
+    ];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+}
+
+/// gcmon under CPython's Conventions, which link a PR to the Issue its title names.
+fn cpython_gcmon() -> RepositorySettings {
+    RepositorySettings {
+        conventions: Conventions::Cpython,
+        ..plain_gcmon()
+    }
+}
+
+/// The mark Mute makes on Issue 5 and its PRs, as `stores_issue_5_with_its_prs` stores them.
+fn issue_5_seen() -> SeenMark {
+    SeenMark {
+        numbers: vec![5, 8, 9],
+        up_to: None,
+    }
+}
+
+#[test]
+fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owes_their_reads() {
+    let (folders, _folder) = temp_folders("muted-session");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+    };
+    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+
+    let asked = session.fetching();
+    asked.sync(cpython_gcmon());
+    asked.mute(gcmon(), issue, issue_5_seen());
+    let muted = heard.asked_through("wants heads none", PLENTY);
+    asked.unmute(gcmon(), issue);
+    let unmuted = heard.asked_through("wants heads #8", PLENTY);
+    session.stop(PLENTY);
+    let store = Store::open(&folders.database()).unwrap();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+
+    assert!(
+        muted.contains(&"some-maintainer/gcmon wants heads none".to_owned()),
+        "{muted:?}"
+    );
+    let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
+    assert!(unmuted.contains(&heads.to_owned()), "{unmuted:?}");
+    assert_eq!(owed, [8, 9].into());
+}
+
+#[test]
+fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirror_nothing() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let (lossy, calls) = store.failing_at_call(Some(2));
+    let (mirrors, heard) = HeardRequests::new();
+    let (messages, _incoming) = mpsc::channel();
+    let fetching = sending(messages, mirrors);
+    let mut syncs = Syncs::default();
+    syncs.add(cpython_gcmon());
+    let issue = ItemKey::Issue { number: 5 };
+    let muted = Marked::Muted {
+        repository: gcmon(),
+        key: issue,
+        mark: issue_5_seen(),
+        at: OffsetDateTime::now_utc(),
+    };
+
+    let moved = ReachMove::of(&muted, &lossy, &syncs);
+    mark_moving_reach(&mut quiet_board(), &lossy, &fetching, (muted, moved));
+
+    // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The
+    // next step that saves hands the Mirror its heads.
+    assert_eq!(calls.try_iter().collect::<Vec<_>>(), [0, 1, 2]);
+    assert_eq!(heard.asked(), Vec::<String>::new());
+    let activity = store.work_facts(&gcmon()).unwrap().activity;
+    assert_eq!(activity.muted.keys().collect::<Vec<_>>(), [&issue]);
 }
 
 #[test]

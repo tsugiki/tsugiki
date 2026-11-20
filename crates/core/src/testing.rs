@@ -29,7 +29,7 @@ pub(crate) mod import;
 pub(crate) use fixture::Fixture;
 /// A test's folder or file under the repo's ignored `.temp` folder, removed when the test passes.
 #[cfg(test)]
-pub(crate) use tsugiki_test_git::{TempPath, temp_path};
+pub(crate) use tsugiki_test_git::{TempPath, files_in, temp_path};
 
 /// Adds `text` to the config of the repository whose git folder is `git_folder`, as `git config` writes it,
 /// without a git to write it, since starting one is slow on Windows (ADR 0003).

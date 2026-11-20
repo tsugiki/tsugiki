@@ -36,6 +36,8 @@ use crate::theme::{
     GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
 };
 
+mod saving;
+
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
 const RECENT: &str = "recent";
@@ -1312,14 +1314,28 @@ impl SettingsFiles {
 
 /// The thread that owns the settings files, so saving never waits on GitHub and GitHub never waits on a slow
 /// drive. Without folders it has nothing to save to, and each add answers with that problem.
-///
-/// Ending the process while it writes can leave a file cut short, as it could on any thread.
 #[derive(Clone)]
 pub struct SettingsOwner {
     requests: Sender<Request>,
     view: LatestReader<SettingsView>,
     /// The palette's recent commands, apart from `view`, which every command that reads the settings copies.
     commands: LatestReader<Vec<CommandId>>,
+}
+
+/// The settings owner's thread on its way to its end, from [`SettingsOwner::begin_stopping`].
+#[must_use = "only `wait_for_end` waits for the save under way"]
+pub struct SettingsEnding(Receiver<()>);
+
+impl SettingsEnding {
+    /// Waits up to `patience` for the thread to end. A save that outlasts it, on a drive gone slow, goes on
+    /// until the process ends, and then the file holds its old text (`saving::save`).
+    pub fn wait_for_end(self, patience: Duration) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "running out of patience is the one failure here, and the doc above says why it is safe"
+        )]
+        let _ = self.0.recv_timeout(patience);
+    }
 }
 
 /// Where the owner's thread hands each Repository's settings a change saves otherwise, with those they
@@ -1335,6 +1351,12 @@ enum Request {
     Command {
         command: CommandId,
         reply: Sender<Result<Vec<CommandId>, Error>>,
+    },
+    /// End, having answered what was asked before, as `begin_stopping` asks. `SettingsEnding::wait_for_end`
+    /// waits for `finishing` to go, which it does as the thread ends, and also if the thread has gone before
+    /// it takes this.
+    Stop {
+        finishing: Sender<()>,
     },
 }
 
@@ -1396,8 +1418,8 @@ impl SettingsOwner {
         let (requests, incoming) = mpsc::channel::<Request>();
         #[expect(
             unused_results,
-            reason = "it ends once the last sender goes, which in the app is when the process ends: a save \
-                      under way then is lost, as in a crash"
+            reason = "it ends when `begin_stopping` asks or once the last sender goes, and `wait_for_end` \
+                      waits for it with a patience a join can't take"
         )]
         thread::spawn(move || {
             // Sends readers the palette's recent commands, unless they hold this list already.
@@ -1431,6 +1453,9 @@ impl SettingsOwner {
                         answer(&reply, saved);
                         continue;
                     }
+                    Request::Stop {
+                        finishing: _finishing,
+                    } => break,
                 };
                 // Only the Sidebar's switch saves a Repository's settings from the window. Every other change
                 // reloads the files, and so takes in a hand edit to them.
@@ -1551,6 +1576,16 @@ impl SettingsOwner {
     /// edit reaches it whichever change reloaded the files first (#822).
     pub fn tell_session(&self, session: SettingsSink) {
         let _sent = self.requests.send(Request::Session(session));
+    }
+
+    /// Tells the thread to end once it has answered what it was asked before, the save under way among them.
+    /// Every copy of this owner then refuses each request with `STOPPED_SAVING`. The caller goes on with its
+    /// own stopping, and the save with it, until it waits on what this returns.
+    pub fn begin_stopping(&self) -> SettingsEnding {
+        let (finishing, finished) = mpsc::channel::<()>();
+        // A thread already gone hands the request back in the error, which `finishing` goes with.
+        drop(self.requests.send(Request::Stop { finishing }));
+        SettingsEnding(finished)
     }
 
     /// A copy of what the settings say, for a thread that reads them later.
@@ -1760,7 +1795,7 @@ impl<'a, T: DeserializeOwned> TomlEdit<'a, T> {
         if merged == self.before {
             return Ok(());
         }
-        save(self.path, &merged).map_err(|cause| {
+        saving::save(self.path, &merged).map_err(|cause| {
             refused(&format!(
                 "Tsugiki can't save {}: {cause}",
                 self.path.display()
@@ -2181,13 +2216,6 @@ fn in_the_files_style(merged: String, before: &str) -> String {
     } else {
         merged
     }
-}
-
-/// Writes over the file rather than moving a new one onto it, so a symlink and the file's permissions stay,
-/// and a failure can't leave a second file in a dotfiles repository.
-fn save(path: &Path, text: &str) -> io::Result<()> {
-    fs::create_dir_all(path.with_file_name(""))?;
-    fs::write(path, text)
 }
 
 fn read_machine(path: &Path) -> Result<Machine, String> {

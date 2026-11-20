@@ -48,23 +48,28 @@ pub(crate) struct Outside {
     pub(crate) pick: PickPath,
 }
 
-/// The threads that work for the window: the session, the mirrors' one writer, and the check for a new
-/// version unless the settings turn it off. The check ends when this is dropped: it writes nothing, so
-/// quitting needn't wait for it.
+/// The threads that work for the window: the session, the settings files' owner, the mirrors' one writer,
+/// and the check for a new version unless the settings turn it off. The check ends when this is dropped: it
+/// writes nothing, so quitting needn't wait for it.
 pub(crate) struct Core {
     pub(crate) session: Session,
+    settings: SettingsOwner,
     mirrors: Mirrors,
     definitions: Definitions,
     _releases: Option<ReleaseCheck>,
 }
 
 impl Core {
-    /// Stops the session, the mirrors and the language servers, and gives them `patience` between them to
-    /// finish.
+    /// Stops the session, the settings files' owner, the mirrors and the language servers, and gives them
+    /// `patience` between them to finish. The settings owner ends before the session is told to: it hands the
+    /// session a save under way once the save ends, and the session's queue has to hold that ahead of the
+    /// stop, or the reads a Filter switched on owes are lost.
     pub(crate) fn stop(&self, patience: Duration) {
         let deadline = Instant::now() + patience;
         self.mirrors.begin_stopping();
-        self.session.stop(patience);
+        self.settings.begin_stopping().wait_for_end(patience);
+        self.session
+            .stop(deadline.saturating_duration_since(Instant::now()));
         self.mirrors
             .wait_for_end(deadline.saturating_duration_since(Instant::now()));
         self.definitions
@@ -206,11 +211,15 @@ pub(crate) fn connect_core<R: Runtime>(
         Box::new(move || log_if_unsent(TextSearchChanged.emit(&search_handle))),
     );
     assert!(app.manage(search), "only this manages the text search");
-    assert!(app.manage(settings), "only this manages the settings");
+    assert!(
+        app.manage(settings.clone()),
+        "only this manages the settings"
+    );
     assert!(app.manage(calls), "only this manages the calls");
     let releases = check_releases(app, check_releases_on.then_some(outside.releases));
     Core {
         session,
+        settings,
         mirrors,
         definitions,
         _releases: releases,

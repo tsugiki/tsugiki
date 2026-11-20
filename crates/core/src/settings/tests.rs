@@ -2028,7 +2028,11 @@ fn additions_that_overlap_all_reach_the_view() {
     thread::scope(|scope| {
         for name in ["a/one", "a/two", "a/three", "a/four"] {
             let owner = owner.clone();
-            let _ = scope.spawn(move || {
+            #[expect(
+                unused_results,
+                reason = "the scope joins each thread, and a panic in one fails the test"
+            )]
+            scope.spawn(move || {
                 owner
                     .add_repository(repository(name), MirrorSource::Download)
                     .unwrap()

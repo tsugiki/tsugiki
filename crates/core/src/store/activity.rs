@@ -267,23 +267,27 @@ fn mark_seen_in(
 ) -> rusqlite::Result<()> {
     for number in numbers {
         let item = named_params! { ":repository": repository, ":number": number };
-        let _cleared = transaction.execute(
-            "DELETE FROM marked_unseen WHERE repository = :repository AND number = :number",
-            item,
-        )?;
+        transaction
+            .execute(
+                "DELETE FROM marked_unseen WHERE repository = :repository AND number = :number",
+                item,
+            )
+            .map(drop)?;
         if let Some(at) = up_to {
-            let _moved = transaction.execute(
-                "INSERT INTO last_seen (repository, number, at, acknowledged_at)
-                 VALUES (:repository, :number, :at, :at)
-                 ON CONFLICT (repository, number) DO UPDATE SET
-                     at = MAX(at, excluded.at),
-                     acknowledged_at = MAX(COALESCE(acknowledged_at, excluded.at), excluded.at)",
-                named_params! {
-                    ":repository": repository,
-                    ":number": number,
-                    ":at": at.unix_timestamp(),
-                },
-            )?;
+            transaction
+                .execute(
+                    "INSERT INTO last_seen (repository, number, at, acknowledged_at)
+                     VALUES (:repository, :number, :at, :at)
+                     ON CONFLICT (repository, number) DO UPDATE SET
+                         at = MAX(at, excluded.at),
+                         acknowledged_at = MAX(COALESCE(acknowledged_at, excluded.at), excluded.at)",
+                    named_params! {
+                        ":repository": repository,
+                        ":number": number,
+                        ":at": at.unix_timestamp(),
+                    },
+                )
+                .map(drop)?;
         }
     }
     Ok(())
@@ -321,19 +325,23 @@ pub(super) fn mark_unseen(
     if let Some(key) = archived {
         unarchive(&transaction, repository, key)?;
     }
-    let _flagged = transaction.execute(
-        "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
-         ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
-        named_params! {
-            ":repository": repository,
-            ":number": number,
-            ":at": at.unix_timestamp(),
-        },
-    )?;
-    let _unarchived = transaction.execute(
-        "DELETE FROM archived WHERE repository = :repository AND number = :number",
-        named_params! { ":repository": repository, ":number": number },
-    )?;
+    transaction
+        .execute(
+            "INSERT INTO marked_unseen (repository, number, at) VALUES (:repository, :number, :at)
+             ON CONFLICT (repository, number) DO UPDATE SET at = excluded.at",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":at": at.unix_timestamp(),
+            },
+        )
+        .map(drop)?;
+    transaction
+        .execute(
+            "DELETE FROM archived WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)?;
     transaction.commit()
 }
 
@@ -377,20 +385,22 @@ pub(super) fn archive(
     let at = hide(&transaction, repository, (numbers, *up_to), now)?;
     let (kind, number) = key_columns(*key);
     let as_before = matches!(put_away, PutAway::AsBefore);
-    let _archived = transaction.execute(
-        "INSERT INTO archived (repository, kind, number, at, archived_at)
-         VALUES (:repository, :kind, :number, :at, :now)
-         ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at),
-             archived_at = CASE WHEN :as_before THEN archived_at ELSE excluded.archived_at END",
-        named_params! {
-            ":repository": repository,
-            ":kind": kind,
-            ":number": number,
-            ":at": at,
-            ":now": UnixMillis(now),
-            ":as_before": as_before,
-        },
-    )?;
+    transaction
+        .execute(
+            "INSERT INTO archived (repository, kind, number, at, archived_at)
+             VALUES (:repository, :kind, :number, :at, :now)
+             ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at),
+                 archived_at = CASE WHEN :as_before THEN archived_at ELSE excluded.archived_at END",
+            named_params! {
+                ":repository": repository,
+                ":kind": kind,
+                ":number": number,
+                ":at": at,
+                ":now": UnixMillis(now),
+                ":as_before": as_before,
+            },
+        )
+        .map(drop)?;
     forget_brought_back(&transaction, repository, *key)?;
     transaction.commit()
 }
@@ -445,7 +455,7 @@ pub(super) fn mute(
     let transaction = connection.transaction()?;
     let at = hide(&transaction, repository, (numbers, *up_to), now)?;
     let (kind, number) = key_columns(*key);
-    let _muted = transaction.execute(
+    transaction.execute(
         "INSERT INTO muted (repository, kind, number, at) VALUES (:repository, :kind, :number, :at)
          ON CONFLICT (repository, kind, number) DO UPDATE SET at = MAX(at, excluded.at)",
         named_params! {
@@ -454,7 +464,7 @@ pub(super) fn mute(
             ":number": number,
             ":at": at,
         },
-    )?;
+    ).map(drop)?;
     forget_brought_back(&transaction, repository, *key)?;
     transaction.commit()
 }
@@ -501,15 +511,17 @@ pub(super) fn mute_author(
     for Seeing { numbers, up_to } in &muting.marks {
         mark_seen_in(&transaction, repository, numbers, *up_to)?;
     }
-    let _muted = transaction.execute(
-        "INSERT INTO muted_authors (repository, login, at) VALUES (:repository, :login, :at)
-         ON CONFLICT (repository, login) DO UPDATE SET at = MAX(at, excluded.at)",
-        named_params! {
-            ":repository": repository,
-            ":login": muting.author,
-            ":at": now.unix_timestamp(),
-        },
-    )?;
+    transaction
+        .execute(
+            "INSERT INTO muted_authors (repository, login, at) VALUES (:repository, :login, :at)
+             ON CONFLICT (repository, login) DO UPDATE SET at = MAX(at, excluded.at)",
+            named_params! {
+                ":repository": repository,
+                ":login": muting.author,
+                ":at": now.unix_timestamp(),
+            },
+        )
+        .map(drop)?;
     transaction.commit()
 }
 
@@ -723,10 +735,12 @@ pub(super) fn bring_back(
         }
     }
     for number in &opened.openings {
-        let _forgot = transaction.execute(
-            "DELETE FROM openings WHERE repository = :repository AND number = :number",
-            named_params! { ":repository": repository, ":number": number },
-        )?;
+        transaction
+            .execute(
+                "DELETE FROM openings WHERE repository = :repository AND number = :number",
+                named_params! { ":repository": repository, ":number": number },
+            )
+            .map(drop)?;
     }
     transaction.commit()
 }
@@ -774,7 +788,7 @@ pub(super) fn archive_closed(
     let transaction = connection.transaction()?;
     for key in &judged.archived {
         let (kind, number) = key_columns(*key);
-        let _archived = transaction.execute(
+        transaction.execute(
             "INSERT INTO archived (repository, kind, number, at, archived_at)
              VALUES (:repository, :kind, :number, :at, :now)
              ON CONFLICT (repository, kind, number) DO UPDATE SET archived_at = excluded.archived_at",
@@ -785,7 +799,7 @@ pub(super) fn archive_closed(
                 ":at": now.unix_timestamp(),
                 ":now": UnixMillis(now),
             },
-        )?;
+        ).map(drop)?;
     }
     for number in &judged.closings {
         forget_closing(&transaction, repository, *number)?;
@@ -822,7 +836,7 @@ fn muted(
             continue;
         };
         let UnixTime(at) = row.get("at")?;
-        let _replaced = found.insert(key, at);
+        found.extend([(key, at)]);
     }
     Ok(found)
 }
@@ -867,7 +881,7 @@ fn archived(
             seen_up_to,
             archived_at,
         };
-        let _replaced = found.insert(key, archive);
+        found.extend([(key, archive)]);
     }
     Ok(found)
 }

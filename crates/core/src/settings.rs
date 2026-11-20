@@ -1575,7 +1575,12 @@ impl SettingsOwner {
     /// changes saved. So no copy a command read earlier can reach the session after a newer one, and a hand
     /// edit reaches it whichever change reloaded the files first (#822).
     pub fn tell_session(&self, session: SettingsSink) {
-        let _sent = self.requests.send(Request::Session(session));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the owner ends only once the last sender goes, so this fails only if it panicked, and \
+                      then nothing saves"
+        )]
+        let _ = self.requests.send(Request::Session(session));
     }
 
     /// Tells the thread to end once it has answered what it was asked before, the save under way among them.

@@ -69,6 +69,15 @@ fn the_next_chunk_of_the_same_file_reads_it_once() {
     assert_eq!(files.reads.load(Ordering::Relaxed), 1);
 }
 
+/// Waits until each thread that shares `barrier` has reached it.
+fn meet(barrier: &Barrier) {
+    #[expect(
+        unused_results,
+        reason = "any thread may lead, and none needs to know which"
+    )]
+    barrier.wait();
+}
+
 #[test]
 fn a_first_chunk_s_lines_and_spans_asked_together_share_one_read() {
     let fixture = fixture("definitions-code-together");
@@ -79,10 +88,10 @@ fn a_first_chunk_s_lines_and_spans_asked_together_share_one_read() {
 
     let (lines, spans) = thread::scope(|scope| {
         let lines = scope.spawn(|| {
-            let _ready = both.wait();
+            meet(&both);
             files.read(&fixture.mirror, &wanted)
         });
-        let _ready = both.wait();
+        meet(&both);
         let spans = files.spans(&highlighter, &fixture.mirror, &wanted);
         (lines.join().unwrap(), spans)
     });

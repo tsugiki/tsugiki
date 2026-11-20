@@ -16,6 +16,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, fs, io, iter, thread};
@@ -73,11 +74,10 @@ struct Ran {
 
 /// Runs git in `dir` with `args`, and `input` on its stdin, until it ends.
 fn ran(dir: &Path, args: &[&str], input: &[u8]) -> Ran {
-    let mut command = Command::new("git");
-    for name in ELSEWHERE {
-        let _ = command.env_remove(name);
-    }
-    let mut child = command
+    let mut child = (ELSEWHERE.iter())
+        .fold(&mut Command::new("git"), |command, name| {
+            command.env_remove(name)
+        })
         .args(config())
         .args(args)
         .current_dir(dir)
@@ -220,7 +220,7 @@ pub fn mirror_with_branch(
         mirror: Snapshot::of(mirror),
         pr: pr.clone(),
     };
-    let _ = BUILT.lock().unwrap().insert(key, Arc::new(built));
+    BUILT.lock().unwrap().extend([(key, Arc::new(built))]);
     pr
 }
 
@@ -388,6 +388,16 @@ pub fn wait_until(patience: Duration, mut check: impl FnMut() -> bool) {
             break;
         }
     }
+}
+
+/// Waits up to `patience` for the next message `messages` brings, for a test that needs only to know it came,
+/// and fails if none does.
+pub fn wait_for_message<T>(messages: &Receiver<T>, patience: Duration) {
+    #[expect(
+        unused_results,
+        reason = "the test needs only to know the message came, not what it says"
+    )]
+    messages.recv_timeout(patience).unwrap();
 }
 
 /// Where `remotes` are, as a `file://` URL that ends in a slash. git reports progress over it as it does

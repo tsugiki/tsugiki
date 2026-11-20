@@ -198,14 +198,8 @@ struct Asked {
 /// Asks the owner `lookup` with `ticket`, as the handle does, without waiting for the answer.
 fn ask(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) -> Asked {
     let (reply, answer) = mpsc::channel();
-    let (heard, waited) = mpsc::channel();
-    let waiting = Box::new(move |waiting| {
-        let _unheard = heard.send(waiting);
-    });
-    let (heard, indexed) = mpsc::channel();
-    let index = Box::new(move |index| {
-        let _unheard = heard.send(index);
-    });
+    let (waiting, waited) = heard();
+    let (index, indexed) = heard();
     let asker = Asker {
         ticket,
         reply,
@@ -229,6 +223,19 @@ fn ask_unheard(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) {
         index: unheard(),
     };
     owner.handle(Message::LookUp(lookup.clone(), asker));
+}
+
+/// A listener that hands each value it hears to the receiver it comes with.
+fn heard<T: Send + 'static>() -> (Box<dyn Fn(T) + Send>, Receiver<T>) {
+    let (hears, heard) = mpsc::channel();
+    let listener = Box::new(move |value| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a test that has dropped the receiver doesn't check what comes after"
+        )]
+        let _ = hears.send(value);
+    });
+    (listener, heard)
 }
 
 /// A listener to a server's index that ignores it.
@@ -530,7 +537,8 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
     // Each start looks for the checkout first.
     let mut owner = owner_of(Sources {
         checkout: Box::new(move |_| {
-            let _before = counted.fetch_add(1, Ordering::Relaxed);
+            #[expect(unused_results, reason = "the test reads the count at the end")]
+            counted.fetch_add(1, Ordering::Relaxed);
             None
         }),
         servers: Box::new(move |_| Some(PathBuf::from("no-ty.exe"))),
@@ -575,7 +583,7 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
     let own = owner.own.clone();
     let later = thread::spawn(move || {
         thread::sleep(idle * 2);
-        let _unheard = own.send(Message::Cancel(Ticket(9)));
+        own.send(Message::Cancel(Ticket(9))).is_ok()
     });
     // The ty it stops says it ended before the cancel comes.
     let message = loop {
@@ -585,7 +593,7 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
         }
         owner.handle(message);
     };
-    later.join().unwrap();
+    assert!(later.join().unwrap(), "the owner stopped listening");
     let stopped = owner.servers.is_empty();
     let idle_row = ty_row(&owner.told);
     let again = ask(&mut owner, &at_head, Ticket(2));
@@ -1043,10 +1051,7 @@ fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
 
     definitions.opened(cpython(), at.clone(), &files);
     definitions.opened(cpython(), at, &[diff_file("c.c")]);
-    let (heard, waited) = mpsc::channel();
-    let hears = Box::new(move |waiting| {
-        let _unheard = heard.send(waiting);
-    });
+    let (hears, waited) = heard();
     let found = hits(definitions.look_up(at_head.clone(), Ticket(1), (hears, unheard())));
     // The lookup has answered, so nothing is cancelled.
     definitions.cancel(Ticket(1));
@@ -1572,12 +1577,12 @@ fn fake_server(
         news(&owner.own, &key),
     )
     .unwrap();
-    let _none = owner.servers.insert(key, server);
+    owner.servers.extend([(key, server)]);
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed,
     };
-    let _none = owner.prs.insert(cpython(), pr);
+    owner.prs.extend([(cpython(), pr)]);
     // The rows show the Repository whose PR is open, as the window opened it.
     owner.shown = Some(cpython());
     (owner, fake)
@@ -2076,7 +2081,7 @@ fn a_pr_at_other_commits_tells_the_lookup_that_its_clangd_stopped() {
     // The clangd the owner starts in the moved checkout can't, so no real one runs, and the owner stops the
     // old one all the same. The owner read each path once, as it started.
     let missing = Some(fixture.checkout.folder.join("no-clangd.exe"));
-    let _real = owner.known.insert(ServerName::Clangd, missing);
+    owner.known.extend([(ServerName::Clangd, missing)]);
 
     let pr = Pr {
         at: moved.checkout.at.clone(),
@@ -2203,7 +2208,11 @@ fn settable(
         }),
         idle: Box::new(move || *idle.lock().unwrap()),
         changed: Box::new(move |changed| {
-            let _unheard = rows.send(changed.to_vec());
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "a test that has dropped `rows` doesn't check the rows after"
+            )]
+            let _ = rows.send(changed.to_vec());
         }),
     }
 }
@@ -2647,7 +2656,7 @@ fn apply_of_a_clangd_unpacked_without_its_built_in_headers_says_so_and_shows_its
     let started_alone = owner.row(ServerName::Clangd).status;
     let whole = set_clangd(&mut owner, &path, clangd);
     // The PR opens again, as the window opens it anew.
-    let _forgotten = owner.prs.remove(&cpython());
+    assert!(owner.prs.remove(&cpython()).is_some());
     owner.handle(Message::Opened(cpython(), pr));
     let started_whole = owner.row(ServerName::Clangd).status;
     owner.cancel_running();
@@ -2808,7 +2817,7 @@ fn what_one_repository_s_clangd_reports_leaves_another_s_be() {
         RepositoryName::parse("tsugiki/tsugiki").unwrap(),
         ServerName::Clangd,
     );
-    let _none = (owner.lasts).insert(other.clone(), Last::Problem(ServerProblem::NotIndexing));
+    (owner.lasts).extend([(other.clone(), Last::Problem(ServerProblem::NotIndexing))]);
 
     let answer = nothing_found(&mut owner, &fixture);
     fake.diagnose(&eggs_c(&fixture), (0, "'stdlib.h' file not found"));

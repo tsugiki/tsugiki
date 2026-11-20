@@ -1486,8 +1486,11 @@ impl Worker {
     fn tell_idle(&mut self, due: Option<Instant>) {
         if due.is_none_or(|at| at > Instant::now()) {
             for reply in self.awaiting_idle.drain(..) {
-                // A test that has stopped waiting doesn't hear it.
-                let _unheard = reply.send(());
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a test that has stopped waiting doesn't hear it"
+                )]
+                let _ = reply.send(());
             }
         }
     }

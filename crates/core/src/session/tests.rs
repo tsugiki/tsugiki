@@ -47,6 +47,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvError, Sender, TryRecvError};
 use time::OffsetDateTime;
+use tsugiki_test_git::wait_for_message;
 
 /// A real store that keeps nothing once it closes.
 fn empty_store() -> Store {
@@ -484,7 +485,7 @@ fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
     session.fetching().fetch_pull_request(cpython(), 152_326);
-    let _change = changes.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&changes, PLENTY);
     let (facts, content) = session
         .reader()
         .pull_request_facts(&cpython(), 152_326)
@@ -679,7 +680,7 @@ fn two_demands_for_a_conversation_before_its_read_finishes_ask_github_once() {
 
     session.fetching().fetch_pull_request(gcmon(), 7);
     session.fetching().fetch_pull_request(gcmon(), 7);
-    let _change = changes.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&changes, PLENTY);
     session.stop(PLENTY);
 
     let operations: Vec<String> = asked.try_iter().map(|(operation, _)| operation).collect();
@@ -720,9 +721,9 @@ fn a_demand_after_a_read_ended_reads_again() {
     let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
 
     session.fetching().fetch_pull_request(gcmon(), 7);
-    let _first = changes.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&changes, PLENTY);
     session.fetching().fetch_pull_request(gcmon(), 7);
-    let _second = changes.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&changes, PLENTY);
     session.stop(PLENTY);
 
     assert_eq!(asked.try_iter().count(), 3, "the sign-in and two reads");
@@ -1234,8 +1235,12 @@ fn checks_dont_put_off_the_next_refresh() {
     let refreshed = AtomicBool::new(false);
 
     thread::scope(|scope| {
-        // Stops by itself, so a timer that starts over with each check fails rather than hangs.
-        let _asking = scope.spawn(|| {
+        #[expect(
+            unused_results,
+            reason = "the scope joins it, and it stops by itself, so a timer that starts over with each \
+                      check fails rather than hangs"
+        )]
+        scope.spawn(|| {
             while !refreshed.load(Ordering::Relaxed) && started.elapsed() < PLENTY {
                 drop(checks.check(gcmon()));
             }
@@ -1301,7 +1306,7 @@ fn the_recorded_cpython_work_reads_as_an_inbox() {
     session.fetching().sync(cpython.clone());
     // Two Filters, the PRs they found, their Issues, one Issue's tree and an Origin PR.
     for _ in 0..6 {
-        let _change = changes.recv_timeout(PLENTY).unwrap();
+        wait_for_message(&changes, PLENTY);
     }
     let workbench = Workbench::read(
         &reader,
@@ -2878,8 +2883,8 @@ fn a_click_refreshes_the_open_repository_again() {
     wait_for(&asked, "RefreshRepository");
     // Once when the window opened it, and once when that refresh finished. A click during a refresh
     // adds nothing, because that refresh is reading what the click asks for.
-    let _opened = last_syncs.recv_timeout(PLENTY).unwrap();
-    let _finished = last_syncs.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&last_syncs, PLENTY);
+    wait_for_message(&last_syncs, PLENTY);
     session.fetching().refresh();
     wait_for(&asked, "RefreshRepository");
     session.stop(PLENTY);

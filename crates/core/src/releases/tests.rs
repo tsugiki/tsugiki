@@ -6,6 +6,8 @@ use super::*;
 
 /// Longer than any of these tests should wait on a working thread.
 const PLENTY: Duration = Duration::from_secs(60);
+/// What each check asks GitHub for.
+const LATEST: &str = "/repos/tsugiki/tsugiki/releases/latest";
 
 fn ask_once(answer: Result<Reply, Unreachable>) -> Result<Version, String> {
     let mut answer = Some(answer);
@@ -35,10 +37,7 @@ fn the_check_asks_for_the_latest_release() {
     let (ask, asks) = github(vec![]);
     let _check = ReleaseCheck::start(ask, PLENTY, Box::new(|_| {}));
 
-    assert_eq!(
-        asks.recv_timeout(PLENTY).unwrap(),
-        "/repos/tsugiki/tsugiki/releases/latest"
-    );
+    assert_eq!(asks.recv_timeout(PLENTY).unwrap(), LATEST);
 }
 
 #[test]
@@ -115,7 +114,7 @@ fn each_check_announces_only_a_newer_version_it_hasnt_told() {
 
     // The check after the last answer has handled them all.
     for _ in 0..=checks {
-        let _ = asks.recv_timeout(PLENTY).unwrap();
+        assert_eq!(asks.recv_timeout(PLENTY).unwrap(), LATEST);
     }
     drop(check);
     // The thread drops `ask` as it ends.
@@ -129,7 +128,7 @@ fn each_check_announces_only_a_newer_version_it_hasnt_told() {
 fn dropping_the_check_ends_its_thread_without_waiting_for_the_next_check() {
     let (ask, asks) = github(vec![]);
     let check = ReleaseCheck::start(ask, PLENTY, Box::new(|_| {}));
-    let _ = asks.recv_timeout(PLENTY).unwrap();
+    assert_eq!(asks.recv_timeout(PLENTY).unwrap(), LATEST);
 
     drop(check);
 

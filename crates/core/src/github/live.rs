@@ -15,7 +15,7 @@ use std::thread;
 #[cfg(not(windows))]
 use std::time::{Duration, Instant};
 
-use process_wrap::std::{ChildWrapper, CommandWrap};
+use process_wrap::std::ChildWrapper;
 use tsugiki_token::Https;
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
@@ -44,23 +44,23 @@ impl Transport for Https {
 /// A Repository git can't read fails rather than asking for a password nobody sees: no terminal prompt, and
 /// no credential helper, since Git Credential Manager on Windows would open a sign-in window.
 pub(crate) fn start_git(args: &[&OsStr], input: &[u8]) -> io::Result<(StartedGit, ChildStderr)> {
-    let mut command = Command::new("git");
-    let _ = command
-        .args(["-c", "credential.helper="])
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GCM_INTERACTIVE", "never")
-        .env("LC_ALL", "C")
-        .env("LANGUAGE", "C")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+    let mut command = tsugiki_lsp::set_up("git", |command| {
+        command
+            .args(["-c", "credential.helper="])
+            .args(args)
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "never")
+            .env("LC_ALL", "C")
+            .env("LANGUAGE", "C")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+    });
     // git hands a download to helpers (`git-remote-https`, `index-pack`), and the `git` on PATH on Windows
     // is a launcher that starts the real one. Each helper joins git's job object, or its process group, as
     // it starts, so `StartedGit::stop` ends them all. Reading the tree when stopping misses a helper that
     // starts while it reads, and that helper goes on holding files in the mirror (#208).
-    let mut command = tsugiki_lsp::windowless(CommandWrap::from(command));
-    let mut git = StartedGit(command.spawn()?);
+    let mut git = StartedGit(tsugiki_lsp::windowless(&mut command).spawn()?);
     // On a thread of its own, so a git that writes before it reads can't leave both waiting on a full pipe.
     // A git that stops reading says why on its error output. Closing the input tells git that is all.
     if let Some(mut stdin) = git.0.stdin().take() {
@@ -163,16 +163,16 @@ const STRAGGLERS_PATIENCE: Duration = Duration::from_millis(200);
 /// Runs a `git` that only reads local files, with `args`, and gives its output. Its last line of error output
 /// says why it failed.
 pub(crate) fn read_git(args: &[&OsStr]) -> io::Result<String> {
-    let mut command = local_git(args);
-    let _ = command.stdin(Stdio::null());
-    let output = command.output()?;
+    let output = local_git(&mut Command::new("git"), args)
+        .stdin(Stdio::null())
+        .output()?;
     git_output(&output).map(|stdout| String::from_utf8_lossy(stdout).into_owned())
 }
 
 /// Runs a `git` that only reads local files, with `args` and `input` on its standard input, and gives its
 /// output as git wrote it. Its last line of error output says why it failed.
 pub(crate) fn read_git_bytes(args: &[&OsStr], input: Vec<u8>) -> io::Result<Vec<u8>> {
-    git_bytes(local_git(args), input)
+    git_bytes(local_git(&mut Command::new("git"), args), input)
 }
 
 /// The same, with the environment variables `envs` set for git.
@@ -181,9 +181,10 @@ pub(crate) fn read_git_bytes_with_env(
     input: Vec<u8>,
     envs: &[(&str, &OsStr)],
 ) -> io::Result<Vec<u8>> {
-    let mut command = local_git(args);
-    let _ = command.envs(envs.iter().copied());
-    git_bytes(command, input)
+    git_bytes(
+        local_git(&mut Command::new("git"), args).envs(envs.iter().copied()),
+        input,
+    )
 }
 
 /// The blobs `names` names, read from the git folder `folder` with one `git cat-file --batch`: the bytes of
@@ -251,12 +252,12 @@ fn parse_batch(mut output: &[u8]) -> Vec<Option<Vec<u8>>> {
     objects
 }
 
-fn git_bytes(mut command: Command, input: Vec<u8>) -> io::Result<Vec<u8>> {
-    let _ = command
+fn git_bytes(command: &mut Command, input: Vec<u8>) -> io::Result<Vec<u8>> {
+    let mut git = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut git = command.spawn()?;
+        .stderr(Stdio::piped())
+        .spawn()?;
     // On a thread of its own, so a git that writes before it has read everything can't leave both waiting on
     // a full pipe. Closing the input tells git that is all.
     if let Some(mut stdin) = git.stdin.take() {
@@ -270,12 +271,10 @@ fn git_bytes(mut command: Command, input: Vec<u8>) -> io::Result<Vec<u8>> {
     git_output(&output).map(<[u8]>::to_vec)
 }
 
-/// A `git` with `args` that only reads local files, and writes in English with no console window.
-fn local_git(args: &[&OsStr]) -> Command {
-    let mut command = Command::new("git");
-    let _ = command.args(args).env("LC_ALL", "C").env("LANGUAGE", "C");
-    without_window(&mut command);
-    command
+/// `command`, a `git`, set to run with `args`, only reading local files, and writing in English with no
+/// console window.
+fn local_git<'c>(command: &'c mut Command, args: &[&OsStr]) -> &'c mut Command {
+    without_window(command.args(args).env("LC_ALL", "C").env("LANGUAGE", "C"))
 }
 
 /// The output of a `git`, or the gist of its error output if it failed.
@@ -300,14 +299,16 @@ fn gist(errors: &str) -> &str {
 }
 
 /// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
-fn without_window(command: &mut Command) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let _ = command.creation_flags(CREATE_NO_WINDOW.0);
-    }
-    #[cfg(not(windows))]
-    let _ = command;
+#[cfg(windows)]
+fn without_window(command: &mut Command) -> &mut Command {
+    use std::os::windows::process::CommandExt;
+    command.creation_flags(CREATE_NO_WINDOW.0)
+}
+
+/// Only Windows opens a window for a console program.
+#[cfg(not(windows))]
+fn without_window(command: &mut Command) -> &mut Command {
+    command
 }
 
 #[cfg(test)]

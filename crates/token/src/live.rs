@@ -163,16 +163,16 @@ pub fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
 /// Runs one program, with no console window on Windows, and gives up on it after `GH_TIMEOUT`.
 fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
     let mut command = Command::new(program);
-    let _ = command
+    let command = command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     #[cfg(windows)]
-    {
+    let command = {
         use std::os::windows::process::CommandExt;
-        let _ = command.creation_flags(CREATE_NO_WINDOW);
-    }
+        command.creation_flags(CREATE_NO_WINDOW)
+    };
     let mut child = command.spawn()?;
     let deadline = Instant::now() + GH_TIMEOUT;
     while child.try_wait()?.is_none() {

@@ -429,12 +429,18 @@ pub(crate) fn definitions(
     calls: State<'_, Calls>,
 ) -> Result<Answer, Error> {
     let heard = Box::new(move |step| {
-        // The window may have stopped listening.
-        let _unheard = waiting.send(step);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the window has stopped listening, and then nobody wants to hear it"
+        )]
+        let _ = waiting.send(step);
     });
     let indexed = Box::new(move |news| {
-        // The window may have stopped listening.
-        let _unheard = index.send(news);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the window has stopped listening, and then nobody wants to hear it"
+        )]
+        let _ = index.send(news);
     });
     crate::look_up_definition(lookup, &calls, (heard, indexed))
 }

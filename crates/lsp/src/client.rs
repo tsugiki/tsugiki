@@ -233,8 +233,12 @@ struct ToOwner(Sender<Input>);
 
 impl ToOwner {
     fn send(&self, input: Input) {
-        // The owner ends only once the `Server` has dropped, and then nothing is left to do for this message.
-        let _gone = self.0.send(input);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the owner ends only once the `Server` has dropped, and then nothing is left to do for \
+                      this message"
+        )]
+        let _ = self.0.send(input);
     }
 }
 
@@ -402,8 +406,20 @@ impl Server {
             params: Value::Null,
             then: Some(Then::Exit),
         };
-        let _agreed: Pending<()> = self.ask(call, identity);
+        // Nobody waits for the answer: `Then::Exit` acts on it.
+        #[expect(
+            unused_results,
+            reason = "nobody cancels the `shutdown`, so its id has no use"
+        )]
+        self.send_ask(call, Box::new(|_| {}));
         self.inputs.send(Input::Stop(patience));
+    }
+
+    /// Sends a request whose answer goes to `answer`, and gives the id it went with.
+    fn send_ask(&self, call: Call, answer: Answer) -> i64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.inputs.send(Input::Ask(Ask { id, call, answer }));
+        id
     }
 
     /// Sends a request whose answer parses as a `W`, and hands the caller `convert` of it.
@@ -412,7 +428,6 @@ impl Server {
         call: Call,
         convert: fn(W) -> T,
     ) -> Pending<T> {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (sender, outcome) = mpsc::sync_channel(1);
         let answer: Answer = Box::new(move |result| {
             let parsed = result.and_then(|value| {
@@ -420,12 +435,14 @@ impl Server {
                     .map(convert)
                     .map_err(RequestError::Unparsable)
             });
-            // The caller may have stopped waiting.
-            let _unheard = sender.send(parsed);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "this fails only if the caller has stopped waiting, and then nobody wants the answer"
+            )]
+            let _ = sender.send(parsed);
         });
-        self.inputs.send(Input::Ask(Ask { id, call, answer }));
         Pending {
-            id,
+            id: self.send_ask(call, answer),
             outcome,
             inputs: self.inputs.clone(),
         }
@@ -665,7 +682,7 @@ impl Owner {
         } = ask;
         if self.life == Life::Running {
             self.write(rpc::request(id, method.name(), params));
-            let _none = self.waiting.insert(id, Waiting { answer, then });
+            self.waiting.extend([(id, Waiting { answer, then })]);
             if let Method::Shutdown = method {
                 self.life = Life::ShuttingDown;
             }
@@ -686,8 +703,11 @@ impl Owner {
 
     /// Hands one message to the writer thread, which says if the server has stopped reading.
     fn write(&self, body: Vec<u8>) {
-        // The writer has gone only after it said the server stopped reading.
-        let _gone = self.writes.send(body);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the writer has gone only after it said the server stopped reading"
+        )]
+        let _ = self.writes.send(body);
     }
 
     fn arrived(&mut self, incoming: Incoming) {
@@ -886,7 +906,11 @@ impl Owner {
         let code = self.process.wait();
         self.life = Life::Exited;
         let stderr_tail = String::from_utf8_lossy(&self.tail).into_owned();
-        let _unheard = self.events.send(Event::Exited(Exit { code, stderr_tail }));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the caller has dropped the events, and then nobody wants to hear it"
+        )]
+        let _ = self.events.send(Event::Exited(Exit { code, stderr_tail }));
     }
 }
 
@@ -918,8 +942,11 @@ fn read_output(output: Box<dyn Read + Send>, errors_closed: &Receiver<()>, input
             }
         }
     }
-    // Closed, or held open past the patience, which the owner can't tell apart.
-    let _closed_or_not = errors_closed.recv_timeout(ERRORS_PATIENCE);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "closed, or held open past the patience, which the owner can't tell apart"
+    )]
+    let _ = errors_closed.recv_timeout(ERRORS_PATIENCE);
     inputs.send(Input::OutputEnded);
 }
 

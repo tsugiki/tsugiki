@@ -55,9 +55,12 @@ impl Matcher {
             }
             Ok(true)
         });
-        // Searching a slice reads no file, and the sink fails on nothing, so only the matcher could fail,
-        // and Rust's regex never does.
-        let _never_fails = searcher.search_slice(&self.regex, bytes, sink);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "searching a slice reads no file, and the sink fails on nothing, so only the matcher \
+                      could fail, and Rust's regex never does"
+        )]
+        let _ = searcher.search_slice(&self.regex, bytes, sink);
         Some(hits)
     }
 
@@ -69,8 +72,11 @@ impl Matcher {
         // fall where it shows them.
         let text = String::from_utf8_lossy(line);
         let mut found = Vec::new();
-        // Rust's regex never fails to match.
-        let _never_fails = self.regex.find_iter(text.as_bytes(), |found_at| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "Rust's regex never fails to match"
+        )]
+        let _ = self.regex.find_iter(text.as_bytes(), |found_at| {
             if !found_at.is_empty() {
                 found.push((found_at.start(), found_at.end()));
             }

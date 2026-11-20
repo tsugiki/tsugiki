@@ -578,7 +578,11 @@ fn crate_paths(Source { path, text }: &Source, found: &mut Scan) {
                     .hidden
                     .push(format!("{at}: a `crate::` path this test can't read"));
             } else if target != module && target != "testing" {
-                let _ = found.uses.entry((module.to_owned(), target)).or_insert(at);
+                // The first place a module uses another is the one a failure names.
+                let used = (module.to_owned(), target);
+                if !found.uses.contains_key(&used) {
+                    found.uses.extend([(used, at)]);
+                }
             }
         }
     }

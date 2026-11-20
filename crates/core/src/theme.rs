@@ -1021,7 +1021,7 @@ fn resolve(built_in: &[Theme], files: &[(String, Theme)]) -> (Vec<Theme>, Vec<Fa
         match taken {
             Some(why) => failed.push(FailedTheme::of(file, theme, why)),
             None => {
-                let _ = first.insert(&theme.name, file);
+                first.extend([(theme.name.as_str(), file.as_str())]);
                 owners.push((file, theme));
             }
         }
@@ -1097,7 +1097,8 @@ impl<'a> Resolver<'a> {
             None => {
                 through.push(&theme.name);
                 let found = self.colors(base_theme, through);
-                let _ = through.pop();
+                #[expect(unused_results, reason = "it is `theme`'s own name, pushed above")]
+                through.pop();
                 let in_loop =
                     |names: &[ThemeName]| names.iter().any(|name| name.as_str() == theme.name);
                 // A loop through this file fails it with the loop; any other failure is its base's.

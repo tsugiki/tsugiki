@@ -363,7 +363,7 @@ fn a_write_that_moves_only_last_seen_leaves_a_review_request_waiting() {
     world.happened(1, vec![review_requested(hours_ago(5))]);
     let mut facts = world.db.reader.work_facts(&cpython()).unwrap();
     // A write to GitHub moves Last seen alone (#395).
-    let _moved = facts.activity.last_seen.insert(1, hours_ago(1));
+    facts.activity.last_seen.extend([(1, hours_ago(1))]);
 
     let workbench = Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole);
 
@@ -507,14 +507,14 @@ fn ci_that_fails_again_after_a_push_needs_attention_though_no_pending_state_came
     let mut facts = world.db.reader.work_facts(&cpython()).unwrap();
     // The store keeps whole seconds, so the moments are set apart by hand.
     let activity = &mut facts.activity;
-    let _failed = activity.ci_finished.insert(1, hours_ago(5));
-    let _acknowledged = activity.acknowledged.insert(1, hours_ago(4));
+    activity.ci_finished.extend([(1, hours_ago(5))]);
+    activity.acknowledged.extend([(1, hours_ago(4))]);
     let push = Activity {
         kind: ActivityKind::Commit,
         who: me(),
         at: hours_ago(1),
     };
-    let _pushed = activity.events.insert(1, vec![push]);
+    activity.events.extend([(1, vec![push])]);
 
     let workbench = Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole);
 

@@ -81,10 +81,10 @@ impl Reviews {
     }
 
     /// Puts back commits that didn't reach their refs, behind any handed over meanwhile.
-    fn put_back(&mut self, commits: BTreeMap<u32, CommitSha>) {
-        for (number, commit) in commits {
-            let _ = self.waiting.entry(number).or_insert(commit);
-        }
+    fn put_back(&mut self, mut commits: BTreeMap<u32, CommitSha>) {
+        // Those handed over meanwhile replace those put back.
+        commits.append(&mut self.waiting);
+        self.waiting = commits;
     }
 
     /// Puts back the commits of a keeping that failed that the rules still want: a hand-over replaces the

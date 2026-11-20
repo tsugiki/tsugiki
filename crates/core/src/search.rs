@@ -268,15 +268,22 @@ impl TextSearch {
             at,
             matcher,
         };
-        // The thread ends only once this has gone, unless it panicked, and then no query can run.
-        let _unheard = (self.messages).send(Message::Search(asked, self.messages.clone()));
+        self.send(Message::Search(asked, self.messages.clone()));
         Ok(id)
     }
 
     /// Cancels query `id` while it runs, as nobody wants what it finds any more, and leaves the state idle.
     /// A newer query, or one that has ended, goes on as it was.
     pub fn cancel(&self, id: SearchId) {
-        let _unheard = self.messages.send(Message::Cancel(id));
+        self.send(Message::Cancel(id));
+    }
+
+    fn send(&self, message: Message) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the thread ends only once this has gone, unless it panicked, and then no query can run"
+        )]
+        let _ = self.messages.send(message);
     }
 
     /// What the latest query found, or why it found nothing.
@@ -450,9 +457,12 @@ fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: 
         at,
         matcher,
     } = asked;
-    // The owner has stopped only when the app quits, and then nobody reads what a search says.
     let tell = |word| {
-        let _unheard = owner.send(Message::Word(*id, word));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the owner has stopped only when the app quits, and then nobody reads what a search says"
+        )]
+        let _ = owner.send(Message::Word(*id, word));
     };
     let answer = requests.ask_lookup_checkout(repository.clone());
     let checkout = match answer.recv_timeout(WAIT_UNSAID) {

@@ -294,7 +294,7 @@ impl LanguageServer {
         (checkout, changed): (LookupCheckout, &[String]),
         news: OnNews,
     ) -> Result<Self, NotReady> {
-        let (folder, _root) = located(&checkout.folder)?;
+        let (folder, _) = located(&checkout.folder)?;
         let didnt_start = |problem: Error| {
             NotReady::Problem(ServerProblem::DidNotStart {
                 cause: problem.message,
@@ -471,7 +471,7 @@ impl LanguageServer {
     /// turns its answer into hits. On clangd, a file the PR doesn't change opens first, if it isn't open.
     pub(super) fn ask(&mut self, request: &Request) -> (Pending<Definitions>, Hits) {
         self.used = Instant::now();
-        let _unread = self.events.try_iter().count();
+        self.events.try_iter().for_each(drop);
         self.show(request.side);
         self.visit(&request.document);
         let pending = self.server.definition(&request.document, request.at);
@@ -515,12 +515,16 @@ impl LanguageServer {
         };
         if visited.len() >= VISITED {
             // Dropping it sends `didClose`.
-            let _closed = visited.pop_front();
+            drop(visited.pop_front());
         }
         let text = String::from_utf8_lossy(&text);
         visited.push_back(self.server.open(document.clone(), self.language, &text));
         // clangd reads its compile database, and starts its index, once a file is open on it.
-        let _heard = self.watcher.send(Heard::Opened);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only once the server's events have ended, and then no index is left to start"
+        )]
+        let _ = self.watcher.send(Heard::Opened);
     }
 
     /// Gives the open files their text at `side`, if they don't have it.
@@ -612,12 +616,12 @@ fn watch(
     let forwards = hears.clone();
     #[expect(
         unused_results,
-        reason = "it ends when the server's events end, or when the watcher has gone"
+        reason = "it ends when the server's events end, or when the watcher has gone and a send to it fails"
     )]
     thread::spawn(move || {
-        let _gone = (events.into_iter().map(Heard::Event))
+        (events.into_iter().map(Heard::Event))
             .chain([Heard::Ended])
-            .try_for_each(|heard| forwards.send(heard));
+            .try_for_each(|heard| forwards.send(heard))
     });
     let first = if watched.index.is_some() {
         Indexing::Unreported
@@ -753,8 +757,11 @@ impl Watcher {
         if let Event::Diagnostics(diagnostics) = event
             && let Some(headers) = &self.headers
         {
-            // The thread that reads them ends only once this one has.
-            let _sent = headers.send(diagnostics.clone());
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the thread that reads them ends only once this one has, so this doesn't fail"
+            )]
+            let _ = headers.send(diagnostics.clone());
         }
         if let Event::Exited(exit) = event {
             // First, so the servers' thread finds this server has ended when it hears.

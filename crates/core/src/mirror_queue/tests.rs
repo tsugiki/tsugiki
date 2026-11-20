@@ -38,7 +38,7 @@ fn run(queue: &mut Queue, job: &Next) {
         let queued = (queue.repositories.iter_mut())
             .find(|queued| queued.repository.is_same(repository))
             .unwrap();
-        let _ = queued.waiting.remove(&kind);
+        assert!(queued.waiting.remove(&kind), "{kind:?} wasn't waiting");
     };
     match job {
         Next::MoveLookup(repository) => done(repository, Waiting::LookupMove),

@@ -96,17 +96,14 @@ fn a_save_that_fails_leaves_the_file_as_it_was_and_no_new_file() {
     assert_eq!(files_in(&folder), ["settings.toml"]);
 }
 
-/// The settings file and the dotfiles folder its link points into, with [`BEFORE`] in the file when `there`.
+/// The settings file, a link to a file in a dotfiles folder that isn't there yet, and that file's path.
 #[cfg(unix)]
-fn linked(name: &str, there: bool) -> (PathBuf, PathBuf, TempPath) {
+fn linked(name: &str) -> (PathBuf, PathBuf, TempPath) {
     let folder = temp_path(&format!("saving-{name}"));
     let dotfiles = folder.join("dotfiles");
     fs::create_dir_all(&dotfiles).unwrap();
     fs::create_dir_all(folder.join("settings")).unwrap();
     let shared = dotfiles.join("settings.toml");
-    if there {
-        fs::write(&shared, BEFORE).unwrap();
-    }
     let link = folder.join("settings").join("settings.toml");
     std::os::unix::fs::symlink(&shared, &link).unwrap();
     (link, shared, folder)
@@ -116,7 +113,8 @@ fn linked(name: &str, there: bool) -> (PathBuf, PathBuf, TempPath) {
 #[cfg(unix)]
 #[test]
 fn a_save_through_a_symbolic_link_keeps_the_link_and_changes_the_file_it_points_to() {
-    let (link, shared, folder) = linked("link", true);
+    let (link, shared, folder) = linked("link");
+    fs::write(&shared, BEFORE).unwrap();
 
     save(&link, AFTER).unwrap();
 
@@ -130,7 +128,7 @@ fn a_save_through_a_symbolic_link_keeps_the_link_and_changes_the_file_it_points_
 #[cfg(unix)]
 #[test]
 fn a_save_through_a_symbolic_link_to_no_file_is_refused_and_keeps_the_link() {
-    let (link, shared, folder) = linked("dangling", false);
+    let (link, shared, folder) = linked("dangling");
 
     let refused = save(&link, AFTER).unwrap_err();
 

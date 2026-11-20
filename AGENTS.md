@@ -35,9 +35,17 @@ closure behind `cfg!(windows)` leaves a line macOS's coverage never runs. Once a
 new commits and bring main in with `git merge origin/main`. An amend or a rebase needs a force push, and each
 force push needs the user's say. The PR squash-merges anyway.
 
+Build each change that becomes a PR in a worktree of its own, and leave the main checkout on a clean main,
+for reading, the tracker and research. Other sessions work on this computer at the same time, and when you
+switch branches or commit in a checkout you share, you take their work along half-done.
+Each PR starts from a ticket, so file one first for a change that has none. `just worktree <n>` makes the
+worktree for ticket n under `.temp/`. Each worktree builds Rust from scratch into a `target/` of its own, so
+delete it once its PR has merged: `just worktree-remove <n>` deletes the worktree, its builds and its branch.
+Use it in place of `just merged`, which switches to main, as git refuses that while the main checkout holds
+main.
+
 To build several tickets of a milestone at once, one background agent per ticket, use the `wave` skill in
-`.claude/skills/wave/`. `just worktree <n>` makes a worktree ready to build ticket n under `.temp/`, and
-`just worktree-remove <n>` deletes it, and its branch once the PR has merged.
+`.claude/skills/wave/`.
 
 `just preflight` runs the gates a first push most often fails on, one at a time, and stops at the first that
 fails; the `justfile` lists them. It runs the full Vitest and Rust suites with their coverage gates, which

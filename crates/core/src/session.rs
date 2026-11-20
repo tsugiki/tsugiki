@@ -30,7 +30,7 @@ use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
     ReaderToOpen, Store, StoreReader,
 };
-use crate::sync::{Progress, Syncs};
+use crate::sync::{HeldSettings, Progress, Syncs};
 use crate::token::read_token;
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
@@ -273,18 +273,32 @@ impl Refreshes {
     }
 
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
-    /// the one asking that the session isn't connected. Mark Seen and Mark Unseen need only the database, so
-    /// they still work, and so does telling the window of a hand edit to the settings. With no syncs there
-    /// is no copy to compare, but the settings owner hands over only settings that changed. Reach follows
-    /// a change of the settings as it does with a token, which needs only the database and the Mirror.
+    /// the one asking that the session isn't connected. The marks need only the database, so they still
+    /// work, and so does telling the window of a hand edit to the settings. With no syncs there is no copy
+    /// to compare, but the settings owner hands over only settings that changed. Reach follows a change of
+    /// the settings, and a Mute or an Unmute in a Repository opened since launch, as it does with a token,
+    /// which needs only the database and the Mirror (#946).
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
+        let mut held = HeldSettings::default();
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
-                SessionMessage::Mark(marked) => mark(board, store, marked),
+                #[expect(unused_results, reason = "only a sync builds on the settings opened")]
+                SessionMessage::Sync { repository } => {
+                    held.open(repository);
+                }
+                SessionMessage::Mark(marked) => {
+                    let moved = ReachMove::of(&marked, store, &held);
+                    mark_moving_reach(board, store, &self.fetching, (marked, moved));
+                }
+                #[expect(
+                    unused_results,
+                    reason = "with no syncs, the window hears of each hand edit, whatever the save replaced"
+                )]
                 SessionMessage::SettingsChanged(save) => {
                     follow_save(&self.fetching, store, &save);
                     announce_settings(board, &save.saved().name, save.by());
+                    held.replace(save.into_saved());
                 }
                 SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
@@ -293,7 +307,6 @@ impl Refreshes {
                     self.read_failed(board, &fetched, ItemUnread::NoToken);
                 }
                 SessionMessage::Check { .. }
-                | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::Screen(_) => {}
             }
@@ -471,7 +484,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 }
             }
             Turn::Mark(marked) => {
-                let moved = ReachMove::of(&marked, store, &syncs);
+                let moved = ReachMove::of(&marked, store, syncs.held());
                 mark_moving_reach(board, store, &refreshes.fetching, (marked, moved));
             }
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
@@ -557,7 +570,7 @@ fn synced_facts<'a>(
     syncs: &'a Syncs,
     repository: &'a RepositoryName,
 ) -> Option<Synced<'a>> {
-    let settings = syncs.settings(repository)?;
+    let settings = syncs.held().get(repository)?;
     let facts = store.work_facts(repository).ok()?;
     Some(Synced {
         repository,
@@ -707,7 +720,7 @@ fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: R
 }
 
 /// A Mute or an Unmute in a Repository the session has opened since launch, which moves Reach (#918), with
-/// the stored facts from before the store keeps it.
+/// the stored facts from before the store keeps it. It moves Reach with or without a token (#946).
 ///
 /// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
 /// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
@@ -719,10 +732,10 @@ struct ReachMove<'a> {
 }
 
 impl<'a> ReachMove<'a> {
-    /// The move `marked` makes, under the settings `syncs` hold: none for a mark other than Mute and Unmute.
+    /// The move `marked` makes, under the settings `held` holds: none for a mark other than Mute and Unmute.
     /// Facts the store can't read, before the mark or after it, leave the heads to the next step that saves,
     /// and lose the reads an Unmute owes.
-    fn of(marked: &Marked, store: &Store, syncs: &'a Syncs) -> Option<Self> {
+    fn of(marked: &Marked, store: &Store, held: &'a HeldSettings) -> Option<Self> {
         let repository = match marked {
             Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
             Marked::AuthorMuted { settings, .. } | Marked::AuthorUnmuted { settings, .. } => {
@@ -733,7 +746,7 @@ impl<'a> ReachMove<'a> {
             | Marked::Archived { .. }
             | Marked::Unarchived { .. } => return None,
         };
-        let settings = syncs.settings(repository)?;
+        let settings = held.get(repository)?;
         let before = facts_for_move(store, repository)?;
         Some(Self { settings, before })
     }
@@ -811,14 +824,8 @@ fn keep_last_checks(
     store.save_last_checks(repository, checks)
 }
 
-/// Keeps what the user marked, and tells the window, whose lists go by it.
-fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
-    let (saved, change) = keep_mark(store, marked);
-    tell_marked(board, saved, &change);
-}
-
-/// Keeps what the user marked, as `mark` does, and has the Mirror worker follow the move of Reach that
-/// `moved` says the mark makes, if the store kept it.
+/// Keeps what the user marked, has the Mirror worker follow the move of Reach that `moved` says the mark
+/// makes, if the store kept it, and tells the window, whose lists go by the mark.
 fn mark_moving_reach(
     board: &mut StatusBoard,
     store: &Store,

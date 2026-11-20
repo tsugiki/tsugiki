@@ -14,7 +14,7 @@ fn a_sync_reads_each_shown_issues_cross_references_and_fetches_the_prs_they_list
     replies.push(fetched_nodes(&[merged_node(2), merged_node(3)], RATE_LIMIT));
     let harness = Harness::new("tree", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -35,7 +35,7 @@ fn a_sync_reads_each_shown_issues_cross_references_and_fetches_the_prs_they_list
 fn a_sync_follows_an_issues_cross_references_page_by_page() {
     let harness = Harness::new("tree-pages", a_tree_over_two_pages());
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -62,7 +62,7 @@ fn a_sync_reads_the_cross_references_of_each_issue_and_fetches_a_shared_pr_once(
     replies.push(fetched_nodes(&[merged_node(3)], RATE_LIMIT));
     let harness = Harness::new("tree-two", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -89,12 +89,12 @@ fn a_merged_pr_is_fetched_once_across_syncs_and_an_open_one_again() {
     replies.push(fetched_nodes(&[pr_node(3, &json!({}))], RATE_LIMIT));
     let harness = Harness::new("frozen", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
     drop(harness.operations());
 
     harness.forget_the_last_sync();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
 
     let tree_ids: Vec<Value> = harness
@@ -113,7 +113,7 @@ fn a_tree_read_below_the_floor_holds_the_next_step_back() {
     replies.push(issue_references_with_more(1, &[], "older", FEW));
     let harness = Harness::new("tree-floor", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
     while !harness

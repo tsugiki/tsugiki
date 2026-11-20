@@ -1,7 +1,7 @@
 use super::testing::{handle, handle_with_headless, named};
 use super::*;
 use crate::facts::CommitSha;
-use crate::repository_settings::SavedBy;
+use crate::repository_settings::{RepositorySettings, SavedBy};
 use crate::status::ItemUnread;
 use crate::testing::cpython;
 
@@ -141,7 +141,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.settings_changed(saved(SavedBy::HandEdit));
     fetching.settings_changed(saved(SavedBy::Window));
     fetching.mark_unseen(cpython(), 9, None);
-    fetching.sync(RepositorySettings::new(cpython()));
+    fetching.sync(cpython());
     fetching.stop_session();
 
     let heard: Vec<String> = incoming.try_iter().map(named).collect();

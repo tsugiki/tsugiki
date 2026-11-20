@@ -5,14 +5,15 @@ use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
 
-use super::HeldSettings;
 use super::issues::fetch_issue_batch;
 use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::github::clock::GitHubClock;
+use crate::latest::LatestReader;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::settings::SettingsView;
 use crate::status::{Change, LastSync, OpenSync, SyncActivity, SyncPart};
 use crate::store::Store;
 
@@ -25,8 +26,6 @@ const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
 /// again. The timer also tries a Repository that has finished a sync, since a refresh costs a few points. A
 /// first sync costs thousands, so it waits for the user.
 const TRIES: u8 = 10;
-
-const NO_SETTINGS: &str = "Tsugiki lost the settings of a Repository it syncs.";
 
 /// What a step of the queue did that the rest of the app can see.
 #[derive(Debug, PartialEq, Eq)]
@@ -139,14 +138,16 @@ fn unfinished(step: Step) -> Option<Stepped> {
 /// The syncs still to run, one step at a time. Repositories take turns, so a big first sync doesn't keep
 /// the others waiting (ADR 0015). The open Repository has every other step, because the window shows it,
 /// and the others take theirs in the order they were asked for, the latest first.
-#[derive(Default)]
 pub struct Syncs {
     queue: VecDeque<Queued>,
     /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
     /// `queue` for its few requests, and leaves no trace of a sync behind it.
     trees: VecDeque<OpenedTree>,
-    /// The settings of each Repository opened since launch, which every sync reads.
-    settings: HeldSettings,
+    /// The settings owner's view, which each step reads its Repository's settings from.
+    settings: LatestReader<SettingsView>,
+    /// The Repositories opened since launch, whose lists the window shows, so it hears of a hand edit to
+    /// their settings.
+    repositories_opened: Vec<RepositoryName>,
     /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because the
     /// session reads an Issue on screen again about once a minute.
     opened: BTreeSet<u32>,
@@ -164,32 +165,45 @@ pub struct Syncs {
 }
 
 impl Syncs {
+    /// No syncs yet, which read each Repository's settings from the settings owner's `settings`.
+    pub fn new(settings: LatestReader<SettingsView>) -> Self {
+        Self {
+            queue: VecDeque::new(),
+            trees: VecDeque::new(),
+            settings,
+            repositories_opened: Vec::new(),
+            opened: BTreeSet::new(),
+            not_before: None,
+            open_went_last: false,
+            open: None,
+            fills: VecDeque::new(),
+            fills_queued: Vec::new(),
+        }
+    }
+
     /// Opens `repository` and gives its sync the next step, carrying on from where it got if one is already
-    /// queued. Its settings replace those the syncs held of it, unless the settings owner handed over its
-    /// own: those are as new as any, and the copy here can be older.
-    pub fn add(&mut self, repository: RepositorySettings) {
-        let name = repository.name.clone();
-        if !self.is_open(&name) {
+    /// queued. A new sync searches the Filters the settings owner's view lists now.
+    pub fn add(&mut self, repository: RepositoryName) {
+        if !self.is_open(&repository) {
             self.opened.clear();
             self.trees.clear();
         }
-        let queued = self.take(&name);
-        let repository = self.settings.open(repository);
-        let sync = queued.map_or_else(|| UserWorkSync::new(repository), |queued| queued.sync);
+        if !self.was_opened(&repository) {
+            self.repositories_opened.push(repository.clone());
+        }
+        let queued = self.take(&repository);
+        let sync = match queued {
+            Some(queued) => queued.sync,
+            None => UserWorkSync::new(&self.settings_of(&repository)),
+        };
         self.queue.push_front(Queued::new(sync));
-        self.open = Some(name);
+        self.open = Some(repository);
         self.open_went_last = false;
     }
 
-    /// Takes the settings the settings owner handed over, `repository`'s, in place of those its syncs read,
-    /// if it was opened since launch and they differ, and answers with those. Which Repository is open
-    /// stays, and nothing new is queued. A sync of it reads ahead under the new settings from its next
-    /// step.
-    pub fn replace_settings(
-        &mut self,
-        repository: RepositorySettings,
-    ) -> Option<RepositorySettings> {
-        self.settings.replace(repository)
+    /// Whether `repository` was opened since launch, so the window lists its items.
+    pub fn was_opened(&self, repository: &RepositoryName) -> bool {
+        (self.repositories_opened.iter()).any(|opened| opened.is_same(repository))
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A
@@ -200,7 +214,7 @@ impl Syncs {
         };
         let has_synced = matches!(store.sync_state(&open.name), Ok(Some(_)));
         if has_synced && self.position(&open.name).is_none() {
-            let sync = UserWorkSync::new(open);
+            let sync = UserWorkSync::new(&open);
             self.queue.push_back(Queued::new(sync));
         }
     }
@@ -217,7 +231,7 @@ impl Syncs {
     /// Answers the user's click while GitHub can't be reached: the open Repository takes the next step once
     /// the wait for the next look at GitHub ends.
     pub fn put_open_first(&mut self) {
-        if let Some(open) = self.open_settings().cloned() {
+        if let Some(open) = self.open.clone() {
             self.add(open);
         }
     }
@@ -270,31 +284,33 @@ impl Syncs {
         let queued = self
             .queued_mut(repository)
             .is_some_and(|queued| queued.sync.open_issue(number));
-        let tree = (self.open_settings())
-            .filter(|_| !queued)
-            .map(|open| UserWorkSync::tree_of(open, number));
-        if let Some(sync) = tree {
+        if queued {
+            return;
+        }
+        if let Some(open) = self.open_settings() {
             self.trees.push_back(OpenedTree {
                 number,
-                sync,
+                sync: UserWorkSync::tree_of(&open, number),
                 failures: 0,
             });
         }
     }
 
-    /// The settings of each Repository opened since launch, which the syncs read.
-    pub fn held(&self) -> &HeldSettings {
-        &self.settings
+    /// The settings of `repository` in the settings owner's view now, or the defaults for one they don't
+    /// list, as a hand edit can take a Repository out while its sync runs.
+    fn settings_of(&self, repository: &RepositoryName) -> RepositorySettings {
+        (self.settings).read(|view| view.repository(repository.clone()))
     }
 
-    /// The settings a step of `repository`'s sync reads. Each sync starts from settings these hold, and none
-    /// leave them, so a miss is Tsugiki's own mistake.
-    fn settings_for(&self, repository: &RepositoryName) -> Result<&RepositorySettings, Error> {
-        (self.settings.get(repository)).ok_or_else(|| Error::new(ErrorKind::Internal, NO_SETTINGS))
+    /// The settings of `repository` in the settings owner's view now, if it was opened since launch: the
+    /// Repositories whose syncs hand the Mirror worker their wants.
+    pub fn opened_settings(&self, repository: &RepositoryName) -> Option<RepositorySettings> {
+        self.was_opened(repository)
+            .then(|| self.settings_of(repository))
     }
 
-    fn open_settings(&self) -> Option<&RepositorySettings> {
-        self.settings.get(self.open.as_ref()?)
+    fn open_settings(&self) -> Option<RepositorySettings> {
+        Some(self.settings_of(self.open.as_ref()?))
     }
 
     fn is_open(&self, repository: &RepositoryName) -> bool {
@@ -470,9 +486,8 @@ impl Syncs {
         store: &Store,
     ) -> Result<Option<Progress>, StepFailure> {
         self.not_before = None;
-        let stepped = (self.settings_for(&tree.sync.repository))
-            .and_then(|settings| tree.sync.step(github, store, settings));
-        let step = match stepped {
+        let settings = self.settings_of(&tree.sync.repository);
+        let step = match tree.sync.step(github, store, &settings) {
             Ok(step) => step,
             // One Issue's trouble mustn't stand in the way of the syncs behind it.
             Err(problem) if !problem.kind.speaks_for_all_of_github() => {
@@ -508,8 +523,8 @@ impl Syncs {
         self.not_before = None;
         let is_open = self.is_open(&queued.sync.repository);
         queued.held_until = None;
-        let stepped = (self.settings_for(&queued.sync.repository))
-            .and_then(|settings| queued.sync.step(github, store, settings));
+        let settings = self.settings_of(&queued.sync.repository);
+        let stepped = queued.sync.step(github, store, &settings);
         let stepped = match stepped.map(unfinished) {
             Ok(Some(stepped)) => stepped,
             Ok(None) => match queued.sync.finish(store) {
@@ -692,5 +707,7 @@ fn pause_for(until: OffsetDateTime, now: OffsetDateTime) -> Duration {
         .min(LONGEST_PAUSE)
 }
 
+#[cfg(test)]
+mod testing;
 #[cfg(test)]
 mod tests;

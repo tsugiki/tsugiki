@@ -7,7 +7,6 @@
 
 mod batches;
 mod filters;
-mod held;
 mod issues;
 mod loading;
 mod origins;
@@ -16,7 +15,6 @@ mod refresh;
 mod searches;
 mod trees;
 
-pub use held::HeldSettings;
 pub use queue::{Progress, Syncs};
 pub use searches::WORK_SEARCHES;
 
@@ -59,7 +57,7 @@ pub const FETCH_BATCH: usize = 25;
 struct UserWorkSync {
     repository: RepositoryName,
     /// The search of each Filter as the sync started, each once. Which PRs are in Reach comes from the
-    /// settings `Syncs` holds, which a switch can change while the sync runs.
+    /// settings owner's view at each step, which a switch can change while the sync runs.
     filters: Vec<FilterQuery>,
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.

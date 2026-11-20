@@ -18,7 +18,7 @@ fn a_sync_searches_in_order_then_stores_what_it_search_page() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -51,7 +51,7 @@ fn a_search_follows_its_pages_before_the_next_search() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -69,7 +69,7 @@ fn a_search_follows_its_pages_before_the_next_search() {
 fn a_search_below_the_floor_holds_the_next_step_back() {
     let harness = Harness::new("floor-search", vec![nothing(FEW)]);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
     drop(syncs.step(&harness.github, &harness.db.store).unwrap());

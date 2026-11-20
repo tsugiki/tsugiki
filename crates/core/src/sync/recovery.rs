@@ -158,7 +158,7 @@ fn run(
     quit_before: Option<usize>,
 ) -> Run {
     let mut syncs = Syncs::default();
-    syncs.add(settings.clone());
+    syncs.add_listed(settings.clone());
     let mut told_the_window = Vec::new();
     let mut steps = 0;
     let mut sync_steps = 0;
@@ -167,7 +167,7 @@ fn run(
         assert!(steps < MOST_STEPS, "the sync doesn't end");
         if quit_before == Some(steps) {
             syncs = Syncs::default();
-            syncs.add(settings.clone());
+            syncs.add_listed(settings.clone());
         }
         if syncs.activity().is_some() {
             sync_steps += 1;

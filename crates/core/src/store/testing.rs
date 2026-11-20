@@ -55,6 +55,15 @@ pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDa
     store.archive_closed(&cpython(), judged, now).unwrap();
 }
 
+/// Mark Seen on `numbers` up to `up_to`, with no Stale review drawn.
+pub(crate) fn seeing(numbers: Vec<u32>, up_to: Option<OffsetDateTime>) -> Seeing {
+    Seeing {
+        numbers,
+        up_to,
+        findings: vec![],
+    }
+}
+
 /// Leaves `store` with the links version `version` of the link rules worked out, as an older Tsugiki kept
 /// them: only `fixes`, each a Repository, a PR and the Issue it fixed under every Conventions, which a test
 /// tells from what this version's rules give.
@@ -246,7 +255,7 @@ impl World {
 
     pub(crate) fn marked_seen(&self, number: u32, up_to: OffsetDateTime) {
         (self.db.store)
-            .mark_seen(&cpython(), vec![number], Some(up_to))
+            .mark_seen(&cpython(), seeing(vec![number], Some(up_to)))
             .unwrap();
     }
 

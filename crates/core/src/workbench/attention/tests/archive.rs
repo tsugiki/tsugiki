@@ -29,12 +29,20 @@ impl World {
     /// What Archive on item `number`'s line of `view` writes, as the window drew it, putting the item away as
     /// `put_away` says.
     fn archiving_in(&self, view: &WorkbenchView, number: u32, put_away: PutAway) -> Archiving {
-        let (key, SeenMark { numbers, up_to }) = self.drawn_in(view, number);
+        let (
+            key,
+            SeenMark {
+                numbers,
+                up_to,
+                findings,
+            },
+        ) = self.drawn_in(view, number);
         Archiving {
             key,
             numbers,
             up_to,
             put_away,
+            findings,
         }
     }
 

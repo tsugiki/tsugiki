@@ -10,9 +10,11 @@ use time::OffsetDateTime;
 use super::Connection;
 use super::columns::{Items, UnixMillis, UnixTime};
 use super::failed_checks;
+use super::patch_ids::acknowledge_in;
 use crate::facts::activity::{
     Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, MutedAuthor, PutAway,
 };
+use crate::facts::patch_ids::StaleFinding;
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -245,16 +247,22 @@ pub(super) fn read(
     Ok(events.into_iter().flatten().collect())
 }
 
-/// Mark Seen on `numbers`, all at once: clears their Marked unseen, and moves their Last seen and the moment
-/// the user acknowledged them on to `up_to`, if it's given. Neither moves back.
+/// Mark Seen on `seeing`'s numbers, all at once: clears their Marked unseen, and moves their Last seen and
+/// the moment the user acknowledged them on to its `up_to`, if it's given. Neither moves back. It
+/// acknowledges each of its findings where the store still keeps that finding (#908).
 pub(super) fn mark_seen(
     connection: &mut Connection,
     repository: &RepositoryName,
-    numbers: &[u32],
-    up_to: Option<OffsetDateTime>,
+    seeing: &Seeing,
 ) -> rusqlite::Result<()> {
+    let Seeing {
+        numbers,
+        up_to,
+        findings,
+    } = seeing;
     let transaction = connection.transaction()?;
-    mark_seen_in(&transaction, repository, numbers, up_to)?;
+    mark_seen_in(&transaction, repository, numbers, *up_to)?;
+    acknowledge_in(&transaction, repository, findings)?;
     transaction.commit()
 }
 
@@ -354,13 +362,15 @@ fn key_columns(key: ItemKey) -> (&'static str, u32) {
 }
 
 /// What Archive writes: the item `key` names, Mark Seen on `numbers`, the item and its tree, up to `up_to` as
-/// the window drew it, and when it puts the item away.
+/// the window drew it, and when it puts the item away. It acknowledges `findings`, the Stale reviews the
+/// window drew there (#908).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Archiving {
     pub key: ItemKey,
     pub numbers: Vec<u32>,
     pub up_to: Option<OffsetDateTime>,
     pub put_away: PutAway,
+    pub findings: Vec<StaleFinding>,
 }
 
 /// Archive on `archiving`'s item: Mark Seen on its numbers, and the item kept as archived from `up_to`, or
@@ -378,11 +388,12 @@ pub(super) fn archive(
         numbers,
         up_to,
         put_away,
+        findings,
     } = archiving;
     let transaction = connection.transaction()?;
     // A number acknowledged later than `up_to`, as by Mark Seen on another Issue its PR fixes, would
     // otherwise read as acknowledged after the archive, and so as come back.
-    let at = hide(&transaction, repository, (numbers, *up_to), now)?;
+    let at = hide(&transaction, repository, (numbers, *up_to, findings), now)?;
     let (kind, number) = key_columns(*key);
     let as_before = matches!(put_away, PutAway::AsBefore);
     transaction
@@ -405,16 +416,17 @@ pub(super) fn archive(
     transaction.commit()
 }
 
-/// Mark Seen on `numbers` up to `up_to`, as Archive and Mute do in `transaction`. Returns the moment the item
-/// they hide is hidden from: `up_to`, or `now` when the window drew no sync, or a later moment one of
-/// `numbers` was acknowledged at.
+/// Mark Seen on `numbers` up to `up_to`, acknowledging `findings`, as Archive and Mute do in `transaction`.
+/// Returns the moment the item they hide is hidden from: `up_to`, or `now` when the window drew no sync, or
+/// a later moment one of `numbers` was acknowledged at.
 fn hide(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
-    (numbers, up_to): (&[u32], Option<OffsetDateTime>),
+    (numbers, up_to, findings): (&[u32], Option<OffsetDateTime>, &[StaleFinding]),
     now: OffsetDateTime,
 ) -> rusqlite::Result<i64> {
     mark_seen_in(transaction, repository, numbers, up_to)?;
+    acknowledge_in(transaction, repository, findings)?;
     let mut at = up_to.unwrap_or(now).unix_timestamp();
     for number in numbers {
         let acknowledged: Option<i64> = transaction
@@ -431,12 +443,13 @@ fn hide(
 }
 
 /// What Mute writes: the item `key` names, and Mark Seen on `numbers`, the item and its tree, up to `up_to`
-/// as the window drew it.
+/// as the window drew it. It acknowledges `findings`, the Stale reviews the window drew there (#908).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Muting {
     pub key: ItemKey,
     pub numbers: Vec<u32>,
     pub up_to: Option<OffsetDateTime>,
+    pub findings: Vec<StaleFinding>,
 }
 
 /// Mute on `muting`'s item (#492): Mark Seen on its numbers, and the item kept as muted from the moment
@@ -451,9 +464,10 @@ pub(super) fn mute(
         key,
         numbers,
         up_to,
+        findings,
     } = muting;
     let transaction = connection.transaction()?;
-    let at = hide(&transaction, repository, (numbers, *up_to), now)?;
+    let at = hide(&transaction, repository, (numbers, *up_to, findings), now)?;
     let (kind, number) = key_columns(*key);
     transaction.execute(
         "INSERT INTO muted (repository, kind, number, at) VALUES (:repository, :kind, :number, :at)
@@ -484,11 +498,13 @@ pub(super) fn unmute(
         .map(drop)
 }
 
-/// Mark Seen on `numbers` up to `up_to`, as the window would draw it: one of Mute author's marks (#494).
+/// Mark Seen on `numbers` up to `up_to`, acknowledging `findings`, the Stale reviews the window drew on them
+/// (#908): Mark Seen as the window drew it, or one of Mute author's marks (#494).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seeing {
     pub numbers: Vec<u32>,
     pub up_to: Option<OffsetDateTime>,
+    pub findings: Vec<StaleFinding>,
 }
 
 /// What Mute author writes (#494): the author, and Mark Seen on each open item they opened, its tree
@@ -508,8 +524,14 @@ pub(super) fn mute_author(
     now: OffsetDateTime,
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    for Seeing { numbers, up_to } in &muting.marks {
+    for Seeing {
+        numbers,
+        up_to,
+        findings,
+    } in &muting.marks
+    {
         mark_seen_in(&transaction, repository, numbers, *up_to)?;
+        acknowledge_in(&transaction, repository, findings)?;
     }
     transaction
         .execute(

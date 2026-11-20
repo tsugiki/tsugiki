@@ -75,9 +75,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     and clears Marked unseen. On an Issue it marks the Issue and every PR in its tree; on a PR, that PR. It
     also clears a Review request, a Stale review and failed CI on an Own PR that started before that
     moment, while a new request, a push that makes the Review stale again or a CI run that fails later
-    counts again. An item on the Workbench only because it Needed attention leaves it, and one that a
-    Filter, a pin or the user's Review holds stays as a plain row. The Review requests and Stale reviews
-    views keep listing their PRs.
+    counts again. A Stale review starts at the push or when the check found it against the PR's head,
+    whichever came later, so one the window hadn't drawn when the user marked counts again. An item on the
+    Workbench only because it Needed attention leaves it, and one that a Filter, a pin or the user's Review
+    holds stays as a plain row. The Review requests and Stale reviews views keep listing their PRs.
   - **Mark Unseen** flags the item Marked unseen. It then Needs attention from the moment of the flag, so By
     attention sorts it first, and its preview says "Marked unseen". Flagging a PR brings its Issue back with
     it. Tsugiki keeps the flag per Repository and item.
@@ -148,11 +149,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     off on the user's own items. A Muted author's Issues, Standalone PRs and Standalone Backports count as
     Muted, those they open later too: they leave the Workbench, the Archived view and the counts, each
     Filter lists them in its fold of Muted items, and their trees leave Reach as a Muted item's do. Muting
-    marks their open items seen in the background, the trees they head included. A Review request or an
-    assignment to the user brings one back as it brings back a Muted item. `Q`, `Shift+Q`, `E` and `M` do
-    nothing on their items; Unmute author is the way back, and leaves an item the user muted on its own
-    Muted. Their PRs inside another author's Issue stay as they are. The Inbox lists their items until
-    [#825](https://github.com/tsugiki/tsugiki/issues/825) leaves them out.
+    marks their open items seen in the background, the trees they head included. It finds those items in
+    the facts as it runs, not on a page the window drew, so unlike Mute on one item it acknowledges no
+    Stale review: Unmute author brings back each one that stood at the mute, while the Review requests it
+    cleared stay cleared. A Review request or an assignment to the user brings one back as it brings back a
+    Muted item. `Q`, `Shift+Q`, `E` and `M` do nothing on their items; Unmute author is the way back, and
+    leaves an item the user muted on its own Muted. Their PRs inside another author's Issue stay as they
+    are. The Inbox lists their items until [#825](https://github.com/tsugiki/tsugiki/issues/825) leaves them
+    out.
 
 ## Issue tree
 

@@ -9,12 +9,13 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::reasons::{WorkReason, reasons};
-use super::review_state::{SharedReviews, YourReview, your_reviews};
+use super::review_state::{SharedReviews, YourReview, can_wait_on, kept_finding, your_reviews};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
 use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, Archive, ItemKey};
 use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::patch_ids::{StaleFinding, StaleFound};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 
@@ -58,8 +59,8 @@ pub enum Why {
     MarkedUnseen,
 }
 
-/// The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
-/// it back as it got it.
+/// The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+/// the window drew them. The window sends it back as it got it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct SeenMark {
     /// The item, and for an Issue every PR in its tree.
@@ -70,6 +71,10 @@ pub struct SeenMark {
     #[serde(with = "time::serde::rfc3339::option")]
     #[specta(type = Option<String>)]
     pub up_to: Option<OffsetDateTime>,
+    /// The finding behind each Stale review of `numbers` that waits on the user, as the window drew it. The
+    /// mark acknowledges these alone, so a check that finds a Stale review after the window drew the page
+    /// still counts (#908).
+    pub findings: Vec<StaleFinding>,
 }
 
 /// One reason an Issue or PR Needs attention, from the moment it started to.
@@ -88,6 +93,8 @@ pub(crate) struct Causes {
     /// The PRs whose Stale review waits on the user, which the Stale reviews view holds. It Needs attention
     /// only until the user acknowledges it.
     pub(crate) stale_reviews: BTreeSet<u32>,
+    /// The finding the store kept behind each of `stale_reviews`, where it kept one.
+    stale_found: BTreeMap<u32, StaleFound>,
     /// The Issues and PRs with New activity, whoever it waits on.
     with_news: BTreeSet<u32>,
     /// The newest moment the facts hold on each Issue and PR: GitHub's last update, CI reaching a result, or
@@ -135,11 +142,13 @@ impl Causes {
         let shared = SharedReviews::of(&facts.pull_requests, conventions);
         let reviews = your_reviews(facts, viewer, &shared);
         let stale_reviews = stale_reviews(facts, viewer, &reviews, &shared);
+        let stale_found = stale_found(facts, &reviews, &stale_reviews);
         let judge = Judge {
             news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
             facts: &facts.activity,
             viewer,
             stale_reviews: &stale_reviews,
+            stale_found: &stale_found,
         };
         let on_pull_requests = facts.pull_requests.iter().map(|pr| {
             let news = judge.news.on_pull_request(pr);
@@ -179,6 +188,7 @@ impl Causes {
             asks,
             review_requests: requested,
             stale_reviews,
+            stale_found,
             with_news,
             known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
@@ -340,6 +350,16 @@ impl Causes {
     pub(crate) fn known_until(&self, number: u32) -> Option<OffsetDateTime> {
         self.known_until.get(&number).copied()
     }
+
+    /// The finding behind each Stale review of `numbers` that waits on the user, where the store kept one,
+    /// for a mark drawn now to acknowledge.
+    pub(crate) fn findings_in(&self, numbers: &[u32]) -> Vec<StaleFinding> {
+        let found = numbers.iter().filter_map(|number| {
+            let found = self.stale_found.get(number)?;
+            Some(found.on(*number))
+        });
+        found.collect()
+    }
 }
 
 /// The PRs whose Stale review waits on the user: each open PR where `viewer`'s Review is a Stale review. A
@@ -353,12 +373,26 @@ fn stale_reviews(
     shared: &SharedReviews,
 ) -> BTreeSet<u32> {
     let waiting = facts.pull_requests.iter().filter(|pr| {
-        let colleagues_draft = pr.is_draft && pr.author.as_ref() != Some(viewer);
         let borrowed = shared.origin_of(pr.number).is_some();
         let stale = reviews.get(&pr.number).is_some_and(YourReview::is_stale);
-        pr.state == PrState::Open && !colleagues_draft && !borrowed && stale
+        can_wait_on(pr, viewer) && !borrowed && stale
     });
     waiting.map(|pr| pr.number).collect()
+}
+
+/// The finding the store kept of each of `stale_reviews`, where it kept the one the PR shows, as
+/// `kept_finding` matches it (#908).
+fn stale_found(
+    facts: &WorkFacts,
+    reviews: &BTreeMap<u32, YourReview>,
+    stale_reviews: &BTreeSet<u32>,
+) -> BTreeMap<u32, StaleFound> {
+    let shown = (facts.pull_requests.iter()).filter(|pr| stale_reviews.contains(&pr.number));
+    let found = shown.filter_map(|pr| {
+        let found = kept_finding(reviews.get(&pr.number)?, pr, &facts.reviews)?;
+        Some((pr.number, found.clone()))
+    });
+    found.collect()
 }
 
 /// The Issues and PRs `facts` hold closed or merged. An Issue saved before Tsugiki kept states counts as
@@ -446,6 +480,7 @@ struct Judge<'a> {
     facts: &'a ActivityFacts,
     viewer: &'a Login,
     stale_reviews: &'a BTreeSet<u32>,
+    stale_found: &'a BTreeMap<u32, StaleFound>,
 }
 
 impl Judge<'_> {
@@ -501,6 +536,24 @@ impl Judge<'_> {
         })
     }
 
+    /// The Stale review on `pull_request`, from the push or from when the check found it, whichever came
+    /// later. The window shows none before the check finds it, however long after the push that comes
+    /// (#908). So it stands until a mark acknowledges the finding the window drew, and marks up to the push.
+    /// A Stale review whose finding the store couldn't keep goes by the push alone, as before Tsugiki kept
+    /// findings, so Mark Seen still clears it on a store that can't write.
+    fn stale_review(&self, pull_request: &PullRequestFacts) -> Option<Cause> {
+        let pushed = self.pushed_at(pull_request.number);
+        let cause = self.standing_from(pull_request, pushed, Why::StaleReview);
+        let Some(found) = self.stale_found.get(&pull_request.number) else {
+            return cause;
+        };
+        let at = pushed.unwrap_or(pull_request.updated_at).max(found.at);
+        (cause.is_some() || !found.acknowledged).then_some(Cause {
+            at,
+            why: Why::StaleReview,
+        })
+    }
+
     fn failed_checks_of(&self, number: u32) -> &[String] {
         let checks = self.facts.failed_checks.get(&number);
         checks.map_or(&[], Vec::as_slice)
@@ -550,8 +603,7 @@ impl Judge<'_> {
             return causes;
         }
         if self.stale_reviews.contains(&number) {
-            let pushed = self.pushed_at(number);
-            causes.extend(self.standing_from(pull_request, pushed, Why::StaleReview));
+            causes.extend(self.stale_review(pull_request));
         }
         let involvement = if pull_request.is_written_or_reviewed_by(self.viewer) {
             Involvement::WroteOrReviewed

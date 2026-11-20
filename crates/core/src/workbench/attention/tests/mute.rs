@@ -10,11 +10,19 @@ use crate::workbench::testing::assigned_issue;
 impl World {
     /// Mute on item `number`'s line of `view`, as the window drew it.
     fn mute_in(&self, view: &WorkbenchView, number: u32) {
-        let (key, SeenMark { numbers, up_to }) = self.drawn_in(view, number);
+        let (
+            key,
+            SeenMark {
+                numbers,
+                up_to,
+                findings,
+            },
+        ) = self.drawn_in(view, number);
         let muting = Muting {
             key,
             numbers,
             up_to,
+            findings,
         };
         let now = OffsetDateTime::now_utc();
         self.db.store.mute(&cpython(), muting, now).unwrap();
@@ -246,12 +254,13 @@ fn an_assignment_to_a_closed_issue_asks_nothing() {
 fn a_muted_item_that_is_archived_too_leaves_the_archived_view() {
     let world = World::new("mute-archived");
     world.has(vec![own(1), own(2)]);
-    let (key, SeenMark { numbers, up_to }) = world.drawn_in(&WorkbenchView::Whole, 1);
+    let (key, SeenMark { numbers, up_to, .. }) = world.drawn_in(&WorkbenchView::Whole, 1);
     let archiving = Archiving {
         key,
         numbers,
         up_to,
         put_away: PutAway::Now,
+        findings: vec![],
     };
     let now = OffsetDateTime::now_utc();
     world.db.store.archive(&cpython(), archiving, now).unwrap();
@@ -261,6 +270,30 @@ fn a_muted_item_that_is_archived_too_leaves_the_archived_view() {
 
     assert!(read.items.is_empty());
     assert_eq!(read.archived, 0);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_on_a_muted_item_acknowledges_no_stale_review_the_check_found_during_the_mute() {
+    let world = World::new("mute-stale-found");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    world.found(&involved(), &[1]);
+    world.mute_in(&filter(involved()), 1);
+    world.check_read([(sha_of('1'), 'a'), (sha_of('2'), 'b')]);
+    world.checks_kept(a_minute_on());
+
+    let read = world.view(&filter(involved()));
+    let muted = read.muted.iter().find(|listed| number_of(listed) == 1);
+    let mark = seen_of(&muted.unwrap().item).mark;
+    assert_eq!(mark.findings, []);
+    world.marks(Marked::Seen {
+        repository: cpython(),
+        mark,
+    });
+    let key = ItemKey::PullRequest { number: 1 };
+    world.db.store.unmute(&cpython(), key).unwrap();
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
     world.finish();
 }
 

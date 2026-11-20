@@ -34,7 +34,7 @@ vi.mock("$lib/data/bindings", () => ({
 
 /** The mark that Mark Seen sends for `numbers`, with nothing new on them. */
 const seen = (...numbers: number[]): Seen => ({
-  mark: { numbers, up_to: null },
+  mark: { numbers, up_to: null, findings: [] },
   state: "seen",
 });
 
@@ -1068,7 +1068,7 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.markSeen).mockResolvedValue(done);
     vi.mocked(commands.markUnseen).mockResolvedValue(refused("no database"));
     const state = new WorkbenchState("python/cpython");
-    const mark = { numbers: [1, 2], up_to: "2026-11-04T10:00:00Z" };
+    const mark = { numbers: [1, 2], up_to: "2026-11-04T10:00:00Z", findings: [] };
 
     expect(await state.markSeen(mark)).toBeUndefined();
     expect(await state.markUnseen(7)).toBe("no database");

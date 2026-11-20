@@ -16,6 +16,7 @@ use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::status::Change;
+use crate::store::testing::seeing;
 use crate::store::{Archiving, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
@@ -2603,6 +2604,7 @@ fn a_refresh_leaves_a_muted_pr_hidden_on_new_activity_and_shows_it_on_a_review_r
         key,
         numbers: vec![3],
         up_to: Some(moment(LAST_SYNC)),
+        findings: vec![],
     };
     (harness.db.store)
         .mute(&cpython(), muting, moment(LAST_SYNC))
@@ -2703,7 +2705,7 @@ fn an_issue_a_pr_brought_back_stays_out_of_archived_on_mark_seen_and_leaves_the_
     let store = &harness.db.store;
 
     store
-        .mark_seen(&cpython(), vec![1, 5], Some(moment(AFTER_IT)))
+        .mark_seen(&cpython(), seeing(vec![1, 5], Some(moment(AFTER_IT))))
         .unwrap();
     let after_seen = (archived(&harness), inbox(&harness, &settings));
     let archiving = Archiving {
@@ -2711,6 +2713,7 @@ fn an_issue_a_pr_brought_back_stays_out_of_archived_on_mark_seen_and_leaves_the_
         numbers: vec![1, 5],
         up_to: Some(moment(AFTER_IT)),
         put_away: PutAway::Now,
+        findings: vec![],
     };
     store
         .archive(&cpython(), archiving, moment(AFTER_IT))

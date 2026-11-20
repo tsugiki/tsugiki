@@ -51,8 +51,13 @@ pub(super) fn seen_of(causes: &Causes, numbers: Vec<u32>) -> Seen {
     } else {
         SeenState::Seen
     };
+    let findings = causes.findings_in(&numbers);
     Seen {
-        mark: SeenMark { numbers, up_to },
+        mark: SeenMark {
+            numbers,
+            up_to,
+            findings,
+        },
         state,
     }
 }

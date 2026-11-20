@@ -42,7 +42,7 @@ const issue: IssueItem = {
     { kind: "pr", ...row, number: 160663, backports: [] },
   ],
   seen: {
-    mark: { numbers: [112564, 160662, 160663], up_to: null },
+    mark: { numbers: [112564, 160662, 160663], up_to: null, findings: [] },
     state: "seen",
   },
 };

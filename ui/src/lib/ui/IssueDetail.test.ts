@@ -67,7 +67,7 @@ const view: IssueView = {
   merged: [],
   merged_count: 0,
   seen: {
-    mark: { numbers: [7, 10, 11, 12, 13, 14], up_to: null },
+    mark: { numbers: [7, 10, 11, 12, 13, 14], up_to: null, findings: [] },
     state: "seen",
   },
   content: {
@@ -139,7 +139,7 @@ it("offers Mark Seen in its header while something is new or it is Marked unseen
   const onmark = vi.fn();
   const seen = (state: "seen" | "new_activity" | "marked_unseen") => ({
     ...view,
-    seen: { mark: { numbers: [7], up_to: "2026-11-04T10:00:00Z" }, state },
+    seen: { mark: { numbers: [7], up_to: "2026-11-04T10:00:00Z", findings: [] }, state },
   });
 
   await shown(seen("seen"), vi.fn(), onmark);

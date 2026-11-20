@@ -10,7 +10,8 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
-use crate::store::{Archiving, AuthorMuting, Seeing};
+use crate::store::testing::seeing;
+use crate::store::{Archiving, AuthorMuting};
 use crate::testing::cpython;
 use crate::work::{SeenMark, YourReview};
 use crate::workbench::testing::{
@@ -172,6 +173,7 @@ fn the_view_says_whether_the_issue_is_archived() {
         numbers,
         up_to: None,
         put_away: PutAway::Now,
+        findings: vec![],
     };
     let now = OffsetDateTime::now_utc();
     world.db.store.archive(&cpython(), archiving, now).unwrap();
@@ -210,10 +212,10 @@ fn the_view_offers_mute_author_for_its_issues_author_and_says_once_they_are_mute
     world.has(vec![fixing(10, 1)], vec![issue(1)]);
     let before = view(&world, 1).unwrap();
 
-    let SeenMark { numbers, up_to } = before.issue.seen.mark.clone();
+    let SeenMark { numbers, up_to, .. } = before.issue.seen.mark.clone();
     let muting = AuthorMuting {
         author: author.clone(),
-        marks: vec![Seeing { numbers, up_to }],
+        marks: vec![seeing(numbers, up_to)],
     };
     let now = OffsetDateTime::now_utc();
     world.db.store.mute_author(&cpython(), muting, now).unwrap();

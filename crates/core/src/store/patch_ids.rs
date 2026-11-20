@@ -5,12 +5,15 @@
 use std::collections::BTreeMap;
 
 use rusqlite::{OptionalExtension, Row, Transaction, named_params};
+use time::OffsetDateTime;
 
 use super::Connection;
+use super::columns::UnixTime;
 use super::pull_request_content::reviewed_commits;
 use crate::facts::CommitSha;
 use crate::facts::patch_ids::{
-    CantCheck, CommitPatches, FilePatch, LastCheck, PatchesOf, ReviewFacts, UncheckedCommit,
+    CantCheck, CommitPatches, FilePatch, Findings, Found, LastCheck, PatchesOf, ReviewFacts,
+    StaleFinding, StaleFound, UncheckedCommit,
 };
 use crate::facts::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
@@ -59,6 +62,58 @@ pub(super) const CHECKS: &str = "
         head_commit TEXT NOT NULL,
         PRIMARY KEY (repository, number)
     ) WITHOUT ROWID;
+";
+
+/// Each PR's last finding that the user's Review of `reviewed_commit` is stale against `head_commit`, or that
+/// the check of the two can't run, first found at `found_at` (#908). `acknowledged_head` is `head_commit`
+/// once a mark acknowledged that finding as the window drew it, and null before.
+///
+/// The window before these were kept could show a Stale review where a check of the user's Review couldn't
+/// run, as `unchecked_commits` says of the last run, or had run: on the PR's head where the patch-ids of
+/// both commits were read, and otherwise on the head `last_checks` says it compared. Each of those counts
+/// as found in 1970 and acknowledged, so its Stale review still waits on the push alone, as it did then. A
+/// Review whose check never ran showed none, so the first check after the upgrade finds it afresh. One the
+/// check finds the same ends at the first check after the upgrade.
+pub(super) const STALE_REVIEWS: &str = "
+    CREATE TABLE stale_reviews (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        reviewed_commit TEXT NOT NULL,
+        head_commit TEXT NOT NULL,
+        found_at INTEGER NOT NULL,
+        acknowledged_head TEXT,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+    CREATE TEMP VIEW moved_on AS
+        SELECT pr.repository, pr.number, pr.head, pr.target_branch, review.commit_sha AS reviewed
+        FROM pull_requests AS pr
+        JOIN viewer ON viewer.id = 1
+        JOIN pr_reviews AS review ON review.repository = pr.repository AND review.number = pr.number
+        WHERE review.position = (SELECT MAX(mine.position) FROM pr_reviews AS mine
+                                 WHERE mine.repository = pr.repository AND mine.number = pr.number
+                                   AND mine.author = viewer.login COLLATE NOCASE)
+          AND review.commit_sha IS NOT NULL AND pr.head IS NOT NULL AND pr.head <> review.commit_sha;
+    INSERT INTO stale_reviews
+            (repository, number, reviewed_commit, head_commit, found_at, acknowledged_head)
+        SELECT repository, number, reviewed, head, 0, head FROM moved_on
+        WHERE EXISTS (SELECT 1 FROM unchecked_commits AS unchecked
+                      WHERE unchecked.repository = moved_on.repository
+                        AND unchecked.target_branch = moved_on.target_branch
+                        AND unchecked.commit_sha IN (moved_on.reviewed, moved_on.head));
+    INSERT OR IGNORE INTO stale_reviews
+            (repository, number, reviewed_commit, head_commit, found_at, acknowledged_head)
+        SELECT repository, number, reviewed, head, 0, head FROM moved_on
+        WHERE (SELECT COUNT(*) FROM patched_commits AS patched
+               WHERE patched.repository = moved_on.repository
+                 AND patched.target_branch = moved_on.target_branch
+                 AND patched.commit_sha IN (moved_on.reviewed, moved_on.head)) = 2;
+    INSERT OR IGNORE INTO stale_reviews
+            (repository, number, reviewed_commit, head_commit, found_at, acknowledged_head)
+        SELECT moved_on.repository, moved_on.number, reviewed, last.head_commit, 0, last.head_commit
+        FROM moved_on
+        JOIN last_checks AS last ON last.repository = moved_on.repository AND last.number = moved_on.number
+                                AND last.reviewed_commit = moved_on.reviewed;
+    DROP VIEW moved_on;
 ";
 
 /// Keeps each of `patches`, in place of what was kept of the same commit before.
@@ -185,9 +240,76 @@ pub(super) fn save_last_checks(
     transaction.commit()
 }
 
+/// Keeps `findings`: each found Review dated `now` and not yet acknowledged, in place of what was kept of
+/// its PR, and each ended one forgotten.
+pub(super) fn save_findings(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    findings: &Findings,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let mut found = transaction.prepare(
+        "INSERT OR REPLACE INTO stale_reviews
+             (repository, number, reviewed_commit, head_commit, found_at, acknowledged_head)
+         VALUES (:repository, :number, :reviewed, :head, :now, NULL)",
+    )?;
+    for Found {
+        number,
+        reviewed,
+        head,
+    } in &findings.found
+    {
+        let row = named_params! {
+            ":repository": repository,
+            ":number": number,
+            ":reviewed": reviewed,
+            ":head": head,
+            ":now": now.unix_timestamp(),
+        };
+        found.execute(row).map(drop)?;
+    }
+    drop(found);
+    let mut ended = transaction
+        .prepare("DELETE FROM stale_reviews WHERE repository = :repository AND number = :number")?;
+    for number in &findings.ended {
+        let row = named_params! { ":repository": repository, ":number": number };
+        ended.execute(row).map(drop)?;
+    }
+    drop(ended);
+    transaction.commit()
+}
+
+/// Acknowledges each of `findings`, which a mark carries as the window drew them, where the store still
+/// keeps that finding, in the mark's `transaction`. One the window never drew, as a later head's, stays as
+/// it is.
+pub(super) fn acknowledge_in(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    findings: &[StaleFinding],
+) -> rusqlite::Result<()> {
+    let mut statement = transaction.prepare(
+        "UPDATE stale_reviews SET acknowledged_head = head_commit
+         WHERE repository = :repository AND number = :number AND reviewed_commit = :reviewed
+           AND head_commit = :head AND found_at = :found_at",
+    )?;
+    for finding in findings {
+        let row = named_params! {
+            ":repository": repository,
+            ":number": finding.number,
+            ":reviewed": finding.reviewed,
+            ":head": finding.head,
+            ":found_at": finding.found_at.unix_timestamp(),
+        };
+        statement.execute(row).map(drop)?;
+    }
+    Ok(())
+}
+
 /// The review facts of `pull_requests`: the reviewed commit of each, and, where the head moved on from it,
 /// the patch-ids held of both commits against its Target branch, why the worker can't read those it can't,
-/// and the PR's last check of the same Review with the patch-ids of the head it compared.
+/// the PR's last check of the same Review with the patch-ids of the head it compared, and its last finding
+/// that the user's Review is stale.
 pub(super) fn read_facts(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
@@ -223,7 +345,34 @@ pub(super) fn read_facts(
         patches,
         unchecked: read_unchecked(transaction, repository)?,
         last_checks,
+        stale_found: read_stale_found(transaction, repository)?,
     })
+}
+
+fn read_stale_found(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, StaleFound>> {
+    let mut statement = transaction.prepare(
+        "SELECT number, reviewed_commit, head_commit, found_at, acknowledged_head FROM stale_reviews
+         WHERE repository = :repository",
+    )?;
+    let asked = named_params! { ":repository": repository };
+    let found = statement.query_map(asked, stale_found_in)?;
+    found.collect()
+}
+
+fn stale_found_in(row: &Row<'_>) -> rusqlite::Result<(u32, StaleFound)> {
+    let UnixTime(at) = row.get("found_at")?;
+    let head: CommitSha = row.get("head_commit")?;
+    let acknowledged: Option<CommitSha> = row.get("acknowledged_head")?;
+    let found = StaleFound {
+        reviewed: row.get("reviewed_commit")?,
+        acknowledged: acknowledged.as_ref() == Some(&head),
+        head,
+        at,
+    };
+    Ok((row.get("number")?, found))
 }
 
 fn read_last_checks(

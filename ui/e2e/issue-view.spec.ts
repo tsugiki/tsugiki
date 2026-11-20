@@ -15,7 +15,7 @@ const row = workbenchRow(10, {
   author: "some-author",
   state: "MERGED",
   your_review: { kind: "reviewed" },
-  seen: { mark: { numbers: [], up_to: null }, state: "seen" },
+  seen: { mark: { numbers: [], up_to: null, findings: [] }, state: "seen" },
 });
 
 const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = []): ListedItem => ({
@@ -27,7 +27,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
   mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: pullRequests,
-  seen: { mark: { numbers: [number], up_to: null }, state: "seen" },
+  seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },
   attention: waiting
     ? { since: "2026-11-04T10:00:00Z", why: [{ kind: "comment", by: "some-reviewer" }] }
     : null,
@@ -49,7 +49,7 @@ const view = (bodyHtml: string): IssueView => ({
   labels: ["type-bug"],
   needs_attention: [10],
   hidden: null,
-  seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
+  seen: { mark: { numbers: [7, 10], up_to: null, findings: [] }, state: "seen" },
   pull_requests: [
     {
       kind: "pr",

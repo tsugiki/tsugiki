@@ -408,6 +408,7 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
             SeenMark {
                 numbers: vec![7, 8],
                 up_to: Some(drawn),
+                findings: vec![],
             },
         );
     });
@@ -428,6 +429,7 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
         let mark = |numbers| SeenMark {
             numbers,
             up_to: Some(drawn),
+            findings: vec![],
         };
         asked.archive(gcmon(), issue, mark(vec![7, 8]));
         asked.keep_archived(gcmon(), issue, mark(vec![7]));
@@ -456,6 +458,7 @@ fn mute_marks_the_item_seen_and_keeps_it_muted_until_unmute() {
         let mark = |numbers| SeenMark {
             numbers,
             up_to: Some(drawn),
+            findings: vec![],
         };
         asked.mute(gcmon(), issue, mark(vec![7, 8]));
         asked.mute(gcmon(), standalone, mark(vec![9]));
@@ -555,6 +558,7 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
             SeenMark {
                 numbers: vec![7],
                 up_to: Some(drawn),
+                findings: vec![],
             },
         );
         asked.mark_unseen(gcmon(), 8, None);
@@ -581,6 +585,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
         SeenMark {
             numbers: vec![7, 8],
             up_to: None,
+            findings: vec![],
         },
     );
     requests.fetch_issue(gcmon(), 7);
@@ -754,6 +759,7 @@ fn an_unmute_before_a_save_it_hasnt_followed_moves_reach_from_where_the_save_end
         key: ItemKey::Issue { number: 5 },
         numbers: vec![5, 8, 9],
         up_to: None,
+        findings: vec![],
     };
     store
         .mute(&gcmon(), muting, OffsetDateTime::now_utc())
@@ -882,6 +888,7 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         mark: SeenMark {
             numbers: vec![7],
             up_to: None,
+            findings: vec![],
         },
     };
     let unseen = Marked::Unseen {
@@ -2256,6 +2263,7 @@ fn issue_5_seen() -> SeenMark {
     SeenMark {
         numbers: vec![5, 8, 9],
         up_to: None,
+        findings: vec![],
     }
 }
 
@@ -2674,6 +2682,22 @@ fn once_both_sides_are_read_the_session_keeps_them_as_the_prs_last_check() {
 }
 
 #[test]
+fn the_session_dates_the_first_stale_finding_of_a_review_before_the_window_hears_of_it() {
+    let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'c')];
+    let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+
+    let (_, held) = keeping_patches(
+        "dates-stale-finding",
+        replying(vec![signed_in()]),
+        vec![PatchReads::Read(both)],
+    );
+
+    let found = &held.stale_found[&8];
+    assert_eq!(found.reviewed, CommitSha::parse("0123abc").unwrap());
+    assert!(before <= found.at && found.at <= OffsetDateTime::now_utc());
+}
+
+#[test]
 fn the_session_keeps_the_commits_the_mirror_cant_read_and_tells_the_window_of_each_change() {
     let refused = UncheckedCommit {
         of: on_main("0123abc"),
@@ -2693,6 +2717,8 @@ fn the_session_keeps_the_commits_the_mirror_cant_read_and_tells_the_window_of_ea
         held.unchecked,
         BTreeMap::from([(on_main("0123abc"), CantCheck::Refused)])
     );
+    // A check that can't run finds the Review stale, and the session dates it.
+    assert_eq!(held.stale_found.keys().collect::<Vec<_>>(), [&8]);
 }
 
 #[test]
@@ -2706,6 +2732,39 @@ fn patch_ids_the_store_cant_keep_show_its_problem() {
 
         assert!(matches!(showing(&seen), Status::Problem { .. }));
     }
+}
+
+#[test]
+fn reads_the_store_kept_reach_the_window_though_it_cant_keep_the_finding() {
+    let store = empty_store();
+    store.remember_login(&me()).unwrap();
+    let stored = stored_pr(8, "some-author", "4567def");
+    store.save_pull_requests(&gcmon(), vec![stored]).unwrap();
+    let reviewed = CommitSha::parse("0123abc").unwrap();
+    let content = (
+        reviewed_by("octocat", &reviewed),
+        OffsetDateTime::UNIX_EPOCH,
+    );
+    store
+        .save_pull_request_content(&gcmon(), 8, content)
+        .unwrap();
+    let (board, seen) = watched_board();
+    let (passed, changes) = mpsc::channel();
+    let mut board = board.with_changes(Box::new(move |change: &Change| {
+        passed.send(change.clone()).unwrap();
+    }));
+    // The calls go: the patch-ids, the facts, the last check, then the finding, which goes missing.
+    let (lossy, _calls) = store.failing_at_call(Some(3));
+    let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'c')];
+
+    keep_patches(&mut board, &lossy, &gcmon(), PatchReads::Read(both));
+
+    assert!(matches!(showing(&seen), Status::Problem { .. }));
+    let heard: Vec<Vec<u32>> = changes.try_iter().map(|change| change.items).collect();
+    assert_eq!(heard, [[8]]);
+    let held = store.work_facts(&gcmon()).unwrap().reviews;
+    assert_eq!(held.patches.len(), 2);
+    assert_eq!(held.stale_found, BTreeMap::new());
 }
 
 /// A PR's Conversation with one Review by `author`, of `commit`.

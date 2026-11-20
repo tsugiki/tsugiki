@@ -25,7 +25,7 @@ pub(crate) use reach::{
 pub use reasons::WorkReason;
 pub(crate) use reasons::reasons;
 pub(crate) use review_state::SharedReviews;
-pub use review_state::{YourReview, checks_to_keep};
+pub use review_state::{YourReview, checks_to_keep, findings_to_keep};
 
 /// The PRs a Backport can sit under, of those each with its Backport link: the ones that aren't Backports
 /// too, which keeps a tree two levels deep. A Bot backport shares the review state of the one it sits under.

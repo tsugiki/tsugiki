@@ -30,11 +30,11 @@ use crate::settings::SettingsView;
 use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
-    ReaderToOpen, Store, StoreReader,
+    ReaderToOpen, Seeing, Store, StoreReader,
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
+use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, findings_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
 use on_screen::OnScreen;
 use refill::LinkRefill;
@@ -742,9 +742,9 @@ fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
     // that can't keep it says so in the log, and in the status bar at the next step that saves.
-    if let Err(problem) = keep_last_checks(store, repository, facts) {
+    if let Err(problem) = keep_checks(store, repository, facts, OffsetDateTime::now_utc()) {
         log::warn!(
-            "Tsugiki couldn't keep the last Stale review checks in {repository}: {}",
+            "Tsugiki couldn't keep the Stale review checks in {repository}: {}",
             problem.message
         );
     }
@@ -909,12 +909,13 @@ fn keep_patches(
         }
     };
     let facts = saved.and_then(|()| store.work_facts(repository));
-    let kept = facts.and_then(|facts| {
-        keep_last_checks(store, repository, &facts)?;
-        Ok(facts)
-    });
-    match kept {
+    match facts {
         Ok(facts) => {
+            // The reads are saved, so the window hears of them whether or not the checks are.
+            if let Err(problem) = keep_checks(store, repository, &facts, OffsetDateTime::now_utc())
+            {
+                board.set(Status::Problem { problem });
+            }
             let reviewed = &facts.reviews.reviewed;
             let checked = facts.pull_requests.iter().filter(|pr| {
                 let sides = pr.head.iter().chain(reviewed.get(&pr.number));
@@ -930,17 +931,23 @@ fn keep_patches(
 }
 
 /// Keeps as its last check the two commits of each PR whose patch-ids `facts` hold of both, where the store
-/// kept others, so their verdict stands while a newer check waits.
-fn keep_last_checks(
+/// kept others, so their verdict stands while a newer check waits. Then dates from `now` each Review a check
+/// finds stale, or can't check, for the first time, before the window hears of it (#908).
+pub(crate) fn keep_checks(
     store: &Store,
     repository: &RepositoryName,
     facts: &WorkFacts,
+    now: OffsetDateTime,
 ) -> Result<(), Error> {
     let checks = checks_to_keep(facts);
-    if checks.is_empty() {
+    if !checks.is_empty() {
+        store.save_last_checks(repository, checks)?;
+    }
+    let findings = findings_to_keep(facts);
+    if findings.is_empty() {
         return Ok(());
     }
-    store.save_last_checks(repository, checks)
+    store.save_findings(repository, findings, now)
 }
 
 /// Tells the window of `change`, which a mark made, or the status bar why the store couldn't keep it.
@@ -953,19 +960,28 @@ fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Chang
 
 /// Keeps what the user marked, with the change to tell the window of. Mute author and Unmute author find
 /// the author's items under the Repository's `settings`.
-fn keep_mark(
+pub(crate) fn keep_mark(
     store: &Store,
     settings: &RepositorySettings,
     marked: Marked,
 ) -> (Result<(), Error>, Change) {
     match marked {
         Marked::Seen { repository, mark } => {
-            let SeenMark { numbers, up_to } = mark;
+            let SeenMark {
+                numbers,
+                up_to,
+                findings,
+            } = mark;
             let change = Change {
                 repository,
                 items: numbers.clone(),
             };
-            (store.mark_seen(&change.repository, numbers, up_to), change)
+            let seeing = Seeing {
+                numbers,
+                up_to,
+                findings,
+            };
+            (store.mark_seen(&change.repository, seeing), change)
         }
         Marked::Unseen {
             repository,
@@ -982,7 +998,12 @@ fn keep_mark(
         Marked::Archived {
             repository,
             key,
-            mark: SeenMark { numbers, up_to },
+            mark:
+                SeenMark {
+                    numbers,
+                    up_to,
+                    findings,
+                },
             put_away,
             at,
         } => {
@@ -995,6 +1016,7 @@ fn keep_mark(
                 numbers,
                 up_to,
                 put_away,
+                findings,
             };
             let saved = store.archive(&change.repository, archiving, at);
             (saved, change)
@@ -1007,7 +1029,12 @@ fn keep_mark(
         Marked::Muted {
             repository,
             key,
-            mark: SeenMark { numbers, up_to },
+            mark:
+                SeenMark {
+                    numbers,
+                    up_to,
+                    findings,
+                },
             at,
         } => {
             let change = Change {
@@ -1018,6 +1045,7 @@ fn keep_mark(
                 key,
                 numbers,
                 up_to,
+                findings,
             };
             let saved = store.mute(&change.repository, muting, at);
             (saved, change)

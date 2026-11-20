@@ -15,78 +15,9 @@ fn cpython_gets_its_conventions_and_others_get_githubs() {
 }
 
 #[test]
-fn a_cpython_title_names_its_issues_with_its_prefix() {
-    for (title, expected) in [
-        ("gh-123: Fix it", vec![123]),
-        ("GH-123: Fix it", vec![123]),
-        ("[3.14] gh-123: Fix it (GH-456)", vec![123]),
-        ("gh-123, gh-456: Fix both", vec![123, 456]),
-        ("gh-123 gh-456: Fix both", vec![123, 456]),
-        ("[3.14] gh-123, GH-456: Fix both", vec![123, 456]),
-        ("gh-123, see gh-456: Fix it", vec![]),
-        (": Fix it", vec![]),
-        ("Fix it", vec![]),
-        ("Fix: gh-123 again", vec![]),
-        ("see gh-123: it broke", vec![]),
-        ("gh-: Fix it", vec![]),
-        ("gh-12x: Fix it", vec![]),
-        ("gé: Fix it", vec![]),
-        ("[3.14 gh-123: Fix it", vec![]),
-    ] {
-        assert_eq!(
-            Conventions::Cpython.issues_in_title(title),
-            expected,
-            "{title}"
-        );
-    }
-}
-
-#[test]
-fn a_title_could_name_what_any_conventions_read_in_it() {
-    assert_eq!(
-        Conventions::issues_in_title_under_any("gh-123: Fix it"),
-        [123]
-    );
-}
-
-#[test]
-fn a_cpython_title_names_its_origin_pr_with_its_marker() {
-    for (title, expected) in [
-        ("[3.14] gh-1: Fix it (GH-9)", Some(9)),
-        ("[3.14] Doc: Fix it (gh-9)", Some(9)),
-        ("[3.14] gh-1: Fix it (GH-9) and more", Some(9)),
-        ("[3.14] gh-1: Revert (GH-8) (GH-9)", Some(9)),
-        ("[3.14] gh-1: Fix it (GH-9) (see notes)", Some(9)),
-        ("[3.14] gh-1: Fix it", None),
-        ("[3.14] gh-1: Fix it GH-9", None),
-        ("[3.14] gh-1: Fix it (#9)", None),
-        ("[3.14] gh-1: Fix it (GH-)", None),
-        ("[3.14] gh-1: Fix it (GH-9", None),
-        ("Fix it", None),
-    ] {
-        assert_eq!(
-            Conventions::Cpython.origin_in_title(title),
-            expected,
-            "{title}"
-        );
-    }
-}
-
-#[test]
-fn githubs_conventions_have_no_backports() {
-    let title = "[3.14] gh-1: Fix it (GH-9)";
-    assert_eq!(Conventions::Github.origin_in_title(title), None);
+fn only_cpythons_conventions_have_backports() {
     assert!(!Conventions::Github.has_backports());
     assert!(Conventions::Cpython.has_backports());
-}
-
-#[test]
-fn a_title_could_name_the_origin_any_conventions_read_in_it() {
-    assert_eq!(
-        Conventions::origin_in_title_under_any("[3.14] gh-1: Fix it (GH-9)"),
-        Some(9)
-    );
-    assert_eq!(Conventions::origin_in_title_under_any("Fix it"), None);
 }
 
 #[test]

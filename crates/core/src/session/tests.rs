@@ -637,7 +637,7 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
     for marked in [seen_mark, unseen] {
         let (mut board, seen) = watched_board();
 
-        mark(&mut board, &Store::stopped(), marked);
+        mark_moving_reach(&mut board, &Store::stopped(), &unheard(), (marked, None));
 
         assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
@@ -2010,6 +2010,52 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
 }
 
 #[test]
+fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_an_older_head() {
+    let (folders, _folder) = temp_folders("muted-no-token");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    // PR 8's Conversation was read before its head moved, and PR 9's at its head.
+    let read_at = |number: u32, head: &str| {
+        let content = reviewed_by("some-reviewer", &CommitSha::parse(head).unwrap());
+        store
+            .save_pull_request_content(&gcmon(), number, (content, OffsetDateTime::UNIX_EPOCH))
+            .unwrap();
+    };
+    read_at(8, "fedcba9");
+    read_at(9, "89abcde");
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let github = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+    let connections = Connections { github, mirrors };
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+
+    let asked = session.fetching();
+    asked.sync(cpython_gcmon());
+    asked.mute(gcmon(), issue, issue_5_seen());
+    let muted = heard.asked_through("wants heads none", PLENTY);
+    let change = changes.recv_timeout(PLENTY).unwrap();
+    asked.unmute(gcmon(), issue);
+    let unmuted = heard.asked_through("wants heads #8", PLENTY);
+    session.stop(PLENTY);
+    let store = Store::open(&folders.database()).unwrap();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+
+    assert!(
+        muted.contains(&"some-maintainer/gcmon wants heads none".to_owned()),
+        "{muted:?}"
+    );
+    assert_eq!(change.items, [5, 8, 9]);
+    let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
+    assert!(unmuted.contains(&heads.to_owned()), "{unmuted:?}");
+    assert_eq!(owed, [8].into());
+}
+
+#[test]
 fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmute_hands_them_back()
 {
     let (folders, _folder) = temp_folders("muted-author-session");
@@ -2111,7 +2157,7 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
         at: OffsetDateTime::now_utc(),
     };
 
-    let moved = ReachMove::of(&muted, &lossy, &syncs);
+    let moved = ReachMove::of(&muted, &lossy, syncs.held());
     mark_moving_reach(&mut quiet_board(), &lossy, &fetching, (muted, moved));
 
     // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The

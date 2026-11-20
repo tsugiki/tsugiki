@@ -1203,7 +1203,7 @@ fn a_sync_whose_settings_went_missing_says_it_is_tsugikis_mistake_and_asks_githu
     let harness = Harness::new("settings-lost", vec![]);
     let mut syncs = Syncs::default();
     syncs.add(plain(cpython()));
-    syncs.settings.clear();
+    syncs.settings = HeldSettings::default();
 
     let failure = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 

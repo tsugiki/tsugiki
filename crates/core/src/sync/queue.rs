@@ -1,11 +1,11 @@
 //! The queue of syncs: which runs next, when it can run and when it gives up (ADR 0015).
 
 use std::collections::{BTreeSet, VecDeque};
-use std::mem;
 use std::time::{Duration, Instant};
 
 use time::OffsetDateTime;
 
+use super::HeldSettings;
 use super::issues::fetch_issue_batch;
 use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
@@ -145,13 +145,8 @@ pub struct Syncs {
     /// The trees of Issues the user opened with no first sync's queue to put them in. Each goes ahead of
     /// `queue` for its few requests, and leaves no trace of a sync behind it.
     trees: VecDeque<OpenedTree>,
-    /// The settings of each Repository opened since launch, as the session last heard them: the one copy
-    /// every sync reads them from.
-    settings: Vec<RepositorySettings>,
-    /// The settings the settings owner last handed over of each Repository, which it hands over in the
-    /// order it saves them. Opening a Repository takes these over the copy the command that opened it read,
-    /// which a save handed over meanwhile can have outdated.
-    owned: Vec<RepositorySettings>,
+    /// The settings of each Repository opened since launch, which every sync reads.
+    settings: HeldSettings,
     /// The Issues of `open` the user has opened since it opened. Each reads its tree once, because the
     /// session reads an Issue on screen again about once a minute.
     opened: BTreeSet<u32>,
@@ -174,22 +169,14 @@ impl Syncs {
     /// own: those are as new as any, and the copy here can be older.
     pub fn add(&mut self, repository: RepositorySettings) {
         let name = repository.name.clone();
-        let owned = (self.owned.iter()).find(|owned| owned.name.is_same(&name));
-        let repository = owned.cloned().unwrap_or(repository);
         if !self.is_open(&name) {
             self.opened.clear();
             self.trees.clear();
         }
-        let sync = self
-            .take(&name)
-            .map_or_else(|| UserWorkSync::new(&repository), |queued| queued.sync);
+        let queued = self.take(&name);
+        let repository = self.settings.open(repository);
+        let sync = queued.map_or_else(|| UserWorkSync::new(repository), |queued| queued.sync);
         self.queue.push_front(Queued::new(sync));
-        let held = (self.settings.iter_mut()).find(|held| held.name.is_same(&name));
-        if let Some(held) = held {
-            *held = repository;
-        } else {
-            self.settings.push(repository);
-        }
         self.open = Some(name);
         self.open_went_last = false;
     }
@@ -202,17 +189,7 @@ impl Syncs {
         &mut self,
         repository: RepositorySettings,
     ) -> Option<RepositorySettings> {
-        let name = repository.name.clone();
-        let owned = (self.owned.iter_mut()).find(|owned| owned.name.is_same(&name));
-        match owned {
-            Some(owned) => owned.clone_from(&repository),
-            None => self.owned.push(repository.clone()),
-        }
-        let held = (self.settings.iter_mut()).find(|held| held.name.is_same(&name))?;
-        if *held == repository {
-            return None;
-        }
-        Some(mem::replace(held, repository))
+        self.settings.replace(repository)
     }
 
     /// Queues the timer's refresh of the open Repository, unless a sync of it is under way or waiting. A
@@ -307,7 +284,12 @@ impl Syncs {
 
     /// The settings `repository`'s syncs read, if it was opened since launch.
     pub fn settings(&self, repository: &RepositoryName) -> Option<&RepositorySettings> {
-        (self.settings.iter()).find(|settings| settings.name.is_same(repository))
+        self.settings.get(repository)
+    }
+
+    /// The settings of each Repository opened since launch, which the syncs read.
+    pub fn held(&self) -> &HeldSettings {
+        &self.settings
     }
 
     /// The settings a step of `repository`'s sync reads. Each sync starts from settings these hold, and none

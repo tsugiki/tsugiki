@@ -193,7 +193,10 @@ describe("the Release workflow", () => {
       lines.push(RELEASE[at + lines.length] ?? "");
     }
     const command = lines.map((line) => line.trim().replace(/\s*\\$/, "")).join(" ");
+    const repo = RELEASE.find((line) => line.startsWith("  REPO: "))?.slice("  REPO: ".length);
+    expect(repo).toBe("tsugiki/tsugiki");
     const page = releasePage("- Notes.").split("\n");
-    expect(page).toContain(command.replace('"$file"', "<file>"));
+    const shown = command.replace('"$file"', "<file>").replaceAll(/"\$REPO([^"]*)"/g, `${repo}$1`);
+    expect(page).toContain(shown);
   });
 });

@@ -59,8 +59,9 @@ unrun although the closure ran, and its list of gaps skips a `?`. Put the `?` on
 pass a named function, as `statement.query_map(asked, event_in)?` does in `store/activity.rs`.
 
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
-log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the
-`justfile`, `scripts/` or `.github/workflows/`. `just next` lists the open tickets of the release being built.
+log's tail. Use it for a PR that changes the gates themselves: the `justfile`, `scripts/` or
+`.github/workflows/`, a release PR included. A release PR that only sets the version ships with
+`just ship --release` (`docs/releasing.md`). `just next` lists the open tickets of the release being built.
 `just tree 393` draws the open tickets below #393 as a tree of blockers, with how deep each chain runs.
 
 A hook in `.claude/settings.json` refuses a shell command that rewrites code or docs in place, such as

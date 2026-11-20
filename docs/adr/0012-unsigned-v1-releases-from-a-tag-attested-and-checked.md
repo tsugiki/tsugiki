@@ -22,13 +22,13 @@ published.
   Settings › Privacy & Security › Open Anyway. The ad-hoc signature changes with every build, so a personal
   access token kept in the keychain asks for access again after an update. gh's token isn't stored there and
   isn't affected.
-- **The workflow**, `release.yml`, runs in this order:
+- **The workflow**, `release.yml`, runs these steps:
   1. Pushing a tag `vX.Y.Z` on main starts it.
   2. The pre-release suites of [ADR 0009](0009-testing-and-full-coverage.md) run: the CPython mirror suite,
      the Windows smoke tests and the live-fixture check. For now only the smoke tests exist, and `release.yml`
      adds the others when they do.
-  3. The release's files are built, and the workflow starts the zip's `tsg.exe` and checks the `.dmg`'s
-     signature.
+  3. Beside those suites, the release's files are built, and the workflow starts the zip's `tsg.exe` and
+     checks the `.dmg`'s signature.
   4. Each file is attested with `actions/attest-build-provenance` and uploaded to a draft release. Its body is
      the version's section of `CHANGELOG.md`, then which file is for which system and the command that checks
      a download. The workflow fails if that section is missing.

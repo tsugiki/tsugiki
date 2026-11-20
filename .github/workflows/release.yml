@@ -27,6 +27,10 @@ concurrency:
 # Each job asks for its own, out of contents: write, id-token: write and attestations: write (ADR 0012).
 permissions: {}
 
+# The repository each draft goes to, and whose release workflow must have signed each download.
+env:
+  REPO: tsugiki/tsugiki
+
 jobs:
   check:
     name: check the version
@@ -49,6 +53,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: The tag matches Cargo.toml, and CHANGELOG.md has its section
         if: ${{ github.event_name == 'push' }}
         run: node scripts/release-check.ts "$GITHUB_REF_NAME" > release-notes.md
@@ -61,7 +66,8 @@ jobs:
           path: release-notes.md
           if-no-files-found: error
 
-  # It builds its own release with a debugging port open, so the downloads below are separate builds.
+  # It builds its own release with a debugging port open, so the downloads below are separate builds. The
+  # builds don't wait for it: the attest job's `needs` lists it, and must list each pre-release suite added.
   smoke:
     name: npm run smoke
     needs: [check]
@@ -76,14 +82,17 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - run: npm ci
       - run: npm run smoke
 
+  # Beside the smoke test, not after it, which halves the run. The attest job needs both, so a failed smoke
+  # test still stops the release, at the cost of the builds' runner minutes.
   build:
     name: build (${{ matrix.os }})
-    needs: [smoke]
+    needs: [check]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -103,6 +112,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - run: npm ci
@@ -127,7 +137,7 @@ jobs:
   # here: the jobs after this one need it, so they skip with it.
   attest:
     name: attest the downloads
-    needs: [build]
+    needs: [smoke, build]
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -165,7 +175,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo tsugiki/tsugiki > /dev/null 2>&1; then
+          if gh release view "$GITHUB_REF_NAME" --repo "$REPO" > /dev/null 2>&1; then
             echo "A release for $GITHUB_REF_NAME exists already. Delete the draft, then run this again."
             exit 1
           fi
@@ -174,7 +184,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release create "$GITHUB_REF_NAME" downloads/*
-          --repo tsugiki/tsugiki --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+          --repo "$REPO" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file release-notes.md
 
   verify:
     name: verify the draft's files
@@ -190,8 +200,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --repo tsugiki/tsugiki --dir assets
+          gh release download "$GITHUB_REF_NAME" --repo "$REPO" --dir assets
           for file in assets/*; do
-            gh attestation verify "$file" --repo tsugiki/tsugiki \
-              --signer-workflow tsugiki/tsugiki/.github/workflows/release.yml
+            gh attestation verify "$file" --repo "$REPO" \
+              --signer-workflow "$REPO/.github/workflows/release.yml"
           done

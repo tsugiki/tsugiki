@@ -150,7 +150,7 @@ impl Store {
     }
 
     /// Owes a read of the Conversation of each of `numbers`, PRs of `repository`, until a read of it saves or
-    /// a sync finishes.
+    /// a refresh finishes.
     pub fn owe_read_ahead(
         &self,
         repository: &RepositoryName,
@@ -164,7 +164,7 @@ impl Store {
     }
 
     /// The PRs of `repository` whose Conversations the store owes a read. Saving a PR's Conversation pays
-    /// its debt, and saving a finished sync pays them all.
+    /// its debt, and saving a finished refresh pays them all.
     pub fn read_ahead_owed(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
         let read =
@@ -274,18 +274,34 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
+    /// Saves where `repository`'s syncs stand: a refresh under way, or a first sync that finished. Neither
+    /// has read ahead, so the reads the store owes stay owed for the next refresh (#900).
     pub fn save_sync_state(
         &self,
         repository: &RepositoryName,
         state: SyncState,
     ) -> Result<(), Error> {
         let repository = repository.clone();
-        let started_at = state.started_at;
         let saved = self.call(move |connection| {
             let transaction = connection.transaction()?;
-            sync_state::save(&transaction, &repository, &state)?;
-            sync_state::forget_place(&transaction, &repository)?;
-            activity::remember_first_sync(&transaction, &repository, started_at)?;
+            save_sync_state_in(&transaction, &repository, &state)?;
+            transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Saves that a refresh of `repository` finished, as `save_sync_state` does, and in the same transaction
+    /// forgets every read ahead the store owed: the refresh read each PR it owed, or found it out of Reach.
+    pub fn save_finished_refresh(
+        &self,
+        repository: &RepositoryName,
+        state: SyncState,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            save_sync_state_in(&transaction, &repository, &state)?;
+            sync_state::forget_read_ahead(&transaction, &repository)?;
             transaction.commit()
         })?;
         saved.map_err(saying(CANT_WRITE))
@@ -1142,6 +1158,17 @@ fn lock(path: &Path) -> Result<Option<File>, Error> {
             locked => return locked.map(|()| Some(file)).map_err(saying(CANT_OPEN)),
         }
     }
+}
+
+/// Saves `state` as `repository`'s sync state, which leaves its first sync no place to come back to.
+fn save_sync_state_in(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    state: &SyncState,
+) -> rusqlite::Result<()> {
+    sync_state::save(transaction, repository, state)?;
+    sync_state::forget_place(transaction, repository)?;
+    activity::remember_first_sync(transaction, repository, state.started_at)
 }
 
 /// Turns a failure into words a user can read (`Error`). SQLite's or the OS's reason goes to the log.

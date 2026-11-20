@@ -553,7 +553,8 @@ impl UserWorkSync {
     }
 
     /// Saves that this sync finished, and says when. The store keeps whole seconds, so the window hears what
-    /// a later start reads back.
+    /// a later start reads back. Only a refresh, which read ahead what the store owed, has it forget those
+    /// reads. One a Filter switch owed during a first sync waits for the next refresh (#900).
     fn finish(&self, store: &Store) -> Result<LastSync, Error> {
         let now = OffsetDateTime::now_utc();
         let finished_at = now.replace_nanosecond(0).unwrap_or(now);
@@ -563,7 +564,11 @@ impl UserWorkSync {
             check: self.check.clone(),
             refresh_under_way: false,
         };
-        store.save_sync_state(&self.repository, state)?;
+        match self.kind {
+            Kind::Refresh => store.save_finished_refresh(&self.repository, state)?,
+            // No tree gets here: the queue drops one once its steps run out (`step_tree`).
+            Kind::First(_) | Kind::Tree => store.save_sync_state(&self.repository, state)?,
+        }
         Ok(LastSync {
             repository: self.repository.clone(),
             at: Some(finished_at),

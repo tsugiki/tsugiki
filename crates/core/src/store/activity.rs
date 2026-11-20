@@ -246,8 +246,7 @@ pub(super) fn read(
 }
 
 /// Mark Seen on `numbers`, all at once: clears their Marked unseen, and moves their Last seen and the moment
-/// the user acknowledged them on to `up_to`, if it's given. Neither moves back. With `up_to` it also
-/// acknowledges the Stale review a check has found on each.
+/// the user acknowledged them on to `up_to`, if it's given. Neither moves back.
 pub(super) fn mark_seen(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -287,15 +286,6 @@ fn mark_seen_in(
                         ":number": number,
                         ":at": at.unix_timestamp(),
                     },
-                )
-                .map(drop)?;
-            // A finding the store holds came before the mark, so the window could draw it (#908). Its moment
-            // never moves Last seen: this computer's clock can pass the date of what GitHub has yet to send.
-            transaction
-                .execute(
-                    "UPDATE stale_reviews SET acknowledged = 1
-                     WHERE repository = :repository AND number = :number",
-                    item,
                 )
                 .map(drop)?;
         }

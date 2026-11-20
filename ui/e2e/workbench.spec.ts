@@ -41,7 +41,7 @@ const review: ListedItem = {
     },
   ],
   seen: {
-    mark: { numbers: [112564, 160662, 160700], up_to: null },
+    mark: { numbers: [112564, 160662, 160700], up_to: null, findings: [] },
     state: "seen",
   },
 };
@@ -252,7 +252,7 @@ const thirty = Array.from({ length: 30 }, (_, at): ListedItem => {
     ...own,
     number,
     title: `Item ${String(number)}`,
-    seen: { ...own.seen, mark: { numbers: [number], up_to: null } },
+    seen: { ...own.seen, mark: { numbers: [number], up_to: null, findings: [] } },
   };
 });
 

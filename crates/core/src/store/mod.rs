@@ -44,7 +44,9 @@ use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
-use crate::facts::patch_ids::{CommitPatches, Findings, LastCheck, ReviewFacts, UncheckedCommit};
+use crate::facts::patch_ids::{
+    CommitPatches, Findings, LastCheck, ReviewFacts, StaleFinding, UncheckedCommit,
+};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
 use crate::facts::{CommitSha, WorkFacts};
@@ -511,6 +513,19 @@ impl Store {
         let saved = self.call(move |connection| {
             patch_ids::save_last_checks(connection, &repository, &checks)
         })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Acknowledges each of `findings` that a mark carries as the window drew them, where the store still
+    /// keeps that finding (#908).
+    pub fn acknowledge(
+        &self,
+        repository: &RepositoryName,
+        findings: Vec<StaleFinding>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self
+            .call(move |connection| patch_ids::acknowledge(connection, &repository, &findings))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

@@ -164,8 +164,9 @@ erDiagram
         TEXT repository PK
         INTEGER number PK
         TEXT reviewed_commit
+        TEXT head_commit
         INTEGER found_at
-        INTEGER acknowledged
+        TEXT acknowledged_head "nullable"
     }
     review_requests }o--|| pull_requests : "repository, number"
     latest_reviews }o--|| pull_requests : "repository, number"

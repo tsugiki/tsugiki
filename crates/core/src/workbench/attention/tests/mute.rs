@@ -10,7 +10,7 @@ use crate::workbench::testing::assigned_issue;
 impl World {
     /// Mute on item `number`'s line of `view`, as the window drew it.
     fn mute_in(&self, view: &WorkbenchView, number: u32) {
-        let (key, SeenMark { numbers, up_to }) = self.drawn_in(view, number);
+        let (key, SeenMark { numbers, up_to, .. }) = self.drawn_in(view, number);
         let muting = Muting {
             key,
             numbers,
@@ -246,7 +246,7 @@ fn an_assignment_to_a_closed_issue_asks_nothing() {
 fn a_muted_item_that_is_archived_too_leaves_the_archived_view() {
     let world = World::new("mute-archived");
     world.has(vec![own(1), own(2)]);
-    let (key, SeenMark { numbers, up_to }) = world.drawn_in(&WorkbenchView::Whole, 1);
+    let (key, SeenMark { numbers, up_to, .. }) = world.drawn_in(&WorkbenchView::Whole, 1);
     let archiving = Archiving {
         key,
         numbers,

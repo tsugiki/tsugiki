@@ -31,7 +31,7 @@ const issue = (number: number): ListedItem => {
         backports: [],
       },
     ],
-    seen: { mark: { numbers: [number, pr], up_to: null }, state: "seen" },
+    seen: { mark: { numbers: [number, pr], up_to: null, findings: [] }, state: "seen" },
   };
 };
 

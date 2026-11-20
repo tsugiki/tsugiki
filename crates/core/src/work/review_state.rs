@@ -9,7 +9,7 @@ use specta::Type;
 
 use super::origins;
 use crate::conventions::Conventions;
-use crate::facts::patch_ids::{CantCheck, Findings, LastCheck, PatchesOf, ReviewFacts};
+use crate::facts::patch_ids::{CantCheck, Findings, Found, LastCheck, PatchesOf, ReviewFacts};
 use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of};
@@ -194,16 +194,43 @@ pub fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
     checked.collect()
 }
 
-/// The changes to the moments the store keeps of when a check first found each PR's Review stale (#908):
-/// a moment for each Review a check finds stale, or can't check, that has none, and an end to each moment
-/// whose Review a check finds the same, whose head went back to the reviewed commit, or that the user
-/// reviewed again since. A check that waits leaves the moment as it is, so a Review stays dated from its
-/// first finding across new heads, restarts and the reasons a check can't run.
+/// Whether a Stale review on `pull_request` can wait on `viewer`: the PR is open, and it is no colleague's
+/// Draft PR. Needs attention counts a Stale review only there, and only there is a new one found (#908).
+pub(super) fn can_wait_on(pull_request: &PullRequestFacts, viewer: &Login) -> bool {
+    let colleagues_draft = pull_request.is_draft && pull_request.author.as_ref() != Some(viewer);
+    pull_request.state == PrState::Open && !colleagues_draft
+}
+
+/// The reviewed commit and the head that `review`, a Stale review of `pull_request`, was found against: the
+/// head its check compared, or the PR's head where the check can't run. None for a review state that isn't
+/// stale.
+pub(super) fn found_against(
+    review: &YourReview,
+    pull_request: &PullRequestFacts,
+) -> Option<(CommitSha, CommitSha)> {
+    match review {
+        YourReview::StaleReview { reviewed, head, .. } => Some((reviewed.clone(), head.clone())),
+        YourReview::CantCheck { reviewed, .. } => {
+            Some((reviewed.clone(), pull_request.head.clone()?))
+        }
+        YourReview::Unreviewed | YourReview::Reviewed => None,
+    }
+}
+
+/// The changes to the findings the store keeps that the user's Review of a PR is stale (#908). A Review a
+/// check finds stale, or can't check, against a head with no finding kept gets a new finding in place of
+/// the PR's last: a new head or a new Review makes a new finding. The last ends once a check finds the diff
+/// the same, the head goes back to the reviewed commit, or the user reviews again. A check that waits leaves
+/// it as it is, and so does a restart that forgets why a check couldn't run.
 ///
-/// Only an open PR of someone else's can wait on the user, so the moments of the rest end, and so do
-/// those of PRs the facts no longer hold. A Bot backport that shares its Origin PR's review state never
-/// gets one, as the check reads none of its commits.
+/// Only a Stale review that can wait on the user gets a new finding, so a colleague's Draft PR gets one once
+/// it is ready for review. A closed PR keeps its last, so a reopen finds it as it was. The user's own PRs and
+/// PRs the facts no longer hold keep none. A Bot backport that shares its Origin PR's review state never gets
+/// one, as the check reads none of its commits.
 pub fn findings_to_keep(facts: &WorkFacts) -> Findings {
+    let Some(viewer) = facts.viewer.as_ref() else {
+        return Findings::default();
+    };
     let reviews = &facts.reviews;
     let held: BTreeSet<u32> = facts.pull_requests.iter().map(|pr| pr.number).collect();
     let gone = (reviews.stale_found.keys()).filter(|number| !held.contains(number));
@@ -213,43 +240,62 @@ pub fn findings_to_keep(facts: &WorkFacts) -> Findings {
     };
     for pr in &facts.pull_requests {
         let number = pr.number;
-        let dated = reviews.finding(number).is_some();
-        let kept = reviews.stale_found.contains_key(&number);
-        match standing(pr, facts) {
-            Standing::Stale(reviewed) if !dated => findings.found.push((number, reviewed.clone())),
-            Standing::NotStale if kept => findings.ended.push(number),
-            Standing::Waits if kept && !dated => findings.ended.push(number),
-            Standing::Stale(_) | Standing::NotStale | Standing::Waits => {}
+        let kept = reviews.stale_found.get(&number);
+        match standing(pr, reviews, viewer) {
+            Standing::Stale { reviewed, head } => {
+                let new = reviews.finding(number, &reviewed, &head).is_none();
+                if new && can_wait_on(pr, viewer) {
+                    findings.found.push(Found {
+                        number,
+                        reviewed,
+                        head,
+                    });
+                }
+            }
+            Standing::NotStale if kept.is_some() => findings.ended.push(number),
+            Standing::Waits(reviewed) if kept.is_some_and(|kept| kept.reviewed != *reviewed) => {
+                findings.ended.push(number);
+            }
+            Standing::NotStale | Standing::Waits(_) => {}
         }
     }
     findings.ended.sort_unstable();
     findings
 }
 
-/// The standing of the user's Review of a PR, as `findings_to_keep` dates it.
+/// The standing of the user's Review of a PR, by which `findings_to_keep` keeps its findings.
 enum Standing<'a> {
-    /// A check finds the user's Review of this commit stale, or can't check it.
-    Stale(&'a CommitSha),
-    /// No Stale review of the user's waits on them there.
+    /// A check finds the user's Review of commit `reviewed` stale against `head`, or can't check the two.
+    Stale {
+        reviewed: CommitSha,
+        head: CommitSha,
+    },
+    /// No Review of the user's there is stale: they have none, they wrote the PR, its head is the reviewed
+    /// commit, or a check finds the diff the same.
     NotStale,
-    /// The check waits, with no verdict.
-    Waits,
+    /// The check of the user's Review of this commit waits, with no verdict.
+    Waits(&'a CommitSha),
 }
 
-/// The standing of the user's Review of `pull_request`, for a Stale review that would wait on them.
-fn standing<'a>(pull_request: &PullRequestFacts, facts: &'a WorkFacts) -> Standing<'a> {
-    let reviews = &facts.reviews;
+/// The standing of `viewer`'s Review of `pull_request`.
+fn standing<'a>(
+    pull_request: &PullRequestFacts,
+    reviews: &'a ReviewFacts,
+    viewer: &Login,
+) -> Standing<'a> {
     let Some(reviewed) = reviews.reviewed.get(&pull_request.number) else {
         return Standing::NotStale;
     };
-    let waits_on_them = pull_request.state == PrState::Open && pull_request.author != facts.viewer;
-    if !waits_on_them || pull_request.head.as_ref() == Some(reviewed) {
+    let own = pull_request.author.as_ref() == Some(viewer);
+    if own || pull_request.head.as_ref() == Some(reviewed) {
         return Standing::NotStale;
     }
-    match checked(pull_request, reviews) {
-        Some(review) if review.is_stale() => Standing::Stale(reviewed),
-        Some(_) => Standing::NotStale,
-        None => Standing::Waits,
+    let Some(review) = checked(pull_request, reviews) else {
+        return Standing::Waits(reviewed);
+    };
+    match found_against(&review, pull_request) {
+        Some((reviewed, head)) => Standing::Stale { reviewed, head },
+        None => Standing::NotStale,
     }
 }
 

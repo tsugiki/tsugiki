@@ -35,7 +35,7 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", backports: [] }],
-  seen: { mark: { numbers: [7, 10], up_to: null }, state: "seen" },
+  seen: { mark: { numbers: [7, 10], up_to: null, findings: [] }, state: "seen" },
   attention: null,
   key: { kind: "issue", number: 7 },
   hidden: null,

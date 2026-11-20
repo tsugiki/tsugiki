@@ -6,7 +6,7 @@ use crate::facts::WorkFacts;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{CantCheck, FilePatch, PatchId, PatchesOf};
-use crate::facts::patch_ids::{Findings, LastCheck, ReviewFacts, StaleFound};
+use crate::facts::patch_ids::{Findings, Found, LastCheck, ReviewFacts, StaleFound};
 use crate::facts::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
@@ -404,42 +404,64 @@ fn reviewed_pr_at(number: u32, head: char) -> PullRequestFacts {
     }
 }
 
-/// The moment the store kept of a check's first finding that the Review of commit `reviewed` was stale.
-fn found(reviewed: char) -> StaleFound {
+/// The finding the store kept that the Review of commit `reviewed` was stale against commit `head`.
+fn found(reviewed: char, head: char) -> StaleFound {
     StaleFound {
         reviewed: sha_of(reviewed),
+        head: sha_of(head),
         at: at(0),
         acknowledged: false,
     }
 }
 
+/// The finding to keep that the Review of commit 1 on PR `number` is stale against commit `head`.
+fn finds(number: u32, head: char) -> Found {
+    Found {
+        number,
+        reviewed: sha_of('1'),
+        head: sha_of(head),
+    }
+}
+
+/// A colleague's Draft PR `number` at commit 2, which the user reviewed.
+fn draft_at_2(number: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        is_draft: true,
+        ..reviewed_pr_at(number, '2')
+    }
+}
+
 #[test]
-fn a_check_dates_each_review_it_first_finds_stale_or_cant_check() {
+fn a_check_finds_each_review_stale_or_unchecked_against_a_head_once() {
     let mut reviews = stale_at_2();
     reviews
         .reviewed
-        .extend([3, 5, 7].map(|number| (number, sha_of('1'))));
+        .extend([3, 5, 7, 9, 11].map(|number| (number, sha_of('1'))));
     reviews
         .unchecked
         .extend([(of('4', "main"), CantCheck::NoGit)]);
-    // PR 5's Stale review is dated already, and PR 7's moment is of an earlier Review.
-    reviews
-        .stale_found
-        .extend([(5, found('1')), (7, found('9'))]);
+    // PR 5's finding is of this head already. PR 7's is of an earlier Review, and PR 9's of an earlier head.
+    reviews.stale_found.extend([
+        (5, found('1', '2')),
+        (7, found('9', '2')),
+        (9, found('1', '8')),
+    ]);
     let pull_requests = vec![
         reviewed_pr(),
         reviewed_pr_at(3, '4'),
         reviewed_pr_at(5, '2'),
         reviewed_pr_at(7, '2'),
+        reviewed_pr_at(9, '2'),
+        draft_at_2(11),
     ];
 
     let findings = findings_to_keep(&facts(pull_requests, reviews));
 
-    let found = [1, 3, 7].map(|number| (number, sha_of('1')));
+    let found = vec![finds(1, '2'), finds(3, '4'), finds(7, '2'), finds(9, '2')];
     assert_eq!(
         findings,
         Findings {
-            found: found.to_vec(),
+            found,
             ended: vec![],
         }
     );
@@ -452,11 +474,11 @@ fn a_finding_ends_with_the_same_diff_a_head_back_at_the_review_or_a_new_review()
     reviews
         .reviewed
         .extend([3, 5, 7].map(|number| (number, sha_of('1'))));
-    // PR 5's check of commit 4 waits, which leaves its moment, and PR 7's moment is of an earlier Review.
-    let kept = [1, 3, 5].map(|number| (number, found('1')));
+    // PR 5's check of commit 4 waits, which leaves its finding, and PR 7's is of an earlier Review.
+    let kept = [1, 3, 5].map(|number| (number, found('1', '2')));
     reviews
         .stale_found
-        .extend(kept.into_iter().chain([(7, found('9'))]));
+        .extend(kept.into_iter().chain([(7, found('9', '2'))]));
     let pull_requests = vec![
         reviewed_pr(),
         reviewed_pr_at(3, '1'),
@@ -476,13 +498,13 @@ fn a_finding_ends_with_the_same_diff_a_head_back_at_the_review_or_a_new_review()
 }
 
 #[test]
-fn only_an_open_pr_of_someone_elses_that_the_facts_hold_keeps_a_finding() {
+fn a_stale_review_that_cant_wait_on_the_user_keeps_its_finding_and_gets_no_new_one() {
     let mut reviews = stale_at_2();
     reviews
         .reviewed
-        .extend([3, 5].map(|number| (number, sha_of('1'))));
+        .extend([3, 5, 11].map(|number| (number, sha_of('1'))));
     // PR 9 has left the facts.
-    let kept = [1, 3, 5, 9].map(|number| (number, found('1')));
+    let kept = [1, 3, 5, 9, 11].map(|number| (number, found('1', '2')));
     reviews.stale_found.extend(kept);
     let merged = PullRequestFacts {
         state: PrState::Merged,
@@ -494,7 +516,7 @@ fn only_an_open_pr_of_someone_elses_that_the_facts_hold_keeps_a_finding() {
     };
     let mut unkept = reviews.clone();
     unkept.stale_found.clear();
-    let pull_requests = vec![reviewed_pr(), merged, yours];
+    let pull_requests = vec![reviewed_pr(), merged, yours, draft_at_2(11)];
 
     let findings = findings_to_keep(&facts(pull_requests.clone(), reviews));
     let found = findings_to_keep(&facts(pull_requests, unkept));
@@ -503,10 +525,10 @@ fn only_an_open_pr_of_someone_elses_that_the_facts_hold_keeps_a_finding() {
         findings,
         Findings {
             found: vec![],
-            ended: vec![3, 5, 9],
+            ended: vec![5, 9],
         }
     );
-    assert_eq!(found.found, [(1, sha_of('1'))]);
+    assert_eq!(found.found, [finds(1, '2')]);
 }
 
 #[test]

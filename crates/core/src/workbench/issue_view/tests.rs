@@ -210,7 +210,7 @@ fn the_view_offers_mute_author_for_its_issues_author_and_says_once_they_are_mute
     world.has(vec![fixing(10, 1)], vec![issue(1)]);
     let before = view(&world, 1).unwrap();
 
-    let SeenMark { numbers, up_to } = before.issue.seen.mark.clone();
+    let SeenMark { numbers, up_to, .. } = before.issue.seen.mark.clone();
     let muting = AuthorMuting {
         author: author.clone(),
         marks: vec![Seeing { numbers, up_to }],

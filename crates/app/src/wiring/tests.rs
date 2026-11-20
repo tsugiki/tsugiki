@@ -810,7 +810,7 @@ fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window(
     let (folders, _root) = temp_folders("wired-open-issue");
     let wired = Wired::start(Ok(folders), no_network());
     let issue_7 = json!({ "repository": CPYTHON, "number": 7 });
-    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z" });
+    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
 
     drop(wired.ask("open_issue", issue_7.clone()).unwrap());
     for moved in ["hide_item", "show_item", "close_item"] {
@@ -845,7 +845,7 @@ fn archive_keep_archived_unarchive_and_mark_unseen_tell_the_window() {
     let (folders, _root) = temp_folders("wired-archive");
     let wired = Wired::start(Ok(folders), no_network());
     let item = json!({ "kind": "issue", "number": 7 });
-    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z" });
+    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
 
     let archive = json!({ "repository": CPYTHON, "item": item, "mark": mark });
     drop(wired.ask("archive", archive.clone()).unwrap());
@@ -879,7 +879,7 @@ fn mute_and_unmute_tell_the_window() {
     let (folders, _root) = temp_folders("wired-mute");
     let wired = Wired::start(Ok(folders), no_network());
     let item = json!({ "kind": "pull_request", "number": 9 });
-    let mark = json!({ "numbers": [9], "up_to": "2026-11-01T09:00:00Z" });
+    let mark = json!({ "numbers": [9], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
 
     let mute = json!({ "repository": CPYTHON, "item": item, "mark": mark });
     drop(wired.ask("mute", mute).unwrap());
@@ -919,12 +919,23 @@ fn mute_author_and_unmute_author_tell_the_window() {
 }
 
 #[test]
-fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
+fn a_mark_seen_with_a_moment_or_a_commit_that_isnt_one_is_refused() {
     let (folders, _root) = temp_folders("wired-bad-mark");
     let wired = Wired::start(Ok(folders), no_network());
-    let mark = json!({ "numbers": [7], "up_to": "yesterday" });
+    let mark = json!({ "numbers": [7], "up_to": "yesterday", "findings": [] });
+    let finding = json!({
+        "number": 7,
+        "reviewed": "1111111111111111111111111111111111111111",
+        "head": "not a commit",
+        "found_at": "2026-11-01T09:00:00Z",
+    });
+    let unparsed = json!({ "numbers": [7], "up_to": null, "findings": [finding] });
 
     let refused = wired.ask("mark_seen", json!({ "repository": CPYTHON, "mark": mark }));
+    let bad_commit = wired.ask(
+        "mark_seen",
+        json!({ "repository": CPYTHON, "mark": unparsed }),
+    );
     let bad_name = wired.ask(
         "mark_unseen",
         json!({ "repository": "not a name", "number": 7 }),
@@ -932,6 +943,7 @@ fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
     let wired = wired.stop();
 
     assert!(refused.is_err());
+    assert!(bad_commit.is_err());
     assert_eq!(bad_name.unwrap_err()["kind"], "not_found");
     assert!(wired.workbenches.try_recv().is_err());
 }

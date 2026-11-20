@@ -2861,14 +2861,14 @@ export type SearchState_Serialize =
 export type Seen = Seen_Serialize | Seen_Deserialize;
 
 /**
- *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
- *  it back as it got it.
+ *  The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+ *  the window drew them. The window sends it back as it got it.
  */
 export type SeenMark = SeenMark_Serialize | SeenMark_Deserialize;
 
 /**
- *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
- *  it back as it got it.
+ *  The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+ *  the window drew them. The window sends it back as it got it.
  */
 export type SeenMark_Deserialize = {
 	/**  The item, and for an Issue every PR in its tree. */
@@ -2879,11 +2879,17 @@ export type SeenMark_Deserialize = {
 	 *  don't hold, and Last seen then stays.
 	 */
 	up_to: string | null,
+	/**
+	 *  The finding behind each Stale review of `numbers` that waits on the user, as the window drew it. The
+	 *  mark acknowledges these alone, so a check that finds a Stale review after the window drew the page
+	 *  still counts (#908).
+	 */
+	findings: StaleFinding_Deserialize[],
 };
 
 /**
- *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
- *  it back as it got it.
+ *  The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+ *  the window drew them. The window sends it back as it got it.
  */
 export type SeenMark_Serialize = {
 	/**  The item, and for an Issue every PR in its tree. */
@@ -2894,6 +2900,12 @@ export type SeenMark_Serialize = {
 	 *  don't hold, and Last seen then stays.
 	 */
 	up_to: string | null,
+	/**
+	 *  The finding behind each Stale review of `numbers` that waits on the user, as the window drew it. The
+	 *  mark acknowledges these alone, so a check that finds a Stale review after the window drew the page
+	 *  still counts (#908).
+	 */
+	findings: StaleFinding_Serialize[],
 };
 
 /**  Whether the user has seen an item as it now is. The header offers Mark Seen unless they have. */
@@ -3169,6 +3181,34 @@ export type Span = {
 	start: number,
 	end: number,
 	highlight: Highlight,
+};
+
+/**
+ *  A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+ *  and Mute carry it back to acknowledge that finding alone.
+ */
+export type StaleFinding = StaleFinding_Serialize | StaleFinding_Deserialize;
+
+/**
+ *  A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+ *  and Mute carry it back to acknowledge that finding alone.
+ */
+export type StaleFinding_Deserialize = {
+	number: number,
+	reviewed: string,
+	head: string,
+	found_at: string,
+};
+
+/**
+ *  A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+ *  and Mute carry it back to acknowledge that finding alone.
+ */
+export type StaleFinding_Serialize = {
+	number: number,
+	reviewed: string,
+	head: string,
+	found_at: string,
 };
 
 /**  The app's state, shown in the status bar. */

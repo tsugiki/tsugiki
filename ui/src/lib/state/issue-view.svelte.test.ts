@@ -25,7 +25,7 @@ const view = (title: string): IssueView => ({
   needs_attention: [],
   hidden: null,
   content: null,
-  seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
+  seen: { mark: { numbers: [7], up_to: null, findings: [] }, state: "seen" },
 });
 
 describe("IssueViewState", () => {

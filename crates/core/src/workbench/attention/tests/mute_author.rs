@@ -26,7 +26,7 @@ impl World {
 
     /// Mute on item `number`'s line of the Workbench, as the window drew it.
     fn mute_on_its_own(&self, number: u32) {
-        let (key, SeenMark { numbers, up_to }) = self.drawn_in(&WorkbenchView::Whole, number);
+        let (key, SeenMark { numbers, up_to, .. }) = self.drawn_in(&WorkbenchView::Whole, number);
         let muting = Muting {
             key,
             numbers,
@@ -249,7 +249,7 @@ fn a_mute_of_the_user_under_another_account_leaves_their_own_items_as_they_are()
 fn a_muted_authors_archived_item_leaves_the_archived_view() {
     let world = World::new("mute-author-archived");
     commented_on(&world, 1);
-    let (key, SeenMark { numbers, up_to }) = world.drawn_in(&WorkbenchView::Whole, 1);
+    let (key, SeenMark { numbers, up_to, .. }) = world.drawn_in(&WorkbenchView::Whole, 1);
     let archiving = crate::store::Archiving {
         key,
         numbers,

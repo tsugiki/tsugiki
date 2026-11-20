@@ -408,6 +408,7 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
             SeenMark {
                 numbers: vec![7, 8],
                 up_to: Some(drawn),
+                findings: vec![],
             },
         );
     });
@@ -428,6 +429,7 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
         let mark = |numbers| SeenMark {
             numbers,
             up_to: Some(drawn),
+            findings: vec![],
         };
         asked.archive(gcmon(), issue, mark(vec![7, 8]));
         asked.keep_archived(gcmon(), issue, mark(vec![7]));
@@ -456,6 +458,7 @@ fn mute_marks_the_item_seen_and_keeps_it_muted_until_unmute() {
         let mark = |numbers| SeenMark {
             numbers,
             up_to: Some(drawn),
+            findings: vec![],
         };
         asked.mute(gcmon(), issue, mark(vec![7, 8]));
         asked.mute(gcmon(), standalone, mark(vec![9]));
@@ -555,6 +558,7 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
             SeenMark {
                 numbers: vec![7],
                 up_to: Some(drawn),
+                findings: vec![],
             },
         );
         asked.mark_unseen(gcmon(), 8, None);
@@ -581,6 +585,7 @@ fn marking_an_issue_seen_and_reading_it_each_tell_the_window() {
         SeenMark {
             numbers: vec![7, 8],
             up_to: None,
+            findings: vec![],
         },
     );
     requests.fetch_issue(gcmon(), 7);
@@ -882,6 +887,7 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         mark: SeenMark {
             numbers: vec![7],
             up_to: None,
+            findings: vec![],
         },
     };
     let unseen = Marked::Unseen {
@@ -2260,6 +2266,7 @@ fn issue_5_seen() -> SeenMark {
     SeenMark {
         numbers: vec![5, 8, 9],
         up_to: None,
+        findings: vec![],
     }
 }
 

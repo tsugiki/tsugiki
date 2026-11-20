@@ -192,10 +192,12 @@ fn a_save_of_unchecked_commits_or_last_checks_that_fails_says_so() {
     let unchecked = store.save_unchecked(&cpython(), vec![]);
     let checks = store.save_last_checks(&cpython(), vec![(1, last)]);
     let findings = store.save_findings(&cpython(), Findings::default(), OffsetDateTime::UNIX_EPOCH);
+    let acknowledged = store.acknowledge(&cpython(), vec![]);
 
     assert!(unchecked.is_err(), "{unchecked:?}");
     assert!(checks.is_err(), "{checks:?}");
     assert!(findings.is_err(), "{findings:?}");
+    assert!(acknowledged.is_err(), "{acknowledged:?}");
 }
 
 fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
@@ -350,28 +352,42 @@ fn the_last_check_of_another_review_brings_no_patch_ids() {
     assert_eq!(read, BTreeMap::new());
 }
 
-#[test]
-fn a_finding_keeps_its_moment_until_it_ends_and_a_new_review_replaces_it() {
-    let (_folder, store) = seeded("patch-ids-findings");
-    let found = |numbers: &[u32], commit: char| Findings {
-        found: numbers
-            .iter()
-            .map(|number| (*number, sha_of(commit)))
-            .collect(),
+/// The finding that the user's Review of commit `reviewed` on PR `number` is stale against commit `head`.
+fn found(number: u32, reviewed: char, head: char) -> Found {
+    Found {
+        number,
+        reviewed: sha_of(reviewed),
+        head: sha_of(head),
+    }
+}
+
+fn found_only(found: Vec<Found>) -> Findings {
+    Findings {
+        found,
         ended: vec![],
-    };
+    }
+}
+
+#[test]
+fn a_finding_keeps_its_moment_and_acknowledgement_until_a_new_head_replaces_it_or_it_ends() {
+    let (_folder, store) = seeded("patch-ids-findings");
     let stale_found = || store.work_facts(&cpython()).unwrap().reviews.stale_found;
 
+    let both = vec![found(1, '1', '2'), found(2, '1', '2')];
     store
-        .save_findings(&cpython(), found(&[1, 2], '1'), at_second(10))
+        .save_findings(&cpython(), found_only(both), at_second(10))
         .unwrap();
     let first = stale_found();
     store
-        .mark_seen(&cpython(), vec![1, 2], Some(at_second(15)))
+        .acknowledge(&cpython(), vec![first[&1].on(1), first[&2].on(2)])
         .unwrap();
-    let marked = stale_found();
+    let acknowledged = stale_found();
     store
-        .save_findings(&cpython(), found(&[2], '3'), at_second(20))
+        .save_findings(
+            &cpython(),
+            found_only(vec![found(2, '1', '3')]),
+            at_second(20),
+        )
         .unwrap();
     let ended = Findings {
         found: vec![],
@@ -383,73 +399,113 @@ fn a_finding_keeps_its_moment_until_it_ends_and_a_new_review_replaces_it() {
     let after = stale_found();
     store.close();
 
-    let at = |commit: char, at: i64, acknowledged: bool| StaleFound {
-        reviewed: sha_of(commit),
+    let at = |head: char, at: i64, acknowledged: bool| StaleFound {
+        reviewed: sha_of('1'),
+        head: sha_of(head),
         at: at_second(at),
         acknowledged,
     };
-    let unmarked = at('1', 10, false);
+    let fresh = at('2', 10, false);
+    assert_eq!(first, BTreeMap::from([(1, fresh.clone()), (2, fresh)]));
+    let marked = at('2', 10, true);
     assert_eq!(
-        first,
-        BTreeMap::from([(1, unmarked.clone()), (2, unmarked)])
-    );
-    let acknowledged = at('1', 10, true);
-    assert_eq!(
-        marked,
-        BTreeMap::from([(1, acknowledged.clone()), (2, acknowledged)])
+        acknowledged,
+        BTreeMap::from([(1, marked.clone()), (2, marked)])
     );
     assert_eq!(after, BTreeMap::from([(2, at('3', 20, false))]));
 }
 
 #[test]
-fn a_mark_with_no_moment_acknowledges_no_finding() {
-    let (_folder, store) = seeded("patch-ids-findings-no-moment");
-    let found = Findings {
-        found: vec![(1, sha_of('1'))],
-        ended: vec![],
-    };
+fn a_mark_acknowledges_only_the_finding_the_window_drew() {
+    let (_folder, store) = seeded("patch-ids-findings-drawn");
     store
-        .save_findings(&cpython(), found, at_second(10))
+        .save_findings(
+            &cpython(),
+            found_only(vec![found(1, '1', '3')]),
+            at_second(20),
+        )
         .unwrap();
+    let kept = store.work_facts(&cpython()).unwrap().reviews.stale_found[&1].on(1);
 
-    store.mark_seen(&cpython(), vec![1], None).unwrap();
+    let drawn = [
+        StaleFinding {
+            head: sha_of('2'),
+            ..kept.clone()
+        },
+        StaleFinding {
+            reviewed: sha_of('4'),
+            ..kept.clone()
+        },
+        StaleFinding {
+            found_at: at_second(10),
+            ..kept.clone()
+        },
+        StaleFinding { number: 2, ..kept },
+    ];
+    store.acknowledge(&cpython(), drawn.to_vec()).unwrap();
 
     let read = store.work_facts(&cpython()).unwrap().reviews.stale_found;
     store.close();
-    assert!(!read[&1].acknowledged);
+    assert!(!read[&1].acknowledged, "{read:?}");
 }
 
 #[test]
-fn each_review_of_a_moved_head_before_the_migration_counts_as_found_long_ago_and_acknowledged() {
-    // PR 1 moved on from the user's Review. PR 2's head is the commit they reviewed. On PR 3 a colleague
-    // reviewed after them.
+fn only_a_stale_review_the_window_could_show_before_the_migration_counts_as_acknowledged() {
+    // Each PR's head moved on from the user's last Review, but PR 2's. PR 1's last check of that Review
+    // compared head a2, before a push to a5. The worker couldn't read PR 3's head, nor PR 4's reviewed
+    // commit, which a colleague reviewed again since. PR 5's last check compared an older Review. PR 6's
+    // head couldn't be read against another Target branch. No check ran on PR 7.
     let (path, _folder) = database_before(
         "patch-ids-before-findings",
         super::STALE_REVIEWS,
         "INSERT INTO viewer (id, login) VALUES (1, 'octocat');
          INSERT INTO pull_requests (repository, number, title, state, is_draft, author, target_branch, ci,
                                     updated_at, head)
-         VALUES ('python/cpython', 1, 'PR 1', 'OPEN', 0, 'some-author', 'main', NULL, 1, '22222222'),
-                ('python/cpython', 2, 'PR 2', 'OPEN', 0, 'some-author', 'main', NULL, 1, '33333333'),
-                ('python/cpython', 3, 'PR 3', 'OPEN', 0, 'some-author', 'main', NULL, 1, '44444444');
+         VALUES ('python/cpython', 1, 'PR 1', 'OPEN', 0, 'some-author', 'main', NULL, 1, 'a5000000'),
+                ('python/cpython', 2, 'PR 2', 'OPEN', 0, 'some-author', 'main', NULL, 1, 'b1000000'),
+                ('python/cpython', 3, 'PR 3', 'OPEN', 0, 'some-author', 'main', NULL, 1, 'c3000000'),
+                ('python/cpython', 4, 'PR 4', 'OPEN', 0, 'some-author', 'main', NULL, 1, 'd4000000'),
+                ('python/cpython', 5, 'PR 5', 'OPEN', 0, 'some-author', 'main', NULL, 1, 'e2000000'),
+                ('python/cpython', 6, 'PR 6', 'OPEN', 0, 'some-author', 'main', NULL, 1, 'f6000000'),
+                ('python/cpython', 7, 'PR 7', 'OPEN', 0, 'some-author', 'main', NULL, 1, '77000000');
          INSERT INTO issue_content (repository, number, body_html, earlier_comments)
-         VALUES ('python/cpython', 1, '', 0), ('python/cpython', 2, '', 0), ('python/cpython', 3, '', 0);
+         VALUES ('python/cpython', 1, '', 0), ('python/cpython', 2, '', 0), ('python/cpython', 3, '', 0),
+                ('python/cpython', 4, '', 0), ('python/cpython', 5, '', 0), ('python/cpython', 6, '', 0),
+                ('python/cpython', 7, '', 0);
          INSERT INTO pr_reviews (repository, number, position, author, state, commit_sha, submitted_at,
                                  body_html)
-         VALUES ('python/cpython', 1, 0, 'octocat', 'APPROVED', '11111111', 1, ''),
-                ('python/cpython', 2, 0, 'octocat', 'APPROVED', '33333333', 1, ''),
-                ('python/cpython', 3, 0, 'octocat', 'APPROVED', '11111111', 1, ''),
-                ('python/cpython', 3, 1, 'some-reviewer', 'APPROVED', '44444444', 2, '');",
+         VALUES ('python/cpython', 1, 0, 'octocat', 'APPROVED', 'a1000000', 1, ''),
+                ('python/cpython', 2, 0, 'octocat', 'APPROVED', 'b1000000', 1, ''),
+                ('python/cpython', 3, 0, 'octocat', 'APPROVED', 'c1000000', 1, ''),
+                ('python/cpython', 4, 0, 'octocat', 'APPROVED', 'd1000000', 1, ''),
+                ('python/cpython', 4, 1, 'some-reviewer', 'APPROVED', 'd4000000', 2, ''),
+                ('python/cpython', 5, 0, 'octocat', 'APPROVED', 'e1000000', 1, ''),
+                ('python/cpython', 6, 0, 'octocat', 'APPROVED', 'f1000000', 1, ''),
+                ('python/cpython', 7, 0, 'octocat', 'APPROVED', '71000000', 1, '');
+         INSERT INTO last_checks (repository, number, reviewed_commit, head_commit)
+         VALUES ('python/cpython', 1, 'a1000000', 'a2000000'),
+                ('python/cpython', 3, 'c1000000', 'c2000000'),
+                ('python/cpython', 5, 'e9000000', 'e2000000');
+         INSERT INTO unchecked_commits (repository, commit_sha, target_branch, reason)
+         VALUES ('python/cpython', 'c3000000', 'main', 'no_git'),
+                ('python/cpython', 'd1000000', 'main', 'no_git'),
+                ('python/cpython', 'f6000000', '3.13', 'no_git');",
     );
 
     let store = Store::open(&path).unwrap();
     let read = store.work_facts(&cpython()).unwrap().reviews.stale_found;
     store.close();
 
-    let found = StaleFound {
-        reviewed: CommitSha::parse("11111111").unwrap(),
+    let found = |reviewed: &str, head: &str| StaleFound {
+        reviewed: CommitSha::parse(reviewed).unwrap(),
+        head: CommitSha::parse(head).unwrap(),
         at: OffsetDateTime::UNIX_EPOCH,
         acknowledged: true,
     };
-    assert_eq!(read, BTreeMap::from([(1, found.clone()), (3, found)]));
+    let expected = BTreeMap::from([
+        (1, found("a1000000", "a2000000")),
+        (3, found("c1000000", "c3000000")),
+        (4, found("d1000000", "d4000000")),
+    ]);
+    assert_eq!(read, expected);
 }

@@ -76,7 +76,9 @@ pub(crate) fn authored_by(
     let marks = (theirs.iter())
         .filter(|item| item.is_open())
         .map(|item| {
-            let SeenMark { numbers, up_to } = item.seen().mark.clone();
+            // These marks come from the facts, not from a page the window drew, so they acknowledge no
+            // finding of a Stale review (#908).
+            let SeenMark { numbers, up_to, .. } = item.seen().mark.clone();
             Seeing { numbers, up_to }
         })
         .collect();

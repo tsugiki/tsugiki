@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::OffsetDateTime;
 
@@ -89,17 +89,21 @@ pub struct ReviewFacts {
     pub unchecked: BTreeMap<PatchesOf, CantCheck>,
     /// The commits each PR's last finished check compared, whose verdict stands while a newer check waits.
     pub last_checks: BTreeMap<u32, LastCheck>,
-    /// The store's record of when a check first found the user's Review of each PR stale.
+    /// The last finding the store kept of each PR that the user's Review of it is stale.
     pub stale_found: BTreeMap<u32, StaleFound>,
 }
 
 impl ReviewFacts {
-    /// The store's record of when a check first found the user's Review of PR `number` stale, or first
-    /// couldn't run, if it kept one of the Review the PR has now.
-    pub fn finding(&self, number: u32) -> Option<&StaleFound> {
-        let reviewed = self.reviewed.get(&number)?;
+    /// The finding the store kept that the user's Review of PR `number` at commit `reviewed` is stale
+    /// against head `head`, if it kept that one.
+    pub fn finding(
+        &self,
+        number: u32,
+        reviewed: &CommitSha,
+        head: &CommitSha,
+    ) -> Option<&StaleFound> {
         let found = self.stale_found.get(&number)?;
-        (found.reviewed == *reviewed).then_some(found)
+        (found.reviewed == *reviewed && found.head == *head).then_some(found)
     }
 }
 
@@ -110,25 +114,60 @@ pub struct LastCheck {
     pub head: CommitSha,
 }
 
-/// The moment a check first found the user's Review of commit `reviewed` stale, or first couldn't run, with
-/// no check finding the diff the same since (#908). The window can't show a Stale review before then.
+/// A check's finding that the user's Review of commit `reviewed` is stale against head `head`, or that the
+/// check of the two can't run, first found `at` (#908). The window can't show the Stale review before then.
+/// A new head or a new Review makes a new finding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StaleFound {
     pub reviewed: CommitSha,
+    pub head: CommitSha,
     pub at: OffsetDateTime,
-    /// Whether Mark Seen, Archive or Mute has marked the PR since the check found it, as the window drew it
-    /// then.
+    /// Whether Mark Seen, Archive or Mute acknowledged this finding, as the window drew it.
     pub acknowledged: bool,
+}
+
+impl StaleFound {
+    /// This finding on PR `number`, as a mark carries it.
+    pub fn on(&self, number: u32) -> StaleFinding {
+        StaleFinding {
+            number,
+            reviewed: self.reviewed.clone(),
+            head: self.head.clone(),
+            found_at: self.at,
+        }
+    }
+}
+
+/// A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+/// and Mute carry it back to acknowledge that finding alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct StaleFinding {
+    pub number: u32,
+    #[specta(type = String)]
+    pub reviewed: CommitSha,
+    #[specta(type = String)]
+    pub head: CommitSha,
+    #[serde(with = "time::serde::rfc3339")]
+    #[specta(type = String)]
+    pub found_at: OffsetDateTime,
+}
+
+/// A Review of commit `reviewed` on PR `number` that a check finds stale against head `head`, or can't
+/// check, with no finding of it kept yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub number: u32,
+    pub reviewed: CommitSha,
+    pub head: CommitSha,
 }
 
 /// The changes to what the store keeps of `StaleFound`, after what the checks say now.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Findings {
-    /// Each PR whose Review of the commit given a check finds stale, or can't check, and of which the store
-    /// keeps no moment. The store dates each from now.
-    pub found: Vec<(u32, CommitSha)>,
-    /// Each PR whose kept moment no longer stands: a check finds the diff the same, the head went back to
-    /// the reviewed commit, or the user reviewed it again.
+    /// Each new finding, which the store dates from now in place of the PR's last.
+    pub found: Vec<Found>,
+    /// Each PR whose last finding no longer stands: a check finds the diff the same, the head went back to
+    /// the reviewed commit, the user reviewed it again or wrote it, or the facts no longer hold the PR.
     pub ended: Vec<u32>,
 }
 

@@ -21,9 +21,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   cloned yet, or cloned again as git said it was broken; no git, or one older than the 2.39 that
   `git patch-id --verbatim` needs; a reviewed commit GitHub refused to send. When the reason goes away, the
   check runs and its verdict replaces the reason.
-- `tsugiki.db` keeps when a check first found each PR's Review stale, or first couldn't run, and whether a
-  mark has acknowledged the PR since, until a check finds the diff the same or the user reviews again.
-  Checks of later heads and restarts keep that moment.
+- `tsugiki.db` keeps each PR's last finding that the user's Review is stale, or that its check can't run:
+  the reviewed commit, the head, and when a check first found the two. A new head or a new Review makes a
+  new finding. The finding ends once a check finds the diff the same, the head goes back to the reviewed
+  commit, or the user reviews again. A check that waits and a restart keep it, and so does a PR that
+  closes. Mark Seen, Archive and Mute acknowledge only the findings the window drew on the item, so a
+  finding of a later head, or one the check made after the window drew the page, still counts. Mute
+  author acknowledges none.
 - A merged or closed PR's check runs once on its final head, while the PR is in **Reach**, and the
   verdict freezes with the PR: once `tsugiki.db` holds both sides, later syncs and fetches read nothing of
   it again. A PR no longer in Reach by then isn't checked. Its row keeps the Stale review

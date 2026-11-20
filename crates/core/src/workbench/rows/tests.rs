@@ -32,6 +32,7 @@ fn a_row_carries_what_the_list_shows() {
                     mark: SeenMark {
                         numbers: vec![3],
                         up_to: Some(at(3)),
+                        findings: vec![],
                     },
                     state: SeenState::Seen,
                 },

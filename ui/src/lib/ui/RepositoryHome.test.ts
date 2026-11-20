@@ -122,7 +122,7 @@ const row = workbenchRow(160662, {
   author: "some-author",
   reasons: ["review_request"],
   seen: {
-    mark: { numbers: [160662], up_to: "2026-11-04T10:00:00Z" },
+    mark: { numbers: [160662], up_to: "2026-11-04T10:00:00Z", findings: [] },
     state: "new_activity",
   },
   mute_author: { kind: "mute", login: "some-author" },
@@ -137,7 +137,7 @@ const issue = {
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ kind: "pr", ...row, backports: [] }],
   seen: {
-    mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z" },
+    mark: { numbers: [112564, 160662], up_to: "2026-11-04T10:00:00Z", findings: [] },
     state: "new_activity",
   },
   mute_author: { kind: "mute", login: "issue-author" } as MuteAuthor,
@@ -2044,7 +2044,7 @@ it("moves the focus with the cursor on Alt+← and Alt+→", async () => {
 });
 
 /** The PR view's item as the core reads it after the list did: newer activity, so another mark. */
-const laterMark = { numbers: [160662], up_to: "2026-11-05T10:00:00Z" };
+const laterMark = { numbers: [160662], up_to: "2026-11-05T10:00:00Z", findings: [] };
 
 it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item when it holds the focus", async () => {
   core.pullRequest.mockResolvedValue({
@@ -2078,7 +2078,7 @@ const threeAlone = async () => {
     number,
     title,
     attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "commits", by: "octocat" }] },
-    seen: { mark: { numbers: [number], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
+    seen: { mark: { numbers: [number], up_to: "2026-11-04T10:00:00Z", findings: [] }, state: "new_activity" },
   });
   const [first, next, last] = [alone(5, "Alone"), alone(6, "Next"), alone(8, "Last")];
   core.pullRequest.mockImplementation((_repository: string, number: number) =>

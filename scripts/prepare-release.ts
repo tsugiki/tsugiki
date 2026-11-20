@@ -62,5 +62,5 @@ console.log(
   `On ${branch}, with version ${version} in Cargo.toml and Cargo.lock.\n` +
     `Write the notes under "${versionHeading(version, date)}" in CHANGELOG.md, and \`just release-check\` ` +
     "prints them.\n" +
-    "Then commit, ask the user, and run `just ship --release --check`.",
+    "Then commit, ask the user, and run `just ship --release`.",
 );

@@ -460,7 +460,7 @@ fn an_issue_shows_the_tree_the_grouping_of_every_pr_gives_it_under_each_conventi
         trees(cpython),
         [
             (1, vec![vec![10, 13, 11], vec![14], vec![30], vec![50]]),
-            (2, vec![vec![10, 13, 12], vec![20]]),
+            (2, vec![vec![10, 13, 12], vec![20], vec![52]]),
             (3, vec![vec![30], vec![40, 41]]),
         ],
         "the links cross as the fixture means them to"

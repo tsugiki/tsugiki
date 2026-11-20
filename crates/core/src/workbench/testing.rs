@@ -219,8 +219,9 @@ impl ViewWorld {
 
     /// Issues 1 to 3, and PRs whose links cross between them: Backports beneath an Origin PR that fix
     /// another Issue than it, a Backport by cherry-pick, a Backport of a Backport, a Backport whose Origin PR
-    /// Tsugiki lacks, a PR that fixes two Issues, a Standalone PR a Backport puts under an Issue, and one
-    /// that stays on its own. Each PR has an update of its own. Issue 1 is archived, and PR 30 in its tree
+    /// Tsugiki lacks, a Backport of one of those that fixes an Issue, which leaves the one it names a
+    /// Standalone backport, a PR that fixes two Issues, a Standalone PR a Backport puts under an Issue, and
+    /// one that stays on its own. Each PR has an update of its own. Issue 1 is archived, and PR 30 in its tree
     /// is marked unseen since, which only a read of its whole tree sees.
     pub(crate) fn has_crossed_links(&self) {
         let merged = |facts: PullRequestFacts| PullRequestFacts {
@@ -253,6 +254,8 @@ impl ViewWorld {
             stranger_numbered(40),
             bots_backport(41, "[3.14] gh-3: Fix it (GH-40)"),
             backport(50, "[3.14] gh-1: Fix it (GH-99)", vec![]),
+            backport(51, "[3.13] Fix it (GH-98)", vec![]),
+            bots_backport(52, "[3.12] gh-2: Fix it (GH-51)"),
             stranger_numbered(60),
         ];
         let updated =

@@ -332,6 +332,17 @@ struct HeldSignals {
     off_default_description: Option<String>,
 }
 
+impl HeldSignals {
+    /// What `row` of `pull_requests` holds of them.
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            number: row.get("number")?,
+            title: row.get("title")?,
+            off_default_description: row.get("off_default_description")?,
+        })
+    }
+}
+
 /// Keeps the links of the first `most` PRs of `repository` from number `from` up that the store holds, in
 /// place of those kept, in one transaction. Answers with the number the next batch starts from, or nothing
 /// once no PR is left. It reads only what the rules read, and finds each Backport's Origin PR once, since
@@ -348,13 +359,7 @@ pub(super) fn refill(
     let asked = named_params! { ":repository": repository, ":from": from, ":most": most.get() };
     let held: Vec<HeldSignals> = {
         let mut statement = transaction.prepare(query)?;
-        let rows = statement.query_map(asked, |row| {
-            Ok(HeldSignals {
-                number: row.get("number")?,
-                title: row.get("title")?,
-                off_default_description: row.get("off_default_description")?,
-            })
-        })?;
+        let rows = statement.query_map(asked, HeldSignals::read)?;
         rows.collect::<rusqlite::Result<_>>()?
     };
     let Some(last) = held.last().map(|pr| pr.number) else {

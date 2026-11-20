@@ -498,6 +498,18 @@ fn a_finding_ends_with_the_same_diff_a_head_back_at_the_review_or_a_new_review()
 }
 
 #[test]
+fn no_finding_changes_before_anyone_signs_in() {
+    let mut reviews = stale_at_2();
+    reviews.stale_found.extend([(9, found('1', '2'))]);
+    let signed_out = WorkFacts {
+        viewer: None,
+        ..facts(vec![reviewed_pr()], reviews)
+    };
+
+    assert_eq!(findings_to_keep(&signed_out), Findings::default());
+}
+
+#[test]
 fn a_stale_review_that_cant_wait_on_the_user_keeps_its_finding_and_gets_no_new_one() {
     let mut reviews = stale_at_2();
     reviews

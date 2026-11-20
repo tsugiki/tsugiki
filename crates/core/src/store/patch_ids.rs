@@ -358,19 +358,21 @@ fn read_stale_found(
          WHERE repository = :repository",
     )?;
     let asked = named_params! { ":repository": repository };
-    let found = statement.query_map(asked, |row| {
-        let UnixTime(at) = row.get("found_at")?;
-        let head: CommitSha = row.get("head_commit")?;
-        let acknowledged: Option<CommitSha> = row.get("acknowledged_head")?;
-        let found = StaleFound {
-            reviewed: row.get("reviewed_commit")?,
-            acknowledged: acknowledged.as_ref() == Some(&head),
-            head,
-            at,
-        };
-        Ok((row.get("number")?, found))
-    })?;
+    let found = statement.query_map(asked, stale_found_in)?;
     found.collect()
+}
+
+fn stale_found_in(row: &Row<'_>) -> rusqlite::Result<(u32, StaleFound)> {
+    let UnixTime(at) = row.get("found_at")?;
+    let head: CommitSha = row.get("head_commit")?;
+    let acknowledged: Option<CommitSha> = row.get("acknowledged_head")?;
+    let found = StaleFound {
+        reviewed: row.get("reviewed_commit")?,
+        acknowledged: acknowledged.as_ref() == Some(&head),
+        head,
+        at,
+    };
+    Ok((row.get("number")?, found))
 }
 
 fn read_last_checks(

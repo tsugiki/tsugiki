@@ -21,7 +21,8 @@ pub(super) struct Linked<R, K> {
 
 /// The links of each of `pull_requests`, worked out from their facts. Only a number that the sync fetched as
 /// an Issue, one of `issues`, counts as one. The store keeps the same links, for a read that can't hold
-/// every PR (#833).
+/// every PR (#833). The Workbench holds every PR's facts, and working their links out from those costs less
+/// than reading the store's (#842).
 pub(super) fn links_of(
     pull_requests: &[PullRequestFacts],
     issues: &[IssueFacts],

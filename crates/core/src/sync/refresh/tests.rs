@@ -1034,10 +1034,8 @@ fn quiet_conversation() -> Result<Reply, Unreachable> {
 
 /// The states of the Reviews Tsugiki holds of PR `number`, or nothing if it hasn't read its Conversation.
 fn reviews_held(harness: &Harness, number: u32) -> Option<Vec<ReviewState>> {
-    let (_, content) = harness
-        .db
-        .reader
-        .pull_request_facts(&cpython(), number)
+    let content = (harness.db.reader)
+        .pull_request_content(&cpython(), number)
         .unwrap();
     content.map(|content| content.reviews.iter().map(|review| review.state).collect())
 }
@@ -1360,7 +1358,9 @@ fn a_conversation_the_pr_view_read_while_a_refresh_reads_ahead_isnt_read_again()
     read_ahead_up_to(&mut syncs, &harness, 2);
 
     // As the PR view does when the user opens PR 3, with what GitHub answered for PR 2.
-    let (_, read) = harness.db.reader.pull_request_facts(&cpython(), 2).unwrap();
+    let read = (harness.db.reader)
+        .pull_request_content(&cpython(), 2)
+        .unwrap();
     harness
         .db
         .store

@@ -33,6 +33,7 @@ use time::{Duration, OffsetDateTime};
 
 use super::backports::plant;
 use super::links::placed;
+use super::trees::Trees;
 use super::{Hidden, ListedItem, candidates};
 use crate::conventions::Conventions;
 use crate::error::Error;
@@ -227,7 +228,7 @@ fn read_page(
     let facts = walk.facts(viewer, chosen.members)?;
     Ok(Some(PageRead {
         facts,
-        links: walk.links,
+        links: walk.trees.into_links(),
         places,
         older: chosen.older,
     }))
@@ -259,10 +260,7 @@ struct Step {
 /// A walk down the updates of one snapshot, which keeps the links and Issues each step reads for the next.
 struct Walk<'s, 't> {
     snapshot: &'s Snapshot<'t>,
-    conventions: Conventions,
-    links: BTreeMap<u32, PrLinks>,
-    /// Each PR whose links were asked for, so a PR the store lacks is asked for once.
-    asked: BTreeSet<u32>,
+    trees: Trees<'s, 't>,
     issues: BTreeMap<u32, IssuePlace>,
     /// The Issues a PR that opened on them brought back (#823), which the Inbox lists closed too.
     brought_back: BTreeSet<u32>,
@@ -272,9 +270,7 @@ impl<'s, 't> Walk<'s, 't> {
     fn new(snapshot: &'s Snapshot<'t>, conventions: Conventions) -> Result<Self, Error> {
         Ok(Self {
             snapshot,
-            conventions,
-            links: BTreeMap::new(),
-            asked: BTreeSet::new(),
+            trees: Trees::new(snapshot, conventions),
             issues: BTreeMap::new(),
             brought_back: snapshot.brought_back()?,
         })
@@ -377,10 +373,10 @@ impl<'s, 't> Walk<'s, 't> {
             .filter(|(_, at)| read(*at))
             .map(|(number, _)| number)
             .collect();
-        let mut trees = self.read_trees(&met)?;
+        let mut trees = self.trees.of_prs(&met)?;
         // The Issues that the lines of the met PRs show under.
         let mut named = BTreeSet::new();
-        for top in plant(placed(self.links_of(&trees))) {
+        for top in plant(placed(self.trees.links_of(&trees))) {
             if top.rows().iter().any(|row| met.contains(&row.number)) {
                 named.extend(top.issues);
             }
@@ -402,10 +398,7 @@ impl<'s, 't> Walk<'s, 't> {
         let open: BTreeSet<u32> = (named.into_iter())
             .filter(|number| (self.issues.get(number)).is_some_and(|issue| self.lists(issue)))
             .collect();
-        if !open.is_empty() {
-            let fixing = self.snapshot.prs_fixing(&open, self.conventions)?;
-            trees.extend(self.read_trees(&fixing)?);
-        }
+        trees.extend(self.trees.under(&open)?);
         Ok(Step {
             found: self.place(&open, &met, &trees),
             floor,
@@ -422,7 +415,7 @@ impl<'s, 't> Walk<'s, 't> {
     ) -> Vec<(InboxCursor, Member)> {
         let mut under: BTreeMap<u32, Vec<&PrLinks>> = BTreeMap::new();
         let mut found = Vec::new();
-        for top in plant(placed(self.links_of(trees))) {
+        for top in plant(placed(self.trees.links_of(trees))) {
             for issue in top.issues.intersection(open) {
                 under
                     .entry(*issue)
@@ -461,42 +454,6 @@ impl<'s, 't> Walk<'s, 't> {
         found
     }
 
-    /// Reads the links of `prs`, of their Origin PRs, and of every PR that names one of either as its
-    /// Origin PR: all that says where each of `prs` sits, and what sits with it. Gives the numbers of all
-    /// those PRs, which `plant` puts on their lines as it would among every PR.
-    fn read_trees(&mut self, prs: &BTreeSet<u32>) -> Result<BTreeSet<u32>, Error> {
-        if prs.is_empty() {
-            return Ok(BTreeSet::new());
-        }
-        self.read_links(prs)?;
-        let origins: BTreeSet<u32> = (prs.iter())
-            .filter_map(|number| self.links.get(number)?.origin)
-            .collect();
-        self.read_links(&origins)?;
-        let mut trees: BTreeSet<u32> = prs.union(&origins).copied().collect();
-        let backports = self.snapshot.prs_naming_origins(&trees, self.conventions)?;
-        self.read_links(&backports)?;
-        trees.extend(backports);
-        Ok(trees)
-    }
-
-    fn read_links(&mut self, numbers: &BTreeSet<u32>) -> Result<(), Error> {
-        let unasked: BTreeSet<u32> = numbers.difference(&self.asked).copied().collect();
-        if unasked.is_empty() {
-            return Ok(());
-        }
-        self.asked.extend(&unasked);
-        let read = self.snapshot.pr_links(&unasked, self.conventions)?;
-        self.links
-            .extend(read.into_iter().map(|links| (links.number, links)));
-        Ok(())
-    }
-
-    /// The links read of each of `numbers` that the store holds.
-    fn links_of<'a>(&'a self, numbers: &'a BTreeSet<u32>) -> impl Iterator<Item = &'a PrLinks> {
-        numbers.iter().filter_map(|number| self.links.get(number))
-    }
-
     /// The whole facts of `members` alone, with their activity and their Reviews.
     fn facts(
         &self,
@@ -514,16 +471,7 @@ impl<'s, 't> Walk<'s, 't> {
                 Member::StandalonePr { prs: tree } => prs.extend(tree),
             }
         }
-        let pull_requests = self.snapshot.pull_requests_numbered(&prs)?;
-        let numbers: BTreeSet<u32> = issues.iter().chain(&prs).copied().collect();
-        Ok(WorkFacts {
-            activity: self.snapshot.activity_of(Some(&viewer), &numbers)?,
-            reviews: self.snapshot.reviews_of(&pull_requests)?,
-            viewer: Some(viewer),
-            issues: self.snapshot.issues_numbered(&issues)?,
-            pull_requests,
-            filters: BTreeMap::new(),
-        })
+        self.trees.facts(viewer, &issues, &prs)
     }
 }
 

@@ -1,23 +1,25 @@
 //! Test helpers for the Workbench: facts to read, and an outline of what they show.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use time::OffsetDateTime;
 
 use super::{
     IssueItem, ListedItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView,
+    candidates_of,
 };
-use crate::facts::WorkFacts;
-use crate::facts::activity::{ActivityFacts, ItemKey};
+use crate::conventions::Conventions;
+use crate::facts::activity::{ActivityFacts, ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
-use crate::facts::pull_requests::{OffDefault, PullRequestFacts};
+use crate::facts::pull_requests::{OffDefault, PrState, PullRequestFacts};
+use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
-use crate::store::Muting;
 use crate::store::testing::OpenStore;
+use crate::store::{Archiving, Flagging, Muting};
 use crate::testing::{cpython, cpython_settings, issue_facts, pr_facts};
-use crate::work::{WorkReason, reasons};
+use crate::work::{Causes, WorkReason, reasons};
 
 pub(crate) use crate::testing::me;
 
@@ -215,7 +217,95 @@ impl ViewWorld {
         self.db.store.mute(&cpython(), muting, now).unwrap();
     }
 
+    /// Issues 1 to 3, and PRs whose links cross between them: Backports beneath an Origin PR that fix
+    /// another Issue than it, a Backport by cherry-pick, a Backport of a Backport, a Backport whose Origin PR
+    /// Tsugiki lacks, a PR that fixes two Issues, a Standalone PR a Backport puts under an Issue, and one
+    /// that stays on its own. Each PR has an update of its own. Issue 1 is archived, and PR 30 in its tree
+    /// is marked unseen since, which only a read of its whole tree sees.
+    pub(crate) fn has_crossed_links(&self) {
+        let merged = |facts: PullRequestFacts| PullRequestFacts {
+            state: PrState::Merged,
+            merge_commit: CommitSha::parse(&format!("{:040x}", facts.number)),
+            ..facts
+        };
+        let picked = PullRequestFacts {
+            off_default: Some(OffDefault {
+                description: format!("(cherry picked from commit {:040x})", 10),
+                cherry_picked_from: CommitSha::parse(&format!("{:040x}", 10))
+                    .into_iter()
+                    .collect(),
+                committers: vec![Some(someone())],
+            }),
+            ..backport(13, "Fix it on 3.12", vec![])
+        };
+        let both = PullRequestFacts {
+            closing_issues: vec![3],
+            ..fixing(30, 1)
+        };
+        let pull_requests = vec![
+            merged(fixing(10, 1)),
+            bots_backport(11, "[3.14] gh-1: Fix it (GH-10)"),
+            backport(12, "[3.13] gh-2: Fix it (GH-10)", vec![]),
+            picked,
+            bots_backport(14, "[3.12] gh-1: Fix it (GH-11)"),
+            own(fixing(20, 2)),
+            both,
+            stranger_numbered(40),
+            bots_backport(41, "[3.14] gh-3: Fix it (GH-40)"),
+            backport(50, "[3.14] gh-1: Fix it (GH-99)", vec![]),
+            stranger_numbered(60),
+        ];
+        let updated =
+            (pull_requests.into_iter().zip(1..)).map(|(facts, seconds)| PullRequestFacts {
+                updated_at: at(seconds),
+                ..facts
+            });
+        self.has(updated.collect(), vec![issue(1), issue(2), issue(3)]);
+        let archiving = Archiving {
+            key: ItemKey::Issue { number: 1 },
+            numbers: vec![1],
+            up_to: None,
+            put_away: PutAway::Now,
+        };
+        let now = OffsetDateTime::now_utc();
+        let store = &self.db.store;
+        store.archive(&cpython(), archiving, now).unwrap();
+        store
+            .mark_unseen(&cpython(), Flagging::on(30), now)
+            .unwrap();
+    }
+
     pub(crate) fn finish(self) {
         self.db.close();
     }
+}
+
+/// A PR numbered `number` that names no Issue and has nothing to do with the viewer.
+fn stranger_numbered(number: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        number,
+        title: format!("PR {number}"),
+        ..stranger()
+    }
+}
+
+/// Each item the grouping of every Issue and PR the store holds gives under `settings`, and the causes it
+/// judged them by: what the Issue view and the PR view read before they read one tree (#842).
+pub(crate) fn grouped_whole(
+    world: &ViewWorld,
+    settings: &RepositorySettings,
+) -> (Vec<WorkbenchItem>, Causes) {
+    let facts = world.db.reader.work_facts(&settings.name).unwrap();
+    let causes = Causes::of(&facts, settings.conventions);
+    let items = candidates_of(facts, settings, &BTreeSet::new(), &causes);
+    (items, causes)
+}
+
+/// `settings` under each Conventions.
+pub(crate) fn under_each(settings: &RepositorySettings) -> Vec<RepositorySettings> {
+    let under = |conventions| RepositorySettings {
+        conventions,
+        ..settings.clone()
+    };
+    vec![under(Conventions::Cpython), under(Conventions::Github)]
 }

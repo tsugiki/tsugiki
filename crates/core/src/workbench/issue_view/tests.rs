@@ -14,7 +14,8 @@ use crate::store::{Archiving, AuthorMuting, Seeing};
 use crate::testing::cpython;
 use crate::work::{SeenMark, YourReview};
 use crate::workbench::testing::{
-    ViewWorld, backport, bots_backport, first_issue, fixing, issue, me, workbench,
+    ViewWorld, backport, bots_backport, first_issue, fixing, grouped_whole, issue, me, under_each,
+    workbench,
 };
 use crate::workbench::{MuteAuthor, WorkbenchRow};
 
@@ -434,5 +435,62 @@ fn a_pr_row_says_whether_the_user_has_reviewed_it() {
         YourReview::Unreviewed,
         "the user's comments on their own PR"
     );
+    world.finish();
+}
+
+#[test]
+fn an_issue_shows_the_tree_the_grouping_of_every_pr_gives_it_under_each_conventions() {
+    let world = ViewWorld::new("issue-view-whole");
+    world.has_crossed_links();
+    let by_first = |mut entries: Vec<TreeEntry>| {
+        entries.sort_by_key(|entry| entry.rows()[0].number);
+        entries
+    };
+    let trees = |items: Vec<WorkbenchItem>| -> Vec<(u32, Vec<Vec<u32>>)> {
+        let issues = items.into_iter().filter_map(|item| match item {
+            WorkbenchItem::Issue(issue) => Some((issue.number, issue.pull_requests)),
+            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+        });
+        issues
+            .map(|(number, entries)| (number, numbers(&by_first(entries))))
+            .collect()
+    };
+    let (cpython, _) = grouped_whole(&world, &world.settings());
+    assert_eq!(
+        trees(cpython),
+        [
+            (1, vec![vec![10, 13, 11], vec![14], vec![30], vec![50]]),
+            (2, vec![vec![10, 13, 12], vec![20]]),
+            (3, vec![vec![30], vec![40, 41]]),
+        ],
+        "the links cross as the fixture means them to"
+    );
+
+    for settings in under_each(&world.settings()) {
+        let (items, causes) = grouped_whole(&world, &settings);
+        for item in items {
+            let WorkbenchItem::Issue(whole) = item else {
+                continue;
+            };
+            let (number, conventions) = (whole.number, settings.conventions);
+            let shown = IssueView::read(&world.db.reader, &settings, number)
+                .unwrap()
+                .unwrap();
+            let key = ItemKey::Issue { number };
+            let prs: Vec<u32> = whole.rows().iter().map(|row| row.number).collect();
+
+            let listed_and_folded = [shown.issue.pull_requests.clone(), shown.merged].concat();
+            assert_eq!(
+                by_first(listed_and_folded),
+                by_first(whole.pull_requests.clone()),
+                "Issue {number} under {conventions:?}"
+            );
+            assert_eq!(
+                shown.needs_attention,
+                causes.needing_attention_in(key, &prs)
+            );
+            assert_eq!(shown.hidden, Hidden::of(&causes, key, &prs));
+        }
+    }
     world.finish();
 }

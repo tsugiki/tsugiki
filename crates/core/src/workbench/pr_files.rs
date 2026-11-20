@@ -17,7 +17,6 @@ use crate::diff::{
 use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 pub use crate::facts::pull_request_content::CodeRow;
-use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_request_content::Side;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, PrState, PullRequestFacts};
 use crate::folders::Folders;
@@ -115,7 +114,7 @@ impl DiffSources<'_> {
         number: u32,
         asks: &dyn Fn() -> bool,
     ) -> Result<Option<FilesRead>, Error> {
-        let Some((pr, content)) = facts(self.reader, repository, number)? else {
+        let Some((pr, content)) = self.reader.pull_request(repository, number)? else {
             return Ok(None);
         };
         let mirror = self.folders.mirror(repository);
@@ -196,7 +195,7 @@ impl DiffSources<'_> {
         repository: &RepositoryName,
         number: u32,
     ) -> Result<Option<HeadInMirror>, Error> {
-        let Some((pr, _content)) = facts(self.reader, repository, number)? else {
+        let Some((pr, _content)) = self.reader.pull_request(repository, number)? else {
             return Ok(None);
         };
         let mirror = self.folders.mirror(repository);
@@ -283,7 +282,7 @@ impl DiffSources<'_> {
     fn open(&self, of: &DiffOf) -> Result<Arc<OpenDiff>, Error> {
         let DiffOf { pr, base } = of;
         self.diffs.get_or_read(pr, Against::Base(base), || {
-            let facts = facts(self.reader, &pr.repository, pr.number)?;
+            let facts = self.reader.pull_request(&pr.repository, pr.number)?;
             let Some((facts, _content)) = facts else {
                 return Err(Error::new(
                     ErrorKind::NotFound,
@@ -327,20 +326,6 @@ fn start(pr: &PullRequestFacts) -> Start {
         }
         (None, _) => Start::TargetBranch,
     }
-}
-
-/// PR `number`'s facts, and its Conversation once Tsugiki has read it, as the database last had them.
-fn facts(
-    reader: &StoreReader,
-    repository: &RepositoryName,
-    number: u32,
-) -> Result<Option<(PullRequestFacts, Option<PullRequestContent>)>, Error> {
-    let (facts, content) = reader.pull_request_facts(repository, number)?;
-    let pr = facts
-        .pull_requests
-        .into_iter()
-        .find(|pr| pr.number == number);
-    Ok(pr.map(|pr| (pr, content)))
 }
 
 #[cfg(test)]

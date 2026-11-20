@@ -378,7 +378,8 @@ fn after_asking(
     session.stop(PLENTY);
 
     let db = OpenStore::of(folders.database(), folder);
-    let (facts, content) = db.reader.issue_facts(&gcmon(), 7).unwrap();
+    let content = db.reader.issue_content(&gcmon(), 7).unwrap();
+    let facts = db.reader.work_facts(&gcmon()).unwrap();
     db.close();
     (content, facts.activity, announced(&seen))
 }
@@ -492,10 +493,10 @@ fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
 
     session.fetching().fetch_pull_request(cpython(), 152_326);
     wait_for_message(&changes, PLENTY);
-    let (facts, content) = session
-        .reader()
-        .pull_request_facts(&cpython(), 152_326)
+    let content = (session.reader())
+        .pull_request_content(&cpython(), 152_326)
         .unwrap();
+    let facts = session.reader().work_facts(&cpython()).unwrap();
     session.stop(PLENTY);
 
     let content = content.unwrap();

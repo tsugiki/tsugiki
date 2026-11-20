@@ -74,7 +74,6 @@ fn links(
 
 #[test]
 fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conventions() {
-    let mut connection = migrated();
     let prs = vec![
         merged_as(10, "gh-1: Fix it", "aaaa111"),
         on_branch(11, "[3.14] gh-1: Fix it (GH-10)", "", &[]),
@@ -90,10 +89,28 @@ fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conven
         },
         on_branch(14, "[3.13] Fix it (GH-99)", "", &["bbbb222"]),
     ];
-    save(&mut connection, &prs);
-    save_issues(&mut connection, &[1, 2, 3]);
-    let known: BTreeSet<u32> = [1, 2, 3].into();
+    assert_kept_as_ruled(&[prs], &[1, 2, 3]);
+}
+
+#[test]
+fn the_store_keeps_the_links_the_rules_read_from_the_facts_of_each_rule_s_sample_prs() {
+    let batches: Vec<Vec<PullRequestFacts>> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| released(rule).0)
+        .collect();
+    let issues: Vec<u32> = (1..=20).collect();
+    assert_kept_as_ruled(&batches, &issues);
+}
+
+/// Checks that, once the store has saved `batches` in turn and holds Issues `issues`, it keeps for each PR
+/// the links that the rules read from its facts, under each Conventions.
+fn assert_kept_as_ruled(batches: &[Vec<PullRequestFacts>], issues: &[u32]) {
+    let mut connection = saved(batches);
+    save_issues(&mut connection, issues);
+    let mut prs = batches.concat();
+    prs.sort_by_key(|facts| facts.number);
+    let known: BTreeSet<u32> = issues.iter().copied().collect();
     let merges = MergeCommits::of(&prs);
+    let numbers: Vec<u32> = prs.iter().map(|facts| facts.number).collect();
 
     for conventions in Conventions::ALL {
         let settings = RepositorySettings {
@@ -112,8 +129,9 @@ fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conven
             })
             .collect();
         assert_eq!(
-            links(&connection, conventions, &[10, 11, 12, 13, 14]),
-            ruled
+            links(&connection, conventions, &numbers),
+            ruled,
+            "{conventions:?}"
         );
     }
 }
@@ -456,43 +474,122 @@ fn stored_texts<T: ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialE
     all.iter().map(through).collect()
 }
 
-/// The rows the store keeps for PRs that try each of the rules behind them, one line for each row.
-fn kept_rows() -> Vec<String> {
-    let description = "Fixes #4\n`Closes #5` <!-- Fixes #6 -->\n```\nFixes #7\n```\n\
-                       Resolves https://github.com/python/cpython/issues/8\n\
-                       Fixes other/repo#9, see gh-10, closes GH-11";
+/// The PRs that try `rule`, in the batches the store saves them in, and the rows `rule` alone keeps for
+/// them, one line for each. A released rule keeps these rows: a change to them is a new rule (`LinkRule`).
+fn released(rule: LinkRule) -> (Vec<Vec<PullRequestFacts>>, Vec<&'static str>) {
+    match rule {
+        LinkRule::ClosingReferences => (
+            vec![vec![
+                PullRequestFacts {
+                    closing_issues: vec![2],
+                    ..pr(1, "gh-1: Fix it")
+                },
+                PullRequestFacts {
+                    closing_issues: vec![3, 4],
+                    ..on_branch(2, "[3.14] gh-5: Fix it (GH-6)", "Fixes #7", &[])
+                },
+            ]],
+            vec![
+                "PR 1 fixes 2 under every",
+                "PR 2 fixes 3 under every",
+                "PR 2 fixes 4 under every",
+            ],
+        ),
+        LinkRule::DescriptionKeywords => {
+            let description = "Fixes #4\n`Closes #5` <!-- Fixes #6 -->\n```\nFixes #7\n```\n\
+                               Resolves https://github.com/python/cpython/issues/8\n\
+                               Fixes other/repo#9, see gh-10, closes GH-11";
+            (
+                vec![vec![PullRequestFacts {
+                    closing_issues: vec![14],
+                    ..on_branch(10, "[3.14] gh-12: Fix it (GH-13)", description, &[])
+                }]],
+                vec![
+                    "PR 10 fixes 4 under every",
+                    "PR 10 fixes 8 under every",
+                    "PR 10 fixes 11 under every",
+                ],
+            )
+        }
+        LinkRule::CpythonTitleIssues => (
+            vec![vec![
+                pr(20, "gh-1: Fix it"),
+                pr(21, "GH-3: Fix it"),
+                pr(22, "[3.14] gh-12: Fix it (GH-13)"),
+                on_branch(23, "[3.14] gh-12, gh-14: Fix it (GH-13)", "Fixes #15", &[]),
+            ]],
+            vec![
+                "PR 20 fixes 1 under cpython",
+                "PR 21 fixes 3 under cpython",
+                "PR 22 fixes 12 under cpython",
+                "PR 23 fixes 12 under cpython",
+                "PR 23 fixes 14 under cpython",
+            ],
+        ),
+        LinkRule::CpythonTitleOrigin => (
+            vec![vec![
+                on_branch(30, "[3.14] gh-12: Fix it (GH-13)", "", &[]),
+                // On the default branch.
+                pr(31, "[3.14] gh-12: Fix it (GH-13)"),
+                on_branch(32, "[3.13] Fix it (#15)", "", &[]),
+            ]],
+            vec!["PR 30 comes from 13 by cpython"],
+        ),
+        LinkRule::CherryPickLine => (
+            vec![
+                vec![
+                    // Saved before the PR its line names.
+                    on_branch(40, "Fix it on 3.13", "", &["bbbb222"]),
+                    // The first of its commits, in the order of their SHAs, that a PR became.
+                    on_branch(41, "Fix it on 3.12", "", &["aaaa111", "cccc333"]),
+                    // A merge commit that sorts after the line's commit without starting with it.
+                    on_branch(42, "Fix it on 3.11", "", &["dddd444"]),
+                    on_branch(43, "[3.14] Fix it (GH-30)", "", &["bbbb222"]),
+                ],
+                vec![
+                    merged_as(50, "Fix it", "bbbb2223333"),
+                    merged_as(51, "Fix it", "cccc3334444"),
+                    merged_as(52, "Fix it", "dddd5555"),
+                ],
+            ],
+            vec![
+                "PR 40 comes from 50 by cherry_pick",
+                "PR 41 comes from 51 by cherry_pick",
+                "PR 43 comes from 50 by cherry_pick",
+            ],
+        ),
+    }
+}
+
+/// A store that saved `batches` in turn, under `LinkRule::SET`.
+fn saved(batches: &[Vec<PullRequestFacts>]) -> Connection {
     let mut connection = migrated();
-    save(
-        &mut connection,
-        &[
-            PullRequestFacts {
-                closing_issues: vec![2],
-                ..pr(1, "gh-1: Fix it")
-            },
-            pr(2, "GH-3: Fix it"),
-            pr(3, "[3.14] gh-12: Fix it (GH-13)"),
-            PullRequestFacts {
-                closing_issues: vec![14],
-                ..on_branch(4, "[3.14] gh-12: Fix it (GH-13)", description, &[])
-            },
-            on_branch(5, "[3.13] Fix it (#15)", "", &[]),
-            // Saved before the PR its line names.
-            on_branch(6, "Fix it on 3.13", "", &["bbbb222"]),
-            // The first of its commits, in the order of their SHAs, that a PR became.
-            on_branch(7, "Fix it on 3.12", "", &["aaaa111", "cccc333"]),
-            // A merge commit that sorts after the line's commit without starting with it.
-            on_branch(8, "Fix it on 3.11", "", &["dddd444"]),
-            on_branch(9, "[3.14] Fix it (GH-30)", "", &["bbbb222"]),
-        ],
-    );
-    save(
-        &mut connection,
-        &[
-            merged_as(20, "Fix it", "bbbb2223333"),
-            merged_as(21, "Fix it", "cccc3334444"),
-            merged_as(22, "Fix it", "dddd5555"),
-        ],
-    );
+    for batch in batches {
+        save(&mut connection, batch);
+    }
+    connection
+}
+
+/// The rows `rule` alone keeps for the PRs of `batches`, once the store holds them all.
+fn kept_by(rule: LinkRule, batches: &[Vec<PullRequestFacts>]) -> Vec<String> {
+    let connection = saved(batches);
+    (connection.execute_batch("DELETE FROM pr_fixes; DELETE FROM pr_origins;")).unwrap();
+    let rules = [rule];
+    let repository = cpython();
+    {
+        let mut keeper = Keeper {
+            rules: &rules,
+            ..Keeper::new(&connection, &repository).unwrap()
+        };
+        for facts in batches.iter().flatten() {
+            keeper.rewrite(facts).unwrap();
+        }
+    }
+    kept_rows(&connection)
+}
+
+/// The rows the store keeps, one line for each row.
+fn kept_rows(connection: &Connection) -> Vec<String> {
     let mut rows = Vec::new();
     let fixes = "SELECT number, issue, under FROM pr_fixes ORDER BY number, issue, under";
     let mut statement = connection.prepare(fixes).unwrap();
@@ -520,31 +617,45 @@ fn kept_rows() -> Vec<String> {
 }
 
 #[test]
-fn the_kept_rows_change_only_with_the_version_of_their_rules() {
+fn each_released_rule_keeps_the_rows_it_kept_for_its_sample_prs() {
+    for rule in LinkRule::SET {
+        let (batches, rows) = released(rule);
+        assert_eq!(
+            kept_by(rule, &batches),
+            rows,
+            "{rule:?} kept other rows: a released rule never changes what it gives, so make the change a \
+             new LinkRule in its place in LinkRule::SET"
+        );
+    }
+}
+
+#[test]
+fn the_set_keeps_the_rows_each_of_its_rules_keeps_alone() {
+    let batches: Vec<Vec<PullRequestFacts>> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| released(rule).0)
+        .collect();
+    let alone: BTreeSet<String> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| kept_by(rule, &batches))
+        .collect();
+    let together: BTreeSet<String> = kept_rows(&saved(&batches)).into_iter().collect();
+    assert_eq!(together, alone);
+}
+
+#[test]
+fn the_version_of_the_rules_names_their_set() {
     assert_eq!(
-        (RULES_VERSION, kept_rows()),
+        (RULES_VERSION, LinkRule::SET),
         (
             1,
             [
-                "PR 1 fixes 1 under cpython",
-                "PR 1 fixes 2 under every",
-                "PR 2 fixes 3 under cpython",
-                "PR 3 fixes 12 under cpython",
-                "PR 4 fixes 4 under every",
-                "PR 4 fixes 8 under every",
-                "PR 4 fixes 11 under every",
-                "PR 4 fixes 12 under cpython",
-                "PR 4 fixes 14 under every",
-                "PR 4 comes from 13 by cpython",
-                "PR 6 comes from 20 by cherry_pick",
-                "PR 7 comes from 21 by cherry_pick",
-                "PR 9 comes from 20 by cherry_pick",
-                "PR 9 comes from 30 by cpython",
+                LinkRule::ClosingReferences,
+                LinkRule::DescriptionKeywords,
+                LinkRule::CpythonTitleIssues,
+                LinkRule::CpythonTitleOrigin,
+                LinkRule::CherryPickLine,
             ]
-            .map(str::to_owned)
-            .to_vec()
         ),
-        "raise RULES_VERSION with the rows its rules leave, so the store works out every PR's links again"
+        "raise RULES_VERSION with a change to LinkRule::SET, so the store works out every PR's links again"
     );
 }
 

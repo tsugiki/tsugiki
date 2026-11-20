@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::login::Login;
-use crate::repository::{RepositoryName, issue_number};
+use crate::repository::RepositoryName;
 
 const CPYTHON: &str = "python/cpython";
 /// `pub` because the recorder keeps this login, which the rules have to recognise in a recording.
@@ -23,7 +23,8 @@ const CPYTHON_BACKPORT_FAILURES: [(&str, &str); 2] = [
     ("I had trouble checking out the ", " backport branch"),
 ];
 
-/// How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this.
+/// How a Repository's PRs name their Issues and Backports (ADR 0011). Each link rule in `links/rules.rs`
+/// says which Conventions read what it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Conventions {
@@ -32,7 +33,7 @@ pub enum Conventions {
 }
 
 impl Conventions {
-    /// Every Conventions Tsugiki knows, for the links the store keeps under each (#833).
+    /// Every Conventions Tsugiki knows.
     pub const ALL: [Self; 2] = [Self::Cpython, Self::Github];
 
     /// `python/cpython` starts with CPython's, and every other Repository with GitHub's.
@@ -44,43 +45,12 @@ impl Conventions {
         }
     }
 
-    /// The Issues `title` names under these Conventions. GitHub's have no title prefix.
-    pub fn issues_in_title(self, title: &str) -> Vec<u32> {
-        match self {
-            Self::Cpython => cpython_title_issues(title),
-            Self::Github => Vec::new(),
-        }
-    }
-
-    /// The Issues `title` could name under any Conventions.
-    pub fn issues_in_title_under_any(title: &str) -> Vec<u32> {
-        Self::ALL
-            .iter()
-            .flat_map(|conventions| conventions.issues_in_title(title))
-            .collect()
-    }
-
     /// True when this Repository's PRs can be Backports.
     pub fn has_backports(self) -> bool {
         match self {
             Self::Cpython => true,
             Self::Github => false,
         }
-    }
-
-    /// The Origin PR that `title` names with these Conventions' Backport marker.
-    pub fn origin_in_title(self, title: &str) -> Option<u32> {
-        match self {
-            Self::Cpython => cpython_title_origin(title),
-            Self::Github => None,
-        }
-    }
-
-    /// The Origin PR that `title` could name under any Conventions.
-    pub fn origin_in_title_under_any(title: &str) -> Option<u32> {
-        Self::ALL
-            .iter()
-            .find_map(|conventions| conventions.origin_in_title(title))
     }
 
     /// True for an account that GitHub takes for a person but these Conventions know is a bot.
@@ -117,41 +87,6 @@ impl Conventions {
             Self::Github => false,
         }
     }
-}
-
-/// The Issues in a title such as `gh-1: Fix it`, `gh-1, gh-2: Fix both` or `[3.14] gh-1: Fix it (GH-9)`.
-/// Anything else before the colon means the title has no prefix.
-fn cpython_title_issues(title: &str) -> Vec<u32> {
-    let Some((head, _)) = title.split_once(':') else {
-        return Vec::new();
-    };
-    let head = head.trim_start();
-    let names = head
-        .strip_prefix('[')
-        .and_then(|rest| rest.split_once(']'))
-        .map_or(head, |(_, after)| after);
-    let numbers: Option<Vec<u32>> = names
-        .split([',', ' '])
-        .filter(|name| !name.is_empty())
-        .map(gh_number)
-        .collect();
-    numbers.unwrap_or_default()
-}
-
-/// The last `(GH-N)` in a title such as `[3.14] gh-1: Fix it (GH-9)`.
-fn cpython_title_origin(title: &str) -> Option<u32> {
-    title
-        .rsplit('(')
-        .find_map(|piece| gh_number(piece.split_once(')')?.0))
-}
-
-/// The number in `gh-N`, whatever its case.
-pub(crate) fn gh_number(word: &str) -> Option<u32> {
-    let digits = word.get(3..)?;
-    word.get(..3)?
-        .eq_ignore_ascii_case("gh-")
-        .then(|| issue_number(digits))
-        .flatten()
 }
 
 #[cfg(test)]

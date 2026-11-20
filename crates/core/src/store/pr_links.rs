@@ -20,7 +20,9 @@ use super::pull_requests::values_by_number;
 use crate::conventions::Conventions;
 use crate::facts::CommitSha;
 use crate::facts::pull_requests::{PrLinks, PullRequestFacts};
-use crate::links::{LinkSignals, RULES_VERSION, fixed_under_each, origins_in_title};
+use crate::links::{
+    LinkRule, LinkSignals, RULES_VERSION, fixed_under_each, origins_in_title, reads_cherry_picks,
+};
 use crate::repository::RepositoryName;
 
 /// The tables of the links, with what finds a PR by the number it names, and what walks the PRs by their
@@ -95,6 +97,8 @@ impl FoundIn {
 /// those of a save, or every PR the store holds.
 pub(super) struct Keeper<'c> {
     repository: &'c RepositoryName,
+    /// The rules that work the links out: `LinkRule::SET`, or one rule alone in its pinned test.
+    rules: &'c [LinkRule],
     forget_fixes: Statement<'c>,
     forget_origins: Statement<'c>,
     forget_picked: Statement<'c>,
@@ -135,6 +139,7 @@ impl<'c> Keeper<'c> {
                            ON pick.repository = :repository AND pick.sha = start.value";
         Ok(Self {
             repository,
+            rules: &LinkRule::SET,
             forget_fixes: connection.prepare(forget_fixes)?,
             forget_origins: connection.prepare(forget_origins)?,
             forget_picked: connection.prepare(forget_picked)?,
@@ -155,7 +160,9 @@ impl<'c> Keeper<'c> {
         self.forget_fixes.execute(this).map(drop)?;
         self.forget_origins.execute(this).map(drop)?;
         self.keep(number, &LinkSignals::of(facts))?;
-        self.keep_picked_origin(number)?;
+        if !reads_cherry_picks(self.rules) {
+            return Ok(());
+        }
         for picker in self.pickers_of(number, facts.merge_commit.as_ref())? {
             let values = named_params! {
                 ":repository": self.repository,
@@ -193,22 +200,25 @@ impl<'c> Keeper<'c> {
         pickers.collect()
     }
 
-    /// Keeps the numbers `signals` names as fixed and the Origin PRs its title names, for PR `number`,
-    /// which has none kept.
+    /// Keeps the numbers `signals` names as fixed and the Origin PRs its title and its cherry-pick lines
+    /// name, for PR `number`, which has none kept.
     fn keep(&mut self, number: u32, signals: &LinkSignals<'_>) -> rusqlite::Result<()> {
         let repository = self.repository;
-        for (issue, conventions) in fixed_under_each(signals, repository) {
+        for (issue, conventions) in fixed_under_each(self.rules, signals, repository) {
             let under = conventions.map_or(Under::Every, Under::Only);
             let values = named_params! {
                 ":repository": repository, ":number": number, ":issue": issue, ":under": under,
             };
             self.insert_fix.execute(values).map(drop)?;
         }
-        let markers = origins_in_title(signals).into_iter();
+        let markers = origins_in_title(self.rules, signals).into_iter();
         let markers = markers
             .filter_map(|(conventions, origin)| Some((FoundIn::marker_of(conventions)?, origin)));
         for (found_in, origin) in markers {
             self.save_origin(number, found_in, origin)?;
+        }
+        if reads_cherry_picks(self.rules) {
+            self.keep_picked_origin(number)?;
         }
         Ok(())
     }
@@ -224,9 +234,10 @@ impl<'c> Keeper<'c> {
         self.insert_origin.execute(values).map(drop)
     }
 
-    /// Keeps the Origin PR that PR `number`'s cherry-pick lines name, which has none kept: the PR that the
-    /// first of its commits that a PR became, in the order of their SHAs, became. A short SHA names the
-    /// first whole one it starts, as `MergeCommits` reads it.
+    /// Keeps the Origin PR that PR `number`'s cherry-pick lines name, which has none kept, as
+    /// `LinkRule::CherryPickLine` finds it: the PR that the first of its commits that a PR became, in the
+    /// order of their SHAs, became. A short SHA names the first whole one it starts, as `MergeCommits` reads
+    /// it. How this finds the PR is the rule's, so a change to it is a new rule.
     fn keep_picked_origin(&mut self, number: u32) -> rusqlite::Result<()> {
         let this = named_params! { ":repository": self.repository, ":number": number };
         let shas = self
@@ -390,7 +401,6 @@ pub(super) fn refill(
                 off_default_description: pr.off_default_description.as_deref(),
             };
             keeper.keep(pr.number, &signals)?;
-            keeper.keep_picked_origin(pr.number)?;
         }
     }
     transaction.commit()?;

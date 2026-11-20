@@ -5,7 +5,8 @@
 //! Issue after the PR starts to link then.
 //!
 //! The rows hold what one version of the link rules gave, `links::RULES_VERSION`, and the store keeps that
-//! number beside them. A store that opens with rows from another version works every PR's links out again.
+//! number beside them. A store that opens with rows from another version keeps them, and answers reads from
+//! them until the session has worked each Repository's links out again, a job at a time (#950).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -248,30 +249,39 @@ impl<'c> Keeper<'c> {
     }
 }
 
-/// Works out the links of every PR the store holds again, unless the rules that worked out the kept ones are
-/// this version's: as the step that makes the tables leaves them empty, or after a release changes the rules.
-pub(super) fn refill_if_stale(connection: &mut Connection) -> rusqlite::Result<()> {
+/// Saves this version of the rules as the one that worked out the kept links. The session saves it once it
+/// has refilled each Repository `stale` named: a PR saved meanwhile kept links under this version's rules.
+pub(super) fn keep_version(connection: &Connection) -> rusqlite::Result<()> {
+    let query = "INSERT INTO link_rules (id, version) VALUES (1, :version)
+                 ON CONFLICT (id) DO UPDATE SET version = excluded.version";
+    let version = named_params! { ":version": RULES_VERSION };
+    connection.execute(query, version).map(drop)
+}
+
+/// Saves this version of the rules as the one that worked out the kept links, in a store that holds no PR,
+/// whose links any version's rules leave empty: a new file, or one the step that makes the tables found
+/// empty. A store that holds PRs keeps the version it has.
+pub(super) fn keep_version_if_empty(connection: &mut Connection) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    let kept: Option<u32> = transaction
+    let empty = "SELECT NOT EXISTS (SELECT 1 FROM pull_requests)";
+    if transaction.query_row(empty, [], |row| row.get::<_, bool>(0))? {
+        keep_version(&transaction)?;
+    }
+    transaction.commit()
+}
+
+/// The Repositories whose PRs' links to work out again, unless the rules that worked out the kept ones are
+/// this version's: as the step that makes the tables leaves them empty, or after a release changes the rules.
+/// Each Repository the store holds PRs of is among them.
+pub(super) fn stale(connection: &Connection) -> rusqlite::Result<Option<Vec<RepositoryName>>> {
+    let kept: Option<u32> = connection
         .query_row("SELECT version FROM link_rules", [], |row| {
             row.get("version")
         })
         .optional()?;
     if kept == Some(RULES_VERSION) {
-        return Ok(());
+        return Ok(None);
     }
-    fill(&transaction)?;
-    let query = "INSERT INTO link_rules (id, version) VALUES (1, :version)
-                 ON CONFLICT (id) DO UPDATE SET version = excluded.version";
-    let version = named_params! { ":version": RULES_VERSION };
-    transaction.execute(query, version).map(drop)?;
-    transaction.commit()
-}
-
-/// Keeps the links of every PR the store holds, in place of all those kept. It reads only what the rules
-/// read, and finds each Backport's Origin PR once, since every PR is there to be found.
-fn fill(connection: &Connection) -> rusqlite::Result<()> {
-    connection.execute_batch("DELETE FROM pr_fixes; DELETE FROM pr_origins;")?;
     let mut statement = connection.prepare("SELECT DISTINCT repository FROM pull_requests")?;
     let names = statement.query_map([], |row| row.get::<_, String>("repository"))?;
     let names: Vec<String> = names.collect::<rusqlite::Result<_>>()?;
@@ -279,17 +289,32 @@ fn fill(connection: &Connection) -> rusqlite::Result<()> {
     let repositories = names
         .iter()
         .filter_map(|name| RepositoryName::parse(name).ok());
-    for repository in repositories {
-        let this: [(&str, &dyn ToSql); 1] = [(":repository", &repository)];
-        let closing = "SELECT number, issue FROM closing_references WHERE repository = :repository
-                       ORDER BY number, issue";
-        let closing: BTreeMap<u32, Vec<u32>> =
-            values_by_number(&mut connection.prepare(closing)?, &this, "issue")?;
-        let query = "SELECT number, title, off_default_description FROM pull_requests
-                     WHERE repository = :repository";
-        let mut statement = connection.prepare(query)?;
+    Ok(Some(repositories.collect()))
+}
+
+/// Keeps the links of every PR of `repository` that the store holds, in place of those kept, in one
+/// transaction. It reads only what the rules read, and finds each Backport's Origin PR once, since every PR
+/// of the Repository is there to be found.
+pub(super) fn refill(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let this: [(&str, &dyn ToSql); 1] = [(":repository", repository)];
+    for table in ["pr_fixes", "pr_origins"] {
+        let forget = format!("DELETE FROM {table} WHERE repository = :repository");
+        transaction.execute(&forget, &this[..]).map(drop)?;
+    }
+    let closing = "SELECT number, issue FROM closing_references WHERE repository = :repository
+                   ORDER BY number, issue";
+    let closing: BTreeMap<u32, Vec<u32>> =
+        values_by_number(&mut transaction.prepare(closing)?, &this, "issue")?;
+    let query = "SELECT number, title, off_default_description FROM pull_requests
+                 WHERE repository = :repository";
+    {
+        let mut statement = transaction.prepare(query)?;
         let mut rows = statement.query(&this[..])?;
-        let mut keeper = Keeper::new(connection, &repository)?;
+        let mut keeper = Keeper::new(&transaction, repository)?;
         while let Some(row) = rows.next()? {
             let number: u32 = row.get("number")?;
             let title: String = row.get("title")?;
@@ -303,7 +328,7 @@ fn fill(connection: &Connection) -> rusqlite::Result<()> {
             keeper.keep_picked_origin(number)?;
         }
     }
-    Ok(())
+    transaction.commit()
 }
 
 /// The condition on `pr_origins` as `origin` that keeps the Origin PRs `conventions` read, with what it

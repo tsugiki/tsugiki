@@ -1,13 +1,16 @@
 use std::collections::BTreeSet;
 
-use super::super::testing::{at_second, migrated, temp_database};
+use super::super::testing::{
+    at_second, keep_old_links, kept_fixes, migrated, refuse_new_links, store_with_old_links,
+    temp_database,
+};
 use super::super::{Connection, MIGRATIONS, Store, issues, open_with, pull_requests};
 use super::*;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{OffDefault, PrState};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
-use crate::testing::{cpython, issue_facts, pr_facts, sha};
+use crate::testing::{TempPath, cpython, issue_facts, pr_facts, sha};
 
 fn pr(number: u32, title: &str) -> PullRequestFacts {
     PullRequestFacts {
@@ -233,7 +236,7 @@ fn the_prs_naming_an_origin_pr_are_found_by_it_under_conventions_with_backports(
 }
 
 #[test]
-fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
+fn a_store_whose_links_no_rules_worked_out_leaves_them_to_the_refill_of_its_repositories() {
     let (path, _folder) = temp_database("links-filled");
     let before_links = &MIGRATIONS[..MIGRATIONS.len() - 1];
     open_with(&path, before_links).unwrap().close();
@@ -255,8 +258,13 @@ fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
     .unwrap();
     drop(old);
 
-    Store::open(&path).unwrap().close();
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.refill_links(&cpython()).unwrap();
+    store.keep_link_rules().unwrap();
 
+    assert_eq!(store.stale_links().unwrap(), None);
+    store.close();
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10, 11]),
@@ -264,24 +272,19 @@ fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
     );
 }
 
-/// Opens the store at `path` once its links say version `version` of the rules worked them out, with only a
-/// number among them that the rules never gave.
-fn open_with_old_links(path: &std::path::Path, version: u32) {
-    let old = Connection::open(path).unwrap();
-    old.execute_batch(&format!(
-        "DELETE FROM pr_fixes;
-         DELETE FROM pr_origins;
-         INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('python/cpython', 10, 6, 'every');
-         UPDATE link_rules SET version = {version};"
-    ))
-    .unwrap();
-    drop(old);
-    Store::open(path).unwrap().close();
+/// The store at `path`, opened again once its links say version `version` of the rules worked them out,
+/// with only a number among them that the rules never gave: PR 10 fixes Issue 6.
+fn open_with_old_links(path: &std::path::Path, version: u32) -> Store {
+    let store = Store::open(path).unwrap();
+    keep_old_links(&store, version, &[(cpython(), 10, 6)]);
+    store.close();
+    Store::open(path).unwrap()
 }
 
-#[test]
-fn a_store_works_its_links_out_again_as_it_opens_after_the_rules_change() {
-    let (path, _folder) = temp_database("links-stale");
+/// A store at a new path that holds PR 10, which fixes Issue 5, and Backport 11, which comes from it, with
+/// Issues 5 and 6.
+fn store_with_a_backport(name: &str) -> (std::path::PathBuf, TempPath) {
+    let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     let saved = vec![
         merged_as(10, "gh-5: Fix it", "aaaa1112222"),
@@ -292,38 +295,88 @@ fn a_store_works_its_links_out_again_as_it_opens_after_the_rules_change() {
         .save_issues(&cpython(), vec![issue(5), issue(6)])
         .unwrap();
     store.close();
+    (path, folder)
+}
 
-    open_with_old_links(&path, RULES_VERSION - 1);
+#[test]
+fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_refill() {
+    let (path, _folder) = store_with_a_backport("links-stale");
+
+    let store = open_with_old_links(&path, RULES_VERSION - 1);
 
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![6], None), (11, vec![], None)]
+    );
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.refill_links(&cpython()).unwrap();
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
         [(10, vec![5], None), (11, vec![], Some(10))]
     );
+    // The refill of each Repository comes first, so a crash before this refills them all again.
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.keep_link_rules().unwrap();
+    assert_eq!(store.stale_links().unwrap(), None);
+    store.close();
 }
 
 #[test]
 fn a_store_whose_links_this_version_worked_out_keeps_them_as_it_opens() {
-    let (path, _folder) = temp_database("links-current");
-    let store = Store::open(&path).unwrap();
-    store
-        .save_pull_requests(
-            &cpython(),
-            vec![merged_as(10, "gh-5: Fix it", "aaaa1112222")],
-        )
-        .unwrap();
-    store
-        .save_issues(&cpython(), vec![issue(5), issue(6)])
-        .unwrap();
+    let (path, _folder) = store_with_a_backport("links-current");
+
+    let store = open_with_old_links(&path, RULES_VERSION);
+
+    assert_eq!(store.stale_links().unwrap(), None);
     store.close();
-
-    open_with_old_links(&path, RULES_VERSION);
-
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10]),
         [(10, vec![6], None)]
     );
+}
+
+#[test]
+fn a_store_that_holds_no_pr_keeps_this_versions_rules_as_it_opens() {
+    let (path, _folder) = temp_database("links-empty");
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.stale_links().unwrap(), None);
+    keep_old_links(&store, RULES_VERSION - 1, &[]);
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+
+    assert_eq!(store.stale_links().unwrap(), None);
+    store.close();
+}
+
+#[test]
+fn a_refill_works_out_only_its_own_repositorys_links() {
+    let gcmon = RepositoryName::parse("some-maintainer/gcmon").unwrap();
+    let store = store_with_old_links(&[cpython(), gcmon.clone()]);
+    let mut stale = store.stale_links().unwrap().unwrap();
+    stale.sort_by_key(ToString::to_string);
+    assert_eq!(stale, [cpython(), gcmon.clone()]);
+
+    store.refill_links(&gcmon).unwrap();
+
+    let gcmon = gcmon.to_string();
+    let python = cpython().to_string();
+    assert_eq!(kept_fixes(&store), [(python, 10, 6), (gcmon, 10, 5)]);
+}
+
+#[test]
+fn a_refill_that_fails_keeps_the_links_it_found_and_their_version() {
+    let (path, _folder) = store_with_a_backport("links-refused");
+    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    refuse_new_links(&store);
+
+    assert!(store.refill_links(&cpython()).is_err());
+
+    assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 6)]);
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.close();
 }
 
 /// The text each of `all` leaves in a column, once it has read back as itself.

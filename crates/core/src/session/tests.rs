@@ -29,7 +29,7 @@ use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
 use crate::status::{Change, FailedRead, ItemUnread, ReadFailure};
-use crate::store::testing::OpenStore;
+use crate::store::testing::{OpenStore, kept_fixes, store_with_old_links};
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
     TempPath, cpython, cpython_settings, hours_ago, issue_facts, listed, listing, me, one_folder,
@@ -3574,4 +3574,64 @@ fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
     let [only]: [Status; 1] = announced(&seen).try_into().unwrap();
     assert!(problem_of(only).unwrap().message.contains("newer"));
     assert_eq!(fs::read(folders.database()).unwrap(), before);
+}
+
+/// Watches GitHub through `access` with a store whose links an older version of the rules kept, in CPython
+/// and gcmon, once the window has opened gcmon. Answers with the Repository of each Change, which names no
+/// item, and the store. The session stops once it has heard of both.
+fn refilled_watching(access: GitHubAccess) -> (Vec<RepositoryName>, Store) {
+    let store = store_with_old_links(&[cpython(), gcmon()]);
+    let (stop, incoming) = mpsc::channel();
+    stop.send(SessionMessage::Sync {
+        repository: gcmon(),
+    })
+    .unwrap();
+    let (heard, changes) = mpsc::channel();
+    let mut count = 0;
+    let mut board = quiet_board().with_changes(Box::new(move |change: &Change| {
+        assert!(change.items.is_empty(), "{change:?}");
+        heard.send(change.repository.clone()).unwrap();
+        count += 1;
+        if count == 2 {
+            stop.send(SessionMessage::Stop).unwrap();
+        }
+    }));
+    let refreshes = Refreshes {
+        incoming,
+        ..unheard_refreshes()
+    };
+
+    watch(&mut board, &store, access, &refreshes);
+
+    (changes.try_iter().collect(), store)
+}
+
+/// The fixes a store holds once the refill of CPython and gcmon worked out their links under this version's
+/// rules.
+fn refilled_fixes() -> Vec<(String, u32, u32)> {
+    let fixed = |repository: RepositoryName| (repository.to_string(), 10, 5);
+    vec![fixed(cpython()), fixed(gcmon())]
+}
+
+#[test]
+fn a_session_refills_stale_links_the_open_repository_first_and_tells_the_window() {
+    let (heard, store) = refilled_watching(offline());
+
+    assert_eq!(heard, [gcmon(), cpython()]);
+    assert_eq!(store.stale_links().unwrap(), None);
+    assert_eq!(kept_fixes(&store), refilled_fixes());
+}
+
+#[test]
+fn a_session_without_a_token_refills_stale_links_too() {
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        run_gh: without_gh,
+    };
+
+    let (heard, store) = refilled_watching(access);
+
+    assert_eq!(heard, [gcmon(), cpython()]);
+    assert_eq!(store.stale_links().unwrap(), None);
+    assert_eq!(kept_fixes(&store), refilled_fixes());
 }

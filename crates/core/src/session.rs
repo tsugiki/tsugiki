@@ -37,8 +37,10 @@ use crate::token::read_token;
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
 use on_screen::OnScreen;
+use refill::LinkRefill;
 
 mod on_screen;
+mod refill;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -195,6 +197,9 @@ struct Refreshes {
     /// How many saves of a Repository's settings the session has followed, to tell from the view's count
     /// those in its queue.
     saves_taken: Cell<usize>,
+    /// The refill of the links the store kept under another version of the rules, which takes a step when no
+    /// message waits, ahead of the syncs'.
+    links: RefCell<LinkRefill>,
 }
 
 /// Where the session tells the window of a mark or a hand edit to the settings, with the syncs that say
@@ -248,6 +253,8 @@ enum Turn {
     Patched(RepositoryName, PatchReads),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
     CheckHour,
+    /// The links the store kept under another version of the rules have a Repository left to work out.
+    RefillLinks,
     SyncStep,
     Stop,
 }
@@ -268,14 +275,8 @@ impl Refreshes {
             on_screen: RefCell::new(OnScreen::new(intervals.on_screen)),
             settings,
             saves_taken: Cell::new(0),
+            links: RefCell::new(LinkRefill::default()),
         }
-    }
-
-    /// The next message, from the backlog first, waiting as long as it takes: none once every sender has
-    /// gone.
-    fn wait_for_message(&self) -> Option<SessionMessage> {
-        let first = self.backlog.borrow_mut().pop_front();
-        first.or_else(|| self.incoming.recv().ok())
     }
 
     /// Has the Mirror worker follow the move of Reach `save` makes, counts it as followed, and tells the
@@ -365,12 +366,30 @@ impl Refreshes {
     /// the one asking that the session isn't connected. The marks need only the database, so they still
     /// work, and so does telling the window of a hand edit to the settings: with no syncs to say which
     /// Repositories were opened, of each one. Reach follows a change of the settings, and a Mute or an
-    /// Unmute, as it does with a token, which needs only the database and the Mirror (#946).
+    /// Unmute, as it does with a token, which needs only the database and the Mirror (#946). The refill of
+    /// the links needs only the database too, and takes a step whenever no message waits.
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
         let mut telling = Telling { board, syncs: None };
-        while let Some(message) = self.wait_for_message() {
+        loop {
+            // A wait too long for the clock waits for the next message, however long it takes.
+            let wait = if self.links.borrow().is_due() {
+                Duration::ZERO
+            } else {
+                Duration::MAX
+            };
+            let message = match self.next_message(wait) {
+                Ok(message) => message,
+                Err(RecvTimeoutError::Timeout) => {
+                    self.links.borrow_mut().step(telling.board, store);
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
+            };
             match message {
                 SessionMessage::Stop => return,
+                SessionMessage::Sync { repository } => {
+                    self.links.borrow_mut().put_first(&repository);
+                }
                 SessionMessage::Mark(marked) => self.mark(&mut telling, store, marked),
                 SessionMessage::SettingsChanged(save) => {
                     self.follow_settings(&mut telling, store, &save);
@@ -382,7 +401,6 @@ impl Refreshes {
                     self.read_failed(telling.board, &fetched, ItemUnread::NoToken);
                 }
                 SessionMessage::Check { .. }
-                | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::Screen(_) => {}
             }
@@ -420,7 +438,8 @@ impl Refreshes {
         loop {
             let hour_check = hour_check(github);
             let reread = self.on_screen.borrow().wake();
-            let wake = [syncs.ready_at(), hour_check, reread]
+            let refill = self.links.borrow().is_due().then(Instant::now);
+            let wake = [syncs.ready_at(), hour_check, reread, refill]
                 .into_iter()
                 .flatten()
                 .fold(next_refresh, Ord::min);
@@ -461,7 +480,7 @@ impl Refreshes {
 
     /// The turn whose time came: asking who is signed in first, as only that brings the session back online,
     /// then reading again an item on screen whose minute came round, refreshing the open Repository,
-    /// checking the hour's points, and else the next sync step.
+    /// checking the hour's points, the next step of the links' refill, and else the next sync step.
     fn timed_turn(&self, due: Due, hour_check: Option<Instant>) -> Turn {
         let now = Instant::now();
         if now >= due.status {
@@ -480,6 +499,9 @@ impl Refreshes {
         }
         if hour_check.is_some_and(|at| now >= at) {
             return Turn::CheckHour;
+        }
+        if self.links.borrow().is_due() {
+            return Turn::RefillLinks;
         }
         Turn::SyncStep
     }
@@ -537,9 +559,11 @@ fn run(board: &mut StatusBoard, database: Database, access: GitHubAccess, refres
     }
 }
 
-/// Connects, then refreshes and runs the syncs the app asks for, until the app stops it. With no token
-/// `board` shows why, and the database stays open until then, so the window can read what's stored.
+/// Queues the refill of the links if the store kept them under another version of the rules, connects, then
+/// refreshes and runs the syncs the app asks for, until the app stops it. With no token `board` shows why,
+/// and the database stays open until then, so the window can read what's stored.
 fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
+    *refreshes.links.borrow_mut() = LinkRefill::owed_by(store);
     let Some(github) = connect(board, store, access) else {
         refreshes.wait_for_stop(board, store);
         return;
@@ -575,7 +599,10 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 }
                 due.repository = Instant::now() + intervals.repository;
             }
-            Turn::Opened(repository) => show_last_sync(board, store, repository),
+            Turn::Opened(repository) => {
+                refreshes.links.borrow_mut().put_first(&repository);
+                show_last_sync(board, store, repository);
+            }
             Turn::SettingsChanged(save) => {
                 let mut telling = Telling {
                     board,
@@ -593,6 +620,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
             Turn::CheckHour => {}
+            Turn::RefillLinks => refreshes.links.borrow_mut().step(board, store),
             Turn::Fetch(fetched) => {
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);

@@ -1852,7 +1852,8 @@ fn with_filters_as_tables(mut repository: Table) -> Table {
 }
 
 /// The `filters` of the first table of `repositories` that names `name`. A table without them gets `written`
-/// first, the Filters the settings read it as, in blocks of their own like those `append` writes.
+/// first, the Filters the settings read it as: in blocks of their own, or as an inline list in a Repository
+/// written inline, as `append` writes them.
 fn filters_in_file<'a>(
     repositories: &'a mut Item,
     name: &RepositoryName,

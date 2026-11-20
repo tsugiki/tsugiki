@@ -1,7 +1,7 @@
 use super::super::testing::{V1, V2, backups, temp_database};
 use super::super::{CANT_OPEN, Store, open_with};
 use super::*;
-use std::ffi::OsString;
+use crate::testing::files_in;
 use std::fs;
 
 #[test]
@@ -22,17 +22,6 @@ fn a_newer_database_is_refused_and_left_untouched() {
         "no -wal or -shm files either"
     );
     assert_eq!(backups(&folder), [""; 0]);
-}
-
-/// What the folder holds, in name order, so a test can see that SQLite never touched the file. The order
-/// `read_dir` gives depends on the file system, and macOS lists `tsugiki.db.lock` first.
-fn files_in(folder: &Path) -> Vec<OsString> {
-    let mut names: Vec<OsString> = fs::read_dir(folder)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect();
-    names.sort();
-    names
 }
 
 #[test]

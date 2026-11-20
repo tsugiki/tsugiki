@@ -2090,7 +2090,7 @@ fn stop_waits_for_the_save_under_way_and_the_saves_asked_before_it() {
         release.send(()).unwrap();
     });
 
-    owner.stop(PLENTY);
+    owner.begin_stopping().wait_for_end(PLENTY);
 
     let after_stop = owner.save_panes(PaneLayout {
         sidebar: Some(300),

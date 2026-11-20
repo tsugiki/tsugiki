@@ -1322,6 +1322,22 @@ pub struct SettingsOwner {
     commands: LatestReader<Vec<CommandId>>,
 }
 
+/// The settings owner's thread on its way to its end, from [`SettingsOwner::begin_stopping`].
+#[must_use = "only `wait_for_end` waits for the save under way"]
+pub struct SettingsEnding(Receiver<()>);
+
+impl SettingsEnding {
+    /// Waits up to `patience` for the thread to end. A save that outlasts it, on a drive gone slow, goes on
+    /// until the process ends, and then the file holds its old text (`saving::save`).
+    pub fn wait_for_end(self, patience: Duration) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "running out of patience is the one failure here, and the doc above says why it is safe"
+        )]
+        let _ = self.0.recv_timeout(patience);
+    }
+}
+
 /// Where the owner's thread hands each Repository's settings a change saves otherwise, with those they
 /// replaced: the session's queue, which `fetching`, above this module, owns.
 pub type SettingsSink = Box<dyn FnMut(SettingsSave) + Send>;
@@ -1561,21 +1577,14 @@ impl SettingsOwner {
         let _sent = self.requests.send(Request::Session(session));
     }
 
-    /// Tells the thread to end once it has answered what it was asked before, the save under way among them,
-    /// and gives it up to `patience` to get there. Every copy of this owner then refuses each request with
-    /// `STOPPED_SAVING`.
-    ///
-    /// A save that outlasts `patience`, on a drive gone slow, goes on until the process ends, and then the
-    /// file holds its old text (`saving::save`).
-    pub fn stop(&self, patience: Duration) {
+    /// Tells the thread to end once it has answered what it was asked before, the save under way among them.
+    /// Every copy of this owner then refuses each request with `STOPPED_SAVING`. The caller goes on with its
+    /// own stopping, and the save with it, until it waits on what this returns.
+    pub fn begin_stopping(&self) -> SettingsEnding {
         let (finishing, finished) = mpsc::channel::<()>();
         // A thread already gone hands the request back in the error, which `finishing` goes with.
         drop(self.requests.send(Request::Stop { finishing }));
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "running out of patience is the one failure here, and the doc above says why it is safe"
-        )]
-        let _ = finished.recv_timeout(patience);
+        SettingsEnding(finished)
     }
 
     /// A copy of what the settings say, for a thread that reads them later.

@@ -91,7 +91,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).
   A quit or a crash during a save leaves the file with its old text or its new, never cut short, and quitting
-  waits for a save under way. A save through a symbolic link changes the file it points to and keeps the link.
+  waits a moment for a save under way. A save through a symbolic link changes the file it points to and keeps
+  the link, and refuses while that file isn't there. A save puts a new file in place, so a hard link stops
+  sharing the file at the first save: link a file into a dotfiles repository with a symbolic link.
   `settings.toml` travels: settings, remapped keybindings, and each Repository with its Conventions and
   Filters; the user syncs it by pointing `settings_path` at a dotfiles repository or a synced folder.
   `machine.toml` stays: the token source, the editor command, paths, the clone each Repository borrows objects

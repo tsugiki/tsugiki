@@ -11,6 +11,7 @@
 #![expect(clippy::unwrap_used, reason = "a failed setup step ends the test")]
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -395,6 +396,16 @@ pub fn url(remotes: &Path) -> String {
     let path = remotes.to_string_lossy().replace('\\', "/");
     let slash = if path.starts_with('/') { "" } else { "/" };
     format!("file://{slash}{path}/")
+}
+
+/// The names of what `folder` holds, in name order. The order `read_dir` gives depends on the file system.
+pub fn files_in(folder: &Path) -> Vec<OsString> {
+    let mut names: Vec<OsString> = fs::read_dir(folder)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    names.sort();
+    names
 }
 
 /// A path for this test run under the repo's ignored `.temp` folder: `.temp/<name>-<pid>`. `.temp` exists

@@ -1864,16 +1864,16 @@ fn filters_in_file<'a>(
             .is_some_and(|text| text.is_same(name))
     };
     let repository = tables_of(repositories).into_iter().find(names_it)?;
-    match (repository.entry(FILTERS), written) {
-        (toml_edit::Entry::Occupied(filters), _) => Some(filters.into_mut()),
-        (toml_edit::Entry::Vacant(place), Some(written)) => {
-            let blocks = written
-                .into_array_of_tables()
-                .map_or_else(|kept| kept, Item::ArrayOfTables);
-            Some(place.insert(blocks))
-        }
-        (toml_edit::Entry::Vacant(_), None) => None,
+    if let (false, Some(written)) = (repository.contains_key(FILTERS), written) {
+        let blocks = written
+            .into_array_of_tables()
+            .map_or_else(|kept| kept, Item::ArrayOfTables);
+        // Not through `entry`, which would keep the blocks as they are in a Repository written inline, where
+        // they can't be written. `insert` writes them as an inline list there.
+        #[expect(unused_results, reason = "the table has no `filters` to give back")]
+        repository.insert(FILTERS, blocks);
     }
+    repository.get_mut(FILTERS)
 }
 
 /// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,

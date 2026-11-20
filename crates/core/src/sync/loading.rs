@@ -382,7 +382,7 @@ fn read_long(
     loading.join(page.listed, Urgency::Urgent, &held(fetched, &frozen));
     #[expect(
         unused_results,
-        reason = "it is `read`, which this step has read, and a next page goes in its place"
+        reason = "it is `read`, whose page this step has read, and a read of its next page, if any, goes first"
     )]
     loading.long_reads.pop_front();
     if let Some(cursor) = page.next {

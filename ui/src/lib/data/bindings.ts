@@ -674,7 +674,10 @@ export type Comment_Serialize = {
 	hidden: HiddenReason | null,
 };
 
-/**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
+/**
+ *  How a Repository's PRs name their Issues and Backports (ADR 0011). Each link rule in `links/rules.rs`
+ *  says which Conventions read what it names.
+ */
 export type Conventions = "cpython" | "github";
 
 /**  Which ends of a long line its text leaves out. */

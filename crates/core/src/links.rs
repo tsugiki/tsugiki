@@ -116,9 +116,9 @@ pub fn possible_origin(facts: &PullRequestFacts) -> Option<u32> {
 /// trust (ADR 0011).
 pub fn fixed_numbers(facts: &PullRequestFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let named = fixed_under_each(&LinkRule::SET, &LinkSignals::of(facts), &repository.name);
-    let counted = named.into_iter().filter(|(_, under)| {
-        under.is_none_or(|conventions| conventions == repository.conventions)
-    });
+    let counted = named
+        .into_iter()
+        .filter(|(_, under)| under.is_none_or(|conventions| conventions == repository.conventions));
     counted.map(|(number, _)| number).collect()
 }
 

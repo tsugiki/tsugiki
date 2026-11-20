@@ -128,7 +128,11 @@ fn assert_kept_as_ruled(batches: &[Vec<PullRequestFacts>], issues: &[u32]) {
                 )
             })
             .collect();
-        assert_eq!(links(&connection, conventions, &numbers), ruled, "{conventions:?}");
+        assert_eq!(
+            links(&connection, conventions, &numbers),
+            ruled,
+            "{conventions:?}"
+        );
     }
 }
 

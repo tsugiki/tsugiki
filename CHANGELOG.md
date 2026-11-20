@@ -7,6 +7,68 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.4 (2026-11-21)
+
+Archive takes an item off the Workbench until something new there Needs attention, and Mute takes it off
+for good, unless someone asks the user by name. Mark Seen now clears a Review request, a Stale review and
+failed CI too.
+
+### Added
+
+- `E`, Archive in the command palette and the Issue view's Archive button archive an Issue, a Standalone
+  PR or a Standalone Backport. Archive marks the item's whole tree seen, and the item leaves the
+  Workbench, the Filters, the Inbox, the Built-in views and their counts. It comes back once something new
+  in its tree Needs attention, and new activity that doesn't Need attention leaves it archived. A PR whose
+  Review request stood at the archive stays in Review requests, marked Archived, until the request ends.
+  Mark Unseen unarchives an item too.
+- The Archived view, last under "Built-in views" in the Sidebar, lists the Archived items, the last
+  archived first, each with Unarchive after its age. `E` on a row unarchives the item, and `Shift+Q`
+  unarchives it and marks it unseen. "View: Archived" in the command palette opens the view.
+- Tsugiki archives an Issue or a Standalone PR when a sync sees it close or merge, if the item was on the
+  Workbench, in a switched-on Filter or in Review requests while it was open. A PR that opens on an
+  Archived Issue brings the Issue back to the Inbox, closed or not, until the user archives or mutes it,
+  or it reopens or closes. A Backport brings nothing back.
+- `M`, Mute in the command palette and the Issue view's Mute button mute an item. A Muted item leaves
+  every list and count an Archived one leaves, the Archived view included, and stays out whatever happens
+  in it. A Review request or an assignment to the user that starts after the mute puts it on the
+  Workbench, marked Muted, until the request or the assignment ends. `M` on a Muted item unmutes it.
+  Tsugiki fetches no heads and reads ahead no Conversations for a Muted item's PRs.
+- Mute Author in the command palette, and the Issue view's "Mute <author>" button, mute the author of the
+  item under the cursor in the current Repository. Their Issues, Standalone PRs and Standalone Backports
+  count as Muted until Unmute Author. The user's own items never do. The Inbox still lists a Muted
+  author's items.
+- A Filter's view lists everything its search finds. An Archived item keeps its place, marked Archived,
+  and the Muted items go at the end behind "Show N muted", folded. A Filter's count in the Sidebar leaves
+  out its Archived and Muted items.
+
+### Changed
+
+- Mark Seen also clears a Review request, a Stale review and failed CI on an Own PR from Needs attention,
+  until a new request, a push that makes the Review stale again, or a CI run that fails after the mark.
+  The Review requests and Stale reviews views still list those PRs. A Review request alone no longer keeps
+  a PR on the Workbench once it is marked seen.
+- The Issue view and the PR view read only the PRs they show, and open in about 2 ms where they took 30 ms
+  on a Repository of 3,600 PRs.
+- The Issue or PR on screen reads again from GitHub a minute after its last read. One that comes back on
+  screen after its minute has passed, as when the window shows again, reads at once.
+
+### Fixed
+
+- A quit or a crash while Tsugiki saved `settings.toml` or `machine.toml` could leave the file empty, and
+  the next start lost the Filters, keys, panes and mirror sources it held. Tsugiki writes a new file
+  beside it and renames it over the old one, so one of the two is always whole.
+- The Files tab of a merged PR whose head Tsugiki didn't know showed Fetching for good. It reads the
+  PR's Conversation to find the head, and says why if that read fails.
+- A Filter switched on during a Repository's first sync, or in `settings.toml` by hand for a Repository
+  not opened since launch, has its PRs' Conversations read ahead. Before, each waited until the user
+  opened its PR.
+- A read of the PR list that lags behind the PR view no longer puts back the older head of a PR.
+
+### Database
+
+0.3.4 moves the database forward and leaves a copy of the old one beside it, as `tsugiki.db.v28.bak`. 0.3.3
+won't open the new file: to go back, put the copy in its place. Tsugiki doesn't sync the cache again.
+
 ## Version 0.3.3 (2026-11-17)
 
 The Inbox takes the place of All issues, with each open Issue's PRs under it. Each Filter chooses whether

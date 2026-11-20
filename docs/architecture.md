@@ -142,8 +142,8 @@ app-wide status.
    saves handed over. A Mute or an Unmute reads the count with the settings, and first follows the saves
    counted that it hasn't, which are in its queue by then, so its move of Reach starts where theirs end.
    The messages it passes keep their order, and each hand edit it follows early announces its `Change`,
-   opened or not, as a Sync it passed may open the Repository. A Repository the settings stop listing goes to the defaults,
-   in the view and in a save.
+   opened or not, as a Sync it passed may open the Repository. A Repository the settings stop listing goes
+   to the defaults, in the view and in a save.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
 problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter

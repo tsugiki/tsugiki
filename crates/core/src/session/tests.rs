@@ -1602,7 +1602,7 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
         bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
     let on = heard.asked();
-    let held = syncs.settings(&gcmon()).cloned();
+    let held = syncs.held().get(&gcmon()).cloned();
     let owed = store.read_ahead_owed(&gcmon()).unwrap();
     let switched_off = settings_changed(
         &fetching,
@@ -1751,13 +1751,13 @@ fn opening_a_repository_keeps_the_settings_the_owner_handed_over_since_the_comma
 
     assert_eq!(syncs.replace_settings(edited.clone()), None);
     syncs.add(bugs_switched(OnWorkbench::Off));
-    let opened = syncs.settings(&gcmon()).cloned();
+    let opened = syncs.held().get(&gcmon()).cloned();
     let unchanged = syncs.replace_settings(edited.clone());
     syncs.add(bugs_switched(OnWorkbench::Off));
 
     assert_eq!(opened, Some(edited.clone()));
     assert_eq!(unchanged, None);
-    assert_eq!(syncs.settings(&gcmon()), Some(&edited));
+    assert_eq!(syncs.held().get(&gcmon()), Some(&edited));
 }
 
 #[test]

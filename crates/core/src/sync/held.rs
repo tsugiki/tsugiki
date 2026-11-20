@@ -30,7 +30,7 @@ impl HeldSettings {
     }
 
     /// Takes the settings the settings owner handed over, `repository`'s, in place of those held, if it was
-    /// opened since launch and they differ, and answers with those.
+    /// opened since launch and they differ, and answers with the settings it replaced.
     pub fn replace(&mut self, repository: RepositorySettings) -> Option<RepositorySettings> {
         let owned = (self.owned.iter_mut()).find(|owned| owned.name.is_same(&repository.name));
         match owned {

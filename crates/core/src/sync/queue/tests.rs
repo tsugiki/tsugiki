@@ -1179,7 +1179,7 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
 fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_the_queue() {
     let mut syncs = Syncs::default();
     assert_eq!(syncs.replace_settings(plain(cpython())), None);
-    assert_eq!(syncs.settings(&cpython()), None);
+    assert_eq!(syncs.held().get(&cpython()), None);
     syncs.add(plain(cpython()));
     syncs.add(plain(peps()));
     let changed = RepositorySettings {
@@ -1190,7 +1190,7 @@ fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_t
     let before = syncs.replace_settings(changed.clone());
 
     assert_eq!(before, Some(plain(cpython())));
-    assert_eq!(syncs.settings(&cpython()), Some(&changed));
+    assert_eq!(syncs.held().get(&cpython()), Some(&changed));
     assert!(syncs.is_open(&peps()));
     let queued: Vec<&RepositoryName> = (syncs.queue.iter())
         .map(|queued| &queued.sync.repository)

@@ -282,11 +282,6 @@ impl Syncs {
         }
     }
 
-    /// The settings `repository`'s syncs read, if it was opened since launch.
-    pub fn settings(&self, repository: &RepositoryName) -> Option<&RepositorySettings> {
-        self.settings.get(repository)
-    }
-
     /// The settings of each Repository opened since launch, which the syncs read.
     pub fn held(&self) -> &HeldSettings {
         &self.settings
@@ -295,12 +290,11 @@ impl Syncs {
     /// The settings a step of `repository`'s sync reads. Each sync starts from settings these hold, and none
     /// leave them, so a miss is Tsugiki's own mistake.
     fn settings_for(&self, repository: &RepositoryName) -> Result<&RepositorySettings, Error> {
-        self.settings(repository)
-            .ok_or_else(|| Error::new(ErrorKind::Internal, NO_SETTINGS))
+        (self.settings.get(repository)).ok_or_else(|| Error::new(ErrorKind::Internal, NO_SETTINGS))
     }
 
     fn open_settings(&self) -> Option<&RepositorySettings> {
-        self.settings(self.open.as_ref()?)
+        self.settings.get(self.open.as_ref()?)
     }
 
     fn is_open(&self, repository: &RepositoryName) -> bool {

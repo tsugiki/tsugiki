@@ -283,18 +283,22 @@ impl Refreshes {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
+                #[expect(unused_results, reason = "only a sync builds on the settings opened")]
                 SessionMessage::Sync { repository } => {
-                    let _opened = held.open(repository);
+                    held.open(repository);
                 }
                 SessionMessage::Mark(marked) => {
                     let moved = ReachMove::of(&marked, store, &held);
                     mark_moving_reach(board, store, &self.fetching, (marked, moved));
                 }
+                #[expect(
+                    unused_results,
+                    reason = "with no syncs, the window hears of each hand edit, whatever the save replaced"
+                )]
                 SessionMessage::SettingsChanged(save) => {
                     follow_save(&self.fetching, store, &save);
                     announce_settings(board, &save.saved().name, save.by());
-                    // With no syncs, the window hears of each hand edit, so the replaced settings go unused.
-                    let _replaced = held.replace(save.into_saved());
+                    held.replace(save.into_saved());
                 }
                 SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
@@ -566,7 +570,7 @@ fn synced_facts<'a>(
     syncs: &'a Syncs,
     repository: &'a RepositoryName,
 ) -> Option<Synced<'a>> {
-    let settings = syncs.settings(repository)?;
+    let settings = syncs.held().get(repository)?;
     let facts = store.work_facts(repository).ok()?;
     Some(Synced {
         repository,

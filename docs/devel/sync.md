@@ -48,6 +48,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   folder. **Import database** on another machine replaces that machine's database after a confirmation,
   keeping a backup, so Pinned issues, Muted authors, Local marks, Last seen, Archived and Muted items and the
   cache follow the user. The mirrors are cloned again on the new machine.
+- An update that changes how Tsugiki links PRs to Issues and Origin PRs opens the database at once, and the
+  screens show the links the last version worked out. Tsugiki then works them out again a Repository at a
+  time, the open one first and before the next sync step, and each screen of a Repository reads it again
+  once its links are done. A refill that fails keeps the old links, and the next start tries again.
 - Offline, Tsugiki is **Read-only**: it shows the mirror and the cached GitHub data. Writing anything needs
   the network. A token that can't write makes a Repository Read-only too: see [token.md](token.md).
   - An Issue view or a PR view without what the item says, and an Issue view of an Issue Tsugiki doesn't

@@ -55,6 +55,73 @@ pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDa
     store.archive_closed(&cpython(), judged, now).unwrap();
 }
 
+/// Leaves `store` with the links version `version` of the link rules worked out, as an older Tsugiki kept
+/// them: only `fixes`, each a Repository, a PR and the Issue it fixed under every Conventions, which a test
+/// tells from what this version's rules give.
+pub(crate) fn keep_old_links(store: &Store, version: u32, fixes: &[(RepositoryName, u32, u32)]) {
+    let fixes = fixes.to_vec();
+    let kept = store.call(move |connection| -> rusqlite::Result<()> {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch("DELETE FROM pr_fixes; DELETE FROM pr_origins;")?;
+        for (repository, number, issue) in &fixes {
+            let insert = "INSERT INTO pr_fixes (repository, number, issue, under)
+                          VALUES (:repository, :number, :issue, 'every')";
+            let values = named_params! {
+                ":repository": repository, ":number": number, ":issue": issue,
+            };
+            transaction.execute(insert, values).map(drop)?;
+        }
+        let rules = "INSERT INTO link_rules (id, version) VALUES (1, :version)
+                     ON CONFLICT (id) DO UPDATE SET version = excluded.version";
+        transaction
+            .execute(rules, named_params! { ":version": version })
+            .map(drop)?;
+        transaction.commit()
+    });
+    kept.unwrap().unwrap();
+}
+
+/// A store in memory that holds PR 10 of each of `repositories`, titled to fix Issue 5, with the links an
+/// older version of the rules kept: each PR fixes Issue 6.
+pub(crate) fn store_with_old_links(repositories: &[RepositoryName]) -> Store {
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    let fixing = PullRequestFacts {
+        title: "gh-5: Fix it".to_owned(),
+        ..crate::testing::pr_facts(10)
+    };
+    for repository in repositories {
+        (store.save_pull_requests(repository, vec![fixing.clone()])).unwrap();
+    }
+    let old: Vec<_> = repositories
+        .iter()
+        .map(|name| (name.clone(), 10, 6))
+        .collect();
+    keep_old_links(&store, crate::links::RULES_VERSION - 1, &old);
+    store
+}
+
+/// Has `store` refuse each link it would keep from now on, as a full disk refuses a refill's rows.
+pub(crate) fn refuse_new_links(store: &Store) {
+    let refusing = store.call(|connection| {
+        connection.execute_batch(
+            "CREATE TRIGGER refuse_fixes BEFORE INSERT ON pr_fixes BEGIN SELECT RAISE(ABORT, 'full'); END;",
+        )
+    });
+    refusing.unwrap().unwrap();
+}
+
+/// Each fix `store` keeps, as its Repository, its PR and the Issue the PR fixes, in that order.
+pub(crate) fn kept_fixes(store: &Store) -> Vec<(String, u32, u32)> {
+    let found = store.call(|connection| -> rusqlite::Result<Vec<(String, u32, u32)>> {
+        let query =
+            "SELECT repository, number, issue FROM pr_fixes ORDER BY repository, number, issue";
+        let mut statement = connection.prepare(query)?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect()
+    });
+    found.unwrap().unwrap()
+}
+
 /// The moment `seconds` after 1970, as a GitHub `updatedAt` a test orders reads by.
 pub(super) fn at_second(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)

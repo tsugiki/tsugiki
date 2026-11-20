@@ -20,7 +20,7 @@ fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issues", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -40,7 +40,7 @@ fn a_sync_with_no_named_issues_asks_for_none() {
     replies.push(fetched(&[1], RATE_LIMIT));
     let harness = Harness::new("no-issues", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -56,7 +56,7 @@ fn a_sync_fetches_a_titles_issue_whatever_the_conventions_of_its_repository() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("conventions", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
+    syncs.add_listed(plain(RepositoryName::parse("python/peps").unwrap()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -77,7 +77,7 @@ fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issue-batches", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
     // Four searches, two moves, the PRs, two moves and the first batch of Issues.

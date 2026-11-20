@@ -536,6 +536,11 @@ pub struct SettingsView {
 }
 
 impl SettingsView {
+    /// The settings of the Repository `name`, or the defaults for one the settings don't list.
+    pub fn repository(&self, name: RepositoryName) -> RepositorySettings {
+        self.loaded.settings.repository(name)
+    }
+
     /// The themes for the window, from the built-in themes and the `themes` folder read now, showing what
     /// `appearance` asks for: the file's `[appearance]`, or what Settings › General shows before Apply saves
     /// it (#757). Both go by the same rules, so the dialog's preview is what Apply shows.

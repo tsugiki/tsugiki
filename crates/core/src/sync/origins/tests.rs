@@ -40,7 +40,7 @@ fn a_first_sync_keeps_what_happened_on_the_prs_it_fetched_and_on_their_origin_pr
     ];
     let harness = Harness::new("origin-activity", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -127,7 +127,7 @@ fn a_sync_fetches_a_users_backports_missing_origin_pr_by_number() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -160,7 +160,7 @@ fn a_sync_fetches_the_issues_a_users_backports_origin_pr_names() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin-issue", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -176,7 +176,7 @@ fn a_sync_fetches_a_tree_backports_missing_origin_pr_after_the_tree() {
     replies.push(pull_request_answer(merged_node(9), RATE_LIMIT));
     let harness = Harness::new("tree-origin", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -209,7 +209,7 @@ fn a_sync_doesnt_ask_for_an_origin_pr_it_has_fetched_or_frozen() {
     let origins_in_each_sync: Vec<usize> = (0..3)
         .map(|_| {
             harness.forget_the_last_sync();
-            syncs.add(plain(cpython()));
+            syncs.add_listed(plain(cpython()));
             drop(run_to_the_end(&mut syncs, &harness));
             harness
                 .operations()
@@ -242,12 +242,12 @@ fn a_frozen_origin_pr_still_leads_a_new_backport_to_its_issue() {
     replies.push(issue_references(&[(1, &[])], RATE_LIMIT));
     let harness = Harness::new("origin-frozen", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
     drop(harness.operations());
 
     harness.forget_the_last_sync();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
 
     assert_eq!(
@@ -269,7 +269,7 @@ fn an_origin_number_that_names_no_pr_is_asked_for_once() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("origin-gone", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -284,7 +284,7 @@ fn an_origin_fetch_below_the_floor_holds_the_next_step_back() {
     replies.push(pull_request_answer(merged_node(9), FEW));
     let harness = Harness::new("origin-floor", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
     // Four searches, two moves, the PR, a move and the Origin PR.

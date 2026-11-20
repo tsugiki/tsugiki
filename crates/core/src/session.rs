@@ -20,17 +20,19 @@ use crate::fetching::{
 };
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
+use crate::latest::LatestReader;
 use crate::login::Login;
 use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy, SettingsSave};
+use crate::settings::SettingsView;
 use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
     ReaderToOpen, Store, StoreReader,
 };
-use crate::sync::{HeldSettings, Progress, Syncs};
+use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
@@ -85,11 +87,13 @@ fn failed(item: &Item, why: ReadFailure) -> FailedRead {
     }
 }
 
-/// What a session reaches beyond its thread: GitHub with `gh`'s token, and the Mirror worker, which it hands
-/// the rules' wants and which hands it the patch-ids it reads.
+/// What a session reaches beyond its thread: GitHub with `gh`'s token, the Mirror worker, which it hands
+/// the rules' wants and which hands it the patch-ids it reads, and the settings owner's view, which it reads
+/// each Repository's settings from.
 pub struct Connections {
     pub github: GitHubAccess,
     pub mirrors: MirrorRequests,
+    pub settings: LatestReader<SettingsView>,
 }
 
 /// How often a session asks GitHub again.
@@ -114,15 +118,15 @@ impl Session {
         let Connections {
             github: access,
             mirrors,
+            settings,
         } = connections;
         let (messages, incoming) = mpsc::channel();
-        let headless = Headless::default();
-        let fetching = Fetching::new(messages, mirrors, headless.clone());
+        let fetching = Fetching::new(messages, mirrors, Headless::default());
         fetching.hand_patch_ids_to_session();
         let (finishing, finished) = mpsc::channel::<()>();
         let (to_open, reader) = store::reader();
         let database = Database { folders, to_open };
-        let refreshes = Refreshes::new(intervals, incoming, fetching.clone(), headless);
+        let refreshes = Refreshes::new(intervals, incoming, fetching.clone(), settings);
         #[expect(
             unused_results,
             reason = "`stop` waits for `finishing` to go, with a patience a join can't take"
@@ -172,7 +176,8 @@ impl Drop for Session {
     }
 }
 
-/// When to ask GitHub again, and the queue the session takes its messages from.
+/// When to ask GitHub again, the queue the session takes its messages from, and the settings owner's view,
+/// which each Repository's settings come from.
 struct Refreshes {
     intervals: Intervals,
     incoming: Receiver<SessionMessage>,
@@ -184,6 +189,9 @@ struct Refreshes {
     headless: Headless,
     /// The Issues and PRs on screen, each read again after its last read.
     on_screen: RefCell<OnScreen>,
+    /// The settings owner's view. The owner publishes each save there before it hands the save to the
+    /// session, so a read finds settings at least as new as every save the session has heard of.
+    settings: LatestReader<SettingsView>,
 }
 
 /// When the next of each kind of question is due.
@@ -232,15 +240,16 @@ impl Refreshes {
         intervals: Intervals,
         incoming: Receiver<SessionMessage>,
         fetching: Fetching,
-        headless: Headless,
+        settings: LatestReader<SettingsView>,
     ) -> Self {
         Self {
             intervals,
             incoming,
             backlog: RefCell::new(VecDeque::new()),
+            headless: fetching.headless(),
             fetching,
-            headless,
             on_screen: RefCell::new(OnScreen::new(intervals.on_screen)),
+            settings,
         }
     }
 
@@ -274,31 +283,17 @@ impl Refreshes {
 
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
     /// the one asking that the session isn't connected. The marks need only the database, so they still
-    /// work, and so does telling the window of a hand edit to the settings. With no syncs there is no copy
-    /// to compare, but the settings owner hands over only settings that changed. Reach follows a change of
-    /// the settings, and a Mute or an Unmute in a Repository opened since launch, as it does with a token,
-    /// which needs only the database and the Mirror (#946).
+    /// work, and so does telling the window of a hand edit to the settings: with no syncs to say which
+    /// Repositories were opened, of each one. Reach follows a change of the settings, and a Mute or an
+    /// Unmute, as it does with a token, which needs only the database and the Mirror (#946).
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
-        let mut held = HeldSettings::default();
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
-                #[expect(unused_results, reason = "only a sync builds on the settings opened")]
-                SessionMessage::Sync { repository } => {
-                    held.open(repository);
-                }
-                SessionMessage::Mark(marked) => {
-                    let moved = ReachMove::of(&marked, store, &held);
-                    mark_moving_reach(board, store, &self.fetching, (marked, moved));
-                }
-                #[expect(
-                    unused_results,
-                    reason = "with no syncs, the window hears of each hand edit, whatever the save replaced"
-                )]
+                SessionMessage::Mark(marked) => self.mark(board, store, marked),
                 SessionMessage::SettingsChanged(save) => {
                     follow_save(&self.fetching, store, &save);
                     announce_settings(board, &save.saved().name, save.by());
-                    held.replace(save.into_saved());
                 }
                 SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
@@ -307,10 +302,24 @@ impl Refreshes {
                     self.read_failed(board, &fetched, ItemUnread::NoToken);
                 }
                 SessionMessage::Check { .. }
+                | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::Screen(_) => {}
             }
         }
+    }
+
+    /// Keeps what the user marked, has the Mirror worker follow the move of Reach the mark makes, under the
+    /// Repository's settings now, if the store kept it, and tells the window, whose lists go by the mark.
+    fn mark(&self, board: &mut StatusBoard, store: &Store, marked: Marked) {
+        let moved = ReachMove::of(&marked, store, &self.settings);
+        let (saved, change) = keep_mark(store, &self.settings, marked);
+        if saved.is_ok()
+            && let Some(moved) = moved
+        {
+            moved.follow(&self.fetching, store);
+        }
+        tell_marked(board, saved, &change);
     }
 
     /// Waits for the next refresh or the next step of a sync, answering what's asked meanwhile, so a step
@@ -326,9 +335,8 @@ impl Refreshes {
                 .fold(next_refresh, Ord::min);
             match self.next_message(wake.saturating_duration_since(Instant::now())) {
                 Ok(SessionMessage::Sync { repository }) => {
-                    let opened = repository.name.clone();
-                    syncs.add(repository);
-                    return Turn::Opened(opened);
+                    syncs.add(repository.clone());
+                    return Turn::Opened(repository);
                 }
                 Ok(SessionMessage::Refresh) => return Turn::RefreshNow,
                 Ok(SessionMessage::SettingsChanged(save)) => return Turn::SettingsChanged(save),
@@ -446,7 +454,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
         return;
     };
     board.hour_points(github.hour_points());
-    let mut syncs = Syncs::default();
+    let mut syncs = Syncs::new(refreshes.settings.clone());
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
     loop {
@@ -478,15 +486,13 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::SettingsChanged(save) => {
-                let (repository, by) = (save.saved().name.clone(), save.by());
-                if settings_changed(&refreshes.fetching, store, &mut syncs, save).is_some() {
-                    announce_settings(board, &repository, by);
+                follow_save(&refreshes.fetching, store, &save);
+                let repository = &save.saved().name;
+                if syncs.was_opened(repository) {
+                    announce_settings(board, repository, save.by());
                 }
             }
-            Turn::Mark(marked) => {
-                let moved = ReachMove::of(&marked, store, syncs.held());
-                mark_moving_reach(board, store, &refreshes.fetching, (marked, moved));
-            }
+            Turn::Mark(marked) => refreshes.mark(board, store, marked),
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
             Turn::CheckHour => {}
@@ -497,7 +503,6 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 let read = Reading {
                     github: &github,
                     queue: refreshes,
-                    syncs: &syncs,
                 };
                 if let Err(problem) = read_conversation(board, store, &read, &fetched) {
                     syncs.after_fetch_failure(&problem, due.status, github.clock());
@@ -514,7 +519,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::SyncStep => match syncs.step(&github, store) {
                 Ok(Some(Progress::Changed(change))) => {
                     if !change.items.is_empty()
-                        && let Some(synced) = synced_facts(store, &syncs, &change.repository)
+                        && let Some(synced) =
+                            synced_facts(store, &refreshes.settings, &change.repository)
                     {
                         hand_over_heads(&refreshes.fetching, store, &synced, &change);
                     }
@@ -557,25 +563,25 @@ fn hand_over_heads(fetching: &Fetching, store: &Store, synced: &Synced<'_>, save
     fetching.heads_saved(synced.repository, saved_heads.collect());
 }
 
-/// A Repository that syncs, with its stored facts and the settings the syncs read it by.
+/// A Repository that syncs, with its stored facts and its settings in the settings owner's view.
 struct Synced<'a> {
     repository: &'a RepositoryName,
     facts: WorkFacts,
-    settings: &'a RepositorySettings,
+    settings: RepositorySettings,
 }
 
-/// `repository` with its facts and settings, if it syncs and the store can read its facts.
+/// `repository` with its facts and its settings in the settings owner's `view`, if the store can read its
+/// facts.
 fn synced_facts<'a>(
     store: &Store,
-    syncs: &'a Syncs,
+    view: &LatestReader<SettingsView>,
     repository: &'a RepositoryName,
 ) -> Option<Synced<'a>> {
-    let settings = syncs.held().get(repository)?;
     let facts = store.work_facts(repository).ok()?;
     Some(Synced {
         repository,
         facts,
-        settings,
+        settings: view.get().repository(repository.clone()),
     })
 }
 
@@ -584,7 +590,7 @@ fn hand_over_rules_wants(fetching: &Fetching, store: &Store, synced: &Synced<'_>
     let stated = Stated {
         repository: synced.repository,
         facts: &synced.facts,
-        work: MirrorWork::of(&synced.facts, synced.settings),
+        work: MirrorWork::of(&synced.facts, &synced.settings),
     };
     hand_over_wants(fetching, store, stated);
 }
@@ -632,19 +638,6 @@ fn announce_settings(board: &mut StatusBoard, repository: &RepositoryName, by: S
             items: Vec::new(),
         });
     }
-}
-
-/// The settings owner made `save`, which Reach follows (`follow_save`). The syncs read the saved settings
-/// from now on, if the session has opened the Repository since launch and holds other settings of it.
-/// Answers with those it held then.
-fn settings_changed(
-    fetching: &Fetching,
-    store: &Store,
-    syncs: &mut Syncs,
-    save: SettingsSave,
-) -> Option<RepositorySettings> {
-    follow_save(fetching, store, &save);
-    syncs.replace_settings(save.into_saved())
 }
 
 /// Reach follows the move `save` made from the settings it replaced, whether or not the session has opened
@@ -719,35 +712,35 @@ fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: R
     }
 }
 
-/// A Mute or an Unmute in a Repository the session has opened since launch, which moves Reach (#918), with
-/// the stored facts from before the store keeps it. It moves Reach with or without a token (#946).
+/// A Mute or an Unmute, which moves Reach (#918), with the Repository's settings and the stored facts from
+/// before the store keeps it. It moves Reach with or without a token (#946).
 ///
 /// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
 /// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
 /// the Mirror fetch the heads of or a refresh read ahead. So the Mirror worker hears the new Reach at once,
 /// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
-struct ReachMove<'a> {
-    settings: &'a RepositorySettings,
+struct ReachMove {
+    settings: RepositorySettings,
     before: WorkFacts,
 }
 
-impl<'a> ReachMove<'a> {
-    /// The move `marked` makes, under the settings `held` holds: none for a mark other than Mute and Unmute.
-    /// Facts the store can't read, before the mark or after it, leave the heads to the next step that saves,
-    /// and lose the reads an Unmute owes.
-    fn of(marked: &Marked, store: &Store, held: &'a HeldSettings) -> Option<Self> {
+impl ReachMove {
+    /// The move `marked` makes, under the Repository's settings in the settings owner's `view`: none for a
+    /// mark other than Mute and Unmute. Facts the store can't read, before the mark or after it, leave the
+    /// heads to the next step that saves, and lose the reads an Unmute owes.
+    fn of(marked: &Marked, store: &Store, view: &LatestReader<SettingsView>) -> Option<Self> {
         let repository = match marked {
-            Marked::Muted { repository, .. } | Marked::Unmuted { repository, .. } => repository,
-            Marked::AuthorMuted { settings, .. } | Marked::AuthorUnmuted { settings, .. } => {
-                &settings.name
-            }
+            Marked::Muted { repository, .. }
+            | Marked::Unmuted { repository, .. }
+            | Marked::AuthorMuted { repository, .. }
+            | Marked::AuthorUnmuted { repository, .. } => repository,
             Marked::Seen { .. }
             | Marked::Unseen { .. }
             | Marked::Archived { .. }
             | Marked::Unarchived { .. } => return None,
         };
-        let settings = held.get(repository)?;
         let before = facts_for_move(store, repository)?;
+        let settings = view.get().repository(repository.clone());
         Some(Self { settings, before })
     }
 
@@ -758,7 +751,10 @@ impl<'a> ReachMove<'a> {
         let Some(now) = facts_for_move(store, &settings.name) else {
             return;
         };
-        let from = |facts| ReachFrom { facts, settings };
+        let from = |facts| ReachFrom {
+            facts,
+            settings: &settings,
+        };
         follow_move(fetching, store, from(&before), from(&now));
     }
 }
@@ -824,23 +820,6 @@ fn keep_last_checks(
     store.save_last_checks(repository, checks)
 }
 
-/// Keeps what the user marked, has the Mirror worker follow the move of Reach that `moved` says the mark
-/// makes, if the store kept it, and tells the window, whose lists go by the mark.
-fn mark_moving_reach(
-    board: &mut StatusBoard,
-    store: &Store,
-    fetching: &Fetching,
-    (marked, moved): (Marked, Option<ReachMove<'_>>),
-) {
-    let (saved, change) = keep_mark(store, marked);
-    if saved.is_ok()
-        && let Some(moved) = moved
-    {
-        moved.follow(fetching, store);
-    }
-    tell_marked(board, saved, &change);
-}
-
 /// Tells the window of `change`, which a mark made, or the status bar why the store couldn't keep it.
 fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Change) {
     match saved {
@@ -849,8 +828,13 @@ fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Chang
     }
 }
 
-/// Keeps what the user marked, with the change to tell the window of.
-fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
+/// Keeps what the user marked, with the change to tell the window of. Mute author and Unmute author find
+/// the author's items under the Repository's settings in the settings owner's `view`.
+fn keep_mark(
+    store: &Store,
+    view: &LatestReader<SettingsView>,
+    marked: Marked,
+) -> (Result<(), Error>, Change) {
     match marked {
         Marked::Seen { repository, mark } => {
             let SeenMark { numbers, up_to } = mark;
@@ -921,12 +905,12 @@ fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
             (saved, Change { repository, items })
         }
         Marked::AuthorMuted {
-            settings,
+            repository,
             author,
             at,
         } => {
+            let settings = view.get().repository(repository.clone());
             let authored = authored_in(store, &settings, &author);
-            let repository = settings.name;
             let (saved, items) = match authored {
                 Ok(Authored { marks, numbers }) => {
                     let muting = AuthorMuting { author, marks };
@@ -936,8 +920,8 @@ fn keep_mark(store: &Store, marked: Marked) -> (Result<(), Error>, Change) {
             };
             (saved, Change { repository, items })
         }
-        Marked::AuthorUnmuted { settings, author } => {
-            let repository = settings.name.clone();
+        Marked::AuthorUnmuted { repository, author } => {
+            let settings = view.get().repository(repository.clone());
             // The window asks again on any change, so a failed read loses only the numbers it names.
             let items = (authored_in(store, &settings, &author))
                 .inspect_err(|problem| {
@@ -973,13 +957,11 @@ enum Content {
     PullRequest(PullRequestContent, OffsetDateTime),
 }
 
-/// What a read of a conversation asks: GitHub, the session's queue, whose demands for the same read share
-/// it, and the Mirror worker with the settings of the Repositories syncing, whose wants a PR's Conversation
-/// can change.
+/// What a read of a conversation asks: GitHub, and the session's queue, whose demands for the same read
+/// share it, with the Mirror worker and the settings, whose wants a PR's Conversation can change.
 struct Reading<'a> {
     github: &'a GitHub,
     queue: &'a Refreshes,
-    syncs: &'a Syncs,
 }
 
 /// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. The demands for the same
@@ -1031,7 +1013,7 @@ fn hand_over_head(store: &Store, read: &Reading<'_>, item: &Item, saved: &Conver
     let fetching = &read.queue.fetching;
     let repository = &item.repository;
     if (matches!(saved.head, HeadKept::Moved(_)) || saved.reviewed_moved)
-        && let Some(synced) = synced_facts(store, read.syncs, repository)
+        && let Some(synced) = synced_facts(store, &read.queue.settings, repository)
     {
         hand_over_rules_wants(fetching, store, &synced);
     }

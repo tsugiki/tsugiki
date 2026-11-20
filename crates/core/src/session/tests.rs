@@ -23,7 +23,7 @@ use crate::login::Login;
 use crate::mirror::HeardRequests;
 use crate::repository::{RepositoryName, RepositorySize};
 use crate::repository_settings::{RepositorySettings, SavedBy};
-use crate::settings::ListOrder;
+use crate::settings::{ListOrder, SettingsFiles, SettingsOwner};
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
@@ -31,13 +31,13 @@ use crate::status::{Change, FailedRead, ItemUnread, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
-    TempPath, cpython, cpython_settings, hours_ago, issue_facts, me, one_folder, pr_facts,
+    TempPath, cpython, cpython_settings, hours_ago, issue_facts, listed, me, one_folder, pr_facts,
     recordings,
 };
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io;
@@ -288,11 +288,12 @@ fn mirrors() -> MirrorRequests {
     HeardRequests::new().0
 }
 
-/// GitHub through `access`, and a Mirror worker that isn't there.
+/// GitHub through `access`, a Mirror worker that isn't there, and settings that list gcmon with no Filters.
 fn reaching(access: GitHubAccess) -> Connections {
     Connections {
         github: access,
         mirrors: mirrors(),
+        settings: listed(vec![plain_gcmon()]),
     }
 }
 
@@ -309,7 +310,12 @@ fn sending(messages: Sender<SessionMessage>, mirrors: MirrorRequests) -> Fetchin
 
 /// Refreshes whose queue is empty and whose handle reaches nothing, for the fields a test doesn't set.
 fn unheard_refreshes() -> Refreshes {
-    Refreshes::new(HOURLY, mpsc::channel().1, unheard(), Headless::default())
+    Refreshes::new(
+        HOURLY,
+        mpsc::channel().1,
+        unheard(),
+        listed(vec![plain_gcmon()]),
+    )
 }
 
 #[test]
@@ -638,7 +644,7 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
     for marked in [seen_mark, unseen] {
         let (mut board, seen) = watched_board();
 
-        mark_moving_reach(&mut board, &Store::stopped(), &unheard(), (marked, None));
+        unheard_refreshes().mark(&mut board, &Store::stopped(), marked);
 
         assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
@@ -653,7 +659,6 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let read = Reading {
         github: &github,
         queue: &unheard_refreshes(),
-        syncs: &Syncs::default(),
     };
 
     let outcome = read_conversation(
@@ -730,7 +735,7 @@ fn a_demand_after_a_read_ended_reads_again() {
 }
 
 /// PR 7 of gcmon kept with `head`, a GitHub that answers its Conversation with `conversations`, and the
-/// session's queue, its syncs of gcmon, and a Mirror worker that only listens.
+/// session's queue, with settings that list gcmon, and a Mirror worker that only listens.
 struct OneRead {
     _folder: TempPath,
     store: Store,
@@ -738,7 +743,6 @@ struct OneRead {
     demands: Fetching,
     queue: Refreshes,
     heard: HeardRequests,
-    syncs: Syncs,
 }
 
 impl OneRead {
@@ -756,10 +760,9 @@ impl OneRead {
                 .map(|conversation| pull_request_answer(conversation, RATE_LIMIT)),
         );
         let github = connect(&mut quiet_board(), &store, replying(replies)).unwrap();
-        let (demands, incoming, heard, headless) = crate::fetching::testing::handle_with_headless();
-        let queue = Refreshes::new(HOURLY, incoming, demands.clone(), headless);
-        let mut syncs = Syncs::default();
-        syncs.add(plain_gcmon());
+        let (demands, incoming, heard) = crate::fetching::testing::handle();
+        let listing = listed(vec![plain_gcmon()]);
+        let queue = Refreshes::new(HOURLY, incoming, demands.clone(), listing);
         Self {
             _folder: folder,
             store,
@@ -767,7 +770,6 @@ impl OneRead {
             demands,
             queue,
             heard,
-            syncs,
         }
     }
 
@@ -776,7 +778,6 @@ impl OneRead {
         let read = Reading {
             github: &self.github,
             queue: &self.queue,
-            syncs: &self.syncs,
         };
         read_conversation(&mut quiet_board(), &self.store, &read, fetched).unwrap();
     }
@@ -1301,9 +1302,10 @@ fn the_recorded_cpython_work_reads_as_an_inbox() {
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
     let reader = session.reader();
+    // The settings list gcmon alone, so CPython syncs under the defaults.
     let cpython = cpython_settings();
 
-    session.fetching().sync(cpython.clone());
+    session.fetching().sync(cpython.name.clone());
     // Two Filters, the PRs they found, their Issues, one Issue's tree and an Origin PR.
     for _ in 0..6 {
         wait_for_message(&changes, PLENTY);
@@ -1339,7 +1341,7 @@ fn a_sync_fills_the_workbench_and_says_so() {
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
     let reader = session.reader();
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     let changed = changes.recv().unwrap();
     let workbench = Workbench::read(
         &reader,
@@ -1391,7 +1393,7 @@ fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
     session.fetching().fetch_pull_request(gcmon(), 7);
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     let mut announced = vec![seen.recv_timeout(PLENTY).unwrap()];
     // Each of the sync's five answers cost a point.
     while announced.last().unwrap().spent < 8 {
@@ -1504,11 +1506,12 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
         Connections {
             github: access,
             mirrors,
+            settings: listed(vec![plain_gcmon()]),
         },
         HOURLY,
     );
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     let handed = heard.asked_through("saved heads", PLENTY);
     session.stop(PLENTY);
 
@@ -1590,37 +1593,29 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
     let (mirrors, heard) = HeardRequests::new();
     let (messages, _incoming) = mpsc::channel();
     let fetching = sending(messages, mirrors);
-    let mut syncs = Syncs::default();
-    syncs.add(bugs_switched(OnWorkbench::Off));
     let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
 
-    let unheld = settings_changed(
+    follow_save(
         &fetching,
         &store,
-        &mut syncs,
-        SettingsSave::new(elsewhere, &[], SavedBy::HandEdit),
+        &SettingsSave::new(elsewhere, &[], SavedBy::HandEdit),
     );
-    let switched_on = settings_changed(
+    let added = heard.asked();
+    follow_save(
         &fetching,
         &store,
-        &mut syncs,
-        bugs_saved(OnWorkbench::On, SavedBy::Window),
+        &bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
     let on = heard.asked();
-    let held = syncs.held().get(&gcmon()).cloned();
     let owed = store.read_ahead_owed(&gcmon()).unwrap();
-    let switched_off = settings_changed(
+    follow_save(
         &fetching,
         &store,
-        &mut syncs,
-        bugs_saved(OnWorkbench::Off, SavedBy::Window),
+        &bugs_saved(OnWorkbench::Off, SavedBy::Window),
     );
     let off = heard.asked();
 
-    assert_eq!(unheld, None);
-    assert_eq!(switched_on, Some(bugs_switched(OnWorkbench::Off)));
-    assert_eq!(switched_off, Some(bugs_switched(OnWorkbench::On)));
-    assert_eq!(held, Some(bugs_switched(OnWorkbench::On)));
+    assert_eq!(added, Vec::<String>::new());
     assert!(
         on.iter().any(|line| line.contains("#8 at 4567def")),
         "{on:?}"
@@ -1632,15 +1627,8 @@ fn a_filter_switched_on_hands_the_mirror_its_heads_and_owes_a_read_of_its_unread
 }
 
 /// Switches the Bugs Filter on, which finds PR 8, with the store losing call `lost`, if any. Answers with
-/// what the switch said, what the Mirror heard, how many calls the store had, and the reads it owes after.
-fn switch_bugs_on_losing(
-    lost: Option<usize>,
-) -> (
-    Option<RepositorySettings>,
-    Vec<String>,
-    usize,
-    BTreeSet<u32>,
-) {
+/// what the Mirror heard, how many calls the store had, and the reads it owes after.
+fn switch_bugs_on_losing(lost: Option<usize>) -> (Vec<String>, usize, BTreeSet<u32>) {
     let store = store_remembering("octocat");
     let stored = vec![stored_pr(8, "some-author", "4567def")];
     store.save_pull_requests(&gcmon(), stored).unwrap();
@@ -1655,18 +1643,15 @@ fn switch_bugs_on_losing(
     let (mirrors, heard) = HeardRequests::new();
     let (messages, _incoming) = mpsc::channel();
     let fetching = sending(messages, mirrors);
-    let mut syncs = Syncs::default();
-    syncs.add(bugs_switched(OnWorkbench::Off));
 
-    let switched = settings_changed(
+    follow_save(
         &fetching,
         &lossy,
-        &mut syncs,
-        bugs_saved(OnWorkbench::On, SavedBy::Window),
+        &bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
 
     let owed = store.read_ahead_owed(&gcmon()).unwrap();
-    (switched, heard.asked(), calls.try_iter().count(), owed)
+    (heard.asked(), calls.try_iter().count(), owed)
 }
 
 /// A board that hands each change it announces that names no item to the receiver beside it.
@@ -1691,6 +1676,7 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     let connections = Connections {
         github: offline(),
         mirrors,
+        settings: listed(vec![bugs_switched(OnWorkbench::On)]),
     };
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     // GitHub's Conventions are those every Repository but CPython starts with.
@@ -1701,7 +1687,7 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     let elsewhere = RepositorySettings::new(RepositoryName::parse("a/b").unwrap());
 
     let asked = session.fetching();
-    asked.sync(bugs_switched(OnWorkbench::Off));
+    asked.sync(gcmon());
     asked.settings_changed(SettingsSave::new(elsewhere, &[], SavedBy::HandEdit));
     asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     asked.settings_changed(bugs_saved(OnWorkbench::On, SavedBy::Window));
@@ -1712,13 +1698,14 @@ fn a_hand_edit_to_the_settings_tells_the_window_and_the_windows_own_switch_doesn
     ));
     session.stop(PLENTY);
 
-    // Nothing for a Repository not opened since launch, or for settings the syncs hold already.
+    // Nothing for a Repository not opened since launch, or for the window's own save.
+    let gcmon_changed = Change {
+        repository: gcmon(),
+        items: vec![],
+    };
     assert_eq!(
         changes.try_iter().collect::<Vec<_>>(),
-        [Change {
-            repository: gcmon(),
-            items: vec![]
-        }]
+        [gcmon_changed.clone(), gcmon_changed]
     );
 }
 
@@ -1747,32 +1734,12 @@ fn a_hand_edit_to_the_settings_tells_the_window_with_no_token() {
 }
 
 #[test]
-fn opening_a_repository_keeps_the_settings_the_owner_handed_over_since_the_command_read_its_own() {
-    let mut syncs = Syncs::default();
-    let edited = RepositorySettings {
-        conventions: Conventions::Cpython,
-        ..bugs_switched(OnWorkbench::Off)
-    };
-
-    assert_eq!(syncs.replace_settings(edited.clone()), None);
-    syncs.add(bugs_switched(OnWorkbench::Off));
-    let opened = syncs.held().get(&gcmon()).cloned();
-    let unchanged = syncs.replace_settings(edited.clone());
-    syncs.add(bugs_switched(OnWorkbench::Off));
-
-    assert_eq!(opened, Some(edited.clone()));
-    assert_eq!(unchanged, None);
-    assert_eq!(syncs.held().get(&gcmon()), Some(&edited));
-}
-
-#[test]
 fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirror_its_heads() {
-    let (_, _, calls, owed) = switch_bugs_on_losing(None);
+    let (_, calls, owed) = switch_bugs_on_losing(None);
     assert_eq!(owed, [8].into());
 
-    let (switched, asked, _, owed) = switch_bugs_on_losing(Some(calls - 1));
+    let (asked, _, owed) = switch_bugs_on_losing(Some(calls - 1));
 
-    assert_eq!(switched, Some(bugs_switched(OnWorkbench::Off)));
     assert!(
         asked.iter().any(|line| line.contains("#8 at 4567def")),
         "{asked:?}"
@@ -1782,10 +1749,9 @@ fn a_switch_whose_reads_ahead_the_store_cant_keep_still_says_it_handed_the_mirro
 
 #[test]
 fn a_switch_whose_facts_the_store_cant_read_hands_over_nothing_and_owes_nothing() {
-    let (switched, asked, _, owed) = switch_bugs_on_losing(Some(0));
+    let (asked, _, owed) = switch_bugs_on_losing(Some(0));
 
-    // The settings change all the same, and the next step that saves hands the Mirror its heads.
-    assert_eq!(switched, Some(bugs_switched(OnWorkbench::Off)));
+    // The next step that saves hands the Mirror its heads.
     assert!(asked.iter().all(|line| !line.contains("#8")), "{asked:?}");
     assert_eq!(owed, BTreeSet::new());
 }
@@ -1802,11 +1768,11 @@ struct TookSave {
 
 /// Starts a session that reaches GitHub through `github`, in a folder named after `name`, on a store whose
 /// PR 8 the Bugs Filter's stored search found and whose Conversation it never read. The session opens the
-/// Repository of the settings `opened` holds, if any, then takes `save`.
+/// Repository `opened`, if any, then takes `save`, whose settings the settings owner's view lists.
 fn session_taking(
     name: &str,
     github: GitHubAccess,
-    opened: Option<RepositorySettings>,
+    opened: Option<RepositoryName>,
     save: SettingsSave,
 ) -> TookSave {
     let (folders, _folder) = temp_folders(name);
@@ -1824,7 +1790,12 @@ fn session_taking(
     store.close();
     let (board, changes) = board_hearing_settings();
     let (mirrors, heard) = HeardRequests::new();
-    let connections = Connections { github, mirrors };
+    let settings = listed(vec![save.saved().clone()]);
+    let connections = Connections {
+        github,
+        mirrors,
+        settings,
+    };
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     if let Some(opened) = opened {
@@ -1850,7 +1821,7 @@ fn a_session_hands_the_mirror_the_heads_a_switch_puts_in_reach_while_offline() {
     let took = session_taking(
         "switched-session",
         offline(),
-        Some(bugs_switched(OnWorkbench::Off)),
+        Some(gcmon()),
         bugs_saved(OnWorkbench::On, SavedBy::Window),
     );
 
@@ -1940,7 +1911,7 @@ fn a_session_with_no_token_follows_the_reach_a_hand_edit_moves() {
         "{:?}",
         took.handed
     );
-    // With no syncs to compare, the window hears of each hand edit.
+    // With no syncs to say which Repositories were opened, the window hears of each hand edit.
     assert_eq!(
         took.announced,
         [Change {
@@ -1991,12 +1962,13 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
     let connections = Connections {
         github: offline(),
         mirrors,
+        settings: listed(vec![cpython_gcmon()]),
     };
     let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
 
     let asked = session.fetching();
-    asked.sync(cpython_gcmon());
+    asked.sync(gcmon());
     asked.mute(gcmon(), issue, issue_5_seen());
     let muted = heard.asked_through("wants heads none", PLENTY);
     asked.unmute(gcmon(), issue);
@@ -2034,13 +2006,17 @@ fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         run_gh: without_gh,
     };
-    let connections = Connections { github, mirrors };
+    let connections = Connections {
+        github,
+        mirrors,
+        settings: listed(vec![cpython_gcmon()]),
+    };
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
     let issue = ItemKey::Issue { number: 5 };
 
     let asked = session.fetching();
-    asked.sync(cpython_gcmon());
+    asked.sync(gcmon());
     asked.mute(gcmon(), issue, issue_5_seen());
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
@@ -2078,18 +2054,19 @@ fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmu
     let connections = Connections {
         github: offline(),
         mirrors,
+        settings: listed(vec![cpython_gcmon()]),
     };
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
 
     let asked = session.fetching();
-    asked.sync(cpython_gcmon());
-    asked.mute_author(cpython_gcmon(), author.clone());
+    asked.sync(gcmon());
+    asked.mute_author(gcmon(), author.clone());
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     let store = session.reader();
     let activity = store.work_facts(&gcmon()).unwrap().activity;
-    asked.unmute_author(cpython_gcmon(), author);
+    asked.unmute_author(gcmon(), author);
     let unmuted = heard.asked_through("wants heads #8", PLENTY);
     session.stop(PLENTY);
 
@@ -2118,20 +2095,23 @@ fn mute_author_on_facts_the_store_cant_read_keeps_nothing_and_unmute_author_stil
         marks: Vec::new(),
     };
     store.mute_author(&gcmon(), muting, at).unwrap();
-    let settings = Box::new(cpython_gcmon());
+    let view = listed(vec![cpython_gcmon()]);
     let other = Login::new("another-author");
     let muted = Marked::AuthorMuted {
-        settings: settings.clone(),
+        repository: gcmon(),
         author: other,
         at,
     };
-    let unmuted = Marked::AuthorUnmuted { settings, author };
+    let unmuted = Marked::AuthorUnmuted {
+        repository: gcmon(),
+        author,
+    };
 
     // The first call of each reads the facts, and goes missing.
     let (lossy, _calls) = store.failing_at_call(Some(0));
-    let (mute_saved, mute_change) = keep_mark(&lossy, muted);
+    let (mute_saved, mute_change) = keep_mark(&lossy, &view, muted);
     let (lossy, _calls) = store.failing_at_call(Some(0));
-    let (unmute_saved, unmute_change) = keep_mark(&lossy, unmuted);
+    let (unmute_saved, unmute_change) = keep_mark(&lossy, &view, unmuted);
 
     assert!(mute_saved.is_err());
     assert!(unmute_saved.is_ok());
@@ -2151,9 +2131,11 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
     let (lossy, calls) = store.failing_at_call(Some(2));
     let (mirrors, heard) = HeardRequests::new();
     let (messages, _incoming) = mpsc::channel();
-    let fetching = sending(messages, mirrors);
-    let mut syncs = Syncs::default();
-    syncs.add(cpython_gcmon());
+    let refreshes = Refreshes {
+        fetching: sending(messages, mirrors),
+        settings: listed(vec![cpython_gcmon()]),
+        ..unheard_refreshes()
+    };
     let issue = ItemKey::Issue { number: 5 };
     let muted = Marked::Muted {
         repository: gcmon(),
@@ -2162,8 +2144,7 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
         at: OffsetDateTime::now_utc(),
     };
 
-    let moved = ReachMove::of(&muted, &lossy, syncs.held());
-    mark_moving_reach(&mut quiet_board(), &lossy, &fetching, (muted, moved));
+    refreshes.mark(&mut quiet_board(), &lossy, muted);
 
     // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The
     // next step that saves hands the Mirror its heads.
@@ -2251,10 +2232,11 @@ fn synced_with_both_sides_read(name: &str, prepared: &str) -> (Vec<String>, Revi
         Connections {
             github: access,
             mirrors,
+            settings: listed(vec![plain_gcmon()]),
         },
         HOURLY,
     );
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     let handed = heard.asked_through("saved heads", PLENTY);
     let held = session.reader().work_facts(&gcmon()).unwrap().reviews;
     session.stop(PLENTY);
@@ -2454,8 +2436,8 @@ fn a_check_goes_ahead_of_the_next_step_of_a_sync() {
         ..unheard_refreshes()
     };
     let github = github(answered(200, GCMON));
-    let mut syncs = Syncs::default();
-    syncs.add(plain_gcmon());
+    let mut syncs = Syncs::new(refreshes.settings.clone());
+    syncs.add(gcmon());
     let due = Due::starting_at(Instant::now(), HOURLY);
 
     let answer = thread::scope(|scope| {
@@ -2482,7 +2464,7 @@ fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
     ]);
     let (messages, incoming) = mpsc::channel();
     let requests = sending(messages.clone(), mirrors());
-    requests.sync(plain_gcmon());
+    requests.sync(gcmon());
     let (passed, seen) = mpsc::channel();
     let mut shown = 0;
     let mut board = StatusBoard::new(Box::new(move |status: &Status| {
@@ -2528,7 +2510,7 @@ fn a_sync_waits_until_tsugiki_knows_who_the_user_is() {
     );
     let reader = session.reader();
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     while !matches!(heard.recv().unwrap(), Heard::Changed(_)) {}
     let workbench = Workbench::read(
         &reader,
@@ -2614,7 +2596,7 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
     let (mirrors, wanted) = HeardRequests::new();
     let fetching = sending(messages.clone(), mirrors);
     let requests = fetching.clone();
-    requests.sync(plain_gcmon());
+    requests.sync(gcmon());
     let clicks = requests.clone();
     // Online, the network goes; offline, it comes back and the user clicks Refresh.
     let on_status = move |shown| match shown {
@@ -2633,7 +2615,7 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
         }
     };
     let (mut board, heard) = heard_board(on_status, on_change);
-    let refreshes = Refreshes::new(HOURLY, incoming, fetching, Headless::default());
+    let refreshes = Refreshes::new(HOURLY, incoming, fetching, listed(vec![plain_gcmon()]));
 
     watch(&mut board, &empty_store(), access, &refreshes);
 
@@ -2664,7 +2646,7 @@ fn a_refresh_while_github_is_still_away_stays_offline_and_runs_no_step() {
     let (access, up, asked) = outage();
     let (messages, incoming) = mpsc::channel();
     let requests = sending(messages.clone(), mirrors());
-    requests.sync(plain_gcmon());
+    requests.sync(gcmon());
     let on_status = move |shown| match shown {
         1 => up.store(false, Ordering::Relaxed),
         2 => {
@@ -2712,7 +2694,7 @@ fn with_no_token_what_is_stored_stays_readable() {
     let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
     let requests = session.fetching();
 
-    requests.sync(plain_gcmon());
+    requests.sync(gcmon());
     let checked = requests.check(gcmon());
     let facts = session.reader().work_facts(&gcmon());
     session.stop(PLENTY);
@@ -2727,7 +2709,7 @@ fn a_session_that_has_ended_ignores_a_sync_and_a_refresh() {
     drop(incoming);
     let requests = sending(messages, mirrors());
 
-    requests.sync(plain_gcmon());
+    requests.sync(gcmon());
     requests.refresh();
 }
 
@@ -2807,7 +2789,7 @@ fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
     let (board, last_syncs) = last_sync_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     let shown = last_syncs.recv_timeout(PLENTY).unwrap();
     wait_for(&asked, "RefreshRepository");
     let after = last_syncs.recv_timeout(PLENTY).unwrap();
@@ -2836,10 +2818,118 @@ fn opening_a_repository_has_its_refresh_read_ahead_what_one_before_this_launch_o
     let (access, asked) = quiet_repository();
     let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     wait_for(&asked, "RefreshRepository");
     wait_for(&asked, "FetchPullRequestContent");
     session.stop(PLENTY);
+}
+
+/// GitHub as [`QuietRepository`] answers it, which holds its first answer to `operation` back until the test
+/// says go, and says when it got there.
+struct HeldAt {
+    quiet: QuietRepository,
+    operation: &'static str,
+    reached: Sender<()>,
+    go: Receiver<()>,
+    held: Cell<bool>,
+}
+
+impl Transport for HeldAt {
+    fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+        if request.operation == self.operation && !self.held.replace(true) {
+            let went = self.reached.send(()).is_ok() && self.go.recv_timeout(PLENTY).is_ok();
+            // A test that never says go fails in its own wait.
+            if !went {
+                return Err(Unreachable::Offline);
+            }
+        }
+        self.quiet.post(token, request)
+    }
+}
+
+/// gcmon's settings, with the Bugs Filter switched on the Workbench by `switch`, which is empty or says so.
+fn gcmon_toml(switch: &str) -> String {
+    format!(
+        "[[repositories]]\nname = \"some-maintainer/gcmon\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+         query = \"label:bug\"\n{switch}"
+    )
+}
+
+/// Starts a session on gcmon, which finished a sync, with a settings owner whose `settings.toml` lists it
+/// with the Bugs Filter off. The store owes a read ahead of PR 8, a stranger's, which only that Filter
+/// reaches. The window opens gcmon, and GitHub holds its first answer to `held` back until `save` has
+/// switched the Filter on. Returns once the session read PR 8's Conversation ahead, which only settings
+/// read after the save would have it do, and fails after [`PLENTY`] without.
+fn reading_ahead_once_saved(name: &str, held: &'static str, save: fn(&SettingsOwner, &Folders)) {
+    let (folders, _folder) = temp_folders(name);
+    after_a_finished_sync(&folders);
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&me()).unwrap();
+    let stored = vec![stored_pr(8, "some-author", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    store.owe_read_ahead(&gcmon(), vec![8]).unwrap();
+    store.close();
+    fs::write(folders.settings_file(), gcmon_toml("")).unwrap();
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (asked, seen) = mpsc::channel();
+    let (reached, at_held) = mpsc::channel();
+    let (go, gone) = mpsc::channel();
+    let access = GitHubAccess {
+        transport: Box::new(HeldAt {
+            quiet: QuietRepository { asked },
+            operation: held,
+            reached,
+            go: gone,
+            held: Cell::new(false),
+        }),
+        run_gh: signed_in_gh,
+    };
+    let connections = Connections {
+        github: access,
+        mirrors: mirrors(),
+        settings: owner.reader(),
+    };
+    let session = Session::start(quiet_board(), Ok(folders.clone()), connections, HOURLY);
+    // As `Calls::launched` does.
+    let told = session.fetching();
+    owner.tell_session(Box::new(move |save| told.settings_changed(save)));
+
+    session.fetching().sync(gcmon());
+    at_held.recv_timeout(PLENTY).unwrap();
+    save(&owner, &folders);
+    go.send(()).unwrap();
+    wait_for(&seen, "FetchPullRequestContent");
+    session.stop(PLENTY);
+}
+
+#[test]
+fn a_save_between_the_windows_open_and_the_session_taking_it_reaches_the_sync() {
+    // The session asks who is signed in before it takes the open, which waits in its queue meanwhile.
+    reading_ahead_once_saved("saved-before-sync", "Viewer", |owner, _| {
+        let saved = owner.put_on_workbench(gcmon(), bugs_query(), OnWorkbench::On);
+        assert!(saved.is_ok(), "{saved:?}");
+    });
+}
+
+#[test]
+fn a_hand_edit_to_an_opened_repository_reaches_its_syncs_next_step() {
+    // The refresh's poll, the step before its read ahead.
+    reading_ahead_once_saved(
+        "hand-edit-mid-sync",
+        "RefreshRepository",
+        |owner, folders| {
+            fs::write(folders.settings_file(), gcmon_toml("on_workbench = true\n")).unwrap();
+            let reread = owner.reread();
+            assert!(reread.is_ok(), "{reread:?}");
+        },
+    );
 }
 
 #[test]
@@ -2849,7 +2939,7 @@ fn opening_a_repository_that_never_synced_says_so() {
     let (board, last_syncs) = last_sync_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     let shown = last_syncs.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
@@ -2879,7 +2969,7 @@ fn a_click_refreshes_the_open_repository_again() {
     let (board, last_syncs) = last_sync_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     wait_for(&asked, "RefreshRepository");
     // Once when the window opened it, and once when that refresh finished. A click during a refresh
     // adds nothing, because that refresh is reading what the click asks for.
@@ -2906,7 +2996,7 @@ fn the_timer_refreshes_the_open_repository_again() {
         every_moment,
     );
 
-    session.fetching().sync(plain_gcmon());
+    session.fetching().sync(gcmon());
     wait_for(&asked, "RefreshRepository");
     wait_for(&asked, "RefreshRepository");
     session.stop(PLENTY);

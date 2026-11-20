@@ -350,17 +350,20 @@ const LAYERS: &[Layer] = &[
             "facts",
             "filters",
             "github",
+            "latest",
             "links",
             "login",
             "repository",
             "repository_settings",
+            "settings",
             "status",
             "store",
             "token",
             "work",
         ],
         why: "Asks GitHub for facts and saves them, then tells the Workbench and the status what changed. \
-              `work` says which PRs it reads ahead.",
+              `work` says which PRs it reads ahead, under each Repository's settings, which it reads from \
+              the view `settings` shares through `latest`.",
     },
     Layer {
         module: "session",
@@ -370,11 +373,13 @@ const LAYERS: &[Layer] = &[
             "fetching",
             "folders",
             "github",
+            "latest",
             "login",
             "mirror",
             "patch_ids",
             "repository",
             "repository_settings",
+            "settings",
             "status",
             "store",
             "sync",
@@ -385,7 +390,8 @@ const LAYERS: &[Layer] = &[
         why: "Runs the session thread, which owns the store and the syncs and takes the messages `fetching` \
               sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
               which it builds on the requests `mirror` gives. Mute author asks `workbench` which items of \
-              the `login` it mutes the window lists, to mark them seen.",
+              the `login` it mutes the window lists, to mark them seen. Each Repository's settings come \
+              from the view `settings` shares through `latest`.",
     },
     Layer {
         module: "calls",

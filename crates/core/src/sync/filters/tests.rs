@@ -128,7 +128,7 @@ fn a_save_that_failed_goes_again_with_no_new_search() {
     let harness = Harness::new("filter-save-again", replies);
     let broken = Store::stopped();
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     // Four searches and a move.
     for _ in 0..5 {
@@ -158,7 +158,7 @@ fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-first", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -185,7 +185,7 @@ fn a_filters_search_says_the_repository_and_follows_its_pages() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-pages", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["label:bug"]));
+    syncs.add_listed(filtering(&["label:bug"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -206,7 +206,7 @@ fn each_filter_keeps_its_own_results_and_a_shared_item_is_fetched_once() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-shared", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a", "b"]));
+    syncs.add_listed(filtering(&["a", "b"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -221,7 +221,7 @@ fn two_filters_with_one_search_run_it_once() {
     replies.push(all_of(&[]));
     let harness = Harness::new("filter-twice", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a", "a"]));
+    syncs.add_listed(filtering(&["a", "a"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -235,7 +235,7 @@ fn saving_what_a_filter_found_tells_the_window() {
     replies.push(all_of(&[]));
     let harness = Harness::new("filter-announced", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -291,12 +291,12 @@ fn a_second_sync_fetches_only_what_changed_and_still_reads_each_tree() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-missing", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
     drop(harness.operations());
 
     harness.forget_the_last_sync();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     // All three trees are owed, Issue 1's among them.
     let mut owed = Value::Null;
     while syncs.ready_at().is_some() {
@@ -329,12 +329,12 @@ fn an_issue_a_filter_found_as_tsugiki_has_it_isnt_fetched_again() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-held-issue", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
     drop(harness.operations());
 
     harness.forget_the_last_sync();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     assert_eq!(
@@ -368,11 +368,11 @@ fn a_closed_pr_that_changed_is_fetched_again_as_it_may_have_reopened() {
     ));
     let harness = Harness::new("filter-reopened", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     harness.forget_the_last_sync();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     let facts = harness.db.reader.work_facts(&cpython()).unwrap();
@@ -410,12 +410,12 @@ fn a_tree_fetches_again_an_open_pr_a_filter_found_unchanged_as_its_ci_may_have_m
     ));
     let harness = Harness::new("filter-tree", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
     drop(harness.operations());
 
     harness.forget_the_last_sync();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     assert_eq!(
@@ -437,7 +437,7 @@ fn a_pr_the_users_searches_and_a_filter_both_found_is_fetched_once() {
     replies.push(fetched(&[10], RATE_LIMIT));
     let harness = Harness::new("filter-and-work", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -456,11 +456,11 @@ fn a_search_the_user_edited_away_loses_its_results_at_the_next_sync() {
     replies.push(all_of(&[]));
     let harness = Harness::new("filter-edited", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["old"]));
+    syncs.add_listed(filtering(&["old"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     harness.forget_the_last_sync();
-    syncs.add(filtering(&["new"]));
+    syncs.add_listed(filtering(&["new"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     assert_eq!(found_by(&harness, "old"), [0_u32; 0]);
@@ -482,11 +482,11 @@ fn a_filter_github_wont_answer_says_why_and_stops_nothing_else() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("filter-refused", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     harness.forget_the_last_sync();
-    syncs.add(filtering(&["a", "b"]));
+    syncs.add_listed(filtering(&["a", "b"]));
     drop(run_to_the_end(&mut syncs, &harness));
 
     assert_eq!(
@@ -506,7 +506,7 @@ fn a_filter_github_wont_answer_tells_the_window() {
     ));
     let harness = Harness::new("filter-refused-announced", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -531,7 +531,7 @@ fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
         replies.push(no_issue_references(RATE_LIMIT));
         let harness = Harness::new(name, replies);
         let mut syncs = Syncs::default();
-        syncs.add(filtering(&["a"]));
+        syncs.add_listed(filtering(&["a"]));
 
         // Four searches and a move.
         for _ in 0..5 {
@@ -556,7 +556,7 @@ fn a_filter_search_below_the_floor_holds_the_next_step_back() {
     replies.push(page(None));
     let harness = Harness::new("filter-floor", replies);
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     let now = Instant::now();
 
     // Four searches and a move, then the first page.
@@ -636,7 +636,7 @@ fn a_filter_over_the_cap_is_read_through_ranges_of_days_and_finds_everything() {
         },
     );
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -717,7 +717,7 @@ fn one_day_over_the_cap_is_read_as_far_as_github_lists_and_the_filter_says_so() 
         },
     );
     let mut syncs = Syncs::default();
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
 
     drop(run_to_the_end(&mut syncs, &harness));
 

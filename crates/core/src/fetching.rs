@@ -23,7 +23,7 @@ use crate::mirror::{CloneRefusal, LookupAt, MirrorRequests};
 use crate::mirror_source::MirrorSource;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
-use crate::repository_settings::{RepositoryCheck, RepositorySettings, SettingsSave};
+use crate::repository_settings::{RepositoryCheck, SettingsSave};
 use crate::status::ItemUnread;
 use crate::work::SeenMark;
 
@@ -96,17 +96,17 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         key: ItemKey,
     },
-    /// Mute author on `author` in the Repository `settings` name, at `at` (#494). The session finds their
-    /// open items, whose trees the mute marks seen, by the link rules under those settings.
+    /// Mute author on `author` in `repository`, at `at` (#494). The session finds their open items, whose
+    /// trees the mute marks seen, by the link rules under the Repository's settings as it takes the mark.
     AuthorMuted {
-        settings: Box<RepositorySettings>,
+        repository: RepositoryName,
         author: Login,
         at: OffsetDateTime,
     },
-    /// Unmute author on `author` in the Repository `settings` name, under whose settings the session finds
+    /// Unmute author on `author` in `repository`, under whose settings as the session takes the mark it finds
     /// the items that come back.
     AuthorUnmuted {
-        settings: Box<RepositorySettings>,
+        repository: RepositoryName,
         author: Login,
     },
 }
@@ -180,9 +180,9 @@ pub(crate) enum SessionMessage {
         name: RepositoryName,
         reply: Sender<Result<RepositoryCheck, Error>>,
     },
-    /// The user opened this Repository.
+    /// The user opened this Repository, whose settings the session reads from the settings owner's view.
     Sync {
-        repository: RepositorySettings,
+        repository: RepositoryName,
     },
     /// The user asked to refresh the open Repository now.
     Refresh,
@@ -271,6 +271,11 @@ impl Fetching {
         }
     }
 
+    /// The PRs whose Conversation the session read named no head, which the session adds to and takes from.
+    pub(crate) fn headless(&self) -> Headless {
+        self.headless.clone()
+    }
+
     /// Tells the session to finish.
     pub(crate) fn stop_session(&self) {
         self.to_session(SessionMessage::Stop);
@@ -278,7 +283,7 @@ impl Fetching {
 
     /// The user opened `repository`: the session loads the user's work and its Filters. A session with no
     /// token or no database has already shown why on the status bar, so this reports no failure.
-    pub fn sync(&self, repository: RepositorySettings) {
+    pub fn sync(&self, repository: RepositoryName) {
         self.to_session(SessionMessage::Sync { repository });
     }
 
@@ -287,10 +292,10 @@ impl Fetching {
         self.to_session(SessionMessage::Refresh);
     }
 
-    /// The settings owner saved a Repository's settings otherwise. The session's syncs read them from now on,
-    /// if it has opened the Repository since launch, and the Mirror worker and the read ahead follow the
-    /// move of Reach from the settings the save replaced, whether or not it has. Which Repository is open
-    /// stays, and no refresh starts.
+    /// The settings owner saved a Repository's settings otherwise, and its view already says so. The Mirror
+    /// worker and the read ahead follow the move of Reach from the settings the save replaced, whether or
+    /// not the session has opened the Repository since launch. Which Repository is open stays, and no
+    /// refresh starts.
     pub fn settings_changed(&self, save: SettingsSave) {
         self.to_session(SessionMessage::SettingsChanged(save));
     }
@@ -387,21 +392,20 @@ impl Fetching {
         self.to_session(SessionMessage::Mark(Marked::Unmuted { repository, key }));
     }
 
-    /// Mute author on `author` in the Repository `settings` name (#494): their items count as Muted, and
-    /// the session marks their open items seen in the background, finding them under `settings`.
-    pub fn mute_author(&self, settings: RepositorySettings, author: Login) {
+    /// Mute author on `author` in `repository` (#494): their items count as Muted, and the session marks
+    /// their open items seen in the background, finding them under the Repository's settings.
+    pub fn mute_author(&self, repository: RepositoryName, author: Login) {
         let muted = Marked::AuthorMuted {
-            settings: Box::new(settings),
+            repository,
             author,
             at: OffsetDateTime::now_utc(),
         };
         self.to_session(SessionMessage::Mark(muted));
     }
 
-    /// Unmutes `author` in the Repository `settings` name.
-    pub fn unmute_author(&self, settings: RepositorySettings, author: Login) {
-        let settings = Box::new(settings);
-        let unmuted = Marked::AuthorUnmuted { settings, author };
+    /// Unmutes `author` in `repository`.
+    pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
+        let unmuted = Marked::AuthorUnmuted { repository, author };
         self.to_session(SessionMessage::Mark(unmuted));
     }
 

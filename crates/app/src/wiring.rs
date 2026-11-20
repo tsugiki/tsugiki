@@ -169,10 +169,12 @@ pub(crate) fn connect_core<R: Runtime>(
         on_screen: ON_SCREEN_REFRESH,
     };
     let call_folders = folders.clone();
-    // The session hands the mirrors the rules' wants, and takes the patch-ids they read.
+    // The session hands the mirrors the rules' wants, takes the patch-ids they read, and reads each
+    // Repository's settings from the settings owner's view.
     let connections = Connections {
         github: outside.github,
         mirrors: mirrors.requests(),
+        settings: settings.reader(),
     };
     let session = Session::start(board, folders, connections, intervals);
     let (checkouts, view, idle_view) = (mirrors.requests(), settings.reader(), settings.reader());

@@ -112,10 +112,8 @@ impl Calls {
     /// the user said, if they have.
     fn start(&self, view: &SettingsView) {
         if let Home::Repository { repository, .. } = &view.home {
-            self.open(
-                repository,
-                view.mirror_sources.get(&repository.name).cloned(),
-            );
+            let source = view.mirror_sources.get(&repository.name).cloned();
+            self.open(&repository.name, source);
         }
     }
 
@@ -124,15 +122,14 @@ impl Calls {
     /// unfinished, goes on in its turns. Its Mirror's clone goes ahead of the others waiting, after the one
     /// under way, and doesn't wait on the sync. While neither `source` nor the Mirror worker holds an answer
     /// of where its objects come from, the clone waits for one.
-    fn open(&self, repository: &RepositorySettings, source: Option<MirrorSource>) {
+    fn open(&self, repository: &RepositoryName, source: Option<MirrorSource>) {
         self.fetching.sync(repository.clone());
-        self.fetching
-            .clone_mirror_next(repository.name.clone(), source);
+        self.fetching.clone_mirror_next(repository.clone(), source);
     }
 
     /// The settings of Repository `name`, or the defaults for one the settings don't list.
     fn repository(&self, name: RepositoryName) -> RepositorySettings {
-        self.settings.view().loaded.settings.repository(name)
+        self.settings.view().repository(name)
     }
 
     /// The rows of a view of `repository`'s Workbench, with what its Sidebar shows, in the order
@@ -143,7 +140,7 @@ impl Calls {
         view: &WorkbenchView,
     ) -> Result<Workbench, Error> {
         let settings = self.settings.view();
-        let repository = settings.loaded.settings.repository(repository);
+        let repository = settings.repository(repository);
         Workbench::read(&self.reader, &repository, view, settings.panes.order)
     }
 
@@ -419,14 +416,14 @@ impl Calls {
         self.fetching.unmute(repository, item);
     }
 
-    /// Mute author on `author` in `repository`, with its settings as they are now.
+    /// Mute author on `author` in `repository`.
     pub fn mute_author(&self, repository: RepositoryName, author: Login) {
-        (self.fetching).mute_author(self.repository(repository), author);
+        self.fetching.mute_author(repository, author);
     }
 
     /// Unmutes `author` in `repository`.
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
-        (self.fetching).unmute_author(self.repository(repository), author);
+        self.fetching.unmute_author(repository, author);
     }
 
     /// Says the Repository the user typed is one Tsugiki has, or else asks GitHub what adding it would load,
@@ -459,7 +456,7 @@ impl Calls {
     pub fn open_repository(&self, repository: RepositoryName) -> Result<Home, Error> {
         let view = self.settings.open_repository(repository)?;
         if let Home::Repository { repository, .. } = &view.home {
-            self.open(repository, None);
+            self.open(&repository.name, None);
         }
         Ok(view.home)
     }

@@ -19,7 +19,7 @@ fn a_pr_two_searches_found_is_fetched_once() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -45,7 +45,7 @@ fn a_retry_at_half_size_leaves_the_rest_for_the_next_batch() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -70,7 +70,7 @@ fn a_fetch_below_the_floor_holds_the_next_step_back() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
     for _ in 0..7 {
@@ -99,7 +99,7 @@ fn a_sync_asks_for_pages_of_50_and_batches_of_25() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 

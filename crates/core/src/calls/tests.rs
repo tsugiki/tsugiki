@@ -14,9 +14,10 @@ use crate::fetching::{Fetched, Headless, Item, NoHead, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::RepositorySettings;
-use crate::settings::{LoadedSettings, Settings, SettingsFiles};
+use crate::settings::SettingsFiles;
 use crate::status::ItemUnread;
 use crate::store::testing::OpenStore;
+use crate::testing::listing;
 use crate::workbench::pr_files::testing::World;
 
 /// PR 7's world, settings that list its Repository, and the queues and language servers its calls ask,
@@ -102,7 +103,7 @@ fn no_servers() -> Definitions {
 fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
     (messages.try_iter())
         .filter_map(|message| match message {
-            SessionMessage::Sync { repository } => Some(format!("sync {}", repository.name)),
+            SessionMessage::Sync { repository } => Some(format!("sync {repository}")),
             SessionMessage::SettingsChanged(save) => {
                 let filters = |settings: &RepositorySettings| settings.filters.len();
                 let replaced = save.replaced().map(filters);
@@ -226,21 +227,6 @@ fn opening_a_pr_puts_it_on_screen_once_its_conversation_is_asked_for() {
     assert!(opened.is_err(), "{opened:?}");
     assert_eq!(heard, ["PR #7", "opened PR #7"]);
     calls.finish();
-}
-
-/// Settings that list `repositories` and nothing else.
-fn listing(repositories: Vec<RepositorySettings>) -> SettingsView {
-    let settings = Settings {
-        repositories,
-        ..Settings::default()
-    };
-    SettingsView {
-        loaded: LoadedSettings {
-            settings,
-            ..LoadedSettings::default()
-        },
-        ..SettingsView::default()
-    }
 }
 
 /// PR 7's head at a commit no mirror holds.

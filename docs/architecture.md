@@ -135,7 +135,10 @@ app-wide status.
    hands the session each Repository's settings a change saves otherwise, with those they replaced, in the
    order it saves them. The session follows the move of Reach between the two in any Repository, opened or
    not. Those a hand edit changed in a Repository opened since launch, as new Conventions or Filters,
-   announce a `Change` that names no item, and the Repository's lists read their items again.
+   announce a `Change` that names no item, and the Repository's lists read their items again. The session
+   keeps no copy of the settings: each sync step, the rules' wants and each move of Reach read them from the
+   owner's `latest` view, where the owner publishes a save before it hands the save over, so the session
+   reads settings at least as new as every save it has heard of.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
 problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter

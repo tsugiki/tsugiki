@@ -13,9 +13,11 @@ use crate::facts::CommitSha;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::folders::Folders;
+use crate::latest::{self, LatestReader};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::settings::{LoadedSettings, Settings, SettingsView};
 
 #[cfg(test)]
 mod fixture;
@@ -51,6 +53,27 @@ pub fn cpython() -> RepositoryName {
 /// [`cpython`]'s settings, as a Repository just added has them.
 pub fn cpython_settings() -> RepositorySettings {
     RepositorySettings::new(cpython())
+}
+
+/// What the settings owner's view says of settings that list `repositories`, and the defaults for the rest.
+pub fn listing(repositories: Vec<RepositorySettings>) -> SettingsView {
+    let settings = Settings {
+        repositories,
+        ..Settings::default()
+    };
+    SettingsView {
+        loaded: LoadedSettings {
+            settings,
+            ..LoadedSettings::default()
+        },
+        ..SettingsView::default()
+    }
+}
+
+/// A reader of the [`listing`] of `repositories`, which nothing writes again, for a thread that reads the
+/// settings owner's view.
+pub fn listed(repositories: Vec<RepositorySettings>) -> LatestReader<SettingsView> {
+    latest::channel(listing(repositories)).1
 }
 
 /// The user signed in.

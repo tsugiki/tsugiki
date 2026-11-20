@@ -36,7 +36,7 @@ fn merged(number: u32) -> Value {
 
 fn syncing() -> Syncs {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     syncs
 }
 
@@ -532,7 +532,7 @@ fn a_frozen_origin_still_brings_the_issue_it_names() {
     drop(harness.operations());
 
     harness.forget_the_last_sync();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
 
     let operations = harness.operations();
@@ -920,7 +920,7 @@ fn editing_the_filters_starts_the_sync_over() {
     drop(quitting.step(&harness.github, &harness.db.store).unwrap());
 
     let mut back = Syncs::default();
-    back.add(RepositorySettings::new(cpython()));
+    back.add_listed(RepositorySettings::new(cpython()));
     drop(back.step(&harness.github, &harness.db.store).unwrap());
 
     assert_eq!(harness.operations(), STARTED_OVER);

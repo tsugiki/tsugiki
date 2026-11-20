@@ -262,7 +262,7 @@ fn run(syncs: &mut Syncs, harness: &Harness) -> Vec<Change> {
 
 fn refreshing(settings: RepositorySettings) -> Syncs {
     let mut syncs = Syncs::default();
-    syncs.add(settings);
+    syncs.add_listed(settings);
     syncs
 }
 
@@ -451,7 +451,7 @@ fn a_refresh_fetches_the_issues_saved_before_tsugiki_kept_states_once() {
 
     let changes = run(&mut syncs, &harness);
     let first = harness.operations();
-    syncs.add(filtering(&[]));
+    syncs.add_listed(filtering(&[]));
     drop(run(&mut syncs, &harness));
 
     let states: Vec<Option<IssueState>> = harness
@@ -480,7 +480,7 @@ fn an_issue_github_no_longer_has_is_asked_for_once_a_launch() {
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
-    syncs.add(filtering(&[]));
+    syncs.add_listed(filtering(&[]));
     drop(run(&mut syncs, &harness));
 
     let states: Vec<Option<IssueState>> = harness
@@ -517,7 +517,7 @@ fn a_refresh_goes_before_the_fetch_of_the_issues_with_no_state() {
     let mut syncs = refreshing(filtering(&[]));
 
     until_finished(&mut syncs, &harness);
-    syncs.add(filtering(&[]));
+    syncs.add_listed(filtering(&[]));
     drop(run(&mut syncs, &harness));
 
     assert_eq!(
@@ -1190,13 +1190,12 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
     stored_filter(&harness, "a", &[2]);
     let mut off = filtering(&["a"]);
     off.filters[0].on_workbench = OnWorkbench::Off;
-    let mut syncs = refreshing(off.clone());
+    let mut syncs = refreshing(off);
     drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
-    let before = syncs.replace_settings(filtering(&["a"]));
+    syncs.list(filtering(&["a"]));
     drop(run(&mut syncs, &harness));
 
-    assert_eq!(before, Some(off));
     assert_eq!(
         harness.operations(),
         [
@@ -1242,14 +1241,14 @@ fn a_filter_switched_on_during_a_first_sync_has_the_next_refresh_read_what_the_s
     let first_sync_finished = harness.db.store.sync_state(&cpython()).unwrap();
 
     // As the session does when the user switches "a" on.
-    drop(syncs.replace_settings(filtering(&["a"])));
+    syncs.list(filtering(&["a"]));
     harness
         .db
         .store
         .owe_read_ahead(&cpython(), vec![2])
         .unwrap();
     drop(run(&mut syncs, &harness));
-    syncs.add(filtering(&["a"]));
+    syncs.add_listed(filtering(&["a"]));
     drop(run(&mut syncs, &harness));
 
     assert_eq!(
@@ -1291,7 +1290,7 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     read_ahead_up_to(&mut syncs, &harness, 2);
 
     // As the session does when the user switches "b" on.
-    drop(syncs.replace_settings(filtering(&["a", "b"])));
+    syncs.list(filtering(&["a", "b"]));
     harness
         .db
         .store
@@ -1342,7 +1341,7 @@ fn a_filter_switched_off_while_a_refresh_reads_ahead_leaves_what_it_reached_unre
 
     let mut b_off = filtering(&["a", "b"]);
     b_off.filters[1].on_workbench = OnWorkbench::Off;
-    drop(syncs.replace_settings(b_off));
+    syncs.list(b_off);
     drop(run(&mut syncs, &harness));
 
     assert_eq!(

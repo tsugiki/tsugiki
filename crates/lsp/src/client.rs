@@ -924,8 +924,8 @@ fn write_input(mut input: Box<dyn Write + Send>, bodies: &Receiver<Vec<u8>>, inp
 }
 
 /// The next message on `receiver`, waiting until `deadline` at most. Nothing once `deadline` has passed,
-/// though more is queued: a wait of zero still hands out each queued message, for as long as a busy sender
-/// keeps the queue full.
+/// though more is queued, since `recv_timeout` with a wait of zero would still hand out each queued message,
+/// for as long as a busy sender keeps the queue full.
 fn received_by<T>(receiver: &Receiver<T>, deadline: Instant) -> Option<T> {
     let wait = (deadline.checked_duration_since(Instant::now())).filter(|wait| !wait.is_zero())?;
     receiver.recv_timeout(wait).ok()

@@ -569,8 +569,8 @@ fn a_stopped_server_that_stops_reading_is_killed_once_the_patience_has_passed() 
     fake.killed.recv_timeout(PATIENCE).unwrap();
 }
 
-/// A server that floods its output while it stops keeps the owner's queue full. The wait for its exit reads
-/// nothing queued once its patience has passed, so the kill comes on time.
+/// The receive that the wait for a stopping server's exit reads through gives nothing once its deadline has
+/// passed, though a message is queued.
 #[test]
 fn once_the_deadline_has_passed_no_queued_message_is_received() {
     let (sends, queued) = mpsc::channel();

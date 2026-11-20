@@ -687,7 +687,9 @@ impl Owner {
 
     fn run(mut self) {
         while let Some(message) = self.next() {
-            if !self.handle(message) {
+            let stops = matches!(message, Message::Stop(..));
+            self.handle(message);
+            if stops {
                 return;
             }
         }
@@ -713,8 +715,8 @@ impl Owner {
         }
     }
 
-    /// Handles `message`, writes the servers' rows if they changed, and says whether the thread goes on.
-    fn handle(&mut self, message: Message) -> bool {
+    /// Handles `message`, and writes the servers' rows if they changed. After a `Stop` the thread ends.
+    fn handle(&mut self, message: Message) {
         match message {
             Message::Opened(repository, pr) => self.opened(&repository, pr),
             Message::LookUp(lookup, asker) => self.look_up(lookup, asker),
@@ -732,13 +734,12 @@ impl Owner {
             Message::Stop(patience, reply) => {
                 self.cancel_running();
                 let all: Vec<Key> = self.servers.keys().cloned().collect();
-                wait_all(self.stop_servers(&all), Instant::now() + patience);
+                self.stop_servers_until(&all, Instant::now() + patience);
                 let _unheard = reply.send(());
-                return false;
+                return;
             }
         }
         self.publish();
-        true
     }
 
     /// Forgets the server `key` names if it is the one that exited, as it ended on its own, and notes how:
@@ -791,7 +792,7 @@ impl Owner {
                 .filter(|(_, running)| *running == name)
                 .cloned()
                 .collect();
-            let _stopping = self.stop_servers(&theirs);
+            self.stop_servers(&theirs);
             self.lasts.retain(|(_, server), _| *server != name);
             let _forgotten = self.health.remove(&name);
             if let Some(path) = path {
@@ -831,12 +832,29 @@ impl Owner {
             .filter(|(owner, _)| owner == repository)
             .cloned()
             .collect();
-        wait_all(self.stop_servers(&theirs), Instant::now() + ENDED_WITHIN);
+        self.stop_servers_until(&theirs, Instant::now() + ENDED_WITHIN);
     }
 
-    /// Asks the servers `keys` name to stop and forgets them, and cancels the lookup running on one of them.
-    /// A lookup that hears how the index of one goes hears nothing more.
-    fn stop_servers(&mut self, keys: &[Key]) -> Vec<Stopping> {
+    /// Asks the servers `keys` name to stop, as `forget_servers` says, and returns at once.
+    fn stop_servers(&mut self, keys: &[Key]) {
+        self.forget_servers(keys)
+            .into_iter()
+            .for_each(LanguageServer::stop);
+    }
+
+    /// Asks the servers `keys` name to stop, as `forget_servers` says, and waits until each has ended, or
+    /// until `until`.
+    fn stop_servers_until(&mut self, keys: &[Key], until: Instant) {
+        let servers = self.forget_servers(keys).into_iter();
+        let stopping: Vec<Stopping> = servers.map(LanguageServer::stopping).collect();
+        for server in stopping {
+            server.wait(until);
+        }
+    }
+
+    /// Takes out the servers `keys` name, and cancels the lookup running on one of them. A lookup that hears
+    /// how the index of one goes hears nothing more.
+    fn forget_servers(&mut self, keys: &[Key]) -> Vec<LanguageServer> {
         let asked = self
             .running
             .take_if(|running| keys.contains(&running.server));
@@ -846,7 +864,6 @@ impl Owner {
         }
         (keys.iter())
             .filter_map(|key| self.servers.remove(key))
-            .map(LanguageServer::stop)
             .collect()
     }
 
@@ -866,7 +883,7 @@ impl Owner {
             );
             let _old = self.lasts.insert(key.clone(), Last::Idle);
         }
-        let _stopping = self.stop_servers(&stale);
+        self.stop_servers(&stale);
     }
 
     /// The wait from `now` until the next server has gone `idle` without a lookup, if a server can.
@@ -911,7 +928,7 @@ impl Owner {
             })
             .map(|(key, _)| key.clone())
             .collect();
-        let _stopping = self.stop_servers(&stale);
+        self.stop_servers(&stale);
     }
 
     /// Starts the server `key` names for `pr`, if the user has set it up.
@@ -1309,7 +1326,9 @@ fn ready<'a>(
             };
             waiting(Waiting::Starting { server: *name });
             // Asked first, the old server can end while the new one starts.
-            let _stopping = old.map(LanguageServer::stop);
+            if let Some(old) = old {
+                old.stop();
+            }
             let changed = pr.changed_for(*name);
             LanguageServer::start(*name, program, (checkout, &changed), news(own, key))?
         }
@@ -1330,13 +1349,6 @@ fn news(own: &Sender<Message>, key: &Key) -> OnNews {
         // The thread ends once it has stopped.
         let _unheard = own.send(message);
     })
-}
-
-/// Waits until each of the `stopping` servers has ended, or until `until`.
-fn wait_all(stopping: Vec<Stopping>, until: Instant) {
-    for server in stopping {
-        server.wait(until);
-    }
 }
 
 /// `path` without its `.` and `..` parts, as a server names the files it read.

@@ -36,6 +36,34 @@ fn reading_no_blob_asks_git_for_nothing() {
     assert!(read_blobs(Path::new("no-folder"), &[]).unwrap().is_empty());
 }
 
+#[test]
+fn a_name_with_a_line_break_gets_nothing_and_the_blobs_after_it_keep_their_places() {
+    let mirrored = crate::diff::testing::Mirrored::new("line-break-name");
+    let head = mirrored.head.as_str();
+    let names = [
+        format!("{head}:Tools/run.sh"),
+        format!("{head}:Lib/x.py\n{head}:Lib/ast.py"),
+        format!("{head}:Lib/spaced name ü.py"),
+    ];
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+
+    let blobs = read_blobs(&mirrored.mirror, &names).unwrap();
+
+    assert_eq!(
+        blobs,
+        [Some(b"echo hi\n".to_vec()), None, Some(b"pass\n".to_vec())]
+    );
+}
+
+#[test]
+fn names_git_would_read_as_others_ask_git_for_nothing() {
+    let names = ["1111:Lib/x.py\nLib/y.py", "1111:Lib/x.py\r"];
+
+    let blobs = read_blobs(Path::new("no-folder"), &names).unwrap();
+
+    assert_eq!(blobs, [None, None]);
+}
+
 /// A helper can leave git's tree while git runs: its parent ends first, as here, or it starts while
 /// `taskkill /T` reads the tree (#208). On Windows, a process left running in the folder keeps it there. On
 /// macOS, a process that starts while the kill runs can outlive it (#309), so the alias goes on starting
@@ -44,7 +72,7 @@ fn reading_no_blob_asks_git_for_nothing() {
 fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let folder = crate::testing::temp_path("stop-git");
     // An alias runs at the top of its repository, so this one needs its own.
-    let _ = tsugiki_test_git::git(
+    tsugiki_test_git::run_git(
         folder.parent().unwrap(),
         &["init", "-q", &folder.to_string_lossy()],
     );
@@ -66,7 +94,7 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let mut output = io::BufReader::new(output);
     let mut line = String::new();
     let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
-    let _succeeded = git.stop();
+    git.stop();
     let (closing, closed) = std::sync::mpsc::channel();
     #[expect(
         unused_results,

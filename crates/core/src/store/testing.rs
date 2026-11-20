@@ -29,6 +29,23 @@ pub(super) fn temp_database(name: &str) -> (PathBuf, TempPath) {
     (folder.join("tsugiki.db"), folder)
 }
 
+/// The file of a new database once its migrations have run. Each [`migrated_database`] starts from a copy,
+/// and skips running them again.
+static MIGRATED: OnceLock<Vec<u8>> = OnceLock::new();
+
+/// A database in a new temp folder, as [`temp_database`] makes it, with every migration run on it, and that
+/// folder. Close the database before the folder drops.
+pub(super) fn migrated_database(name: &str) -> (PathBuf, TempPath) {
+    let migrated = MIGRATED.get_or_init(|| {
+        let (path, _folder) = temp_database("migrated");
+        Store::open(&path).unwrap().close();
+        fs::read(&path).unwrap()
+    });
+    let (path, folder) = temp_database(name);
+    fs::write(&path, migrated).unwrap();
+    (path, folder)
+}
+
 /// Archives the items of CPython that `keys` name as a sync does when it sees them close, put away `now`.
 pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDateTime) {
     let judged = Judged {
@@ -38,13 +55,13 @@ pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDa
     store.archive_closed(&cpython(), judged, now).unwrap();
 }
 
-/// A database in a new temp folder, as [`temp_database`] makes it, at the age before the migration `sql`,
-/// holding what the SQL statements `rows` insert: a store of that age can't run today's saves.
 /// The moment `seconds` after 1970, as a GitHub `updatedAt` a test orders reads by.
 pub(super) fn at_second(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)
 }
 
+/// A database in a new temp folder, as [`temp_database`] makes it, at the age before the migration `sql`,
+/// holding what the SQL statements `rows` insert: a store of that age can't run today's saves.
 pub(super) fn database_before(name: &str, sql: &str, rows: &str) -> (PathBuf, TempPath) {
     let (path, folder) = temp_database(name);
     let before = MIGRATIONS.iter().position(|step| step.sql == sql).unwrap();
@@ -66,20 +83,10 @@ pub(crate) struct OpenStore {
     _folder: TempPath,
 }
 
-/// The file of a new database once its migrations have run. Each [`OpenStore::new`] starts from a copy, and
-/// skips running them again.
-static MIGRATED: OnceLock<Vec<u8>> = OnceLock::new();
-
 impl OpenStore {
     /// A new database in the temp folder `name` names.
     pub(crate) fn new(name: &str) -> Self {
-        let migrated = MIGRATED.get_or_init(|| {
-            let (path, _folder) = temp_database("migrated");
-            Store::open(&path).unwrap().close();
-            fs::read(&path).unwrap()
-        });
-        let (path, folder) = temp_database(name);
-        fs::write(&path, migrated).unwrap();
+        let (path, folder) = migrated_database(name);
         Self::of(path, folder)
     }
 

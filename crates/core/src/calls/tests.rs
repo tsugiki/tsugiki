@@ -3,7 +3,7 @@ use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use serde_json::json;
-use tsugiki_test_git::git;
+use tsugiki_test_git::run_git;
 
 use super::*;
 use crate::definitions::Sources;
@@ -220,9 +220,10 @@ fn opening_a_pr_puts_it_on_screen_once_its_conversation_is_asked_for() {
         ..calls.work()
     };
 
-    let _refused = work.open_pull_request(&calls.world.repository(), 7);
+    let opened = work.open_pull_request(&calls.world.repository(), 7);
 
     let heard: Vec<String> = calls.session.try_iter().map(named).collect();
+    assert!(opened.is_err(), "{opened:?}");
     assert_eq!(heard, ["PR #7", "opened PR #7"]);
     calls.finish();
 }
@@ -326,7 +327,7 @@ fn the_files_tab_of_a_moved_head_shows_the_diff_before_and_fetches_the_newer_fir
     let calls = Setup::new("moved");
     let mirrored = Mirrored::new("calls-moved");
     let older = mirrored.head.clone();
-    let _ = git(
+    run_git(
         &mirrored.mirror,
         &["update-ref", "refs/tsugiki/pull/7/head", older.as_str()],
     );

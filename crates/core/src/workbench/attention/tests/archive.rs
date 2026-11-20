@@ -80,7 +80,7 @@ fn a_closed_item_comes_back_while_it_needs_attention_and_goes_back_to_archived_a
 #[test]
 fn closing_archives_an_item_that_still_needs_attention_and_marks_nothing_seen() {
     let world = World::new("archive-closed-unseen");
-    let _commented = world.has_a_flagged_comment();
+    world.has_a_flagged_comment_at(hours_ago(2));
     world.has(vec![PullRequestFacts {
         state: PrState::Merged,
         ..own(1)

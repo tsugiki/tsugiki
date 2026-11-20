@@ -30,8 +30,10 @@ pub(super) const FIRST_SYNC_PLACE: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// The PRs a refresh found changed and hasn't yet read the Conversations of. A refresh that stops partway
-/// leaves them here for the next one, which can't tell they changed once they're saved (#205).
+/// Every PR whose Conversation the store owes a read: those a refresh found changed, and those a Filter
+/// switched on or an Unmute put in Reach. A refresh that stops partway leaves its own here for the next one,
+/// which can't tell they changed once they're saved (#205). Only a saved Conversation or a finished refresh
+/// clears a row, so a finished first sync leaves them all (#900).
 pub(super) const READ_AHEAD: &str = "
     CREATE TABLE read_ahead (
         repository TEXT NOT NULL COLLATE NOCASE,
@@ -135,7 +137,10 @@ pub(super) fn forget_read_ahead_of(
 }
 
 /// A finished refresh has read ahead each PR it owed, or found it out of Reach.
-fn forget_read_ahead(connection: &Connection, repository: &RepositoryName) -> rusqlite::Result<()> {
+pub(super) fn forget_read_ahead(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<()> {
     connection
         .execute(
             "DELETE FROM read_ahead WHERE repository = :repository",
@@ -209,9 +214,6 @@ pub(super) fn save(
         ChangeCheck::Untagged => (true, None),
         ChangeCheck::Tagged(etag) => (true, Some(etag)),
     };
-    if !state.refresh_under_way {
-        forget_read_ahead(connection, repository)?;
-    }
     let params = named_params! {
         ":repository": repository,
         ":started_at": state.started_at.unix_timestamp(),

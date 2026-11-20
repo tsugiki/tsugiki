@@ -40,11 +40,20 @@ fn fetched(prs: &mut Prs, batch: &[PrHead], refs: &[PrHead], patience: Duration)
     prs.note_fetched(batch, Ok(&landed), retry)
 }
 
+/// What a fetch notes that brought the heads of `numbers`, and left none stuck.
+fn arrived(numbers: &[u32]) -> Noted {
+    Noted {
+        arrived: numbers.to_vec(),
+        ..Noted::default()
+    }
+}
+
 #[test]
 fn a_hand_over_wants_only_the_heads_the_mirror_lacks_and_drops_the_prs_it_leaves_out() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(1, 'a'), at(2, 'b')]);
-    let _ = fetched(&mut prs, &[at(1, 'a')], &[at(1, 'a')], NONE);
+    let noted = fetched(&mut prs, &[at(1, 'a')], &[at(1, 'a')], NONE);
+    assert_eq!(noted, arrived(&[1]));
 
     prs.hand_over(vec![at(1, 'a'), at(3, 'c')]);
 
@@ -55,10 +64,12 @@ fn a_hand_over_wants_only_the_heads_the_mirror_lacks_and_drops_the_prs_it_leaves
 fn a_hand_over_leaves_a_head_waiting_its_moment_and_restarts_one_whose_retry_is_spent() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(1, 'a'), at(2, 'b')]);
-    let _ = fetched(&mut prs, &[at(1, 'a')], &[at(1, '9')], MINUTE);
-    for _ in 0..2 {
-        let _ = fetched(&mut prs, &[at(2, 'b')], &[at(2, '9')], NONE);
-    }
+    let waiting = fetched(&mut prs, &[at(1, 'a')], &[at(1, '9')], MINUTE);
+    assert_eq!(waiting, Noted::default());
+    let tried = fetched(&mut prs, &[at(2, 'b')], &[at(2, '9')], NONE);
+    assert_eq!(tried, Noted::default());
+    let spent = fetched(&mut prs, &[at(2, 'b')], &[at(2, '9')], NONE);
+    assert_eq!(spent.stuck, BTreeMap::from([(Unfetched::Behind, vec![2])]));
 
     prs.hand_over(vec![at(1, 'a'), at(2, 'b')]);
 
@@ -110,7 +121,8 @@ fn the_app_hears_of_a_pr_the_user_opened_only_from_the_fetches_its_head_was_in()
 fn a_head_the_user_opened_waiting_its_moment_takes_no_try_from_the_rules_fetch() {
     let mut prs = Prs::default();
     prs.fetch_first(at(5, 'a'));
-    let _ = fetched(&mut prs, &[at(5, 'a')], &[at(5, '9')], MINUTE);
+    let waiting = fetched(&mut prs, &[at(5, 'a')], &[at(5, '9')], MINUTE);
+    assert_eq!(waiting, Noted::default());
     prs.hand_over(vec![at(5, 'a')]);
 
     let noted = fetched(&mut prs, &[at(5, 'a')], &[at(5, '9')], MINUTE);
@@ -127,9 +139,10 @@ fn a_head_github_lacks_at_its_retry_meets_the_rules_but_not_the_user() {
     prs.fetch_first(at(5, 'a'));
     let batch = [at(5, 'a')];
 
-    let _ = fetched(&mut prs, &batch, &[], NONE);
+    let tried = fetched(&mut prs, &batch, &[], NONE);
     let noted = fetched(&mut prs, &batch, &[], NONE);
 
+    assert_eq!(tried, Noted::default());
     let missing = BTreeMap::from([(Unfetched::NotOnGitHub, vec![5])]);
     assert_eq!(noted.stuck, missing);
     prs.hand_over(vec![at(5, 'a')]);
@@ -141,7 +154,8 @@ fn a_head_github_lacks_at_its_retry_meets_the_rules_but_not_the_user() {
 fn the_users_look_at_another_commit_leaves_where_the_ref_stands() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(5, 'a')]);
-    let _ = fetched(&mut prs, &[at(5, 'a')], &[at(5, 'a')], NONE);
+    let noted = fetched(&mut prs, &[at(5, 'a')], &[at(5, 'a')], NONE);
+    assert_eq!(noted, arrived(&[5]));
 
     prs.fetch_first(at(5, 'b'));
     prs.hand_over(vec![at(5, 'a')]);
@@ -158,7 +172,8 @@ fn the_users_look_at_another_commit_leaves_where_the_ref_stands() {
 fn a_saved_head_of_an_awaited_pr_is_asked_for_unless_the_mirror_holds_it() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(7, 'a')]);
-    let _ = fetched(&mut prs, &[at(7, 'a')], &[at(7, 'a')], NONE);
+    let noted = fetched(&mut prs, &[at(7, 'a')], &[at(7, 'a')], NONE);
+    assert_eq!(noted, arrived(&[7]));
     prs.await_head(7);
     prs.await_head(8);
     prs.opened(9);
@@ -182,7 +197,8 @@ fn a_new_clone_fetches_again_each_head_fetched_since_launch_with_its_target_bran
     };
     prs.hand_over(vec![backport.clone(), at(2, 'b')]);
     let batch = [backport.clone(), at(2, 'b')];
-    let _ = fetched(&mut prs, &batch, &[at(1, 'a'), at(2, '9')], MINUTE);
+    let noted = fetched(&mut prs, &batch, &[at(1, 'a'), at(2, '9')], MINUTE);
+    assert_eq!(noted, arrived(&[1]));
 
     prs.fetch_again();
 
@@ -207,7 +223,8 @@ fn a_pr_back_in_reach_whose_ref_upkeep_pruned_meanwhile_is_fetched_again() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(1, 'a'), at(2, 'b')]);
     let batch = [at(1, 'a'), at(2, 'b')];
-    let _ = fetched(&mut prs, &batch, &[at(1, 'a'), at(2, 'b')], NONE);
+    let noted = fetched(&mut prs, &batch, &[at(1, 'a'), at(2, 'b')], NONE);
+    assert_eq!(noted, arrived(&[1, 2]));
     // Upkeep plans to prune both. PR 1 comes back while its git runs.
     prs.hand_over(vec![]);
     prs.hand_over(vec![at(1, 'a')]);
@@ -224,17 +241,18 @@ fn the_app_hears_nothing_of_the_rules_head_of_a_pr_the_user_opened_while_the_mir
     prs.hand_over(vec![at(5, 'a')]);
     let batch = [at(5, 'a')];
 
-    let _ = fetched(&mut prs, &batch, &[at(5, '9')], NONE);
+    let tried = fetched(&mut prs, &batch, &[at(5, '9')], NONE);
     let noted = fetched(&mut prs, &batch, &[at(5, '9')], NONE);
 
-    assert_eq!(noted, Noted::default());
+    assert_eq!((tried, noted), (Noted::default(), Noted::default()));
 }
 
 #[test]
 fn the_users_look_at_the_commit_the_worker_noted_fetches_it_again() {
     let mut prs = Prs::default();
     prs.hand_over(vec![at(5, 'a')]);
-    let _ = fetched(&mut prs, &[at(5, 'a')], &[at(5, 'a')], NONE);
+    let noted = fetched(&mut prs, &[at(5, 'a')], &[at(5, 'a')], NONE);
+    assert_eq!(noted, arrived(&[5]));
 
     prs.fetch_first(at(5, 'a'));
 

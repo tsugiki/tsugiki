@@ -9,6 +9,7 @@ use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, Patc
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::Review;
 use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
+use crate::fetching::testing::QUEUED;
 use crate::fetching::{NoHead, ScreenMove};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
@@ -808,7 +809,7 @@ fn a_conversation_that_fills_the_head_of_a_pr_answers_the_await_of_a_demand_it_m
         vec![pr_content(&json!({}))],
     );
     // The Files tab found no head while the read waited, and awaits it.
-    let _queued = one.demands.find_head(gcmon(), 7);
+    assert_eq!(one.demands.find_head(gcmon(), 7), QUEUED);
 
     one.read(&pr_7());
 
@@ -856,7 +857,7 @@ fn a_conversation_that_names_no_head_says_so_until_a_read_names_one() {
         vec![unnamed, pr_content(&json!({}))],
     );
 
-    let _queued = one.demands.find_head(gcmon(), 7);
+    assert_eq!(one.demands.find_head(gcmon(), 7), QUEUED);
     one.read(&pr_7());
     let after_unnamed = one.demands.why_no_head(&gcmon(), 7);
     let other_pr = one.demands.why_no_head(&gcmon(), 8);
@@ -890,7 +891,7 @@ fn a_failed_conversation_read_says_why_the_pr_has_no_head_until_a_read_names_one
         vec![Value::Null, pr_content(&json!({}))],
     );
 
-    let _queued = one.demands.find_head(gcmon(), 7);
+    assert_eq!(one.demands.find_head(gcmon(), 7), QUEUED);
     one.read(&pr_7());
     let after_failure = one.demands.why_no_head(&gcmon(), 7);
     let unawaited = one.heard.asked();
@@ -1091,7 +1092,7 @@ fn a_pr_read_with_no_token_says_why_the_pr_has_no_head_before_the_window_hears()
     let (board, failed) = failed_reads_board();
     let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
 
-    let _queued = session.fetching().find_head(gcmon(), 7);
+    assert_eq!(session.fetching().find_head(gcmon(), 7), QUEUED);
     let heard = failed.recv_timeout(PLENTY).unwrap();
     let why = session.fetching().why_no_head(&gcmon(), 7);
     session.stop(PLENTY);
@@ -2123,6 +2124,41 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
 
 #[test]
 fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read() {
+    let (handed, held) = synced_with_both_sides_read("last-check-on-sync", "");
+
+    let last = LastCheck {
+        reviewed: CommitSha::parse("0123abc").unwrap(),
+        head: CommitSha::parse("4567def").unwrap(),
+    };
+    assert!(
+        handed.contains(&"some-maintainer/gcmon wants patch-ids of none".to_owned()),
+        "{handed:?}"
+    );
+    assert_eq!(held.last_checks, BTreeMap::from([(8, last)]));
+}
+
+#[test]
+fn a_last_check_the_store_cant_keep_on_a_sync_leaves_the_mirror_its_wants() {
+    let refuse = "CREATE TRIGGER refuse BEFORE INSERT ON last_checks
+                  BEGIN SELECT RAISE(ABORT, 'refused'); END;";
+
+    let (handed, held) = synced_with_both_sides_read("last-check-refused", refuse);
+
+    assert!(
+        handed.contains(&"some-maintainer/gcmon wants patch-ids of none".to_owned()),
+        "{handed:?}"
+    );
+    assert_eq!(held.last_checks, BTreeMap::new());
+}
+
+/// A sync of gcmon, whose PR 8 moved to a head whose patch-ids the store holds, as it holds those of the
+/// commit the user's Review covered, with `prepared` run on the database first. Gives what the Mirror worker
+/// heard up to the heads the sync saved, and the Review facts the store holds then.
+#[expect(
+    clippy::disallowed_types,
+    reason = "a store that can't keep a last check needs a trigger the store would never write"
+)]
+fn synced_with_both_sides_read(name: &str, prepared: &str) -> (Vec<String>, ReviewFacts) {
     let (script, _asked) = Scripted::new(vec![
         signed_in(),
         work_search(&["a"]),
@@ -2135,7 +2171,7 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
         transport: Box::new(script),
         run_gh: signed_in_gh,
     };
-    let (folders, _folder) = temp_folders("last-check-on-sync");
+    let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
     store
         .save_pull_requests(&gcmon(), vec![stored_pr(8, "some-author", "4567def")])
@@ -2154,6 +2190,9 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
     let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'a')];
     store.save_patch_ids(&gcmon(), both).unwrap();
     store.close();
+    let raw = rusqlite::Connection::open(folders.database()).unwrap();
+    raw.execute_batch(prepared).unwrap();
+    drop(raw);
     let (mirrors, heard) = HeardRequests::new();
     let session = Session::start(
         quiet_board(),
@@ -2164,21 +2203,11 @@ fn a_sync_keeps_the_last_check_of_a_pr_whose_head_moved_to_a_commit_already_read
         },
         HOURLY,
     );
-
     session.fetching().sync(plain_gcmon());
     let handed = heard.asked_through("saved heads", PLENTY);
     let held = session.reader().work_facts(&gcmon()).unwrap().reviews;
     session.stop(PLENTY);
-
-    let last = LastCheck {
-        reviewed,
-        head: CommitSha::parse("4567def").unwrap(),
-    };
-    assert!(
-        handed.contains(&"some-maintainer/gcmon wants patch-ids of none".to_owned()),
-        "{handed:?}"
-    );
-    assert_eq!(held.last_checks, BTreeMap::from([(8, last)]));
+    (handed, held)
 }
 
 /// `commit`'s patch-ids against main, with `Lib/ast.py` changed in the way `digit` names.
@@ -2677,9 +2706,14 @@ impl Transport for QuietRepository {
     }
 }
 
-/// A store that says `gcmon` finished a sync, in `folders`.
-fn after_a_finished_sync(folders: &Folders) -> OffsetDateTime {
-    let at = OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap();
+/// When the sync that [`after_a_finished_sync`] keeps started and finished.
+fn finished_sync_at() -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap()
+}
+
+/// A store that says `gcmon` finished a sync at [`finished_sync_at`], in `folders`.
+fn after_a_finished_sync(folders: &Folders) {
+    let at = finished_sync_at();
     let store = Store::open(&folders.database()).unwrap();
     let state = SyncState {
         started_at: at,
@@ -2689,7 +2723,6 @@ fn after_a_finished_sync(folders: &Folders) -> OffsetDateTime {
     };
     store.save_sync_state(&gcmon(), state).unwrap();
     store.close();
-    at
 }
 
 fn quiet_repository() -> (GitHubAccess, Receiver<String>) {
@@ -2717,7 +2750,8 @@ fn wait_for(seen: &Receiver<String>, operation: &str) {
 #[test]
 fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
     let (folders, _folder) = temp_folders("opened");
-    let at = after_a_finished_sync(&folders);
+    after_a_finished_sync(&folders);
+    let at = finished_sync_at();
     let (access, asked) = quiet_repository();
     let (board, last_syncs) = last_sync_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
@@ -2741,7 +2775,7 @@ fn opening_a_repository_shows_its_last_sync_and_refreshes_it() {
 #[test]
 fn opening_a_repository_has_its_refresh_read_ahead_what_one_before_this_launch_owed() {
     let (folders, _folder) = temp_folders("opened-owed");
-    let _at = after_a_finished_sync(&folders);
+    after_a_finished_sync(&folders);
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&Login::new("octocat")).unwrap();
     let stored = vec![stored_pr(8, "octocat", "4567def")];
@@ -2789,7 +2823,7 @@ fn a_store_that_cant_say_when_it_last_synced_shows_the_problem() {
 #[test]
 fn a_click_refreshes_the_open_repository_again() {
     let (folders, _folder) = temp_folders("click");
-    let _at = after_a_finished_sync(&folders);
+    after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let (board, last_syncs) = last_sync_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
@@ -2808,7 +2842,7 @@ fn a_click_refreshes_the_open_repository_again() {
 #[test]
 fn the_timer_refreshes_the_open_repository_again() {
     let (folders, _folder) = temp_folders("timer");
-    let _at = after_a_finished_sync(&folders);
+    after_a_finished_sync(&folders);
     let (access, asked) = quiet_repository();
     let every_moment = Intervals {
         repository: Duration::from_millis(10),

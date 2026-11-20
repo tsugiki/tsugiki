@@ -23,9 +23,9 @@ impl Place {
     fn commit_to_main(&self, name: &RepositoryName, file: &str, text: &str) -> CommitSha {
         let work = self.work(name);
         fs::write(work.join(file), text).unwrap();
-        let _ = git(&work, &["add", file]);
-        let _ = git(&work, &["commit", "-qm", file]);
-        let _ = git(&work, &["push", "-q", &self.bare(name), "HEAD:main"]);
+        run_git(&work, &["add", file]);
+        run_git(&work, &["commit", "-qm", file]);
+        run_git(&work, &["push", "-q", &self.bare(name), "HEAD:main"]);
         self.main(name)
     }
 
@@ -35,12 +35,12 @@ impl Place {
         let path = work.join(file);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, format!("PR {number}\n")).unwrap();
-        let _ = git(&work, &["add", file]);
-        let _ = git(&work, &["commit", "-qm", &format!("PR {number}")]);
+        run_git(&work, &["add", file]);
+        run_git(&work, &["commit", "-qm", &format!("PR {number}")]);
         let head = self.main(name);
         let refspec = format!("HEAD:refs/pull/{number}/head");
-        let _ = git(&work, &["push", "-q", &self.bare(name), &refspec]);
-        let _ = git(&work, &["reset", "-q", "--hard", "HEAD~1"]);
+        run_git(&work, &["push", "-q", &self.bare(name), &refspec]);
+        run_git(&work, &["reset", "-q", "--hard", "HEAD~1"]);
         head
     }
 
@@ -49,7 +49,7 @@ impl Place {
     fn mirror_with(&self, name: &RepositoryName, heads: &[(u32, &CommitSha)]) -> Mirrors {
         let (mirrors, announced) = self.start();
         mirrors.requests().clone_mirror(name.clone(), download());
-        let _clone = one_clone(&announced);
+        clone_ended(&announced);
         let heads: Vec<PrHead> = (heads.iter())
             .map(|(number, commit)| PrHead {
                 commit: (*commit).clone(),
@@ -86,11 +86,13 @@ fn a_test_hears_where_a_checkout_is_asked_apart_from_its_moves() {
     let (requests, heard) = HeardRequests::new();
     let name = crate::testing::cpython();
     requests.look_up(name.clone(), fake_at(1));
-    let _answer = requests.ask_lookup_checkout(name.clone());
-    let asked: Vec<RepositoryName> = (heard.checkouts().into_iter())
-        .map(|(repository, _)| repository)
-        .collect();
+    let answer = requests.ask_lookup_checkout(name.clone());
+    let (asked, replies): (Vec<RepositoryName>, Vec<_>) = heard.checkouts().into_iter().unzip();
+    for reply in replies {
+        reply.send(None).unwrap();
+    }
     assert_eq!(asked, std::slice::from_ref(&name));
+    assert_eq!(answer.try_recv(), Ok(None), "the test answers the ask");
     assert_eq!(heard.look_ups(), [(name, fake_at(1))]);
 }
 
@@ -207,8 +209,8 @@ fn the_mirrors_gc_keeps_the_commit_the_checkout_is_on() {
 
     // PR 1 has left the work, so its ref goes, and gc prunes what nothing reaches.
     let mirror = place.folders.mirror(&hello);
-    let _ = git(&mirror, &["update-ref", "-d", "refs/tsugiki/pull/1/head"]);
-    let _ = git(&mirror, &["gc", "--quiet", "--prune=now"]);
+    run_git(&mirror, &["update-ref", "-d", "refs/tsugiki/pull/1/head"]);
+    run_git(&mirror, &["gc", "--quiet", "--prune=now"]);
 
     let kind = git(&mirror, &["cat-file", "-t", one.as_str()]);
     assert_eq!(kind.trim(), "commit");

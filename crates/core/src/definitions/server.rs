@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -173,19 +174,28 @@ impl Stopping {
     /// Waits until the server's process has ended, or until `until`. The events end once the client has
     /// killed it.
     pub(super) fn wait(self, until: Instant) {
-        let _exit = exit_by(&self.0, until);
+        (events_until(&self.0, until))
+            .take_while(|event| !matches!(event, Event::Exited(_)))
+            .for_each(drop);
     }
 }
 
 /// How the server whose `events` these are exited, once it has, waiting until `until` at most. Nothing if
 /// it hasn't by then, or its events ended without it, as when it was killed.
 fn exit_by(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
-    while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
+    for event in events_until(events, until) {
         if let Event::Exited(exit) = event {
             return Some(exit);
         }
     }
     None
+}
+
+/// The `events` of a server as they come, until `until` or until they end.
+fn events_until(events: &Receiver<Event>, until: Instant) -> impl Iterator<Item = Event> {
+    iter::from_fn(move || {
+        (events.recv_timeout(until.saturating_duration_since(Instant::now()))).ok()
+    })
 }
 
 /// A file the PR changes, open on the server, with its text at the head and at the base. A file the PR adds
@@ -336,20 +346,15 @@ impl LanguageServer {
             Err(cause) => return Err(not_started(&cause, &events)),
         };
         let version = (info.and_then(|info| info.version)).and_then(|text| version_in(&text));
-        // git can't read a file whose path has a line break, so the server isn't told of it.
-        let readable: Vec<(&String, [String; 2])> = (changed.iter())
-            .filter_map(|path| {
-                let name = |commit| diff::object_name(commit, path);
-                Some((path, [name(&at.head)?, name(&at.base)?]))
-            })
+        let names: Vec<String> = (changed.iter())
+            .flat_map(|path| [&at.head, &at.base].map(|commit| diff::object_name(commit, path)))
             .collect();
-        let names: Vec<&str> = (readable.iter())
-            .flat_map(|(_, names)| names.iter().map(String::as_str))
-            .collect();
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let mut texts = diff::blobs(&folder, &names).into_iter();
         let mut open = Vec::new();
-        for (path, _) in readable {
-            // A file the PR deletes has no text at the head, and the checkout holds its base.
+        for path in changed {
+            // A file the PR deletes has no text at the head, and the checkout holds its base. git can't read
+            // a file whose path has a line break, so the server isn't told of it.
             let (Some(Some(head)), base) = (texts.next(), texts.next().flatten()) else {
                 continue;
             };
@@ -438,7 +443,12 @@ impl LanguageServer {
 
     /// Asks the server to stop with `shutdown` and `exit`, and returns at once. One that hasn't agreed within
     /// [`EXIT_PATIENCE`], or hasn't exited [`EXIT_PATIENCE`] after `exit`, is killed.
-    pub(super) fn stop(self) -> Stopping {
+    pub(super) fn stop(self) {
+        self.server.stop(EXIT_PATIENCE);
+    }
+
+    /// Asks the server to stop, as [`LanguageServer::stop`] does, and gives what waits for its end.
+    pub(super) fn stopping(self) -> Stopping {
         self.server.stop(EXIT_PATIENCE);
         Stopping(self.events)
     }

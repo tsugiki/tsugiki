@@ -119,8 +119,9 @@ fn recorded(name: &str, bodies: [&str; 2]) -> String {
         .collect();
     let (scripted, _requests) = crate::github::testing::Scripted::new(replies);
     let recorder = Recorder::new(Box::new(scripted), dir.to_path_buf());
-    for _ in bodies {
-        let _ = recorder.post(&token(), &REQUEST).unwrap();
+    for body in bodies {
+        let live = recorder.post(&token(), &REQUEST).unwrap();
+        assert_eq!(live.body, body, "the caller still gets the real answer");
     }
     let replayed = Replayer::new(dir.to_path_buf())
         .post(&token(), &REQUEST)
@@ -432,10 +433,11 @@ fn a_whole_string_that_is_a_known_login_gets_its_stand_in_in_any_field() {
 fn a_body_that_isnt_json_is_recorded_as_text() {
     let dir = temp_dir("text");
     let recorder = Recorder::new(Box::new(Canned(Ok(reply("<html>")))), dir.to_path_buf());
-    let _ = recorder.post(&token(), &REQUEST).unwrap();
+    let live = recorder.post(&token(), &REQUEST).unwrap();
     let replayed = Replayer::new(dir.to_path_buf())
         .post(&token(), &REQUEST)
         .unwrap();
+    assert_eq!(live.body, "<html>");
     assert_eq!(replayed.body, "<html>");
 }
 

@@ -216,13 +216,19 @@ impl World {
         attention.since
     }
 
-    /// Own PR 1 with a colleague's comment, which the user Marked unseen since. Gives when the comment came.
+    /// Own PR 1 with a colleague's comment, as [`World::has_a_flagged_comment_at`] makes it, two hours ago.
+    /// Gives when the comment came.
     fn has_a_flagged_comment(&self) -> OffsetDateTime {
-        self.has(vec![own(1)]);
         let commented = hours_ago(2);
+        self.has_a_flagged_comment_at(commented);
+        commented
+    }
+
+    /// Own PR 1 with a colleague's comment at `commented`, which the user Marked unseen an hour ago.
+    fn has_a_flagged_comment_at(&self, commented: OffsetDateTime) {
+        self.has(vec![own(1)]);
         self.happened(1, vec![comment(&colleague(), commented)]);
         self.marked_unseen(1, hours_ago(1));
-        commented
     }
 
     /// Fails unless the user saw PR 1 up to `at`, and nothing is Marked unseen.

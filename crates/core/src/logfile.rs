@@ -55,15 +55,11 @@ impl Logger {
             let mut last = String::new();
             for message in queue {
                 match message {
-                    // A repeat adds nothing, and a week offline would push older causes out of the file.
+                    // A repeat adds nothing, and a week offline would push older causes out of the file. A
+                    // line that couldn't be written is lost, as the module doc says, so its repeat isn't one.
                     Message::Line { when, text } => {
                         let text = scrub(&text, &hidden);
-                        if text != last {
-                            #[expect(
-                                clippy::let_underscore_must_use,
-                                reason = "the module doc says why a line that can't be written is dropped"
-                            )]
-                            let _ = append(&path, &format!("{when} {text}"));
+                        if text != last && append(&path, &format!("{when} {text}")).is_ok() {
                             last = text;
                         }
                     }

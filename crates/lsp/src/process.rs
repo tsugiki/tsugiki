@@ -12,7 +12,7 @@ use std::io::{self, Read, Write};
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 #[cfg(windows)]
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
@@ -75,7 +75,6 @@ impl Server {
         };
         let (Some(input), Some(output), Some(errors)) = (input, output, errors) else {
             process.kill();
-            let _code = process.wait();
             return Err(io::Error::other(
                 "the language server's streams weren't piped",
             ));
@@ -192,18 +191,24 @@ struct Child {
     _job: Option<EndsWithTsugiki>,
 }
 
-impl Process for Child {
+impl Child {
     /// Waits for the server alone, then ends what it left running. A wait on the whole job object, or
     /// process group, would last as long as a process the server started, which could be never.
-    fn wait(&mut self) -> Option<i32> {
+    fn waited(&mut self) -> io::Result<ExitStatus> {
         let waited = self.process.inner_mut().wait();
         if let Err(cause) = self.process.start_kill() {
             log::debug!("Tsugiki found nothing a language server left running to stop: {cause}");
         }
-        match waited {
+        waited
+    }
+}
+
+impl Process for Child {
+    fn wait(&mut self) -> Option<i32> {
+        match self.waited() {
             Ok(status) => status.code(),
             Err(cause) => {
-                log::warn!("Tsugiki can't wait for a language server: {cause}");
+                unwaited(&cause);
                 None
             }
         }
@@ -213,7 +218,15 @@ impl Process for Child {
         if let Err(cause) = self.process.start_kill() {
             log::warn!("Tsugiki can't stop a language server: {cause}");
         }
+        if let Err(cause) = self.waited() {
+            unwaited(&cause);
+        }
     }
+}
+
+/// Logs that Tsugiki couldn't wait for a language server to end, for `cause`.
+fn unwaited(cause: &io::Error) {
+    log::warn!("Tsugiki can't wait for a language server: {cause}");
 }
 
 /// A job object that kills the processes in it once its last handle closes, as when Tsugiki's process ends,

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use tsugiki_test_git::{Snapshot, git};
+use tsugiki_test_git::{Snapshot, git, run_git};
 
 use super::*;
 use crate::patch_ids::{ChangedFile, changed_files};
@@ -27,7 +27,7 @@ impl Place {
             let root = crate::testing::temp_path("patch-ids-built");
             let mirror = root.join("mirror.git");
             fs::create_dir_all(&root).unwrap();
-            let _ = git(&root, &["init", "-q", "--bare", "-b", "main", "mirror.git"]);
+            run_git(&root, &["init", "-q", "--bare", "-b", "main", "mirror.git"]);
             let (ast, os) = (lines(1..=20), lines(1..=20));
             let changes = [
                 file("Lib/ast.py", &ast),
@@ -62,6 +62,11 @@ impl Place {
             changes,
         };
         import(&self.mirror, &[commit]).remove(0)
+    }
+
+    /// The commit at the end of `main`.
+    fn main(&self) -> CommitSha {
+        CommitSha::parse(git(&self.mirror, &["rev-parse", "main"]).trim()).unwrap()
     }
 
     /// The patch-ids of `commit` against `main`.
@@ -236,7 +241,8 @@ fn the_attributes_on_the_target_branch_say_which_files_are_generated() {
     let place = Place::new("generated");
     let reviewed = reviewed_pr(&place);
     let attributes = file(".gitattributes", "Lib/ast.py linguist-generated\n");
-    let _main = place.commit("main", &[&place.first], &[attributes]);
+    let main = place.commit("main", &[&place.first], &[attributes]);
+    assert_eq!(place.main(), main);
 
     let patches = place.patches(&reviewed);
 
@@ -332,7 +338,8 @@ fn a_pr_merged_with_a_merge_commit_keeps_the_patch_ids_it_had_while_open() {
     let ast = ast_with_both();
     let changes = [file("Lib/ast.py", &ast), file("Lib/os.py", &os)];
     let merge = place.commit("main", &[&three, &head], &changes);
-    let _four = place.commit("main", &[&merge], &[file("README.rst", "Read me last\n")]);
+    let four = place.commit("main", &[&merge], &[file("README.rst", "Read me last\n")]);
+    assert_eq!(place.main(), four);
 
     // Both commits are on main now, and their merge base with it is themselves.
     let merged = [place.patches(&reviewed), place.patches(&head)];

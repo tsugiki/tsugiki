@@ -113,8 +113,35 @@ fn a_server_is_quiescent_once_it_says_so_and_has_stopped_if_it_exits_first() {
     let (_sends, ready) = events(vec![loading(), done, Event::Exited(crashed())]);
     let (_sends, exited) = events(vec![loading(), Event::Exited(crashed())]);
 
-    assert_eq!(quiescent(&ready), None);
-    assert_eq!(quiescent(&exited), Some(crashed()));
+    assert_eq!(quiescent(&ready, Instant::now() + PATIENCE), None);
+    assert_eq!(quiescent(&exited, Instant::now() + PATIENCE), Some(crashed()));
+}
+
+#[test]
+fn once_the_deadline_has_passed_no_queued_event_is_read() {
+    let (_sends, events) = events(vec![loading(), Event::Exited(crashed())]);
+    let passed = Instant::now();
+
+    assert_eq!(exit_by(&events, passed), None);
+    assert_eq!(quiescent(&events, passed), None);
+    assert_eq!(events.try_recv(), Ok(loading()));
+}
+
+#[test]
+fn a_stopping_server_is_waited_for_until_the_deadline_while_it_floods_its_events() {
+    // How long the server floods its events, unless nothing reads them before then.
+    let flood = 20 * SOON;
+    let start = Instant::now();
+    // A bound keeps the queue from growing without limit, and full while the server floods it.
+    let (sends, events) = mpsc::sync_channel(10_000);
+    let flooder = thread::spawn(move || {
+        while start.elapsed() < flood && sends.send(loading()).is_ok() {}
+    });
+
+    Stopping(events).wait(start + SOON);
+
+    assert!(start.elapsed() < flood);
+    flooder.join().unwrap();
 }
 
 #[test]

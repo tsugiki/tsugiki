@@ -31,8 +31,8 @@ use crate::status::{Change, FailedRead, ItemUnread, ReadFailure};
 use crate::store::testing::OpenStore;
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
-    TempPath, cpython, cpython_settings, hours_ago, issue_facts, listed, me, one_folder, pr_facts,
-    recordings,
+    TempPath, cpython, cpython_settings, hours_ago, issue_facts, listed, listing, me, one_folder,
+    pr_facts, recordings,
 };
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
@@ -626,6 +626,81 @@ fn issue_7() -> Item {
     }
 }
 
+fn unseen_7() -> Marked {
+    Marked::Unseen {
+        repository: gcmon(),
+        number: 7,
+        archived: None,
+        at: OffsetDateTime::UNIX_EPOCH,
+    }
+}
+
+/// The session's queue, reading a view that counts `saves` handed to the session, and where the session's
+/// messages go.
+fn refreshes_told(saves: u64) -> (Refreshes, Sender<SessionMessage>) {
+    let (messages, incoming) = mpsc::channel();
+    let view = SettingsView {
+        saves_told: saves,
+        ..listing(vec![plain_gcmon()])
+    };
+    let refreshes = Refreshes::new(HOURLY, incoming, unheard(), crate::latest::channel(view).1);
+    (refreshes, messages)
+}
+
+#[test]
+fn a_mark_waits_behind_the_saves_the_owner_published_before_it() {
+    let (refreshes, messages) = refreshes_told(2);
+    let save = || SessionMessage::SettingsChanged(bugs_saved(OnWorkbench::On, SavedBy::HandEdit));
+    for message in [
+        SessionMessage::Refresh,
+        save(),
+        SessionMessage::Refresh,
+        save(),
+    ] {
+        messages.send(message).unwrap();
+    }
+    messages.send(SessionMessage::Refresh).unwrap();
+
+    refreshes.mark(&mut quiet_board(), &Store::stopped(), unseen_7());
+
+    let mut queued = Vec::new();
+    while let Ok(message) = refreshes.next_message(Duration::ZERO) {
+        queued.push(crate::fetching::testing::named(message));
+    }
+    let saved = format!("settings of {}", gcmon());
+    assert_eq!(
+        queued,
+        ["refresh", &saved, "refresh", &saved, "unseen #7", "refresh"]
+    );
+}
+
+#[test]
+fn a_mark_after_the_session_followed_each_save_waits_for_none() {
+    let (refreshes, _messages) = refreshes_told(1);
+    let (mut board, seen) = watched_board();
+    refreshes.take_save(
+        &Store::stopped(),
+        &bugs_saved(OnWorkbench::On, SavedBy::HandEdit),
+    );
+
+    let started = Instant::now();
+    refreshes.mark(&mut board, &Store::stopped(), unseen_7());
+
+    assert!(started.elapsed() < SAVE_ON_ITS_WAY);
+    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+}
+
+#[test]
+fn a_mark_whose_save_never_comes_is_kept_once_the_wait_ends() {
+    let (refreshes, _messages) = refreshes_told(1);
+    let (mut board, seen) = watched_board();
+
+    refreshes.mark(&mut board, &Store::stopped(), unseen_7());
+
+    // The stopped store couldn't keep it, which shows it was tried.
+    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+}
+
 #[test]
 fn a_mark_that_cant_be_stored_is_a_problem() {
     let seen_mark = Marked::Seen {
@@ -659,6 +734,7 @@ fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let read = Reading {
         github: &github,
         queue: &unheard_refreshes(),
+        syncs: &Syncs::default(),
     };
 
     let outcome = read_conversation(
@@ -735,13 +811,15 @@ fn a_demand_after_a_read_ended_reads_again() {
 }
 
 /// PR 7 of gcmon kept with `head`, a GitHub that answers its Conversation with `conversations`, and the
-/// session's queue, with settings that list gcmon, and a Mirror worker that only listens.
+/// session's queue and syncs, with settings that list gcmon and gcmon opened, and a Mirror worker that only
+/// listens.
 struct OneRead {
     _folder: TempPath,
     store: Store,
     github: GitHub,
     demands: Fetching,
     queue: Refreshes,
+    syncs: Syncs,
     heard: HeardRequests,
 }
 
@@ -762,6 +840,8 @@ impl OneRead {
         let github = connect(&mut quiet_board(), &store, replying(replies)).unwrap();
         let (demands, incoming, heard) = crate::fetching::testing::handle();
         let listing = listed(vec![plain_gcmon()]);
+        let mut syncs = Syncs::new(listing.clone());
+        syncs.add(gcmon());
         let queue = Refreshes::new(HOURLY, incoming, demands.clone(), listing);
         Self {
             _folder: folder,
@@ -769,6 +849,7 @@ impl OneRead {
             github,
             demands,
             queue,
+            syncs,
             heard,
         }
     }
@@ -778,6 +859,7 @@ impl OneRead {
         let read = Reading {
             github: &self.github,
             queue: &self.queue,
+            syncs: &self.syncs,
         };
         read_conversation(&mut quiet_board(), &self.store, &read, fetched).unwrap();
     }
@@ -1654,6 +1736,61 @@ fn switch_bugs_on_losing(lost: Option<usize>) -> (Vec<String>, usize, BTreeSet<u
     (heard.asked(), calls.try_iter().count(), owed)
 }
 
+#[test]
+fn a_repository_a_hand_edit_takes_out_and_puts_back_moves_reach_from_the_defaults() {
+    let (folders, _folder) = temp_folders("settings-block-back");
+    let store = store_remembering("octocat");
+    let stored = vec![stored_pr(8, "some-author", "4567def")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    let found = FilterResults {
+        numbers: [8].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    let on = gcmon_toml("on_workbench = true\n");
+    fs::write(folders.settings_file(), &on).unwrap();
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (sent, saves) = mpsc::channel();
+    owner.tell_session(Box::new(move |save| sent.send(save).unwrap()));
+    let (mirrors, heard) = HeardRequests::new();
+    let fetching = sending(mpsc::channel().0, mirrors);
+
+    // A hand edit takes gcmon's block out, so the session reads the defaults for it, and another puts the
+    // block back.
+    fs::write(folders.settings_file(), "").unwrap();
+    assert!(owner.reread().is_ok());
+    let out: Vec<SettingsSave> = saves.try_iter().collect();
+    for save in &out {
+        follow_save(&fetching, &store, save);
+    }
+    let wants_out = heard.asked();
+    fs::write(folders.settings_file(), &on).unwrap();
+    assert!(owner.reread().is_ok());
+    let back: Vec<SettingsSave> = saves.try_iter().collect();
+    for save in &back {
+        follow_save(&fetching, &store, save);
+    }
+
+    assert_eq!(
+        out.len(),
+        1,
+        "taking the block out moves gcmon to the defaults"
+    );
+    assert_eq!(back.len(), 1, "putting it back moves gcmon from them");
+    assert!(
+        wants_out.iter().all(|line| !line.contains("#8")),
+        "{wants_out:?}"
+    );
+    let wants = heard.asked();
+    assert!(
+        wants.iter().any(|line| line.contains("#8 at 4567def")),
+        "{wants:?}"
+    );
+    assert_eq!(store.read_ahead_owed(&gcmon()).unwrap(), [8].into());
+}
+
 /// A board that hands each change it announces that names no item to the receiver beside it.
 fn board_hearing_settings() -> (StatusBoard, mpsc::Receiver<Change>) {
     let (sent, changes) = mpsc::channel();
@@ -2095,7 +2232,7 @@ fn mute_author_on_facts_the_store_cant_read_keeps_nothing_and_unmute_author_stil
         marks: Vec::new(),
     };
     store.mute_author(&gcmon(), muting, at).unwrap();
-    let view = listed(vec![cpython_gcmon()]);
+    let settings = cpython_gcmon();
     let other = Login::new("another-author");
     let muted = Marked::AuthorMuted {
         repository: gcmon(),
@@ -2109,9 +2246,9 @@ fn mute_author_on_facts_the_store_cant_read_keeps_nothing_and_unmute_author_stil
 
     // The first call of each reads the facts, and goes missing.
     let (lossy, _calls) = store.failing_at_call(Some(0));
-    let (mute_saved, mute_change) = keep_mark(&lossy, &view, muted);
+    let (mute_saved, mute_change) = keep_mark(&lossy, &settings, muted);
     let (lossy, _calls) = store.failing_at_call(Some(0));
-    let (unmute_saved, unmute_change) = keep_mark(&lossy, &view, unmuted);
+    let (unmute_saved, unmute_change) = keep_mark(&lossy, &settings, unmuted);
 
     assert!(mute_saved.is_err());
     assert!(unmute_saved.is_ok());

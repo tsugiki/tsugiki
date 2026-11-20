@@ -18,6 +18,14 @@ fn every_reader_sees_what_the_writer_set_last() {
 }
 
 #[test]
+fn a_read_takes_a_part_of_what_the_writer_set_last() {
+    let (mut writer, reader) = channel(vec![1, 2]);
+    writer.set(&vec![3, 4]);
+
+    assert_eq!(reader.read(|value| value[1]), 4);
+}
+
+#[test]
 fn a_reader_keeps_the_last_value_after_the_writer_has_gone() {
     let (mut writer, reader) = channel(1);
     writer.set(&2);

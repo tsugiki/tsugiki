@@ -533,6 +533,10 @@ pub struct SettingsView {
     /// status bar to name when no theme has the name it gives (#755).
     pub theme_place: String,
     pub language_servers: LanguageServers,
+    /// How many saves of a Repository's settings the owner has handed the session, those this view shows
+    /// among them. The owner publishes a view before it hands its saves over, so a session that has taken
+    /// fewer knows the rest are on their way.
+    pub saves_told: u64,
 }
 
 impl SettingsView {
@@ -971,6 +975,7 @@ impl SettingsFiles {
                     idle: minutes(given.idle_minutes),
                 }
             },
+            saves_told: 0,
         }
     }
 
@@ -1434,9 +1439,7 @@ impl SettingsOwner {
                     published.clone_from(commands);
                 }
             };
-            // The session told of each change, with each Repository's settings as it was last told them,
-            // those the files no longer list included.
-            let mut session: Option<(SettingsSink, Vec<RepositorySettings>)> = None;
+            let mut session: Option<ToldSession> = None;
             for request in incoming {
                 let change = match request {
                     Request::Change(change) => change,
@@ -1444,7 +1447,11 @@ impl SettingsOwner {
                         let told = (files.as_ref().ok())
                             .map(|files| files.view().loaded.settings.repositories)
                             .unwrap_or_default();
-                        session = Some((sink, told));
+                        session = Some(ToldSession {
+                            sink,
+                            told,
+                            saves: 0,
+                        });
                         continue;
                     }
                     Request::Command { command, reply } => {
@@ -1474,7 +1481,7 @@ impl SettingsOwner {
                     | Change::Reread { .. }
                     | Change::Apply { .. } => SavedBy::HandEdit,
                 };
-                let (saved, reply) = match (&mut files, change) {
+                let (mut saved, reply) = match (&mut files, change) {
                     (
                         Ok(files),
                         Change::Add {
@@ -1544,14 +1551,15 @@ impl SettingsOwner {
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
                 // one at a time, so an older one can't replace a newer one.
-                if let (Ok(saved), Ok(files)) = (&saved, &files) {
+                if let (Ok(saved), Ok(files)) = (&mut saved, &files) {
+                    let saves = (session.as_mut()).map(|told| told.saves(saved, by));
                     writer.set(saved);
                     // Each change reads `machine.toml` again, which may hold a hand edit to the list.
                     publish_if_changed(&files.recent_commands());
                     // Before the answer too, so the session hears of the change before whatever the one who
                     // asked sends it next, and from this thread alone, in the order the changes saved.
-                    if let Some((sink, told)) = &mut session {
-                        tell_session(sink, told, &saved.loaded.settings.repositories, by);
+                    if let (Some(told), Some(saves)) = (&mut session, saves) {
+                        told.hand_over(saves);
                     }
                 }
                 answer(&reply, saved);
@@ -1723,29 +1731,53 @@ impl SettingsOwner {
     }
 }
 
-/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, with what `told`
-/// held of it, and keeps them as told. Of a Repository written twice, the first counts, as in `home`.
+/// The session the owner hands each save to, with each Repository's settings as it was last told them, and
+/// how many saves it has been handed. Of a Repository written twice, the first counts, as in `home`.
 ///
 /// `told` starts as what the files said when the session asked to hear, at launch, which the session never
 /// heard. So the first save of a Repository's settings comes with those it replaced too. Files that
-/// couldn't be read then list no Repository, and each comes as added once they can. `told` keeps a
-/// Repository the files stop listing, as a hand edit that takes it out or a reload that finds no
-/// `settings.toml` does, so one that comes back comes with those it had.
-fn tell_session(
-    session: &mut SettingsSink,
-    told: &mut Vec<RepositorySettings>,
-    repositories: &[RepositorySettings],
-    by: SavedBy,
-) {
-    for repository in first_of_each(repositories) {
-        let save = SettingsSave::new(repository.clone(), told, by);
-        if save.replaced() == Some(repository) {
-            continue;
+/// couldn't be read then list no Repository, and each comes as added once they can. A Repository the files
+/// stop listing, as a hand edit that takes it out or a reload that finds no `settings.toml` does, goes to
+/// the defaults, which the session reads for it then, so one that comes back moves from those.
+struct ToldSession {
+    sink: SettingsSink,
+    told: Vec<RepositorySettings>,
+    saves: u64,
+}
+
+impl ToldSession {
+    /// The saves a change makes that leaves `view` saying what it says, as `by` made it: each Repository's
+    /// settings that differ from those told, and the defaults of each one the files stopped listing. Counts
+    /// them in `view`, which the owner publishes before it hands them over.
+    fn saves(&mut self, view: &mut SettingsView, by: SavedBy) -> Vec<SettingsSave> {
+        let settings = &view.loaded.settings;
+        let listed = first_of_each(&settings.repositories);
+        let dropped = (self.told.iter())
+            .filter(|held| !listed.iter().any(|one| one.name.is_same(&held.name)))
+            .map(|held| settings.repository(held.name.clone()));
+        let now: Vec<RepositorySettings> =
+            (listed.iter().copied().cloned()).chain(dropped).collect();
+        let mut saves = Vec::new();
+        for repository in now {
+            let save = SettingsSave::new(repository.clone(), &self.told, by);
+            if save.replaced() == Some(&repository) {
+                continue;
+            }
+            saves.push(save);
+            self.saves += 1;
+            match (self.told.iter_mut()).find(|held| held.name.is_same(&repository.name)) {
+                Some(held) => *held = repository,
+                None => self.told.push(repository),
+            }
         }
-        session(save);
-        match (told.iter_mut()).find(|held| held.name.is_same(&repository.name)) {
-            Some(held) => repository.clone_into(held),
-            None => told.push(repository.clone()),
+        view.saves_told = self.saves;
+        saves
+    }
+
+    /// Hands the session `saves`, in order.
+    fn hand_over(&mut self, saves: Vec<SettingsSave>) {
+        for save in saves {
+            (self.sink)(save);
         }
     }
 }

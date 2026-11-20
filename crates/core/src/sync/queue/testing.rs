@@ -3,12 +3,12 @@
 use super::Syncs;
 use crate::latest;
 use crate::repository_settings::RepositorySettings;
-use crate::settings::SettingsView;
+use crate::testing::listed;
 
 impl Default for Syncs {
     /// Syncs reading a view that lists no Repository yet.
     fn default() -> Self {
-        Self::new(latest::channel(SettingsView::default()).1)
+        Self::new(listed(Vec::new()))
     }
 }
 

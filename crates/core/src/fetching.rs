@@ -128,6 +128,20 @@ impl Marked {
             at: OffsetDateTime::now_utc(),
         }
     }
+
+    /// The Repository whose item or author the mark is on.
+    pub(crate) fn repository(&self) -> &RepositoryName {
+        match self {
+            Self::Seen { repository, .. }
+            | Self::Unseen { repository, .. }
+            | Self::Archived { repository, .. }
+            | Self::Unarchived { repository, .. }
+            | Self::Muted { repository, .. }
+            | Self::Unmuted { repository, .. }
+            | Self::AuthorMuted { repository, .. }
+            | Self::AuthorUnmuted { repository, .. } => repository,
+        }
+    }
 }
 
 /// An Issue or a PR on screen, whose conversation the session reads from GitHub.

@@ -284,13 +284,13 @@ impl Syncs {
         let queued = self
             .queued_mut(repository)
             .is_some_and(|queued| queued.sync.open_issue(number));
-        let tree = (self.open_settings())
-            .filter(|_| !queued)
-            .map(|open| UserWorkSync::tree_of(&open, number));
-        if let Some(sync) = tree {
+        if queued {
+            return;
+        }
+        if let Some(open) = self.open_settings() {
             self.trees.push_back(OpenedTree {
                 number,
-                sync,
+                sync: UserWorkSync::tree_of(&open, number),
                 failures: 0,
             });
         }
@@ -299,7 +299,14 @@ impl Syncs {
     /// The settings of `repository` in the settings owner's view now, or the defaults for one they don't
     /// list, as a hand edit can take a Repository out while its sync runs.
     fn settings_of(&self, repository: &RepositoryName) -> RepositorySettings {
-        self.settings.get().repository(repository.clone())
+        (self.settings).read(|view| view.repository(repository.clone()))
+    }
+
+    /// The settings of `repository` in the settings owner's view now, if it was opened since launch: the
+    /// Repositories whose syncs hand the Mirror worker their wants.
+    pub fn opened_settings(&self, repository: &RepositoryName) -> Option<RepositorySettings> {
+        self.was_opened(repository)
+            .then(|| self.settings_of(repository))
     }
 
     fn open_settings(&self) -> Option<RepositorySettings> {

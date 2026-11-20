@@ -43,5 +43,13 @@ impl<T: Clone> LatestReader<T> {
     }
 }
 
+impl<T> LatestReader<T> {
+    /// What `part` takes from the value, without a copy of the rest. It runs while this holds the lock, so it
+    /// is the one action: it only reads, and waits on nothing.
+    pub fn read<R>(&self, part: impl FnOnce(&T) -> R) -> R {
+        part(&self.0.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
 #[cfg(test)]
 mod tests;

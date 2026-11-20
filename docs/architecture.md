@@ -138,7 +138,10 @@ app-wide status.
    announce a `Change` that names no item, and the Repository's lists read their items again. The session
    keeps no copy of the settings: each sync step, the rules' wants and each move of Reach read them from the
    owner's `latest` view, where the owner publishes a save before it hands the save over, so the session
-   reads settings at least as new as every save it has heard of.
+   reads settings at least as new as every save it has heard of. The view counts the saves handed over,
+   and a mark waits behind those the session hasn't followed, so the move of Reach a Mute or an Unmute
+   makes starts where theirs end. A Repository the settings stop listing goes to the defaults, in the view
+   and in a save.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
 problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter

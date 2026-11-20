@@ -1277,7 +1277,7 @@ fn telling_session(owner: &SettingsOwner) -> mpsc::Receiver<Told> {
 }
 
 #[test]
-fn a_repository_the_files_drop_and_list_again_comes_back_with_the_settings_it_had() {
+fn a_repository_the_files_drop_goes_to_the_defaults_and_comes_back_from_them() {
     let bugs = |switch: &str| {
         format!("\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n{switch}")
     };
@@ -1286,29 +1286,50 @@ fn a_repository_the_files_drop_and_list_again_comes_back_with_the_settings_it_ha
     let (files, folders, _root) =
         settings_saying("owner-tells-return", &format!("{a_b}{}", c_d("")));
     let owner = SettingsOwner::start(Ok(files));
-    let incoming = telling_session(&owner);
+    // Each save in brief: the Repository, and whether the settings it saved and those it replaced hold the
+    // Bugs Filter, which the defaults don't.
+    let (sent, incoming) = mpsc::channel();
+    let has_bugs = |settings: &RepositorySettings| {
+        (settings.filters.iter()).any(|filter| filter.query == query("label:bug"))
+    };
+    owner.tell_session(Box::new(move |save: SettingsSave| {
+        let told = (
+            save.saved().name.to_string(),
+            has_bugs(save.saved()),
+            save.replaced().map(has_bugs),
+        );
+        sent.send(told).unwrap();
+    }));
 
-    // A hand edit takes c/d out, an editor's save leaves no file for a moment, and a hand edit puts c/d
-    // back with its Filter switched on.
+    // A hand edit takes c/d out, an editor's save leaves no file for a moment, and a hand edit puts both
+    // back.
     fs::write(folders.settings_file(), &a_b).unwrap();
-    drop(owner.reread().unwrap());
+    assert!(owner.reread().is_ok());
     fs::remove_file(folders.settings_file()).unwrap();
     let emptied = owner.reread().unwrap();
-    let back = format!("{a_b}{}", c_d("on_workbench = true\n"));
-    fs::write(folders.settings_file(), back).unwrap();
-    drop(owner.reread().unwrap());
+    let saved_out: Vec<_> = incoming.try_iter().collect();
+    fs::write(folders.settings_file(), format!("{a_b}{}", c_d(""))).unwrap();
+    assert!(owner.reread().is_ok());
+    let counted = owner.view().saves_told;
     drop(owner);
 
     assert_eq!(emptied.loaded.settings.repositories, []);
-    // a/b came back as it was, so the session hears nothing of it.
+    // The view counts the saves it shows, for the session to tell those on their way.
+    assert_eq!(counted, 4);
+    // The session reads the defaults for a Repository the files don't list, so it hears each go to them.
+    assert_eq!(
+        saved_out,
+        [
+            ("c/d".to_owned(), false, Some(true)),
+            ("a/b".to_owned(), false, Some(true)),
+        ]
+    );
     assert_eq!(
         incoming.try_iter().collect::<Vec<_>>(),
-        [(
-            "c/d".to_owned(),
-            (Conventions::Github, OnWorkbench::On),
-            Some((Conventions::Github, OnWorkbench::Off)),
-            SavedBy::HandEdit
-        )]
+        [
+            ("a/b".to_owned(), true, Some(false)),
+            ("c/d".to_owned(), true, Some(false)),
+        ]
     );
 }
 

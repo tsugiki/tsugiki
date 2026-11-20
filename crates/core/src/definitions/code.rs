@@ -140,7 +140,7 @@ fn text_of(mirror: &Path, file: &HitFile) -> Result<String, Error> {
             let short = commit.as_str().get(..7).unwrap_or_default();
             let missing = format!("Tsugiki's copy of the Repository has no {path} at {short}.");
             let name = diff::object_name(commit, path);
-            let blob = name.and_then(|name| diff::blobs(mirror, &[&name]).into_iter().next());
+            let blob = diff::blobs(mirror, &[&name]).into_iter().next();
             blob.flatten()
                 .ok_or_else(|| Error::new(ErrorKind::NotFound, &missing))
         }

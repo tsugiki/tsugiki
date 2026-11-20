@@ -385,7 +385,7 @@ impl Highlighter {
     ) -> Vec<HeadLine> {
         let FileLines { file, lines } = wanted;
         let path = diff.diff.files.get(file).map(|file| file.path.as_str());
-        let name = path.and_then(|path| object_name(&diff.pr.head, path));
+        let name = path.map(|path| object_name(&diff.pr.head, path));
         let text = name.and_then(|name| blobs(mirror, &[&name]).into_iter().next().flatten());
         let text = text.unwrap_or_default();
         let skip = usize::try_from(lines.start.saturating_sub(1)).unwrap_or(usize::MAX);
@@ -930,7 +930,7 @@ impl OpenDiff {
             Side::Head => (&self.pr.head, &file.path),
         };
         let language = Language::of(path)?;
-        object_name(commit, path).map(|name| (language, name))
+        Some((language, object_name(commit, path)))
     }
 
     /// `versions` read from `mirror` with one git.
@@ -960,9 +960,9 @@ impl OpenDiff {
     }
 }
 
-/// The name git knows `path` at `commit` by, unless the path has a line break: git reads a name a line.
-pub(crate) fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
-    (!path.contains('\n')).then(|| format!("{}:{path}", commit.as_str()))
+/// The name git knows `path` at `commit` by.
+pub(crate) fn object_name(commit: &CommitSha, path: &str) -> String {
+    format!("{}:{path}", commit.as_str())
 }
 
 /// The files `names` names, read from `mirror` with one `git cat-file --batch`: the text of each, or

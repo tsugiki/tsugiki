@@ -187,22 +187,40 @@ pub(crate) fn read_git_bytes_with_env(
 }
 
 /// The blobs `names` names, read from the git folder `folder` with one `git cat-file --batch`: the bytes of
-/// each, or nothing for a name git has no blob for. A name is a blob's id or `<commit>:<path>`, and holds no
-/// line break. Output cut short ends the list.
+/// each, or nothing for a name git has no blob for. A name is a blob's id or `<commit>:<path>`, and a PR's
+/// author picks its paths. git reads a name a line and drops a carriage return at a line's end, so a name
+/// that holds a line feed, or ends in a carriage return, would read as another name and send each blob after
+/// it to the wrong place. Such a name stays out of git's input and gets nothing. Output cut short ends the
+/// list.
 pub(crate) fn read_blobs(folder: &Path, names: &[&str]) -> io::Result<Vec<Option<Vec<u8>>>> {
-    if names.is_empty() {
-        return Ok(Vec::new());
+    let readable = |name: &str| !name.contains('\n') && !name.ends_with('\r');
+    // At debug: a PR's author picks the path, the user can't change it, and each read of the file says it.
+    for name in names.iter().filter(|name| !readable(name)) {
+        log::debug!("Tsugiki can't read {name:?} from git: its name has a line break");
     }
     let input: Vec<u8> = (names.iter())
+        .filter(|name| readable(name))
         .flat_map(|name| name.bytes().chain(*b"\n"))
         .collect();
+    if input.is_empty() {
+        return Ok(names.iter().map(|_| None).collect());
+    }
     let args = [
         OsStr::new("-C"),
         folder.as_os_str(),
         OsStr::new("cat-file"),
         OsStr::new("--batch"),
     ];
-    Ok(parse_batch(&read_git_bytes(&args, input)?))
+    let mut blobs = parse_batch(&read_git_bytes(&args, input)?).into_iter();
+    Ok((names.iter())
+        .map_while(|name| {
+            if readable(name) {
+                blobs.next()
+            } else {
+                Some(None)
+            }
+        })
+        .collect())
 }
 
 /// What `git cat-file --batch` printed: for each name, `<id> <type> <size>`, a line feed, the object and a

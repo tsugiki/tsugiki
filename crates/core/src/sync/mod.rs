@@ -7,6 +7,7 @@
 
 mod batches;
 mod filters;
+mod held;
 mod issues;
 mod loading;
 mod origins;
@@ -15,6 +16,7 @@ mod refresh;
 mod searches;
 mod trees;
 
+pub use held::HeldSettings;
 pub use queue::{Progress, Syncs};
 pub use searches::WORK_SEARCHES;
 

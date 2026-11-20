@@ -44,9 +44,7 @@ use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
-use crate::facts::patch_ids::{
-    CommitPatches, Findings, LastCheck, ReviewFacts, StaleFinding, UncheckedCommit,
-};
+use crate::facts::patch_ids::{CommitPatches, Findings, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
 use crate::facts::{CommitSha, WorkFacts};
@@ -516,19 +514,6 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Acknowledges each of `findings` that a mark carries as the window drew them, where the store still
-    /// keeps that finding (#908).
-    pub fn acknowledge(
-        &self,
-        repository: &RepositoryName,
-        findings: Vec<StaleFinding>,
-    ) -> Result<(), Error> {
-        let repository = repository.clone();
-        let saved = self
-            .call(move |connection| patch_ids::acknowledge(connection, &repository, &findings))?;
-        saved.map_err(saying(CANT_WRITE))
-    }
-
     /// Keeps `findings` of when checks first found Reviews stale, each found one dated `now`.
     pub fn save_findings(
         &self,
@@ -543,18 +528,12 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Mark Seen on items `numbers`: clears their Marked unseen, and moves their Last seen on to `up_to`, if
-    /// it's given.
-    pub fn mark_seen(
-        &self,
-        repository: &RepositoryName,
-        numbers: Vec<u32>,
-        up_to: Option<OffsetDateTime>,
-    ) -> Result<(), Error> {
+    /// Mark Seen on `seeing`'s items: clears their Marked unseen, moves their Last seen on to its `up_to`, if
+    /// it's given, and acknowledges its findings, the Stale reviews the window drew on them (#908).
+    pub fn mark_seen(&self, repository: &RepositoryName, seeing: Seeing) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved = self.call(move |connection| {
-            activity::mark_seen(connection, &repository, &numbers, up_to)
-        })?;
+        let saved =
+            self.call(move |connection| activity::mark_seen(connection, &repository, &seeing))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

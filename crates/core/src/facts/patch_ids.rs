@@ -93,20 +93,6 @@ pub struct ReviewFacts {
     pub stale_found: BTreeMap<u32, StaleFound>,
 }
 
-impl ReviewFacts {
-    /// The finding the store kept that the user's Review of PR `number` at commit `reviewed` is stale
-    /// against head `head`, if it kept that one.
-    pub fn finding(
-        &self,
-        number: u32,
-        reviewed: &CommitSha,
-        head: &CommitSha,
-    ) -> Option<&StaleFound> {
-        let found = self.stale_found.get(&number)?;
-        (found.reviewed == *reviewed && found.head == *head).then_some(found)
-    }
-}
-
 /// The two commits a PR's check compared once the patch-ids of both were read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastCheck {

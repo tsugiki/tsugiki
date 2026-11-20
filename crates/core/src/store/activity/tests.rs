@@ -5,7 +5,7 @@ use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::Store;
 use crate::store::migrate::MIGRATIONS;
-use crate::store::testing::{archived_on_closing, database_before, temp_database};
+use crate::store::testing::{archived_on_closing, database_before, seeing, temp_database};
 use crate::testing::{cpython, issue_facts, pr_facts};
 
 #[test]
@@ -57,7 +57,7 @@ fn marked_unseen_survives_a_restart_until_mark_seen_clears_it() {
         .unwrap()
         .activity
         .marked_unseen;
-    store.mark_seen(&repository, vec![7], None).unwrap();
+    store.mark_seen(&repository, seeing(vec![7], None)).unwrap();
     let after = store.work_facts(&repository).unwrap().activity;
 
     store.close();
@@ -79,9 +79,11 @@ fn a_last_seen_from_before_acknowledgements_acknowledges_nothing_until_mark_seen
     let migrated = store.work_facts(&repository).unwrap().activity;
     let later = seen + Duration::days(1);
     store
-        .mark_seen(&repository, vec![7, 8], Some(later))
+        .mark_seen(&repository, seeing(vec![7, 8], Some(later)))
         .unwrap();
-    store.mark_seen(&repository, vec![8], Some(seen)).unwrap();
+    store
+        .mark_seen(&repository, seeing(vec![8], Some(seen)))
+        .unwrap();
     let after = store.work_facts(&repository).unwrap().activity;
 
     store.close();
@@ -112,6 +114,7 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
                 numbers: vec![7, 8],
                 up_to: Some(drawn),
                 put_away: PutAway::Now,
+                findings: vec![],
             },
             now,
         )
@@ -126,6 +129,7 @@ fn an_archived_item_survives_a_restart_and_archive_marks_its_tree_seen() {
                 numbers: vec![9],
                 up_to: None,
                 put_away: PutAway::Now,
+                findings: vec![],
             },
             now,
         )
@@ -163,13 +167,16 @@ fn archive_counts_from_the_latest_moment_its_tree_was_acknowledged_and_never_mov
     let later = drawn + Duration::hours(1);
     let store = Store::open(&path).unwrap();
     // PR 8 also fixes another Issue, which the user marked seen up to a later sync.
-    store.mark_seen(&repository, vec![8], Some(later)).unwrap();
+    store
+        .mark_seen(&repository, seeing(vec![8], Some(later)))
+        .unwrap();
     let key = ItemKey::Issue { number: 7 };
     let archiving = |numbers| Archiving {
         key,
         numbers,
         up_to: Some(drawn),
         put_away: PutAway::Now,
+        findings: vec![],
     };
     store
         .archive(&repository, archiving(vec![7, 8]), drawn)
@@ -206,6 +213,7 @@ fn archive_puts_the_item_away_now_and_mark_seen_on_an_archived_item_keeps_when()
             numbers: vec![number],
             up_to: Some(first),
             put_away,
+            findings: vec![],
         };
         store.archive(&repository, archiving, now).unwrap();
         let archived = store.work_facts(&repository).unwrap().activity.archived;
@@ -271,6 +279,7 @@ fn mark_unseen_unarchives_the_item() {
                 numbers: vec![7],
                 up_to: Some(now),
                 put_away: PutAway::Now,
+                findings: vec![],
             },
             now,
         )
@@ -417,6 +426,7 @@ fn mark_unseen_on_a_pr_unarchives_the_archived_item_that_holds_it() {
         numbers: vec![7, 8],
         up_to: Some(now),
         put_away: PutAway::Now,
+        findings: vec![],
     };
     store.archive(&repository, archiving, now).unwrap();
     let flagging = Flagging {
@@ -491,7 +501,9 @@ fn a_muted_item_survives_a_restart_and_mute_marks_its_tree_seen() {
         .mark_unseen(&repository, Flagging::on(7), drawn)
         .unwrap();
     // PR 8 also fixes another Issue, which the user marked seen up to a later sync.
-    store.mark_seen(&repository, vec![8], Some(later)).unwrap();
+    store
+        .mark_seen(&repository, seeing(vec![8], Some(later)))
+        .unwrap();
     let issue = ItemKey::Issue { number: 7 };
     let (key, numbers, up_to) = (issue, vec![7, 8], Some(drawn));
     store
@@ -501,6 +513,7 @@ fn a_muted_item_survives_a_restart_and_mute_marks_its_tree_seen() {
                 key,
                 numbers,
                 up_to,
+                findings: vec![],
             },
             now,
         )
@@ -514,6 +527,7 @@ fn a_muted_item_survives_a_restart_and_mute_marks_its_tree_seen() {
                 key,
                 numbers,
                 up_to,
+                findings: vec![],
             },
             now,
         )
@@ -554,14 +568,8 @@ fn a_muted_author_survives_a_restart_and_mute_author_marks_their_items_seen() {
     store
         .mark_unseen(&repository, Flagging::on(7), drawn)
         .unwrap();
-    let issue = Seeing {
-        numbers: vec![7, 8],
-        up_to: Some(drawn),
-    };
-    let standalone = Seeing {
-        numbers: vec![9],
-        up_to: None,
-    };
+    let issue = seeing(vec![7, 8], Some(drawn));
+    let standalone = seeing(vec![9], None);
     let author = Login::new("some-author");
     let muting = AuthorMuting {
         author: author.clone(),
@@ -735,6 +743,7 @@ fn an_issue_a_pr_brought_back_stays_back_until_archive_mute_or_a_state_move() {
         key: ItemKey::Issue { number: 5 },
         numbers: vec![5],
         up_to: Some(now),
+        findings: vec![],
     };
     store.mute(&repository, muting, now).unwrap();
     (store.unarchive(&repository, ItemKey::Issue { number: 6 })).unwrap();
@@ -753,12 +762,14 @@ fn an_issue_a_pr_brought_back_stays_back_until_archive_mute_or_a_state_move() {
         numbers: vec![1],
         up_to: Some(now),
         put_away: PutAway::Now,
+        findings: vec![],
     };
     store.archive(&repository, archiving, now).unwrap();
     let muting = Muting {
         key: ItemKey::Issue { number: 2 },
         numbers: vec![2],
         up_to: Some(now),
+        findings: vec![],
     };
     store.mute(&repository, muting, now).unwrap();
     let reopened = IssueFacts {

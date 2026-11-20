@@ -39,7 +39,7 @@ use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
-use crate::work::{Causes, in_own_right};
+use crate::work::{Causes, SeenMark, in_own_right};
 use attention::{attention_of, summed};
 use backports::{plant, standalone};
 use filters::FilterFacts;
@@ -79,6 +79,13 @@ impl TreeEntry {
             Self::Backport(backport) => vec![&backport.row],
         }
     }
+
+    fn rows_mut(&mut self) -> Vec<&mut WorkbenchRow> {
+        match self {
+            Self::Pr(tree) => tree.rows_mut(),
+            Self::Backport(backport) => vec![&mut backport.row],
+        }
+    }
 }
 
 impl IssueItem {
@@ -95,6 +102,11 @@ impl PrTree {
     fn rows(&self) -> Vec<&WorkbenchRow> {
         let beneath = self.backports.iter().map(|backport| &backport.row);
         std::iter::once(&self.row).chain(beneath).collect()
+    }
+
+    fn rows_mut(&mut self) -> Vec<&mut WorkbenchRow> {
+        let beneath = self.backports.iter_mut().map(|backport| &mut backport.row);
+        std::iter::once(&mut self.row).chain(beneath).collect()
     }
 }
 
@@ -137,6 +149,20 @@ impl WorkbenchItem {
                 ItemKey::PullRequest { number: row.number }
             }
         }
+    }
+
+    /// The Mark Seen of each of its lines: the item's own, then each row's in its tree.
+    fn marks_mut(&mut self) -> Vec<&mut SeenMark> {
+        let rows = match self {
+            Self::Issue(issue) => {
+                let rows = issue.pull_requests.iter_mut().flat_map(TreeEntry::rows_mut);
+                let marks = rows.map(|row| &mut row.seen.mark);
+                return std::iter::once(&mut issue.seen.mark).chain(marks).collect();
+            }
+            Self::StandalonePr(tree) => tree.rows_mut(),
+            Self::StandaloneBackport(backport) => vec![&mut backport.row],
+        };
+        rows.into_iter().map(|row| &mut row.seen.mark).collect()
     }
 
     /// The item's part in Mark Seen, which covers its tree.
@@ -477,6 +503,15 @@ fn candidates(
         entries.sort_by_key(|entry| !entry.rows().iter().any(|row| first.contains(&row.number)));
         issue_item(issue, entries, repository.conventions, causes)
     }));
+    // A Muted item Needs attention only for a fresh ask, so it draws no Stale review for a mark to
+    // acknowledge (#908).
+    for item in &mut items {
+        if causes.is_muted(item.key()) {
+            for mark in item.marks_mut() {
+                mark.findings.clear();
+            }
+        }
+    }
     items
 }
 

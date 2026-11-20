@@ -26,7 +26,7 @@ use crate::patch_ids::ChangedFile;
 use crate::session::{keep_checks, keep_mark};
 use crate::settings::ListOrder;
 use crate::store::Flagging;
-use crate::store::testing::World;
+use crate::store::testing::{World, seeing};
 use crate::testing::{cpython, cpython_settings, hours_ago, issue_facts, me, pr_facts, sha_of};
 use crate::work::{SeenMark, Why, YourReview};
 use crate::workbench::{
@@ -1162,7 +1162,7 @@ fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
     world
         .db
         .store
-        .mark_seen(&cpython(), pr_1.numbers.clone(), pr_1.up_to)
+        .mark_seen(&cpython(), seeing(pr_1.numbers.clone(), pr_1.up_to))
         .unwrap();
     assert_eq!(world.why(5), [Why::Comment { by: colleague() }]);
     assert_eq!(world.since(5), newer);
@@ -1598,6 +1598,43 @@ fn a_stale_review_acknowledged_before_its_pr_closed_stays_acknowledged_once_it_r
     world.checks_kept(a_minute_on());
 
     assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn a_restart_leaves_a_stale_review_whose_check_cant_run_acknowledged() {
+    let world = World::new("attention-unchecked-restart");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(hours_ago(6));
+    // A push to commit 3, which the worker can't read, and the user marks the Stale review it shows.
+    world.moved_to(&pull_request, '3', hours_ago(5));
+    world.cant_read('3', CantCheck::Cloning);
+    world.checks_kept(hours_ago(4));
+    world.mark_seen(world.seen(1));
+    let kept = || {
+        world
+            .db
+            .store
+            .work_facts(&cpython())
+            .unwrap()
+            .reviews
+            .stale_found
+    };
+    let marked = kept();
+
+    // A restart forgets why the worker couldn't read commit 3, and the row falls back on the last check.
+    world.db.store.forget_unchecked().unwrap();
+    world.checks_kept(a_minute_on());
+    let restarted = world.why(1);
+    world.cant_read('3', CantCheck::Cloning);
+    world.checks_kept(a_minute_on());
+
+    assert_eq!(restarted, []);
+    assert_eq!(world.why(1), []);
+    assert_eq!(kept(), marked);
+    assert_eq!(marked[&1].head, sha_of('3'));
+    assert!(marked[&1].acknowledged);
     world.finish();
 }
 

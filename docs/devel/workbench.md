@@ -149,11 +149,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     off on the user's own items. A Muted author's Issues, Standalone PRs and Standalone Backports count as
     Muted, those they open later too: they leave the Workbench, the Archived view and the counts, each
     Filter lists them in its fold of Muted items, and their trees leave Reach as a Muted item's do. Muting
-    marks their open items seen in the background, the trees they head included. A Review request or an
-    assignment to the user brings one back as it brings back a Muted item. `Q`, `Shift+Q`, `E` and `M` do
-    nothing on their items; Unmute author is the way back, and leaves an item the user muted on its own
-    Muted. Their PRs inside another author's Issue stay as they are. The Inbox lists their items until
-    [#825](https://github.com/tsugiki/tsugiki/issues/825) leaves them out.
+    marks their open items seen in the background, the trees they head included. It finds those items in
+    the facts as it runs, not on a page the window drew, so unlike Mute on one item it acknowledges no
+    Stale review: Unmute author brings back each one that stood at the mute, while the Review requests it
+    cleared stay cleared. A Review request or an assignment to the user brings one back as it brings back a
+    Muted item. `Q`, `Shift+Q`, `E` and `M` do nothing on their items; Unmute author is the way back, and
+    leaves an item the user muted on its own Muted. Their PRs inside another author's Issue stay as they
+    are. The Inbox lists their items until [#825](https://github.com/tsugiki/tsugiki/issues/825) leaves them
+    out.
 
 ## Issue tree
 

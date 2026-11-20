@@ -321,6 +321,7 @@ fn archive_takes_an_item_out_and_a_page_of_archived_items_gives_way_to_the_next(
             numbers: vec![number],
             up_to: Some(ago(0)),
             put_away: PutAway::Now,
+            findings: vec![],
         };
         world
             .db
@@ -351,6 +352,7 @@ fn mute_takes_an_item_out() {
             key,
             numbers: vec![number],
             up_to: Some(ago(0)),
+            findings: vec![],
         };
         world.db.store.mute(&cpython(), muting, now()).unwrap();
     };
@@ -378,6 +380,7 @@ fn a_muted_authors_items_stay_unless_muted_or_archived_on_their_own() {
         key: ItemKey::PullRequest { number: 21 },
         numbers: vec![21],
         up_to: Some(ago(0)),
+        findings: vec![],
     };
     world.db.store.mute(&cpython(), muting, now()).unwrap();
     let archiving = Archiving {
@@ -385,6 +388,7 @@ fn a_muted_authors_items_stay_unless_muted_or_archived_on_their_own() {
         numbers: vec![22],
         up_to: Some(ago(0)),
         put_away: PutAway::Now,
+        findings: vec![],
     };
     world
         .db

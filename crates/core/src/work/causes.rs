@@ -9,7 +9,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use super::reasons::{WorkReason, reasons};
-use super::review_state::{SharedReviews, YourReview, can_wait_on, found_against, your_reviews};
+use super::review_state::{SharedReviews, YourReview, can_wait_on, kept_finding, your_reviews};
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
@@ -380,8 +380,8 @@ fn stale_reviews(
     waiting.map(|pr| pr.number).collect()
 }
 
-/// The finding the store kept of each of `stale_reviews`, where it kept the one the PR shows: of the Review
-/// and the head its Stale review was found against (#908).
+/// The finding the store kept of each of `stale_reviews`, where it kept the one the PR shows, as
+/// `kept_finding` matches it (#908).
 fn stale_found(
     facts: &WorkFacts,
     reviews: &BTreeMap<u32, YourReview>,
@@ -389,8 +389,7 @@ fn stale_found(
 ) -> BTreeMap<u32, StaleFound> {
     let shown = (facts.pull_requests.iter()).filter(|pr| stale_reviews.contains(&pr.number));
     let found = shown.filter_map(|pr| {
-        let (reviewed, head) = found_against(reviews.get(&pr.number)?, pr)?;
-        let found = facts.reviews.finding(pr.number, &reviewed, &head)?;
+        let found = kept_finding(reviews.get(&pr.number)?, pr, &facts.reviews)?;
         Some((pr.number, found.clone()))
     });
     found.collect()

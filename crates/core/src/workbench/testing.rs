@@ -212,6 +212,7 @@ impl ViewWorld {
             key: ItemKey::Issue { number },
             numbers,
             up_to: None,
+            findings: vec![],
         };
         let now = OffsetDateTime::now_utc();
         self.db.store.mute(&cpython(), muting, now).unwrap();
@@ -269,6 +270,7 @@ impl ViewWorld {
             numbers: vec![1],
             up_to: None,
             put_away: PutAway::Now,
+            findings: vec![],
         };
         let now = OffsetDateTime::now_utc();
         let store = &self.db.store;

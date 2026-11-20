@@ -759,6 +759,7 @@ fn an_unmute_before_a_save_it_hasnt_followed_moves_reach_from_where_the_save_end
         key: ItemKey::Issue { number: 5 },
         numbers: vec![5, 8, 9],
         up_to: None,
+        findings: vec![],
     };
     store
         .mute(&gcmon(), muting, OffsetDateTime::now_utc())

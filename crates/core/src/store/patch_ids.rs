@@ -68,11 +68,12 @@ pub(super) const CHECKS: &str = "
 /// the check of the two can't run, first found at `found_at` (#908). `acknowledged_head` is `head_commit`
 /// once a mark acknowledged that finding as the window drew it, and null before.
 ///
-/// The window before these were kept could show a Stale review where a check of the user's Review had run,
-/// as `last_checks` says, or couldn't run, as `unchecked_commits` says of the last run. Each of those counts
+/// The window before these were kept could show a Stale review where a check of the user's Review couldn't
+/// run, as `unchecked_commits` says of the last run, or had run: on the PR's head where the patch-ids of
+/// both commits were read, and otherwise on the head `last_checks` says it compared. Each of those counts
 /// as found in 1970 and acknowledged, so its Stale review still waits on the push alone, as it did then. A
-/// Review whose check never ran showed none, so the first check after the upgrade finds it afresh. Where the
-/// check couldn't run, the window showed that, whatever the last check found.
+/// Review whose check never ran showed none, so the first check after the upgrade finds it afresh. One the
+/// check finds the same ends at the first check after the upgrade.
 pub(super) const STALE_REVIEWS: &str = "
     CREATE TABLE stale_reviews (
         repository TEXT NOT NULL COLLATE NOCASE,
@@ -99,6 +100,13 @@ pub(super) const STALE_REVIEWS: &str = "
                       WHERE unchecked.repository = moved_on.repository
                         AND unchecked.target_branch = moved_on.target_branch
                         AND unchecked.commit_sha IN (moved_on.reviewed, moved_on.head));
+    INSERT OR IGNORE INTO stale_reviews
+            (repository, number, reviewed_commit, head_commit, found_at, acknowledged_head)
+        SELECT repository, number, reviewed, head, 0, head FROM moved_on
+        WHERE (SELECT COUNT(*) FROM patched_commits AS patched
+               WHERE patched.repository = moved_on.repository
+                 AND patched.target_branch = moved_on.target_branch
+                 AND patched.commit_sha IN (moved_on.reviewed, moved_on.head)) = 2;
     INSERT OR IGNORE INTO stale_reviews
             (repository, number, reviewed_commit, head_commit, found_at, acknowledged_head)
         SELECT moved_on.repository, moved_on.number, reviewed, last.head_commit, 0, last.head_commit
@@ -273,13 +281,13 @@ pub(super) fn save_findings(
 }
 
 /// Acknowledges each of `findings`, which a mark carries as the window drew them, where the store still
-/// keeps that finding. One the window never drew, as a later head's, stays as it is.
-pub(super) fn acknowledge(
-    connection: &mut Connection,
+/// keeps that finding, in the mark's `transaction`. One the window never drew, as a later head's, stays as
+/// it is.
+pub(super) fn acknowledge_in(
+    transaction: &Transaction<'_>,
     repository: &RepositoryName,
     findings: &[StaleFinding],
 ) -> rusqlite::Result<()> {
-    let transaction = connection.transaction()?;
     let mut statement = transaction.prepare(
         "UPDATE stale_reviews SET acknowledged_head = head_commit
          WHERE repository = :repository AND number = :number AND reviewed_commit = :reviewed
@@ -295,8 +303,7 @@ pub(super) fn acknowledge(
         };
         statement.execute(row).map(drop)?;
     }
-    drop(statement);
-    transaction.commit()
+    Ok(())
 }
 
 /// The review facts of `pull_requests`: the reviewed commit of each, and, where the head moved on from it,

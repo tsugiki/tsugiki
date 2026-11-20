@@ -12,7 +12,6 @@ use time::OffsetDateTime;
 use crate::error::{Error, ErrorKind};
 use crate::facts::activity::ItemKey;
 use crate::facts::issue_content::IssueContent;
-use crate::facts::patch_ids::StaleFinding;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
@@ -31,7 +30,7 @@ use crate::settings::SettingsView;
 use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
-    ReaderToOpen, Store, StoreReader,
+    ReaderToOpen, Seeing, Store, StoreReader,
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
@@ -928,22 +927,6 @@ fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Chang
     }
 }
 
-/// Once a mark is `saved`, acknowledges the `findings` it carries, the Stale reviews the window drew on the
-/// items of `change` (#908). A store that keeps the mark but not this leaves those Stale reviews in Needs
-/// attention, and says why in the status bar.
-fn acknowledging(
-    store: &Store,
-    change: &Change,
-    saved: Result<(), Error>,
-    findings: Vec<StaleFinding>,
-) -> Result<(), Error> {
-    saved?;
-    if findings.is_empty() {
-        return Ok(());
-    }
-    store.acknowledge(&change.repository, findings)
-}
-
 /// Keeps what the user marked, with the change to tell the window of. Mute author and Unmute author find
 /// the author's items under the Repository's `settings`.
 pub(crate) fn keep_mark(
@@ -962,8 +945,12 @@ pub(crate) fn keep_mark(
                 repository,
                 items: numbers.clone(),
             };
-            let saved = store.mark_seen(&change.repository, numbers, up_to);
-            (acknowledging(store, &change, saved, findings), change)
+            let seeing = Seeing {
+                numbers,
+                up_to,
+                findings,
+            };
+            (store.mark_seen(&change.repository, seeing), change)
         }
         Marked::Unseen {
             repository,
@@ -998,9 +985,10 @@ pub(crate) fn keep_mark(
                 numbers,
                 up_to,
                 put_away,
+                findings,
             };
             let saved = store.archive(&change.repository, archiving, at);
-            (acknowledging(store, &change, saved, findings), change)
+            (saved, change)
         }
         Marked::Unarchived { repository, key } => {
             let saved = store.unarchive(&repository, key);
@@ -1026,9 +1014,10 @@ pub(crate) fn keep_mark(
                 key,
                 numbers,
                 up_to,
+                findings,
             };
             let saved = store.mute(&change.repository, muting, at);
-            (acknowledging(store, &change, saved, findings), change)
+            (saved, change)
         }
         Marked::Unmuted { repository, key } => {
             let saved = store.unmute(&repository, key);

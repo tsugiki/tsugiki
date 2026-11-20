@@ -9,7 +9,9 @@ use specta::Type;
 
 use super::origins;
 use crate::conventions::Conventions;
-use crate::facts::patch_ids::{CantCheck, Findings, Found, LastCheck, PatchesOf, ReviewFacts};
+use crate::facts::patch_ids::{
+    CantCheck, Findings, Found, LastCheck, PatchesOf, ReviewFacts, StaleFound,
+};
 use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of};
@@ -201,10 +203,25 @@ pub(super) fn can_wait_on(pull_request: &PullRequestFacts, viewer: &Login) -> bo
     pull_request.state == PrState::Open && !colleagues_draft
 }
 
+/// The finding the store keeps of `review`, a Stale review of `pull_request`, if it keeps one: of the
+/// reviewed commit and the head the Stale review was found against (#908). A verdict that the last check
+/// gave on an earlier head, while the check of the PR's head waits, says nothing new of that head, so the
+/// finding kept of the same Review stands for it, as after a restart forgets why the check couldn't run.
+pub(super) fn kept_finding<'a>(
+    review: &YourReview,
+    pull_request: &PullRequestFacts,
+    reviews: &'a ReviewFacts,
+) -> Option<&'a StaleFound> {
+    let (reviewed, head) = found_against(review, pull_request)?;
+    let kept = reviews.stale_found.get(&pull_request.number)?;
+    let of_an_earlier_head = pull_request.head.as_ref() != Some(&head);
+    (kept.reviewed == reviewed && (kept.head == head || of_an_earlier_head)).then_some(kept)
+}
+
 /// The reviewed commit and the head that `review`, a Stale review of `pull_request`, was found against: the
 /// head its check compared, or the PR's head where the check can't run. None for a review state that isn't
 /// stale.
-pub(super) fn found_against(
+fn found_against(
     review: &YourReview,
     pull_request: &PullRequestFacts,
 ) -> Option<(CommitSha, CommitSha)> {
@@ -242,21 +259,18 @@ pub fn findings_to_keep(facts: &WorkFacts) -> Findings {
         let number = pr.number;
         let kept = reviews.stale_found.get(&number);
         match standing(pr, reviews, viewer) {
-            Standing::Stale { reviewed, head } => {
-                let new = reviews.finding(number, &reviewed, &head).is_none();
-                if new && can_wait_on(pr, viewer) {
-                    findings.found.push(Found {
-                        number,
-                        reviewed,
-                        head,
-                    });
-                }
+            Standing::Stale { reviewed, head } if can_wait_on(pr, viewer) => {
+                findings.found.push(Found {
+                    number,
+                    reviewed,
+                    head,
+                });
             }
             Standing::NotStale if kept.is_some() => findings.ended.push(number),
             Standing::Waits(reviewed) if kept.is_some_and(|kept| kept.reviewed != *reviewed) => {
                 findings.ended.push(number);
             }
-            Standing::NotStale | Standing::Waits(_) => {}
+            Standing::Stale { .. } | Standing::Kept | Standing::NotStale | Standing::Waits(_) => {}
         }
     }
     findings.ended.sort_unstable();
@@ -265,11 +279,14 @@ pub fn findings_to_keep(facts: &WorkFacts) -> Findings {
 
 /// The standing of the user's Review of a PR, by which `findings_to_keep` keeps its findings.
 enum Standing<'a> {
-    /// A check finds the user's Review of commit `reviewed` stale against `head`, or can't check the two.
+    /// A check finds the user's Review of commit `reviewed` stale against `head`, or can't check the two,
+    /// and the store keeps no finding of that.
     Stale {
         reviewed: CommitSha,
         head: CommitSha,
     },
+    /// The user's Review is stale, and the store keeps the finding of it.
+    Kept,
     /// No Review of the user's there is stale: they have none, they wrote the PR, its head is the reviewed
     /// commit, or a check finds the diff the same.
     NotStale,
@@ -293,6 +310,9 @@ fn standing<'a>(
     let Some(review) = checked(pull_request, reviews) else {
         return Standing::Waits(reviewed);
     };
+    if kept_finding(&review, pull_request, reviews).is_some() {
+        return Standing::Kept;
+    }
     match found_against(&review, pull_request) {
         Some((reviewed, head)) => Standing::Stale { reviewed, head },
         None => Standing::NotStale,

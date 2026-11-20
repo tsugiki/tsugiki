@@ -31,6 +31,7 @@ impl World {
             key,
             numbers,
             up_to,
+            findings: vec![],
         };
         let now = OffsetDateTime::now_utc();
         self.db.store.mute(&cpython(), muting, now).unwrap();
@@ -255,6 +256,7 @@ fn a_muted_authors_archived_item_leaves_the_archived_view() {
         numbers,
         up_to,
         put_away: crate::facts::activity::PutAway::Now,
+        findings: vec![],
     };
     let now = OffsetDateTime::now_utc();
     world.db.store.archive(&cpython(), archiving, now).unwrap();

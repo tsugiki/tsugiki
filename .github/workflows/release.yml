@@ -53,6 +53,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: The tag matches Cargo.toml, and CHANGELOG.md has its section
         if: ${{ github.event_name == 'push' }}
         run: node scripts/release-check.ts "$GITHUB_REF_NAME" > release-notes.md
@@ -80,6 +81,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - run: npm ci
@@ -107,6 +109,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
+          package-manager-cache: false
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - run: npm ci

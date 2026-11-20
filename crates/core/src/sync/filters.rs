@@ -270,7 +270,7 @@ fn read_page(link: &Link<'_>, walk: &mut FilterWalk, search: &WalkedSearch) -> R
     }
     for hit in page.hits {
         walk.current.extend([hit.number]);
-        drop(walk.hits.insert(hit.number, hit));
+        walk.hits.extend([(hit.number, hit)]);
     }
     if page.next.is_some() {
         pages.cursor = page.next;
@@ -302,7 +302,11 @@ pub(super) fn blames_the_search(problem: &Error) -> bool {
 
 impl FilterWalk {
     fn start_the_next_search(&mut self) {
-        drop(self.left.pop_front());
+        #[expect(
+            unused_results,
+            reason = "the search at the front has ended, and the walk searched a copy of it"
+        )]
+        self.left.pop_front();
         self.place = Place::default();
         self.current.clear();
         self.cut_off = false;

@@ -150,7 +150,8 @@ fn each_read_of_a_pr_replaces_its_reviews() {
         .save_pull_request_content(&name, 9, (reviewed(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
     let mut again = reviewed();
-    drop(again.reviews.remove(0));
+    // The read again lacks the first Review.
+    again.reviews = again.reviews.split_off(1);
     again.earlier_reviews = 0;
 
     world

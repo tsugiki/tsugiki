@@ -19,8 +19,8 @@ fn hear_patches(mirrors: &Mirrors) -> (Patched, Unchecked) {
     mirrors
         .requests()
         .hand_patches_to(Box::new(move |repository, reads| match reads {
-            PatchReads::Read(read) => drop(patching.send((repository.to_string(), read))),
-            PatchReads::Unchecked(commits) => drop(unchecking.send(commits)),
+            PatchReads::Read(read) => pass_on(&patching, (repository.to_string(), read)),
+            PatchReads::Unchecked(commits) => pass_on(&unchecking, commits),
         }));
     (patched, unchecked)
 }

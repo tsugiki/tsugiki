@@ -442,7 +442,7 @@ impl Fetching {
         let session = self.session.clone();
         Box::new(move |repository, patches| {
             let patched = SessionMessage::Patched(repository.clone(), patches);
-            drop(session.send(patched));
+            tell(&session, patched);
         })
     }
 
@@ -544,9 +544,18 @@ impl Fetching {
     }
 
     fn to_session(&self, message: SessionMessage) {
-        // The session has stopped, or has shown on the status bar why it can't ask GitHub.
-        drop(self.session.send(message));
+        tell(&self.session, message);
     }
+}
+
+/// Sends the session `message`.
+fn tell(session: &Sender<SessionMessage>, message: SessionMessage) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fails only once the session has stopped, or has shown on the status bar why it can't \
+                  ask GitHub, and then nothing is left to hear the message"
+    )]
+    let _ = session.send(message);
 }
 
 #[cfg(test)]

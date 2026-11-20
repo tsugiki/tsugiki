@@ -58,6 +58,11 @@ const LAYERS: &[Layer] = &[
         why: "Shares a value between threads, and knows no domain type.",
     },
     Layer {
+        module: "deadline",
+        uses: &[],
+        why: "Reads a channel until a deadline, and knows no domain type.",
+    },
+    Layer {
         module: "version",
         uses: &[],
         why: "Names the version and the commit a build came from, which the log and the HUD write down.",
@@ -263,6 +268,7 @@ const LAYERS: &[Layer] = &[
     Layer {
         module: "definitions",
         uses: &[
+            "deadline",
             "diff",
             "error",
             "facts",
@@ -442,9 +448,10 @@ const CYCLES: &[Cycle] = &[];
 const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "mirror_queue", "work"];
 
 /// The imperative shell, which the functional core may not use: the database, `github`'s client, the
-/// Mirrors, the values threads share, the requests for data, and the threads that sync.
+/// Mirrors, the values threads share, the waits on their messages, the requests for data, and the threads
+/// that sync.
 const SHELL: &[&str] = &[
-    "fetching", "github", "latest", "mirror", "session", "store", "sync",
+    "deadline", "fetching", "github", "latest", "mirror", "session", "store", "sync",
 ];
 
 /// What a group of modules keeps out of, and the words a broken rule says.

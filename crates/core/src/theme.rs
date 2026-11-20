@@ -618,8 +618,7 @@ impl Tokens {
                 continue;
             };
             match item.as_str().map(str::parse::<Color>) {
-                // TOML refuses a key twice in a table, so nothing is replaced.
-                Some(Ok(color)) => drop(self.colors.insert(token, color)),
+                Some(Ok(color)) => self.colors.extend([(token, color)]),
                 Some(Err(NotAColor)) | None => self.skip(line, key, SkipReason::BadValue),
             }
         }

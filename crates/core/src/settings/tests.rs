@@ -978,8 +978,7 @@ fn a_settings_toml_removed_from_its_usual_folder_means_the_defaults_again() {
 
 #[test]
 fn an_empty_list_of_filters_stays_in_a_repositorys_table() {
-    let mut table = Table::new();
-    drop(table.insert(FILTERS, toml_edit::value(toml_edit::Array::new())));
+    let table = Table::from_iter([(FILTERS, toml_edit::value(toml_edit::Array::new()))]);
 
     let kept = with_filters_as_tables(table);
 
@@ -1208,6 +1207,35 @@ fn a_switch_on_a_repository_without_filters_writes_out_the_starters_it_reads_as(
     );
     assert_eq!(
         switches(&files),
+        [("Mine".to_owned(), false), ("Involved".to_owned(), true)]
+    );
+}
+
+#[test]
+fn a_switch_on_a_repository_written_inline_without_filters_writes_out_the_starters_inline() {
+    let (mut files, folders, _root) = settings_saying(
+        "switch-starters-inline",
+        "repositories = [{ name = \"a/b\" }]\n",
+    );
+
+    files
+        .put_on_workbench(
+            &repository("a/b"),
+            &query("is:open involves:@me -author:@me"),
+            OnWorkbench::On,
+        )
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let reloaded = SettingsFiles::load(folders);
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\" , filters = [{ name = \"Mine\", query = \"is:open author:@me\", \
+         on_workbench = false }, { name = \"Involved\", query = \"is:open involves:@me -author:@me\", \
+         on_workbench = true }] }]\n"
+    );
+    assert_eq!(
+        switches(&reloaded),
         [("Mine".to_owned(), false), ("Involved".to_owned(), true)]
     );
 }

@@ -1082,11 +1082,11 @@ impl Worker {
                 return;
             }
         }
-        if let Some(index) = self.asking.iter().position(|one| one.is_same(&repository)) {
+        if self.asking.iter().any(|one| one.is_same(&repository)) {
             if self.sources.get(&repository).is_none() {
                 return;
             }
-            drop(self.asking.remove(index));
+            self.asking.retain(|one| !one.is_same(&repository));
             self.tell_asking();
         }
         let cloning = match &self.job {
@@ -1096,26 +1096,19 @@ impl Worker {
         if cloning.is_some_and(|cloning| cloning.is_same(&repository)) {
             return;
         }
-        let waiting = self.waiting.iter().position(|one| one.is_same(&repository));
-        let failed = self
-            .failed
-            .iter()
-            .position(|failed| failed.repository.is_same(&repository));
+        let waits = |one: &RepositoryName| one.is_same(&repository);
+        let failed = |failed: &FailedClone| failed.repository.is_same(&repository);
         match turn {
             // A clone that failed goes back in line once its wait is over.
             Turn::Last => {
-                if waiting.is_none() && failed.is_none() {
+                if !self.waiting.iter().any(waits) && !self.failed.iter().any(failed) {
                     self.waiting.push_back(repository);
                 }
             }
             // The user wants this one now, so its wait is over.
             Turn::Next => {
-                if let Some(index) = waiting {
-                    drop(self.waiting.remove(index));
-                }
-                if let Some(index) = failed {
-                    drop(self.failed.remove(index));
-                }
+                self.waiting.retain(|one| !waits(one));
+                self.failed.retain(|one| !failed(one));
                 self.waiting.push_front(repository);
             }
         }
@@ -1819,8 +1812,11 @@ impl Worker {
             self.settle(repository, &clone.partial, &clone.mirror);
         } else {
             log::warn!("Tsugiki couldn't clone {repository}'s mirror: {last_words}");
-            // What is left goes before the next clone of this Repository, which says if it can't.
-            drop(fs::remove_dir_all(&clone.partial));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "what is left goes before the next clone of this Repository, which says if it can't"
+            )]
+            let _ = fs::remove_dir_all(&clone.partial);
             self.fail_clone(repository, last_words.to_owned());
         }
         (self.announce.cloning)(None);
@@ -1958,7 +1954,7 @@ fn read_progress_until_done(progress: Box<dyn Read + Send>, messages: &Sender<Me
         }
         let text = String::from_utf8_lossy(&line);
         match read_progress(&text) {
-            Some(progress) => drop(messages.send(Message::Progress(progress))),
+            Some(progress) => tell_worker(messages, Message::Progress(progress)),
             None if text.starts_with("fatal: ") || text.starts_with("error: ") => {
                 last_error = text.trim().to_owned();
             }
@@ -1970,7 +1966,16 @@ fn read_progress_until_done(progress: Box<dyn Read + Send>, messages: &Sender<Me
     if !last_error.is_empty() {
         last_words = last_error;
     }
-    drop(messages.send(Message::Ended { last_words }));
+    tell_worker(messages, Message::Ended { last_words });
+}
+
+/// Sends the worker `message` about the git it waits for.
+fn tell_worker(messages: &Sender<Message>, message: Message) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fails only once the worker has ended, and then nothing waits for git"
+    )]
+    let _ = messages.send(message);
 }
 
 /// Reads one line of `git clone --progress`. Lines from the server, and lines without a percentage, say

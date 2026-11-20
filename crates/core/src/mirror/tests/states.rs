@@ -17,7 +17,7 @@ impl Place {
     ) -> (Mirrors, Receiver<FakeStart>, States) {
         let (telling, told) = channel();
         let announce = Announce {
-            states: Box::new(move |states| drop(telling.send(states.to_vec()))),
+            states: Box::new(move |states| pass_on(&telling, states.to_vec())),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
         let (mirrors, starts) = self.start_faked_from(remotes, announce, versions);

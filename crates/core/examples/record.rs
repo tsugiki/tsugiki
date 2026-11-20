@@ -229,7 +229,7 @@ fn record_a_filter(
     println!("{} items of {} in a Filter", page.hits.len(), page.total);
     for hit in page.hits {
         match hit.kind {
-            FilterHitKind::Issue => drop(named.insert(hit.number)),
+            FilterHitKind::Issue => named.extend([hit.number]),
             FilterHitKind::PullRequest(id) => {
                 if !ids.contains(&id) {
                     ids.push(id);

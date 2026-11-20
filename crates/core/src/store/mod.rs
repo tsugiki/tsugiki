@@ -695,7 +695,11 @@ impl Store {
             for (call, job) in calls.iter().enumerate() {
                 seen.send(call).expect("the test holds the receiver");
                 if lost != Some(call) {
-                    drop(database.send(job));
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "a store thread that has gone drops the job, and its caller hears it failed"
+                    )]
+                    let _ = database.send(job);
                 }
             }
         });

@@ -643,9 +643,7 @@ impl Owner {
         }
         let mut deadline = Instant::now() + patience;
         let mut exiting = false;
-        while let Ok(input) =
-            inputs.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        {
+        while let Some(input) = received_by(inputs, deadline) {
             match input {
                 Input::Arrived(incoming) => self.arrived(incoming),
                 Input::Errors(bytes) => self.keep_tail(&bytes),
@@ -822,8 +820,7 @@ impl Owner {
             _ => return,
         };
         match event {
-            // The caller may not listen.
-            Ok(event) => drop(self.events.send(event)),
+            Ok(event) => self.tell(event),
             Err(cause) => log::warn!("A language server's {method} doesn't parse: {cause}"),
         }
     }
@@ -906,11 +903,16 @@ impl Owner {
         let code = self.process.wait();
         self.life = Life::Exited;
         let stderr_tail = String::from_utf8_lossy(&self.tail).into_owned();
+        self.tell(Event::Exited(Exit { code, stderr_tail }));
+    }
+
+    /// Hands the caller `event`.
+    fn tell(&self, event: Event) {
         #[expect(
             clippy::let_underscore_must_use,
             reason = "this fails only if the caller has dropped the events, and then nobody wants to hear it"
         )]
-        let _ = self.events.send(Event::Exited(Exit { code, stderr_tail }));
+        let _ = self.events.send(event);
     }
 }
 
@@ -923,6 +925,14 @@ fn write_input(mut input: Box<dyn Write + Send>, bodies: &Receiver<Vec<u8>>, inp
             return;
         }
     }
+}
+
+/// The next message on `receiver`, waiting until `deadline` at most. Nothing once `deadline` has passed,
+/// though more is queued, since `recv_timeout` with a wait of zero would still hand out each queued message,
+/// for as long as a busy sender keeps the queue full.
+fn received_by<T>(receiver: &Receiver<T>, deadline: Instant) -> Option<T> {
+    let wait = (deadline.checked_duration_since(Instant::now())).filter(|wait| !wait.is_zero())?;
+    receiver.recv_timeout(wait).ok()
 }
 
 /// Reads the server's messages until its output ends, then waits for its error output to end too, so the

@@ -159,7 +159,7 @@ impl Parsed {
                         pattern,
                         ranges,
                     };
-                    drop(found.insert(piece, kept));
+                    found.extend([(piece, kept)]);
                 }
             }
         }

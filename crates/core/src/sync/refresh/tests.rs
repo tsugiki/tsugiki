@@ -33,6 +33,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::mpsc::{self, Sender};
 use time::format_description::well_known::Rfc3339;
+use tsugiki_test_git::pass_on;
 
 const LAST_SYNC: &str = "2026-11-04T10:00:00Z";
 const AFTER_IT: &str = "2026-11-04T10:30:00Z";
@@ -1908,7 +1909,7 @@ impl Transport for SmallRepository {
         _: &Token,
         request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
-        drop(self.tags.send(request.etag.map(str::to_owned)));
+        pass_on(&self.tags, request.etag.map(str::to_owned));
         self.checks
             .borrow_mut()
             .pop_front()

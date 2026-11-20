@@ -13,6 +13,7 @@ pub mod pr_files;
 pub mod pr_view;
 pub mod quick_open;
 mod rows;
+mod trees;
 
 pub use attention::{Attention, Seen, SeenState};
 pub use filters::FilterLine;

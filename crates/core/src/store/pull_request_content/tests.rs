@@ -29,7 +29,7 @@ fn a_conversation_kept_before_the_migration_has_no_numbers_until_the_next_read()
     );
 
     let db = OpenStore::of(path, folder);
-    let (_, kept) = db.reader.pull_request_facts(&cpython(), 1).unwrap();
+    let kept = db.reader.pull_request_content(&cpython(), 1).unwrap();
     db.close();
 
     let kept = kept.unwrap();
@@ -156,15 +156,11 @@ fn head_of(number: u32, commit: &str) -> PrHead {
 
 /// The head PR `number`'s facts keep, and the head its kept Conversation was read at.
 fn heads(world: &World, number: u32) -> (Option<CommitSha>, Option<CommitSha>) {
-    let (facts, conversation) = (world.db.reader)
-        .pull_request_facts(&cpython(), number)
-        .unwrap();
-    let facts = facts
-        .pull_requests
-        .into_iter()
-        .find(|pr| pr.number == number);
+    let reader = &world.db.reader;
+    let held = reader.pull_request(&cpython(), number).unwrap();
+    let conversation = reader.pull_request_content(&cpython(), number).unwrap();
     (
-        facts.and_then(|pr| pr.head),
+        held.and_then(|(facts, _)| facts.head),
         conversation.and_then(|read| read.head),
     )
 }

@@ -111,6 +111,28 @@ impl OpenStore {
     }
 }
 
+impl StoreReader {
+    /// What Issue `number` says, once Tsugiki has read it, as the Issue view reads it.
+    pub(crate) fn issue_content(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<Option<IssueContent>, Error> {
+        self.read_snapshot(repository, move |snapshot| snapshot.issue_content(number))
+    }
+
+    /// PR `number`'s Conversation, once Tsugiki has read it, whether or not the store holds the PR's facts.
+    pub(crate) fn pull_request_content(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<Option<PullRequestContent>, Error> {
+        self.read_snapshot(repository, move |snapshot| {
+            snapshot.pull_request_content(number)
+        })
+    }
+}
+
 /// A database of `cpython` whose user signed in as `me()` and whose first sync began three days ago: the
 /// world of the scenarios of New activity and Needs attention. Each scenario's file adds what it reads.
 pub(crate) struct World {

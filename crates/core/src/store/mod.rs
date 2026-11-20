@@ -789,30 +789,6 @@ fn work_facts_in(
     })
 }
 
-/// The facts behind the Issue view, from one transaction, so a view never mixes two saves (ADR 0018).
-fn read_issue_facts(
-    connection: &mut Connection,
-    repository: &RepositoryName,
-    number: u32,
-) -> rusqlite::Result<(WorkFacts, Option<IssueContent>)> {
-    let transaction = connection.transaction()?;
-    let facts = work_facts_in(&transaction, repository)?;
-    let content = issue_content::read(&transaction, repository, number)?;
-    Ok((facts, content))
-}
-
-/// The facts behind the PR view of PR `number`, from one transaction (ADR 0018).
-fn read_pull_request_facts(
-    connection: &mut Connection,
-    repository: &RepositoryName,
-    number: u32,
-) -> rusqlite::Result<(WorkFacts, Option<PullRequestContent>)> {
-    let transaction = connection.transaction()?;
-    let facts = work_facts_in(&transaction, repository)?;
-    let content = pull_request_content::read(&transaction, repository, number)?;
-    Ok((facts, content))
-}
-
 /// The Issues and the PRs that quick open searches, from one transaction (ADR 0018).
 fn read_titled(
     connection: &mut Connection,
@@ -944,6 +920,22 @@ impl Snapshot<'_> {
         patch_ids::read_facts(&self.transaction, &self.repository, pull_requests)
             .map_err(saying(CANT_READ))
     }
+
+    /// Each search of the Repository, with its last results.
+    pub fn filter_results(&self) -> Result<BTreeMap<FilterQuery, FilterResults>, Error> {
+        filters::read_all(&self.transaction, &self.repository).map_err(saying(CANT_READ))
+    }
+
+    /// What Issue `number` says, once Tsugiki has read it.
+    pub fn issue_content(&self, number: u32) -> Result<Option<IssueContent>, Error> {
+        issue_content::read(&self.transaction, &self.repository, number).map_err(saying(CANT_READ))
+    }
+
+    /// PR `number`'s Conversation, once Tsugiki has read it.
+    pub fn pull_request_content(&self, number: u32) -> Result<Option<PullRequestContent>, Error> {
+        let (transaction, repository) = (&self.transaction, &self.repository);
+        pull_request_content::read(transaction, repository, number).map_err(saying(CANT_READ))
+    }
 }
 
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
@@ -960,28 +952,20 @@ impl StoreReader {
         read.map_err(saying(CANT_READ))
     }
 
-    /// The facts behind the Issue view of Issue `number`.
-    pub fn issue_facts(
+    /// PR `number`'s facts, and its Conversation once Tsugiki has read it, or nothing if the store lacks the
+    /// PR.
+    pub fn pull_request(
         &self,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<(WorkFacts, Option<IssueContent>), Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| read_issue_facts(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
-    }
-
-    /// The facts behind the PR view of PR `number`.
-    pub fn pull_request_facts(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-    ) -> Result<(WorkFacts, Option<PullRequestContent>), Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| read_pull_request_facts(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
+    ) -> Result<Option<(PullRequestFacts, Option<PullRequestContent>)>, Error> {
+        self.read_snapshot(repository, move |snapshot| {
+            let held = snapshot.pull_requests_numbered(&BTreeSet::from([number]))?;
+            let Some(pr) = held.into_iter().next() else {
+                return Ok(None);
+            };
+            Ok(Some((pr, snapshot.pull_request_content(number)?)))
+        })
     }
 
     /// The number, title, state and last update of each Issue and PR of `repository`, in no order.

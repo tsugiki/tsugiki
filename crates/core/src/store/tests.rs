@@ -339,11 +339,8 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     };
     let codes = TraceEventCodes::SQLITE_TRACE_STMT;
     connection.trace_v2(codes, Some(trace)).unwrap();
-    let (read, kept) = read_issue_facts(connection, &cpython, 1).unwrap();
+    let read = read_work_facts(connection, &cpython).unwrap();
     assert_eq!(read.pull_requests.len(), 1);
-    assert_eq!(kept, Some(content));
-    let (_, kept) = read_pull_request_facts(connection, &cpython, 1).unwrap();
-    assert_eq!(kept, Some(reviewed));
     assert_eq!(read_titled(connection, &cpython).unwrap().len(), 2);
     let snapshot = Snapshot {
         transaction: connection.transaction().unwrap(),
@@ -369,6 +366,9 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     let prs_before = snapshot.pull_requests_updated(before).unwrap();
     drop(snapshot.activity_of(Some(&viewer), &one).unwrap());
     let reviews = snapshot.reviews_of(&open).unwrap();
+    assert_eq!(snapshot.issue_content(1).unwrap(), Some(content));
+    assert_eq!(snapshot.pull_request_content(1).unwrap(), Some(reviewed));
+    assert_eq!(snapshot.filter_results().unwrap().len(), 1);
     drop(snapshot);
     let found = [linked.len(), fixing.len(), naming.len(), open.len()];
     let updated = [prs_since.len(), prs_before.len()];

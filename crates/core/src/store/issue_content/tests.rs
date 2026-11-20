@@ -56,7 +56,7 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
         .save_issue_content(&cpython(), 1, second.clone())
         .unwrap();
 
-    let read = |number| db.reader.issue_facts(&cpython(), number).unwrap().1;
+    let read = |number| db.reader.issue_content(&cpython(), number).unwrap();
 
     assert_eq!(read(1), Some(second));
     assert_eq!(read(2), Some(other));

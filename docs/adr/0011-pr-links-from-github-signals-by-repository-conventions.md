@@ -9,8 +9,9 @@ Conventions regroups the PRs with no rewrite, and a number the sync fetches as a
 link then. The store keeps the version of the rules beside the links, and works out every PR's links again as
 it opens after a release changes the rules. A screen that reads every PR, as the Workbench does, works the
 same links out from the facts when it asks, like the other rules
-([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)); the Inbox reads a page at a time, and
-finds the PRs that name an Issue through the kept links.
+([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)). The Inbox reads a page at a time, and
+the Issue view and the PR view read one item (#842): each finds the PRs that name an Issue or an Origin PR
+through the kept links.
 
 A Repository's Conventions are a few named fields, filled in by a preset:
 

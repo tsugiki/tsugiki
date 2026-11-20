@@ -3,8 +3,11 @@ use time::OffsetDateTime;
 use super::testing::reviewed;
 use super::*;
 use crate::facts::pull_requests::PullRequestFacts;
+use crate::store::testing::OpenStore;
+use crate::testing::{cpython, cpython_settings};
+use crate::workbench::issue_view::IssueView;
 use crate::workbench::testing::{
-    ViewWorld, backport, bots_backport, fixing, issue, someone, stranger,
+    ViewWorld, backport, bots_backport, fixing, grouped_whole, issue, someone, stranger, under_each,
 };
 
 fn view(world: &ViewWorld, number: u32) -> Option<PrView> {
@@ -19,6 +22,21 @@ fn a_pr_tsugiki_doesnt_hold_has_no_view() {
     assert_eq!(view(&world, 1), None, "an Issue is no PR");
     assert_eq!(view(&world, 5), None);
     world.finish();
+}
+
+#[test]
+fn neither_view_shows_anything_before_anyone_signs_in() {
+    let db = OpenStore::new("views-no-viewer");
+    db.store
+        .save_pull_requests(&cpython(), vec![fixing(5, 1)])
+        .unwrap();
+    db.store.save_issues(&cpython(), vec![issue(1)]).unwrap();
+
+    let pr = PrView::read(&db.reader, &cpython_settings(), 5).unwrap();
+    let issue = IssueView::read(&db.reader, &cpython_settings(), 1).unwrap();
+
+    db.close();
+    assert_eq!((pr, issue), (None, None));
 }
 
 #[test]
@@ -185,5 +203,33 @@ fn a_pr_read_before_tsugiki_read_reviews_has_none_until_the_next_read() {
 
     assert_eq!(content.conversation, conversation);
     assert_eq!((content.reviews, content.earlier_reviews), (vec![], 0));
+    world.finish();
+}
+
+#[test]
+fn a_pr_shows_the_row_the_grouping_of_every_pr_gives_it_under_each_conventions() {
+    let world = ViewWorld::new("pr-view-whole");
+    world.has_crossed_links();
+
+    for settings in under_each(&world.settings()) {
+        let (items, causes) = grouped_whole(&world, &settings);
+        let facts = world.db.reader.work_facts(&settings.name).unwrap();
+        let shared = SharedReviews::of(&facts.pull_requests, settings.conventions);
+        for number in facts.pull_requests.iter().map(|pr| pr.number) {
+            let conventions = settings.conventions;
+            let shown = PrView::read(&world.db.reader, &settings, number)
+                .unwrap()
+                .unwrap();
+            let holding = (items.iter())
+                .find(|item| item.rows().iter().any(|row| row.number == number))
+                .unwrap();
+
+            let row = holding.rows().into_iter().find(|row| row.number == number);
+            assert_eq!(Some(&shown.row), row, "PR {number} under {conventions:?}");
+            let hidden = Hidden::of(&causes, holding.key(), &holding.numbers());
+            assert_eq!(shown.hidden, hidden, "PR {number} under {conventions:?}");
+            assert_eq!(shown.shares_review_of, shared.origin_of(number));
+        }
+    }
     world.finish();
 }

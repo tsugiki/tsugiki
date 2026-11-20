@@ -6,7 +6,8 @@ use serde::Serialize;
 use specta::Type;
 
 use super::filters::FilterFacts;
-use super::{Hidden, IssueItem, TreeEntry, WorkbenchItem, candidates_of};
+use super::trees::{ItemRead, Named, Trees};
+use super::{Hidden, IssueItem, TreeEntry, WorkbenchItem, candidates};
 use crate::error::Error;
 use crate::facts::activity::ItemKey;
 use crate::facts::issue_content::IssueContent;
@@ -15,7 +16,7 @@ use crate::facts::labels::Label;
 use crate::facts::pull_requests::PrState;
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
-use crate::store::StoreReader;
+use crate::store::{Snapshot, StoreReader};
 use crate::work::Causes;
 
 /// An Issue as the Detail pane shows it.
@@ -44,14 +45,30 @@ pub struct IssueView {
 }
 
 impl IssueView {
-    /// Reads Issue `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never on
-    /// GitHub, so the view opens on what was last read (ADR 0018).
+    /// Reads Issue `number`, or nothing if Tsugiki doesn't hold it or nobody has signed in yet. This waits
+    /// on the database and never on GitHub, so the view opens on what was last read (ADR 0018). It reads the
+    /// Issue's tree alone, through the links the store keeps (#842).
     pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         number: u32,
     ) -> Result<Option<Self>, Error> {
-        let (mut facts, content) = reader.issue_facts(&repository.name, number)?;
+        let trees_of = move |trees: &mut Trees<'_, '_>| {
+            let issues = BTreeSet::from([number]);
+            let prs = trees.under(&issues)?;
+            Ok(Named { issues, prs })
+        };
+        let more = move |snapshot: &Snapshot<'_>| {
+            Ok((snapshot.filter_results()?, snapshot.issue_content(number)?))
+        };
+        let Some(read) = ItemRead::read(reader, repository, trees_of, more)? else {
+            return Ok(None);
+        };
+        let ItemRead {
+            facts,
+            links,
+            more: (filters, content),
+        } = read;
         let held = facts.issues.iter().find(|issue| issue.number == number);
         let (author, assignees, labels) = held
             .map(|issue| {
@@ -65,9 +82,9 @@ impl IssueView {
             })
             .unwrap_or_default();
         // A Matched PR is one any Filter found, on the Workbench or off it, as its view lists it first.
-        let matched = FilterFacts::new(repository, std::mem::take(&mut facts.filters)).found();
+        let matched = FilterFacts::new(repository, filters).found();
         let causes = Causes::of(&facts, repository.conventions);
-        let found = candidates_of(facts, repository, &BTreeSet::new(), &causes)
+        let found = candidates((facts, &links), repository, &BTreeSet::new(), &causes)
             .into_iter()
             .find_map(|item| match item {
                 WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),

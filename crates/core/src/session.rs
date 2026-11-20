@@ -24,7 +24,7 @@ use crate::login::Login;
 use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
-use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
+use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy, SettingsSave};
 use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{
     self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
@@ -214,7 +214,7 @@ enum Turn {
     /// The window opened this Repository, so it needs to know when its last sync was.
     Opened(RepositoryName),
     /// The settings owner saved these settings of a Repository.
-    SettingsChanged(RepositorySettings, SavedBy),
+    SettingsChanged(SettingsSave),
     /// The user marked an item seen or unseen.
     Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
@@ -275,14 +275,16 @@ impl Refreshes {
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
     /// the one asking that the session isn't connected. Mark Seen and Mark Unseen need only the database, so
     /// they still work, and so does telling the window of a hand edit to the settings. With no syncs there
-    /// is no copy to compare, but the settings owner hands over only settings that changed.
+    /// is no copy to compare, but the settings owner hands over only settings that changed. Reach follows
+    /// a change of the settings as it does with a token, which needs only the database and the Mirror.
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
         while let Ok(message) = self.incoming.recv() {
             match message {
                 SessionMessage::Stop => return,
                 SessionMessage::Mark(marked) => mark(board, store, marked),
-                SessionMessage::SettingsChanged(settings, by) => {
-                    announce_settings(board, &settings.name, by);
+                SessionMessage::SettingsChanged(save) => {
+                    follow_save(&self.fetching, store, &save);
+                    announce_settings(board, &save.saved().name, save.by());
                 }
                 SessionMessage::Patched(repository, patches) => {
                     keep_patches(board, store, &repository, patches);
@@ -316,9 +318,7 @@ impl Refreshes {
                     return Turn::Opened(opened);
                 }
                 Ok(SessionMessage::Refresh) => return Turn::RefreshNow,
-                Ok(SessionMessage::SettingsChanged(settings, by)) => {
-                    return Turn::SettingsChanged(settings, by);
-                }
+                Ok(SessionMessage::SettingsChanged(save)) => return Turn::SettingsChanged(save),
                 Ok(SessionMessage::Mark(marked)) => return Turn::Mark(marked),
                 Ok(SessionMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
                 Ok(SessionMessage::Screen(moved)) => {
@@ -464,9 +464,9 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 due.repository = Instant::now() + intervals.repository;
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
-            Turn::SettingsChanged(settings, by) => {
-                let repository = settings.name.clone();
-                if settings_changed(&refreshes.fetching, store, &mut syncs, settings).is_some() {
+            Turn::SettingsChanged(save) => {
+                let (repository, by) = (save.saved().name.clone(), save.by());
+                if settings_changed(&refreshes.fetching, store, &mut syncs, save).is_some() {
                     announce_settings(board, &repository, by);
                 }
             }
@@ -621,21 +621,30 @@ fn announce_settings(board: &mut StatusBoard, repository: &RepositoryName, by: S
     }
 }
 
-/// The settings owner saved `settings`, which the syncs read from now on, if the session has opened their
-/// Repository since launch and holds other settings of it. Answers with those it held then.
+/// The settings owner made `save`, which Reach follows (`follow_save`). The syncs read the saved settings
+/// from now on, if the session has opened the Repository since launch and holds other settings of it.
+/// Answers with those it held then.
 fn settings_changed(
     fetching: &Fetching,
     store: &Store,
     syncs: &mut Syncs,
-    settings: RepositorySettings,
+    save: SettingsSave,
 ) -> Option<RepositorySettings> {
-    let now = settings.clone();
-    let before = syncs.replace_settings(settings)?;
-    follow_reach(fetching, store, &now, &before);
-    Some(before)
+    follow_save(fetching, store, &save);
+    syncs.replace_settings(save.into_saved())
 }
 
-/// The syncs read settings `now` in place of `before`. A Filter switched on puts PRs in Reach that no
+/// Reach follows the move `save` made from the settings it replaced, whether or not the session has opened
+/// the Repository since launch: a hand edit can switch a Filter on in any Repository, and once the user
+/// opens it, its refreshes read ahead only what the store owes (#901). A Repository the save added has no
+/// move to follow.
+fn follow_save(fetching: &Fetching, store: &Store, save: &SettingsSave) {
+    if let Some(replaced) = save.replaced() {
+        follow_reach(fetching, store, save.saved(), replaced);
+    }
+}
+
+/// A Repository's settings say `now` in place of `before`. A Filter switched on puts PRs in Reach that no
 /// change on GitHub would have the Mirror fetch the head of or a refresh read ahead (#819). So the Mirror
 /// worker hears the new Reach at once, and the store owes a read of each Conversation the rules say the
 /// switch owes. A refresh that finishes reads those still in Reach ahead. One switched off takes PRs out, and
@@ -673,20 +682,22 @@ fn facts_for_move(store: &Store, repository: &RepositoryName) -> Option<WorkFact
         .ok()
 }
 
-/// Hands the Mirror worker its work after Reach moved from `before` to `now`, and has the store owe the
-/// reads ahead the move owes, as `moved` works them out. A store that can't say which heads its
-/// Conversations were read at owes a read of each PR the move puts in Reach, which costs a request apiece
-/// and loses nothing. One that can't keep what it owes loses them, and the log says so.
+/// Hands the Mirror worker its work after Reach moved from `before` to `now`, unless the move left it as it
+/// was, and has the store owe the reads ahead the move owes, as `moved` works them out. A store that can't
+/// say which heads its Conversations were read at owes a read of each PR the move puts in Reach, which costs
+/// a request apiece and loses nothing. One that can't keep what it owes loses them, and the log says so.
 fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: ReachFrom<'_>) {
     let repository = &now.settings.name;
     let read_at = store.conversation_heads(repository).unwrap_or_default();
     let (work, owed) = moved(before, now, &read_at);
-    let stated = Stated {
-        repository,
-        facts: now.facts,
-        work,
-    };
-    hand_over_wants(fetching, store, stated);
+    if let Some(work) = work {
+        let stated = Stated {
+            repository,
+            facts: now.facts,
+            work,
+        };
+        hand_over_wants(fetching, store, stated);
+    }
     if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
             "Tsugiki couldn't keep the reads ahead owed in {repository}: {}",

@@ -1253,6 +1253,98 @@ fn the_owner_saves_a_switch_and_answers_with_what_the_files_say() {
     assert_eq!(owner.view(), saved);
 }
 
+/// A save the session heard of, in brief: the Repository, the Conventions and the first Filter's switch
+/// it saved, those it replaced, and what saved them.
+type Told = (
+    String,
+    (Conventions, OnWorkbench),
+    Option<(Conventions, OnWorkbench)>,
+    SavedBy,
+);
+
+/// Has `owner` hand the session each save, which the receiver hears in brief.
+fn telling_session(owner: &SettingsOwner) -> mpsc::Receiver<Told> {
+    let (sent, incoming) = mpsc::channel();
+    let said =
+        |settings: &RepositorySettings| (settings.conventions, settings.filters[0].on_workbench);
+    owner.tell_session(Box::new(move |save: SettingsSave| {
+        let replaced = save.replaced().map(said);
+        let saved = save.saved();
+        sent.send((saved.name.to_string(), said(saved), replaced, save.by()))
+            .unwrap();
+    }));
+    incoming
+}
+
+#[test]
+fn a_repository_the_files_drop_and_list_again_comes_back_with_the_settings_it_had() {
+    let bugs = |switch: &str| {
+        format!("\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n{switch}")
+    };
+    let a_b = format!("[[repositories]]\nname = \"a/b\"\n{}", bugs(""));
+    let c_d = |switch| format!("\n[[repositories]]\nname = \"c/d\"\n{}", bugs(switch));
+    let (files, folders, _root) =
+        settings_saying("owner-tells-return", &format!("{a_b}{}", c_d("")));
+    let owner = SettingsOwner::start(Ok(files));
+    let incoming = telling_session(&owner);
+
+    // A hand edit takes c/d out, an editor's save leaves no file for a moment, and a hand edit puts c/d
+    // back with its Filter switched on.
+    fs::write(folders.settings_file(), &a_b).unwrap();
+    drop(owner.reread().unwrap());
+    fs::remove_file(folders.settings_file()).unwrap();
+    let emptied = owner.reread().unwrap();
+    let back = format!("{a_b}{}", c_d("on_workbench = true\n"));
+    fs::write(folders.settings_file(), back).unwrap();
+    drop(owner.reread().unwrap());
+    drop(owner);
+
+    assert_eq!(emptied.loaded.settings.repositories, []);
+    // a/b came back as it was, so the session hears nothing of it.
+    assert_eq!(
+        incoming.try_iter().collect::<Vec<_>>(),
+        [(
+            "c/d".to_owned(),
+            (Conventions::Github, OnWorkbench::On),
+            Some((Conventions::Github, OnWorkbench::Off)),
+            SavedBy::HandEdit
+        )]
+    );
+}
+
+#[test]
+fn of_a_repository_written_twice_the_session_hears_of_the_first() {
+    let a_b = |switch: &str| {
+        format!(
+            "\n[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \"label:bug\"\n{switch}"
+        )
+    };
+    let on = "on_workbench = true\n";
+    let (files, folders, _root) =
+        settings_saying("owner-tells-twice", &format!("{}{}", a_b(""), a_b(on)));
+    let owner = SettingsOwner::start(Ok(files));
+    let incoming = telling_session(&owner);
+
+    // Each reload reads both, and the second would undo what the first said.
+    drop(owner.reread().unwrap());
+    drop(owner.reread().unwrap());
+    fs::write(folders.settings_file(), format!("{}{}", a_b(on), a_b(""))).unwrap();
+    drop(owner.reread().unwrap());
+    drop(owner.reread().unwrap());
+    drop(owner);
+
+    assert_eq!(
+        incoming.try_iter().collect::<Vec<_>>(),
+        [(
+            "a/b".to_owned(),
+            (Conventions::Github, OnWorkbench::On),
+            Some((Conventions::Github, OnWorkbench::Off)),
+            SavedBy::HandEdit
+        )]
+    );
+}
+
 #[test]
 fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwise_in_save_order() {
     let (files, folders, _root) = settings_saying(
@@ -1260,12 +1352,7 @@ fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwi
         "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n",
     );
     let owner = SettingsOwner::start(Ok(files));
-    let (sent, incoming) = mpsc::channel();
-    owner.tell_session(Box::new(move |settings: RepositorySettings, by| {
-        let switch = settings.filters[0].on_workbench;
-        sent.send((settings.name.to_string(), settings.conventions, switch, by))
-            .unwrap();
-    }));
+    let incoming = telling_session(&owner);
 
     drop(owner.save_panes(PaneLayout::default()).unwrap());
     drop(
@@ -1287,19 +1374,20 @@ fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwi
 
     let told: Vec<_> = incoming.try_iter().collect();
     assert_ne!(edited, file, "{file}");
+    // The first change replaced the settings the files held at launch, which the session never heard.
     assert_eq!(
         told,
         [
             (
                 "a/b".to_owned(),
-                Conventions::Github,
-                OnWorkbench::On,
+                (Conventions::Github, OnWorkbench::On),
+                Some((Conventions::Github, OnWorkbench::Off)),
                 SavedBy::Window
             ),
             (
                 "a/b".to_owned(),
-                Conventions::Cpython,
-                OnWorkbench::On,
+                (Conventions::Cpython, OnWorkbench::On),
+                Some((Conventions::Github, OnWorkbench::On)),
                 SavedBy::HandEdit
             ),
         ]

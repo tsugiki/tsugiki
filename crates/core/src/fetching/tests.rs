@@ -1,6 +1,7 @@
 use super::testing::{handle, handle_with_headless, named};
 use super::*;
 use crate::facts::CommitSha;
+use crate::repository_settings::SavedBy;
 use crate::status::ItemUnread;
 use crate::testing::cpython;
 
@@ -136,8 +137,9 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.fetch_issue(cpython(), 7);
     fetching.fetch_pull_request(cpython(), 8);
     fetching.refresh();
-    fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::HandEdit);
-    fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::Window);
+    let saved = |by| SettingsSave::new(RepositorySettings::new(cpython()), &[], by);
+    fetching.settings_changed(saved(SavedBy::HandEdit));
+    fetching.settings_changed(saved(SavedBy::Window));
     fetching.mark_unseen(cpython(), 9, None);
     fetching.sync(RepositorySettings::new(cpython()));
     fetching.stop_session();

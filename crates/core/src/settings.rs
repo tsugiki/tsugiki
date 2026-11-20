@@ -29,7 +29,9 @@ use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::repository::RepositoryName;
-use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings, SavedBy};
+use crate::repository_settings::{
+    NameCheck, RepositoryCheck, RepositorySettings, SavedBy, SettingsSave,
+};
 use crate::theme::{
     GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
 };
@@ -1097,12 +1099,7 @@ impl SettingsFiles {
             .iter()
             .filter_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
         // A name the user wrote twice, in either file, comes once.
-        let mut order: Vec<&RepositorySettings> = Vec::with_capacity(repositories.len());
-        for repository in reopened.chain(repositories) {
-            if !order.iter().any(|one| one.name.is_same(&repository.name)) {
-                order.push(repository);
-            }
-        }
+        let order = first_of_each(reopened.chain(repositories));
         match order.split_first() {
             Some((&repository, others)) => Home::Repository {
                 repository: repository.clone(),
@@ -1325,9 +1322,9 @@ pub struct SettingsOwner {
     commands: LatestReader<Vec<CommandId>>,
 }
 
-/// Where the owner's thread hands each Repository's settings a change saves otherwise: the session's queue,
-/// which `fetching`, above this module, owns.
-pub type SettingsSink = Box<dyn FnMut(RepositorySettings, SavedBy) + Send>;
+/// Where the owner's thread hands each Repository's settings a change saves otherwise, with those they
+/// replaced: the session's queue, which `fetching`, above this module, owns.
+pub type SettingsSink = Box<dyn FnMut(SettingsSave) + Send>;
 
 /// What the owner's thread is asked.
 enum Request {
@@ -1410,7 +1407,8 @@ impl SettingsOwner {
                     published.clone_from(commands);
                 }
             };
-            // The session told of each change, with each Repository's settings as it was last told them.
+            // The session told of each change, with each Repository's settings as it was last told them,
+            // those the files no longer list included.
             let mut session: Option<(SettingsSink, Vec<RepositorySettings>)> = None;
             for request in incoming {
                 let change = match request {
@@ -1547,10 +1545,10 @@ impl SettingsOwner {
         self.commands.get()
     }
 
-    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with what
-    /// saved them: from the owner's thread, before it answers, in the order the changes saved. So no copy a
-    /// command read earlier can reach the session after a newer one, and a hand edit reaches it whichever
-    /// change reloaded the files first (#822).
+    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with those
+    /// they replaced and what saved them: from the owner's thread, before it answers, in the order the
+    /// changes saved. So no copy a command read earlier can reach the session after a newer one, and a hand
+    /// edit reaches it whichever change reloaded the files first (#822).
     pub fn tell_session(&self, session: SettingsSink) {
         let _sent = self.requests.send(Request::Session(session));
     }
@@ -1680,20 +1678,45 @@ impl SettingsOwner {
     }
 }
 
-/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, and keeps them as
-/// told.
+/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, with what `told`
+/// held of it, and keeps them as told. Of a Repository written twice, the first counts, as in `home`.
+///
+/// `told` starts as what the files said when the session asked to hear, at launch, which the session never
+/// heard. So the first save of a Repository's settings comes with those it replaced too. Files that
+/// couldn't be read then list no Repository, and each comes as added once they can. `told` keeps a
+/// Repository the files stop listing, as a hand edit that takes it out or a reload that finds no
+/// `settings.toml` does, so one that comes back comes with those it had.
 fn tell_session(
     session: &mut SettingsSink,
     told: &mut Vec<RepositorySettings>,
     repositories: &[RepositorySettings],
     by: SavedBy,
 ) {
-    for repository in repositories {
-        if !told.contains(repository) {
-            session(repository.clone(), by);
+    for repository in first_of_each(repositories) {
+        let save = SettingsSave::new(repository.clone(), told, by);
+        if save.replaced() == Some(repository) {
+            continue;
+        }
+        session(save);
+        match (told.iter_mut()).find(|held| held.name.is_same(&repository.name)) {
+            Some(held) => repository.clone_into(held),
+            None => told.push(repository.clone()),
         }
     }
-    repositories.clone_into(told);
+}
+
+/// Each of `repositories` whose name none before it holds, in any case: of a Repository the user wrote
+/// twice, the first.
+fn first_of_each<'a>(
+    repositories: impl IntoIterator<Item = &'a RepositorySettings>,
+) -> Vec<&'a RepositorySettings> {
+    let mut first: Vec<&RepositorySettings> = Vec::new();
+    for repository in repositories {
+        if !first.iter().any(|one| one.name.is_same(&repository.name)) {
+            first.push(repository);
+        }
+    }
+    first
 }
 
 /// Hands `saved` to whoever asked the owner's thread.

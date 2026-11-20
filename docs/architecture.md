@@ -132,9 +132,10 @@ app-wide status.
    again a minute after its last read (`session/on_screen.rs`), and the window holds no timer: it tells the
    core when the user opens, hides, shows again or closes an item, and when the window loads, hides or
    shows. An item that shows again after its minute came round reads at once. The settings owner's thread
-   hands the session each Repository's settings a change saves otherwise, in the order it saves them. Those
-   a hand edit changed, as new Conventions or Filters, announce a `Change` that names no item, and the
-   Repository's lists read their items again.
+   hands the session each Repository's settings a change saves otherwise, with those they replaced, in the
+   order it saves them. The session follows the move of Reach between the two in any Repository, opened or
+   not. Those a hand edit changed in a Repository opened since launch, as new Conventions or Filters,
+   announce a `Change` that names no item, and the Repository's lists read their items again.
 
 App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
 problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter

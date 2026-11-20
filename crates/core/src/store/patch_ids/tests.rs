@@ -7,7 +7,7 @@ use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::ReviewState;
 use crate::login::Login;
 use crate::store::Store;
-use crate::store::testing::{database_before, migrated_database};
+use crate::store::testing::{at_second, database_before, migrated_database};
 use crate::testing::{TempPath, cpython, me, pr_facts, sha_of};
 
 fn file(path: &str, digit: char) -> FilePatch {
@@ -350,10 +350,6 @@ fn the_last_check_of_another_review_brings_no_patch_ids() {
     assert_eq!(read, BTreeMap::new());
 }
 
-fn seconds(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::from_unix_timestamp(seconds).unwrap()
-}
-
 #[test]
 fn a_finding_keeps_its_moment_until_it_ends_and_a_new_review_replaces_it() {
     let (_folder, store) = seeded("patch-ids-findings");
@@ -367,35 +363,83 @@ fn a_finding_keeps_its_moment_until_it_ends_and_a_new_review_replaces_it() {
     let stale_found = || store.work_facts(&cpython()).unwrap().reviews.stale_found;
 
     store
-        .save_findings(&cpython(), found(&[1, 2], '1'), seconds(10))
+        .save_findings(&cpython(), found(&[1, 2], '1'), at_second(10))
         .unwrap();
     let first = stale_found();
     store
-        .save_findings(&cpython(), found(&[2], '3'), seconds(20))
+        .mark_seen(&cpython(), vec![1, 2], Some(at_second(15)))
+        .unwrap();
+    let marked = stale_found();
+    store
+        .save_findings(&cpython(), found(&[2], '3'), at_second(20))
         .unwrap();
     let ended = Findings {
         found: vec![],
         ended: vec![1],
     };
-    store.save_findings(&cpython(), ended, seconds(30)).unwrap();
+    store
+        .save_findings(&cpython(), ended, at_second(30))
+        .unwrap();
     let after = stale_found();
     store.close();
 
-    let at = |commit: char, at: i64| StaleFound {
+    let at = |commit: char, at: i64, acknowledged: bool| StaleFound {
         reviewed: sha_of(commit),
-        at: seconds(at),
+        at: at_second(at),
+        acknowledged,
     };
-    assert_eq!(first, BTreeMap::from([(1, at('1', 10)), (2, at('1', 10))]));
-    assert_eq!(after, BTreeMap::from([(2, at('3', 20))]));
+    let unmarked = at('1', 10, false);
+    assert_eq!(
+        first,
+        BTreeMap::from([(1, unmarked.clone()), (2, unmarked)])
+    );
+    let acknowledged = at('1', 10, true);
+    assert_eq!(
+        marked,
+        BTreeMap::from([(1, acknowledged.clone()), (2, acknowledged)])
+    );
+    assert_eq!(after, BTreeMap::from([(2, at('3', 20, false))]));
 }
 
 #[test]
-fn a_last_check_kept_before_the_migration_counts_as_found_long_ago() {
+fn a_mark_with_no_moment_acknowledges_no_finding() {
+    let (_folder, store) = seeded("patch-ids-findings-no-moment");
+    let found = Findings {
+        found: vec![(1, sha_of('1'))],
+        ended: vec![],
+    };
+    store
+        .save_findings(&cpython(), found, at_second(10))
+        .unwrap();
+
+    store.mark_seen(&cpython(), vec![1], None).unwrap();
+
+    let read = store.work_facts(&cpython()).unwrap().reviews.stale_found;
+    store.close();
+    assert!(!read[&1].acknowledged);
+}
+
+#[test]
+fn each_review_of_a_moved_head_before_the_migration_counts_as_found_long_ago_and_acknowledged() {
+    // PR 1 moved on from the user's Review. PR 2's head is the commit they reviewed. On PR 3 a colleague
+    // reviewed after them.
     let (path, _folder) = database_before(
         "patch-ids-before-findings",
         super::STALE_REVIEWS,
-        "INSERT INTO last_checks (repository, number, reviewed_commit, head_commit)
-         VALUES ('python/cpython', 1, '11111111', '22222222')",
+        "INSERT INTO viewer (id, login) VALUES (1, 'octocat');
+         INSERT INTO pull_requests (repository, number, title, state, is_draft, author, target_branch, ci,
+                                    updated_at, head)
+         VALUES ('python/cpython', 1, 'PR 1', 'OPEN', 0, 'some-author', 'main', NULL, 1, '22222222'),
+                ('python/cpython', 2, 'PR 2', 'OPEN', 0, 'some-author', 'main', NULL, 1, '33333333'),
+                ('python/cpython', 3, 'PR 3', 'OPEN', 0, 'some-author', 'main', NULL, 1, '44444444');
+         INSERT INTO issue_content (repository, number, body_html, earlier_comments)
+         VALUES ('python/cpython', 1, '', 0), ('python/cpython', 2, '', 0), ('python/cpython', 3, '', 0);
+         INSERT INTO pr_reviews (repository, number, position, author, state, commit_sha, submitted_at,
+                                 body_html)
+         VALUES ('python/cpython', 1, 0, 'octocat', 'APPROVED', '11111111', 1, ''),
+                ('python/cpython', 2, 0, 'octocat', 'APPROVED', '33333333', 1, ''),
+                ('python/cpython', 3, 0, 'octocat', 'APPROVED', '11111111', 1, ''),
+                ('python/cpython', 3, 1, 'some-reviewer', 'APPROVED', '44444444', 2, '');",
     );
 
     let store = Store::open(&path).unwrap();
@@ -405,6 +449,7 @@ fn a_last_check_kept_before_the_migration_counts_as_found_long_ago() {
     let found = StaleFound {
         reviewed: CommitSha::parse("11111111").unwrap(),
         at: OffsetDateTime::UNIX_EPOCH,
+        acknowledged: true,
     };
-    assert_eq!(read, BTreeMap::from([(1, found)]));
+    assert_eq!(read, BTreeMap::from([(1, found.clone()), (3, found)]));
 }

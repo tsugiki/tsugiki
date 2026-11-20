@@ -21,8 +21,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   cloned yet, or cloned again as git said it was broken; no git, or one older than the 2.39 that
   `git patch-id --verbatim` needs; a reviewed commit GitHub refused to send. When the reason goes away, the
   check runs and its verdict replaces the reason.
-- `tsugiki.db` keeps when a check first found each PR's Review stale, or first couldn't run, until a check
-  finds the diff the same or the user reviews again. Checks of later heads and restarts keep that moment.
+- `tsugiki.db` keeps when a check first found each PR's Review stale, or first couldn't run, and whether a
+  mark has acknowledged the PR since, until a check finds the diff the same or the user reviews again.
+  Checks of later heads and restarts keep that moment.
 - A merged or closed PR's check runs once on its final head, while the PR is in **Reach**, and the
   verdict freezes with the PR: once `tsugiki.db` holds both sides, later syncs and fetches read nothing of
   it again. A PR no longer in Reach by then isn't checked. Its row keeps the Stale review

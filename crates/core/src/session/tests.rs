@@ -2730,6 +2730,39 @@ fn patch_ids_the_store_cant_keep_show_its_problem() {
     }
 }
 
+#[test]
+fn reads_the_store_kept_reach_the_window_though_it_cant_keep_the_finding() {
+    let store = empty_store();
+    store.remember_login(&me()).unwrap();
+    let stored = stored_pr(8, "some-author", "4567def");
+    store.save_pull_requests(&gcmon(), vec![stored]).unwrap();
+    let reviewed = CommitSha::parse("0123abc").unwrap();
+    let content = (
+        reviewed_by("octocat", &reviewed),
+        OffsetDateTime::UNIX_EPOCH,
+    );
+    store
+        .save_pull_request_content(&gcmon(), 8, content)
+        .unwrap();
+    let (board, seen) = watched_board();
+    let (passed, changes) = mpsc::channel();
+    let mut board = board.with_changes(Box::new(move |change: &Change| {
+        passed.send(change.clone()).unwrap();
+    }));
+    // The calls go: the patch-ids, the facts, the last check, then the finding, which goes missing.
+    let (lossy, _calls) = store.failing_at_call(Some(3));
+    let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'c')];
+
+    keep_patches(&mut board, &lossy, &gcmon(), PatchReads::Read(both));
+
+    assert!(matches!(showing(&seen), Status::Problem { .. }));
+    let heard: Vec<Vec<u32>> = changes.try_iter().map(|change| change.items).collect();
+    assert_eq!(heard, [[8]]);
+    let held = store.work_facts(&gcmon()).unwrap().reviews;
+    assert_eq!(held.patches.len(), 2);
+    assert_eq!(held.stale_found, BTreeMap::new());
+}
+
 /// A PR's Conversation with one Review by `author`, of `commit`.
 fn reviewed_by(author: &str, commit: &CommitSha) -> PullRequestContent {
     PullRequestContent {

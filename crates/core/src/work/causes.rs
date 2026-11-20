@@ -180,9 +180,9 @@ impl Causes {
             by_number,
             asks,
             review_requests: requested,
-            known_until: known_until(facts, &stale_reviews),
             stale_reviews,
             with_news,
+            known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
             archived: facts.activity.archived.clone(),
@@ -376,10 +376,8 @@ fn closed(facts: &WorkFacts) -> BTreeSet<u32> {
 }
 
 /// The newest moment `facts` hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
-/// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be,
-/// and the moment a check found each of `stale_reviews` stale, so Mark Seen acknowledges the Stale review
-/// the window shows.
-fn known_until(facts: &WorkFacts, stale_reviews: &BTreeSet<u32>) -> BTreeMap<u32, OffsetDateTime> {
+/// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be.
+fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
     let updated = facts
         .pull_requests
         .iter()
@@ -399,10 +397,8 @@ fn known_until(facts: &WorkFacts, stale_reviews: &BTreeSet<u32>) -> BTreeMap<u32
         .ci_finished
         .iter()
         .map(|(number, at)| (*number, *at));
-    let found = (stale_reviews.iter())
-        .filter_map(|number| Some((*number, facts.reviews.stale_found_at(*number)?)));
     let mut newest = BTreeMap::new();
-    for (number, at) in updated.chain(events).chain(ci).chain(found) {
+    for (number, at) in updated.chain(events).chain(ci) {
         let known = newest.entry(number).or_insert(at);
         *known = (*known).max(at);
     }
@@ -508,6 +504,24 @@ impl Judge<'_> {
         })
     }
 
+    /// The Stale review on `pull_request`, from the push or from when the check first found it, whichever
+    /// came later. The window shows none before the check finds it, however long after the push that comes
+    /// (#908). So the user acknowledges it with a mark that comes after the finding, and that marks up to
+    /// the push. A finding the store hasn't dated counts as marked, as before Tsugiki dated them: a store
+    /// that can't keep findings then still lets Mark Seen clear it.
+    fn stale_review(&self, pull_request: &PullRequestFacts) -> Option<Cause> {
+        let pushed = self.pushed_at(pull_request.number);
+        let cause = self.standing_from(pull_request, pushed, Why::StaleReview);
+        let Some(found) = self.reviews.finding(pull_request.number) else {
+            return cause;
+        };
+        let at = pushed.unwrap_or(pull_request.updated_at).max(found.at);
+        (cause.is_some() || !found.acknowledged).then_some(Cause {
+            at,
+            why: Why::StaleReview,
+        })
+    }
+
     fn failed_checks_of(&self, number: u32) -> &[String] {
         let checks = self.facts.failed_checks.get(&number);
         checks.map_or(&[], Vec::as_slice)
@@ -557,11 +571,7 @@ impl Judge<'_> {
             return causes;
         }
         if self.stale_reviews.contains(&number) {
-            // The window shows no Stale review before the check finds it, however long after the push that
-            // comes (#908). A finding the store hasn't dated yet counts from the push.
-            let found = self.reviews.stale_found_at(number);
-            let started = self.pushed_at(number).max(found);
-            causes.extend(self.standing_from(pull_request, started, Why::StaleReview));
+            causes.extend(self.stale_review(pull_request));
         }
         let involvement = if pull_request.is_written_or_reviewed_by(self.viewer) {
             Involvement::WroteOrReviewed

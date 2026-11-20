@@ -89,17 +89,17 @@ pub struct ReviewFacts {
     pub unchecked: BTreeMap<PatchesOf, CantCheck>,
     /// The commits each PR's last finished check compared, whose verdict stands while a newer check waits.
     pub last_checks: BTreeMap<u32, LastCheck>,
-    /// The moment a check first found the user's Review of each PR stale, as the store kept it.
+    /// The store's record of when a check first found the user's Review of each PR stale.
     pub stale_found: BTreeMap<u32, StaleFound>,
 }
 
 impl ReviewFacts {
-    /// The moment a check first found the user's Review of PR `number` stale, or first couldn't run, if the
-    /// store kept one of the Review the PR has now.
-    pub fn stale_found_at(&self, number: u32) -> Option<OffsetDateTime> {
+    /// The store's record of when a check first found the user's Review of PR `number` stale, or first
+    /// couldn't run, if it kept one of the Review the PR has now.
+    pub fn finding(&self, number: u32) -> Option<&StaleFound> {
         let reviewed = self.reviewed.get(&number)?;
         let found = self.stale_found.get(&number)?;
-        (found.reviewed == *reviewed).then_some(found.at)
+        (found.reviewed == *reviewed).then_some(found)
     }
 }
 
@@ -116,6 +116,9 @@ pub struct LastCheck {
 pub struct StaleFound {
     pub reviewed: CommitSha,
     pub at: OffsetDateTime,
+    /// Whether Mark Seen, Archive or Mute has marked the PR since the check found it, as the window drew it
+    /// then.
+    pub acknowledged: bool,
 }
 
 /// The changes to what the store keeps of `StaleFound`, after what the checks say now.

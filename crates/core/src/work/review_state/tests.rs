@@ -409,6 +409,7 @@ fn found(reviewed: char) -> StaleFound {
     StaleFound {
         reviewed: sha_of(reviewed),
         at: at(0),
+        acknowledged: false,
     }
 }
 
@@ -472,6 +473,40 @@ fn a_finding_ends_with_the_same_diff_a_head_back_at_the_review_or_a_new_review()
             ended: vec![1, 3, 7],
         }
     );
+}
+
+#[test]
+fn only_an_open_pr_of_someone_elses_that_the_facts_hold_keeps_a_finding() {
+    let mut reviews = stale_at_2();
+    reviews
+        .reviewed
+        .extend([3, 5].map(|number| (number, sha_of('1'))));
+    // PR 9 has left the facts.
+    let kept = [1, 3, 5, 9].map(|number| (number, found('1')));
+    reviews.stale_found.extend(kept);
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..reviewed_pr_at(3, '2')
+    };
+    let yours = PullRequestFacts {
+        author: Some(me()),
+        ..reviewed_pr_at(5, '2')
+    };
+    let mut unkept = reviews.clone();
+    unkept.stale_found.clear();
+    let pull_requests = vec![reviewed_pr(), merged, yours];
+
+    let findings = findings_to_keep(&facts(pull_requests.clone(), reviews));
+    let found = findings_to_keep(&facts(pull_requests, unkept));
+
+    assert_eq!(
+        findings,
+        Findings {
+            found: vec![],
+            ended: vec![3, 5, 9],
+        }
+    );
+    assert_eq!(found.found, [(1, sha_of('1'))]);
 }
 
 #[test]

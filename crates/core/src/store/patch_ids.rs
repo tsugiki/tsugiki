@@ -65,18 +65,30 @@ pub(super) const CHECKS: &str = "
 ";
 
 /// The moment a check first found the user's Review of `reviewed_commit` on each PR stale, or first couldn't
-/// run, with no check finding the diff the same since (#908). A last check kept before these moments were
-/// counts as found in 1970, so its Stale review still starts at the push, as it did then.
+/// run, with no check finding the diff the same since, and whether a mark has acknowledged the PR since
+/// (#908).
+///
+/// Each of the user's Reviews whose PR's head moved on from it before these were kept counts as found in
+/// 1970 and acknowledged, so its Stale review still waits on the push alone, as it did then. That covers a
+/// Review whose check can't run, or hasn't, so an upgrade brings back no Stale review the user acknowledged.
 pub(super) const STALE_REVIEWS: &str = "
     CREATE TABLE stale_reviews (
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
         reviewed_commit TEXT NOT NULL,
         found_at INTEGER NOT NULL,
+        acknowledged INTEGER NOT NULL,
         PRIMARY KEY (repository, number)
     ) WITHOUT ROWID;
-    INSERT INTO stale_reviews (repository, number, reviewed_commit, found_at)
-        SELECT repository, number, reviewed_commit, 0 FROM last_checks;
+    INSERT INTO stale_reviews (repository, number, reviewed_commit, found_at, acknowledged)
+        SELECT pr.repository, pr.number, review.commit_sha, 0, 1
+        FROM pull_requests AS pr
+        JOIN viewer ON viewer.id = 1
+        JOIN pr_reviews AS review ON review.repository = pr.repository AND review.number = pr.number
+        WHERE review.position = (SELECT MAX(mine.position) FROM pr_reviews AS mine
+                                 WHERE mine.repository = pr.repository AND mine.number = pr.number
+                                   AND mine.author = viewer.login COLLATE NOCASE)
+          AND review.commit_sha IS NOT NULL AND pr.head IS NOT NULL AND pr.head <> review.commit_sha;
 ";
 
 /// Keeps each of `patches`, in place of what was kept of the same commit before.
@@ -203,8 +215,8 @@ pub(super) fn save_last_checks(
     transaction.commit()
 }
 
-/// Keeps `findings`: each found Review dated `now`, in place of what was kept of its PR, and each ended one
-/// forgotten.
+/// Keeps `findings`: each found Review dated `now` and not yet acknowledged, in place of what was kept of
+/// its PR, and each ended one forgotten.
 pub(super) fn save_findings(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -213,8 +225,8 @@ pub(super) fn save_findings(
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     let mut found = transaction.prepare(
-        "INSERT OR REPLACE INTO stale_reviews (repository, number, reviewed_commit, found_at)
-         VALUES (:repository, :number, :reviewed, :now)",
+        "INSERT OR REPLACE INTO stale_reviews (repository, number, reviewed_commit, found_at, acknowledged)
+         VALUES (:repository, :number, :reviewed, :now, 0)",
     )?;
     for (number, reviewed) in &findings.found {
         let row = named_params! {
@@ -284,7 +296,8 @@ fn read_stale_found(
     repository: &RepositoryName,
 ) -> rusqlite::Result<BTreeMap<u32, StaleFound>> {
     let mut statement = transaction.prepare(
-        "SELECT number, reviewed_commit, found_at FROM stale_reviews WHERE repository = :repository",
+        "SELECT number, reviewed_commit, found_at, acknowledged FROM stale_reviews
+         WHERE repository = :repository",
     )?;
     let asked = named_params! { ":repository": repository };
     let found = statement.query_map(asked, |row| {
@@ -292,6 +305,7 @@ fn read_stale_found(
         let found = StaleFound {
             reviewed: row.get("reviewed_commit")?,
             at,
+            acknowledged: row.get("acknowledged")?,
         };
         Ok((row.get("number")?, found))
     })?;

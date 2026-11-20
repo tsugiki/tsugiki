@@ -878,12 +878,13 @@ fn keep_patches(
         }
     };
     let facts = saved.and_then(|()| store.work_facts(repository));
-    let kept = facts.and_then(|facts| {
-        keep_checks(store, repository, &facts, OffsetDateTime::now_utc())?;
-        Ok(facts)
-    });
-    match kept {
+    match facts {
         Ok(facts) => {
+            // The reads are saved, so the window hears of them whether or not the checks are.
+            if let Err(problem) = keep_checks(store, repository, &facts, OffsetDateTime::now_utc())
+            {
+                board.set(Status::Problem { problem });
+            }
             let reviewed = &facts.reviews.reviewed;
             let checked = facts.pull_requests.iter().filter(|pr| {
                 let sides = pr.head.iter().chain(reviewed.get(&pr.number));

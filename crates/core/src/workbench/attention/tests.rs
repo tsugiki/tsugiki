@@ -1318,8 +1318,8 @@ fn a_stale_review_needs_attention_and_counts() {
 fn mark_seen_takes_a_stale_review_out_of_needs_attention_until_a_later_push() {
     let world = World::new("attention-stale-seen");
     world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
-    // The check's finding is the newest moment the window drew, later than the PR's last update.
-    world.checks_kept(hours_ago(2));
+    // The check's finding is later than anything GitHub said of the PR.
+    world.checks_kept(a_minute_on());
 
     world.mark_seen(world.seen(1));
     // The user's Review holds it on the Workbench, as a plain row.
@@ -1330,6 +1330,28 @@ fn mark_seen_takes_a_stale_review_out_of_needs_attention_until_a_later_push() {
 
     world.pushed(1);
     assert!(world.why(1).contains(&Why::StaleReview));
+    world.finish();
+}
+
+#[test]
+fn mark_seen_on_a_stale_review_leaves_a_comment_github_hadnt_sent_new() {
+    let world = World::new("attention-stale-seen-comment");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(a_minute_on());
+    world.mark_seen(world.seen(1));
+
+    // A colleague commented an hour ago, before the check found the Review stale, and the comment syncs
+    // after the mark.
+    let commented = hours_ago(1);
+    world.has(vec![PullRequestFacts {
+        head: Some(sha_of('2')),
+        updated_at: commented,
+        ..pull_request
+    }]);
+    world.happened(1, vec![comment(&colleague(), commented)]);
+
+    assert_eq!(world.why(1), [Why::Comment { by: colleague() }]);
     world.finish();
 }
 

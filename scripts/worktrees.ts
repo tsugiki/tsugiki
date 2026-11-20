@@ -92,3 +92,16 @@ export function addRefusal(
   }
   return undefined;
 }
+
+/**
+ * The reason `just worktree-remove` won't pull main in the main checkout, or `undefined` when it may.
+ * `branch` is the main checkout's branch, empty when it has none, and `status` is what
+ * `git status --porcelain --untracked-files=no` prints there.
+ */
+export function pullRefusal(branch: string, status: string): string | undefined {
+  if (branch !== "main") {
+    return `the main checkout is on ${branch === "" ? "no branch" : branch}, not main.`;
+  }
+  if (status !== "") return "the main checkout holds changes git hasn't committed.";
+  return undefined;
+}

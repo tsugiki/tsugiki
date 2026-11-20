@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addRefusal,
+  pullRefusal,
   ticketBranch,
   ticketNumber,
   ticketTitle,
@@ -99,5 +100,20 @@ describe("addRefusal", () => {
 
   it("refuses a folder that's there already", () => {
     expect(addRefusal(undefined, ".temp/wt-738", true)).toContain(".temp/wt-738 is there already");
+  });
+});
+
+describe("pullRefusal", () => {
+  it("lets a clean main pull", () => {
+    expect(pullRefusal("main", "")).toBeUndefined();
+  });
+
+  it("refuses a main checkout on another branch", () => {
+    expect(pullRefusal("842-trees", "")).toContain("on 842-trees");
+    expect(pullRefusal("", "")).toContain("on no branch");
+  });
+
+  it("refuses a main checkout with uncommitted changes", () => {
+    expect(pullRefusal("main", " M AGENTS.md\n")).toContain("changes git hasn't committed");
   });
 });

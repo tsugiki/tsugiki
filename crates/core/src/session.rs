@@ -398,6 +398,7 @@ impl Refreshes {
                     keep_patches(telling.board, store, &repository, patches);
                 }
                 SessionMessage::Fetch(fetched) => {
+                    (self.links.borrow_mut()).put_first(&fetched.item().repository);
                     self.read_failed(telling.board, &fetched, ItemUnread::NoToken);
                 }
                 SessionMessage::Check { .. }
@@ -622,6 +623,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             Turn::CheckHour => {}
             Turn::RefillLinks => refreshes.links.borrow_mut().step(board, store),
             Turn::Fetch(fetched) => {
+                // An item of another Repository, as quick open opens one, reads its links on screen too.
+                (refreshes.links.borrow_mut()).put_first(&fetched.item().repository);
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);
                 }

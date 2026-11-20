@@ -508,18 +508,26 @@ impl Store {
         found.map_err(saying(CANT_READ))
     }
 
-    /// Works out the links of each PR of `repository` again, under this version's rules, in place of those
-    /// kept. A refill that fails keeps them.
-    pub fn refill_links(&self, repository: &RepositoryName) -> Result<(), Error> {
+    /// Works out the links of the first `most` PRs of `repository` from number `from` up again, under this
+    /// version's rules, in place of those kept. Answers with the number the next batch starts from, or
+    /// nothing once the Repository has no PR left. A batch that fails keeps the links it would replace.
+    pub fn refill_links(
+        &self,
+        repository: &RepositoryName,
+        from: u32,
+        most: u32,
+    ) -> Result<Option<u32>, Error> {
         let repository = repository.clone();
-        let refilled = self.call(move |connection| pr_links::refill(connection, &repository))?;
+        let refilled =
+            self.call(move |connection| pr_links::refill(connection, &repository, from, most))?;
         refilled.map_err(saying(CANT_WRITE))
     }
 
     /// Saves this version of the link rules as the one that worked out the kept links, once the session has
-    /// refilled those of each Repository `stale_links` named.
+    /// refilled those of each Repository `stale_links` named. The links of a Repository whose stored name no
+    /// longer parses go with it.
     pub fn keep_link_rules(&self) -> Result<(), Error> {
-        let kept = self.call(|connection| pr_links::keep_version(connection))?;
+        let kept = self.call(pr_links::refilled)?;
         kept.map_err(saying(CANT_WRITE))
     }
 

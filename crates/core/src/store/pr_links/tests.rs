@@ -10,7 +10,7 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{OffDefault, PrState};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
-use crate::testing::{TempPath, cpython, issue_facts, pr_facts, sha};
+use crate::testing::{TempPath, cpython, gcmon, issue_facts, pr_facts, sha};
 
 fn pr(number: u32, title: &str) -> PullRequestFacts {
     PullRequestFacts {
@@ -260,7 +260,7 @@ fn a_store_whose_links_no_rules_worked_out_leaves_them_to_the_refill_of_its_repo
 
     let store = Store::open(&path).unwrap();
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
-    store.refill_links(&cpython()).unwrap();
+    refill_whole(&store, &cpython());
     store.keep_link_rules().unwrap();
 
     assert_eq!(store.stale_links().unwrap(), None);
@@ -298,6 +298,32 @@ fn store_with_a_backport(name: &str) -> (std::path::PathBuf, TempPath) {
     (path, folder)
 }
 
+/// Works out the links of every PR of `repository` that `store` holds again, in one batch.
+fn refill_whole(store: &Store, repository: &RepositoryName) {
+    assert_eq!(store.refill_links(repository, 0, u32::MAX).unwrap(), None);
+}
+
+#[test]
+fn a_refill_takes_a_repositorys_prs_a_batch_at_a_time_in_number_order() {
+    let (path, _folder) = store_with_a_backport("links-batches");
+    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    let connection = Connection::open(&path).unwrap();
+    let refill = |from| store.refill_links(&cpython(), from, 1).unwrap();
+
+    assert_eq!(refill(0), Some(11));
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5], None), (11, vec![], None)]
+    );
+    assert_eq!(refill(11), Some(12));
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5], None), (11, vec![], Some(10))]
+    );
+    assert_eq!(refill(12), None);
+    store.close();
+}
+
 #[test]
 fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_refill() {
     let (path, _folder) = store_with_a_backport("links-stale");
@@ -310,7 +336,7 @@ fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_
         [(10, vec![6], None), (11, vec![], None)]
     );
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
-    store.refill_links(&cpython()).unwrap();
+    refill_whole(&store, &cpython());
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10, 11]),
         [(10, vec![5], None), (11, vec![], Some(10))]
@@ -353,17 +379,38 @@ fn a_store_that_holds_no_pr_keeps_this_versions_rules_as_it_opens() {
 
 #[test]
 fn a_refill_works_out_only_its_own_repositorys_links() {
-    let gcmon = RepositoryName::parse("some-maintainer/gcmon").unwrap();
-    let store = store_with_old_links(&[cpython(), gcmon.clone()]);
+    let store = store_with_old_links(&[cpython(), gcmon()]);
     let mut stale = store.stale_links().unwrap().unwrap();
     stale.sort_by_key(ToString::to_string);
-    assert_eq!(stale, [cpython(), gcmon.clone()]);
+    assert_eq!(stale, [cpython(), gcmon()]);
 
-    store.refill_links(&gcmon).unwrap();
+    refill_whole(&store, &gcmon());
 
-    let gcmon = gcmon.to_string();
-    let python = cpython().to_string();
+    let (python, gcmon) = (cpython().to_string(), gcmon().to_string());
     assert_eq!(kept_fixes(&store), [(python, 10, 6), (gcmon, 10, 5)]);
+}
+
+#[test]
+fn the_end_of_a_refill_forgets_the_links_of_a_repository_whose_name_no_longer_parses() {
+    let (path, _folder) = store_with_a_backport("links-unparsed");
+    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    store.close();
+    let old = Connection::open(&path).unwrap();
+    old.execute_batch(
+        "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch, updated_at)
+             VALUES ('no-slash', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
+         INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('no-slash', 10, 6, 'every');",
+    )
+    .unwrap();
+    drop(old);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+
+    refill_whole(&store, &cpython());
+    store.keep_link_rules().unwrap();
+
+    assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 5)]);
+    store.close();
 }
 
 #[test]
@@ -372,7 +419,7 @@ fn a_refill_that_fails_keeps_the_links_it_found_and_their_version() {
     let store = open_with_old_links(&path, RULES_VERSION - 1);
     refuse_new_links(&store);
 
-    assert!(store.refill_links(&cpython()).is_err());
+    assert!(store.refill_links(&cpython(), 0, u32::MAX).is_err());
 
     assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 6)]);
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));

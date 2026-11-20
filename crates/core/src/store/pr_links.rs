@@ -249,13 +249,38 @@ impl<'c> Keeper<'c> {
     }
 }
 
-/// Saves this version of the rules as the one that worked out the kept links. The session saves it once it
-/// has refilled each Repository `stale` named: a PR saved meanwhile kept links under this version's rules.
-pub(super) fn keep_version(connection: &Connection) -> rusqlite::Result<()> {
+/// Saves this version of the rules as the one that worked out the kept links.
+fn keep_version(connection: &Connection) -> rusqlite::Result<()> {
     let query = "INSERT INTO link_rules (id, version) VALUES (1, :version)
                  ON CONFLICT (id) DO UPDATE SET version = excluded.version";
     let version = named_params! { ":version": RULES_VERSION };
     connection.execute(query, version).map(drop)
+}
+
+/// Saves this version of the rules as the one that worked out the kept links, once the session has refilled
+/// each Repository `stale` named: a PR saved meanwhile kept links under this version's rules. The links of a
+/// Repository whose stored name no longer parses go, as no refill reaches them.
+pub(super) fn refilled(connection: &mut Connection) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let query = "SELECT repository FROM pr_fixes UNION SELECT repository FROM pr_origins";
+    let names: Vec<String> = {
+        let mut statement = transaction.prepare(query)?;
+        let names = statement.query_map([], |row| row.get("repository"))?;
+        names.collect::<rusqlite::Result<_>>()?
+    };
+    let unread = names
+        .iter()
+        .filter(|name| RepositoryName::parse(name).is_err());
+    for name in unread {
+        for table in ["pr_fixes", "pr_origins"] {
+            let forget = format!("DELETE FROM {table} WHERE repository = :repository");
+            transaction
+                .execute(&forget, named_params! { ":repository": name })
+                .map(drop)?;
+        }
+    }
+    keep_version(&transaction)?;
+    transaction.commit()
 }
 
 /// Saves this version of the rules as the one that worked out the kept links, in a store that holds no PR,
@@ -285,50 +310,80 @@ pub(super) fn stale(connection: &Connection) -> rusqlite::Result<Option<Vec<Repo
     let mut statement = connection.prepare("SELECT DISTINCT repository FROM pull_requests")?;
     let names = statement.query_map([], |row| row.get::<_, String>("repository"))?;
     let names: Vec<String> = names.collect::<rusqlite::Result<_>>()?;
-    // A name the store holds parsed once; one that no longer parses names no Repository to link.
+    // A name the store holds parsed once. One that no longer parses names no Repository to link, and
+    // `refilled` forgets its links.
     let repositories = names
         .iter()
         .filter_map(|name| RepositoryName::parse(name).ok());
     Ok(Some(repositories.collect()))
 }
 
-/// Keeps the links of every PR of `repository` that the store holds, in place of those kept, in one
-/// transaction. It reads only what the rules read, and finds each Backport's Origin PR once, since every PR
-/// of the Repository is there to be found.
+/// What a PR's links are worked out from, as the store holds it.
+struct HeldSignals {
+    number: u32,
+    title: String,
+    off_default_description: Option<String>,
+}
+
+/// Keeps the links of the first `most` PRs of `repository` from number `from` up that the store holds, in
+/// place of those kept, in one transaction. Answers with the number the next batch starts from, or nothing
+/// once no PR is left. It reads only what the rules read, and finds each Backport's Origin PR once, since
+/// every PR of the Repository is there to be found.
 pub(super) fn refill(
     connection: &mut Connection,
     repository: &RepositoryName,
-) -> rusqlite::Result<()> {
+    from: u32,
+    most: u32,
+) -> rusqlite::Result<Option<u32>> {
     let transaction = connection.transaction()?;
-    let this: [(&str, &dyn ToSql); 1] = [(":repository", repository)];
+    let query = "SELECT number, title, off_default_description FROM pull_requests
+                 WHERE repository = :repository AND number >= :from ORDER BY number LIMIT :most";
+    let asked = named_params! { ":repository": repository, ":from": from, ":most": most };
+    let held: Vec<HeldSignals> = {
+        let mut statement = transaction.prepare(query)?;
+        let rows = statement.query_map(asked, |row| {
+            Ok(HeldSignals {
+                number: row.get("number")?,
+                title: row.get("title")?,
+                off_default_description: row.get("off_default_description")?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    let Some(last) = held.last().map(|pr| pr.number) else {
+        return Ok(None);
+    };
+    let these: [(&str, &dyn ToSql); 3] = [
+        (":repository", repository),
+        (":from", &from),
+        (":last", &last),
+    ];
     for table in ["pr_fixes", "pr_origins"] {
-        let forget = format!("DELETE FROM {table} WHERE repository = :repository");
-        transaction.execute(&forget, &this[..]).map(drop)?;
+        let forget = format!(
+            "DELETE FROM {table} WHERE repository = :repository AND number BETWEEN :from AND :last"
+        );
+        transaction.execute(&forget, &these[..]).map(drop)?;
     }
-    let closing = "SELECT number, issue FROM closing_references WHERE repository = :repository
+    let closing = "SELECT number, issue FROM closing_references
+                   WHERE repository = :repository AND number BETWEEN :from AND :last
                    ORDER BY number, issue";
     let closing: BTreeMap<u32, Vec<u32>> =
-        values_by_number(&mut transaction.prepare(closing)?, &this, "issue")?;
-    let query = "SELECT number, title, off_default_description FROM pull_requests
-                 WHERE repository = :repository";
+        values_by_number(&mut transaction.prepare(closing)?, &these, "issue")?;
     {
-        let mut statement = transaction.prepare(query)?;
-        let mut rows = statement.query(&this[..])?;
         let mut keeper = Keeper::new(&transaction, repository)?;
-        while let Some(row) = rows.next()? {
-            let number: u32 = row.get("number")?;
-            let title: String = row.get("title")?;
-            let description: Option<String> = row.get("off_default_description")?;
+        for pr in &held {
             let signals = LinkSignals {
-                title: &title,
-                closing_issues: closing.get(&number).map_or(&[][..], Vec::as_slice),
-                off_default_description: description.as_deref(),
+                title: &pr.title,
+                closing_issues: closing.get(&pr.number).map_or(&[][..], Vec::as_slice),
+                off_default_description: pr.off_default_description.as_deref(),
             };
-            keeper.keep(number, &signals)?;
-            keeper.keep_picked_origin(number)?;
+            keeper.keep(pr.number, &signals)?;
+            keeper.keep_picked_origin(pr.number)?;
         }
     }
-    transaction.commit()
+    transaction.commit()?;
+    let full = held.len() == usize::try_from(most).unwrap_or(usize::MAX);
+    Ok(if full { last.checked_add(1) } else { None })
 }
 
 /// The condition on `pr_origins` as `origin` that keeps the Origin PRs `conventions` read, with what it

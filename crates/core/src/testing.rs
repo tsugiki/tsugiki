@@ -50,6 +50,11 @@ pub fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
 }
 
+/// A second Repository, for a test that tells two apart.
+pub fn gcmon() -> RepositoryName {
+    RepositoryName::parse("some-maintainer/gcmon").unwrap()
+}
+
 /// [`cpython`]'s settings, as a Repository just added has them.
 pub fn cpython_settings() -> RepositorySettings {
     RepositorySettings::new(cpython())

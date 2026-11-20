@@ -1,7 +1,7 @@
 //! The job that works out the links the store keeps again, once a release changes the rules that work them
 //! out (#950). The store opens with the links it kept and answers reads from them meanwhile. The session
-//! takes the job a Repository at a time, ahead of the syncs' next steps, and answers what it's asked between
-//! two Repositories.
+//! takes the job a batch of a Repository's PRs at a time, ahead of the syncs' next steps, and answers what
+//! it's asked between two batches.
 
 use std::collections::VecDeque;
 
@@ -9,12 +9,35 @@ use crate::repository::RepositoryName;
 use crate::status::{Change, StatusBoard};
 use crate::store::Store;
 
+/// How many PRs a step works out the links of, at most. The step keeps the session from what it's asked
+/// for as long as it runs, and a Repository the size of CPython's would keep it for several of these.
+const BATCH: u32 = 5000;
+
+/// A Repository whose links are still to work out again, from the PR it has got to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Left {
+    repository: RepositoryName,
+    /// The number the next batch starts from.
+    from: u32,
+}
+
 /// The refill the store's links owe, if they owe one.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct LinkRefill {
     /// The Repositories whose links are still to work out again, the next first. Nothing while the kept
     /// links are this version's, or once a refill failed.
-    left: Option<VecDeque<RepositoryName>>,
+    left: Option<VecDeque<Left>>,
+    /// How many PRs a step works out the links of, at most.
+    batch: u32,
+}
+
+impl Default for LinkRefill {
+    fn default() -> Self {
+        Self {
+            left: None,
+            batch: BATCH,
+        }
+    }
 }
 
 impl LinkRefill {
@@ -28,8 +51,17 @@ impl LinkRefill {
             );
             None
         });
+        let left = stale.map(|repositories| {
+            let left = repositories.into_iter();
+            left.map(|repository| Left {
+                repository,
+                from: 0,
+            })
+            .collect()
+        });
         Self {
-            left: stale.map(VecDeque::from),
+            left,
+            ..Self::default()
         }
     }
 
@@ -38,38 +70,49 @@ impl LinkRefill {
         self.left.is_some()
     }
 
-    /// Has the refill take `repository` next, as the window opened it, if its links are still to work out.
+    /// Has the refill take `repository` next, from the PR it has got to, as the window shows it, if its links
+    /// are still to work out.
     pub(super) fn put_first(&mut self, repository: &RepositoryName) {
         let Some(left) = &mut self.left else {
             return;
         };
-        let at = left.iter().position(|name| name.is_same(repository));
-        if let Some(name) = at.and_then(|at| left.remove(at)) {
-            left.push_front(name);
+        let at = left
+            .iter()
+            .position(|next| next.repository.is_same(repository));
+        if let Some(next) = at.and_then(|at| left.remove(at)) {
+            left.push_front(next);
         }
     }
 
-    /// Works out the links of the next Repository again and tells `board`, whose screens read them again.
-    /// Once none are left, it saves this version of the rules as the kept links'. A step that fails ends the
-    /// refill, and leaves the kept links and their version for the next launch to refill.
+    /// Works out the links of the next batch of PRs again. Once a Repository has none left, it tells
+    /// `board`, whose screens of the Repository read them again, and once no Repository is left, it saves
+    /// this version of the rules as the kept links'. A step that fails ends the refill, and leaves the kept
+    /// links and their version for the next launch to refill.
     pub(super) fn step(&mut self, board: &mut StatusBoard, store: &Store) {
         let Some(left) = &mut self.left else {
             return;
         };
-        if let Some(repository) = left.pop_front() {
-            if let Err(problem) = store.refill_links(&repository) {
-                log::warn!(
-                    "Tsugiki couldn't work out the links of {repository} again, and tries at the next \
-                     launch: {}",
-                    problem.message
-                );
-                self.left = None;
-                return;
+        if let Some(next) = left.pop_front() {
+            let repository = next.repository;
+            match store.refill_links(&repository, next.from, self.batch) {
+                Ok(Some(from)) => {
+                    left.push_front(Left { repository, from });
+                    return;
+                }
+                Ok(None) => board.changed(&Change {
+                    repository,
+                    items: Vec::new(),
+                }),
+                Err(problem) => {
+                    log::warn!(
+                        "Tsugiki couldn't work out the links of {repository} again, and tries at the \
+                         next launch: {}",
+                        problem.message
+                    );
+                    self.left = None;
+                    return;
+                }
             }
-            board.changed(&Change {
-                repository,
-                items: Vec::new(),
-            });
             if !left.is_empty() {
                 return;
             }

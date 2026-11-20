@@ -32,8 +32,8 @@ use crate::status::{Change, FailedRead, ItemUnread, ReadFailure};
 use crate::store::testing::{OpenStore, kept_fixes, store_with_old_links};
 use crate::store::{ChangeCheck, SyncState};
 use crate::testing::{
-    TempPath, cpython, cpython_settings, hours_ago, issue_facts, listed, listing, me, one_folder,
-    pr_facts, recordings,
+    TempPath, cpython, cpython_settings, gcmon, hours_ago, issue_facts, listed, listing, me,
+    one_folder, pr_facts, recordings,
 };
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
@@ -1410,10 +1410,6 @@ const PLENTY: Duration = Duration::from_secs(10);
 const GCMON: &str = r#"{"data":{"repository":{"nameWithOwner":"some-maintainer/gcmon",
         "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
         "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
-
-fn gcmon() -> RepositoryName {
-    RepositoryName::parse("some-maintainer/gcmon").unwrap()
-}
 
 /// A Repository with no Filters, so a sync asks for what these tests script.
 fn plain_gcmon() -> RepositorySettings {
@@ -3576,16 +3572,19 @@ fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
     assert_eq!(fs::read(folders.database()).unwrap(), before);
 }
 
+/// The ways the window opens something of gcmon: the Repository, and a PR of it from quick open.
+const OPENING_GCMON: [fn(&Fetching); 2] = [
+    |fetching| fetching.sync(gcmon()),
+    |fetching| fetching.fetch_pull_request(gcmon(), 10),
+];
+
 /// Watches GitHub through `access` with a store whose links an older version of the rules kept, in CPython
-/// and gcmon, once the window has opened gcmon. Answers with the Repository of each Change, which names no
-/// item, and the store. The session stops once it has heard of both.
-fn refilled_watching(access: GitHubAccess) -> (Vec<RepositoryName>, Store) {
+/// and gcmon, once the window has opened something of gcmon through `open`. Answers with the Repository of
+/// each Change, which names no item, and the store. The session stops once it has heard of both.
+fn refilled_watching(access: GitHubAccess, open: fn(&Fetching)) -> (Vec<RepositoryName>, Store) {
     let store = store_with_old_links(&[cpython(), gcmon()]);
     let (stop, incoming) = mpsc::channel();
-    stop.send(SessionMessage::Sync {
-        repository: gcmon(),
-    })
-    .unwrap();
+    open(&sending(stop.clone(), mirrors()));
     let (heard, changes) = mpsc::channel();
     let mut count = 0;
     let mut board = quiet_board().with_changes(Box::new(move |change: &Change| {
@@ -3615,23 +3614,27 @@ fn refilled_fixes() -> Vec<(String, u32, u32)> {
 
 #[test]
 fn a_session_refills_stale_links_the_open_repository_first_and_tells_the_window() {
-    let (heard, store) = refilled_watching(offline());
+    for open in OPENING_GCMON {
+        let (heard, store) = refilled_watching(offline(), open);
 
-    assert_eq!(heard, [gcmon(), cpython()]);
-    assert_eq!(store.stale_links().unwrap(), None);
-    assert_eq!(kept_fixes(&store), refilled_fixes());
+        assert_eq!(heard, [gcmon(), cpython()]);
+        assert_eq!(store.stale_links().unwrap(), None);
+        assert_eq!(kept_fixes(&store), refilled_fixes());
+    }
 }
 
 #[test]
 fn a_session_without_a_token_refills_stale_links_too() {
-    let access = GitHubAccess {
-        transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
-    };
+    for open in OPENING_GCMON {
+        let access = GitHubAccess {
+            transport: Box::new(Canned(Err(Unreachable::Offline))),
+            run_gh: without_gh,
+        };
 
-    let (heard, store) = refilled_watching(access);
+        let (heard, store) = refilled_watching(access, open);
 
-    assert_eq!(heard, [gcmon(), cpython()]);
-    assert_eq!(store.stale_links().unwrap(), None);
-    assert_eq!(kept_fixes(&store), refilled_fixes());
+        assert_eq!(heard, [gcmon(), cpython()]);
+        assert_eq!(store.stale_links().unwrap(), None);
+        assert_eq!(kept_fixes(&store), refilled_fixes());
+    }
 }

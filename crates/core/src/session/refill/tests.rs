@@ -3,11 +3,7 @@ use std::sync::mpsc::{self, Receiver};
 use super::*;
 use crate::status::testing::quiet_board;
 use crate::store::testing::{kept_fixes, refuse_new_links, store_with_old_links};
-use crate::testing::cpython;
-
-fn gcmon() -> RepositoryName {
-    RepositoryName::parse("some-maintainer/gcmon").unwrap()
-}
+use crate::testing::{cpython, gcmon};
 
 /// A board that passes on the Repository of each Change, with whether it named no item.
 fn repositories_board() -> (StatusBoard, Receiver<(RepositoryName, bool)>) {
@@ -55,6 +51,36 @@ fn each_step_refills_a_repository_the_one_the_window_opened_first_and_the_last_s
     assert_eq!(changes.try_iter().collect::<Vec<_>>(), [(cpython(), true)]);
     assert!(!refill.is_due());
     assert_eq!(store.stale_links().unwrap(), None);
+    let fixed = |repository: RepositoryName| (repository.to_string(), 10, 5);
+    assert_eq!(kept_fixes(&store), [fixed(cpython()), fixed(gcmon())]);
+}
+
+#[test]
+fn a_repository_tells_the_window_once_its_last_batch_saves_and_keeps_its_place_when_another_goes_first()
+ {
+    let store = store_with_old_links(&[cpython(), gcmon()]);
+    let (mut board, changes) = repositories_board();
+    let mut refill = LinkRefill {
+        batch: 1,
+        ..LinkRefill::owed_by(&store)
+    };
+    refill.put_first(&cpython());
+
+    // PR 10 of CPython, then the window opens gcmon, then the batch after PR 10, which finds none.
+    refill.step(&mut board, &store);
+    refill.put_first(&gcmon());
+    for _ in 0..2 {
+        refill.step(&mut board, &store);
+    }
+    assert_eq!(changes.try_iter().collect::<Vec<_>>(), [(gcmon(), true)]);
+    let place = |left: &Left| (left.repository.clone(), left.from);
+    let left: Vec<_> = refill.left.iter().flatten().map(place).collect();
+    assert_eq!(left, [(cpython(), 11)]);
+
+    refill.step(&mut board, &store);
+
+    assert_eq!(changes.try_iter().collect::<Vec<_>>(), [(cpython(), true)]);
+    assert!(!refill.is_due());
     let fixed = |repository: RepositoryName| (repository.to_string(), 10, 5);
     assert_eq!(kept_fixes(&store), [fixed(cpython()), fixed(gcmon())]);
 }

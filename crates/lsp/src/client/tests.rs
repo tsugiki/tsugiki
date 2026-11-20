@@ -1,12 +1,12 @@
 use std::io::{self, Write};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use crate::client::{Event, Exit, Fallback, Init, Pending, RequestError, Server};
+use crate::client::{Event, Exit, Fallback, Init, Pending, RequestError, Server, received_by};
 use crate::testing::{
     Fake, PATIENCE, connect, connect_logged, initialize, initialized, initialized_with, range, uri,
 };
@@ -567,6 +567,18 @@ fn a_stopped_server_that_stops_reading_is_killed_once_the_patience_has_passed() 
     fake.stop_reading();
     server.stop(Duration::from_millis(100));
     fake.killed.recv_timeout(PATIENCE).unwrap();
+}
+
+/// A server that floods its output while it stops keeps the owner's queue full. The wait for its exit reads
+/// nothing queued once its patience has passed, so the kill comes on time.
+#[test]
+fn once_the_deadline_has_passed_no_queued_message_is_received() {
+    let (sends, queued) = mpsc::channel();
+    sends.send("first").unwrap();
+    let passed = Instant::now();
+
+    assert_eq!(received_by(&queued, passed), None);
+    assert_eq!(received_by(&queued, passed + PATIENCE), Some("first"));
 }
 
 #[test]

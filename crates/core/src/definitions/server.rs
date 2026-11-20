@@ -7,7 +7,6 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{self, Write};
-use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -26,6 +25,7 @@ use super::{
     DiffEnd, EXIT_NEWS, EXIT_PATIENCE, Hit, IndexedFiles, Lookup, NotReady, PATIENCE, Place,
     ServerName, ServerProblem, plain, server_log, slashed, uri,
 };
+use crate::deadline::received_until;
 use crate::diff;
 use crate::error::Error;
 use crate::latest::{self, LatestReader, LatestWriter};
@@ -174,7 +174,7 @@ impl Stopping {
     /// Waits until the server's process has ended, or until `until`. The events end once the client has
     /// killed it.
     pub(super) fn wait(self, until: Instant) {
-        (events_until(&self.0, until))
+        (received_until(&self.0, until))
             .take_while(|event| !matches!(event, Event::Exited(_)))
             .for_each(drop);
     }
@@ -183,21 +183,12 @@ impl Stopping {
 /// How the server whose `events` these are exited, once it has, waiting until `until` at most. Nothing if
 /// it hasn't by then, or its events ended without it, as when it was killed.
 fn exit_by(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
-    for event in events_until(events, until) {
+    for event in received_until(events, until) {
         if let Event::Exited(exit) = event {
             return Some(exit);
         }
     }
     None
-}
-
-/// The `events` of a server as they come, until `until` or until they end.
-fn events_until(events: &Receiver<Event>, until: Instant) -> impl Iterator<Item = Event> {
-    iter::from_fn(move || {
-        // Once the deadline has passed, events already queued would come first for as long as they last.
-        let wait = (until.checked_duration_since(Instant::now())).filter(|wait| !wait.is_zero())?;
-        events.recv_timeout(wait).ok()
-    })
 }
 
 /// A file the PR changes, open on the server, with its text at the head and at the base. A file the PR adds
@@ -782,7 +773,7 @@ impl Watcher {
 /// Waits until the server whose `events` these are says it is quiescent, or has ended, or until `until`. A
 /// server that is still loading then answers what it can. One that has ended gives how.
 fn quiescent(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
-    for event in events_until(events, until) {
+    for event in received_until(events, until) {
         match event {
             Event::Status(Status {
                 quiescent: true, ..

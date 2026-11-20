@@ -114,7 +114,10 @@ fn a_server_is_quiescent_once_it_says_so_and_has_stopped_if_it_exits_first() {
     let (_sends, exited) = events(vec![loading(), Event::Exited(crashed())]);
 
     assert_eq!(quiescent(&ready, Instant::now() + PATIENCE), None);
-    assert_eq!(quiescent(&exited, Instant::now() + PATIENCE), Some(crashed()));
+    assert_eq!(
+        quiescent(&exited, Instant::now() + PATIENCE),
+        Some(crashed())
+    );
 }
 
 #[test]
@@ -135,12 +138,18 @@ fn a_stopping_server_is_waited_for_until_the_deadline_while_it_floods_its_events
     // A bound keeps the queue from growing without limit, and full while the server floods it.
     let (sends, events) = mpsc::sync_channel(10_000);
     let flooder = thread::spawn(move || {
-        while start.elapsed() < flood && sends.send(loading()).is_ok() {}
+        while start.elapsed() < flood {
+            if sends.send(loading()).is_err() {
+                break;
+            }
+        }
     });
 
     Stopping(events).wait(start + SOON);
 
-    assert!(start.elapsed() < flood);
+    let waited = start.elapsed();
+    assert!(waited >= SOON, "{waited:?}");
+    assert!(waited < flood, "{waited:?}");
     flooder.join().unwrap();
 }
 

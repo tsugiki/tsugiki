@@ -305,17 +305,16 @@ fn reference_timeline(numbers: &[u32], older: Option<&str>) -> Value {
 
 /// An answer to a read of Issues by number, each with the PRs that list beside it as cross-references.
 pub(super) fn issue_references(issues: &[(u32, &[u32])], rate: &str) -> Result<Reply, Unreachable> {
-    let mut fields = serde_json::Map::new();
-    for (number, prs) in issues {
-        drop(fields.insert(
-            format!("i{number}"),
-            json!({
+    let fields: serde_json::Map<String, Value> = (issues.iter())
+        .map(|(number, prs)| {
+            let issue = json!({
                 "__typename": "Issue",
                 "number": number,
                 "timelineItems": reference_timeline(prs, None),
-            }),
-        ));
-    }
+            });
+            (format!("i{number}"), issue)
+        })
+        .collect();
     answer(json!({ "repository": fields }), rate)
 }
 

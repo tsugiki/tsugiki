@@ -1,8 +1,8 @@
 //! The test helpers that several crates share and that use no crate's types: git repositories built with
 //! the real git (ADR 0009), the folders under `.temp` the tests work in, the language servers they start,
-//! the repo's files they read, and a wait for what another thread does. A change to how a test runs git or
-//! where it keeps its files is then made once. A helper that needs a crate's types lives in that crate's
-//! `testing` module instead, which other crates' tests reach through its `testing` feature.
+//! the repo's files they read, and the sends and waits that pass messages between threads. A change to how
+//! a test runs git or where it keeps its files is then made once. A helper that needs a crate's types lives
+//! in that crate's `testing` module instead, which other crates' tests reach through its `testing` feature.
 
 #![expect(
     clippy::disallowed_types,
@@ -16,7 +16,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::{env, fs, io, iter, thread};
@@ -398,6 +398,15 @@ pub fn wait_for_message<T>(messages: &Receiver<T>, patience: Duration) {
         reason = "the test needs only to know the message came, not what it says"
     )]
     messages.recv_timeout(patience).unwrap();
+}
+
+/// Passes `value` on to the test that holds the receiver of `to`, as a fake hears what the code tells it.
+pub fn pass_on<T>(to: &Sender<T>, value: T) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "a test that has dropped the receiver doesn't check what comes after"
+    )]
+    let _ = to.send(value);
 }
 
 /// Where `remotes` are, as a `file://` URL that ends in a slash. git reports progress over it as it does

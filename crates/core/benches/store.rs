@@ -313,8 +313,11 @@ impl Held {
     fn close(self) {
         self.reads.close();
         self.store.close();
-        // A folder left behind sits in the ignored `.temp`, and the next run gets a new one.
-        drop(fs::remove_dir_all(&self.folder));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a folder left behind sits in the ignored `.temp`, and the next run gets a new one"
+        )]
+        let _ = fs::remove_dir_all(&self.folder);
     }
 }
 

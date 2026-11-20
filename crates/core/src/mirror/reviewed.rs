@@ -72,12 +72,8 @@ impl Reviews {
 
     /// Notes the commits now under their refs. One handed over again meanwhile asks for nothing more.
     fn note_kept(&mut self, kept: BTreeMap<u32, CommitSha>) {
-        for (number, commit) in kept {
-            if self.waiting.get(&number) == Some(&commit) {
-                drop(self.waiting.remove(&number));
-            }
-            drop(self.kept.insert(number, commit));
-        }
+        (self.waiting).retain(|number, commit| kept.get(number) != Some(commit));
+        self.kept.extend(kept);
     }
 
     /// Puts back commits that didn't reach their refs, behind any handed over meanwhile.
@@ -129,15 +125,12 @@ impl Worker {
     ) {
         self.change_reviews(repository, |reviews| {
             let handed: BTreeSet<u32> = reviewed.iter().map(|one| one.number).collect();
-            reviews.waiting.retain(|number, _| handed.contains(number));
+            (reviews.waiting).extend(reviewed.into_iter().map(|one| (one.number, one.commit)));
+            let kept = &reviews.kept;
+            (reviews.waiting).retain(|number, commit| {
+                handed.contains(number) && kept.get(number) != Some(commit)
+            });
             reviews.handed = Some(handed);
-            for ReviewedCommit { number, commit } in reviewed {
-                if reviews.kept.get(&number) == Some(&commit) {
-                    drop(reviews.waiting.remove(&number));
-                } else {
-                    drop(reviews.waiting.insert(number, commit));
-                }
-            }
         });
     }
 
@@ -330,15 +323,10 @@ impl Worker {
                 // The Stale review check can read the commits it brought now.
                 self.change_heads(&repository, |known| known.patches.read_missing_again());
             }
-            Step::Fetch { mut missing } => {
+            Step::Fetch { missing } => {
                 let refusal = REFUSALS.iter().any(|words| last_words.contains(words));
-                let refused: Vec<(u32, CommitSha)> = (missing.iter())
-                    .filter(|(_, commit)| refusal && last_words.contains(commit.as_str()))
-                    .map(|(number, commit)| (*number, commit.clone()))
-                    .collect();
-                for (number, _) in &refused {
-                    drop(missing.remove(number));
-                }
+                let (refused, missing): (BTreeMap<u32, CommitSha>, _) = (missing.into_iter())
+                    .partition(|(_, commit)| refusal && last_words.contains(commit.as_str()));
                 self.put_back_reviewed(&repository, missing);
                 if !refused.is_empty() {
                     self.note_refused(&repository, &mirror, refused);
@@ -375,7 +363,7 @@ impl Worker {
         &mut self,
         repository: &RepositoryName,
         mirror: &Path,
-        refused: Vec<(u32, CommitSha)>,
+        refused: BTreeMap<u32, CommitSha>,
     ) {
         let mut lines = String::new();
         for (number, commit) in &refused {
@@ -388,7 +376,7 @@ impl Worker {
         }
         self.change_reviews(repository, |reviews| {
             let noted = reviews.refused.get_or_insert_with(BTreeSet::new);
-            noted.extend(refused.into_iter().map(|(_, commit)| commit));
+            noted.extend(refused.into_values());
         });
         if let Err(cause) = append_refused(mirror, &lines) {
             log::warn!(

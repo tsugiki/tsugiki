@@ -820,8 +820,7 @@ impl Owner {
             _ => return,
         };
         match event {
-            // The caller may not listen.
-            Ok(event) => drop(self.events.send(event)),
+            Ok(event) => self.tell(event),
             Err(cause) => log::warn!("A language server's {method} doesn't parse: {cause}"),
         }
     }
@@ -904,11 +903,16 @@ impl Owner {
         let code = self.process.wait();
         self.life = Life::Exited;
         let stderr_tail = String::from_utf8_lossy(&self.tail).into_owned();
+        self.tell(Event::Exited(Exit { code, stderr_tail }));
+    }
+
+    /// Hands the caller `event`.
+    fn tell(&self, event: Event) {
         #[expect(
             clippy::let_underscore_must_use,
             reason = "this fails only if the caller has dropped the events, and then nobody wants to hear it"
         )]
-        let _ = self.events.send(Event::Exited(Exit { code, stderr_tail }));
+        let _ = self.events.send(event);
     }
 }
 

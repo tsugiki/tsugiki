@@ -215,7 +215,7 @@ pub(super) fn read_facts(
         if !patches.contains_key(&of)
             && let Some(files) = read(transaction, repository, &of)?
         {
-            drop(patches.insert(of, files));
+            patches.extend([(of, files)]);
         }
     }
     Ok(ReviewFacts {

@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, channel};
 
+use tsugiki_test_git::pass_on;
+
 use super::testing::{answered, offline, release};
 use super::*;
 
@@ -20,7 +22,7 @@ fn github(answers: Vec<Result<Reply, Unreachable>>) -> (AskPublic, Receiver<Stri
     let (asked, asks) = channel();
     let mut answers = VecDeque::from(answers);
     let ask: AskPublic = Box::new(move |path| {
-        drop(asked.send(path.to_string()));
+        pass_on(&asked, path.to_string());
         answers.pop_front().unwrap_or_else(offline)
     });
     (ask, asks)
@@ -28,7 +30,7 @@ fn github(answers: Vec<Result<Reply, Unreachable>>) -> (AskPublic, Receiver<Stri
 
 fn hearing() -> (AnnounceNewVersion, Receiver<NewVersion>) {
     let (heard, news) = channel();
-    let announce: AnnounceNewVersion = Box::new(move |new| drop(heard.send(new.clone())));
+    let announce: AnnounceNewVersion = Box::new(move |new| pass_on(&heard, new.clone()));
     (announce, news)
 }
 

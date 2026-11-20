@@ -1081,7 +1081,7 @@ impl SettingsFiles {
                         let path = toml_edit::value(path.to_string_lossy().into_owned());
                         merge_value(server, "path", &path, None);
                     }
-                    None => drop(server.remove("path")),
+                    None => take_out(server, "path"),
                 });
             }
         });
@@ -1184,7 +1184,7 @@ impl SettingsFiles {
                     Some(size) => {
                         merge_value(section, key, &toml_edit::value(i64::from(size)), None)
                     }
-                    None => drop(section.remove(key)),
+                    None => take_out(section, key),
                 }
             }
             for (key, set) in [
@@ -1202,7 +1202,7 @@ impl SettingsFiles {
             let key = "detail_only_hid";
             match panes.detail_only_hid {
                 Some(hid) => merge_value(section, key, &toml_edit::value(hid.to_text()), None),
-                None => drop(section.remove(key)),
+                None => take_out(section, key),
             }
             merge_value(
                 section,
@@ -1588,8 +1588,12 @@ impl SettingsOwner {
     /// own stopping, and the save with it, until it waits on what this returns.
     pub fn begin_stopping(&self) -> SettingsEnding {
         let (finishing, finished) = mpsc::channel::<()>();
-        // A thread already gone hands the request back in the error, which `finishing` goes with.
-        drop(self.requests.send(Request::Stop { finishing }));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a thread already gone hands the request back in the error, and dropping it drops \
+                      `finishing`, so the wait on what this returns ends at once"
+        )]
+        let _ = self.requests.send(Request::Stop { finishing });
         SettingsEnding(finished)
     }
 
@@ -1842,13 +1846,14 @@ fn with_filters_as_tables(mut repository: Table) -> Table {
         let filters = filters
             .into_array_of_tables()
             .map_or_else(|kept| kept, Item::ArrayOfTables);
-        drop(repository.insert(FILTERS, filters));
+        repository.extend([(FILTERS, filters)]);
     }
     repository
 }
 
 /// The `filters` of the first table of `repositories` that names `name`. A table without them gets `written`
-/// first, the Filters the settings read it as, in blocks of their own like those `append` writes.
+/// first, the Filters the settings read it as: in blocks of their own, or as an inline list in a Repository
+/// written inline, as `append` writes them.
 fn filters_in_file<'a>(
     repositories: &'a mut Item,
     name: &RepositoryName,
@@ -1864,7 +1869,10 @@ fn filters_in_file<'a>(
         let blocks = written
             .into_array_of_tables()
             .map_or_else(|kept| kept, Item::ArrayOfTables);
-        drop(repository.insert(FILTERS, blocks));
+        // Not through `entry`, which would keep the blocks as they are in a Repository written inline, where
+        // they can't be written. `insert` writes them as an inline list there.
+        #[expect(unused_results, reason = "the table has no `filters` to give back")]
+        repository.insert(FILTERS, blocks);
     }
     repository.get_mut(FILTERS)
 }
@@ -1910,8 +1918,8 @@ fn tables_of(list: &mut Item) -> Vec<&mut dyn TableLike> {
 /// `[keys]`. Merging the list would replace the file's tables, and the user's comments on them, and merging
 /// `[keys]` would write each key in Tsugiki's words over the user's: `"ctrl+k m"` over `"Ctrl+K M"`.
 fn without_hand_edits(mut document: DocumentMut) -> DocumentMut {
-    drop(document.remove(REPOSITORIES));
-    drop(document.remove(KEYS));
+    take_out(document.as_table_mut(), REPOSITORIES);
+    take_out(document.as_table_mut(), KEYS);
     document
 }
 
@@ -1939,7 +1947,7 @@ fn tidy_recent(file: &mut Table) {
         && let Some(tables) = file.remove(RECENT)
         && let Ok(list) = tables.into_value()
     {
-        drop(file.insert(RECENT, Item::Value(list)));
+        file.extend([(RECENT, Item::Value(list))]);
     }
     let has_list = file.get(RECENT).is_some_and(Item::is_array);
     let order: Vec<String> = file
@@ -1954,7 +1962,7 @@ fn tidy_recent(file: &mut Table) {
         return;
     }
     // A `recent` that isn't a list counts as none, so `last_repository` takes its place.
-    drop(file.remove(RECENT));
+    take_out(file, RECENT);
     let parsed = last
         .as_str()
         .and_then(|last| RepositoryName::parse(last).ok());
@@ -1970,7 +1978,7 @@ fn tidy_recent(file: &mut Table) {
         .cloned()
         .unwrap_or_default();
     let key = Key::new(RECENT).with_leaf_decor(key.leaf_decor().clone());
-    drop(file.insert_formatted(&key, Item::Value(recent)));
+    file.extend([(key, Item::Value(recent))]);
     let place = |key: &Key| order.iter().position(|one| one == key.get());
     file.sort_values_by(|one, _, other, _| place(one).cmp(&place(other)));
 }
@@ -2030,11 +2038,13 @@ fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) -> Vec<Co
 
 /// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.
 fn recent_entry(name: &RepositoryName, opened_at: Option<OffsetDateTime>) -> Value {
-    let mut entry = InlineTable::new();
-    drop(entry.insert(NAME, Value::from(name.to_string())));
-    if let Some(at) = opened_at.and_then(toml_time) {
-        drop(entry.insert(OPENED_AT, Value::from(at)));
-    }
+    let at = opened_at
+        .and_then(toml_time)
+        .map(|at| (OPENED_AT, Value::from(at)));
+    let mut entry: InlineTable = [(NAME, Value::from(name.to_string()))]
+        .into_iter()
+        .chain(at)
+        .collect();
     entry.fmt();
     Value::InlineTable(entry)
 }
@@ -2104,7 +2114,7 @@ fn set_mirror_source(file: &mut dyn TableLike, name: &RepositoryName, source: &M
             })
             .collect();
         for other in others {
-            drop(section.remove(&other));
+            take_out(section, &other);
         }
         merge_value(section, &key, &toml_edit::value(source.to_text()), None);
     });
@@ -2148,7 +2158,11 @@ fn merge_section(
 /// leaves it empty.
 fn edit_section(file: &mut dyn TableLike, key: &str, change: impl FnOnce(&mut dyn TableLike)) {
     if !file.get(key).is_some_and(Item::is_table_like) {
-        drop(file.insert(key, Item::Table(Table::new())));
+        #[expect(
+            unused_results,
+            reason = "a value there that isn't a table, such as a hand-written path, gives way to the section"
+        )]
+        file.insert(key, Item::Table(Table::new()));
     }
     if let Some(section) = file.get_mut(key).and_then(Item::as_table_like_mut) {
         change(section);
@@ -2163,7 +2177,7 @@ fn drop_if_empty(file: &mut dyn TableLike, key: &str) {
         .and_then(Item::as_table_like)
         .is_some_and(TableLike::is_empty);
     if empty && !has_comment(file, key) {
-        drop(file.remove(key));
+        take_out(file, key);
     }
 }
 
@@ -2171,7 +2185,7 @@ fn drop_if_empty(file: &mut dyn TableLike, key: &str) {
 /// tidy file, so that value stays, at its default.
 fn merge_value(file: &mut dyn TableLike, key: &str, wanted: &Item, default: Option<&Item>) {
     if default.is_some_and(|default| same(wanted, default)) && !has_comment(file, key) {
-        drop(file.remove(key));
+        take_out(file, key);
         return;
     }
     match (
@@ -2185,8 +2199,24 @@ fn merge_value(file: &mut dyn TableLike, key: &str, wanted: &Item, default: Opti
                 *current.decor_mut() = decor;
             }
         }
-        _ => drop(file.insert(key, wanted.clone())),
+        _ => {
+            #[expect(
+                unused_results,
+                reason = "the file held nothing at `key`, or something of another kind than `wanted`, which \
+                          takes its place"
+            )]
+            file.insert(key, wanted.clone());
+        }
     }
+}
+
+/// Takes `key` out of `table`, with the comments on it.
+fn take_out(table: &mut dyn TableLike, key: &str) {
+    #[expect(
+        unused_results,
+        reason = "each caller wants the key gone from the file, and none needs what it held"
+    )]
+    table.remove(key);
 }
 
 fn same(one: &Item, other: &Item) -> bool {

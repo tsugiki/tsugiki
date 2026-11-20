@@ -63,7 +63,7 @@ fn start_asking(place: &Place) -> (Mirrors, Receiver<FakeStart>, Receiver<Option
     let (asking, asked) = channel();
     let announce = Announce {
         question: Box::new(move |repository| {
-            drop(asking.send(repository.map(ToString::to_string)));
+            pass_on(&asking, repository.map(ToString::to_string));
         }),
         ..Announce::cloning_only(Box::new(|_| {}))
     };

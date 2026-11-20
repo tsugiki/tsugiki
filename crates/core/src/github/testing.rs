@@ -64,10 +64,11 @@ impl Scripted {
 
 impl Transport for Scripted {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        drop(
-            self.asked
-                .send((request.operation.to_owned(), request.variables.clone())),
-        );
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a test that has dropped the receiver doesn't check what was asked"
+        )]
+        let _ = (self.asked).send((request.operation.to_owned(), request.variables.clone()));
         self.replies
             .borrow_mut()
             .pop_front()

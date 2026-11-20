@@ -164,12 +164,12 @@ fn a_moved_head_with_other_changes_is_a_stale_review_naming_the_files() {
 
 /// `reviews`, where PR 1's last check compared commit `reviewed` with commit 3, whose change was `head`.
 fn last_checked(mut reviews: ReviewFacts, reviewed: char, head: Vec<FilePatch>) -> ReviewFacts {
-    drop(reviews.patches.insert(of('3', "main"), head));
+    reviews.patches.extend([(of('3', "main"), head)]);
     let last = LastCheck {
         reviewed: sha_of(reviewed),
         head: sha_of('3'),
     };
-    drop(reviews.last_checks.insert(1, last));
+    reviews.last_checks.extend([(1, last)]);
     reviews
 }
 
@@ -221,7 +221,7 @@ fn a_check_that_cant_run_on_either_side_is_a_stale_review_with_the_reason() {
     for reason in reasons() {
         for side in ['1', '2'] {
             let mut reviews = reviewed_at_1(None, None);
-            drop(reviews.unchecked.insert(of(side, "main"), reason.clone()));
+            (reviews.unchecked).extend([(of(side, "main"), reason.clone())]);
 
             assert_eq!(
                 state_of(reviewed_pr(), reviews),
@@ -240,11 +240,7 @@ fn a_check_that_cant_run_outranks_the_last_verdict() {
     let reviewed = Some(vec![file("Lib/ast.py", '1', 'a')]);
     let last = vec![file("Lib/ast.py", '1', 'a')];
     let mut reviews = last_checked(reviewed_at_1(reviewed, None), '1', last);
-    drop(
-        reviews
-            .unchecked
-            .insert(of('2', "main"), CantCheck::Cloning),
-    );
+    (reviews.unchecked).extend([(of('2', "main"), CantCheck::Cloning)]);
 
     assert_eq!(
         state_of(reviewed_pr(), reviews),
@@ -259,7 +255,7 @@ fn a_check_that_cant_run_outranks_the_last_verdict() {
 fn once_both_sides_are_read_their_verdict_replaces_the_reason() {
     let read = || Some(vec![file("Lib/ast.py", '1', 'a')]);
     let mut reviews = reviewed_at_1(read(), read());
-    drop(reviews.unchecked.insert(of('1', "main"), CantCheck::NoGit));
+    (reviews.unchecked).extend([(of('1', "main"), CantCheck::NoGit)]);
 
     assert_eq!(state_of(reviewed_pr(), reviews), YourReview::Reviewed);
 }
@@ -393,7 +389,7 @@ fn a_check_keeps_the_commits_it_compared_once_both_sides_are_read() {
         reviewed: sha_of('1'),
         head: sha_of('2'),
     };
-    drop(reviews.last_checks.insert(3, last.clone()));
+    reviews.last_checks.extend([(3, last.clone())]);
     let pull_requests = vec![reviewed_pr(), kept, pending];
 
     assert_eq!(checks_to_keep(&facts(pull_requests, reviews)), [(1, last)]);
@@ -442,7 +438,7 @@ fn a_merged_prs_check_reads_its_final_head_once_while_the_users_work_reaches_it(
     reviews
         .reviewed
         .extend([(5, sha_of('1')), (7, sha_of('1'))]);
-    drop(reviews.patches.insert(of('3', "main"), vec![]));
+    reviews.patches.extend([(of('3', "main"), vec![])]);
     let pull_requests = vec![
         in_issue_10(merged(1)),
         in_issue_10(frozen),
@@ -686,11 +682,7 @@ fn the_stale_reviews_view_lists_the_open_prs_with_a_stale_review_in_their_issues
     reviews
         .reviewed
         .extend([2, 3, 4, 6, 8].map(|number| (number, sha_of('1'))));
-    drop(
-        reviews
-            .unchecked
-            .insert(of('5', "main"), CantCheck::Cloning),
-    );
+    (reviews.unchecked).extend([(of('5', "main"), CantCheck::Cloning)]);
     let issues = vec![issue(10), issue(20), issue(30)];
 
     let view = stale_view(pull_requests.clone(), issues.clone(), reviews.clone());
@@ -743,7 +735,7 @@ fn a_pr_leaves_the_stale_reviews_view_once_it_merges_or_turns_reviewed() {
         ..reviewed_pr()
     };
     let mut reviewed_again = stale_at_2();
-    drop(reviewed_again.reviewed.insert(1, sha_of('2')));
+    reviewed_again.reviewed.extend([(1, sha_of('2'))]);
 
     let stale = stale_view(vec![reviewed_pr()], vec![], stale_at_2());
     let after_merge = stale_view(vec![merged], vec![], stale_at_2());

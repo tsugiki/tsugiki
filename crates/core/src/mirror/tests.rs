@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tsugiki_test_git::{git, run_git, wait_for_message};
+use tsugiki_test_git::{git, pass_on, run_git, wait_for_message};
 
 use super::*;
 use crate::error::ErrorKind;
@@ -36,7 +36,7 @@ type Failures = Receiver<(String, Vec<u32>, Unfetched)>;
 /// Announcements that pass on each clone, and nothing of fetches.
 fn cloning_only(announcing: Sender<Option<Cloning>>) -> Announce {
     Announce::cloning_only(Box::new(move |cloning| {
-        drop(announcing.send(cloning.cloned()));
+        pass_on(&announcing, cloning.cloned());
     }))
 }
 
@@ -803,10 +803,13 @@ impl Place {
         let (failing, failures) = channel();
         let announce = Announce {
             fetched: Box::new(move |repository, numbers| {
-                drop(arriving.send((repository.to_string(), numbers.to_vec())));
+                pass_on(&arriving, (repository.to_string(), numbers.to_vec()));
             }),
             failed: Box::new(move |repository, numbers, why| {
-                drop(failing.send((repository.to_string(), numbers.to_vec(), why.clone())));
+                pass_on(
+                    &failing,
+                    (repository.to_string(), numbers.to_vec(), why.clone()),
+                );
             }),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
@@ -1921,7 +1924,7 @@ mod problems {
     fn hearing_problems() -> (Announce, Receiver<Option<MirrorProblem>>) {
         let (telling, told) = channel();
         let announce = Announce {
-            problem: Box::new(move |problem| drop(telling.send(problem.cloned()))),
+            problem: Box::new(move |problem| pass_on(&telling, problem.cloned())),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
         (announce, told)

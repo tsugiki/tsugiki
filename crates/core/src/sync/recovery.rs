@@ -11,6 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Instant;
 
 use serde_json::{Value, json};
+use tsugiki_test_git::pass_on;
 
 use super::testing::Harness;
 use super::{Progress, Syncs};
@@ -64,8 +65,8 @@ impl Transport for Recording {
         let asked = asked_by_post(request);
         let next = self.posts.borrow_mut().pop_front();
         let reply = next.expect("the scenario has a reply for each request")?;
-        drop(self.posted.send((asked.clone(), reply.clone())));
-        drop(self.served.send(asked));
+        pass_on(&self.posted, (asked.clone(), reply.clone()));
+        pass_on(&self.served, asked);
         Ok(reply)
     }
 
@@ -77,8 +78,8 @@ impl Transport for Recording {
         let asked = asked_by_get(request);
         let next = self.checks.borrow_mut().pop_front();
         let reply = next.expect("the scenario has a reply for each list check");
-        drop(self.checked.send((asked.clone(), reply.clone())));
-        drop(self.served.send(asked));
+        pass_on(&self.checked, (asked.clone(), reply.clone()));
+        pass_on(&self.served, asked);
         Ok(reply)
     }
 }
@@ -98,7 +99,7 @@ impl Replaying {
     fn serve<T: Clone>(&self, answers: &[(Asked, T)], asked: Asked) -> T {
         let known = answers.iter().find(|(request, _)| *request == asked);
         let (_, answer) = known.expect("a request the run with no failure didn't make");
-        drop(self.served.send(asked));
+        pass_on(&self.served, asked);
         answer.clone()
     }
 }

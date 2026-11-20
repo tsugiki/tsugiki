@@ -7,14 +7,22 @@
 //
 // `just worktree-remove <ticket>` deletes the worktree, its target/ and its node_modules, unless it holds a
 // change git hasn't committed. It deletes the branch too once the branch's PR has merged with its last
-// commit, which it asks GitHub, as `just merged` does.
+// commit, which it asks GitHub, as `just merged` does, and then pulls main in the main checkout when that
+// checkout is on main with nothing uncommitted.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { type Pr, PR_FIELDS, unmergedReason } from "./pr.ts";
 import { attempt, messageOf, run, stop } from "./run.ts";
-import { addRefusal, ticketBranch, ticketNumber, ticketTitle, worktreeFolder } from "./worktrees.ts";
+import {
+  addRefusal,
+  pullRefusal,
+  ticketBranch,
+  ticketNumber,
+  ticketTitle,
+  worktreeFolder,
+} from "./worktrees.ts";
 
 /** The main checkout, whichever checkout of the repository the script runs in. */
 function mainCheckout(): string {
@@ -184,6 +192,25 @@ function remove(ticket: number): void {
   }
   run(`git couldn't delete the branch ${branch}.`, "git", "-C", main, "branch", "-q", "-D", branch);
   console.log(`Deleted the branch ${branch}.`);
+
+  const refusal = pullRefusal(
+    run("git can't name the main checkout's branch.", "git", "-C", main, "branch", "--show-current"),
+    run(
+      "git status failed in the main checkout.",
+      "git",
+      "-C",
+      main,
+      "status",
+      "--porcelain",
+      "--untracked-files=no",
+    ),
+  );
+  if (refusal !== undefined) {
+    console.log(`Didn't pull main: ${refusal}`);
+    return;
+  }
+  run("git couldn't pull main, as it says above.", "git", "-C", main, "pull", "-q", "--ff-only", "--prune");
+  console.log("Pulled main.");
 }
 
 const [command, number, slug = "", ...extra] = process.argv.slice(2);

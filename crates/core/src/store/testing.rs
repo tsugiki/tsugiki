@@ -1,5 +1,6 @@
 use super::*;
 use crate::facts::activity::{Activity, ItemActivity};
+use crate::links::LinkRule;
 use crate::testing::{TempPath, cpython};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -64,24 +65,56 @@ pub(crate) fn seeing(numbers: Vec<u32>, up_to: Option<OffsetDateTime>) -> Seeing
     }
 }
 
+/// The text each of `all` leaves in a column, once it has read back as itself.
+pub(super) fn stored_texts<T>(all: &[T]) -> Vec<String>
+where
+    T: rusqlite::ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialEq,
+{
+    let connection = Connection::open_in_memory().unwrap();
+    let through = |value: &T| {
+        let (text, read): (String, T) = connection
+            .query_row(
+                "SELECT :value AS value",
+                named_params! { ":value": value },
+                |row| Ok((row.get("value")?, row.get("value")?)),
+            )
+            .unwrap();
+        assert_eq!(&read, value);
+        text
+    };
+    all.iter().map(through).collect()
+}
+
 /// The rules an older Tsugiki's links name in `store_with_old_links`: the first set, less its last rule.
-pub(super) const OLDER_RULES: &[&str] = &[
-    "closing_references",
-    "description_keywords",
-    "cpython_title_issues",
-    "cpython_title_origin",
+pub(super) const OLDER_RULES: &[LinkRule] = &[
+    LinkRule::ClosingReferences,
+    LinkRule::DescriptionKeywords,
+    LinkRule::CpythonTitleIssues,
+    LinkRule::CpythonTitleOrigin,
 ];
 
-/// Leaves `store` with the links the link rules `rules` name worked out, as another Tsugiki kept them: only
-/// `fixes`, each a Repository, a PR and the Issue it fixed under every Conventions, which a test tells from
-/// what `LinkRule::SET` gives.
+/// Adds `name` to the rules `store` says worked out its links, as a newer Tsugiki would keep a rule this
+/// build doesn't know.
+pub(super) fn name_a_newer_rule(store: &Store, name: &'static str) {
+    let named = store.call(move |connection| {
+        let keep = "INSERT INTO link_rules (name) VALUES (:name)";
+        connection
+            .execute(keep, named_params! { ":name": name })
+            .map(drop)
+    });
+    named.unwrap().unwrap();
+}
+
+/// Leaves `store` with the links `rules` worked out, as another Tsugiki kept them: only `fixes`, each a
+/// Repository, a PR and the Issue it fixed under every Conventions, which a test tells from what
+/// `LinkRule::SET` gives.
 pub(crate) fn keep_old_links(
     store: &Store,
-    rules: &[impl AsRef<str>],
+    rules: &[LinkRule],
     fixes: &[(RepositoryName, u32, u32)],
 ) {
     let fixes = fixes.to_vec();
-    let rules: Vec<String> = rules.iter().map(|name| name.as_ref().to_owned()).collect();
+    let rules = rules.to_vec();
     let kept = store.call(move |connection| -> rusqlite::Result<()> {
         let transaction = connection.transaction()?;
         transaction.execute_batch("DELETE FROM pr_fixes; DELETE FROM pr_origins;")?;
@@ -96,10 +129,10 @@ pub(crate) fn keep_old_links(
         transaction
             .execute("DELETE FROM link_rules", [])
             .map(drop)?;
-        for name in &rules {
+        for rule in &rules {
             let keep = "INSERT INTO link_rules (name) VALUES (:name)";
             transaction
-                .execute(keep, named_params! { ":name": name })
+                .execute(keep, named_params! { ":name": rule })
                 .map(drop)?;
         }
         transaction.commit()

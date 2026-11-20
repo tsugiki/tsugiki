@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use super::super::testing::{
     OLDER_RULES, at_second, database_before, keep_old_links, kept_fixes, migrated,
-    refuse_new_links, store_with_old_links, temp_database,
+    name_a_newer_rule, refuse_new_links, store_with_old_links, stored_texts, temp_database,
 };
 use super::super::{Connection, MIGRATIONS, Store, issues, open_with, pull_requests};
 use super::*;
@@ -292,7 +292,7 @@ fn a_store_whose_links_no_rules_worked_out_leaves_them_to_the_refill_of_its_repo
 
 /// The store at `path`, opened again once its links say the rules `rules` name worked them out, with only
 /// a number among them that the rules never gave: PR 10 fixes Issue 6.
-fn open_with_old_links(path: &std::path::Path, rules: &[impl AsRef<str>]) -> Store {
+fn open_with_old_links(path: &std::path::Path, rules: &[LinkRule]) -> Store {
     let store = Store::open(path).unwrap();
     keep_old_links(&store, rules, &[(cpython(), 10, 6)]);
     store.close();
@@ -378,7 +378,7 @@ fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_
 fn a_store_whose_links_the_set_worked_out_keeps_them_as_it_opens() {
     let (path, _folder) = store_with_a_backport("links-current");
 
-    let store = open_with_old_links(&path, &stored_texts(&LinkRule::SET));
+    let store = open_with_old_links(&path, &LinkRule::SET);
 
     assert_eq!(store.stale_links().unwrap(), None);
     store.close();
@@ -454,25 +454,6 @@ fn a_refill_that_fails_keeps_the_links_it_found_and_their_rules() {
     assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 6)]);
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
     store.close();
-}
-
-/// The text each of `all` leaves in a column, once it has read back as itself.
-fn stored_texts<T: ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialEq>(
-    all: &[T],
-) -> Vec<String> {
-    let connection = Connection::open_in_memory().unwrap();
-    let through = |value: &T| {
-        let (text, read): (String, T) = connection
-            .query_row(
-                "SELECT :value AS value",
-                named_params! { ":value": value },
-                |row| Ok((row.get("value")?, row.get("value")?)),
-            )
-            .unwrap();
-        assert_eq!(&read, value);
-        text
-    };
-    all.iter().map(through).collect()
 }
 
 /// The PRs that try `rule`, in the batches the store saves them in, and the rows `rule` alone keeps for
@@ -648,21 +629,28 @@ fn each_link_keeps_the_text_earlier_versions_stored() {
     assert_eq!(stored_texts(FoundIn::ALL), ["cpython", "cherry_pick"]);
 }
 
+/// The names of the first set of rules, which the step that names the rules gives a store at version 1.
+const FIRST_SET: [&str; 5] = [
+    "closing_references",
+    "description_keywords",
+    "cpython_title_issues",
+    "cpython_title_origin",
+    "cherry_pick_line",
+];
+
 #[test]
 fn each_rule_keeps_the_name_earlier_versions_stored() {
-    let first_set = [
-        "closing_references",
-        "description_keywords",
-        "cpython_title_issues",
-        "cpython_title_origin",
-        "cherry_pick_line",
-    ];
-    assert_eq!(stored_texts(LinkRule::ALL), first_set);
+    assert_eq!(stored_texts(LinkRule::ALL), FIRST_SET);
 }
 
 /// The names the store keeps for `LinkRule::SET`.
 fn set_names() -> BTreeSet<String> {
     stored_texts(&LinkRule::SET).into_iter().collect()
+}
+
+/// The names of `names`, as `kept_rule_names` answers them.
+fn names_of(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
 }
 
 /// The names `link_rules` holds in the database `connection` reads.
@@ -675,9 +663,13 @@ fn kept_rule_names(connection: &Connection) -> BTreeSet<String> {
 #[test]
 fn a_store_that_names_a_rule_this_build_doesnt_know_fails_to_open_and_stays_as_it_was() {
     let (path, _folder) = store_with_a_backport("links-newer");
-    let named = ["closing_references", "a_rule_of_a_newer_tsugiki"];
     let store = Store::open(&path).unwrap();
-    keep_old_links(&store, &named, &[(cpython(), 10, 6)]);
+    keep_old_links(
+        &store,
+        &[LinkRule::ClosingReferences],
+        &[(cpython(), 10, 6)],
+    );
+    name_a_newer_rule(&store, "a_rule_of_a_newer_tsugiki");
     store.close();
 
     let Err(problem) = Store::open(&path) else {
@@ -688,7 +680,7 @@ fn a_store_that_names_a_rule_this_build_doesnt_know_fails_to_open_and_stays_as_i
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
         kept_rule_names(&connection),
-        named.map(str::to_owned).into()
+        names_of(&["closing_references", "a_rule_of_a_newer_tsugiki"])
     );
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10, 11]),
@@ -700,7 +692,7 @@ fn a_store_that_names_a_rule_this_build_doesnt_know_fails_to_open_and_stays_as_i
 fn links_that_name_a_rule_this_build_doesnt_know_once_the_store_is_open_owe_no_refill() {
     let store = store_with_old_links(&[cpython()]);
 
-    keep_old_links(&store, &["a_rule_of_a_newer_tsugiki"], &[(cpython(), 10, 6)]);
+    name_a_newer_rule(&store, "a_rule_of_a_newer_tsugiki");
 
     assert_eq!(store.stale_links().unwrap(), None);
 }
@@ -725,15 +717,18 @@ fn database_at_rules_version(name: &str, version: u32) -> (std::path::PathBuf, T
 }
 
 #[test]
-fn a_store_whose_links_version_1_of_the_rules_kept_names_the_first_set_and_owes_no_refill() {
+fn a_store_whose_links_version_1_of_the_rules_kept_names_the_first_set_and_owes_no_refill_under_it()
+{
     let (path, _folder) = database_at_rules_version("links-version-1", 1);
 
     let store = Store::open(&path).unwrap();
 
-    assert_eq!(store.stale_links().unwrap(), None);
+    // Once a later set takes the first one's place, the store owes a refill.
+    let owed = set_names() != names_of(&FIRST_SET);
+    assert_eq!(store.stale_links().unwrap().is_some(), owed);
     store.close();
     let connection = Connection::open(&path).unwrap();
-    assert_eq!(kept_rule_names(&connection), set_names());
+    assert_eq!(kept_rule_names(&connection), names_of(&FIRST_SET));
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10]),
         [(10, vec![6], None)]

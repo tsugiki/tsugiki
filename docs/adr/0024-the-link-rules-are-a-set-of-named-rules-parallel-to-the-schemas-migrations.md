@@ -31,9 +31,9 @@ description, CPython's Issue numbers in the title, CPython's Origin PR in the ti
 - The store keeps the name of each rule that wrote its rows in `link_rules`, one row each, in place of
   `RULES_VERSION` (#971). A migration turned version 1 into the first set's names. A store that names a rule
   this build doesn't know was filled by a newer Tsugiki, and it refuses to open with `NEWER`, as on a schema
-  past the last migration it knows, so neither build rewrites the other's rows. A retired name still
-  parses. A store whose names aren't `SET`'s holds stale links: one that lacks a rule of the set lacks its
-  rows, and one that names a retired rule holds rows the set no longer gives. The session refills those
+  past the last migration it knows, so the older build doesn't rewrite the newer one's rows. A retired name
+  still parses. A store whose names aren't `SET`'s holds stale links: one that lacks a rule of the set lacks
+  its rows, and one that names a retired rule holds rows the set no longer gives. The session refills those
   links as a job (#950), then saves the set's names.
 
 ## Considered Options
@@ -58,3 +58,6 @@ description, CPython's Issue numbers in the title, CPython's Origin PR in the ti
   updates Tsugiki to read it.
 - Two branches that each add a rule add two names, so a store that one of them filled names a rule the
   other doesn't know, and the other refuses to open it, where one number passed as current on both.
+- A set that only drops a rule names nothing an older build doesn't know. The older build opens that store,
+  finds a rule of its set missing, and refills, and the newer build refills again on its next start. A
+  change that keeps to the rule above, a new variant in the old one's place, adds a name and avoids this.

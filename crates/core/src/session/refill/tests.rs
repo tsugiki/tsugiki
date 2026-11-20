@@ -139,7 +139,7 @@ fn a_repository_opened_once_the_refill_ended_finds_nothing_to_refill() {
 }
 
 #[test]
-fn a_refill_that_fails_ends_and_leaves_the_kept_links_with_their_version_for_the_next_launch() {
+fn a_refill_that_fails_ends_and_leaves_the_kept_links_with_their_rules_for_the_next_launch() {
     let store = store_with_old_links(&[cpython(), gcmon()]);
     refuse_new_links(&store);
     let (mut board, changes) = repositories_board();

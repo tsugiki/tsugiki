@@ -221,8 +221,8 @@ impl ViewWorld {
     /// another Issue than it, a Backport by cherry-pick, a Backport of a Backport, a Backport whose Origin PR
     /// Tsugiki lacks, a Backport of one of those that fixes an Issue, which leaves the one it names a
     /// Standalone backport, a PR that fixes two Issues, a Standalone PR a Backport puts under an Issue, and
-    /// one that stays on its own. Each PR has an update of its own. Issue 1 is archived, and PR 30 in its tree
-    /// is marked unseen since, which only a read of its whole tree sees.
+    /// one that stays on its own. Each PR has an update of its own. Issue 1 is archived, and PR 30 in its
+    /// tree is marked unseen since, which only a read of its whole tree sees.
     pub(crate) fn has_crossed_links(&self) {
         let merged = |facts: PullRequestFacts| PullRequestFacts {
             state: PrState::Merged,

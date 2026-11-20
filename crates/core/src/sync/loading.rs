@@ -380,7 +380,11 @@ fn read_long(
         .fetch_cross_references(link.repository, read.number, asked)?;
     let frozen = frozen(link)?;
     loading.join(page.listed, Urgency::Urgent, &held(fetched, &frozen));
-    drop(loading.long_reads.pop_front());
+    #[expect(
+        unused_results,
+        reason = "it is `read`, which this step has read, and a next page goes in its place"
+    )]
+    loading.long_reads.pop_front();
     if let Some(cursor) = page.next {
         let number = read.number;
         loading.long_reads.push_front(LongRead { number, cursor });

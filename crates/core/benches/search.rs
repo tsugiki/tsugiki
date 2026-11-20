@@ -83,7 +83,12 @@ impl Tree {
         let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../.temp")
             .join(format!("bench-search-{name}-{}", std::process::id()));
-        drop(fs::remove_dir_all(&folder));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the folder's name holds this process's id, so it is there only if an earlier run with \
+                      that id ended early, and mostly isn't"
+        )]
+        let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).expect("a folder for the tree");
         run_git(&folder, &["init", "-q", "-b", "main"]);
         run_git(&folder, &["config", "core.autocrlf", "false"]);
@@ -106,8 +111,11 @@ impl Tree {
     }
 
     fn remove(self) {
-        // A folder left behind sits in the ignored `.temp`, and the next run gets a new one.
-        drop(fs::remove_dir_all(&self.folder));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a folder left behind sits in the ignored `.temp`, and the next run gets a new one"
+        )]
+        let _ = fs::remove_dir_all(&self.folder);
     }
 }
 

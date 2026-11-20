@@ -47,7 +47,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvError, Sender, TryRecvError};
 use time::OffsetDateTime;
-use tsugiki_test_git::wait_for_message;
+use tsugiki_test_git::{pass_on, wait_for_message};
 
 /// A real store that keeps nothing once it closes.
 fn empty_store() -> Store {
@@ -2551,7 +2551,7 @@ struct Outage {
 
 impl Transport for Outage {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        drop(self.asked.send(request.operation.to_owned()));
+        pass_on(&self.asked, request.operation.to_owned());
         if !self.up.load(Ordering::Relaxed) {
             return Err(Unreachable::Offline);
         }
@@ -2738,7 +2738,7 @@ struct QuietRepository {
 
 impl Transport for QuietRepository {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        drop(self.asked.send(request.operation.to_owned()));
+        pass_on(&self.asked, request.operation.to_owned());
         if request.operation == "Viewer" {
             return reply_ok(r#"{"data":{"viewer":{"login":"octocat"}}}"#);
         }

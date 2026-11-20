@@ -26,7 +26,9 @@ use tsugiki_core::settings::{Home, SettingsFiles};
 use tsugiki_core::testing::pr_facts;
 use tsugiki_core::token::Token;
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_test_git::{TempPath, mirror_with_branch, run_git, ty, wait_for_message, wait_until};
+use tsugiki_test_git::{
+    TempPath, mirror_with_branch, pass_on, run_git, ty, wait_for_message, wait_until,
+};
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -207,7 +209,7 @@ fn hear(app: &App<MockRuntime>, event: &str) -> Receiver<Value> {
         reason = "the listener lasts as long as the app, which the test drops at its end"
     )]
     app.listen(event, move |event| {
-        drop(heard.send(serde_json::from_str(event.payload()).unwrap()));
+        pass_on(&heard, serde_json::from_str(event.payload()).unwrap());
     });
     payloads
 }
@@ -1379,7 +1381,7 @@ struct Refreshing {
 
 impl Transport for Refreshing {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        drop(self.asked.send(request.operation.to_owned()));
+        pass_on(&self.asked, request.operation.to_owned());
         let page = |nodes: Value| json!({ "pageInfo": page_info(None), "nodes": nodes });
         let data = match request.operation {
             "Viewer" => json!({ "viewer": { "login": "octocat" } }),

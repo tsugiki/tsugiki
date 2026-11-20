@@ -978,8 +978,7 @@ fn a_settings_toml_removed_from_its_usual_folder_means_the_defaults_again() {
 
 #[test]
 fn an_empty_list_of_filters_stays_in_a_repositorys_table() {
-    let mut table = Table::new();
-    drop(table.insert(FILTERS, toml_edit::value(toml_edit::Array::new())));
+    let table = Table::from_iter([(FILTERS, toml_edit::value(toml_edit::Array::new()))]);
 
     let kept = with_filters_as_tables(table);
 

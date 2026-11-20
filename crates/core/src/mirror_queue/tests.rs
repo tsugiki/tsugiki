@@ -47,7 +47,7 @@ fn run(queue: &mut Queue, job: &Next) {
         Next::KeepReviewed(repository) => done(repository, Waiting::Reviewed),
         Next::ReadPatchIds(repository) => done(repository, Waiting::PatchIds),
         Next::Clone(_) => queue.clone = None,
-        Next::Upkeep(_) => drop(queue.upkeep.remove(0)),
+        Next::Upkeep(repository) => assert_eq!(queue.upkeep.remove(0), *repository),
     }
 }
 

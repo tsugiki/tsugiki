@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
-use tsugiki_test_git::wait_until;
+use tsugiki_test_git::{pass_on, wait_until};
 
 use super::server::{Ready, Setup};
 use super::testing::{FakeClangd, Initialize, Notified, fake_program, ty};
@@ -228,14 +228,7 @@ fn ask_unheard(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) {
 /// A listener that hands each value it hears to the receiver it comes with.
 fn heard<T: Send + 'static>() -> (Box<dyn Fn(T) + Send>, Receiver<T>) {
     let (hears, heard) = mpsc::channel();
-    let listener = Box::new(move |value| {
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "a test that has dropped the receiver doesn't check what comes after"
-        )]
-        let _ = hears.send(value);
-    });
-    (listener, heard)
+    (Box::new(move |value| pass_on(&hears, value)), heard)
 }
 
 /// A listener to a server's index that ignores it.
@@ -2207,13 +2200,7 @@ fn settable(
                 .flatten()
         }),
         idle: Box::new(move || *idle.lock().unwrap()),
-        changed: Box::new(move |changed| {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "a test that has dropped `rows` doesn't check the rows after"
-            )]
-            let _ = rows.send(changed.to_vec());
-        }),
+        changed: Box::new(move |changed| pass_on(&rows, changed.to_vec())),
     }
 }
 

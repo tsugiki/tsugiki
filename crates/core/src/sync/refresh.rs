@@ -275,13 +275,13 @@ fn merge_next_answer(link: &Link<'_>, poll: &mut Poll) -> Result<Option<Vec<u32>
             let moved = link
                 .store
                 .merge_filter_results(link.repository, query, results)?;
-            let hits = page.hits.iter().cloned();
-            poll.hits.extend(hits.map(|hit| (hit.number, hit)));
-            drop(poll.answers.remove(0));
+            let (_, page) = poll.answers.remove(0);
+            poll.hits
+                .extend(page.hits.into_iter().map(|hit| (hit.number, hit)));
             return Ok(Some(moved.into_iter().collect()));
         }
-        poll.narrowed.push(query.clone());
-        drop(poll.answers.remove(0));
+        let (query, _) = poll.answers.remove(0);
+        poll.narrowed.push(query);
     }
     Ok(None)
 }

@@ -14,6 +14,7 @@ use crate::sync::testing::{
 use crate::token::Token;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
+use tsugiki_test_git::pass_on;
 
 /// A Repository with these searches as Filters.
 fn filtering(queries: &[&str]) -> RepositorySettings {
@@ -581,7 +582,7 @@ impl Transport for ByCreated {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         match request.operation {
             "SearchFilter" => {
-                drop(self.asked.send(request.variables.clone()));
+                pass_on(&self.asked, request.variables.clone());
                 Ok(self.answer(request.variables["query"].as_str().unwrap_or_default()))
             }
             "FetchIssues" => issues(&[], RATE_LIMIT),

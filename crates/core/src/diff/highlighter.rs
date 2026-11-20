@@ -161,14 +161,18 @@ impl ShelfWriter {
             shelves.push((Arc::clone(diff), HashMap::new()));
         }
         if let Some((_, trees)) = shelves.iter_mut().find(|(kept, _)| kept.is(diff)) {
-            drop(trees.insert(version, tree));
+            trees.extend([(version, tree)]);
         }
     }
 
     fn take(&mut self, diff: &OpenDiff, version: Version) {
         let shelves = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).diffs;
         for (_, trees) in shelves.iter_mut().filter(|(kept, _)| kept.is(diff)) {
-            drop(trees.remove(&version));
+            #[expect(
+                unused_results,
+                reason = "the thread has stopped keeping this tree, so the shelf lets go of it too"
+            )]
+            trees.remove(&version);
         }
     }
 
@@ -600,7 +604,7 @@ impl Opened {
             .shelf
             .put(&self.source.diff, version, kept.tree.clone());
         store.kept += kept.cost;
-        drop(self.trees.insert(version, kept));
+        self.trees.extend([(version, kept)]);
     }
 
     /// Notes that chunk `chunk` used `versions`, and gives the trees of those it keeps.
@@ -609,7 +613,7 @@ impl Opened {
         for version in versions {
             if let Some(kept) = self.trees.get_mut(version) {
                 kept.used = chunk;
-                drop(trees.insert(*version, kept.tree.clone()));
+                trees.extend([(*version, kept.tree.clone())]);
             }
         }
         trees

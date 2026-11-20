@@ -8,6 +8,7 @@ use crate::github::{ConditionalReply, Reply, Transport};
 use crate::testing::{cpython, moment, recordings};
 use crate::token::Token;
 use std::sync::mpsc::{self, Sender};
+use tsugiki_test_git::pass_on;
 
 const START: ListPlace = ListPlace::Next(None);
 const NEWER: &str = "2026-11-04T10:30:00Z";
@@ -232,7 +233,7 @@ impl Transport for Lists {
         request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
         let seen = (request.path.to_string(), request.etag.map(str::to_owned));
-        drop(self.asked.send(seen));
+        pass_on(&self.asked, seen);
         self.answer.clone()
     }
 }

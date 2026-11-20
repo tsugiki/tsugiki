@@ -17,7 +17,7 @@ fn repositories_board() -> (StatusBoard, Receiver<(RepositoryName, bool)>) {
 }
 
 #[test]
-fn a_store_whose_links_this_version_worked_out_owes_no_refill() {
+fn a_store_whose_links_the_set_worked_out_owes_no_refill() {
     let store = store_with_old_links(&[cpython()]);
     store.keep_link_rules().unwrap();
 
@@ -34,7 +34,7 @@ fn a_store_that_cant_say_whether_its_links_are_stale_owes_no_refill_this_launch(
 }
 
 #[test]
-fn each_step_refills_a_repository_the_one_the_window_opened_first_and_the_last_saves_the_version() {
+fn each_step_refills_a_repository_the_one_the_window_opened_first_and_the_last_saves_the_set() {
     let store = store_with_old_links(&[cpython(), gcmon()]);
     let (mut board, changes) = repositories_board();
     let mut refill = LinkRefill::owed_by(&store);
@@ -155,10 +155,10 @@ fn a_refill_that_fails_ends_and_leaves_the_kept_links_with_their_version_for_the
 }
 
 #[test]
-fn a_version_the_store_cant_save_leaves_the_refilled_links_for_the_next_launch_to_refill_again() {
+fn a_set_the_store_cant_save_leaves_the_refilled_links_for_the_next_launch_to_refill_again() {
     let store = store_with_old_links(&[cpython()]);
     let mut refill = LinkRefill::owed_by(&store);
-    // The step's calls go: the refill, then the version, which goes missing.
+    // The step's calls go: the refill, then the set's names, which go missing.
     let (lossy, _calls) = store.failing_at_call(Some(1));
 
     refill.step(&mut quiet_board(), &lossy);
@@ -169,7 +169,7 @@ fn a_version_the_store_cant_save_leaves_the_refilled_links_for_the_next_launch_t
 }
 
 #[test]
-fn a_store_whose_stale_links_name_no_repository_saves_the_version_in_one_step() {
+fn a_store_whose_stale_links_name_no_repository_saves_the_set_in_one_step() {
     let store = store_with_old_links(&[]);
     let mut refill = LinkRefill::owed_by(&store);
     assert!(refill.is_due());

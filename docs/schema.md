@@ -75,8 +75,7 @@ erDiagram
         INTEGER origin
     }
     link_rules {
-        INTEGER id PK
-        INTEGER version
+        TEXT name PK
     }
     committers {
         TEXT repository PK, FK

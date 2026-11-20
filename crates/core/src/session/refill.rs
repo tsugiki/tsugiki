@@ -25,8 +25,8 @@ struct Left {
 /// The refill the store's links owe, if they owe one.
 #[derive(Debug)]
 pub(super) struct LinkRefill {
-    /// The Repositories whose links are still to work out again, the next first. Nothing while the kept
-    /// links are this version's, or once a refill failed.
+    /// The Repositories whose links are still to work out again, the next first. Nothing while
+    /// `LinkRule::SET` worked out the kept links, or once a refill failed.
     left: Option<VecDeque<Left>>,
     /// How many PRs a step works out the links of, at most.
     batch: NonZeroU32,
@@ -42,7 +42,7 @@ impl Default for LinkRefill {
 }
 
 impl LinkRefill {
-    /// The refill of each Repository whose links `store` kept under another version of the rules. A store
+    /// The refill of each Repository whose links `store` kept under rules other than the set. A store
     /// that can't say owes none this launch, and the next launch asks again.
     pub(super) fn owed_by(store: &Store) -> Self {
         let stale = store.stale_links().unwrap_or_else(|problem| {
@@ -87,9 +87,10 @@ impl LinkRefill {
 
     /// Works out the links of the next batch of PRs again. Once a Repository has none left, it tells
     /// `board`, whose screens of the Repository read them again, and once no Repository is left, it saves
-    /// this version of the rules as the kept links'. A step that fails ends the refill. Its batch keeps the
-    /// links it would replace, and the version stays, for the next launch to refill every Repository. The
-    /// earlier batches of its Repository keep what they saved, so `board` hears of the Repository then too.
+    /// the names of `LinkRule::SET` as the kept links' rules. A step that fails ends the refill. Its batch
+    /// keeps the links it would replace, and the names stay, for the next launch to refill every
+    /// Repository. The earlier batches of its Repository keep what they saved, so `board` hears of the
+    /// Repository then too.
     pub(super) fn step(&mut self, board: &mut StatusBoard, store: &Store) {
         let Some(left) = &mut self.left else {
             return;
@@ -126,7 +127,7 @@ impl LinkRefill {
         }
         if let Err(problem) = store.keep_link_rules() {
             log::warn!(
-                "Tsugiki couldn't save the version of the link rules, and works the links out again at \
+                "Tsugiki couldn't save the names of the link rules, and works the links out again at \
                  the next launch: {}",
                 problem.message
             );

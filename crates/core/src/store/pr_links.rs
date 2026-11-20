@@ -4,13 +4,16 @@
 //! 0011). The numbers stay numbers: a read joins them with `issues`, so a number that the sync fetches as an
 //! Issue after the PR starts to link then.
 //!
-//! The rows hold what one version of the link rules gave, `links::RULES_VERSION`, and the store keeps that
-//! number beside them. A store that opens with rows from another version keeps them, and answers reads from
-//! them until the session has worked each Repository's links out again, a job at a time (#950).
+//! The rows hold what a set of link rules gave, and the store keeps the names of those rules beside them, as
+//! it keeps the version of its schema (ADR 0024). A store that names a rule this build doesn't know was
+//! written by a newer Tsugiki, and won't open. One whose rules aren't `LinkRule::SET` keeps its rows, and
+//! answers reads from them until the session has worked each Repository's links out again, a job at a time
+//! (#950).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
+use rusqlite::types::{FromSql, ValueRef};
 use rusqlite::{OptionalExtension, Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
@@ -20,15 +23,13 @@ use super::pull_requests::values_by_number;
 use crate::conventions::Conventions;
 use crate::facts::CommitSha;
 use crate::facts::pull_requests::{PrLinks, PullRequestFacts};
-use crate::links::{
-    LinkRule, LinkSignals, RULES_VERSION, fixed_under_each, origins_in_title, reads_cherry_picks,
-};
+use crate::links::{LinkRule, LinkSignals, fixed_under_each, origins_in_title, reads_cherry_picks};
 use crate::repository::RepositoryName;
 
 /// The tables of the links, with what finds a PR by the number it names, and what walks the PRs by their
 /// last update. A Backport's cherry-pick line names a commit, which a PR became, so the merge commits and
-/// the cherry-picked commits are found by their SHAs. `link_rules` holds the version of the rules that
-/// worked the rows out, once the store has filled them.
+/// the cherry-picked commits are found by their SHAs. `link_rules` held the version of the rules that
+/// worked the rows out, once the store had filled them, until `RULE_NAMES` put their names in its place.
 pub(super) const SCHEMA: &str = "
     CREATE TABLE pr_fixes (
         repository TEXT NOT NULL COLLATE NOCASE,
@@ -53,6 +54,58 @@ pub(super) const SCHEMA: &str = "
     CREATE INDEX pull_requests_by_merge_commit ON pull_requests (repository, merge_commit);
     CREATE INDEX cherry_picks_by_sha ON cherry_picks (repository, sha);
 ";
+
+/// `link_rules` holds the name of each rule that worked the rows out, one row each, in place of a version
+/// (#971). Version 1 named the first set of rules, so it becomes their names, and any other version becomes
+/// none, which the session refills. These names are the first set's for good, whatever `LinkRule::SET`
+/// holds later. The column takes any name, so that a newer Tsugiki at this schema can keep a rule of its
+/// own, which this build then refuses to open.
+pub(super) const RULE_NAMES: &str = "
+    CREATE TABLE link_rule_names (name TEXT PRIMARY KEY) WITHOUT ROWID;
+    INSERT INTO link_rule_names (name)
+        SELECT column1 FROM (VALUES ('closing_references'), ('description_keywords'),
+                                    ('cpython_title_issues'), ('cpython_title_origin'), ('cherry_pick_line'))
+            WHERE EXISTS (SELECT 1 FROM link_rules WHERE version = 1);
+    DROP TABLE link_rules;
+    ALTER TABLE link_rule_names RENAME TO link_rules;
+";
+
+// A released name never changes, as the rule it names never changes what it gives (`LinkRule`). A retired
+// rule keeps its name, so a store an older Tsugiki filled still opens.
+text_column!(LinkRule {
+    ClosingReferences => "closing_references",
+    DescriptionKeywords => "description_keywords",
+    CpythonTitleIssues => "cpython_title_issues",
+    CpythonTitleOrigin => "cpython_title_origin",
+    CherryPickLine => "cherry_pick_line",
+});
+
+/// The rules whose names `link_rules` holds, as this build reads them.
+enum KeptRules {
+    /// Each a rule of this build, in `LinkRule::SET` or retired.
+    Known(Vec<LinkRule>),
+    /// A name no rule of this build spells: a newer Tsugiki worked the rows out.
+    Newer,
+}
+
+/// The rules that worked out the kept links, as `link_rules` names them.
+fn kept_rules(connection: &Connection) -> rusqlite::Result<KeptRules> {
+    let mut statement = connection.prepare("SELECT name FROM link_rules")?;
+    let names = statement.query_map([], |row| row.get::<_, String>("name"))?;
+    let names: Vec<String> = names.collect::<rusqlite::Result<_>>()?;
+    let rules = names
+        .iter()
+        .map(|name| LinkRule::column_result(ValueRef::Text(name.as_bytes())).ok())
+        .collect::<Option<Vec<LinkRule>>>();
+    Ok(rules.map_or(KeptRules::Newer, KeptRules::Known))
+}
+
+/// Whether a newer Tsugiki worked out the kept links, under a rule this build doesn't know. The store then
+/// refuses to open, as it does a schema past its last migration, since this build would write over the
+/// rows the newer one keeps.
+pub(super) fn written_by_newer(connection: &Connection) -> rusqlite::Result<bool> {
+    Ok(matches!(kept_rules(connection)?, KeptRules::Newer))
+}
 
 /// The Conventions a kept number counts under, as the `under` column spells it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -261,12 +314,14 @@ impl<'c> Keeper<'c> {
     }
 }
 
-/// Saves this version of the rules as the one that worked out the kept links.
-fn keep_version(connection: &Connection) -> rusqlite::Result<()> {
-    let query = "INSERT INTO link_rules (id, version) VALUES (1, :version)
-                 ON CONFLICT (id) DO UPDATE SET version = excluded.version";
-    let version = named_params! { ":version": RULES_VERSION };
-    connection.execute(query, version).map(drop)
+/// Saves the names of `LinkRule::SET` as the rules that worked out the kept links, in place of those kept.
+fn keep_set(connection: &Connection) -> rusqlite::Result<()> {
+    connection.execute("DELETE FROM link_rules", []).map(drop)?;
+    let mut keep = connection.prepare("INSERT INTO link_rules (name) VALUES (:name)")?;
+    for rule in LinkRule::SET {
+        keep.execute(named_params! { ":name": rule }).map(drop)?;
+    }
+    Ok(())
 }
 
 /// The Repository a name the store holds spells, as a refill reads its rows by: nothing for a name that no
@@ -279,9 +334,9 @@ fn spelled(name: &str) -> Option<RepositoryName> {
         .then_some(repository)
 }
 
-/// Saves this version of the rules as the one that worked out the kept links, once the session has refilled
-/// each Repository `stale` named: a PR saved meanwhile kept links under this version's rules. The links of a
-/// name that spells no Repository go, as no refill reaches them.
+/// Saves the names of `LinkRule::SET` as the rules that worked out the kept links, once the session has
+/// refilled each Repository `stale` named: a PR saved meanwhile kept links under the set. The links of a name
+/// that spells no Repository go, as no refill reaches them.
 pub(super) fn refilled(connection: &mut Connection) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     let query = "SELECT repository FROM pr_fixes UNION SELECT repository FROM pr_origins";
@@ -299,32 +354,34 @@ pub(super) fn refilled(connection: &mut Connection) -> rusqlite::Result<()> {
                 .map(drop)?;
         }
     }
-    keep_version(&transaction)?;
+    keep_set(&transaction)?;
     transaction.commit()
 }
 
-/// Saves this version of the rules as the one that worked out the kept links, in a store that holds no PR,
-/// whose links any version's rules leave empty: a new file, or one the step that makes the tables found
-/// empty. A store that holds PRs keeps the version it has.
-pub(super) fn keep_version_if_empty(connection: &mut Connection) -> rusqlite::Result<()> {
+/// Saves the names of `LinkRule::SET` as the rules that worked out the kept links, in a store that holds no
+/// PR, whose links any rules leave empty: a new file, or one the step that makes the tables found empty. A
+/// store that holds PRs keeps the names it has.
+pub(super) fn keep_set_if_empty(connection: &mut Connection) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     let empty = "SELECT NOT EXISTS (SELECT 1 FROM pull_requests)";
     if transaction.query_row(empty, [], |row| row.get::<_, bool>(0))? {
-        keep_version(&transaction)?;
+        keep_set(&transaction)?;
     }
     transaction.commit()
 }
 
 /// The Repositories whose PRs' links to work out again, unless the rules that worked out the kept ones are
-/// this version's: as the step that makes the tables leaves them empty, or after a release changes the rules.
-/// Each Repository the store holds PRs of is among them.
+/// `LinkRule::SET`: as the step that makes the tables leaves them empty, or after a release changes the set.
+/// Each Repository the store holds PRs of is among them. A store that lacks a rule of the set lacks its
+/// rows, and one that holds a rule outside it holds rows the set doesn't give. A store a newer Tsugiki wrote
+/// never opens, so a name this build doesn't know means a hand edit since: its rows stay as they are, for
+/// the next open to refuse.
 pub(super) fn stale(connection: &Connection) -> rusqlite::Result<Option<Vec<RepositoryName>>> {
-    let kept: Option<u32> = connection
-        .query_row("SELECT version FROM link_rules", [], |row| {
-            row.get("version")
-        })
-        .optional()?;
-    if kept == Some(RULES_VERSION) {
+    let KeptRules::Known(kept) = kept_rules(connection)? else {
+        return Ok(None);
+    };
+    let kept: BTreeSet<LinkRule> = kept.into_iter().collect();
+    if kept == BTreeSet::from(LinkRule::SET) {
         return Ok(None);
     }
     let mut statement = connection.prepare("SELECT DISTINCT repository FROM pull_requests")?;

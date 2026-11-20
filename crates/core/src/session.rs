@@ -197,8 +197,8 @@ struct Refreshes {
     /// How many saves of a Repository's settings the session has followed, to tell from the view's count
     /// those in its queue.
     saves_taken: Cell<usize>,
-    /// The refill of the links the store kept under another version of the rules, which takes a step when no
-    /// message waits, ahead of the syncs'.
+    /// The refill of the links the store kept under rules other than `LinkRule::SET`, which takes a step when
+    /// no message waits, ahead of the syncs'.
     links: RefCell<LinkRefill>,
 }
 
@@ -253,7 +253,7 @@ enum Turn {
     Patched(RepositoryName, PatchReads),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
     CheckHour,
-    /// The links the store kept under another version of the rules have a Repository left to work out.
+    /// The links the store kept under rules other than `LinkRule::SET` have a Repository left to work out.
     RefillLinks,
     SyncStep,
     Stop,
@@ -560,9 +560,9 @@ fn run(board: &mut StatusBoard, database: Database, access: GitHubAccess, refres
     }
 }
 
-/// Queues the refill of the links if the store kept them under another version of the rules, connects, then
-/// refreshes and runs the syncs the app asks for, until the app stops it. With no token `board` shows why,
-/// and the database stays open until then, so the window can read what's stored.
+/// Queues the refill of the links if the store kept them under rules other than `LinkRule::SET`, connects,
+/// then refreshes and runs the syncs the app asks for, until the app stops it. With no token `board` shows
+/// why, and the database stays open until then, so the window can read what's stored.
 fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
     *refreshes.links.borrow_mut() = LinkRefill::owed_by(store);
     let Some(github) = connect(board, store, access) else {

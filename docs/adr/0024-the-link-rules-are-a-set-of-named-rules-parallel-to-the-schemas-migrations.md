@@ -28,8 +28,13 @@ description, CPython's Issue numbers in the title, CPython's Origin PR in the ti
   through a `Keeper` that runs only that rule. A second test checks that the whole set keeps the rows its
   rules keep alone, so the samples of each rule speak for the set. Its match on `LinkRule` has no default
   arm, so a new rule can't build without samples.
-- `RULES_VERSION` stays until #971, which keeps the names of the rules in the store in its place. Until then
-  a test pins it to `SET`, so a change to the set fails until someone raises it.
+- The store keeps the name of each rule that wrote its rows in `link_rules`, one row each, in place of
+  `RULES_VERSION` (#971). A migration turned version 1 into the first set's names. A store that names a rule
+  this build doesn't know was filled by a newer Tsugiki, and it refuses to open with `NEWER`, as on a schema
+  past the last migration it knows, so neither build rewrites the other's rows. A retired name still
+  parses. A store whose names aren't `SET`'s holds stale links: one that lacks a rule of the set lacks its
+  rows, and one that names a retired rule holds rows the set no longer gives. The session refills those
+  links as a job (#950), then saves the set's names.
 
 ## Considered Options
 
@@ -48,5 +53,8 @@ description, CPython's Issue numbers in the title, CPython's Origin PR in the ti
 - A retired rule runs nowhere, so its samples can leave the pinned test.
 - Two cherry-pick rules can't both run, since the `Keeper` and `MergeCommits` each hold one way to find the
   PR. A new one replaces the old in `SET`, and the code of both looks at which rule the set holds.
-- #971 keeps each rule's name in `link_rules`, refuses a store that names a rule this build doesn't know, and
-  refills a store that lacks one. `RULES_VERSION` goes with it.
+- Each rule's name, as `link_rules` spells it, never changes once released, and a retired variant keeps its
+  spelling. A downgrade to a build that lacks a rule the newer one ran won't open the store, and the user
+  updates Tsugiki to read it.
+- Two branches that each add a rule add two names, so a store that one of them filled names a rule the
+  other doesn't know, and the other refuses to open it, where one number passed as current on both.

@@ -42,16 +42,40 @@ fn events(sent: Vec<Event>) -> (Sender<Event>, Receiver<Event>) {
     (sends, events)
 }
 
+/// How long a server in these tests takes to send an event once the caller waits for it.
+const SOON: Duration = Duration::from_millis(100);
+
+/// Sends `event` with `sends` [`SOON`] from now, from a thread of its own, then drops `sends`.
+fn send_soon(sends: Sender<Event>, event: Event) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        thread::sleep(SOON);
+        sends.send(event).unwrap();
+    })
+}
+
 #[test]
 fn exit_by_reads_past_other_events_to_the_exit_and_is_none_if_the_events_end_or_time_is_up() {
+    let start = Instant::now();
     let (_sends, exited) = events(vec![loading(), Event::Exited(crashed())]);
     let (gone, ended) = events(vec![loading()]);
     drop(gone);
-    let (_sends, quiet) = events(vec![loading()]);
+    let (_sends, quiet) = events(vec![]);
 
-    assert_eq!(exit_by(&exited, Instant::now() + PATIENCE), Some(crashed()));
-    assert_eq!(exit_by(&ended, Instant::now() + PATIENCE), None);
-    assert_eq!(exit_by(&quiet, Instant::now()), None);
+    assert_eq!(exit_by(&exited, start + PATIENCE), Some(crashed()));
+    assert_eq!(exit_by(&ended, start + PATIENCE), None);
+    assert!(start.elapsed() < PATIENCE);
+    assert_eq!(exit_by(&quiet, Instant::now() + SOON), None);
+}
+
+#[test]
+fn exit_by_waits_for_an_exit_still_to_come() {
+    let (sends, events) = events(vec![loading()]);
+    let sender = send_soon(sends, Event::Exited(crashed()));
+
+    let exit = exit_by(&events, Instant::now() + PATIENCE);
+
+    assert_eq!(exit, Some(crashed()));
+    sender.join().unwrap();
 }
 
 #[test]
@@ -68,12 +92,25 @@ fn a_stopping_server_is_waited_for_until_it_exits_or_its_events_end() {
 }
 
 #[test]
+fn a_stopping_server_is_waited_for_until_an_exit_still_to_come() {
+    let start = Instant::now();
+    let (sends, events) = events(vec![loading()]);
+    let sender = send_soon(sends, Event::Exited(crashed()));
+
+    Stopping(events).wait(start + PATIENCE);
+
+    assert!(start.elapsed() >= SOON);
+    sender.join().unwrap();
+}
+
+#[test]
 fn a_server_is_quiescent_once_it_says_so_and_has_stopped_if_it_exits_first() {
     let done = Event::Status(Status {
         quiescent: true,
         message: None,
     });
-    let (_sends, ready) = events(vec![loading(), done]);
+    // An exit after the quiescent status, which a wait that read past that status would give.
+    let (_sends, ready) = events(vec![loading(), done, Event::Exited(crashed())]);
     let (_sends, exited) = events(vec![loading(), Event::Exited(crashed())]);
 
     assert_eq!(quiescent(&ready), None);

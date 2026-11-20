@@ -64,11 +64,6 @@ impl SettingsSave {
     pub fn by(&self) -> SavedBy {
         self.by
     }
-
-    /// The settings the save wrote, for whoever reads them from now on.
-    pub fn into_saved(self) -> RepositorySettings {
-        self.saved
-    }
 }
 
 /// A Repository the user added, as `settings.toml` holds it.

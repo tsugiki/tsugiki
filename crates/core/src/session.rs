@@ -322,11 +322,12 @@ impl Refreshes {
         for save in &saves {
             self.follow_settings(&mut every, store, save);
         }
-        if saves.len() < owed {
+        // `log::error!` evaluates a call among its arguments only while a logger listens.
+        let found = saves.len();
+        if found < owed {
             log::error!(
                 "The settings owner counts {owed} saves the session hasn't followed, and the session's queue \
-                 holds {}",
-                saves.len()
+                 holds {found}"
             );
             self.saves_taken.set(told);
         }

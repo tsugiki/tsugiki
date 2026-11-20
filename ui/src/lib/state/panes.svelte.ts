@@ -5,6 +5,7 @@
 // they dragged the PR view's rail (#603). The core keeps the layout in `machine.toml`, so it stays on this
 // machine and isn't synced. Whether the rail shows, and on which tab, lasts only the session.
 import { commands, type ListOrder, type Panes } from "$lib/data/bindings";
+import { problemIn } from "./answer";
 import { PEEK_ROWS } from "./peek";
 import { RAIL_ORDER, RailState, type RailTabId } from "./rail.svelte";
 
@@ -278,13 +279,7 @@ export class PanesState {
       detail_only_hid: this.#detailOnlyHid ?? null,
       order: this.order,
     };
-    let problem: string | undefined;
-    try {
-      const answer = await commands.savePaneLayout(layout);
-      problem = answer.status === "error" ? answer.error.message : undefined;
-    } catch (e) {
-      problem = String(e);
-    }
+    const problem = await problemIn(() => commands.savePaneLayout(layout));
     if (problem === undefined && !layout.sidebar_icons) this.#savedSidebar = layout.sidebar;
     this.#saveProblem =
       problem === undefined ? undefined : `Tsugiki can't save the panes' layout: ${problem}`;

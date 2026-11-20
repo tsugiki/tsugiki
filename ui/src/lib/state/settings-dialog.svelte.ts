@@ -198,7 +198,7 @@ export class SettingsDialog {
     let unshown: string | undefined;
     try {
       // A broken call answers as a refusal, so Cancel and Esc work again after it.
-      answer = await ask(Promise.resolve().then(() => commands.applySettings(changes)));
+      answer = await ask(() => commands.applySettings(changes));
       unshown = answer.status === "ok" ? await this.#theme.endPreview(saved) : undefined;
     } finally {
       this.applying = false;

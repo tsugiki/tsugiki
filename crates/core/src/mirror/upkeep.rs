@@ -6,9 +6,9 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use std::{fs, io, mem};
+use std::{fs, io};
 
-use super::{Behind, Job, Run, Turn, Worker};
+use super::{Job, Run, Turn, Worker};
 use crate::repository::RepositoryName;
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -183,21 +183,19 @@ pub(super) fn says_broken(words: &str) -> bool {
     SIGNS.iter().any(|sign| unquoted.contains(sign))
 }
 
-/// Deletes the broken mirror beside `repository`'s `mirror`, if there is one, and says whether it did.
-pub(super) fn delete_broken(repository: &RepositoryName, mirror: &Path) -> bool {
-    let broken = mirror.with_file_name(BROKEN);
-    if !broken.exists() {
-        return false;
+/// Whether a broken mirror waits beside `mirror`.
+pub(super) fn has_broken(mirror: &Path) -> bool {
+    mirror.with_file_name(BROKEN).exists()
+}
+
+/// Deletes the broken mirror beside `repository`'s `mirror`, if there is one.
+pub(super) fn delete_broken(repository: &RepositoryName, mirror: &Path) {
+    if !has_broken(mirror) {
+        return;
     }
-    match fs::remove_dir_all(&broken) {
-        Ok(()) => {
-            log::info!("Tsugiki deleted {repository}'s broken mirror");
-            true
-        }
-        Err(cause) => {
-            log::warn!("Tsugiki can't delete {repository}'s broken mirror: {cause}");
-            false
-        }
+    match fs::remove_dir_all(mirror.with_file_name(BROKEN)) {
+        Ok(()) => log::info!("Tsugiki deleted {repository}'s broken mirror"),
+        Err(cause) => log::warn!("Tsugiki can't delete {repository}'s broken mirror: {cause}"),
     }
 }
 
@@ -242,28 +240,40 @@ impl Worker {
         Instant::now().checked_add(wait)
     }
 
-    /// Starts the upkeep of the first mirror that is due, if one is. It reads the mirror's PR refs first,
-    /// to delete those of PRs no longer in Reach.
-    pub(super) fn start_upkeep(&mut self) {
+    /// The Repositories whose mirror is there and due for its upkeep, in the order the worker heard of them.
+    pub(super) fn upkeep_waiting(&self) -> Vec<RepositoryName> {
         let (Some(schedule), Ok(folders)) = (self.remotes.upkeep, &self.folders) else {
-            return;
+            return Vec::new();
         };
         let now = SystemTime::now();
-        let due = self.upkept.iter().find_map(|(repository, upkept)| {
-            let task = upkept.due(schedule, now)?;
-            let mirror = folders.mirror(repository);
-            mirror.exists().then(|| (repository.clone(), mirror, task))
-        });
-        let Some((repository, mirror, task)) = due else {
-            return;
-        };
-        let pruning = self.stale_refs(&repository, &mirror);
-        self.start_upkeep_git(Plan {
-            repository,
-            mirror,
-            pruning,
-            task,
-        });
+        (self.upkept.iter())
+            .filter(|(repository, upkept)| {
+                upkept.due(schedule, now).is_some() && folders.mirror(repository).exists()
+            })
+            .map(|(repository, _)| repository.clone())
+            .collect()
+    }
+
+    /// Starts the upkeep of `repository`'s mirror, which is due. It reads the mirror's PR refs first, to
+    /// delete those of PRs no longer in Reach.
+    pub(super) fn start_upkeep(&mut self, repository: &RepositoryName) {
+        if let Some((repository, mirror, task)) = self.upkeep_of(repository) {
+            let pruning = self.stale_refs(&repository, &mirror);
+            self.start_upkeep_git(Plan {
+                repository,
+                mirror,
+                pruning,
+                task,
+            });
+        }
+    }
+
+    /// The task due for `repository`'s mirror, with where the mirror is.
+    fn upkeep_of(&self, repository: &RepositoryName) -> Option<(RepositoryName, PathBuf, Task)> {
+        let (schedule, folders) = (self.remotes.upkeep?, self.folders.as_ref().ok()?);
+        let (repository, upkept) = (self.upkept.iter()).find(|(one, _)| one.is_same(repository))?;
+        let task = upkept.due(schedule, SystemTime::now())?;
+        Some((repository.clone(), folders.mirror(repository), task))
     }
 
     /// The PRs whose refs are in `mirror` though the last hand-over didn't reach them and the user hasn't
@@ -273,15 +283,11 @@ impl Worker {
             .heads
             .iter()
             .find(|heads| heads.repository.is_same(repository));
-        let Some((handed, opened)) =
-            known.and_then(|heads| Some((heads.handed.as_ref()?, &heads.viewed)))
-        else {
+        let Some(out_of_reach) = known.and_then(|heads| heads.prs.out_of_reach()) else {
             return Vec::new();
         };
         match self.read_pull_refs(mirror) {
-            Ok(refs) => (refs.into_keys())
-                .filter(|number| !handed.contains(number) && !opened.contains(number))
-                .collect(),
+            Ok(refs) => refs.into_keys().filter(out_of_reach).collect(),
             Err(cause) => {
                 log::warn!("Tsugiki can't read which PR refs {repository}'s mirror keeps: {cause}");
                 Vec::new()
@@ -347,10 +353,7 @@ impl Worker {
             let known =
                 (self.heads.iter_mut()).filter(|heads| heads.repository.is_same(repository));
             for known in known {
-                for number in &plan.pruning {
-                    drop(known.settled.remove(number));
-                    drop(known.behind.remove(number));
-                }
+                known.prs.pruned(&plan.pruning);
             }
             return;
         }
@@ -377,7 +380,7 @@ impl Worker {
     /// Notes a new clone of `repository` at `mirror`, whose upkeep starts afresh, and deletes the broken
     /// mirror it replaces, if there was one.
     pub(super) fn cloned_afresh(&mut self, repository: &RepositoryName, mirror: &Path) {
-        let _deleted = delete_broken(repository, mirror);
+        delete_broken(repository, mirror);
         // The worker heard of each Repository whose mirror it keeps before it cloned it.
         if let Some((_, upkept)) = (self.upkept.iter_mut()).find(|(one, _)| one.is_same(repository))
         {
@@ -416,16 +419,7 @@ impl Worker {
         );
         self.replaced.push(repository.clone());
         let mut known = self.take_heads(repository);
-        let settled = mem::take(&mut known.settled);
-        let behind =
-            mem::take(&mut known.behind)
-                .into_iter()
-                .map(|(number, behind)| match behind {
-                    Behind::Due { commit, .. } | Behind::Retried { commit } => (number, commit),
-                });
-        for (number, commit) in settled.into_iter().chain(behind) {
-            let _ = known.waiting.entry(number).or_insert(commit);
-        }
+        known.prs.fetch_again();
         known.reviews.keep_again();
         known.lookup.forget();
         self.heads.push_front(known);

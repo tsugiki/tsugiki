@@ -221,7 +221,7 @@ export class ThemeState {
       this.#wanted = undefined;
       const asked = this.#previews;
       // A broken call answers as a refusal, so the asks go on.
-      const answer = await ask<Themes>(Promise.resolve().then(() => commands.previewThemes(appearance)));
+      const answer = await ask(() => commands.previewThemes(appearance));
       if (asked !== this.#previews) continue;
       if (answer.status !== "ok") {
         this.previewProblem = `Tsugiki can't show the theme: ${answer.error.message}`;
@@ -368,7 +368,7 @@ export class ThemeState {
     // A save waits for the one before it, and a load for both. A save that doesn't answer would hold them,
     // but the settings thread writes a small file, and a drive slow enough to hold it holds the `themes`
     // folder beside it too, which every load reads. A broken call answers as a refusal, so the chain goes on.
-    const saving = this.#saves.then(() => ask(Promise.resolve().then(() => commands.saveTheme(saved))));
+    const saving = this.#saves.then(() => ask(() => commands.saveTheme(saved)));
     this.#saves = saving;
     const answer = await saving;
     const putBack = answer.status !== "ok" && this.#picks === pick;

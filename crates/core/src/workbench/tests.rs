@@ -4,8 +4,10 @@ use super::*;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::testing::cpython_settings;
 use crate::workbench::testing::{
-    at, cpython, first_issue, fixing, issue, mine, outline, reasons_for, stranger, workbench,
+    ViewWorld, at, first_issue, fixing, grouped_whole, issue, mine, outline, reasons_for, stranger,
+    workbench,
 };
 
 #[test]
@@ -75,6 +77,49 @@ fn a_merged_pr_of_the_users_keeps_no_issue_on_the_workbench() {
 }
 
 #[test]
+fn an_items_marks_are_its_own_and_each_of_its_rows_backports_included() {
+    let world = ViewWorld::new("workbench-marks");
+    world.has_crossed_links();
+    let (items, _) = grouped_whole(&world, &world.settings());
+    let shapes = |items: &[WorkbenchItem]| -> Vec<&'static str> {
+        let shape = |item: &WorkbenchItem| match item {
+            WorkbenchItem::Issue(issue) if issue.pull_requests.iter().any(is_backport) => "issue",
+            WorkbenchItem::Issue(_) => "",
+            WorkbenchItem::StandalonePr(_) => "pr",
+            WorkbenchItem::StandaloneBackport(_) => "backport",
+        };
+        let mut shapes: Vec<_> = items.iter().map(shape).filter(|s| !s.is_empty()).collect();
+        shapes.sort_unstable();
+        shapes.dedup();
+        shapes
+    };
+    assert_eq!(
+        shapes(&items),
+        ["backport", "issue", "pr"],
+        "the fixture's shapes"
+    );
+
+    for mut item in items {
+        let own = item.seen().mark.numbers.clone();
+        let rows = item.rows().into_iter().map(|row| vec![row.number]);
+        let expected: Vec<Vec<u32>> = match &item {
+            WorkbenchItem::Issue(_) => std::iter::once(own).chain(rows).collect(),
+            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => rows.collect(),
+        };
+        let marks: Vec<Vec<u32>> = (item.marks_mut().into_iter())
+            .map(|mark| mark.numbers.clone())
+            .collect();
+        assert_eq!(marks, expected);
+    }
+    world.finish();
+}
+
+/// Whether `entry` is a Backport whose Origin PR Tsugiki can't show.
+fn is_backport(entry: &TreeEntry) -> bool {
+    matches!(entry, TreeEntry::Backport(_))
+}
+
+#[test]
 fn nothing_is_the_users_before_anyone_signs_in() {
     let found = Workbench::from_facts(
         WorkFacts {
@@ -85,7 +130,7 @@ fn nothing_is_the_users_before_anyone_signs_in() {
             issues: vec![issue(1)],
             filters: BTreeMap::new(),
         },
-        &cpython(),
+        &cpython_settings(),
         &WorkbenchView::Whole,
     );
     assert_eq!(found.items, []);

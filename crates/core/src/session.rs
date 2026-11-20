@@ -1,28 +1,46 @@
 //! One run of Tsugiki: opens the database, then keeps the status following GitHub until the app ends.
 
-use std::collections::BTreeSet;
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use time::OffsetDateTime;
+
 use crate::error::{Error, ErrorKind};
+use crate::facts::activity::ItemKey;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
-use crate::fetching::{Fetched, Fetching, Item, Marked, MirrorWant, SessionMessage};
+use crate::fetching::{
+    Fetched, Fetching, Headless, Item, Marked, MirrorWant, NoHead, SessionMessage,
+};
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
+use crate::latest::LatestReader;
+use crate::login::Login;
 use crate::mirror::MirrorRequests;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
-use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy};
-use crate::status::{Change, FailedRead, LastSync, ReadFailure, Status, StatusBoard};
-use crate::store::{self, OpenReader, ReaderToOpen, Store, StoreReader};
+use crate::repository_settings::{RepositoryCheck, RepositorySettings, SavedBy, SettingsSave};
+use crate::settings::SettingsView;
+use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
+use crate::store::{
+    self, Archiving, AuthorMuting, ConversationSaved, Flagging, HeadKept, Muting, OpenReader,
+    ReaderToOpen, Seeing, Store, StoreReader,
+};
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{SeenMark, checks_to_keep, mirror_work, reach};
+use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, findings_to_keep, moved};
+use crate::workbench::{Authored, authored_by};
+use on_screen::OnScreen;
+use refill::LinkRefill;
+
+mod on_screen;
+mod refill;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -71,11 +89,13 @@ fn failed(item: &Item, why: ReadFailure) -> FailedRead {
     }
 }
 
-/// What a session reaches beyond its thread: GitHub with `gh`'s token, and the Mirror worker, which it hands
-/// the rules' wants and which hands it the patch-ids it reads.
+/// What a session reaches beyond its thread: GitHub with `gh`'s token, the Mirror worker, which it hands
+/// the rules' wants and which hands it the patch-ids it reads, and the settings owner's view, which it reads
+/// each Repository's settings from.
 pub struct Connections {
     pub github: GitHubAccess,
     pub mirrors: MirrorRequests,
+    pub settings: LatestReader<SettingsView>,
 }
 
 /// How often a session asks GitHub again.
@@ -85,6 +105,8 @@ pub struct Intervals {
     pub status: Duration,
     /// Refreshing the open Repository (ADR 0015).
     pub repository: Duration,
+    /// Reading an Issue or a PR the user can see again, after its last read.
+    pub on_screen: Duration,
 }
 
 impl Session {
@@ -98,19 +120,20 @@ impl Session {
         let Connections {
             github: access,
             mirrors,
+            settings,
         } = connections;
         let (messages, incoming) = mpsc::channel();
-        let fetching = Fetching::new(messages, mirrors);
+        let fetching = Fetching::new(messages, mirrors, Headless::default());
         fetching.hand_patch_ids_to_session();
         let (finishing, finished) = mpsc::channel::<()>();
         let (to_open, reader) = store::reader();
         let database = Database { folders, to_open };
-        let refreshes = Refreshes {
-            intervals,
-            incoming,
-            fetching: fetching.clone(),
-        };
-        let _ = thread::spawn(move || {
+        let refreshes = Refreshes::new(intervals, incoming, fetching.clone(), settings);
+        #[expect(
+            unused_results,
+            reason = "`stop` waits for `finishing` to go, with a patience a join can't take"
+        )]
+        thread::spawn(move || {
             // `stop` learns the session is over when this goes, however the thread ends.
             let _finishing = finishing;
             run(&mut board, database, access, &refreshes);
@@ -124,12 +147,12 @@ impl Session {
 
     /// The way to ask GitHub and the Mirrors for data. Dropping the session stops it, whatever handles are
     /// left.
-    pub fn fetching(&self) -> Fetching {
+    pub(crate) fn fetching(&self) -> Fetching {
         self.fetching.clone()
     }
 
     /// The read-only connection, which doesn't wait for anything this session is doing (ADR 0018).
-    pub fn reader(&self) -> StoreReader {
+    pub(crate) fn reader(&self) -> StoreReader {
         self.reader.clone()
     }
 
@@ -155,12 +178,42 @@ impl Drop for Session {
     }
 }
 
-/// When to ask GitHub again, and the queue the session takes its messages from.
+/// When to ask GitHub again, the queue the session takes its messages from, and the settings owner's view,
+/// which each Repository's settings come from.
 struct Refreshes {
     intervals: Intervals,
     incoming: Receiver<SessionMessage>,
+    /// The messages taken off `incoming` while merging demands, which go first, in the order they came.
+    backlog: RefCell<VecDeque<SessionMessage>>,
     /// The handle the session hands the rules' wants to the Mirror worker through.
     fetching: Fetching,
+    /// The PRs whose Conversation named no head or failed to read, which `fetching` shares.
+    headless: Headless,
+    /// The Issues and PRs on screen, each read again after its last read.
+    on_screen: RefCell<OnScreen>,
+    /// The settings owner's view. The owner publishes each save there and hands it to the session in one
+    /// step, so a read finds settings at least as new as every save the session has heard of.
+    settings: LatestReader<SettingsView>,
+    /// How many saves of a Repository's settings the session has followed, to tell from the view's count
+    /// those in its queue.
+    saves_taken: Cell<usize>,
+    /// The refill of the links the store kept under rules other than `LinkRule::SET`, which takes a step when
+    /// no message waits, ahead of the syncs'.
+    links: RefCell<LinkRefill>,
+}
+
+/// Where the session tells the window of a mark or a hand edit to the settings, with the syncs that say
+/// which Repositories' lists the window shows: those opened since launch. A session with no syncs tells of
+/// a hand edit to any.
+struct Telling<'a> {
+    board: &'a mut StatusBoard,
+    syncs: Option<&'a Syncs>,
+}
+
+impl Telling<'_> {
+    fn shows(&self, repository: &RepositoryName) -> bool {
+        (self.syncs).is_none_or(|syncs| syncs.was_opened(repository))
+    }
 }
 
 /// When the next of each kind of question is due.
@@ -191,7 +244,7 @@ enum Turn {
     /// The window opened this Repository, so it needs to know when its last sync was.
     Opened(RepositoryName),
     /// The settings owner saved these settings of a Repository.
-    SettingsChanged(RepositorySettings, SavedBy),
+    SettingsChanged(SettingsSave),
     /// The user marked an item seen or unseen.
     Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
@@ -200,34 +253,183 @@ enum Turn {
     Patched(RepositoryName, PatchReads),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
     CheckHour,
+    /// The links the store kept under rules other than `LinkRule::SET` have a Repository left to work out.
+    RefillLinks,
     SyncStep,
     Stop,
 }
 
 impl Refreshes {
+    fn new(
+        intervals: Intervals,
+        incoming: Receiver<SessionMessage>,
+        fetching: Fetching,
+        settings: LatestReader<SettingsView>,
+    ) -> Self {
+        Self {
+            intervals,
+            incoming,
+            backlog: RefCell::new(VecDeque::new()),
+            headless: fetching.headless(),
+            fetching,
+            on_screen: RefCell::new(OnScreen::new(intervals.on_screen)),
+            settings,
+            saves_taken: Cell::new(0),
+            links: RefCell::new(LinkRefill::default()),
+        }
+    }
+
+    /// Has the Mirror worker follow the move of Reach `save` makes, counts it as followed, and tells the
+    /// window of a hand edit to a Repository whose lists it shows.
+    fn follow_settings(&self, telling: &mut Telling<'_>, store: &Store, save: &SettingsSave) {
+        self.saves_taken.set(self.saves_taken.get() + 1);
+        follow_save(&self.fetching, store, save);
+        let repository = &save.saved().name;
+        if telling.shows(repository) {
+            announce_settings(telling.board, repository, save.by());
+        }
+    }
+
+    /// Follows each save among the first `told` the owner handed over that the session hasn't, taking it
+    /// from the queue now. The owner counts a save in the view in one step with handing it over, so each
+    /// is in the queue. The messages it passes keep their order, in the backlog.
+    ///
+    /// It tells the window of each hand edit it follows, in a Repository opened since launch or not: a Sync
+    /// it passes may open the Repository, whose lists the window read before the edit. A save missing from
+    /// the queue is logged once, and the count goes on from `told`, so a later mark takes no save that only
+    /// a later view counts.
+    fn follow_saves_told(&self, board: &mut StatusBoard, store: &Store, told: usize) {
+        let owed = told.saturating_sub(self.saves_taken.get());
+        if owed == 0 {
+            return;
+        }
+        let saves = {
+            let mut backlog = self.backlog.borrow_mut();
+            backlog.extend(self.incoming.try_iter());
+            let mut saves = Vec::new();
+            backlog.retain(|message| {
+                let SessionMessage::SettingsChanged(save) = message else {
+                    return true;
+                };
+                let owed_still = saves.len() < owed;
+                if owed_still {
+                    saves.push(save.clone());
+                }
+                !owed_still
+            });
+            saves
+        };
+        let mut every = Telling { board, syncs: None };
+        for save in &saves {
+            self.follow_settings(&mut every, store, save);
+        }
+        // `log::error!` evaluates a call among its arguments only while a logger listens.
+        let found = saves.len();
+        if found < owed {
+            log::error!(
+                "The settings owner counts {owed} saves the session hasn't followed, and the session's queue \
+                 holds {found}"
+            );
+            self.saves_taken.set(told);
+        }
+    }
+
+    /// The next message, from the backlog first, waiting up to `wait` for one.
+    fn next_message(&self, wait: Duration) -> Result<SessionMessage, RecvTimeoutError> {
+        let first = self.backlog.borrow_mut().pop_front();
+        first.map_or_else(|| self.incoming.recv_timeout(wait), Ok)
+    }
+
+    /// The read `fetched` ended, so each demand for the same read that came while it waited or ran shares
+    /// its outcome and leaves the queue. A demand that comes after this starts a read of its own.
+    fn merge(&self, fetched: &Fetched) {
+        let mut backlog = self.backlog.borrow_mut();
+        backlog.extend(self.incoming.try_iter());
+        backlog.retain(
+            |message| !matches!(message, SessionMessage::Fetch(other) if other.is(fetched)),
+        );
+    }
+
+    /// Tells the window that the read of `fetched` failed for `why`. For a PR, it first tells the Files tab,
+    /// which asks again once the window hears and finds why, and ends the Mirror worker's await of the head,
+    /// which no read answers until the next.
+    fn read_failed(&self, board: &mut StatusBoard, fetched: &Fetched, why: ItemUnread) {
+        let item = fetched.item();
+        if let Fetched::PullRequest(_) = fetched {
+            self.headless.note(item, NoHead::Unread(why));
+            (self.fetching).no_head(item.repository.clone(), item.number);
+        }
+        board.failed_read(&failed(item, why.into()));
+    }
+
     /// Waits for a stop message, for a session with nothing to ask GitHub with. A check dropped here tells
-    /// the one asking that the session isn't connected. Mark Seen and Mark Unseen need only the database, so
-    /// they still work, and so does telling the window of a hand edit to the settings. With no syncs there
-    /// is no copy to compare, but the settings owner hands over only settings that changed.
+    /// the one asking that the session isn't connected. The marks need only the database, so they still
+    /// work, and so does telling the window of a hand edit to the settings: with no syncs to say which
+    /// Repositories were opened, of each one. Reach follows a change of the settings, and a Mute or an
+    /// Unmute, as it does with a token, which needs only the database and the Mirror (#946). The refill of
+    /// the links needs only the database too, and takes a step whenever no message waits.
     fn wait_for_stop(&self, board: &mut StatusBoard, store: &Store) {
-        while let Ok(message) = self.incoming.recv() {
+        let mut telling = Telling { board, syncs: None };
+        loop {
+            // A wait too long for the clock waits for the next message, however long it takes.
+            let wait = if self.links.borrow().is_due() {
+                Duration::ZERO
+            } else {
+                Duration::MAX
+            };
+            let message = match self.next_message(wait) {
+                Ok(message) => message,
+                Err(RecvTimeoutError::Timeout) => {
+                    self.links.borrow_mut().step(telling.board, store);
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => return,
+            };
             match message {
                 SessionMessage::Stop => return,
-                SessionMessage::Mark(marked) => mark(board, store, marked),
-                SessionMessage::SettingsChanged(settings, by) => {
-                    announce_settings(board, &settings.name, by);
+                SessionMessage::Sync { repository } => {
+                    self.links.borrow_mut().put_first(&repository);
+                }
+                SessionMessage::Mark(marked) => self.mark(&mut telling, store, marked),
+                SessionMessage::SettingsChanged(save) => {
+                    self.follow_settings(&mut telling, store, &save);
                 }
                 SessionMessage::Patched(repository, patches) => {
-                    keep_patches(board, store, &repository, patches);
+                    keep_patches(telling.board, store, &repository, patches);
                 }
                 SessionMessage::Fetch(fetched) => {
-                    board.failed_read(&failed(fetched.item(), ReadFailure::NoToken));
+                    (self.links.borrow_mut()).put_first(&fetched.item().repository);
+                    self.read_failed(telling.board, &fetched, ItemUnread::NoToken);
                 }
                 SessionMessage::Check { .. }
-                | SessionMessage::Sync { .. }
-                | SessionMessage::Refresh => {}
+                | SessionMessage::Refresh
+                | SessionMessage::Screen(_) => {}
             }
         }
+    }
+
+    /// Keeps what the user marked, has the Mirror worker follow the move of Reach the mark makes, under the
+    /// Repository's settings now, if the store kept it, and tells the window, whose lists go by the mark.
+    ///
+    /// A mark that moves Reach first follows each save counted in the view it reads the settings from, as
+    /// those settings hold them. The saves' moves of Reach then end where the mark's starts, and the two
+    /// chain. Without, a save that comes after the mark moves Reach on the facts after it, and a PR that only
+    /// the pair puts in Reach is owed by neither.
+    fn mark(&self, telling: &mut Telling<'_>, store: &Store, marked: Marked) {
+        let repository = marked.repository().clone();
+        let (told, settings) =
+            (self.settings).read(|view| (view.saves_told, view.repository(repository)));
+        if marked.moves_reach() {
+            self.follow_saves_told(telling.board, store, told);
+        }
+        let moved = ReachMove::of(&marked, store, &settings);
+        let (saved, change) = keep_mark(store, &settings, marked);
+        if saved.is_ok()
+            && let Some(moved) = moved
+        {
+            moved.follow(&self.fetching, store);
+        }
+        tell_marked(telling.board, saved, &change);
     }
 
     /// Waits for the next refresh or the next step of a sync, answering what's asked meanwhile, so a step
@@ -236,25 +438,24 @@ impl Refreshes {
         let next_refresh = due.status.min(due.repository);
         loop {
             let hour_check = hour_check(github);
-            let wake = [syncs.ready_at(), hour_check]
+            let reread = self.on_screen.borrow().wake();
+            let refill = self.links.borrow().is_due().then(Instant::now);
+            let wake = [syncs.ready_at(), hour_check, reread, refill]
                 .into_iter()
                 .flatten()
                 .fold(next_refresh, Ord::min);
-            match self
-                .incoming
-                .recv_timeout(wake.saturating_duration_since(Instant::now()))
-            {
+            match self.next_message(wake.saturating_duration_since(Instant::now())) {
                 Ok(SessionMessage::Sync { repository }) => {
-                    let opened = repository.name.clone();
-                    syncs.add(repository);
-                    return Turn::Opened(opened);
+                    syncs.add(repository.clone());
+                    return Turn::Opened(repository);
                 }
                 Ok(SessionMessage::Refresh) => return Turn::RefreshNow,
-                Ok(SessionMessage::SettingsChanged(settings, by)) => {
-                    return Turn::SettingsChanged(settings, by);
-                }
+                Ok(SessionMessage::SettingsChanged(save)) => return Turn::SettingsChanged(save),
                 Ok(SessionMessage::Mark(marked)) => return Turn::Mark(marked),
                 Ok(SessionMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
+                Ok(SessionMessage::Screen(moved)) => {
+                    self.on_screen.borrow_mut().moved(moved, Instant::now());
+                }
                 Ok(SessionMessage::Patched(repository, patches)) => {
                     return Turn::Patched(repository, patches);
                 }
@@ -273,20 +474,37 @@ impl Refreshes {
                 Ok(SessionMessage::Stop) | Err(RecvTimeoutError::Disconnected) => {
                     return Turn::Stop;
                 }
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= due.status => {
-                    return Turn::Refresh;
-                }
-                Err(RecvTimeoutError::Timeout) if Instant::now() >= due.repository => {
-                    return Turn::RefreshRepository;
-                }
-                Err(RecvTimeoutError::Timeout)
-                    if hour_check.is_some_and(|at| Instant::now() >= at) =>
-                {
-                    return Turn::CheckHour;
-                }
-                Err(RecvTimeoutError::Timeout) => return Turn::SyncStep,
+                Err(RecvTimeoutError::Timeout) => return self.timed_turn(due, hour_check),
             }
         }
+    }
+
+    /// The turn whose time came: asking who is signed in first, as only that brings the session back online,
+    /// then reading again an item on screen whose minute came round, refreshing the open Repository,
+    /// checking the hour's points, the next step of the links' refill, and else the next sync step.
+    fn timed_turn(&self, due: Due, hour_check: Option<Instant>) -> Turn {
+        let now = Instant::now();
+        if now >= due.status {
+            return Turn::Refresh;
+        }
+        let reread = self.on_screen.borrow().due(now);
+        if let Some(read) = reread {
+            // Whether the PR has a head waits for this read, as it does for a demand's.
+            if let Fetched::PullRequest(item) = &read {
+                self.headless.forget(item);
+            }
+            return Turn::Fetch(read);
+        }
+        if now >= due.repository {
+            return Turn::RefreshRepository;
+        }
+        if hour_check.is_some_and(|at| now >= at) {
+            return Turn::CheckHour;
+        }
+        if self.links.borrow().is_due() {
+            return Turn::RefillLinks;
+        }
+        Turn::SyncStep
     }
 }
 
@@ -342,15 +560,17 @@ fn run(board: &mut StatusBoard, database: Database, access: GitHubAccess, refres
     }
 }
 
-/// Connects, then refreshes and runs the syncs the app asks for, until the app stops it. With no token
-/// `board` shows why, and the database stays open until then, so the window can read what's stored.
+/// Queues the refill of the links if the store kept them under rules other than `LinkRule::SET`, connects,
+/// then refreshes and runs the syncs the app asks for, until the app stops it. With no token `board` shows
+/// why, and the database stays open until then, so the window can read what's stored.
 fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes: &Refreshes) {
+    *refreshes.links.borrow_mut() = LinkRefill::owed_by(store);
     let Some(github) = connect(board, store, access) else {
         refreshes.wait_for_stop(board, store);
         return;
     };
     board.hour_points(github.hour_points());
-    let mut syncs = Syncs::default();
+    let mut syncs = Syncs::new(refreshes.settings.clone());
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
     loop {
@@ -380,25 +600,45 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 }
                 due.repository = Instant::now() + intervals.repository;
             }
-            Turn::Opened(repository) => show_last_sync(board, store, repository),
-            Turn::SettingsChanged(settings, by) => {
-                let repository = settings.name.clone();
-                if settings_changed(&refreshes.fetching, store, &mut syncs, settings).is_some() {
-                    announce_settings(board, &repository, by);
-                }
+            Turn::Opened(repository) => {
+                refreshes.links.borrow_mut().put_first(&repository);
+                show_last_sync(board, store, repository);
             }
-            Turn::Mark(marked) => mark(board, store, marked),
+            Turn::SettingsChanged(save) => {
+                let mut telling = Telling {
+                    board,
+                    syncs: Some(&syncs),
+                };
+                refreshes.follow_settings(&mut telling, store, &save);
+            }
+            Turn::Mark(marked) => {
+                let mut telling = Telling {
+                    board,
+                    syncs: Some(&syncs),
+                };
+                refreshes.mark(&mut telling, store, marked);
+            }
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
             Turn::CheckHour => {}
+            Turn::RefillLinks => refreshes.links.borrow_mut().step(board, store),
             Turn::Fetch(fetched) => {
+                // An item of another Repository, as quick open opens one, reads its links on screen too.
+                (refreshes.links.borrow_mut()).put_first(&fetched.item().repository);
                 if let Fetched::Issue(item) = &fetched {
                     syncs.open_issue(&item.repository, item.number);
                 }
-                if let Err(problem) = fetch_conversation(board, store, &github, fetched) {
+                let read = Reading {
+                    github: &github,
+                    queue: refreshes,
+                    syncs: &syncs,
+                };
+                if let Err(problem) = read_conversation(board, store, &read, &fetched) {
                     syncs.after_fetch_failure(&problem, due.status, github.clock());
                     board.set(status_after(problem, store));
                 }
+                // A failed read waits its minute too, or the session would ask GitHub again at once.
+                (refreshes.on_screen.borrow_mut()).read(fetched.item(), Instant::now());
             }
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.
@@ -407,8 +647,10 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::SyncStep => match syncs.step(&github, store) {
                 Ok(Some(Progress::Changed(change))) => {
-                    if !change.items.is_empty() {
-                        let _handed = hand_over_heads(&refreshes.fetching, store, &syncs, &change);
+                    if !change.items.is_empty()
+                        && let Some(synced) = synced_facts(store, &syncs, &change.repository)
+                    {
+                        hand_over_heads(&refreshes.fetching, store, &synced, &change);
                     }
                     board.changed(&change);
                 }
@@ -427,25 +669,17 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
     }
 }
 
-/// Hands the Mirror worker what the rules want of the Repository a step just saved facts of: the heads of
-/// the PRs in its Reach, the commit each of the user's Reviews there covered, and the commits whose patch-ids
-/// the Stale review check needs and the store lacks. Then the heads the step saved, so a PR the user opened
-/// before its head was known gets its head first. It keeps the last check of each PR whose sides are both
-/// read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't keep yet. A
-/// store that can't answer just saved, and the next step that saves says if it is in trouble, and hands the
-/// heads. The heads go though the reviewed commits can't be read, and those wait for a step whose read works.
-/// Says whether it handed anything over.
-fn hand_over_heads(
-    fetching: &Fetching,
-    store: &Store,
-    syncs: &Syncs,
-    saved: &Change,
-) -> Option<()> {
-    let repository = &saved.repository;
-    let settings = syncs.settings(repository)?;
-    let facts = store.work_facts(repository).ok()?;
-    hand_over_wants(fetching, store, settings, &facts);
-    let saved_heads = (facts.pull_requests.iter())
+/// Hands the Mirror worker what the rules want of the `synced` Repository a step just saved facts of: the
+/// heads of the PRs in its Reach, the commit each of the user's Reviews there covered, and the commits whose
+/// patch-ids the Stale review check needs and the store lacks. Then the heads the step saved, so a PR the
+/// user opened before its head was known gets its head first. It keeps the last check of each PR whose sides
+/// are both read first. The mirror fetches only the heads that moved, and the reviewed commits it doesn't
+/// keep yet. A store that can't answer just saved, and the next step that saves says if it is in trouble,
+/// and hands the heads. The heads go though the reviewed commits can't be read, and those wait for a step
+/// whose read works.
+fn hand_over_heads(fetching: &Fetching, store: &Store, synced: &Synced<'_>, saved: &Change) {
+    hand_over_rules_wants(fetching, store, synced);
+    let saved_heads = (synced.facts.pull_requests.iter())
         .filter(|pr| saved.items.contains(&pr.number))
         .filter_map(|pr| {
             Some(PrHead {
@@ -454,28 +688,70 @@ fn hand_over_heads(
                 target_branch: pr.target_branch.clone(),
             })
         });
-    fetching.heads_saved(repository, saved_heads.collect());
-    Some(())
+    fetching.heads_saved(synced.repository, saved_heads.collect());
 }
 
-/// Hands the Mirror worker what the rules want of the Repository of `settings`, whose stored facts are
-/// `facts`, as `hand_over_heads` says.
-fn hand_over_wants(
-    fetching: &Fetching,
+/// A Repository that syncs, with its stored facts and its settings in the settings owner's view.
+struct Synced<'a> {
+    repository: &'a RepositoryName,
+    facts: WorkFacts,
+    settings: RepositorySettings,
+}
+
+/// `repository` with its facts and its settings in the settings owner's view, if it was opened since launch
+/// and the store can read its facts. Only those Repositories sync, so only theirs hand the Mirror worker a
+/// new set of wants.
+fn synced_facts<'a>(
     store: &Store,
-    settings: &RepositorySettings,
-    facts: &WorkFacts,
-) {
-    let repository = &settings.name;
+    syncs: &Syncs,
+    repository: &'a RepositoryName,
+) -> Option<Synced<'a>> {
+    let settings = syncs.opened_settings(repository)?;
+    let facts = store.work_facts(repository).ok()?;
+    Some(Synced {
+        repository,
+        facts,
+        settings,
+    })
+}
+
+/// Hands the Mirror worker what the rules want of the `synced` Repository, from its stored facts.
+fn hand_over_rules_wants(fetching: &Fetching, store: &Store, synced: &Synced<'_>) {
+    let stated = Stated {
+        repository: synced.repository,
+        facts: &synced.facts,
+        work: MirrorWork::of(&synced.facts, &synced.settings),
+    };
+    hand_over_wants(fetching, store, stated);
+}
+
+/// The Mirror's work in a Repository, with the stored facts the rules worked it out from.
+struct Stated<'a> {
+    repository: &'a RepositoryName,
+    facts: &'a WorkFacts,
+    work: MirrorWork,
+}
+
+/// Hands the Mirror worker what the rules want of it, as `hand_over_heads` says.
+fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
+    let Stated {
+        repository,
+        facts,
+        work,
+    } = stated;
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
-    // that can't keep it says so at the next step that saves.
-    let _kept = keep_last_checks(store, repository, facts);
-    let (heads, patches) = mirror_work(facts, settings);
+    // that can't keep it says so in the log, and in the status bar at the next step that saves.
+    if let Err(problem) = keep_checks(store, repository, facts, OffsetDateTime::now_utc()) {
+        log::warn!(
+            "Tsugiki couldn't keep the Stale review checks in {repository}: {}",
+            problem.message
+        );
+    }
     let want = MirrorWant {
-        heads,
+        heads: work.heads,
         reviewed,
-        patches,
+        patches: work.patches,
     };
     fetching.want(repository, want);
 }
@@ -494,51 +770,116 @@ fn announce_settings(board: &mut StatusBoard, repository: &RepositoryName, by: S
     }
 }
 
-/// The settings owner saved `settings`, which the syncs read from now on, if the session has opened their
-/// Repository since launch and holds other settings of it. Answers with those it held then.
-fn settings_changed(
-    fetching: &Fetching,
-    store: &Store,
-    syncs: &mut Syncs,
-    settings: RepositorySettings,
-) -> Option<RepositorySettings> {
-    let now = settings.clone();
-    let before = syncs.replace_settings(settings)?;
-    let _followed = follow_reach(fetching, store, &now, &before);
-    Some(before)
+/// Reach follows the move `save` made from the settings it replaced, whether or not the session has opened
+/// the Repository since launch: a hand edit can switch a Filter on in any Repository, and once the user
+/// opens it, its refreshes read ahead only what the store owes (#901). A Repository the save added has no
+/// move to follow.
+fn follow_save(fetching: &Fetching, store: &Store, save: &SettingsSave) {
+    if let Some(replaced) = save.replaced() {
+        follow_reach(fetching, store, save.saved(), replaced);
+    }
 }
 
-/// The syncs read settings `now` in place of `before`. A Filter switched on puts PRs in Reach that no
+/// A Repository's settings say `now` in place of `before`. A Filter switched on puts PRs in Reach that no
 /// change on GitHub would have the Mirror fetch the head of or a refresh read ahead (#819). So the Mirror
-/// worker hears the new Reach at once, and the store owes a read of each PR newly in Reach whose
-/// Conversation it doesn't hold at the PR's head, which the next refresh reads ahead while the PR is still
-/// in Reach. One switched off takes PRs out, and the Mirror worker stops wanting their heads.
+/// worker hears the new Reach at once, and the store owes a read of each Conversation the rules say the
+/// switch owes. A refresh that finishes reads those still in Reach ahead. One switched off takes PRs out, and
+/// the Mirror worker stops wanting their heads.
 ///
-/// A store that can't read the facts leaves the heads to the next step that saves. One that can't keep what
-/// it owes leaves the Conversations to the PR view, which reads one when it opens, and the log says so.
-/// Says whether it handed the Mirror worker anything.
+/// A store that can't read the facts leaves the heads to the next step that saves. The reads the switch owes
+/// are lost, as no later step works them out, and the log says so. The PR view reads a lost Conversation
+/// when it opens.
 fn follow_reach(
     fetching: &Fetching,
     store: &Store,
     now: &RepositorySettings,
     before: &RepositorySettings,
-) -> Option<()> {
-    let repository = &now.name;
-    let facts = store.work_facts(repository).ok()?;
-    hand_over_wants(fetching, store, now, &facts);
-    let reached = reach(&facts, now);
-    let reached_before = reach(&facts, before);
-    let newly = (facts.pull_requests.iter())
-        .filter(|pr| reached.contains(&pr.number) && !reached_before.contains(&pr.number))
-        .map(|pr| (pr.number, pr.head.clone()))
-        .collect();
-    if let Err(problem) = store.owe_read_ahead_at(repository, newly) {
+) {
+    let Some(facts) = facts_for_move(store, &now.name) else {
+        return;
+    };
+    let from = |settings| ReachFrom {
+        facts: &facts,
+        settings,
+    };
+    follow_move(fetching, store, from(before), from(now));
+}
+
+/// The stored facts of `repository`, which a move of Reach goes by. A store that can't read them says so in
+/// the log.
+fn facts_for_move(store: &Store, repository: &RepositoryName) -> Option<WorkFacts> {
+    (store.work_facts(repository))
+        .inspect_err(|problem| {
+            log::warn!(
+                "Tsugiki couldn't read what moved Reach in {repository}: {}",
+                problem.message
+            );
+        })
+        .ok()
+}
+
+/// Hands the Mirror worker its work after Reach moved from `before` to `now`, unless the move left it as it
+/// was, and has the store owe the reads ahead the move owes, as `moved` works them out. A store that can't
+/// say which heads its Conversations were read at owes a read of each PR the move puts in Reach, which costs
+/// a request apiece and loses nothing. One that can't keep what it owes loses them, and the log says so.
+fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: ReachFrom<'_>) {
+    let repository = &now.settings.name;
+    let read_at = store.conversation_heads(repository).unwrap_or_default();
+    let (work, owed) = moved(before, now, &read_at);
+    if let Some(work) = work {
+        let stated = Stated {
+            repository,
+            facts: now.facts,
+            work,
+        };
+        hand_over_wants(fetching, store, stated);
+    }
+    if let Err(problem) = store.owe_read_ahead(repository, owed) {
         log::warn!(
-            "Tsugiki couldn't keep the reads ahead a Filter switched on in {repository} owes: {}",
+            "Tsugiki couldn't keep the reads ahead owed in {repository}: {}",
             problem.message
         );
     }
-    Some(())
+}
+
+/// A Mute or an Unmute, which moves Reach (#918), with the Repository's settings and the stored facts from
+/// before the store keeps it. It moves Reach with or without a token (#946).
+///
+/// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
+/// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
+/// the Mirror fetch the heads of or a refresh read ahead. So the Mirror worker hears the new Reach at once,
+/// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
+struct ReachMove {
+    settings: RepositorySettings,
+    before: WorkFacts,
+}
+
+impl ReachMove {
+    /// The move `marked` makes, under the Repository's `settings`: none for a mark other than Mute and
+    /// Unmute. Facts the store can't read, before the mark or after it, leave the heads to the next step that
+    /// saves, and lose the reads an Unmute owes.
+    fn of(marked: &Marked, store: &Store, settings: &RepositorySettings) -> Option<Self> {
+        if !marked.moves_reach() {
+            return None;
+        }
+        let before = facts_for_move(store, marked.repository())?;
+        let settings = settings.clone();
+        Some(Self { settings, before })
+    }
+
+    /// Has the Mirror worker follow the move, once the store kept the mark. Reach after it goes by the facts
+    /// the store kept.
+    fn follow(self, fetching: &Fetching, store: &Store) {
+        let Self { settings, before } = self;
+        let Some(now) = facts_for_move(store, &settings.name) else {
+            return;
+        };
+        let from = |facts| ReachFrom {
+            facts,
+            settings: &settings,
+        };
+        follow_move(fetching, store, from(&before), from(&now));
+    }
 }
 
 /// Keeps what the Mirror worker handed over: the patch-ids it read, with the last check of each PR whose
@@ -568,12 +909,13 @@ fn keep_patches(
         }
     };
     let facts = saved.and_then(|()| store.work_facts(repository));
-    let kept = facts.and_then(|facts| {
-        keep_last_checks(store, repository, &facts)?;
-        Ok(facts)
-    });
-    match kept {
+    match facts {
         Ok(facts) => {
+            // The reads are saved, so the window hears of them whether or not the checks are.
+            if let Err(problem) = keep_checks(store, repository, &facts, OffsetDateTime::now_utc())
+            {
+                board.set(Status::Problem { problem });
+            }
             let reviewed = &facts.reviews.reviewed;
             let checked = facts.pull_requests.iter().filter(|pr| {
                 let sides = pr.head.iter().chain(reviewed.get(&pr.number));
@@ -589,112 +931,339 @@ fn keep_patches(
 }
 
 /// Keeps as its last check the two commits of each PR whose patch-ids `facts` hold of both, where the store
-/// kept others, so their verdict stands while a newer check waits.
-fn keep_last_checks(
+/// kept others, so their verdict stands while a newer check waits. Then dates from `now` each Review a check
+/// finds stale, or can't check, for the first time, before the window hears of it (#908).
+pub(crate) fn keep_checks(
     store: &Store,
     repository: &RepositoryName,
     facts: &WorkFacts,
+    now: OffsetDateTime,
 ) -> Result<(), Error> {
     let checks = checks_to_keep(facts);
-    if checks.is_empty() {
+    if !checks.is_empty() {
+        store.save_last_checks(repository, checks)?;
+    }
+    let findings = findings_to_keep(facts);
+    if findings.is_empty() {
         return Ok(());
     }
-    store.save_last_checks(repository, checks)
+    store.save_findings(repository, findings, now)
 }
 
-/// Keeps what the user marked, and tells the window, whose lists go by it.
-fn mark(board: &mut StatusBoard, store: &Store, marked: Marked) {
-    let (saved, change) = match marked {
+/// Tells the window of `change`, which a mark made, or the status bar why the store couldn't keep it.
+fn tell_marked(board: &mut StatusBoard, saved: Result<(), Error>, change: &Change) {
+    match saved {
+        Ok(()) => board.changed(change),
+        Err(problem) => board.set(Status::Problem { problem }),
+    }
+}
+
+/// Keeps what the user marked, with the change to tell the window of. Mute author and Unmute author find
+/// the author's items under the Repository's `settings`.
+pub(crate) fn keep_mark(
+    store: &Store,
+    settings: &RepositorySettings,
+    marked: Marked,
+) -> (Result<(), Error>, Change) {
+    match marked {
         Marked::Seen { repository, mark } => {
-            let SeenMark { numbers, up_to } = mark;
+            let SeenMark {
+                numbers,
+                up_to,
+                findings,
+            } = mark;
             let change = Change {
                 repository,
                 items: numbers.clone(),
             };
-            (store.mark_seen(&change.repository, numbers, up_to), change)
+            let seeing = Seeing {
+                numbers,
+                up_to,
+                findings,
+            };
+            (store.mark_seen(&change.repository, seeing), change)
         }
         Marked::Unseen {
-            item: Item { repository, number },
+            repository,
+            number,
+            archived,
             at,
         } => {
-            let saved = store.mark_unseen(&repository, number, at);
-            let items = vec![number];
+            let saved = store.mark_unseen(&repository, Flagging { number, archived }, at);
+            let unarchived = archived.map(ItemKey::number);
+            let mut items = vec![number];
+            items.extend(unarchived.filter(|holder| *holder != number));
             (saved, Change { repository, items })
         }
-    };
-    match saved {
-        Ok(()) => board.changed(&change),
-        Err(problem) => board.set(Status::Problem { problem }),
+        Marked::Archived {
+            repository,
+            key,
+            mark:
+                SeenMark {
+                    numbers,
+                    up_to,
+                    findings,
+                },
+            put_away,
+            at,
+        } => {
+            let change = Change {
+                repository,
+                items: numbers.clone(),
+            };
+            let archiving = Archiving {
+                key,
+                numbers,
+                up_to,
+                put_away,
+                findings,
+            };
+            let saved = store.archive(&change.repository, archiving, at);
+            (saved, change)
+        }
+        Marked::Unarchived { repository, key } => {
+            let saved = store.unarchive(&repository, key);
+            let items = vec![key.number()];
+            (saved, Change { repository, items })
+        }
+        Marked::Muted {
+            repository,
+            key,
+            mark:
+                SeenMark {
+                    numbers,
+                    up_to,
+                    findings,
+                },
+            at,
+        } => {
+            let change = Change {
+                repository,
+                items: numbers.clone(),
+            };
+            let muting = Muting {
+                key,
+                numbers,
+                up_to,
+                findings,
+            };
+            let saved = store.mute(&change.repository, muting, at);
+            (saved, change)
+        }
+        Marked::Unmuted { repository, key } => {
+            let saved = store.unmute(&repository, key);
+            let items = vec![key.number()];
+            (saved, Change { repository, items })
+        }
+        Marked::AuthorMuted {
+            repository,
+            author,
+            at,
+        } => {
+            let authored = authored_in(store, settings, &author);
+            let (saved, items) = match authored {
+                Ok(Authored { marks, numbers }) => {
+                    let muting = AuthorMuting { author, marks };
+                    (store.mute_author(&repository, muting, at), numbers)
+                }
+                Err(problem) => (Err(problem), Vec::new()),
+            };
+            (saved, Change { repository, items })
+        }
+        Marked::AuthorUnmuted { repository, author } => {
+            // The window asks again on any change, so a failed read loses only the numbers it names.
+            let items = (authored_in(store, settings, &author))
+                .inspect_err(|problem| {
+                    // `log::warn!` evaluates a call among its arguments only while a logger listens.
+                    let login = author.as_str();
+                    log::warn!(
+                        "Tsugiki couldn't read what unmuting {login} brings back in {repository}: {}",
+                        problem.message
+                    );
+                })
+                .map(|authored| authored.numbers)
+                .unwrap_or_default();
+            let saved = store.unmute_author(&repository, &author);
+            (saved, Change { repository, items })
+        }
     }
+}
+
+/// What muting or unmuting `author` touches in the stored facts of the Repository `settings` name.
+fn authored_in(
+    store: &Store,
+    settings: &RepositorySettings,
+    author: &Login,
+) -> Result<Authored, Error> {
+    let facts = store.work_facts(&settings.name)?;
+    Ok(authored_by(facts, settings, author))
 }
 
 /// An Issue's or a PR's content, as GitHub answered.
 enum Content {
     Issue(IssueContent),
-    PullRequest(PullRequestContent),
+    /// A PR's, and GitHub's `updatedAt` for it at the read.
+    PullRequest(PullRequestContent, OffsetDateTime),
 }
 
-/// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. GitHub numbers both from
-/// one sequence, so they share where they are kept. If this fails, the view goes on showing what was last
-/// read, and the window hears why. An error returned here speaks for all of GitHub, so the status bar and
-/// the syncs need to hear it. Any other trouble is this one item's, and goes to the log.
-fn fetch_conversation(
+/// What a read of a conversation asks: GitHub, the session's queue, whose demands for the same read share
+/// it, and the Mirror worker with the syncs, which say whose wants a PR's Conversation can change.
+struct Reading<'a> {
+    github: &'a GitHub,
+    queue: &'a Refreshes,
+    syncs: &'a Syncs,
+}
+
+/// Reads what an Issue or a PR says from GitHub, keeps it, and tells the window. The demands for the same
+/// read that came before GitHub answered share its answer, its failure too.
+///
+/// GitHub numbers Issues and PRs from one sequence, so they share where they are kept. If the read fails,
+/// the view goes on showing what was last read, and the window hears why, as do the Mirror worker and the
+/// Files tab of a PR, which may wait for the head the Conversation names. An error returned here speaks
+/// for all of GitHub, so the status bar and the syncs need to hear it. Any other trouble is this one item's,
+/// and goes to the log.
+fn read_conversation(
     board: &mut StatusBoard,
     store: &Store,
-    github: &GitHub,
-    fetched: Fetched,
+    read: &Reading<'_>,
+    fetched: &Fetched,
 ) -> Result<(), Error> {
-    let (item, noun, read) = match fetched {
-        Fetched::Issue(item) => {
-            let read = github.issue_content(&item.repository, item.number);
-            (item, "Issue", read.map(Content::Issue))
+    let answered = ask_github(board, read.github, fetched);
+    read.queue.merge(fetched);
+    let item = fetched.item();
+    let content = match answered? {
+        Ok(content) => content,
+        Err(why) => {
+            read.queue.read_failed(board, fetched, why);
+            return Ok(());
         }
-        Fetched::PullRequest(item) => {
+    };
+    let change = match keep_conversation(board, store, item, content) {
+        None => return Ok(()),
+        Some(Kept::Issue(change)) => change,
+        Some(Kept::PullRequest(change, saved)) => {
+            hand_over_head(store, read, item, &saved);
+            change
+        }
+    };
+    board.changed(&change);
+    Ok(())
+}
+
+/// Tells the Mirror worker and the Files tab what keeping PR `item`'s Conversation did, as `saved` says.
+///
+/// The Conversation names the PR's head, and the worker hears the head the facts keep is saved: the newer
+/// read's, the list's or this one's. A PR the user opened before Tsugiki knew its head gets it first, and a
+/// PR pushed to since the last list read gets the newer head before the next. The demands were merged
+/// before this, so the worker hears each await their screens sent before the head that answers it. A
+/// Conversation that names no head, or a PR the facts don't hold, ends the await. A head that moved, or a
+/// Review of the user's that covers another commit, changes what the rules want, so the worker hears their
+/// wants again first.
+fn hand_over_head(store: &Store, read: &Reading<'_>, item: &Item, saved: &ConversationSaved) {
+    let fetching = &read.queue.fetching;
+    let repository = &item.repository;
+    if (matches!(saved.head, HeadKept::Moved(_)) || saved.reviewed_moved)
+        && let Some(synced) = synced_facts(store, read.syncs, repository)
+    {
+        hand_over_rules_wants(fetching, store, &synced);
+    }
+    match &saved.head {
+        HeadKept::Moved(head) | HeadKept::Had(head) => {
+            fetching.heads_saved(repository, vec![head.clone()]);
+            read.queue.headless.forget(item);
+        }
+        HeadKept::Unnamed => {
+            fetching.no_head(repository.clone(), item.number);
+            read.queue.headless.note(item, NoHead::Unnamed);
+        }
+        HeadKept::NoFacts => {
+            fetching.no_head(repository.clone(), item.number);
+            read.queue.headless.forget(item);
+        }
+    }
+}
+
+/// What a read of a conversation kept: the change the window hears, and for a PR what keeping it did
+/// beside it.
+#[derive(Debug, PartialEq, Eq)]
+enum Kept {
+    Issue(Change),
+    PullRequest(Change, ConversationSaved),
+}
+
+/// What an Issue or a PR says, as GitHub answered `fetched`, or why the read failed for this item alone, as
+/// `read_conversation` says. The status bar hears a failure that speaks for all of GitHub, and this logs
+/// the others, which the caller tells the window of.
+fn ask_github(
+    board: &mut StatusBoard,
+    github: &GitHub,
+    fetched: &Fetched,
+) -> Result<Result<Content, ItemUnread>, Error> {
+    let item = fetched.item();
+    let (noun, read) = match fetched {
+        Fetched::Issue(_) => {
+            let read = github.issue_content(&item.repository, item.number);
+            ("Issue", read.map(Content::Issue))
+        }
+        Fetched::PullRequest(_) => {
             let read = github.pull_request_content(&item.repository, item.number);
-            (
-                item,
-                "PR",
-                read.map(|read| Content::PullRequest(read.content)),
-            )
+            let read = read.map(|read| Content::PullRequest(read.content, read.updated_at));
+            ("PR", read)
         }
     };
     let content = match read {
         Ok(content) => content,
         Err(problem) if problem.kind.speaks_for_all_of_github() => {
-            board.failed_read(&failed(&item, ReadFailure::WaitsOnGitHub));
+            board.failed_read(&failed(item, ReadFailure::WaitsOnGitHub));
             return Err(problem);
         }
         Err(problem) => {
             let why = if matches!(problem.kind, ErrorKind::NotFound) {
-                ReadFailure::NotOnGitHub
+                ItemUnread::NotOnGitHub
             } else {
-                ReadFailure::Other
+                ItemUnread::Other
             };
-            board.failed_read(&failed(&item, why));
             log::warn!(
                 "Tsugiki couldn't read {noun} #{} in {}: {}",
                 item.number,
                 item.repository,
                 problem.message
             );
-            return Ok(());
+            return Ok(Err(why));
         }
     };
+    Ok(Ok(content))
+}
+
+/// Keeps `content`, what `item` says, and gives what that kept, or nothing when the store can't keep it,
+/// which the status bar shows.
+fn keep_conversation(
+    board: &mut StatusBoard,
+    store: &Store,
+    item: &Item,
+    content: Content,
+) -> Option<Kept> {
     let Item { repository, number } = item;
-    let saved = match content {
-        Content::Issue(content) => store.save_issue_content(&repository, number, content),
-        Content::PullRequest(content) => {
-            store.save_pull_request_content(&repository, number, content)
+    let change = Change {
+        repository: repository.clone(),
+        items: vec![*number],
+    };
+    let kept = match content {
+        Content::Issue(content) => {
+            (store.save_issue_content(repository, *number, content)).map(|()| Kept::Issue(change))
+        }
+        Content::PullRequest(content, updated_at) => {
+            (store.save_read_of_pull_request(repository, *number, (content, updated_at)))
+                .map(|saved| Kept::PullRequest(change, saved))
         }
     };
-    match saved {
-        Ok(()) => board.changed(&Change {
-            repository,
-            items: vec![number],
-        }),
-        Err(problem) => board.set(Status::Problem { problem }),
+    match kept {
+        Ok(kept) => Some(kept),
+        Err(problem) => {
+            board.set(Status::Problem { problem });
+            None
+        }
     }
-    Ok(())
 }
 
 /// Tells the window when `repository` last finished a sync, so the status bar can say.

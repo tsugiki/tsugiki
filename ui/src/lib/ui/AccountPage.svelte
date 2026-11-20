@@ -3,7 +3,7 @@
 <script lang="ts">
   import type { About } from "$lib/state/about.svelte";
   import { AccountState, signedIn, tokenReadme } from "$lib/state/account.svelte";
-  import { openLink } from "$lib/state/browser";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import type { Status } from "$lib/state/status.svelte";
   import { TOKEN_SOURCE_WORDS } from "./token-words";
 
@@ -14,12 +14,12 @@
   const who = $derived(signedIn(status));
   const readme = $derived(tokenReadme(about));
 
-  /** The problem that kept the browser from opening the README, until the next try. */
-  let linkProblem = $state<string>();
+  /** Opens the README, and keeps what kept the browser from it until the next try. */
+  const readmePage = new LinkOpener();
   /** Opens the README in the system browser. Enter on the link arrives as a click. */
   async function followReadme(e: MouseEvent) {
     e.preventDefault();
-    linkProblem = await openLink(readme);
+    await readmePage.openLink(readme);
   }
   /** A middle click opens it too, and would otherwise ask the webview for a window. The right button and
    * the mouse's back and forward buttons leave it alone. */
@@ -63,22 +63,11 @@
   <a href={readme} onclick={followReadme} onauxclick={followReadmeByWheel}>README</a> says what it does in plain
   words.
 </p>
-{#if linkProblem !== undefined}
-  <p role="alert">{linkProblem}</p>
+{#if readmePage.problem !== undefined}
+  <p role="alert">{readmePage.problem}</p>
 {/if}
 
 <style>
-  h3 {
-    margin: 16px 0 8px;
-    padding-bottom: 4px;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  h3:first-child {
-    margin-top: 4px;
-  }
-
   /* A label column and a value column, as the prototype's Account page lays them out. */
   dl {
     display: grid;

@@ -4,7 +4,8 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::filters::FilterProblem;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::workbench::testing::{backport, cpython, fixing, issue, me, mine, outline, stranger};
+use crate::testing::cpython_settings;
+use crate::workbench::testing::{backport, fixing, issue, me, mine, outline, stranger};
 use crate::workbench::{Workbench, WorkbenchView};
 
 fn query(text: &str) -> FilterQuery {
@@ -28,7 +29,7 @@ fn with_switched(filters: &[(&str, bool)]) -> RepositorySettings {
                 on_workbench: (*on_workbench).into(),
             })
             .collect(),
-        ..cpython()
+        ..cpython_settings()
     }
 }
 

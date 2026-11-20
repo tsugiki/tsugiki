@@ -190,7 +190,6 @@
     margin: 0;
   }
 
-  /* The tab on show underlined in the accent colour, as the PR's own tabs are. */
   .tabs {
     display: flex;
     flex: 1;
@@ -198,22 +197,10 @@
     min-width: 0;
   }
 
+  /* window.css draws the tabs, the one on show underlined as the PR's own tabs are. */
   [role="tab"] {
-    all: unset;
-    cursor: pointer;
     padding: 2px 8px;
-    font-size: 12px;
     white-space: nowrap;
-    border-bottom: 2px solid transparent;
-  }
-
-  [role="tab"][aria-selected="true"] {
-    font-weight: 600;
-    border-bottom-color: var(--accent);
-  }
-
-  [role="tab"]:focus-visible {
-    outline: 1px solid var(--focus-border);
   }
 
   .close {

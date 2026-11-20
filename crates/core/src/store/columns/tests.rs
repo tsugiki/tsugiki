@@ -1,28 +1,30 @@
 use super::*;
 use crate::store::Connection;
+use crate::store::testing::stored_texts;
 use rusqlite::named_params;
-use std::fmt::Debug;
 
-/// The text `value` leaves in a column, and the value that reads back from there.
-fn through_a_column<T: ToSql + FromSql>(value: &T) -> (String, T) {
-    Connection::open_in_memory()
-        .unwrap()
+#[test]
+fn a_time_in_milliseconds_keeps_them_and_refuses_one_past_the_calendar() {
+    let at = OffsetDateTime::from_unix_timestamp_nanos(1_795_000_000_123_456_789).unwrap();
+    let connection = Connection::open_in_memory().unwrap();
+    let (stored, read): (i64, UnixMillis) = connection
         .query_row(
             "SELECT :value AS value",
-            named_params! {":value": value},
+            named_params! {":value": UnixMillis(at)},
             |row| Ok((row.get("value")?, row.get("value")?)),
         )
-        .unwrap()
-}
+        .unwrap();
+    let past: rusqlite::Result<UnixMillis> =
+        connection.query_row("SELECT 9223372036854775807 AS value", [], |row| {
+            row.get("value")
+        });
 
-/// The text each of `all` leaves in a column, once it has read back as itself.
-fn stored_texts<T: ToSql + FromSql + Debug + PartialEq>(all: &[T]) -> Vec<String> {
-    let through = |value| {
-        let (text, read) = through_a_column(value);
-        assert_eq!(&read, value);
-        text
-    };
-    all.iter().map(through).collect()
+    assert_eq!(stored, 1_795_000_000_123);
+    assert_eq!(
+        read,
+        UnixMillis(at.replace_nanosecond(123_000_000).unwrap())
+    );
+    assert!(past.is_err());
 }
 
 #[test]

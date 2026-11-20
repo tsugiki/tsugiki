@@ -6,11 +6,12 @@ and keeps them beside it (#833): each number the PR names, with the Conventions 
 Origin PR it names. A read takes the rows of the Repository's Conventions and joins the numbers with the
 Issues the store holds. So a retitled PR moves at the next sync with nothing to fix up, a change of
 Conventions regroups the PRs with no rewrite, and a number the sync fetches as an Issue after the PR starts to
-link then. The store keeps the version of the rules beside the links, and works out every PR's links again as
-it opens after a release changes the rules. A screen that reads every PR, as the Workbench does, works the
+link then. The store keeps the names of the rules beside the links, and works out every PR's links again
+after a release changes the rules (ADR 0024). A screen that reads every PR, as the Workbench does, works the
 same links out from the facts when it asks, like the other rules
-([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)); the Inbox reads a page at a time, and
-finds the PRs that name an Issue through the kept links.
+([ADR 0010](0010-one-sqlite-database-and-per-repository-mirrors.md)). The Inbox reads a page at a time, and
+the Issue view and the PR view read one item (#842): each finds the PRs that name an Issue or an Origin PR
+through the kept links.
 
 A Repository's Conventions are a few named fields, filled in by a preset:
 

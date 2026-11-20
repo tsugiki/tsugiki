@@ -7,36 +7,22 @@
 //
 // `just worktree-remove <ticket>` deletes the worktree, its target/ and its node_modules, unless it holds a
 // change git hasn't committed. It deletes the branch too once the branch's PR has merged with its last
-// commit, which it asks GitHub, as `just merged` does.
-import { execFileSync, spawnSync } from "node:child_process";
+// commit, which it asks GitHub, as `just merged` does, and then pulls main in the main checkout when that
+// checkout is on main with nothing uncommitted.
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
-import { type Pr, unmergedReason } from "./pr.ts";
-import { addRefusal, ticketBranch, ticketNumber, ticketTitle, worktreeFolder } from "./worktrees.ts";
-
-function stop(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
-
-/** Runs a command and returns its output, or stops with `failed` after the command's own message. */
-function run(failed: string, command: string, ...args: string[]): string {
-  try {
-    return execFileSync(command, args, { encoding: "utf8" }).trim();
-  } catch {
-    stop(failed);
-  }
-}
-
-/** Runs a command and returns its output, or `undefined` when it fails, without printing its message. */
-function ask(command: string, ...args: string[]): string | undefined {
-  try {
-    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return undefined;
-  }
-}
+import { type Pr, PR_FIELDS, unmergedReason } from "./pr.ts";
+import { attempt, messageOf, run, stop } from "./run.ts";
+import {
+  addRefusal,
+  pullRefusal,
+  ticketBranch,
+  ticketNumber,
+  ticketTitle,
+  worktreeFolder,
+} from "./worktrees.ts";
 
 /** The main checkout, whichever checkout of the repository the script runs in. */
 function mainCheckout(): string {
@@ -103,9 +89,9 @@ function add(ticket: number, slug: string): void {
       ),
     );
   } catch (cause) {
-    stop(cause instanceof Error ? cause.message : String(cause));
+    stop(messageOf(cause));
   }
-  if (ask("git", "-C", main, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== undefined) {
+  if (attempt("git", "-C", main, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== undefined) {
     stop(`The branch ${branch} is there already. Delete it, or name another slug.`);
   }
 
@@ -150,7 +136,7 @@ function remove(ticket: number): void {
     stop(`Run it from outside ${folder}, which it deletes.`);
   }
   // Without its .git file, git would read the main checkout from inside the folder.
-  const top = ask("git", "-C", path, "rev-parse", "--show-toplevel");
+  const top = attempt("git", "-C", path, "rev-parse", "--show-toplevel");
   if (top === undefined || !sameFolder(top, path)) {
     run("git worktree prune failed.", "git", "-C", main, "worktree", "prune");
     if (existsSync(join(path, ".git")) || listed(main, path)) {
@@ -184,9 +170,7 @@ function remove(ticket: number): void {
   console.log(`Removed the worktree ${path}.`);
   if (branch === "") return;
 
-  const view = spawnSync("gh", ["pr", "view", branch, "--json", "number,state,headRefName,headRefOid"], {
-    encoding: "utf8",
-  });
+  const view = spawnSync("gh", ["pr", "view", branch, "--json", PR_FIELDS], { encoding: "utf8" });
   if (view.status !== 0) {
     if (/no pull requests found/i.test(view.stderr)) {
       console.log(`Kept the branch ${branch}, which has no PR.`);
@@ -200,7 +184,7 @@ function remove(ticket: number): void {
     branch,
     tip,
     pr,
-    (commit, of) => ask("git", "-C", main, "merge-base", "--is-ancestor", commit, of) !== undefined,
+    (commit, of) => attempt("git", "-C", main, "merge-base", "--is-ancestor", commit, of) !== undefined,
   );
   if (unmerged !== undefined) {
     console.log(`Kept the branch ${branch}: ${unmerged}`);
@@ -208,6 +192,25 @@ function remove(ticket: number): void {
   }
   run(`git couldn't delete the branch ${branch}.`, "git", "-C", main, "branch", "-q", "-D", branch);
   console.log(`Deleted the branch ${branch}.`);
+
+  const refusal = pullRefusal(
+    run("git can't name the main checkout's branch.", "git", "-C", main, "branch", "--show-current"),
+    run(
+      "git status failed in the main checkout.",
+      "git",
+      "-C",
+      main,
+      "status",
+      "--porcelain",
+      "--untracked-files=no",
+    ),
+  );
+  if (refusal !== undefined) {
+    console.log(`Didn't pull main: ${refusal}`);
+    return;
+  }
+  run("git couldn't pull main, as it says above.", "git", "-C", main, "pull", "-q", "--ff-only", "--prune");
+  console.log("Pulled main.");
 }
 
 const [command, number, slug = "", ...extra] = process.argv.slice(2);

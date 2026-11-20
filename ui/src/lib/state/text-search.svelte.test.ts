@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { FileHits, LineHit, SearchState } from "$lib/data/bindings";
+import { nextTask } from "$lib/testing/helpers";
 import {
   literalRegex,
   SEARCH_PAUSE,
@@ -70,8 +71,6 @@ const ready = (state: SearchState = { state: "idle" }) => {
   return search;
 };
 
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
-
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockImplementation((heard: () => void) => {
@@ -120,12 +119,12 @@ it("runs at once on each toggle, and puts the picked text in the box as a regex 
   search.toggle("case");
   search.toggle("words");
   search.toggle("regex");
-  await settled();
+  await nextTask();
   search.seed("a.b(c)");
-  await settled();
+  await nextTask();
   search.toggle("regex");
   search.seed("a.b");
-  await settled();
+  await nextTask();
 
   // Each query goes in place of those asked before it while the listener was on its way.
   expect(asked().map((each) => each.query)).toEqual([
@@ -143,17 +142,17 @@ it("asks nothing for an empty box, waits for the diff, then asks again on a diff
   search.seed("");
   const empty = search.summary;
   search.seed("spam");
-  await settled();
+  await nextTask();
   const waiting = [search.summary, core.textSearch.mock.calls.length];
 
   search.follow(READY);
-  await settled();
+  await nextTask();
   search.follow({ ...READY });
   // A PR moved to another Target branch keeps its head and gets another merge base (#211).
   search.follow({ ...READY, base: "b1" });
-  await settled();
+  await nextTask();
   search.follow({ ...READY, base: "b1", head: "def" });
-  await settled();
+  await nextTask();
 
   expect(empty).toBe("");
   expect(waiting).toEqual(["Waiting for the checkout…", 0]);
@@ -168,7 +167,7 @@ it("asks nothing for an empty box, waits for the diff, then asks again on a diff
 it("says why it waits for a diff that won't come on its own, and cancels the query once its diff goes", async () => {
   const search = ready(results(1, [fileHits("a.py", hit(1))], "running"));
   search.seed("spam");
-  await settled();
+  await nextTask();
   const said = (diff: SearchDiff) => {
     search.follow(diff);
     return [search.summary, search.troubled];
@@ -213,6 +212,9 @@ it("gives the search the Files tab's diff once it is ready, or why there is none
     files(fetching, { unfetched: { kind: "git", words: "timed out" }, waitsForNetwork: true }),
     // Only the PR's commits wait for the network here: a clone that does says so as `loading`.
     files({ state: "cloning" }, { waitsForNetwork: true }),
+    // The read of the Conversation that names the PR's head waits for the network, then failed.
+    files({ state: "finding_head" }, { waitsForNetwork: true }),
+    files({ state: "unread", why: "other" }),
   ]).toEqual([
     READY,
     { kind: "loading" },
@@ -223,6 +225,8 @@ it("gives the search the Files tab's diff once it is ready, or why there is none
     { kind: "failed" },
     { kind: "offline" },
     { kind: "loading" },
+    { kind: "offline" },
+    { kind: "failed" },
   ]);
 });
 
@@ -233,15 +237,15 @@ it("says why a query can't run, and why the core couldn't be asked", async () =>
     data: { kind: "bad_query", message: "unclosed group" },
   });
   search.seed("(");
-  await settled();
+  await nextTask();
   const bad = [search.summary, search.troubled];
   core.textSearch.mockResolvedValueOnce({ status: "error", error: { message: "not a Repository" } });
   search.seed("spam");
-  await settled();
+  await nextTask();
   const refused = search.summary;
   core.textSearch.mockRejectedValueOnce(new Error("no IPC"));
   search.seed("eggs");
-  await settled();
+  await nextTask();
 
   expect(bad).toEqual(["unclosed group", true]);
   expect(refused).toBe("Tsugiki can't search: not a Repository");
@@ -251,24 +255,24 @@ it("says why a query can't run, and why the core couldn't be asked", async () =>
 it("cancels the query an empty box, a bad query, a newer query's late answer or the view's end leaves running", async () => {
   const search = ready();
   search.seed("spam");
-  await settled();
+  await nextTask();
   search.seed("");
-  await settled();
+  await nextTask();
   search.seed("spam");
-  await settled();
+  await nextTask();
   core.textSearch.mockResolvedValueOnce({ status: "ok", data: { kind: "bad_query", message: "x" } });
   search.seed("(");
-  await settled();
+  await nextTask();
   const late = Promise.withResolvers<unknown>();
   core.textSearch.mockReturnValueOnce(late.promise);
   search.seed("eggs");
-  await settled();
+  await nextTask();
   search.seed("ham");
-  await settled();
+  await nextTask();
   late.resolve(running(7));
-  await settled();
+  await nextTask();
   search.stop();
-  await settled();
+  await nextTask();
 
   // The second query, 2, ran until the bad one; the late answer, 7, came after the next, 3.
   expect(cancelled()).toEqual([1, 2, 7, 3]);
@@ -277,21 +281,34 @@ it("cancels the query an empty box, a bad query, a newer query's late answer or 
 it("cancels the query before one that a newer one, or the view's end, stops on its way to the core", async () => {
   const overtaken = ready();
   overtaken.seed("spam");
-  await settled();
+  await nextTask();
   overtaken.seed("eggs");
   overtaken.seed("");
-  await settled();
+  await nextTask();
   const byNewer = cancelled();
   core.textSearchCancel.mockClear();
   const stopped = ready();
   stopped.seed("spam");
-  await settled();
+  await nextTask();
   stopped.seed("eggs");
   stopped.stop();
-  await settled();
+  await nextTask();
 
   expect([byNewer, cancelled()]).toEqual([[1], [1]]);
   expect(core.textSearch).toHaveBeenCalledTimes(2);
+});
+
+it("says nothing of a cancel the core couldn't take", async () => {
+  core.textSearchCancel.mockRejectedValue(new Error("no core"));
+  const search = ready();
+  search.seed("spam");
+  await nextTask();
+
+  search.seed("");
+  await nextTask();
+
+  expect(cancelled()).toEqual([1]);
+  expect(search.troubled).toBe(false);
 });
 
 it("sends nothing of a query a newer one replaced while the listener was on its way", async () => {
@@ -302,7 +319,7 @@ it("sends nothing of a query a newer one replaced while the listener was on its 
   search.seed("e");
   search.seed("");
   placed.resolve(core.stop);
-  await settled();
+  await nextTask();
 
   expect(core.textSearch).not.toHaveBeenCalled();
   expect(search.summary).toBe("");
@@ -312,11 +329,11 @@ it("says why it can't hear the core, and listens again on the next query", async
   core.listen.mockRejectedValueOnce(new Error("no events"));
   const search = ready(results(1, [fileHits("a.py", hit(1))]));
   search.seed("spam");
-  await settled();
+  await nextTask();
   const unheard = [search.summary, core.textSearch.mock.calls.length];
 
   search.seed("spam");
-  await settled();
+  await nextTask();
 
   expect(unheard).toEqual(["Tsugiki can't search: Error: no events", 0]);
   expect(search.summary).toBe("1 result in 1 file");
@@ -325,11 +342,11 @@ it("says why it can't hear the core, and listens again on the next query", async
 it("says what the core says of each state of the query, and the limit", async () => {
   const search = ready();
   search.seed("spam");
-  await settled();
+  await nextTask();
   const said = async (state: SearchState) => {
     core.textSearchState.mockResolvedValueOnce(state);
     core.changed();
-    await settled();
+    await nextTask();
     return [search.summary, search.troubled];
   };
 
@@ -365,12 +382,12 @@ it("reads the diff again once when the core finds no checkout of it, and runs th
   const noCheckout = async () => {
     core.textSearchState.mockResolvedValueOnce({ state: "no_checkout", id });
     core.changed();
-    await settled();
+    await nextTask();
     return [search.summary, search.troubled, reread.mock.calls.length, core.textSearch.mock.calls.length];
   };
   core.textSearchState.mockResolvedValue({ state: "waiting", id: 1 });
   search.seed("spam");
-  await settled();
+  await nextTask();
 
   const first = await noCheckout();
   const second = await noCheckout();
@@ -378,12 +395,12 @@ it("reads the diff again once when the core finds no checkout of it, and runs th
   const later = Promise.withResolvers<undefined>();
   reread.mockReturnValueOnce(later.promise);
   search.seed("eggs");
-  await settled();
+  await nextTask();
   const third = await noCheckout();
   search.seed("ham");
-  await settled();
+  await nextTask();
   later.resolve(undefined);
-  await settled();
+  await nextTask();
 
   expect(first).toEqual(["Waiting for the checkout…", false, 1, 2]);
   expect(second).toEqual(["There's no checkout of the PR to search. tsugiki.log may say why.", true, 1, 2]);
@@ -406,19 +423,19 @@ it("shows only what answers the query asked last, and drops a late answer to an 
   const first = Promise.withResolvers<unknown>();
   core.textSearch.mockReturnValueOnce(first.promise).mockResolvedValueOnce(running(2));
   search.seed("spam");
-  await settled();
+  await nextTask();
   search.seed("eggs");
-  await settled();
+  await nextTask();
   first.resolve(running(1));
-  await settled();
+  await nextTask();
   const shown = search.summary;
   // The core's state of an older query, or of none, changes nothing.
   core.textSearchState.mockResolvedValueOnce(results(1, [fileHits("a.py", hit(1), hit(2))]));
   core.changed();
-  await settled();
+  await nextTask();
   core.textSearchState.mockResolvedValueOnce({ state: "idle" });
   core.changed();
-  await settled();
+  await nextTask();
 
   expect(shown).toBe("1 result in 1 file");
   expect(search.rows.map((row) => row.file.path)).toEqual(["b.py", "b.py"]);
@@ -427,7 +444,7 @@ it("shows only what answers the query asked last, and drops a late answer to an 
 it("reads once more after a read that changes came during, and says why a read failed", async () => {
   const search = ready();
   search.seed("spam");
-  await settled();
+  await nextTask();
   core.textSearchState.mockReset();
   const reading = Promise.withResolvers<SearchState>();
   core.textSearchState.mockReturnValueOnce(reading.promise);
@@ -437,11 +454,11 @@ it("reads once more after a read that changes came during, and says why a read f
   core.changed();
   core.changed();
   reading.resolve(results(1, [], "running"));
-  await settled();
+  await nextTask();
   const read = [core.textSearchState.mock.calls.length, search.summary];
   core.textSearchState.mockRejectedValueOnce(new Error("gone"));
   core.changed();
-  await settled();
+  await nextTask();
 
   expect(read).toEqual([2, "1 result in 1 file"]);
   expect(search.summary).toBe("Tsugiki can't search: Error: gone");
@@ -450,11 +467,11 @@ it("reads once more after a read that changes came during, and says why a read f
 it("reads nothing before the core has numbered a query", async () => {
   const search = ready();
   search.seed("spam");
-  await settled();
+  await nextTask();
   search.seed("");
 
   core.changed();
-  await settled();
+  await nextTask();
 
   expect(core.textSearchState).toHaveBeenCalledOnce();
 });
@@ -462,7 +479,7 @@ it("reads nothing before the core has numbered a query", async () => {
 it("moves the cursor through the rows, folds and unfolds a file, and picks a match at the diff's ends", async () => {
   const search = ready(results(1, [fileHits("a.py", hit(1), hit(4)), fileHits("b.py", hit(2))]));
   search.seed("spam");
-  await settled();
+  await nextTask();
   const at = () => search.cursor;
 
   search.moveTo(-3);
@@ -501,18 +518,18 @@ it("moves the cursor through the rows, folds and unfolds a file, and picks a mat
 it("keeps the cursor on its row as files come in above it, and goes back to the top once the row goes", async () => {
   const search = ready(results(1, [fileHits("b.py", hit(2), hit(3))], "running"));
   search.seed("spam");
-  await settled();
+  await nextTask();
   search.moveTo(2);
 
   core.textSearchState.mockResolvedValueOnce(
     results(1, [fileHits("a.py", hit(1)), fileHits("b.py", hit(2), hit(3))]),
   );
   core.changed();
-  await settled();
+  await nextTask();
   const kept = search.cursor;
   core.textSearchState.mockResolvedValueOnce(results(1, [fileHits("c.py", hit(1))]));
   core.changed();
-  await settled();
+  await nextTask();
 
   expect([kept, search.cursor]).toEqual([4, 0]);
   expect(search.pick()).toBeUndefined();
@@ -533,11 +550,11 @@ it("stops listening as the PR view goes, even while the listener is on its way",
   core.listen.mockReturnValueOnce(placed.promise);
   const search = ready();
   search.seed("spam");
-  await settled();
+  await nextTask();
 
   search.stop();
   placed.resolve(core.stop);
-  await settled();
+  await nextTask();
 
   expect(core.stop).toHaveBeenCalledOnce();
   expect(core.textSearch).not.toHaveBeenCalled();
@@ -548,7 +565,7 @@ it("places no listener and asks nothing once the PR view has gone", async () => 
 
   search.stop();
   search.seed("spam");
-  await settled();
+  await nextTask();
 
   expect(core.listen).not.toHaveBeenCalled();
   expect(core.textSearch).not.toHaveBeenCalled();

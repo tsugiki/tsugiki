@@ -21,6 +21,7 @@ const strip = {
   count: 12,
   reviewRequests: 4,
   staleReviews: 0,
+  archived: 5,
   filters: [mine, involved],
   selected: whole,
   onselect: () => {},
@@ -59,6 +60,7 @@ it("lists the initials, an icon for each entry with its count and name, then ⚙
     ["Inbox", "Inbox", ""],
     ["Review requests (4)", "Review requests", "4"],
     ["Stale reviews", "Stale reviews", ""],
+    ["Archived (5)", "Archived", "5"],
     ["Mine (3)", "Mine", "3"],
     ["Involved", "Involved", ""],
     ["Settings", "Settings (Ctrl+,)", "⚙"],
@@ -81,7 +83,15 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
   const onsettings = vi.fn();
   render(SidebarIcons, { ...strip, onselect, onfull, onsettings });
 
-  for (const name of ["Workbench (12)", "Inbox", "Review requests (4)", "Stale reviews", "Mine (3)"]) {
+  const names = [
+    "Workbench (12)",
+    "Inbox",
+    "Review requests (4)",
+    "Stale reviews",
+    "Archived (5)",
+    "Mine (3)",
+  ];
+  for (const name of names) {
     await fireEvent.click(button(name));
   }
   await fireEvent.click(button("Full Sidebar"));
@@ -92,6 +102,7 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
     [{ kind: "inbox" }],
     [{ kind: "review_requests" }],
     [{ kind: "stale_reviews" }],
+    [{ kind: "archived" }],
     [{ kind: "filter", query: mine.query }],
   ]);
   expect([onfull.mock.calls.length, onsettings.mock.calls.length]).toEqual([1, 1]);

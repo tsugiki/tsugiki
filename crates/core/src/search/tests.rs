@@ -1,9 +1,10 @@
 use std::sync::Mutex;
-use std::time::Instant;
 
-use super::testing::Fixture;
+use tsugiki_test_git::within;
+
 use super::*;
 use crate::mirror::{HeardRequests, LookupCheckout};
+use crate::testing::{Fixture, cpython};
 
 fn query(text: &str) -> Query {
     Query {
@@ -14,13 +15,9 @@ fn query(text: &str) -> Query {
     }
 }
 
-fn repository() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
 /// Asks `search` for `text` in `fixture`'s PR, at the ends its checkout holds.
 fn search_in(search: &TextSearch, fixture: &Fixture, text: &str) -> SearchId {
-    (search.search(repository(), fixture.checkout.at.clone(), &query(text))).unwrap()
+    (search.search(cpython(), fixture.checkout.at.clone(), &query(text))).unwrap()
 }
 
 /// The ends of a diff no fixture holds, each commit a run of `digit`.
@@ -35,12 +32,8 @@ fn ends(digit: u8) -> LookupAt {
 }
 
 /// Waits up to 10 seconds for `done` to hold.
-fn wait_until(mut done: impl FnMut() -> bool) {
-    let until = Instant::now() + Duration::from_secs(10);
-    while !done() {
-        assert!(Instant::now() < until, "timed out");
-        thread::sleep(Duration::from_millis(5));
-    }
+fn wait_until(done: impl FnMut() -> bool) {
+    assert!(within(Duration::from_secs(10), done), "timed out");
 }
 
 /// A text search whose questions reach the test, and how many times it announced a change.
@@ -60,26 +53,14 @@ fn asked(heard: &HeardRequests) -> Sender<Option<LookupCheckout>> {
         found.is_some()
     });
     let (repository, reply) = found.unwrap();
-    assert_eq!(repository, self::repository());
+    assert_eq!(repository, self::cpython());
     reply
 }
 
 /// The results of query `id` once it has ended, each file as its path and its lines' numbers.
 fn ended(search: &TextSearch, id: SearchId) -> (Vec<(String, Vec<u32>)>, End, u32) {
-    let mut last = None;
-    wait_until(|| {
-        last = match search.state() {
-            SearchState::Results(results) => {
-                Some(results).filter(|results| results.id == id && results.end != End::Running)
-            }
-            SearchState::Idle
-            | SearchState::Waiting { .. }
-            | SearchState::NoCheckout { .. }
-            | SearchState::Failed { .. } => None,
-        };
-        last.is_some()
-    });
-    let results = last.unwrap();
+    wait_for_end(search, id);
+    let results = ended_results(search, id).unwrap();
     let files = (results.files.iter())
         .map(|file| {
             let lines = file.lines.iter().map(|line| line.line).collect();
@@ -89,8 +70,26 @@ fn ended(search: &TextSearch, id: SearchId) -> (Vec<(String, Vec<u32>)>, End, u3
     (files, results.end, results.matches)
 }
 
+/// Waits until query `id` has ended.
+fn wait_for_end(search: &TextSearch, id: SearchId) {
+    wait_until(|| ended_results(search, id).is_some());
+}
+
+/// The results of query `id`, if it has ended.
+fn ended_results(search: &TextSearch, id: SearchId) -> Option<Results> {
+    match search.state() {
+        SearchState::Results(results) => {
+            Some(results).filter(|results| results.id == id && results.end != End::Running)
+        }
+        SearchState::Idle
+        | SearchState::Waiting { .. }
+        | SearchState::NoCheckout { .. }
+        | SearchState::Failed { .. } => None,
+    }
+}
+
 fn pr(name: &str) -> Fixture {
-    Fixture::new(
+    Fixture::of_bytes(
         name,
         &[
             ("b.py", b"spam\neggs\nspam spam\n"),
@@ -156,9 +155,7 @@ fn a_second_query_cancels_the_first() {
 #[test]
 fn a_query_with_no_checkout_says_so() {
     let (search, heard, _) = started();
-    let id = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     asked(&heard).send(None).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }
@@ -167,9 +164,7 @@ fn a_query_with_no_checkout_says_so() {
 fn a_query_searches_none_of_a_checkout_at_another_diff() {
     let fixture = pr("search-owner-elsewhere");
     let (search, heard, _) = started();
-    let id = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     // The checkout went to another diff, the fixture's, while the query waited.
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
@@ -182,9 +177,7 @@ fn queries_on_older_and_newer_diffs_move_no_checkout_whatever_order_their_thread
         let (search, heard, _) = started();
         // A query on the diff before, then one on the diff the PR now shows, whose threads hear where the
         // checkout is in the order the loop gives.
-        let _older = search
-            .search(repository(), ends(1), &query("spam"))
-            .unwrap();
+        assert!(search.search(cpython(), ends(1), &query("spam")).is_ok());
         let older_reply = asked(&heard);
         let newer = search_in(&search, &fixture, "eggs");
         let newer_reply = asked(&heard);
@@ -223,6 +216,7 @@ fn a_cancel_of_an_older_query_leaves_the_newer_one_running() {
     let fixture = pr("search-owner-cancel-older");
     let (search, heard, _) = started();
     let older = search_in(&search, &fixture, "spam");
+    // Held, so the older query still waits for its checkout when the cancel comes.
     let _older_reply = asked(&heard);
     let newer = search_in(&search, &fixture, "eggs");
     let reply = asked(&heard);
@@ -255,7 +249,7 @@ fn a_bad_regex_returns_its_error_and_leaves_the_query_running_alone() {
         ..query("(")
     };
     let refused = search
-        .search(repository(), fixture.checkout.at.clone(), &bad)
+        .search(cpython(), fixture.checkout.at.clone(), &bad)
         .err()
         .unwrap();
     assert!(
@@ -273,7 +267,7 @@ fn a_bad_regex_returns_its_error_and_leaves_the_query_running_alone() {
 fn with_no_network_a_query_searches_a_commit_the_mirror_holds() {
     let fixture = pr("search-owner-offline");
     // Nothing answers at this address, so a fetch would fail.
-    let _ = tsugiki_test_git::git(
+    tsugiki_test_git::run_git(
         &fixture.mirror,
         &[
             "remote",
@@ -292,7 +286,7 @@ fn with_no_network_a_query_searches_a_commit_the_mirror_holds() {
 #[test]
 fn a_search_past_the_most_matches_stops_and_says_so() {
     let text = format!("{}\n", "spam ".repeat(40)).repeat(150);
-    let fixture = Fixture::new("search-owner-most", &[("many.txt", text.as_bytes())], &[]);
+    let fixture = Fixture::of_bytes("search-owner-most", &[("many.txt", text.as_bytes())], &[]);
     let (search, heard, _) = started();
     let id = search_in(&search, &fixture, "spam");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
@@ -303,9 +297,7 @@ fn a_search_past_the_most_matches_stops_and_says_so() {
 #[test]
 fn a_worker_that_stops_without_an_answer_leaves_no_checkout() {
     let (search, heard, _) = started();
-    let id = search
-        .search(repository(), ends(1), &query("spam"))
-        .unwrap();
+    let id = search.search(cpython(), ends(1), &query("spam")).unwrap();
     drop(asked(&heard));
     wait_until(|| matches!(search.state(), SearchState::NoCheckout { id: none } if none == id));
 }
@@ -335,7 +327,7 @@ fn the_window_reads_the_state_with_each_file_whole_under_a_tag_of_its_state() {
     let idle = serde_json::to_value(search.state()).unwrap();
     let id = search_in(&search, &fixture, "eggs");
     asked(&heard).send(Some(fixture.checkout.clone())).unwrap();
-    let _ = ended(&search, id);
+    wait_for_end(&search, id);
     let found = serde_json::to_value(search.state()).unwrap();
     let waiting = serde_json::to_value(SearchState::Waiting { id }).unwrap();
     assert_eq!(idle, serde_json::json!({ "state": "idle" }));

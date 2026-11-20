@@ -6,11 +6,12 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::{git, pass_on, run_git, wait_for_message};
 
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::CommitSha;
+use crate::facts::patch_ids::PatchId;
 use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::login::Login;
 use crate::status::Status;
@@ -35,7 +36,7 @@ type Failures = Receiver<(String, Vec<u32>, Unfetched)>;
 /// Announcements that pass on each clone, and nothing of fetches.
 fn cloning_only(announcing: Sender<Option<Cloning>>) -> Announce {
     Announce::cloning_only(Box::new(move |cloning| {
-        drop(announcing.send(cloning.cloned()));
+        pass_on(&announcing, cloning.cloned());
     }))
 }
 
@@ -109,6 +110,11 @@ fn one_clone(announced: &Receiver<Option<Cloning>>) -> Vec<Cloning> {
         clone.push(cloning);
     }
     clone
+}
+
+/// Waits until the clone the worker announces has ended.
+fn clone_ended(announced: &Receiver<Option<Cloning>>) {
+    while announced.recv_timeout(PLENTY).unwrap().is_some() {}
 }
 
 #[test]
@@ -213,10 +219,7 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
         named("octo-org/second"),
         named("octo-org/open"),
     ];
-    for name in [&first, &second, &open] {
-        place.remote(name);
-    }
-    let (mirrors, announced) = place.start();
+    let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
     requests.clone_mirror(first.clone(), download());
@@ -226,7 +229,12 @@ fn the_open_repositorys_mirror_goes_ahead_of_those_waiting() {
     requests.clone_mirror(open.clone(), download());
     requests.clone_mirror_next(open.clone(), download());
     let order: Vec<RepositoryName> = (0..3)
-        .map(|_| one_clone(&announced).remove(0).repository)
+        .map(|_| {
+            let clone = starts.recv_timeout(PLENTY).unwrap();
+            let cloned = clone.cloned();
+            clone.fail();
+            cloned
+        })
         .collect();
     mirrors.stop_cleanly(PLENTY);
 
@@ -271,34 +279,47 @@ fn a_clone_under_way_goes_on_to_its_end_and_the_one_asked_for_next_starts_after_
 fn a_repository_whose_mirror_is_there_isnt_cloned_again() {
     let place = Place::new("cloned");
     let [cloned, next] = [named("octo-org/cloned"), named("octo-org/next")];
-    place.remote(&next);
-    fs::create_dir_all(place.folders.mirror(&cloned)).unwrap();
-    let (mirrors, announced) = place.start();
+    place.mirrored(&cloned);
+    let (mirrors, starts) = place.start_faked();
 
     mirrors.requests().clone_mirror(cloned, download());
     mirrors
         .requests()
         .clone_mirror_next(next.clone(), download());
-    let clone = one_clone(&announced);
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    let repository = clone.cloned();
+    clone.fail();
+    mirrors.wait_idle();
+    let another = starts.try_recv().is_ok();
     mirrors.stop_cleanly(PLENTY);
 
-    assert!(clone.iter().all(|cloning| cloning.repository == next));
+    assert_eq!(repository, next);
+    assert!(!another, "another clone started");
 }
 
 #[test]
 fn a_failed_clone_leaves_no_folder_and_the_next_one_goes_on() {
     let place = Place::new("fails");
     let [missing, next] = [named("octo-org/missing"), named("octo-org/next")];
-    place.remote(&next);
-    let (mirrors, announced) = place.start();
+    let (mirrors, starts) = place.start_faked();
 
     mirrors.requests().clone_mirror(missing.clone(), download());
     mirrors.requests().clone_mirror(next.clone(), download());
-    let failed = one_clone(&announced);
-    let _ = one_clone(&announced);
+    // git fails after it has written part of the clone.
+    let failed = starts.recv_timeout(PLENTY).unwrap();
+    let written = PathBuf::from(failed.args.last().unwrap());
+    fs::create_dir_all(written.join("objects")).unwrap();
+    fs::write(written.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    let failed_clone = failed.cloned();
+    failed.fail();
+    let clone = starts.recv_timeout(PLENTY).unwrap();
+    let cloned = clone.cloned();
+    fs::create_dir_all(clone.args.last().unwrap()).unwrap();
+    clone.succeed();
     mirrors.stop_cleanly(PLENTY);
 
-    assert!(failed.iter().all(|cloning| cloning.repository == missing));
+    assert_eq!(failed_clone, missing);
+    assert_eq!(cloned, next);
     let partial = place.folders.repository(&missing).join(PARTIAL);
     assert!(!partial.exists());
     assert!(!place.folders.mirror(&missing).exists());
@@ -419,6 +440,34 @@ struct FakeGit {
     refs: Receiver<String>,
     /// The answer to each `git --version`, or nothing for a git that isn't there.
     versions: Receiver<Option<String>>,
+    /// Hears each read of a commit's patch-ids. Once the test stops listening, each read fails.
+    patch_reads: Sender<FakePatchRead>,
+}
+
+/// One read of a commit's patch-ids by the fake git, which waits for the test to answer it.
+struct FakePatchRead {
+    of: PatchesOf,
+    answer: Sender<io::Result<Vec<FilePatch>>>,
+}
+
+impl FakePatchRead {
+    /// Gives the commit a change to each file of `paths`.
+    fn give(self, paths: &[&str]) {
+        let id = |text: &str| PatchId::parse(&text.repeat(40)).unwrap();
+        let files = paths.iter().map(|path| FilePatch {
+            path: (*path).to_owned(),
+            verbatim: id("a"),
+            loose: id("b"),
+            generated: false,
+        });
+        self.answer.send(Ok(files.collect())).unwrap();
+    }
+
+    /// Fails the read, as git does in a mirror that lacks the commit.
+    fn fail(self) {
+        let lacks = format!("fatal: bad object {}", self.of.commit.as_str());
+        self.answer.send(Err(io::Error::other(lacks))).unwrap();
+    }
 }
 
 /// One start of the fake git.
@@ -572,9 +621,12 @@ impl Run for FakeRun {
     }
 
     /// Says git succeeded if the test said so before the stop.
-    fn stop(&mut self) -> bool {
-        // A test that has stopped listening doesn't hear the stop.
-        let _unheard = self.stopping.send(());
+    fn stop_finished(&mut self) -> bool {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a test that has stopped listening doesn't hear the stop"
+        )]
+        let _ = self.stopping.send(());
         self.output.close();
         self.outcome.try_recv().unwrap_or(false)
     }
@@ -621,15 +673,84 @@ impl Git for FakeGit {
                 Err(_none) => Ok("git version 2.43.0.windows.1".to_owned()),
             };
         }
-        // A look at a clone the user has, or for the reviewed commits a mirror has, goes to the real git,
-        // which reads it as the worker would.
-        let looks = ["rev-parse", "config", "rev-list"].map(OsStr::new);
-        if args.get(2).is_some_and(|command| looks.contains(command)) {
-            return live::read_git(args);
+        match args {
+            [_, mirror, command, shas @ ..] if *command == "rev-list" => {
+                return fake_rev_list(Path::new(mirror), shas);
+            }
+            // Each clone a user keeps has its objects in `.git`, as far as the fake can tell.
+            [_, _, command, ..] if *command == "rev-parse" => return Ok(".git\n".to_owned()),
+            [_, folder, command, ..] if *command == "config" => {
+                return fake_remote_urls(Path::new(folder));
+            }
+            _ => {}
         }
         self.refs
             .try_recv()
             .map_err(|_none| io::Error::other("the test gave no refs"))
+    }
+
+    fn read_patch_ids(&self, _mirror: &Path, of: &PatchesOf) -> io::Result<Vec<FilePatch>> {
+        let (answer, answered) = channel();
+        let read = FakePatchRead {
+            of: of.clone(),
+            answer,
+        };
+        if self.patch_reads.send(read).is_err() {
+            return Err(io::Error::other("the test reads no patch-ids"));
+        }
+        answered.recv().map_err(io::Error::other)?
+    }
+}
+
+/// Where the fake git keeps `commit` in `mirror`: a file where git keeps a loose object.
+fn fake_object(mirror: &Path, commit: &CommitSha) -> PathBuf {
+    let (folder, file) = commit.as_str().split_at(2);
+    mirror.join("objects").join(folder).join(file)
+}
+
+/// The commits of `args` that `mirror` holds, as `rev-list --no-walk --ignore-missing` lists them. git
+/// can't look in a mirror that isn't a folder.
+fn fake_rev_list(mirror: &Path, args: &[&OsStr]) -> io::Result<String> {
+    if !mirror.is_dir() {
+        let words = format!("fatal: cannot change to '{}'", mirror.display());
+        return Err(io::Error::other(words));
+    }
+    let commits = args
+        .iter()
+        .filter_map(|arg| CommitSha::parse(arg.to_str()?));
+    let held = commits.filter(|commit| fake_object(mirror, commit).exists());
+    Ok(held
+        .map(|commit| format!("{}\n", commit.as_str()))
+        .collect())
+}
+
+/// The URL of each remote of a clone `fake_clone` made, as `config --get-regexp` lists them.
+fn fake_remote_urls(folder: &Path) -> io::Result<String> {
+    let config = fs::read_to_string(folder.join(".git").join("config"))?;
+    let urls = config
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("url = "));
+    Ok(urls
+        .map(|url| format!("remote.origin.url {url}\n"))
+        .collect())
+}
+
+impl Mirrors {
+    /// Waits until the worker has handled each request sent before this, has read the patch-ids waiting,
+    /// and has started what it would start now, so a test can then say that nothing else started. A git
+    /// that waits for the one under way, or a fetch tried again after a wait, hasn't started yet.
+    fn wait_idle(&self) {
+        let (reply, idle) = channel();
+        let sent = self.messages.send(Message::Idle(reply));
+        match sent.map(|()| idle.recv_timeout(PLENTY)) {
+            Ok(Ok(())) => {}
+            Ok(Err(RecvTimeoutError::Timeout)) => {
+                panic!("the mirror worker wasn't idle within {PLENTY:?}")
+            }
+            Err(_) | Ok(Err(RecvTimeoutError::Disconnected)) => {
+                panic!("the mirror worker ended before it was idle")
+            }
+        }
     }
 }
 
@@ -658,14 +779,7 @@ impl Place {
 
     /// The worker with the fake git, each start of it, and each Repository's heads that arrived.
     fn start_faked_hearing(&self, patience: Duration) -> (Mirrors, Receiver<FakeStart>, Arrivals) {
-        let (arriving, arrivals) = channel();
-        let announce = Announce {
-            fetched: Box::new(move |repository, numbers| {
-                drop(arriving.send((repository.to_string(), numbers.to_vec())));
-            }),
-            ..Announce::cloning_only(Box::new(|_| {}))
-        };
-        let (mirrors, starts) = self.start_faked_announcing(patience, announce);
+        let (mirrors, starts, arrivals, _failures) = self.start_faked_hearing_all(patience);
         (mirrors, starts, arrivals)
     }
 
@@ -675,15 +789,32 @@ impl Place {
         &self,
         patience: Duration,
     ) -> (Mirrors, Receiver<FakeStart>, Failures) {
+        let (mirrors, starts, _arrivals, failures) = self.start_faked_hearing_all(patience);
+        (mirrors, starts, failures)
+    }
+
+    /// The worker with the fake git, each start of it, and each Repository's heads that arrived and that it
+    /// stopped fetching. Heads that are behind wait `patience` to be fetched once more.
+    fn start_faked_hearing_all(
+        &self,
+        patience: Duration,
+    ) -> (Mirrors, Receiver<FakeStart>, Arrivals, Failures) {
+        let (arriving, arrivals) = channel();
         let (failing, failures) = channel();
         let announce = Announce {
+            fetched: Box::new(move |repository, numbers| {
+                pass_on(&arriving, (repository.to_string(), numbers.to_vec()));
+            }),
             failed: Box::new(move |repository, numbers, why| {
-                drop(failing.send((repository.to_string(), numbers.to_vec(), why.clone())));
+                pass_on(
+                    &failing,
+                    (repository.to_string(), numbers.to_vec(), why.clone()),
+                );
             }),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
         let (mirrors, starts) = self.start_faked_announcing(patience, announce);
-        (mirrors, starts, failures)
+        (mirrors, starts, arrivals, failures)
     }
 
     /// The worker with the fake git, which tells `announce` as it goes, and each start of it.
@@ -704,25 +835,54 @@ impl Place {
         announce: Announce,
         versions: Receiver<Option<String>>,
     ) -> (Mirrors, Receiver<FakeStart>) {
+        let (mirrors, starts, reads) = self.faked(remotes, announce, versions);
+        // Nobody hears the reads of patch-ids, so each fails.
+        drop(reads);
+        (mirrors, starts)
+    }
+
+    /// The worker with the fake git, each start of it, and each read of a commit's patch-ids, which waits
+    /// for the test to answer it. A head that is behind waits longer than a test.
+    fn start_faked_reading(&self) -> (Mirrors, Receiver<FakeStart>, Receiver<FakePatchRead>) {
+        let (_versions, answers) = channel();
+        let announce = Announce::cloning_only(Box::new(|_| {}));
+        self.faked(self.clone_source().patient(PLENTY), announce, answers)
+    }
+
+    fn faked(
+        &self,
+        remotes: Remotes,
+        announce: Announce,
+        versions: Receiver<Option<String>>,
+    ) -> (Mirrors, Receiver<FakeStart>, Receiver<FakePatchRead>) {
         let (starting, starts) = channel();
         let (landed, refs) = channel();
+        let (patch_reads, reads) = channel();
         let mirrors = Mirrors::with_git(
             Box::new(FakeGit {
                 starts: starting,
                 landed,
                 refs,
                 versions,
+                patch_reads,
             }),
             Ok(self.folders.clone()),
             remotes,
             announce,
         );
-        (mirrors, starts)
+        (mirrors, starts, reads)
     }
 
     /// A mirror that is already there, as far as the worker can tell.
     fn mirrored(&self, repository: &RepositoryName) {
         fs::create_dir_all(self.folders.mirror(repository)).unwrap();
+    }
+
+    /// A mirror that is already there and holds `commit`, as far as the fake git can tell.
+    fn mirrored_holding(&self, repository: &RepositoryName, commit: &CommitSha) {
+        let object = fake_object(&self.folders.mirror(repository), commit);
+        fs::create_dir_all(object.parent().unwrap()).unwrap();
+        fs::write(object, "").unwrap();
     }
 }
 
@@ -742,6 +902,14 @@ fn older(number: u32) -> PrHead {
     }
 }
 
+/// PR `number`'s head after a push the store hasn't heard of yet.
+fn newer(number: u32) -> PrHead {
+    PrHead {
+        commit: CommitSha::parse(&"a".repeat(40)).unwrap(),
+        ..head(number)
+    }
+}
+
 fn refspec(number: u32) -> String {
     format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*")
 }
@@ -755,11 +923,8 @@ fn reviewed(number: u32, commit: &CommitSha) -> ReviewedCommit {
 }
 
 /// Waits until `done` says so, or a minute has gone.
-fn wait_until(mut done: impl FnMut() -> bool) {
-    let deadline = Instant::now() + PLENTY;
-    while !done() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
+fn wait_until(done: impl FnMut() -> bool) {
+    tsugiki_test_git::wait_until(PLENTY, done);
 }
 
 #[test]
@@ -908,7 +1073,7 @@ fn a_failed_fetch_tries_again_when_github_is_back() {
 }
 
 #[test]
-fn a_fetch_that_brings_an_older_commit_leaves_the_head_for_the_next_hand_over() {
+fn a_head_that_is_behind_waits_out_its_moment_though_handed_over_again() {
     let place = Place::new("older-head");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
@@ -922,14 +1087,13 @@ fn a_fetch_that_brings_an_older_commit_leaves_the_head_for_the_next_hand_over() 
         .recv_timeout(PLENTY)
         .unwrap()
         .succeed_with(vec![older]);
-    requests.fetch_heads(cpython.clone(), vec![head(1), head(2)]);
+    requests.fetch_heads(cpython, vec![head(1), head(2)]);
     let next = starts.recv_timeout(PLENTY).unwrap();
 
-    assert_eq!(next.refspecs(), [refspec(1), refspec(2)]);
+    assert_eq!(next.refspecs(), [refspec(2)]);
     next.succeed();
-    requests.fetch_heads(cpython, vec![head(1), head(2)]);
     mirrors.stop_cleanly(PLENTY);
-    assert!(starts.recv().is_err(), "both heads landed");
+    assert!(starts.recv().is_err(), "head 1 waits longer than the test");
 }
 
 #[test]
@@ -1001,19 +1165,21 @@ fn a_head_github_doesnt_have_is_fetched_once_more_then_not_at_a_hand_over() {
 }
 
 #[test]
-fn heads_whose_refs_cant_be_read_back_are_fetched_at_the_next_hand_over() {
+fn heads_whose_refs_cant_be_read_back_at_their_retry_are_fetched_at_the_next_hand_over() {
     let place = Place::new("unread-refs");
     let cpython = named("python/cpython");
     place.mirrored(&cpython);
-    let (mirrors, starts) = place.start_faked();
+    let (mirrors, starts) = place.start_faked_with(Duration::from_millis(50));
     let requests = mirrors.requests();
 
     requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed_unread();
     starts.recv_timeout(PLENTY).unwrap().succeed_unread();
     requests.fetch_heads(cpython, vec![head(1)]);
     let again = starts.recv_timeout(PLENTY).unwrap();
 
     assert_eq!(again.refspecs(), [refspec(1)]);
+    assert_eq!(again.branches(), ["+refs/heads/main*:refs/heads/main*"]);
     again.succeed();
     mirrors.stop_cleanly(PLENTY);
 }
@@ -1142,6 +1308,29 @@ fn an_opened_pr_wakes_a_stalled_worker() {
     assert_eq!(wanted.refspecs(), [refspec(1)]);
     wanted.succeed();
     mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_hand_over_of_a_head_the_mirror_holds_leaves_no_fetch_of_its_target_branch_alone() {
+    let place = Place::new("opened-settled");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    let retargeted = PrHead {
+        target_branch: "3.14".to_owned(),
+        ..head(5)
+    };
+
+    requests.fetch_heads(cpython.clone(), vec![head(5)]);
+    starts.recv_timeout(PLENTY).unwrap().succeed();
+    requests.fetch_heads(cpython, vec![retargeted]);
+    mirrors.wait_idle();
+    let started = starts.try_recv();
+    mirrors.stop_cleanly(PLENTY);
+
+    assert!(started.is_err(), "{:?}", started.map(|start| start.args));
 }
 
 #[test]
@@ -1282,6 +1471,33 @@ fn a_pr_opened_before_its_head_is_known_gets_its_head_ahead_of_the_want_once_it_
     hellos.succeed();
     let wanted = starts.recv_timeout(PLENTY).unwrap();
     assert_eq!(wanted.refspecs(), [refspec(2)]);
+    wanted.succeed();
+    mirrors.stop_cleanly(PLENTY);
+}
+
+#[test]
+fn a_pr_whose_head_no_read_names_awaits_it_no_more() {
+    let place = Place::new("awaited-no-head");
+    let (cpython, hello) = (named("python/cpython"), named("octo-org/hello"));
+    place.mirrored(&cpython);
+    place.mirrored(&hello);
+    let (mirrors, starts) = place.start_faked();
+    let requests = mirrors.requests();
+
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    let first = starts.recv_timeout(PLENTY).unwrap();
+    requests.await_head(cpython.clone(), 7);
+    requests.no_head(cpython.clone(), 7);
+    requests.fetch_heads(hello, vec![head(5)]);
+    requests.fetch_heads(cpython.clone(), vec![head(1), head(7)]);
+    requests.heads_saved(cpython, vec![head(7)]);
+    first.succeed();
+    let next = starts.recv_timeout(PLENTY).unwrap();
+
+    assert_eq!(next.refspecs(), [refspec(5)], "PR 7's head takes its turn");
+    next.succeed();
+    let wanted = starts.recv_timeout(PLENTY).unwrap();
+    assert_eq!(wanted.refspecs(), [refspec(7)]);
     wanted.succeed();
     mirrors.stop_cleanly(PLENTY);
 }
@@ -1631,11 +1847,11 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     place.remote(&hello);
     let (mirrors, announced) = place.start();
     mirrors.requests().clone_mirror(hello.clone(), download());
-    let _clone = one_clone(&announced);
+    clone_ended(&announced);
     let commit = place.pull_request(&hello, 1);
     let mirror = place.folders.mirror(&hello);
     // What an earlier fetch left of a PR whose head GitHub has since dropped.
-    let _ = git(&mirror, &["update-ref", "refs/tsugiki/pull/2/head", "HEAD"]);
+    run_git(&mirror, &["update-ref", "refs/tsugiki/pull/2/head", "HEAD"]);
     let dropped = mirror.join("refs/tsugiki/pull/2/head");
 
     let heads = vec![
@@ -1647,10 +1863,7 @@ fn a_fetch_brings_a_prs_head_into_the_mirror_and_a_head_github_lacks_fails_nothi
     ];
     mirrors.requests().fetch_heads(hello.clone(), heads);
     let fetched = mirror.join("refs/tsugiki/pull/1/head");
-    let deadline = Instant::now() + PLENTY;
-    while (!fetched.exists() || dropped.exists()) && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(|| fetched.exists() && !dropped.exists());
     mirrors.stop_cleanly(PLENTY);
 
     assert_eq!(
@@ -1692,6 +1905,7 @@ not a commit          refs/tsugiki/pull/3/head
     assert_eq!(pull_refs(&listing), BTreeMap::from([(1, head(1).commit)]));
 }
 
+mod asks;
 mod borrowing;
 mod lookup;
 mod patches;
@@ -1705,14 +1919,12 @@ mod problems {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     const GIB: u64 = 1 << 30;
-    /// Long enough for a git that would start to have started.
-    const A_MOMENT: Duration = Duration::from_millis(300);
 
     /// Announces each problem the worker finds, and nothing else.
     fn hearing_problems() -> (Announce, Receiver<Option<MirrorProblem>>) {
         let (telling, told) = channel();
         let announce = Announce {
-            problem: Box::new(move |problem| drop(telling.send(problem.cloned()))),
+            problem: Box::new(move |problem| pass_on(&telling, problem.cloned())),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
         (announce, told)
@@ -1784,7 +1996,8 @@ mod problems {
             .clone_mirror(named("octo-org/hello"), download());
         mirrors.requests().fetch_heads(cpython, vec![head(1)]);
         let missing = told.recv_timeout(PLENTY).unwrap();
-        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.wait_idle();
+        let held = starts.try_recv().is_err();
         mirrors.requests().check_again();
         let found = told.recv_timeout(PLENTY).unwrap();
         let fetch = starts.recv_timeout(PLENTY).unwrap();
@@ -1810,7 +2023,8 @@ mod problems {
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
         let old = told.recv_timeout(PLENTY).unwrap();
-        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.wait_idle();
+        let held = starts.try_recv().is_err();
         mirrors.stop_cleanly(PLENTY);
 
         let version = "git version 2.29.2".to_owned();
@@ -1939,7 +2153,7 @@ mod problems {
         fs::create_dir_all(&mirror).unwrap();
         fs::write(mirror.join("in-the-way"), "").unwrap();
         clone.succeed();
-        let _ = one_clone(&announced);
+        clone_ended(&announced);
         fs::remove_dir_all(&mirror).unwrap();
         mirrors.requests().clone_mirror_next(hello, download());
         mirrors.stop_cleanly(PLENTY);
@@ -2152,7 +2366,8 @@ mod problems {
         mirrors
             .requests()
             .clone_mirror(named("octo-org/hello"), download());
-        let held = starts.recv_timeout(A_MOMENT).is_err();
+        mirrors.wait_idle();
+        let held = starts.try_recv().is_err();
         mirrors.stop_cleanly(PLENTY);
 
         assert!(held);

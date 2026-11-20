@@ -12,13 +12,14 @@
     "bindings": "node scripts/bindings.ts",
     "check": "npm run svelte-check && npm run clippy",
     "doc-width": "node scripts/doc-width.ts",
+    "dupes": "node scripts/dupes.ts",
     "prose-check": "node scripts/prose-check.ts",
     "lint": "npm run eslint && npm run prettier && npm run rustfmt && npm run token-deps && npm run pre-commit",
     "fmt": "npm run fmt -w ui && prettier --write scripts .github eslint.config.ts codecov.yml && cargo fmt --all",
     "test": "npm run vitest && npm run cargo-test && npm run stale-bindings",
     "e2e": "npm run e2e -w ui --",
-    "bench": "cargo bench -p tsugiki-core && npm run bench -w ui",
-    "record": "cargo run -p tsugiki-core --example record",
+    "bench": "cargo bench -p tsugiki-core --features testing && npm run bench -w ui",
+    "record": "cargo run -p tsugiki-core --features testing --example record",
     "tauri": "tauri",
     "eslint": "npm run eslint -w ui && eslint scripts eslint.config.ts",
     "prettier": "npm run prettier -w ui && prettier --check scripts .github eslint.config.ts codecov.yml",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4",
-    "@types/node": "26.6.6"
+    "@types/node": "26.6.6",
+    "jscpd": "5.4.2"
   }
 }

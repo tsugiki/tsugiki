@@ -29,6 +29,7 @@ erDiagram
         INTEGER checks_read_at "nullable"
         TEXT head "nullable"
         TEXT base "nullable"
+        INTEGER head_at "nullable"
     }
     review_requests {
         TEXT repository PK, FK
@@ -74,8 +75,7 @@ erDiagram
         INTEGER origin
     }
     link_rules {
-        INTEGER id PK
-        INTEGER version
+        TEXT name PK
     }
     committers {
         TEXT repository PK, FK
@@ -158,6 +158,14 @@ erDiagram
         INTEGER number PK
         TEXT reviewed_commit
         TEXT head_commit
+    }
+    stale_reviews {
+        TEXT repository PK
+        INTEGER number PK
+        TEXT reviewed_commit
+        TEXT head_commit
+        INTEGER found_at
+        TEXT acknowledged_head "nullable"
     }
     review_requests }o--|| pull_requests : "repository, number"
     latest_reviews }o--|| pull_requests : "repository, number"
@@ -264,11 +272,42 @@ erDiagram
         TEXT repository PK
         INTEGER number PK
         INTEGER at
+        INTEGER acknowledged_at "nullable"
     }
     marked_unseen {
         TEXT repository PK
         INTEGER number PK
         INTEGER at
+    }
+    archived {
+        TEXT repository PK
+        TEXT kind PK
+        INTEGER number PK
+        INTEGER at
+        INTEGER archived_at
+    }
+    muted {
+        TEXT repository PK
+        TEXT kind PK
+        INTEGER number PK
+        INTEGER at
+    }
+    muted_authors {
+        TEXT repository PK
+        TEXT login PK
+        INTEGER at
+    }
+    closings {
+        TEXT repository PK
+        INTEGER number PK
+    }
+    openings {
+        TEXT repository PK
+        INTEGER number PK
+    }
+    brought_back {
+        TEXT repository PK
+        INTEGER number PK
     }
     first_syncs {
         TEXT repository PK

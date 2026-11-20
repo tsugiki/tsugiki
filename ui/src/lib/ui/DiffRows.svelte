@@ -651,21 +651,6 @@
     position: absolute;
     left: 0;
     right: 0;
-    display: flex;
-    height: 20px;
-    line-height: 20px;
-    white-space: pre;
-    tab-size: 8;
-  }
-
-  .number {
-    flex: none;
-    width: 48px;
-    padding-right: 8px;
-    box-sizing: border-box;
-    text-align: right;
-    color: var(--fg-muted);
-    user-select: none;
   }
 
   .file {
@@ -772,14 +757,6 @@
     color: var(--fg-muted);
   }
 
-  .added {
-    background: color-mix(in srgb, var(--add) 18%, transparent);
-  }
-
-  .removed {
-    background: color-mix(in srgb, var(--del) 18%, transparent);
-  }
-
   /* The search's matches show on the theme's find colour, and the one the tab is on stands out from them. */
   .text :global(.match) {
     background: color-mix(in srgb, var(--find) 40%, transparent);
@@ -788,19 +765,5 @@
   .text :global(.current) {
     background: var(--find-current);
     color: var(--find-current-fg);
-  }
-
-  /* The word the user picked, on a tint of the accent, with a caret that takes no room. */
-  .text :global(.picked) {
-    background: color-mix(in srgb, var(--accent) 25%, transparent);
-  }
-
-  .caret {
-    display: inline-block;
-    width: 0;
-    height: 14px;
-    margin-right: -1px;
-    border-left: 1px solid currentColor;
-    vertical-align: -3px;
   }
 </style>

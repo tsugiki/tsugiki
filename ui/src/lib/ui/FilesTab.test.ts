@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { remapKeys } from "$lib/state/keymap.svelte";
 import { chooseMirrorSource, mirrorCost, pickClone } from "$lib/state/mirror-source";
 import { PanesState } from "$lib/state/panes.svelte";
@@ -16,6 +16,17 @@ import {
   type PrFiles,
 } from "$lib/state/pr-files.svelte";
 import type { YourReview } from "$lib/state/workbench.svelte";
+import {
+  diffFile,
+  diffThread,
+  done,
+  fileLines,
+  foundText,
+  ok,
+  readyFiles,
+  refused,
+} from "$lib/testing/fixtures";
+import { clickAt, nextTask, pressed } from "$lib/testing/helpers";
 import { ChordAction } from "./chord.svelte";
 import FilesTab from "./FilesTab.svelte";
 
@@ -37,36 +48,31 @@ const core = vi.hoisted(() => ({
   listen: vi.fn(),
 }));
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    pullRequestFiles: core.pullRequestFiles,
-    pullRequestRows: core.pullRequestRows,
-    pullRequestSpans: core.pullRequestSpans,
-    pullRequestLines: core.pullRequestLines,
-    pullRequestFind: core.pullRequestFind,
-    definitions: core.definitions,
-    cancelDefinitions: core.cancelDefinitions,
-    definitionCode: core.definitionCode,
-    definitionSpans: core.definitionSpans,
-    pullRequestRow: core.pullRequestRow,
-    cloning: core.cloning,
-    mirrorStates: core.mirrorStates,
-    mirrorsHeld: core.mirrorsHeld,
-    savePaneLayout: core.savePaneLayout,
-  },
-  events: {
-    headsFetched: { listen: core.listen },
-    headsFetchFailed: { listen: core.listen },
-    changed: { listen: core.listen },
-    readFailed: { listen: core.listen },
-    cloningChanged: { listen: core.listen },
-    mirrorStatesChanged: { listen: core.listen },
-    mirrorsHeldChanged: { listen: core.listen },
-  },
-}));
+vi.mock("$lib/data/bindings", async () => {
+  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      pullRequestFiles: core.pullRequestFiles,
+      pullRequestRows: core.pullRequestRows,
+      pullRequestSpans: core.pullRequestSpans,
+      pullRequestLines: core.pullRequestLines,
+      pullRequestFind: core.pullRequestFind,
+      definitions: core.definitions,
+      cancelDefinitions: core.cancelDefinitions,
+      definitionCode: core.definitionCode,
+      definitionSpans: core.definitionSpans,
+      pullRequestRow: core.pullRequestRow,
+      cloning: core.cloning,
+      mirrorStates: core.mirrorStates,
+      mirrorsHeld: core.mirrorsHeld,
+      savePaneLayout: core.savePaneLayout,
+    },
+    events: prFilesEvents(() => core.listen),
+  };
+});
 
 // A lookup hears what it waits for on a channel, which these tests leave quiet.
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("$lib/data/channel", () => ({
   Channel: class {
     onmessage = () => {};
   },
@@ -77,18 +83,6 @@ vi.mock("$lib/state/mirror-source", () => ({
   chooseMirrorSource: vi.fn(),
   mirrorCost: vi.fn(),
 }));
-
-const ok = <T>(data: T) => ({ status: "ok" as const, data });
-
-// jsdom has no `inert`, which a browser reflects to the attribute, as Svelte sets the property.
-Object.defineProperty(HTMLElement.prototype, "inert", {
-  get(this: HTMLElement) {
-    return this.hasAttribute("inert");
-  },
-  set(this: HTMLElement, inert: boolean) {
-    this.toggleAttribute("inert", inert);
-  },
-});
 
 /** A diff of three files: a rename with an edit, a binary file, and a file that lost its last newline. */
 const rows: DiffRow[] = [
@@ -105,41 +99,22 @@ const rows: DiffRow[] = [
 const ready = (
   count: number,
   more: Partial<{ files: DiffFile[]; news: NewsEntry[]; threads: DiffThread[]; waiting: number }> = {},
-): PrFiles => ({
-  state: "ready",
-  head: "abc",
-  base: "base",
-  rows: count,
-  news: more.news ?? [],
-  threads:
-    more.waiting === undefined
-      ? { kind: "shown", threads: more.threads ?? [] }
-      : { kind: "held_back", newer: "def5678def", count: more.waiting },
-  files: more.files ?? [
-    {
-      path: "news.txt",
-      old_path: "notes.txt",
-      change: { kind: "lines", added: 1, removed: 1 },
-      row: 0,
-      columns: 8,
-      generated: false,
-      gaps: [],
-      rest: null,
-      pairs: [],
-    },
-    {
-      path: "logo.png",
-      old_path: null,
-      change: { kind: "binary" },
-      row: 5,
-      columns: 19,
-      generated: false,
-      gaps: [],
-      rest: null,
-      pairs: [],
-    },
-  ],
-});
+): PrFiles =>
+  readyFiles(count, {
+    news: more.news ?? [],
+    threads:
+      more.waiting === undefined
+        ? { kind: "shown", threads: more.threads ?? [] }
+        : { kind: "held_back", newer: "def5678def", count: more.waiting },
+    files: more.files ?? [
+      diffFile("news.txt", 0, {
+        old_path: "notes.txt",
+        change: { kind: "lines", added: 1, removed: 1 },
+        columns: 8,
+      }),
+      diffFile("logo.png", 5, { change: { kind: "binary" }, columns: 19 }),
+    ],
+  });
 
 const onlink = vi.fn();
 const NOW = new Date("2026-11-04T12:00:00Z");
@@ -176,15 +151,6 @@ const lines = () => [...document.querySelectorAll(".row")].map((row) => row.text
 
 beforeEach(() => {
   vi.resetAllMocks();
-  // jsdom lays nothing out, so bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
   core.listen.mockResolvedValue(vi.fn());
   core.cloning.mockResolvedValue(null);
   core.mirrorStates.mockResolvedValue([]);
@@ -283,6 +249,20 @@ describe("the question of where the mirror gets its objects", () => {
 it("waits for the PR's commits", async () => {
   await shown({ state: "fetching" });
   expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
+});
+
+it("shows the read of the Conversation that names the PR's head as a fetch of its commits", async () => {
+  await shown({ state: "finding_head" });
+  expect(screen.getByText("Fetching the PR's commits…")).toBeTruthy();
+});
+
+it("says why the Conversation that names the PR's head didn't come, as the Conversation tab does", async () => {
+  await shown({ state: "unread", why: "not_on_github" });
+
+  expect(screen.getByRole("alert").textContent).toBe(
+    "GitHub doesn't have this PR, or your token can't see it.",
+  );
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
 });
 
 it("says the PR's commits wait for the network while the mirror holds back git, over a failed fetch", async () => {
@@ -426,18 +406,12 @@ it("paints each line of code in its spans' colors once they come", async () => {
 });
 
 it("starts a Generated file collapsed to its header, and collapses or opens any file on a click", async () => {
-  const file = (path: string, row: number, generated: boolean): DiffFile => ({
-    path,
-    old_path: null,
-    change: { kind: "lines", added: 0, removed: 0 },
-    row,
-    columns: 8,
-    generated,
-    gaps: [],
-    rest: null,
-    pairs: [],
-  });
-  const files = [file("news.txt", 0, false), file("logo.png", 5, true), file("ast.py", 7, false)];
+  const plain = { change: { kind: "lines" as const, added: 0, removed: 0 }, columns: 8 };
+  const files = [
+    diffFile("news.txt", 0, plain),
+    diffFile("logo.png", 5, { ...plain, generated: true }),
+    diffFile("ast.py", 7, plain),
+  ];
   await shown(ready(rows.length, { files }));
   await vi.waitFor(() => {
     expect(lines()[0]).toBe("▾notes.txt → news.txt+1 −1");
@@ -473,18 +447,12 @@ it("starts a Generated file collapsed to its header, and collapses or opens any 
 });
 
 it("says in their headers which files changed since a Stale review, and starts the rest folded", async () => {
-  const file = (path: string, row: number, old_path: string | null = null): DiffFile => ({
-    path,
-    old_path,
-    change: { kind: "lines", added: 0, removed: 0 },
-    row,
-    columns: 8,
-    generated: false,
-    gaps: [],
-    rest: null,
-    pairs: [],
-  });
-  const files = [file("news.txt", 0, "notes.txt"), file("logo.png", 5), file("ast.py", 7)];
+  const plain = { change: { kind: "lines" as const, added: 0, removed: 0 }, columns: 8 };
+  const files = [
+    diffFile("news.txt", 0, { ...plain, old_path: "notes.txt" }),
+    diffFile("logo.png", 5, plain),
+    diffFile("ast.py", 7, plain),
+  ];
   const review: YourReview = {
     kind: "stale_review",
     reviewed: "1".repeat(40),
@@ -606,20 +574,15 @@ const gapped: DiffRow[] = [
   { kind: "context", old: 107, new: 107, text: "e" },
   { kind: "context", old: 108, new: 108, text: "f" },
 ];
-const gappedFile: DiffFile = {
-  path: "a.py",
-  old_path: null,
+const gappedFile = diffFile("a.py", 0, {
   change: { kind: "lines", added: 1, removed: 1 },
-  row: 0,
   columns: 8,
-  generated: false,
   gaps: [
     { row: 1, old: 1, new: 1, lines: 49 },
     { row: 6, old: 53, new: 53, lines: 53 },
   ],
   rest: { old: 109, new: 109 },
-  pairs: [],
-};
+});
 
 /** The fake core sends `gapped`'s rows, and its lines with their first word a keyword. */
 const setUpGapped = () => {
@@ -686,8 +649,8 @@ it("offers to show the lines each gap leaves out, and draws them highlighted onc
 it("opens the lines around a thread on a line no hunk shows, with buttons for those hidden around them", async () => {
   setUpGapped();
   const threads = [
-    threadAt("T1", { kind: "outside", file: 0, line: 80, head_line: 80 }, "open"),
-    threadAt("T2", { kind: "gone", path: "Lib/old.py", code: null }, "open"),
+    diffThread("T1", { kind: "outside", file: 0, line: 80, head_line: 80 }, "open"),
+    diffThread("T2", { kind: "gone", path: "Lib/old.py", code: null }, "open"),
   ];
   await shown(ready(gapped.length, { files: [gappedFile], threads }));
   await vi.waitFor(() => {
@@ -863,17 +826,15 @@ const changed: DiffRow[] = [
   { kind: "context", old: 6, new: 4, text: "f" },
   { kind: "added", new: 5, text: "g" },
 ];
-const changedFile: DiffFile = {
-  ...gappedFile,
+const changedFile = diffFile("a.py", 0, {
   change: { kind: "lines", added: 2, removed: 3 },
-  gaps: [],
-  rest: null,
+  columns: 8,
   pairs: [
     { row: 3, removed: 3, added: 1 },
     { row: 8, removed: 1, added: 0 },
     { row: 10, removed: 0, added: 1 },
   ],
-};
+});
 
 /** A choice of the side-by-side view. */
 const sideBySide = () => {
@@ -969,34 +930,10 @@ it("keeps the row at the top in view as the view switches", async () => {
   expect(diff.scrollTop).toBe(0);
 });
 
-/** Thread `id` under row `row`, or at `row` when it isn't a number, with `comments` comments. */
-const threadAt = (
-  id: string,
-  row: number | DiffThread["at"],
-  resolution: "open" | "resolved",
-  comments = 1,
-): DiffThread => ({
-  id,
-  at: typeof row === "number" ? { kind: "row", row } : row,
-  resolution,
-  comments: Array.from({ length: comments }, () => ({
-    id: null,
-    author: "some-reviewer",
-    created_at: "2026-11-04T10:00:00Z",
-    body_html: "<p>Why?</p>",
-    hidden: null,
-    submission: "submitted",
-  })),
-  later_comments: 0,
-});
-
 /** The diff of `rows` with an open thread of two comments under row 2, which takes 7 places until it's
  * measured, and a resolved one under row 4, folded to one place: row 5 shows at place 13. */
 const threadedDiff = () =>
-  ready(rows.length, { threads: [threadAt("T1", 2, "open", 2), threadAt("T2", 4, "resolved")] });
-
-/** Waits until what the last change set going has drawn. */
-const settledTab = () => new Promise((resolve) => setTimeout(resolve, 0));
+  ready(rows.length, { threads: [diffThread("T1", 2, "open", 2), diffThread("T2", 4, "resolved")] });
 
 const threadBoxes = () => screen.getAllByRole("group", { name: "Review thread" });
 
@@ -1021,6 +958,9 @@ it("draws each thread under its line, and a resolved one folded until a click op
 
 it("measures each open thread, and keeps the row at the top in view as a thread above it shrinks", async () => {
   const observed: { element: Element; heard: () => void }[] = [];
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -1044,7 +984,7 @@ it("measures each open thread, and keeps the row at the top in view as a thread 
   diff.scrollTop = 20 + 5;
   await fireEvent.scroll(diff);
   await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, Resolved" }));
-  await settledTab();
+  await nextTask();
   expect(diff.scrollTop).toBe(20 + 5);
   await fireEvent.click(screen.getByRole("button", { name: "some-reviewer · 1 comment, Resolved" }));
   // Five pixels into row 5, the second file's header.
@@ -1077,7 +1017,7 @@ it("scrolls to the thread it moves to, with a few rows of its code above it", as
   expect(files.jump).toBeUndefined();
   // A thread the layout doesn't show leaves the tab where it is.
   files.jump = { id: "gone" };
-  await settledTab();
+  await nextTask();
   expect(diff.scrollTop).toBe((12 - 3) * 20);
   expect(files.jump).toBeUndefined();
 });
@@ -1096,11 +1036,6 @@ it("scrolls to the change it moves to, with a few rows of code above it", async 
     expect(screen.getByRole("region", { name: "Diff" }).scrollTop).toBe((8 - 3) * 20);
   });
 });
-
-/** The core's answer to a search, which found `matches`, each a row and where in it the text starts and
- * ends. */
-const found = (matches: [number, number, number][], more = false) =>
-  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
 
 /** The text of each match the rows mark, and whether it is the one the tab is on. */
 const marks = () =>
@@ -1122,7 +1057,7 @@ const searching = async (choice = new DiffViewChoice()) => {
 
 it("searches every row from its box, marks the matches, and moves between them with Enter and its buttons", async () => {
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 1],
       [6, 0, 1],
     ]),
@@ -1157,7 +1092,7 @@ it("searches every row from its box, marks the matches, and moves between them w
 });
 
 it("says when it finds nothing, with nowhere to move, and when the core stopped counting", async () => {
-  core.pullRequestFind.mockResolvedValueOnce(found([]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([]));
   const { box } = await searching();
   const status = () => screen.getByRole("search").querySelector(".count")?.textContent;
 
@@ -1167,7 +1102,7 @@ it("says when it finds nothing, with nowhere to move, and when the core stopped 
   });
   const moves = ["Previous match", "Next match"].map((name) => screen.getByRole("button", { name }));
   expect(moves.map((button) => (button as HTMLButtonElement).disabled)).toEqual([true, true]);
-  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 1]], true));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[3, 0, 1]], true));
   await fireEvent.input(box, { target: { value: "b" } });
   await vi.waitFor(() => {
     expect(status()).toBe("1 of 1+");
@@ -1187,7 +1122,7 @@ it("closes the search on Escape or its button, handing the diff its focus back",
 
 it("marks the matches side by side, a line of context's on both sides", async () => {
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [2, 0, 1],
       [3, 0, 1],
       [6, 0, 1],
@@ -1208,7 +1143,7 @@ it("marks the matches side by side, a line of context's on both sides", async ()
 });
 
 it("says in the box why it couldn't search", async () => {
-  core.pullRequestFind.mockResolvedValue({ status: "error", error: { kind: "internal", message: "gone" } });
+  core.pullRequestFind.mockResolvedValue(refused("gone"));
   const { box } = await searching();
 
   await fireEvent.input(box, { target: { value: "b" } });
@@ -1222,7 +1157,7 @@ it("says in the box why it couldn't search", async () => {
 it("leaves a match it shows in place, and scrolls to one it doesn't", async () => {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(100);
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 1],
       [10, 0, 1],
     ]),
@@ -1269,8 +1204,6 @@ const segments = (): [HTMLElement, HTMLElement] => {
   const group = within(screen.getByRole("group", { name: "Files" }));
   return [group.getByRole("button", { name: "All files" }), group.getByRole("button", { name: "One file" })];
 };
-/** Each segment's `aria-pressed`, All files then One file. */
-const pressed = () => segments().map((segment) => segment.getAttribute("aria-pressed"));
 
 it("shows one file at a time under a bar that counts the files, and walks them with its arrows", async () => {
   await shownOne(ready(rows.length));
@@ -1372,7 +1305,7 @@ it("scrolls to the header of the next file with all the files, and to the very t
   // A page the layout doesn't show leaves the tab where it is.
   diff.scrollTop = 40;
   files.jump = { page: { kind: "file", file: 9 } };
-  await settledTab();
+  await nextTask();
   expect([diff.scrollTop, files.jump]).toEqual([40, undefined]);
 });
 
@@ -1394,7 +1327,7 @@ it("puts the NEWS entries on a page of their own, and a NEWS entry's Show file g
 it("gives the threads on files no longer in the diff a last page of their own", async () => {
   const files = await shownOne(
     ready(rows.length, {
-      threads: [threadAt("lost", { kind: "gone", path: "Lib/old.py", code: null }, "open")],
+      threads: [diffThread("lost", { kind: "gone", path: "Lib/old.py", code: null }, "open")],
     }),
   );
   files.showFile(1);
@@ -1406,20 +1339,6 @@ it("gives the threads on files no longer in the diff a last page of their own", 
   expect(bar().textContent.replace(/\s+/g, " ").trim()).toBe("‹› On files no longer in the diff");
   expect(threadBoxes()).toHaveLength(1);
 });
-
-/** Clicks `element` with the caret `offset` characters into its text, where Chromium leaves a collapsed
- * selection after a click; jsdom lays nothing out to find the caret from. */
-const clickAt = async (element: Element, offset: number, keys: MouseEventInit = {}) => {
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  let left = offset;
-  let node = walker.nextNode() as Text | null;
-  while (node !== null && left > node.length) {
-    left -= node.length;
-    node = walker.nextNode() as Text | null;
-  }
-  getSelection()?.collapse(node ?? element, node === null ? 0 : left);
-  await fireEvent.click(element, keys);
-};
 
 /** The code of the row `row` of the tab, on its `half` side by side. */
 const codeOf = (row: number, half = 0) =>
@@ -1973,14 +1892,7 @@ const peekCode = () =>
   );
 
 /** A file of `count` lines, line N of which reads `line N`, as the core reads a hit's file. */
-const fileOf = (count: number) => {
-  core.definitionCode.mockImplementation((code) => {
-    const lines = [];
-    for (let line = code.start; line < Math.min(code.end, count + 1); line++)
-      lines.push(`line ${String(line)}`);
-    return Promise.resolve(ok({ count, lines }));
-  });
-};
+const fileOf = (count: number) => core.definitionCode.mockImplementation(fileLines(count));
 
 it("opens the Definition peek under the picked line, names the hit, shows its code and pushes the rows after it down", async () => {
   const hit = (path: string, line: number, text: string) => ({
@@ -2304,10 +2216,8 @@ it("drags the peek's bottom edge, saves its height for the next peek, and gives 
   core.definitions.mockResolvedValue(
     ok({ state: "found", hits: [{ place, line: 12, column: 4, text: "" }] }),
   );
-  core.savePaneLayout.mockResolvedValue(ok(null));
+  core.savePaneLayout.mockResolvedValue(done);
   fileOf(30);
-  // jsdom has no pointer capture.
-  HTMLElement.prototype.setPointerCapture = vi.fn();
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[4]).toBe("2+new line");
@@ -2350,8 +2260,7 @@ it("saves the height of a drag that the peek's answer cuts short, as the peek dr
       answer = resolve;
     }),
   );
-  core.savePaneLayout.mockResolvedValue(ok(null));
-  HTMLElement.prototype.setPointerCapture = vi.fn();
+  core.savePaneLayout.mockResolvedValue(done);
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[4]).toBe("2+new line");
@@ -2503,10 +2412,7 @@ it("says how to set ty up, and when no server knows the file's language", async 
 
 it("says when a lookup found no definition, at the base for a removed line, or why it failed", async () => {
   core.definitions.mockResolvedValueOnce(ok({ state: "found", hits: [] }));
-  core.definitions.mockResolvedValueOnce({
-    status: "error",
-    error: { kind: "internal", message: "ty couldn't answer: the server ended before it answered" },
-  });
+  core.definitions.mockResolvedValueOnce(refused("ty couldn't answer: the server ended before it answered"));
   const files = await shown(ready(rows.length));
   await vi.waitFor(() => {
     expect(lines()[4]).toBe("2+new line");
@@ -2564,7 +2470,7 @@ describe("the split Definition peek", () => {
     core.definitions.mockResolvedValue(
       ok({ state: "found", hits: [headHit("Lib/news.py", 12), headHit("Lib/old.py", 3)] }),
     );
-    core.savePaneLayout.mockResolvedValue(ok(null));
+    core.savePaneLayout.mockResolvedValue(done);
     fileOf(30);
     const files = await shown(ready(rows.length), undefined, undefined, () => layout.now);
     await vi.waitFor(() => {
@@ -2632,8 +2538,6 @@ describe("the split Definition peek", () => {
   });
 
   it("resizes by its top edge, no lower than 160 px, saves its height for the next peek, and resets", async () => {
-    // jsdom has no pointer capture.
-    HTMLElement.prototype.setPointerCapture = vi.fn();
     const files = await splitTab({ now: "split" });
     await files.peekDefinition();
     const saved = () => core.savePaneLayout.mock.calls.map(([layout]) => layout.split_peek);

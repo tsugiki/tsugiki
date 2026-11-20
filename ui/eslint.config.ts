@@ -46,11 +46,27 @@ export default defineConfig(
     plugins: { layers },
     rules: { "layers/imports": ["error", { src }] },
   },
-  // A test may read the sources from disk, as window.test.ts does: Vitest hands it a stylesheet as "".
+  // A test may read the sources from disk, as window.test.ts does: Vitest hands it a stylesheet as "". It
+  // takes the helpers the tests share from src/lib/testing, which nothing else may import.
   {
     files: ["src/**/*.test.ts", "src/**/*.bench.ts"],
     rules: {
-      "layers/imports": ["error", { src, extraPackages: ["vitest", "@testing-library/svelte", "node:fs"] }],
+      "layers/imports": [
+        "error",
+        { src, extraPackages: ["vitest", "@testing-library/svelte", "node:fs"], extraLayers: ["testing"] },
+      ],
+    },
+  },
+  // The e2e specs load the fixtures in Playwright, which resolves neither Vitest nor the app's modules, and
+  // the tests' `vi.mock` factories of the bindings load them too, which a run-time import of the bindings
+  // would loop on.
+  {
+    files: ["src/lib/testing/fixtures.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        { patterns: [{ group: ["*"], allowTypeImports: true, message: "Import only types here." }] },
+      ],
     },
   },
 );

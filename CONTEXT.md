@@ -65,7 +65,9 @@ An Issue, or a PR's conversation, also needs attention when someone else has pos
 seen** and the user is in the conversation: they opened it, it is assigned to them, they commented in it, or
 the new posts mention them. An Issue the user only follows through a **Filter** or a pin shows its New
 activity but does not need attention. Any Issue or PR the user **Marked unseen** needs attention, followed
-Issues included.
+Issues included. Mark Seen, Archive and Mute acknowledge a Review request, a Stale review and failed CI that
+stand on the item: each stops needing attention until something starts it again, a new request, a push that
+makes the Review stale again, or a CI run that fails.
 _Avoid_: Pending, todo
 
 **Maintained repository**:
@@ -116,26 +118,33 @@ _Avoid_: Dashboard
 **Reach**:
 The Issues and PRs Tsugiki keeps ready to open in a **Repository**: their heads in the **Mirror** and their
 Conversations read ahead. It is worked out from the **Workbench** and the links between Issues and PRs, never
-from the rows the list draws. It holds each Issue and PR on the Workbench in its own right, with the Origin
-PR and the Backports of such a PR, and each Issue one of those fixes; then each PR that fixes a reached
-Issue, through the Repository's **Conventions**, whether open, merged or closed; then each **Backport** whose
-**Origin PR** is reached, and the Origin PR of each reached Backport. An item that only a **Filter** switched
-off the Workbench finds stays out of it.
+from the rows the list draws. It holds each Issue and PR on the Workbench in its own right or carrying a
+**Review request**, with the Origin PR and the Backports of such a PR, and each Issue one of those fixes,
+less each **Muted** item's tree; then each PR that fixes a reached Issue, through the Repository's
+**Conventions**, whether open, merged or closed; then each **Backport** whose **Origin PR** is reached, and
+the Origin PR of each reached Backport; and no more. So a PR in a Muted tree comes back when it fixes a
+reached Issue or shares a reached Backport family. Reach also holds the tree of each Muted item where a
+Review request or an assignment to the user stands, acknowledged or not. An **Archived** item stays in it.
+An item that only a **Filter** switched off the Workbench finds stays out of it.
 _Avoid_: The PRs the user's work reaches
 
 **Filter**:
 A saved GitHub search the user defines, such as "PRs I opened" or "a colleague's open PRs". It can match
 Issues or PRs. Its "On the Workbench" switch says whether its items go on the **Workbench**, where a
 matching PR pulls its **Issue**, and so into **Reach**. A Filter switched off is a view the user
-browses: its search still runs, and its view lists what it found. Clicking a person opens an unsaved Filter
-for what they authored, which the user can save or close.
+browses: its search still runs, and its view lists what it found. The view lists all the search found, as
+a mail client's search finds archived mail: an **Archived** item in its place, marked Archived, and the
+**Muted** items and those of **Muted authors** at the end, folded behind a line such as "Show 4 muted". Its
+count in the Sidebar leaves both out, and neither goes on the Workbench. Clicking a person opens an unsaved
+Filter for what they authored, which the user can save or close.
 _Avoid_: Query, section
 
 **Inbox**:
 Every open item of a **Repository** that the user hasn't triaged, as a mail client's inbox holds the mail
 not yet filed: each open **Issue** with its PRs under it, merged and closed ones too, grouped as on the
 **Workbench**, and each **Standalone PR** with an open PR in its tree on its own, the latest update first. An
-item that closes leaves it. It starts with the last
+item that closes leaves it. A PR that opens on an **Archived** Issue brings the Issue back to it, closed or
+not, until the user archives or mutes it. It starts with the last
 two days and reads older items from the cache as the user scrolls. It adds nothing to **Reach**. It is where
 the user finds an Issue to read, comment on or pin, or a PR to open.
 _Avoid_: All issues, Issue browser, backlog
@@ -168,23 +177,37 @@ _Avoid_: No issue, orphan PR, unlinked PR
 
 **Archived**:
 A **Workbench** item (an Issue, a **Standalone PR** or **Dependency updates**) the user has put away until
-something new needs their attention there; then it comes back by itself. Like archiving a mail thread.
-Archiving marks the item seen and clears **Marked unseen**, so New activity after it brings the item back, and
-so does a Review request or a CI failure that starts after it. Mark Unseen on an Archived item unarchives it.
+something new needs their attention there; then it comes back by itself. Like archiving a mail thread,
+which a search still finds: each **Filter** that matches it lists it, marked Archived. Archiving marks the
+item seen and clears **Marked unseen**, so a reason to **Need attention** that starts after it brings the
+item back: New activity that Needs attention, a Review request or a CI failure. New activity that doesn't,
+as on an Issue the user only follows, leaves it archived. Mark Unseen on an Archived item unarchives it.
+An Issue or a Standalone PR that closes or merges on GitHub, while on the Workbench or in **Reach**, is
+Archived by itself, a closed Issue with an open PR too, and nothing is marked seen. A closed item stays
+Archived while nothing in its tree Needs attention: it comes back while something does, and goes back to
+Archived after Mark Seen. Reopening takes it out of Archived, and so does Unarchive until it closes again.
+A PR that opens on an Archived Issue unarchives it, as Unarchive does, and brings it back to the **Inbox**.
+The new PR alone doesn't make it Need attention, so it is on the Workbench only if something else puts it
+there. A **Backport** carries an older change and brings nothing back.
 Kept in Tsugiki only.
 _Avoid_: Dismissed, done, snoozed
 
 **Muted**:
-A **Workbench** item the user has hidden until they unmute it, whatever happens to it, except a **Review
-request** or an assignment to the user: someone asking by name always shows. Kept in Tsugiki only.
+A **Workbench** item the user has hidden until they unmute it, whatever happens to it. Muting marks the item
+seen, as archiving does. Only someone asking the user by name gets through: a **Review request** or an
+assignment to the user that starts after the mute shows the item on the Workbench, marked Muted, while it
+stands, and one that stood at the mute keeps it, for a PR, in Review requests. Each **Filter** that matches
+the item lists it in a fold at the end of its view, or in its place, marked Muted, while one of those
+stands. Kept in Tsugiki only.
 _Avoid_: Ignored, blocked
 
 **Muted author**:
-A person or bot whose Issues and **Standalone PRs** the user has hidden from one **Repository**'s
-**Workbench**, usually because their area is outside the user's interest. Their PRs inside an Issue the user
-follows stay listed but never need attention, and an Issue they opened still shows when another PR in it needs
-attention or a **Filter** matches it. As with **Muted**, a Review request or an assignment always shows. Kept
-in Tsugiki only.
+A person or bot the user has muted in one **Repository**, usually because their area is outside the user's
+interest. Their Issues, **Standalone PRs** and **Standalone Backports** count as **Muted**, those they open
+later too, and leave the **Workbench** the same way, with the same exceptions for a Review request or an
+assignment to the user. Muting the author marks their open items seen. Tsugiki works this out from the author
+and keeps no mute on each item, so unmuting the author brings their items back, and an item muted on its own
+stays Muted. Their PRs inside another author's Issue stay as they are. Kept in Tsugiki only.
 _Avoid_: Blocked user, ignored user
 
 ### Reviewing
@@ -221,8 +244,10 @@ A **Review** the user records only inside Tsugiki, without leaving a trace on Gi
 _Avoid_: Bookmark, seen flag
 
 **Review request**:
-A PR where the user is a requested reviewer or an assignee. It always counts as **Needs attention** until the
-user submits a review on GitHub (a **Local mark** does not clear it), even for a **Bot backport**.
+A PR where the user is a requested reviewer or an assignee, even a **Bot backport**. It lasts until the user
+submits a review on GitHub (a **Local mark** does not end it), and the Review requests view lists it until
+then. It counts as **Needs attention** until the user marks the PR seen, archives or mutes it; a request that
+comes after counts again.
 _Avoid_: Assignment, ping
 
 **Outdated thread**:
@@ -248,7 +273,10 @@ The moment up to which the user has seen a PR or an **Issue**, tracked per PR an
 it to the moment of the item's last sync that the window drew, so a comment that came in while the user read
 stays **New activity**. Mark Seen on an Issue moves the Last seen of the Issue and of every PR in its tree; on
 a PR, only that PR's. Archive, Mute, Unmute and a write to GitHub move it too. Opening an item, in Tsugiki or
-on GitHub, and handing a PR to a review tool leave it alone. It never moves back.
+on GitHub, and handing a PR to a review tool leave it alone. It never moves back. Beside it Tsugiki keeps the
+moment the user acknowledged the item, which Mark Seen, Archive and Mute move and a write to GitHub and
+Unmute leave alone: a **Review request**, a **Stale review** or failed CI that started before it no longer
+**Needs attention**.
 _Avoid_: Last visited, read
 
 **Marked unseen**:

@@ -50,7 +50,11 @@ impl ReleaseCheck {
     pub fn start(mut ask: AskPublic, every: Duration, mut announce: AnnounceNewVersion) -> Self {
         let (stop, stopped) = mpsc::channel::<()>();
         let mut told = running();
-        let _ = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "dropping `_stop` ends it at once, or after the check under way, which nothing waits for"
+        )]
+        thread::spawn(move || {
             loop {
                 match latest(&mut ask) {
                     Ok(version) if version.cmp_precedence(&told).is_gt() => {
@@ -107,3 +111,7 @@ fn latest(ask: &mut AskPublic) -> Result<Version, String> {
 
 #[cfg(test)]
 mod tests;
+
+/// What GitHub Releases answers in the release check's tests, and in other crates' tests.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;

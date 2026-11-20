@@ -1,40 +1,17 @@
 import { expect, type Page, test } from "@playwright/test";
-import type {
-  Filter_Serialize as Filter,
-  ListedItem_Serialize as ListedItem,
-} from "../src/lib/data/bindings.ts";
+import { workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home, own } from "./fixtures.ts";
 import { mockCore } from "./mock-core.ts";
 
 // A dialog gives the focus back as it closes, and the browser then acts on the press that closed it. jsdom
 // has nothing that acts on a press, so only a browser shows the focus staying where it went back to.
 
-const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-const own: ListedItem = {
-  attention: null,
-  kind: "standalone_pr",
-  number: 157178,
-  title: "GH-156425: Clear GC frame on early return",
-  author: "octocat",
-  state: "OPEN",
-  is_draft: true,
-  target_branch: "3.14",
-  ci: "FAILURE",
-  updated_at: "2026-11-04T09:00:00Z",
-  reasons: ["own_pr"],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [157178], up_to: null }, state: "seen" },
-  backports: [],
-};
-
 /** Opens the app on a Repository with one row. */
 async function openApp(page: Page): Promise<void> {
   await mockCore(page, {
     status: { state: "online", login: "octocat" },
-    home: { screen: "repository", repository, others: [] },
-    workbench: {
-      status: "ok",
-      data: { items: [own], count: 1, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    home,
+    workbench: workbenchPage([own], { count: 1 }),
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: /#157178/ })).toBeVisible();

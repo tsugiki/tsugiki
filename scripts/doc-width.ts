@@ -1,15 +1,12 @@
 // `just doc-width`: fails when a line of Markdown, a comment or a docstring runs past 110 columns. It reads
 // what git tracks and what git would add, so a new file counts before its first commit.
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 import { isDocFile, WIDEST, wideLines } from "./doc-lines.ts";
+import { git, nulSeparated, untracked } from "./run.ts";
 
-const listed = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
-  encoding: "utf8",
-  maxBuffer: 2 ** 28,
-});
-const paths = listed.split("\0").filter((path) => isDocFile(path) && existsSync(path));
+const listed = [...nulSeparated(git("ls-files", "--cached", "-z")), ...untracked()];
+const paths = listed.filter((path) => isDocFile(path) && existsSync(path));
 const wide = paths.flatMap((path) =>
   wideLines(path, readFileSync(path, "utf8")).map(({ at, width }) => `${path}:${at} is ${width} columns`),
 );

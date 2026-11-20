@@ -1,34 +1,15 @@
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, channel};
 
+use tsugiki_test_git::pass_on;
+
+use super::testing::{answered, offline, release};
 use super::*;
 
 /// Longer than any of these tests should wait on a working thread.
 const PLENTY: Duration = Duration::from_secs(60);
-
-fn release(tag: &str) -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status: 200,
-        body: format!(r#"{{"tag_name": "{tag}", "draft": false, "prerelease": false}}"#),
-        date: None,
-        ratelimit_reset: None,
-        etag: None,
-    })
-}
-
-fn answered(status: u16, body: &str) -> Result<Reply, Unreachable> {
-    Ok(Reply {
-        status,
-        body: body.to_owned(),
-        date: None,
-        ratelimit_reset: None,
-        etag: None,
-    })
-}
-
-fn offline() -> Result<Reply, Unreachable> {
-    Err(Unreachable::Offline("no network".to_owned()))
-}
+/// What each check asks GitHub for.
+const LATEST: &str = "/repos/tsugiki/tsugiki/releases/latest";
 
 fn ask_once(answer: Result<Reply, Unreachable>) -> Result<Version, String> {
     let mut answer = Some(answer);
@@ -41,7 +22,7 @@ fn github(answers: Vec<Result<Reply, Unreachable>>) -> (AskPublic, Receiver<Stri
     let (asked, asks) = channel();
     let mut answers = VecDeque::from(answers);
     let ask: AskPublic = Box::new(move |path| {
-        drop(asked.send(path.to_string()));
+        pass_on(&asked, path.to_string());
         answers.pop_front().unwrap_or_else(offline)
     });
     (ask, asks)
@@ -49,7 +30,7 @@ fn github(answers: Vec<Result<Reply, Unreachable>>) -> (AskPublic, Receiver<Stri
 
 fn hearing() -> (AnnounceNewVersion, Receiver<NewVersion>) {
     let (heard, news) = channel();
-    let announce: AnnounceNewVersion = Box::new(move |new| drop(heard.send(new.clone())));
+    let announce: AnnounceNewVersion = Box::new(move |new| pass_on(&heard, new.clone()));
     (announce, news)
 }
 
@@ -58,10 +39,7 @@ fn the_check_asks_for_the_latest_release() {
     let (ask, asks) = github(vec![]);
     let _check = ReleaseCheck::start(ask, PLENTY, Box::new(|_| {}));
 
-    assert_eq!(
-        asks.recv_timeout(PLENTY).unwrap(),
-        "/repos/tsugiki/tsugiki/releases/latest"
-    );
+    assert_eq!(asks.recv_timeout(PLENTY).unwrap(), LATEST);
 }
 
 #[test]
@@ -138,7 +116,7 @@ fn each_check_announces_only_a_newer_version_it_hasnt_told() {
 
     // The check after the last answer has handled them all.
     for _ in 0..=checks {
-        let _ = asks.recv_timeout(PLENTY).unwrap();
+        assert_eq!(asks.recv_timeout(PLENTY).unwrap(), LATEST);
     }
     drop(check);
     // The thread drops `ask` as it ends.
@@ -152,7 +130,7 @@ fn each_check_announces_only_a_newer_version_it_hasnt_told() {
 fn dropping_the_check_ends_its_thread_without_waiting_for_the_next_check() {
     let (ask, asks) = github(vec![]);
     let check = ReleaseCheck::start(ask, PLENTY, Box::new(|_| {}));
-    let _ = asks.recv_timeout(PLENTY).unwrap();
+    assert_eq!(asks.recv_timeout(PLENTY).unwrap(), LATEST);
 
     drop(check);
 

@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   cargoDiffArgs,
+  changedJobs,
   EVERY_JOB,
+  type Git,
   isVersionBump,
   type Job,
   jobs,
@@ -15,7 +17,6 @@ import {
   paths,
   readTested,
   sincePassed,
-  type TreeGit,
 } from "./scope.ts";
 
 /** The Cargo diff of a change that can't be a release PR, which `jobs` mustn't read. */
@@ -188,19 +189,27 @@ describe("readTested", () => {
   });
 });
 
-/** A git whose merges, diffs and failures a test sets. */
-function fakeGit(changed: string[] | Error, merge: string | Error = "tree", cargoDiff = ""): TreeGit {
-  return {
-    mergeTree: () => {
-      if (merge instanceof Error) throw merge;
-      return merge;
-    },
-    changedSince: () => {
-      if (changed instanceof Error) throw changed;
-      return changed;
-    },
-    cargoDiffSince: () => cargoDiff,
+/**
+ * A git whose merges, diffs and failures a test sets, which keeps each call's arguments in `calls`. It
+ * answers `merge-tree` with `merge`, `diff --name-only` with `changed`, and the Cargo diff with `cargoDiff`.
+ */
+function fakeGit(
+  changed: string[] | Error,
+  merge: string | Error = "tree",
+  cargoDiff = "",
+): Git & { calls: string[][] } {
+  const calls: string[][] = [];
+  const answer = (value: string | Error): string => {
+    if (value instanceof Error) throw value;
+    return value;
   };
+  const git = (...args: string[]): string => {
+    calls.push(args);
+    if (args[0] === "merge-tree") return answer(merge);
+    if (args.includes("--name-only")) return answer(changed instanceof Error ? changed : changed.join("\n"));
+    return cargoDiff;
+  };
+  return Object.assign(git, { calls });
 }
 
 const LAST_TESTED = JSON.stringify({ head: HEAD, base: BASE });
@@ -258,6 +267,15 @@ describe("sincePassed", () => {
     ).toEqual(["dependencies"]);
   });
 
+  it("merges the run's head into its base again, and diffs that tree with the checkout", () => {
+    const git = fakeGit([]);
+    sincePassed(LAST_TESTED, git);
+    expect(git.calls).toEqual([
+      ["merge-tree", "--write-tree", BASE, HEAD],
+      ["diff", "--no-renames", "--name-only", "tree", "HEAD"],
+    ]);
+  });
+
   it.each([
     ["no run passed", undefined, fakeGit([]), "No run"],
     ["its tested.json can't be read", "{}", fakeGit([]), "doesn't name two commits"],
@@ -283,6 +301,30 @@ describe("cargoDiffArgs", () => {
       "Cargo.toml",
       "Cargo.lock",
     ]);
+  });
+});
+
+describe("changedJobs", () => {
+  it("diffs the revisions with each rename as both of its paths, and gives the jobs those need", () => {
+    const git = fakeGit(["ui/src/App.svelte", "docs/scope.md"]);
+    expect(changedJobs(git, ["HEAD^1", "HEAD"])).toEqual({
+      paths: ["ui/src/App.svelte", "docs/scope.md"],
+      jobs: UI,
+    });
+    expect(git.calls).toEqual([["diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"]]);
+  });
+
+  it("counts the untracked files as changed", () => {
+    expect(changedJobs(fakeGit(["docs/scope.md"]), ["origin/main"], ["crates/core/src/new.rs"])).toEqual({
+      paths: ["docs/scope.md", "crates/core/src/new.rs"],
+      jobs: RUST,
+    });
+  });
+
+  it("reads the Cargo diff between the same revisions for a change that could set the version", () => {
+    const git = fakeGit(["Cargo.lock", "Cargo.toml"], "tree", SETS_VERSION);
+    expect(changedJobs(git, ["--merge-base", "origin/main"]).jobs).toEqual(["dependencies"]);
+    expect(git.calls.at(-1)).toEqual(cargoDiffArgs("--merge-base", "origin/main"));
   });
 });
 

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { type Snippet, untrack } from "svelte";
-  import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
-  import type { ReadFailure } from "$lib/state/detail-view.svelte";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     BESIDE_RAIL_LEAST,
     type PanesState,
@@ -22,6 +21,7 @@
   import RailSearch from "./RailSearch.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
+  import { PR_UNREAD } from "./unread-words";
   import { ago, headline, staleReviewLine } from "./workbench-row";
 
   let {
@@ -31,6 +31,7 @@
     now,
     onback,
     onmark,
+    marks = true,
     focusable = false,
     header,
   }: {
@@ -42,6 +43,9 @@
     onback: (issue: number) => void;
     /** Mark Seen or Mark Unseen, whichever the header's button offers. */
     onmark: () => void;
+    /** Whether the header offers Mark Seen or Mark Unseen, which it doesn't on a PR of a Muted item
+     * (#492). */
+    marks?: boolean;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -54,17 +58,7 @@
     { tab: "files", name: "Files" },
   ];
 
-  /** The Conversation tab's words before its first read lands, and why it hasn't once a read failed. */
-  const UNREAD: Record<ReadFailure | "reading", string> = {
-    reading: "Reading from GitHub…",
-    no_token:
-      "Tsugiki can't ask GitHub for the Conversation without a token. The status bar says how to sign in.",
-    waits_on_github: "The Conversation comes once GitHub answers.",
-    not_on_github: "GitHub doesn't have this PR, or your token can't see it.",
-    other: "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why.",
-  };
-
-  let browserProblem = $state<string>();
+  const links = new LinkOpener();
   // Svelte sets each to null as its element goes.
   let section = $state<HTMLElement | null>(null);
   let panel = $state<HTMLElement | null>(null);
@@ -130,13 +124,6 @@
   function handOnFocus() {
     if (document.activeElement === section && conversationScrolls) panel?.focus({ preventScroll: true });
   }
-
-  const onGitHub = async (item: GitHubItem) => {
-    browserProblem = await openOnGitHub(repository, item);
-  };
-  const followLink = async (address: string) => {
-    browserProblem = await openLink(address);
-  };
 </script>
 
 <!-- The rail's Files tab, which the tree of the PR's changed files fills (#604). -->
@@ -147,7 +134,7 @@
 
 <section
   bind:this={section}
-  class="detail"
+  class="detail-pane"
   class:files={pr.tab === "files"}
   class:railed
   aria-label="PR view"
@@ -159,8 +146,8 @@
   {#if pr.error}
     <p role="alert">{`Tsugiki can't show this PR: ${pr.error}`}</p>
   {/if}
-  {#if browserProblem}
-    <p role="alert">{browserProblem}</p>
+  {#if links.problem}
+    <p role="alert">{links.problem}</p>
   {/if}
   <!-- The line over the title: the Issue the PR was opened under, where it goes and when it changed. -->
   {#if pr.issue !== undefined || pr.view}
@@ -187,12 +174,15 @@
     {@const stale = staleReviewLine(view.your_review, view.shares_review_of)}
     <h2>
       <StateIcon icon={prIcon(view)} />
-      <button class="link" onclick={() => void onGitHub({ kind: "pull_request", number: view.number })}>
+      <button
+        class="link"
+        onclick={() => void links.openOnGitHub(repository, { kind: "pull_request", number: view.number })}
+      >
         {headline(view)}
       </button>
     </h2>
-    <p class="by"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
-    <MarkButton seen={view.seen} {onmark} />
+    <p class="byline"><b>{view.author ?? "deleted user"}</b> <StateWords row={view} /></p>
+    <MarkButton seen={view.seen} {onmark} {marks} />
 
     <!-- The tabs, and at the right a button for each of the rail's tabs, which opens the rail beside them on
          that tab, or closes it there. -->
@@ -262,16 +252,16 @@
             <Conversation
               content={view.content}
               {now}
-              onlink={(address) => void followLink(address)}
+              onlink={(address) => void links.openLink(address)}
               onthread={(id) => {
                 pr.openThread(id);
               }}
             />
           {:else}
-            <p class="by">{UNREAD[pr.failedRead ?? "reading"]}</p>
+            <p class="byline">{PR_UNREAD[pr.failedRead ?? "reading"]}</p>
           {/if}
         {:else}
-          <FilesTab files={pr.files} {now} onlink={(address) => void followLink(address)} />
+          <FilesTab files={pr.files} {now} onlink={(address) => void links.openLink(address)} />
         {/if}
       </div>
       {#if railed}
@@ -300,26 +290,18 @@
 </section>
 
 <style>
-  /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
-  .detail {
-    flex: 1;
-    min-width: 320px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   /* The diff scrolls by itself, and so do the Conversation and the rail beside each other, so the pane
      doesn't. */
-  .detail.files,
-  .detail.railed {
+  .detail-pane.files,
+  .detail-pane.railed {
     display: flex;
     flex-direction: column;
     overflow: hidden;
   }
 
   /* The tab and the rail on its right fill the pane under the tab row. */
-  .detail.files .body,
-  .detail.railed .body {
+  .detail-pane.files .body,
+  .detail-pane.railed .body {
     display: flex;
     flex: 1;
     min-height: 0;
@@ -334,7 +316,7 @@
   }
 
   /* The file view covers the tab, and stacks over nothing outside it. */
-  .detail.files .body > [role="tabpanel"] {
+  .detail-pane.files .body > [role="tabpanel"] {
     position: relative;
     isolation: isolate;
     display: flex;
@@ -342,7 +324,7 @@
     min-height: 0;
   }
 
-  .detail.railed:not(.files) .body > [role="tabpanel"] {
+  .detail-pane.railed:not(.files) .body > [role="tabpanel"] {
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -351,14 +333,14 @@
   [role="alert"],
   .crumb,
   h2,
-  h2 + .by,
+  h2 + .byline,
   .tab-row,
   .stale,
-  .detail:not(.files) [role="tabpanel"] {
+  .detail-pane:not(.files) [role="tabpanel"] {
     padding-inline: 16px;
   }
 
-  .detail:not(.files) [role="tabpanel"] {
+  .detail-pane:not(.files) [role="tabpanel"] {
     padding-bottom: 24px;
   }
 
@@ -377,17 +359,6 @@
   h2 {
     margin: 4px 0 2px;
     font-size: 18px;
-  }
-
-  .by {
-    margin: 0 0 8px;
-    font-size: 13px;
-    color: var(--fg-muted);
-  }
-
-  .by b {
-    font-weight: 600;
-    color: var(--fg);
   }
 
   /* The open tab underlined in the accent colour, on a line across the pane, with the rail's button at the
@@ -433,21 +404,9 @@
     }
   }
 
+  /* window.css draws the tabs. */
   [role="tab"] {
-    all: unset;
-    cursor: pointer;
     padding: 6px 12px;
-    font-size: 12px;
-    border-bottom: 2px solid transparent;
-  }
-
-  [role="tab"][aria-selected="true"] {
-    font-weight: 600;
-    border-bottom-color: var(--accent);
-  }
-
-  [role="tab"]:focus-visible {
-    outline: 1px solid var(--focus-border);
   }
 
   /* One line under the tabs, on either tab, while the user's Review is a Stale review. */

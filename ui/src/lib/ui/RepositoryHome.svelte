@@ -1,9 +1,10 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import { openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import type { GitHubItem } from "$lib/state/browser";
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
-  import { IssueViewState } from "$lib/state/issue-view.svelte";
+  import { type IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     DETAIL_LEAST,
     LIST_LEAST,
@@ -24,10 +25,14 @@
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
+    isMuted,
     sameStop,
     WorkbenchState,
+    type Hiding,
+    type ItemKey,
     type BackportRow,
     type ListedItem,
+    type MuteAuthor,
     type Seen,
     type Stop,
     type SidebarView,
@@ -65,8 +70,8 @@
     summary,
     treeCount,
   } from "./workbench-row";
+  import { minuteClock } from "./clock.svelte";
 
-  const MINUTE = 60_000;
   /** How far ↑ or ↓ scrolls the Detail pane while the list is hidden, in CSS pixels, as a browser does. */
   const LINE = 40;
   /** The view of every PR's diff, unified or side by side, which `Ctrl+Alt+U` switches. */
@@ -80,6 +85,7 @@
       "Nothing in this Filter yet. If a sync has run, check its query in settings.toml: GitHub finds nothing for a search it can't read.",
     review_requests: "Nobody has asked you for a review.",
     stale_reviews: "No Review of yours is stale.",
+    archived: "Nothing archived. E archives the item under the cursor.",
     inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
   };
 
@@ -104,15 +110,7 @@
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
-  let now = $state(new Date());
-  $effect(() => {
-    const ticking = setInterval(() => {
-      now = new Date();
-    }, MINUTE);
-    return () => {
-      clearInterval(ticking);
-    };
-  });
+  const now = minuteClock();
 
   // Another Repository has its own Workbench, so a new name starts a new state and stops the last one.
   const workbench = $derived(
@@ -131,7 +129,7 @@
     return () => {
       opened.stop();
       swap(undefined);
-      browserProblem = undefined;
+      links.forget();
       markProblem = undefined;
     };
   });
@@ -146,7 +144,7 @@
   let detail = $state<IssueViewState | PrViewState>();
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
-  let browserProblem = $state<string>();
+  const links = new LinkOpener();
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
   let list = $state<HTMLElement>();
@@ -168,10 +166,6 @@
   /** Whether the window holds the system's focus, which no CSS can ask. The panes read which of them holds
    * it with `:focus-within` (#602). */
   let windowFocused = $state(document.hasFocus());
-
-  const onGitHub = async (item: GitHubItem) => {
-    browserProblem = await openOnGitHub(name, item);
-  };
 
   /** The title of each Issue and PR the Detail pane has shown, for the history's arrows and lists. Each
    * Repository has its own, as its numbers name other items. */
@@ -365,13 +359,42 @@
     if (focused?.isConnected === false) focusCursor();
   }
 
-  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. */
-  type Marked = { stop: Stop | undefined; number: number; seen: Seen };
+  /** The item Mark Seen and Mark Unseen act on: the item on show, or the line `stop` of the list. With the
+   * key of the Archived item that holds it, if the window draws one, Mark Seen keeps that item Archived
+   * (#490). */
+  type Marked = { stop: Stop | undefined; number: number; seen: Seen; archived?: ItemKey | undefined };
 
-  /** The item the Detail pane shows, once its view has arrived. */
+  /** The item the Detail pane shows, once its view has arrived, unless it is Muted, which takes no mark
+   * (#492). */
   function detailMarked(): Marked | undefined {
     const view = detail?.view;
-    return view ? { stop: detailLine(), number: view.number, seen: view.seen } : undefined;
+    if (!view || detailMuted()) return undefined;
+    const stop = detailLine();
+    // The Issue view knows whether its Issue is Archived, listed or not.
+    const issue = detail instanceof IssueViewState ? detail.view : undefined;
+    const archived = issue ? issueArchived(issue) : stop && workbench.hiddenHolding(stop, "archived");
+    return { stop, number: view.number, seen: view.seen, archived };
+  }
+
+  /** The key of the Issue `view` shows, while it's Archived. */
+  function issueArchived(view: IssueView): ItemKey | undefined {
+    return view.hidden === "archived" ? { kind: "issue", number: view.number } : undefined;
+  }
+
+  /** Whether the Detail pane's item is Muted, on its own (#492) or as a Muted author's (#494): the Issue on
+   * show, or the item that holds the PR on show, as its view knows listed or not. Until the view arrives, the
+   * list says. */
+  function detailMuted(): boolean {
+    if (detail?.view) return isMuted(detail.view.hidden);
+    const line = detailLine();
+    return line !== undefined && workbench.mutedHolding(line);
+  }
+
+  /** Whether the Detail pane's item is a Muted author's (#494), as `detailMuted` finds it. */
+  function detailByMutedAuthor(): boolean {
+    if (detail?.view) return detail.view.hidden === "muted_author";
+    const line = detailLine();
+    return line !== undefined && workbench.hiddenHolding(line, "muted_author") !== undefined;
   }
 
   /** The pane a press on `target` went to, as `keyTarget` asks. A press that reaches no control, on the
@@ -388,12 +411,14 @@
   const forDetail = (at: KeyTarget) => panes.hidden("list") || at.pane === "detail";
 
   /** The item `Q` and `Shift+Q` act on for a press `at`: the Detail pane's item while it holds the focus or
-   * the list is hidden, and otherwise the line under the cursor. */
+   * the list is hidden, and otherwise the line under the cursor, unless the item is Muted (#492). */
   function keyMarked(at: KeyTarget): Marked | undefined {
     if (forDetail(at)) return detailMarked();
     const stop = workbench.underCursor;
-    const seen = stop && workbench.seenOf(stop);
-    return stop && seen ? { stop, number: stop.number, seen } : undefined;
+    const seen = stop && !workbench.mutedHolding(stop) && workbench.seenOf(stop);
+    return stop && seen
+      ? { stop, number: stop.number, seen, archived: workbench.hiddenHolding(stop, "archived") }
+      : undefined;
   }
 
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
@@ -408,7 +433,7 @@
    * row lands on the row that came after it, whether the item moved or kept its place, and `cursorLanded`
    * runs. */
   async function markSeen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark));
+    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark, marked.archived));
   }
 
   /** Takes the focus to the row the cursor landed on when a row of the list holds the focus, or the page
@@ -458,8 +483,10 @@
     return shown?.number === stop.number && shown.kind === stop.kind;
   }
 
+  /** Mark Unseen on `marked`. It unarchives the Archived item that holds it, which comes back Marked unseen
+   * (#491). */
   async function markUnseen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markUnseen(marked.number));
+    if (marked) await sayMarkProblem((opened) => opened.markUnseen(marked.number, marked.archived));
   }
 
   /** Mark Seen or Mark Unseen on the item on show, whichever its header's button offers. */
@@ -467,6 +494,121 @@
     const marked = detailMarked();
     if (marked && offersMarkSeen(marked.seen)) void markSeen(marked);
     else void markUnseen(marked);
+  }
+
+  /** What Archive and Mute act on in the Detail pane: the Issue on show, or the item that holds the PR on
+   * show, once its view has arrived. */
+  function detailHiding(): Hiding | undefined {
+    if (detail instanceof IssueViewState) {
+      const view = detail.view;
+      return view ? { key: { kind: "issue", number: view.number }, mark: view.seen.mark } : undefined;
+    }
+    const line = detailLine();
+    return line && workbench.hidingBy(line);
+  }
+
+  /** What `E` and `M` act on for a press `at`: the Detail pane's item while it holds the focus or the list is
+   * hidden, as for `Q`, and otherwise the item that holds the line under the cursor. With whether that item
+   * is Muted (#492), and whether a Muted author's (#494). */
+  function keyHiding(at: KeyTarget): (Hiding & { muted: boolean; byAuthor: boolean }) | undefined {
+    if (forDetail(at)) {
+      const hiding = detailHiding();
+      return hiding && { ...hiding, muted: detailMuted(), byAuthor: detailByMutedAuthor() };
+    }
+    const stop = workbench.underCursor;
+    const hiding = stop && workbench.hidingBy(stop);
+    const byAuthor = stop !== undefined && workbench.hiddenHolding(stop, "muted_author") !== undefined;
+    return stop && hiding && { ...hiding, muted: workbench.mutedHolding(stop), byAuthor };
+  }
+
+  /** What `E` does for a press `at`: on a row of the Archived view it unarchives the item that holds the row
+   * (#491), on a Muted item nothing (#492), and otherwise it archives what `keyHiding` names. */
+  function keyArchive(at: KeyTarget): (() => void) | undefined {
+    const stop = forDetail(at) ? undefined : workbench.underCursor;
+    if (stop && workbench.shown.kind === "archived") {
+      const key = workbench.hidingBy(stop)?.key;
+      return key && (() => void unarchive(key));
+    }
+    const hiding = keyHiding(at);
+    return hiding && !hiding.muted ? () => void archive(hiding) : undefined;
+  }
+
+  /** What `M` does for a press `at`: it unmutes a Muted item, and mutes any other, the item `keyHiding`
+   * names (#492). On a Muted author's item it does nothing, as Unmute author is the way back (#494). */
+  function keyMute(at: KeyTarget): (() => void) | undefined {
+    const hiding = keyHiding(at);
+    if (!hiding || hiding.byAuthor) return undefined;
+    return hiding.muted ? () => void unmute(hiding.key) : () => void mute(hiding);
+  }
+
+  /** What Mute author offers for a press `at` (#494): for the author of the Detail pane's Issue or PR while
+   * it holds the focus or the list is hidden, as for `M`, and otherwise for the author of the line under
+   * the cursor, a PR's author on a PR's line. With the line, if the list holds it. */
+  function muteAuthorAt(at: KeyTarget): { offered: MuteAuthor; stop: Stop | undefined } | undefined {
+    if (forDetail(at)) {
+      const offered = detail?.view?.mute_author;
+      return offered && { offered, stop: detailLine() };
+    }
+    const stop = workbench.underCursor;
+    const offered = stop && workbench.muteAuthorOf(stop);
+    return offered && { offered, stop };
+  }
+
+  /** What Mute author does for a press `at`: it mutes the author `muteAuthorAt` finds, or unmutes a Muted
+   * author, and does nothing on the user's own items. */
+  function keyMuteAuthor(at: KeyTarget): (() => void) | undefined {
+    const found = muteAuthorAt(at);
+    return found && muteAuthorRun(found.offered, found.stop);
+  }
+
+  /** What Mute author does with what `offered` offers, of the author of line `stop`: nothing when off. */
+  function muteAuthorRun(offered: MuteAuthor, stop: Stop | undefined): (() => void) | undefined {
+    if (offered.kind === "off") return undefined;
+    const { login } = offered;
+    return offered.kind === "mute"
+      ? () => void sayMarkProblem((opened) => opened.muteAuthor(login, stop))
+      : () => void sayMarkProblem((opened) => opened.unmuteAuthor(login));
+  }
+
+  /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
+  async function archive(archived: Hiding) {
+    await sayMarkProblem((opened) => opened.archive(archived));
+  }
+
+  /** Mute on `muted`. Once the item leaves the list, a cursor on it lands on the row after it. */
+  async function mute(muted: Hiding) {
+    await sayMarkProblem((opened) => opened.mute(muted));
+  }
+
+  /** Unmutes the item `key` names. */
+  async function unmute(key: ItemKey) {
+    await sayMarkProblem((opened) => opened.unmute(key));
+  }
+
+  /** Unarchives the item `key` names. Once it leaves the list, as the Archived view, a cursor on it lands on
+   * the row after it. */
+  async function unarchive(key: ItemKey) {
+    await sayMarkProblem((opened) => opened.unarchive(key));
+  }
+
+  /** The Issue view's Archive button: Archive on the Issue `view` shows, or Unarchive on an Archived one. */
+  function archiveByButton(view: IssueView) {
+    const key = { kind: "issue" as const, number: view.number };
+    if (view.hidden === "archived") void unarchive(key);
+    else void archive({ key, mark: view.seen.mark });
+  }
+
+  /** The Issue view's Mute button: Mute on the Issue `view` shows, or Unmute on a Muted one (#492). */
+  function muteByButton(view: IssueView) {
+    const key = { kind: "issue" as const, number: view.number };
+    if (view.hidden === "muted") void unmute(key);
+    else void mute({ key, mark: view.seen.mark });
+  }
+
+  /** The Issue view's Mute author button: Mute author on the author of the Issue `view` shows, or Unmute
+   * author on a Muted author (#494). */
+  function muteAuthorByButton(view: IssueView) {
+    muteAuthorRun(view.mute_author, { number: view.number, kind: "issue", issue: undefined })?.();
   }
 
   /** The line of the list the Detail pane shows, if it shows one. */
@@ -575,9 +717,10 @@
    * what the action does, with an id so the palette's history keeps one place for both titles, or the title
    * the palette gave the command before the key table. Undefined leaves the action out of the palette where
    * its key would still run: Unfold Unchanged Files waits for files unchanged since a Stale review to be
-   * folded (#387). Each other action goes by the key table's title.
+   * folded (#387). Each other action goes by the key table's title. Each takes the press `at` the palette
+   * opened on.
    */
-  const PALETTE_NAMES: Partial<Record<Action, () => PaletteName | undefined>> = {
+  const PALETTE_NAMES: Partial<Record<Action, (at: KeyTarget) => PaletteName | undefined>> = {
     toggle_sidebar: () => ({
       title: panes.hidden("sidebar") ? "Show Sidebar" : "Hide Sidebar",
       id: "toggle_sidebar",
@@ -606,6 +749,10 @@
         ? { title: "View: Unfold Unchanged Files" }
         : undefined;
     },
+    mute_author: (at) => ({
+      title: muteAuthorAt(at)?.offered.kind === "unmute" ? "Unmute Author" : "Mute Author",
+      id: "mute_author",
+    }),
   };
 
   /**
@@ -621,25 +768,28 @@
     const run = SCREEN_ACTIONS[action]?.(at);
     if (run === undefined) return undefined;
     const named = PALETTE_NAMES[action];
-    const name = named ? named() : { title };
+    const name = named ? named(at) : { title };
     return name && { ...name, action, run: () => run(false) };
   }
 
+  /** Whether the view selected keeps its own order, and so has no switch of order: the Inbox, the latest
+   * update first, and Archived, the last archived first. */
+  const ownOrder = () => workbench.selected.kind === "inbox" || workbench.selected.kind === "archived";
+
   /** The commands this screen adds to the palette that run no action, which follow the actions. */
   export function paletteCommands(): PaletteAction[] {
-    // The Inbox keeps its own order.
-    const sort: PaletteAction[] =
-      workbench.selected.kind === "inbox"
-        ? []
-        : [
-            panes.order === "attention"
-              ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
-              : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
-          ];
+    const sort: PaletteAction[] = ownOrder()
+      ? []
+      : [
+          panes.order === "attention"
+            ? { title: "Sort by Last Update", id: "sort_list", run: () => void sortBy("last_update") }
+            : { title: "Sort by Attention", id: "sort_list", run: () => void sortBy("attention") },
+        ];
     return [
       ...sort,
       { title: "View: Inbox", run: () => showView({ kind: "inbox" }) },
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
+      { title: "View: Archived", run: () => showView({ kind: "archived" }) },
       // Each shape but the one on show, so a hidden Sidebar offers both.
       ...(panes.hidden("sidebar") || !panes.sidebarIcons
         ? [{ title: "View: Sidebar as Icons", run: () => showSidebar(true) }]
@@ -754,6 +904,13 @@
         if (!held) void mark(keyMarked(at));
       });
 
+  /** The run of a key that calls `run`, if there is one, once: a held key doesn't call it again. */
+  const once = (run: (() => void) | undefined): Run | undefined =>
+    run &&
+    ((held) => {
+      if (!held) run();
+    });
+
   /** → and ← in the list. Elsewhere the bare arrows are a pane edge's, or scroll a diff or a code block
    * sideways. */
   const folding =
@@ -774,7 +931,7 @@
     },
     open_on_github: () => {
       const current = currentOnGitHub();
-      return current && (() => void onGitHub(current));
+      return current && (() => void links.openOnGitHub(name, current));
     },
     toggle_diff_view: onDiff(() => diffView.toggle()),
     find_in_diff: onDiff((files) => files.openSearch()),
@@ -805,6 +962,10 @@
     },
     mark_seen: marking(markSeen),
     mark_unseen: marking(markUnseen),
+    archive: (at) => once(keyArchive(at)),
+    mute: (at) => once(keyMute(at)),
+    // It has no key unless `[keys]` gives it one (#494).
+    mute_author: (at) => once(keyMuteAuthor(at)),
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
@@ -1010,6 +1171,7 @@
      attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
   {@const unfolded = item.kind === "issue" && workbench.unfolded(item.number)}
+  {@const inArchived = workbench.shown.kind === "archived"}
   {@const stop: Stop = {
     number: item.number,
     kind: item.kind === "issue" ? "issue" : "pull_request",
@@ -1042,7 +1204,21 @@
         {#if item.kind === "issue" && item.pull_requests.length > 0}
           <small class="count">{treeCount(item)}</small>
         {/if}
+        <!-- Every row of the Archived view is Archived, so there it offers Unarchive instead (#491). -->
+        {#if item.hidden === "archived" && !inArchived}
+          <small class="archived">Archived</small>
+        {:else if isMuted(item.hidden)}
+          <small class="archived">Muted</small>
+        {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
+        {#if inArchived}
+          <button
+            class="link unarchive"
+            onclick={() => {
+              void unarchive(item.key);
+            }}>Unarchive</button
+          >
+        {/if}
       </span>
       <small class="facts"
         >{#if item.attention}{preview(item.attention)}{:else if item.kind !== "issue"}{@render facts(
@@ -1072,8 +1248,8 @@
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
     <p role="alert">{`Tsugiki can't read this Workbench: ${workbench.error}`}</p>
   {/if}
-  {#if browserProblem}
-    <p role="alert">{browserProblem}</p>
+  {#if links.problem}
+    <p role="alert">{links.problem}</p>
   {/if}
   {#if markProblem}
     <p role="alert">{`Tsugiki couldn't mark this item: ${markProblem}`}</p>
@@ -1131,6 +1307,7 @@
         count={workbench.count}
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
+        archived={workbench.archived}
         filters={workbench.filters}
         selected={workbench.selected}
         onselect={showViewInFull}
@@ -1146,6 +1323,7 @@
         count={workbench.count}
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
+        archived={workbench.archived}
         filters={workbench.filters}
         selected={workbench.selected}
         onselect={showView}
@@ -1199,8 +1377,7 @@
             />On the Workbench</label
           >
         {/if}
-        <!-- The Inbox keeps its own order, the latest update first. -->
-        {#if workbench.selected.kind !== "inbox"}
+        {#if !ownOrder()}
           <button
             class="link order"
             title="Change the order"
@@ -1210,7 +1387,7 @@
         {/if}
       </header>
       {@render problems()}
-      {#if workbench.items?.length === 0}
+      {#if workbench.items?.length === 0 && workbench.muted.length === 0}
         <p>{EMPTY[workbench.selected.kind]}</p>
       {:else if workbench.items}
         <!-- The Inbox can hold every open item the cache does, so the browser draws only its rows on
@@ -1220,6 +1397,22 @@
             {@render listed(item)}
           {/each}
         </ul>
+        <!-- A Filter's view folds the Muted items nobody asks the user about at its end (#824). -->
+        {#if workbench.muted.length > 0}
+          <button
+            class="link muted-fold"
+            aria-expanded={workbench.mutedShown}
+            onclick={() => workbench.toggleMuted()}
+            >{`${workbench.mutedShown ? "Hide" : "Show"} ${String(workbench.muted.length)} muted`}</button
+          >
+          {#if workbench.mutedShown}
+            <ul aria-label="Muted items">
+              {#each workbench.muted as item (item.number)}
+                {@render listed(item)}
+              {/each}
+            </ul>
+          {/if}
+        {/if}
       {/if}
     </section>
     {#if detail}
@@ -1242,6 +1435,9 @@
         {now}
         focusable={panes.hidden("list")}
         onmark={markByButton}
+        onarchive={archiveByButton}
+        onmute={muteByButton}
+        onmuteauthor={muteAuthorByButton}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -1259,6 +1455,7 @@
         {now}
         onback={back}
         onmark={markByButton}
+        marks={!detailMuted()}
         focusable={panes.hidden("list")}
       >
         {#snippet header()}{@render history(pr.number)}{/snippet}
@@ -1432,6 +1629,7 @@
 
   .count,
   .age,
+  .archived,
   .facts {
     font-size: 12px;
     color: var(--fg-muted);
@@ -1439,6 +1637,15 @@
 
   .attention > .row .age {
     color: var(--accent);
+  }
+
+  /* Unarchive on a row of the Archived view sits above the title's cover, so a click on it unarchives
+     rather than opens. */
+  .unarchive {
+    position: relative;
+    z-index: 1;
+    flex: none;
+    font-size: 12px;
   }
 
   /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. It sits above the
@@ -1495,6 +1702,14 @@
   /* The empty view's words and the problems line up with the header. */
   .list > p {
     margin: 8px 10px;
+  }
+
+  /* The line the Muted items fold into, which lines up with the items' headlines. */
+  .muted-fold {
+    display: block;
+    padding: 7px 10px 7px 15px;
+    font-size: 12px;
+    color: var(--fg-muted);
   }
 
   /* Windows' contrast themes draw every border in their own colour, the clear ones too, and drop the

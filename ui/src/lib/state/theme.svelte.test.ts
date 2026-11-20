@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
+import { nextTask } from "$lib/testing/helpers";
 import { applyTheme, type DarkQuery, ThemeState, type Themes, type ThemeView } from "./theme.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -271,7 +272,7 @@ describe("ThemeState", () => {
     await vi.waitFor(() => expect(commands.turnWindow).toHaveBeenLastCalledWith("dark"));
     vi.mocked(commands.themes).mockResolvedValueOnce({ status: "ok", data: structuredClone(THEMES) });
     const newer = state.load();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTask();
     expect(commands.turnWindow).toHaveBeenCalledTimes(2);
     said(null);
     await older;
@@ -744,13 +745,13 @@ describe("ThemeState", () => {
 
     void state.load();
     // Lets the second load's answer reach its turn, which waits behind the first load's.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTask();
     void state.load();
     await vi.waitFor(() => {
       expect(commands.themes).toHaveBeenCalledTimes(3);
     });
     turning.resolve(null);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTask();
 
     expect(commands.turnWindow).toHaveBeenCalledOnce();
     expect(commands.turnWindow).not.toHaveBeenCalledWith("dark");

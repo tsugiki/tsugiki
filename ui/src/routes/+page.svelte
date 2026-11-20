@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
   import { HomeState } from "$lib/state/home.svelte";
   import {
@@ -24,6 +24,7 @@
   import { SettingsState } from "$lib/state/settings.svelte";
   import { StatusState } from "$lib/state/status.svelte";
   import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
+  import { tellCoreWhenShown } from "$lib/state/window-shown";
   import AddRepository from "$lib/ui/AddRepository.svelte";
   import { type ChordRun, ChordWait } from "$lib/ui/chord.svelte";
   import KeyList, { type KeysHere } from "$lib/ui/KeyList.svelte";
@@ -81,6 +82,8 @@
   void recentCommands.load();
   // WKWebView has no PerformanceObserver for keys and long frames, and the miss log asks before it listens.
   hud.watchBrowser(globalThis.PerformanceObserver);
+  // Here, not in an effect, so the core hears the window loaded before any view opens an item.
+  onDestroy(tellCoreWhenShown());
 
   let addOpen = $state(false);
   /** What the palette's text box holds as it opens, while the palette is open: `>` for its commands, or

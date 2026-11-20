@@ -70,22 +70,59 @@ export const commands = {
 	 *  Last seen stays: only Mark Seen moves it.
 	 */
 	openIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_issue", { repository, number })),
-	/**  Asks the core to read what an Issue on screen says now, and returns at once (ADR 0015). */
-	fetchIssue: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_issue", { repository, number })),
 	/**
 	 *  Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.
 	 *  GitHub's answer comes later.
 	 */
 	openPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("open_pull_request", { repository, number })),
-	/**  Asks the core to read a PR's Conversation on screen now, and returns at once (ADR 0015). */
-	fetchPullRequest: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("fetch_pull_request", { repository, number })),
+	/**  Tells the core another view hides the Issue or PR the user opened, and returns at once. */
+	hideItem: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("hide_item", { repository, number })),
+	/**  Tells the core the Issue or PR the user opened shows again, and returns at once. */
+	showItem: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("show_item", { repository, number })),
+	/**  Tells the core the user left the Issue or PR they opened, and returns at once. */
+	closeItem: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("close_item", { repository, number })),
+	/**  Tells the core the window hid, and returns at once. */
+	windowHidden: () => __TAURI_INVOKE<void>("window_hidden"),
+	/**  Tells the core the window shows again, and returns at once. */
+	windowShown: () => __TAURI_INVOKE<void>("window_shown"),
+	/**  Tells the core the window loaded afresh, with no item open, and returns at once. */
+	windowLoaded: () => __TAURI_INVOKE<void>("window_loaded"),
 	/**
 	 *  Mark Seen on what `mark` names, as the window drew it: an item, and for an Issue every PR in its tree.
 	 *  Returns at once, and the `changed` event follows.
 	 */
 	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
-	/**  Mark Unseen on item `number`, and returns at once. */
-	markUnseen: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number })),
+	/**
+	 *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
+	 *  draws that Archived (#491). Returns at once.
+	 */
+	markUnseen: (repository: string, number: number, archived: ItemKey | null) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number, archived })),
+	/**
+	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
+	 *  once, and the `changed` event follows.
+	 */
+	archive: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, item, mark })),
+	/**
+	 *  Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
+	 *  its place in the Archived view (#491). Returns at once, and the `changed` event follows.
+	 */
+	keepArchived: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, item, mark })),
+	/**  Unarchives the item `item` names, and returns at once. */
+	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
+	/**
+	 *  Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
+	 *  once, and the `changed` event follows.
+	 */
+	mute: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, item, mark })),
+	/**  Unmutes the item `item` names, and returns at once. */
+	unmute: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute", { repository, item })),
+	/**
+	 *  Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
+	 *  the background, and the `changed` event follows.
+	 */
+	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
+	/**  Unmutes `author` in `repository`, and returns at once. */
+	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -193,8 +230,8 @@ export const commands = {
 	workbench: (repository: string, view: WorkbenchView) => typedError<Workbench_Serialize, Error_Serialize>(__TAURI_INVOKE("workbench", { repository, view })),
 	/**
 	 *  Page `page` of a Repository's Inbox: its open Issues, each with its open PRs, and its open Standalone
-	 *  PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and asks
-	 *  nothing of `fetching`, so the Inbox adds nothing to Reach.
+	 *  PRs, the latest update first. This waits on the database and never on GitHub (ADR 0018), and queues
+	 *  nothing, so the Inbox adds nothing to Reach.
 	 */
 	inbox: (repository: string, page: InboxPage_Deserialize) => typedError<Inbox_Serialize, Error_Serialize>(__TAURI_INVOKE("inbox", { repository, page })),
 	/**
@@ -339,7 +376,7 @@ export type About = {
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
  *  `local_mark`.
  */
-export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
+export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mute_author" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
 
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
@@ -637,7 +674,10 @@ export type Comment_Serialize = {
 	hidden: HiddenReason | null,
 };
 
-/**  How a Repository's PRs name their Issues and Backports (ADR 0011). `links.rs` reads this. */
+/**
+ *  How a Repository's PRs name their Issues and Backports (ADR 0011). Each link rule in `links/rules.rs`
+ *  says which Conventions read what it names.
+ */
 export type Conventions = "cpython" | "github";
 
 /**  Which ends of a long line its text leaves out. */
@@ -1101,6 +1141,25 @@ export type HeadsFetchFailed = FailedHeads;
 /**  Sent when PR heads arrive in a Repository's mirror, so a Files tab waiting for one asks again. */
 export type HeadsFetched = Change;
 
+/**  The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more. */
+export type Hidden = 
+/**
+ *  Only the Filters' views show it (#824), the Review requests view for a PR whose Review request stood
+ *  at the archive (#490), and the Archived view.
+ */
+"archived" | 
+/**
+ *  Only the Filters' views show it, in their fold of Muted items unless a Review request or an
+ *  assignment to the user stands in its tree (#824). The Review requests view shows a PR while its
+ *  request stands, and the Workbench while one that started after the mute does (#492).
+ */
+"muted" | 
+/**
+ *  A Muted author opened it (#494), whether or not the user muted it on its own too. Muted, and only
+ *  Unmute author brings it back: Mute, Archive and the marks do nothing on it.
+ */
+"muted_author";
+
 /**  The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it. */
 export type HiddenReason = "abuse" | "off_topic" | "outdated" | "resolved" | "duplicate" | "spam" | 
 /**  GitHub gave a reason Tsugiki doesn't know, or none. */
@@ -1430,6 +1489,8 @@ export type IssueItem_Deserialize = {
 	pull_requests: TreeEntry_Deserialize[],
 	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
 	seen: Seen_Deserialize,
+	/**  What Mute author offers for the Issue's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
@@ -1445,6 +1506,8 @@ export type IssueItem_Serialize = {
 	pull_requests: TreeEntry_Serialize[],
 	/**  Its part in Mark Seen, which covers the Issue and every PR in its tree. */
 	seen: Seen_Serialize,
+	/**  What Mute author offers for the Issue's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
@@ -1495,6 +1558,8 @@ export type IssueView_Deserialize = {
 	content?: IssueContent_Deserialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
 	needs_attention: number[],
+	/**  Whether the Issue is Archived or Muted, so its buttons offer Unarchive (#490) or Unmute (#492). */
+	hidden?: Hidden | null,
 } & IssueItem_Deserialize;
 
 /**  An Issue as the Detail pane shows it. */
@@ -1516,7 +1581,29 @@ export type IssueView_Serialize = {
 	content: IssueContent_Serialize | null,
 	/**  The PRs and Backports in its tree that Need attention, each by itself (#597). */
 	needs_attention: number[],
+	/**  Whether the Issue is Archived or Muted, so its buttons offer Unarchive (#490) or Unmute (#492). */
+	hidden: Hidden | null,
 } & IssueItem_Serialize;
+
+/**
+ *  Names a Workbench item in the user's own state that hides it: Archived, and Muted (#492). Issues and PRs
+ *  share their numbers in a Repository, and a Standalone PR and a Standalone Backport are both PRs.
+ *  Dependency updates join it as a kind of their own.
+ */
+export type ItemKey = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
+
+/**
+ *  The reason a read of what an Issue or a PR says failed for this item, which the session's next read of
+ *  it may mend: a `ReadFailure` less `WaitsOnGitHub`, which speaks for all of GitHub. A PR's Files tab that
+ *  waits for the head the Conversation names shows it.
+ */
+export type ItemUnread = 
+/**  Tsugiki has no token, so no read brings the item until it starts again. */
+"no_token" | 
+/**  GitHub has no such item, or the token can't see it. */
+"not_on_github" | 
+/**  Anything else that went wrong with this one read. The log says what it was. */
+"other";
 
 /**
  *  The jumps in a PR's diff while recording: each scroll that showed rows the window didn't hold, until
@@ -1655,11 +1742,19 @@ export type ListedItem = ListedItem_Serialize | ListedItem_Deserialize;
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Deserialize = {
 	attention?: Attention_Deserialize | null,
+	/**  The key Archive and Mute keep the item under. */
+	key: ItemKey,
+	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
+	hidden?: Hidden | null,
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
 export type ListedItem_Serialize = {
 	attention: Attention_Serialize | null,
+	/**  The key Archive and Mute keep the item under. */
+	key: ItemKey,
+	/**  Whether the user's state hides the item, which only some lists show, as `Hidden` says. */
+	hidden: Hidden | null,
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
@@ -1972,6 +2067,15 @@ export type Miss_Serialize =
 /**  The window logged `limit` misses of one kind within a minute, and logs no more of them until it ends. */
 { kind: "capped"; of: MissKind; limit: number };
 
+/**  What Mute author offers on a row for the author of its Issue or PR. */
+export type MuteAuthor = 
+/**  Nothing: the user opened it, or its author's account has gone. */
+{ kind: "off" } | 
+/**  Mute author mutes `login`. */
+{ kind: "mute"; login: Login } | 
+/**  `login` is a Muted author, and Unmute author unmutes them. */
+{ kind: "unmute"; login: Login };
+
 /**  What Add repository learns about the name the user typed. */
 export type NameCheck = NameCheck_Serialize | NameCheck_Deserialize;
 
@@ -2264,48 +2368,46 @@ export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;
 /**  What the Files tab shows. */
 export type PrFiles_Deserialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
+({ state: "cloning" }) & { why?: never } | 
 /**
  *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
  *  objects.
  */
-{ state: "asking" } | 
+({ state: "asking" }) & { why?: never } | 
 /**  The mirror lacks the PR's commits, and is fetching them. */
-{ state: "fetching" } | 
+({ state: "fetching" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
+({ state: "finding_head" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
+{ state: "unread"; why: ItemUnread } | 
 /**  The diff, whose rows the window asks for by number. */
-{ state: "ready"; 
-/**  The commit the diff ends at, which each chunk names. */
-head: string; 
-/**
- *  The merge base the diff starts from, which each chunk names too. A PR moved to another
- *  Target branch keeps its head and gets another merge base (#211).
- */
-base: string; files: DiffFile_Deserialize[]; rows: number; 
-/**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Deserialize[]; threads: DiffThreads_Deserialize };
+{
+	state: "ready",
+} & {
+	threads: DiffThreads_Deserialize,
+} & ShownDiff_Deserialize;
 
 /**  What the Files tab shows. */
 export type PrFiles_Serialize = 
 /**  The Repository's mirror is still being cloned, and the clone says how far it is. */
-{ state: "cloning" } | 
+({ state: "cloning" }) & { why?: never } | 
 /**
  *  The Repository's mirror isn't cloned yet, and its clone waits for the user to say where it gets its
  *  objects.
  */
-{ state: "asking" } | 
+({ state: "asking" }) & { why?: never } | 
 /**  The mirror lacks the PR's commits, and is fetching them. */
-{ state: "fetching" } | 
+({ state: "fetching" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and is reading the Conversation that names it. */
+({ state: "finding_head" }) & { why?: never } | 
+/**  Tsugiki doesn't know the PR's head, and the read of the Conversation that names it failed for `why`. */
+{ state: "unread"; why: ItemUnread } | 
 /**  The diff, whose rows the window asks for by number. */
-{ state: "ready"; 
-/**  The commit the diff ends at, which each chunk names. */
-head: string; 
-/**
- *  The merge base the diff starts from, which each chunk names too. A PR moved to another
- *  Target branch keeps its head and gets another merge base (#211).
- */
-base: string; files: DiffFile_Serialize[]; rows: number; 
-/**  The PR's NEWS entries, rendered above the rows. */
-news: NewsEntry_Serialize[]; threads: DiffThreads_Serialize };
+{
+	state: "ready",
+} & {
+	threads: DiffThreads_Serialize,
+} & ShownDiff_Serialize;
 
 export type PrState = "OPEN" | "CLOSED" | "MERGED";
 
@@ -2334,6 +2436,11 @@ export type PrView_Deserialize = {
 	 *  PR's reviewed commit and files.
 	 */
 	shares_review_of?: number | null,
+	/**
+	 *  Whether the user's own state hides the item that holds the PR. On a Muted item the header offers no
+	 *  Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
+	 */
+	hidden?: Hidden | null,
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
@@ -2345,6 +2452,11 @@ export type PrView_Serialize = {
 	 *  PR's reviewed commit and files.
 	 */
 	shares_review_of: number | null,
+	/**
+	 *  Whether the user's own state hides the item that holds the PR. On a Muted item the header offers no
+	 *  Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
+	 */
+	hidden: Hidden | null,
 } & WorkbenchRow_Serialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */
@@ -2752,14 +2864,14 @@ export type SearchState_Serialize =
 export type Seen = Seen_Serialize | Seen_Deserialize;
 
 /**
- *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
- *  it back as it got it.
+ *  The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+ *  the window drew them. The window sends it back as it got it.
  */
 export type SeenMark = SeenMark_Serialize | SeenMark_Deserialize;
 
 /**
- *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
- *  it back as it got it.
+ *  The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+ *  the window drew them. The window sends it back as it got it.
  */
 export type SeenMark_Deserialize = {
 	/**  The item, and for an Issue every PR in its tree. */
@@ -2770,11 +2882,17 @@ export type SeenMark_Deserialize = {
 	 *  don't hold, and Last seen then stays.
 	 */
 	up_to: string | null,
+	/**
+	 *  The finding behind each Stale review of `numbers` that waits on the user, as the window drew it. The
+	 *  mark acknowledges these alone, so a check that finds a Stale review after the window drew the page
+	 *  still counts (#908).
+	 */
+	findings: StaleFinding_Deserialize[],
 };
 
 /**
- *  The numbers Mark Seen marks and the moment it marks them up to, as the window drew them. The window sends
- *  it back as it got it.
+ *  The numbers Mark Seen marks, the moment it marks them up to, and the Stale reviews it acknowledges, as
+ *  the window drew them. The window sends it back as it got it.
  */
 export type SeenMark_Serialize = {
 	/**  The item, and for an Issue every PR in its tree. */
@@ -2785,6 +2903,12 @@ export type SeenMark_Serialize = {
 	 *  don't hold, and Last seen then stays.
 	 */
 	up_to: string | null,
+	/**
+	 *  The finding behind each Stale review of `numbers` that waits on the user, as the window drew it. The
+	 *  mark acknowledges these alone, so a check that finds a Stale review after the window drew the page
+	 *  still counts (#908).
+	 */
+	findings: StaleFinding_Serialize[],
 };
 
 /**  Whether the user has seen an item as it now is. The header offers Mark Seen unless they have. */
@@ -2996,6 +3120,39 @@ export type Settings_Serialize = {
 	repositories: RepositorySettings_Serialize[],
 };
 
+/**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
+export type ShownDiff = ShownDiff_Serialize | ShownDiff_Deserialize;
+
+/**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
+export type ShownDiff_Deserialize = {
+	/**  The commit the diff ends at, which each chunk names. */
+	head: string,
+	/**
+	 *  The merge base the diff starts from, which each chunk names too. A PR moved to another Target branch
+	 *  keeps its head and gets another merge base (#211).
+	 */
+	base: string,
+	files: DiffFile_Deserialize[],
+	rows: number,
+	/**  The PR's NEWS entries, rendered above the rows. */
+	news: NewsEntry_Deserialize[],
+};
+
+/**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
+export type ShownDiff_Serialize = {
+	/**  The commit the diff ends at, which each chunk names. */
+	head: string,
+	/**
+	 *  The merge base the diff starts from, which each chunk names too. A PR moved to another Target branch
+	 *  keeps its head and gets another merge base (#211).
+	 */
+	base: string,
+	files: DiffFile_Serialize[],
+	rows: number,
+	/**  The PR's NEWS entries, rendered above the rows. */
+	news: NewsEntry_Serialize[],
+};
+
 /**  The version of the file a thread's line is in, as GitHub's `diffSide` names it. */
 export type Side = 
 /**  The merge base's. */
@@ -3027,6 +3184,34 @@ export type Span = {
 	start: number,
 	end: number,
 	highlight: Highlight,
+};
+
+/**
+ *  A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+ *  and Mute carry it back to acknowledge that finding alone.
+ */
+export type StaleFinding = StaleFinding_Serialize | StaleFinding_Deserialize;
+
+/**
+ *  A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+ *  and Mute carry it back to acknowledge that finding alone.
+ */
+export type StaleFinding_Deserialize = {
+	number: number,
+	reviewed: string,
+	head: string,
+	found_at: string,
+};
+
+/**
+ *  A finding that the user's Review of PR `number` is stale, which the window drew, as Mark Seen, Archive
+ *  and Mute carry it back to acknowledge that finding alone.
+ */
+export type StaleFinding_Serialize = {
+	number: number,
+	reviewed: string,
+	head: string,
+	found_at: string,
 };
 
 /**  The app's state, shown in the status bar. */
@@ -3410,6 +3595,8 @@ export type WebAddress = string;
 
 /**  One reason an item Needs attention. */
 export type Why = { kind: "review_requested" } | 
+/**  The user was assigned to an Issue after they muted it (#492). */
+{ kind: "assigned" } | 
 /**  The PR's diff changed since the user's Review. The row names the files. */
 { kind: "stale_review" } | 
 /**  Empty `checks` means Tsugiki hasn't heard which ones failed, or GitHub names none. */
@@ -3482,6 +3669,8 @@ export type WorkbenchRow_Deserialize = {
 	your_review: YourReview,
 	/**  Its part in Mark Seen, which covers this PR alone. */
 	seen: Seen_Deserialize,
+	/**  What Mute author offers for the PR's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  A PR's line of the list. */
@@ -3500,10 +3689,14 @@ export type WorkbenchRow_Serialize = {
 	your_review: YourReview,
 	/**  Its part in Mark Seen, which covers this PR alone. */
 	seen: Seen_Serialize,
+	/**  What Mute author offers for the PR's author (#494). */
+	mute_author: MuteAuthor,
 };
 
 /**  The list the window asks for. */
-export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" } | { kind: "stale_reviews" };
+export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" } | { kind: "stale_reviews" } | 
+/**  The Archived items, the last archived first (#491). */
+{ kind: "archived" };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
@@ -3512,12 +3705,19 @@ export type Workbench_Deserialize = {
 	 *  to, then the rest by last update; or by last update alone.
 	 */
 	items: ListedItem_Deserialize[],
+	/**
+	 *  The items the list folds at its end behind "Show N muted", in the list's order. In a Filter's view,
+	 *  the Muted items its search found that nobody asks the user about (#824). Empty in every other view.
+	 */
+	muted: ListedItem_Deserialize[],
 	/**  The count of items on the Workbench that Need attention. */
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
+	/**  The count of Archived items. */
+	archived: number,
 	filters: FilterLine_Deserialize[],
 };
 
@@ -3528,12 +3728,19 @@ export type Workbench_Serialize = {
 	 *  to, then the rest by last update; or by last update alone.
 	 */
 	items: ListedItem_Serialize[],
+	/**
+	 *  The items the list folds at its end behind "Show N muted", in the list's order. In a Filter's view,
+	 *  the Muted items its search found that nobody asks the user about (#824). Empty in every other view.
+	 */
+	muted: ListedItem_Serialize[],
 	/**  The count of items on the Workbench that Need attention. */
 	count: number,
 	/**  The count of items that hold a PR carrying a Review request. */
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
+	/**  The count of Archived items. */
+	archived: number,
 	filters: FilterLine_Serialize[],
 };
 

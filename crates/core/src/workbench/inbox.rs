@@ -1,7 +1,8 @@
 //! The Inbox's view model (#827): every open Issue of the Repository with its PRs under it, whatever their
 //! state, grouped as the Workbench groups them, and every Standalone PR that has an open PR in its tree on
-//! its own, the latest update first. The window reads it a page at a time: the items updated in the last two
-//! days, then older batches. Reading it adds nothing to Reach.
+//! its own, the latest update first. A closed Issue that a PR opening on it brought back (#823) is listed
+//! as an open one is. The window reads it a page at a time: the items updated in the last two days, then
+//! older batches. Reading it adds nothing to Reach.
 //!
 //! An item's place is the latest update in it: the Issue's own or a PR's in its tree. A page walks the
 //! updates down from where it starts, the PRs' and the open Issues', a step at a time. Each step reads the
@@ -30,10 +31,10 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::{Duration, OffsetDateTime};
 
-use super::attention::attention_of;
 use super::backports::plant;
 use super::links::placed;
-use super::{ListedItem, candidates};
+use super::trees::Trees;
+use super::{Hidden, ListedItem, candidates};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
@@ -103,7 +104,7 @@ pub struct Inbox {
 
 impl Inbox {
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from the clock's now.
-    pub fn read_now(
+    pub(crate) fn read_now(
         reader: &StoreReader,
         repository: &RepositorySettings,
         page: InboxPage,
@@ -112,41 +113,65 @@ impl Inbox {
     }
 
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
-    /// the database and never on a sync (ADR 0018).
-    pub fn read(
+    /// the database and never on a sync (ADR 0018). A page whose items are all Archived gives way to the next
+    /// older one, so the window never gets an empty page with more to come.
+    pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
         page: InboxPage,
         now: OffsetDateTime,
     ) -> Result<Self, Error> {
-        let conventions = repository.conventions;
-        let job = move |snapshot: &Snapshot<'_>| read_page(snapshot, conventions, page, now);
-        let Some(read) = reader.read_snapshot(&repository.name, job)? else {
-            return Ok(Self {
-                items: Vec::new(),
-                older: None,
-            });
+        let settings = repository.clone();
+        // One snapshot holds the pages it walks, so they fit together as the pages of one read do.
+        let job = move |snapshot: &Snapshot<'_>| {
+            let mut page = page;
+            loop {
+                let Some(read) = read_page(snapshot, settings.conventions, page, now)? else {
+                    return Ok(Self {
+                        items: Vec::new(),
+                        older: None,
+                    });
+                };
+                let inbox = Self::listed(read, &settings);
+                match (inbox.items.is_empty(), inbox.older) {
+                    (true, Some(after)) => page = InboxPage::Older { after },
+                    (false, _) | (true, None) => return Ok(inbox),
+                }
+            }
         };
-        let causes = Causes::of(&read.facts, conventions);
+        reader.read_snapshot(&repository.name, job)
+    }
+
+    /// The page `read` holds, Archived and Muted items left out.
+    fn listed(read: PageRead, repository: &RepositorySettings) -> Self {
+        let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
             (read.facts, &read.links),
             repository,
             &BTreeSet::new(),
             &causes,
         );
+        // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
+        // A Muted author's item stays, unless one of those takes it out too, until #825 leaves it out.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .map(|item| ListedItem {
-                attention: attention_of(&causes, &item),
-                item,
+            .map(|item| ListedItem::of(&causes, item))
+            .filter(|listed| match listed.hidden {
+                None => true,
+                Some(Hidden::Archived | Hidden::Muted) => false,
+                Some(Hidden::MutedAuthor) => {
+                    let key = listed.key;
+                    !causes.is_muted_on_its_own(key)
+                        && !causes.is_archived(key, &listed.item.numbers())
+                }
             })
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);
         items.sort_by_key(|listed| Reverse(place_of(listed).copied()));
-        Ok(Self {
+        Self {
             items,
             older: read.older,
-        })
+        }
     }
 }
 
@@ -171,7 +196,7 @@ fn read_page(
     let Some(viewer) = snapshot.viewer()? else {
         return Ok(None);
     };
-    let mut walk = Walk::new(snapshot, conventions);
+    let mut walk = Walk::new(snapshot, conventions)?;
     let chosen = match page {
         InboxPage::Latest => {
             // The store keeps whole seconds, so a page that started within a second would put an item
@@ -203,7 +228,7 @@ fn read_page(
     let facts = walk.facts(viewer, chosen.members)?;
     Ok(Some(PageRead {
         facts,
-        links: walk.links,
+        links: walk.trees.into_links(),
         places,
         older: chosen.older,
     }))
@@ -212,7 +237,7 @@ fn read_page(
 /// An item of the Inbox before its rows are read, with the numbers of the PRs it shows.
 #[derive(Debug, Clone)]
 enum Member {
-    /// An open Issue, with no PRs when none fixes it.
+    /// An open Issue, or a closed one a PR brought back, with no PRs when none fixes it.
     Issue { number: u32, prs: Vec<u32> },
     /// A Standalone PR with its Backports, or a Standalone Backport.
     StandalonePr { prs: Vec<u32> },
@@ -224,8 +249,9 @@ struct Chosen {
     older: Option<InboxCursor>,
 }
 
-/// What a step of the walk found: each item whose latest update it met, at its place, and the earliest
-/// update it read, or nothing once it read the last.
+/// What a step of the walk found: each item its updates or their trees show, at its place, and the earliest
+/// update it read, or nothing once it read the last. An item's place can fall outside what the step read, as
+/// for an Issue that a met PR's tree names but whose own tree didn't move.
 struct Step {
     found: Vec<(InboxCursor, Member)>,
     floor: Option<OffsetDateTime>,
@@ -234,22 +260,26 @@ struct Step {
 /// A walk down the updates of one snapshot, which keeps the links and Issues each step reads for the next.
 struct Walk<'s, 't> {
     snapshot: &'s Snapshot<'t>,
-    conventions: Conventions,
-    links: BTreeMap<u32, PrLinks>,
-    /// Each PR whose links were asked for, so a PR the store lacks is asked for once.
-    asked: BTreeSet<u32>,
+    trees: Trees<'s, 't>,
     issues: BTreeMap<u32, IssuePlace>,
+    /// The Issues a PR that opened on them brought back (#823), which the Inbox lists closed too.
+    brought_back: BTreeSet<u32>,
 }
 
 impl<'s, 't> Walk<'s, 't> {
-    fn new(snapshot: &'s Snapshot<'t>, conventions: Conventions) -> Self {
-        Self {
+    fn new(snapshot: &'s Snapshot<'t>, conventions: Conventions) -> Result<Self, Error> {
+        Ok(Self {
             snapshot,
-            conventions,
-            links: BTreeMap::new(),
-            asked: BTreeSet::new(),
+            trees: Trees::new(snapshot, conventions),
             issues: BTreeMap::new(),
-        }
+            brought_back: snapshot.brought_back()?,
+        })
+    }
+
+    /// Whether the Inbox lists the Issue `issue` places: an open one, or one a PR that opened on it brought
+    /// back.
+    fn lists(&self, issue: &IssuePlace) -> bool {
+        issue.state == Some(IssueState::Open) || self.brought_back.contains(&issue.number)
     }
 
     /// The next `OLDER_BATCH` items after `after`, and where the batch after them starts, if any are left.
@@ -319,9 +349,11 @@ impl<'s, 't> Walk<'s, 't> {
         }
     }
 
-    /// Reads the updates `updates` takes, and the trees of what they belong to, and places every item whose
-    /// latest update it met. A step that reads `at_least` updates of a kind reads no lower than the last of
-    /// them, since the next step reads on from there.
+    /// Reads the updates `updates` takes, and the trees of what they belong to, and places every item those
+    /// trees show. That takes in each open Issue they name, whose place falls below every update the step
+    /// read when its own tree didn't move. Each caller keeps only the items placed within what the step
+    /// read, and the step that reads an item's place finds it again (#891). A step that reads `at_least`
+    /// updates of a kind reads no lower than the last of them, since the next step reads on from there.
     fn step(&mut self, updates: Updates) -> Result<Step, Error> {
         let prs = self.snapshot.pull_requests_updated(updates)?;
         let issues = self.snapshot.open_issue_places(updates)?;
@@ -341,10 +373,10 @@ impl<'s, 't> Walk<'s, 't> {
             .filter(|(_, at)| read(*at))
             .map(|(number, _)| number)
             .collect();
-        let mut trees = self.read_trees(&met)?;
+        let mut trees = self.trees.of_prs(&met)?;
         // The Issues that the lines of the met PRs show under.
         let mut named = BTreeSet::new();
-        for top in plant(placed(self.links_of(&trees))) {
+        for top in plant(placed(self.trees.links_of(&trees))) {
             if top.rows().iter().any(|row| met.contains(&row.number)) {
                 named.extend(top.issues);
             }
@@ -364,15 +396,9 @@ impl<'s, 't> Walk<'s, 't> {
                 .extend(read_now.into_iter().map(|issue| (issue.number, issue)));
         }
         let open: BTreeSet<u32> = (named.into_iter())
-            .filter(|number| {
-                let place = self.issues.get(number);
-                place.is_some_and(|issue| issue.state == Some(IssueState::Open))
-            })
+            .filter(|number| (self.issues.get(number)).is_some_and(|issue| self.lists(issue)))
             .collect();
-        if !open.is_empty() {
-            let fixing = self.snapshot.prs_fixing(&open, self.conventions)?;
-            trees.extend(self.read_trees(&fixing)?);
-        }
+        trees.extend(self.trees.under(&open)?);
         Ok(Step {
             found: self.place(&open, &met, &trees),
             floor,
@@ -389,7 +415,7 @@ impl<'s, 't> Walk<'s, 't> {
     ) -> Vec<(InboxCursor, Member)> {
         let mut under: BTreeMap<u32, Vec<&PrLinks>> = BTreeMap::new();
         let mut found = Vec::new();
-        for top in plant(placed(self.links_of(trees))) {
+        for top in plant(placed(self.trees.links_of(trees))) {
             for issue in top.issues.intersection(open) {
                 under
                     .entry(*issue)
@@ -412,50 +438,20 @@ impl<'s, 't> Walk<'s, 't> {
         for (number, issue) in open.iter().filter_map(|n| Some((*n, self.issues.get(n)?))) {
             let rows = under.remove(&number).unwrap_or_default();
             let updated_at = rows.iter().map(|row| row.updated_at);
+            // The walk reads the updates of open Issues alone, so a closed one a PR brought back stands at
+            // its PRs' latest update, where the walk meets it.
+            let own = match issue.state {
+                Some(IssueState::Open) => issue.updated_at,
+                _ => OffsetDateTime::UNIX_EPOCH,
+            };
             let place = InboxCursor {
-                updated_at: updated_at.fold(issue.updated_at, Ord::max),
+                updated_at: updated_at.fold(own, Ord::max),
                 number,
             };
             let prs = rows.iter().map(|row| row.number).collect();
             found.push((place, Member::Issue { number, prs }));
         }
         found
-    }
-
-    /// Reads the links of `prs`, of their Origin PRs, and of every PR that names one of either as its
-    /// Origin PR: all that says where each of `prs` sits, and what sits with it. Gives the numbers of all
-    /// those PRs, which `plant` puts on their lines as it would among every PR.
-    fn read_trees(&mut self, prs: &BTreeSet<u32>) -> Result<BTreeSet<u32>, Error> {
-        if prs.is_empty() {
-            return Ok(BTreeSet::new());
-        }
-        self.read_links(prs)?;
-        let origins: BTreeSet<u32> = (prs.iter())
-            .filter_map(|number| self.links.get(number)?.origin)
-            .collect();
-        self.read_links(&origins)?;
-        let mut trees: BTreeSet<u32> = prs.union(&origins).copied().collect();
-        let backports = self.snapshot.prs_naming_origins(&trees, self.conventions)?;
-        self.read_links(&backports)?;
-        trees.extend(backports);
-        Ok(trees)
-    }
-
-    fn read_links(&mut self, numbers: &BTreeSet<u32>) -> Result<(), Error> {
-        let unasked: BTreeSet<u32> = numbers.difference(&self.asked).copied().collect();
-        if unasked.is_empty() {
-            return Ok(());
-        }
-        self.asked.extend(&unasked);
-        let read = self.snapshot.pr_links(&unasked, self.conventions)?;
-        self.links
-            .extend(read.into_iter().map(|links| (links.number, links)));
-        Ok(())
-    }
-
-    /// The links read of each of `numbers` that the store holds.
-    fn links_of<'a>(&'a self, numbers: &'a BTreeSet<u32>) -> impl Iterator<Item = &'a PrLinks> {
-        numbers.iter().filter_map(|number| self.links.get(number))
     }
 
     /// The whole facts of `members` alone, with their activity and their Reviews.
@@ -475,16 +471,7 @@ impl<'s, 't> Walk<'s, 't> {
                 Member::StandalonePr { prs: tree } => prs.extend(tree),
             }
         }
-        let pull_requests = self.snapshot.pull_requests_numbered(&prs)?;
-        let numbers: BTreeSet<u32> = issues.iter().chain(&prs).copied().collect();
-        Ok(WorkFacts {
-            activity: self.snapshot.activity_of(Some(&viewer), &numbers)?,
-            reviews: self.snapshot.reviews_of(&pull_requests)?,
-            viewer: Some(viewer),
-            issues: self.snapshot.issues_numbered(&issues)?,
-            pull_requests,
-            filters: BTreeMap::new(),
-        })
+        self.trees.facts(viewer, &issues, &prs)
     }
 }
 

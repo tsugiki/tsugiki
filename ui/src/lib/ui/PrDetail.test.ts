@@ -4,12 +4,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { remapKeys } from "$lib/state/keymap.svelte";
 import { PanesState } from "$lib/state/panes.svelte";
 import { PrViewState, type PrView } from "$lib/state/pr-view.svelte";
+import { done, ok, readyFiles, refused, workbenchRow } from "$lib/testing/fixtures";
 import PrDetail from "./PrDetail.svelte";
 
 const core = vi.hoisted(() => ({
   pullRequest: vi.fn(),
   openPullRequest: vi.fn(),
-  fetchPullRequest: vi.fn(),
   openOnGithub: vi.fn(),
   openLink: vi.fn(),
   pullRequestFiles: vi.fn(),
@@ -20,42 +20,30 @@ const core = vi.hoisted(() => ({
   listen: vi.fn(),
 }));
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    pullRequest: core.pullRequest,
-    openPullRequest: core.openPullRequest,
-    fetchPullRequest: core.fetchPullRequest,
-    openOnGithub: core.openOnGithub,
-    openLink: core.openLink,
-    pullRequestFiles: core.pullRequestFiles,
-    cloning: core.cloning,
-    mirrorStates: core.mirrorStates,
-    mirrorsHeld: core.mirrorsHeld,
-    savePaneLayout: core.savePaneLayout,
-  },
-  events: {
-    changed: { listen: core.listen },
-    readFailed: { listen: core.listen },
-    headsFetched: { listen: core.listen },
-    headsFetchFailed: { listen: core.listen },
-    cloningChanged: { listen: core.listen },
-    mirrorStatesChanged: { listen: core.listen },
-    mirrorsHeldChanged: { listen: core.listen },
-  },
-}));
+vi.mock("$lib/data/bindings", async () => {
+  const { itemMoves, prFilesEvents } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      pullRequest: core.pullRequest,
+      openPullRequest: core.openPullRequest,
+      ...itemMoves(),
+      openOnGithub: core.openOnGithub,
+      openLink: core.openLink,
+      pullRequestFiles: core.pullRequestFiles,
+      cloning: core.cloning,
+      mirrorStates: core.mirrorStates,
+      mirrorsHeld: core.mirrorsHeld,
+      savePaneLayout: core.savePaneLayout,
+    },
+    events: prFilesEvents(() => core.listen),
+  };
+});
 
 const view: PrView = {
-  number: 11,
-  title: "gh-10: Fix the crash",
-  author: "pr-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z" }, state: "new_activity" },
+  ...workbenchRow(11, {
+    title: "gh-10: Fix the crash",
+    seen: { mark: { numbers: [11], up_to: "2026-11-04T10:00:00Z", findings: [] }, state: "new_activity" },
+  }),
   content: {
     body_html: "<p>The description</p>",
     comments: [
@@ -84,6 +72,7 @@ const view: PrView = {
     earlier_reviews: 0,
   },
   shares_review_of: null,
+  hidden: null,
 };
 
 const NOW = new Date("2026-11-04T11:00:00Z");
@@ -99,7 +88,7 @@ const shown = async (
   onmark = vi.fn(),
   panes = new PanesState(),
 ) => {
-  core.pullRequest.mockResolvedValue({ status: "ok", data: answer });
+  core.pullRequest.mockResolvedValue(ok(answer));
   const state = new PrViewState("python/cpython", 11, issue, panes);
   onShow = state;
   await state.load();
@@ -115,10 +104,10 @@ afterEach(() => {
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(vi.fn());
-  core.openPullRequest.mockResolvedValue({ status: "ok", data: null });
-  core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
-  core.openLink.mockResolvedValue({ status: "ok", data: null });
-  core.pullRequestFiles.mockResolvedValue({ status: "ok", data: { state: "fetching" } });
+  core.openPullRequest.mockResolvedValue(done);
+  core.openOnGithub.mockResolvedValue(done);
+  core.openLink.mockResolvedValue(done);
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "fetching" }));
   core.cloning.mockResolvedValue(null);
   core.mirrorStates.mockResolvedValue([]);
   core.mirrorsHeld.mockResolvedValue(false);
@@ -146,7 +135,7 @@ it("says over the title which Issue the PR is under, where it goes and when it c
   expect(document.querySelector(".crumb")?.textContent.replace(/\s+/g, " ").trim()).toBe(
     "gh-10 › into main · updated 1h ago",
   );
-  expect(document.querySelector("p.by")?.textContent).toBe(
+  expect(document.querySelector("p.byline")?.textContent).toBe(
     `pr-author ${document.querySelector(".words")?.textContent ?? ""}`,
   );
 });
@@ -339,10 +328,7 @@ it("opens the title on GitHub", async () => {
 });
 
 it("sends a link in a comment to the browser, and says if that fails", async () => {
-  core.openLink.mockResolvedValue({
-    status: "error",
-    error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
-  });
+  core.openLink.mockResolvedValue(refused("Tsugiki couldn't open the system browser."));
   await shown(view, 10);
 
   await fireEvent.click(screen.getByRole("link", { name: "A link" }));
@@ -354,15 +340,6 @@ it("sends a link in a comment to the browser, and says if that fails", async () 
 });
 
 it("sends a link in a NEWS entry to the browser", async () => {
-  // jsdom lays nothing out, so bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
   const url = "https://github.com/python/cpython/issues/1";
   const news = [
     {
@@ -372,17 +349,13 @@ it("sends a link in a NEWS entry to the browser", async () => {
       blocks: [],
     },
   ];
-  core.pullRequestFiles.mockResolvedValue({
-    status: "ok",
-    data: { state: "ready", head: "abc", base: "base", files: [], rows: 0, news, threads: [] },
-  });
+  core.pullRequestFiles.mockResolvedValue(ok(readyFiles(0, { news })));
   await shown(view, 10);
   await fireEvent.click(screen.getByRole("tab", { name: "Files" }));
 
   await fireEvent.click(await screen.findByRole("link", { name: "gh-1" }));
 
   expect(core.openLink).toHaveBeenCalledExactlyOnceWith(url);
-  vi.unstubAllGlobals();
 });
 
 it("says so for a PR Tsugiki doesn't hold", async () => {
@@ -392,10 +365,7 @@ it("says so for a PR Tsugiki doesn't hold", async () => {
 });
 
 it("says why it can't show the PR", async () => {
-  core.pullRequest.mockResolvedValue({
-    status: "error",
-    error: { kind: "internal", message: "no database" },
-  });
+  core.pullRequest.mockResolvedValue(refused("no database"));
   const panes = new PanesState();
   const state = new PrViewState("python/cpython", 11, 10, panes);
   await state.load();
@@ -610,12 +580,10 @@ it("keeps the rail open, at its width, from the Conversation to the Files tab an
 });
 
 it("drags the rail's left edge between its least and greatest widths, saves where it stops, and resets on a double-click", async () => {
-  core.savePaneLayout.mockResolvedValue({ status: "ok", data: null });
+  core.savePaneLayout.mockResolvedValue(done);
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     return { width: this.matches(".rail") ? 280 : 600 } as DOMRect;
   });
-  // jsdom has no pointer capture.
-  HTMLElement.prototype.setPointerCapture = vi.fn();
   const panes = new PanesState();
   panes.railState.pick("files");
   await shown(view, 10, vi.fn(), vi.fn(), panes);
@@ -647,7 +615,7 @@ it("drags the rail's left edge between its least and greatest widths, saves wher
 });
 
 it("keeps the rail's width while a narrow pane squeezes it, and narrows it from that width", async () => {
-  core.savePaneLayout.mockResolvedValue({ status: "ok", data: null });
+  core.savePaneLayout.mockResolvedValue(done);
   // The rail keeps 280 px but shows 150, beside a Conversation at its least.
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     return { width: this.matches(".rail") ? 150 : 240 } as DOMRect;
@@ -712,7 +680,7 @@ it("keeps the Conversation where it was read to as the rail opens and closes, th
 
 it("hands the focus the pane takes on to the Conversation beside the rail, which scrolls as the pane doesn't", async () => {
   const panes = new PanesState();
-  core.pullRequest.mockResolvedValue({ status: "ok", data: view });
+  core.pullRequest.mockResolvedValue(ok(view));
   const state = new PrViewState("python/cpython", 11, 10, panes);
   onShow = state;
   await state.load();

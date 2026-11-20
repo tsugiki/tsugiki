@@ -8,7 +8,6 @@ use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
-use crate::facts::CommitSha;
 use crate::github::refresh::Etag;
 use crate::repository::RepositoryName;
 
@@ -31,8 +30,10 @@ pub(super) const FIRST_SYNC_PLACE: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// The PRs a refresh found changed and hasn't yet read the Conversations of. A refresh that stops partway
-/// leaves them here for the next one, which can't tell they changed once they're saved (#205).
+/// Every PR whose Conversation the store owes a read: those a refresh found changed, and those a Filter
+/// switched on or an Unmute put in Reach. A refresh that stops partway leaves its own here for the next one,
+/// which can't tell they changed once they're saved (#205). Only a saved Conversation or a finished refresh
+/// clears a row, so a finished first sync leaves them all (#900).
 pub(super) const READ_AHEAD: &str = "
     CREATE TABLE read_ahead (
         repository TEXT NOT NULL COLLATE NOCASE,
@@ -110,26 +111,6 @@ pub(super) fn owe_read_ahead(
     Ok(())
 }
 
-/// Owes a read of the Conversation of each PR of `heads` at its head, unless the store holds one read at
-/// that head. A PR whose head Tsugiki doesn't know is owed one.
-pub(super) fn owe_read_ahead_at(
-    connection: &Connection,
-    repository: &RepositoryName,
-    heads: &[(u32, Option<CommitSha>)],
-) -> rusqlite::Result<()> {
-    let sql = "INSERT INTO read_ahead (repository, number)
-               SELECT :repository, :number WHERE :head IS NULL OR NOT EXISTS (
-                   SELECT 1 FROM issue_content
-                   WHERE repository = :repository AND number = :number AND head_sha = :head)
-               ON CONFLICT DO NOTHING";
-    let mut insert = connection.prepare(sql)?;
-    for (number, head) in heads {
-        let values = named_params! { ":repository": repository, ":number": number, ":head": head };
-        insert.execute(values).map(drop)?;
-    }
-    Ok(())
-}
-
 pub(super) fn read_ahead_owed(
     connection: &Connection,
     repository: &RepositoryName,
@@ -156,7 +137,10 @@ pub(super) fn forget_read_ahead_of(
 }
 
 /// A finished refresh has read ahead each PR it owed, or found it out of Reach.
-fn forget_read_ahead(connection: &Connection, repository: &RepositoryName) -> rusqlite::Result<()> {
+pub(super) fn forget_read_ahead(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<()> {
     connection
         .execute(
             "DELETE FROM read_ahead WHERE repository = :repository",
@@ -230,9 +214,6 @@ pub(super) fn save(
         ChangeCheck::Untagged => (true, None),
         ChangeCheck::Tagged(etag) => (true, Some(etag)),
     };
-    if !state.refresh_under_way {
-        forget_read_ahead(connection, repository)?;
-    }
     let params = named_params! {
         ":repository": repository,
         ":started_at": state.started_at.unix_timestamp(),

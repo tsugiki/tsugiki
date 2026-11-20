@@ -1,22 +1,12 @@
 use super::*;
+use crate::github::testing::token;
 use crate::github::{Request, Transport};
-use crate::token::{GhOutput, Token, read_token};
 
 fn fixture(name: &str, contents: &str) -> crate::testing::TempPath {
     let dir = crate::testing::temp_path(&format!("replay-{name}"));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("Op.json"), contents).unwrap();
     dir
-}
-
-fn token() -> Token {
-    read_token(|_| {
-        Ok(GhOutput {
-            success: true,
-            stdout: "t".to_owned(),
-        })
-    })
-    .unwrap()
 }
 
 /// A read by number of `numbers`, each field asking for `fields`.

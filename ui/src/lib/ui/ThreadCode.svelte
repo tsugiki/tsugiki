@@ -2,7 +2,7 @@
      highlighted, ending at the thread's line. The diff's scroller colors the highlighted code. -->
 <script lang="ts">
   import type { CodeRow, Span } from "$lib/state/pr-files.svelte";
-  import { pieces } from "./spans";
+  import CodePieces from "./CodePieces.svelte";
 
   let { rows, spans }: { rows: CodeRow[]; spans: Span[][] } = $props();
 
@@ -26,7 +26,7 @@
   {#each rows as row, at (at)}
     {@const shown = parts(row)}
     <!-- prettier-ignore -->
-    <div class={`row ${row.kind}`}><span class="number">{shown.old ?? ""}</span><span class="number">{shown.new ?? ""}</span><span class="text">{shown.marker}{#each pieces(shown.text, spans[at] ?? []) as piece, index (index)}{#if piece.highlight}<span class={`hl-${piece.highlight}`}>{piece.text}</span>{:else}{piece.text}{/if}{/each}</span></div>
+    <div class={`row ${row.kind}`}><span class="number">{shown.old ?? ""}</span><span class="number">{shown.new ?? ""}</span><span class="text">{shown.marker}<CodePieces text={shown.text} spans={spans[at] ?? []} /></span></div>
   {/each}
 </div>
 
@@ -38,24 +38,6 @@
     border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
   }
 
-  .row {
-    display: flex;
-    height: 20px;
-    line-height: 20px;
-    white-space: pre;
-    tab-size: 8;
-  }
-
-  .number {
-    flex: none;
-    width: 48px;
-    padding-right: 8px;
-    box-sizing: border-box;
-    text-align: right;
-    color: var(--fg-muted);
-    user-select: none;
-  }
-
   .hunk,
   .note {
     color: var(--fg-muted);
@@ -63,13 +45,5 @@
 
   .hunk {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-
-  .added {
-    background: color-mix(in srgb, var(--add) 18%, transparent);
-  }
-
-  .removed {
-    background: color-mix(in srgb, var(--del) 18%, transparent);
   }
 </style>

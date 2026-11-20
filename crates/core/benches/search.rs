@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tsugiki_core::facts::CommitSha;
 use tsugiki_core::mirror::{LookupAt, LookupCheckout};
 use tsugiki_core::search::{Case, End, Query, Syntax, Words, search_checkout};
-use tsugiki_test_git::git;
+use tsugiki_test_git::run_git;
 
 fn main() {
     divan::main();
@@ -83,10 +83,15 @@ impl Tree {
         let folder = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../.temp")
             .join(format!("bench-search-{name}-{}", std::process::id()));
-        drop(fs::remove_dir_all(&folder));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the folder's name holds this process's id, so it is there only if an earlier run with \
+                      that id ended early, and mostly isn't"
+        )]
+        let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).expect("a folder for the tree");
-        let _ = git(&folder, &["init", "-q", "-b", "main"]);
-        let _ = git(&folder, &["config", "core.autocrlf", "false"]);
+        run_git(&folder, &["init", "-q", "-b", "main"]);
+        run_git(&folder, &["config", "core.autocrlf", "false"]);
         for file in 0..FILES {
             write(&folder, file, "base");
         }
@@ -95,7 +100,7 @@ impl Tree {
             write(&folder, file * (FILES / CHANGED), "head");
         }
         let head = commit(&folder, "head");
-        let _ = git(&folder, &["checkout", "-q", "--detach", base.as_str()]);
+        run_git(&folder, &["checkout", "-q", "--detach", base.as_str()]);
         Self {
             checkout: LookupCheckout {
                 folder: folder.clone(),
@@ -106,8 +111,11 @@ impl Tree {
     }
 
     fn remove(self) {
-        // A folder left behind sits in the ignored `.temp`, and the next run gets a new one.
-        drop(fs::remove_dir_all(&self.folder));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a folder left behind sits in the ignored `.temp`, and the next run gets a new one"
+        )]
+        let _ = fs::remove_dir_all(&self.folder);
     }
 }
 
@@ -147,8 +155,5 @@ fn write(folder: &Path, file: u32, version: &str) {
 
 #[expect(clippy::expect_used, reason = "git names a commit by its SHA")]
 fn commit(folder: &Path, message: &str) -> CommitSha {
-    let _ = git(folder, &["add", "-A"]);
-    let _ = git(folder, &["commit", "-q", "-m", message]);
-    let commit = git(folder, &["rev-parse", "HEAD"]);
-    CommitSha::parse(commit.trim()).expect("a commit's SHA")
+    CommitSha::parse(&tsugiki_test_git::commit(folder, message)).expect("a commit's SHA")
 }

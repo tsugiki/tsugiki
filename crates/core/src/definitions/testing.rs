@@ -1,132 +1,46 @@
-//! A Repository with a PR, a Lookup checkout at its base as the Mirror worker leaves one, built with the
-//! real git (ADR 0009), the servers the tests start, and a fake server for what a real one does only at
-//! moments a test can't pick.
+//! The servers the tests start, a fake server for what a real one does only at moments a test can't pick,
+//! and a fake server program for the tests of what the owner does as it starts and stops one. The
+//! Repository with a PR that they work in is [`crate::testing::Fixture`].
 
 use std::collections::HashSet;
-use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write, pipe};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::io::{BufRead, ErrorKind, PipeWriter, Write};
+use std::path::Path;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::{env, fs, thread};
+use std::thread;
 
 use serde_json::{Value, json};
-use tsugiki_lsp::{Event, Process, Server, Starting, Streams, Uri};
-use tsugiki_test_git::git;
+use tsugiki_lsp::testing::{
+    FAKE_SERVER_SCRIPT, fake_server_script, nth_answer, pipes, read_message, reply_to,
+    write_message,
+};
+use tsugiki_lsp::{Event, Starting, Uri};
+/// The ty, rust-analyzer and clangd that `just cargo-test` and `just rust-coverage` name.
+pub(crate) use tsugiki_test_git::{clangd, rust_analyzer, ty};
 
-use crate::facts::CommitSha;
-use crate::mirror::{LookupAt, LookupCheckout};
-use crate::testing::{TempPath, temp_path};
-
-/// The ty that `TSUGIKI_TY` names, which `just cargo-test` and `just rust-coverage` set to the one
-/// `scripts/test-servers.ts` fetches.
-pub(crate) fn ty() -> PathBuf {
-    let ty = PathBuf::from(env::var_os("TSUGIKI_TY").unwrap_or_default());
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
-    ty
-}
-
-/// The rust-analyzer that `TSUGIKI_RUST_ANALYZER` names, which `just cargo-test` and `just rust-coverage`
-/// set to the one in the toolchain `rust-toolchain.toml` pins.
-pub(crate) fn rust_analyzer() -> PathBuf {
-    let path = PathBuf::from(env::var_os("TSUGIKI_RUST_ANALYZER").unwrap_or_default());
-    assert!(
-        path.is_file(),
-        "TSUGIKI_RUST_ANALYZER={path:?}: see just test-servers"
-    );
-    path
-}
-
-/// The clangd that `TSUGIKI_CLANGD` names, which `just cargo-test` and `just rust-coverage` set to the one
-/// `scripts/test-servers.ts` fetches.
-pub(crate) fn clangd() -> PathBuf {
-    let path = PathBuf::from(env::var_os("TSUGIKI_CLANGD").unwrap_or_default());
-    assert!(
-        path.is_file(),
-        "TSUGIKI_CLANGD={path:?}: see just test-servers"
-    );
-    path
-}
-
-/// A repository whose `main` is the PR's base, and whose PR's head changes, adds and deletes files.
-pub(crate) struct Fixture {
-    /// The repository the PR is in, which stands in for its Mirror.
-    pub(crate) mirror: PathBuf,
-    pub(crate) checkout: LookupCheckout,
-    /// The folder around both, which a test drops after the servers that work in it.
-    _root: TempPath,
-}
-
-impl Fixture {
-    /// The base holds `base`, and the PR's head writes each of `head`'s files, or deletes it where its text
-    /// is None. The checkout holds the base and the head's added files, as a move leaves it.
-    pub(crate) fn new(name: &str, base: &[(&str, &str)], head: &[(&str, Option<&str>)]) -> Self {
-        // The folder keeps the `..` in `temp_path`'s path, which the core reads past.
-        let root = temp_path(name);
-        let mirror = root.join("mirror");
-        fs::create_dir_all(&mirror).unwrap();
-        let _ = git(&mirror, &["init", "-q", "-b", "main"]);
-        let _ = git(&mirror, &["config", "core.autocrlf", "false"]);
-        for (path, text) in base {
-            write(&mirror, path, text);
-        }
-        let base_commit = commit(&mirror, "base");
-        let mut added = Vec::new();
-        for (path, text) in head {
-            match text {
-                Some(text) => {
-                    if !mirror.join(path).exists() {
-                        added.push(*path);
-                    }
-                    write(&mirror, path, text);
-                }
-                None => {
-                    let _ = git(&mirror, &["rm", "-q", path]);
-                }
-            }
-        }
-        let head_commit = commit(&mirror, "head");
-        let folder = root.join("lookup");
-        let folder_arg = folder.to_string_lossy().into_owned();
-        let at = [
-            "worktree",
-            "add",
-            "-q",
-            "--detach",
-            &folder_arg,
-            base_commit.as_str(),
-        ];
-        let _ = git(&mirror, &at);
-        if !added.is_empty() {
-            let mut args = vec!["checkout", head_commit.as_str(), "--"];
-            args.extend(added);
-            let _ = git(&folder, &args);
-        }
-        Self {
-            mirror,
-            checkout: LookupCheckout {
-                folder,
-                at: LookupAt {
-                    base: base_commit,
-                    head: head_commit,
-                },
-            },
-            _root: root,
-        }
+/// Puts the fake server program `tsugiki-lsp` builds at `program`, in place of any file there, beside a
+/// script that has it print `version` for `--version` and answer lookups with `answers`, the first lookup
+/// with the first and the rest as [`FakeClangd::start`] says. Unlike [`FakeClangd`] it runs as a process
+/// that the owner starts from its path, so a test of the owner's own starts and stops can run it, and it
+/// holds its working folder as a real server does. It answers a lookup in a document it wasn't sent, and
+/// reports no problems in each document opened on it, which keeps events coming as a real server's do.
+pub(crate) fn fake_program(program: &Path, version: &str, answers: Vec<Value>) {
+    let folder = program.parent().unwrap();
+    fs::create_dir_all(folder).unwrap();
+    // A file there that can't go fails here, not as a copy that fails after.
+    if let Err(error) = fs::remove_file(program) {
+        assert_eq!(error.kind(), ErrorKind::NotFound, "{error}");
     }
-}
-
-fn write(folder: &Path, path: &str, text: &str) {
-    let file = folder.join(path);
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(&file, text).unwrap();
-    let _ = git(folder, &["add", path]);
-}
-
-fn commit(folder: &Path, message: &str) -> CommitSha {
-    let _ = git(folder, &["commit", "-q", "--allow-empty", "-m", message]);
-    let commit = git(folder, &["rev-parse", "HEAD"]);
-    CommitSha::parse(commit.trim()).unwrap()
+    // A copy, not a link: the program is small, and the build may be on another drive.
+    #[expect(
+        unused_results,
+        reason = "the copy fails unless it copies the whole program, so its size says nothing more"
+    )]
+    fs::copy(tsugiki_test_git::fake_server(), program).unwrap();
+    let script = fake_server_script(version, answers).to_string();
+    fs::write(folder.join(FAKE_SERVER_SCRIPT), script).unwrap();
 }
 
 /// A fake clangd, which threads of the test play over in-memory pipes: it answers each lookup with the
@@ -177,40 +91,40 @@ impl FakeClangd {
         answers: Vec<Value>,
         initialize: Initialize,
     ) -> (Self, (Starting, Receiver<Event>)) {
-        let (client_reads, server_writes) = pipe().unwrap();
-        let (server_reads, client_writes) = pipe().unwrap();
-        let (errors_read, errors_written) = pipe().unwrap();
-        let errors = Arc::new(Mutex::new(Some(errors_written)));
+        let (starting, events, ends) = pipes(None);
+        let errors = Arc::new(Mutex::new(Some(ends.errors)));
+        let code = Arc::new(AtomicI32::new(0));
         let (says, said) = mpsc::channel();
-        let (ended, end) = mpsc::channel::<()>();
-        let crashed = ended.clone();
-        let _writes = thread::spawn(move || {
-            write_messages(server_writes, &said);
-            let _gone = crashed.send(());
+        // The process ends with the code it holds once the fake stops writing, as a crash does, or reading.
+        let (ended, crashed) = (
+            Ended(ends.exit.clone(), Arc::clone(&code)),
+            Ended(ends.exit, Arc::clone(&code)),
+        );
+        let mut writes = ends.writes;
+        #[expect(
+            unused_results,
+            reason = "it ends once the fake and its reading thread have let go of `says`"
+        )]
+        thread::spawn(move || {
+            write_messages(&mut writes, &said);
+            crashed.end();
         });
         let (replies, asked) = (says.clone(), Arc::new(AtomicUsize::new(0)));
         let (counts, closes) = (Arc::clone(&asked), Arc::clone(&errors));
         let documents = Arc::new(Mutex::new(Vec::new()));
         let logs = Arc::clone(&documents);
-        let _reads = thread::spawn(move || {
-            serve(
-                server_reads,
-                &replies,
-                (&answers, &counts, &logs),
-                initialize,
-            );
-            // The process ends, and its error output with it, once it stops reading.
-            let _gone = ended.send(());
+        let mut reads = ends.reads;
+        #[expect(
+            unused_results,
+            reason = "it ends when the client closes its input, as a server's process would"
+        )]
+        thread::spawn(move || {
+            serve(&mut reads, &replies, (&answers, &counts, &logs), initialize);
+            // Its error output ends with it.
+            ended.end();
             drop(closes.lock().unwrap().take());
         });
-        let code = Arc::new(AtomicI32::new(0));
-        let client = Server::over(Streams {
-            input: Box::new(client_writes),
-            output: Box::new(client_reads),
-            errors: Box::new(errors_read),
-            log: None,
-            process: Box::new(FakeProcess(end, Arc::clone(&code))),
-        });
+        let client = (starting, events);
         let fake = Self {
             says,
             asked,
@@ -268,17 +182,17 @@ impl FakeClangd {
     }
 }
 
-/// The process a [`FakeClangd`] stands in for, which ends once the fake stops reading or crashes, with the
-/// exit code it holds.
-struct FakeProcess(Receiver<()>, Arc<AtomicI32>);
+/// Ends the process a [`FakeClangd`] stands in for, with the exit code it holds then.
+struct Ended(Sender<Option<i32>>, Arc<AtomicI32>);
 
-impl Process for FakeProcess {
-    fn wait(&mut self) -> Option<i32> {
-        let _ended = self.0.recv();
-        Some(self.1.load(Ordering::SeqCst))
+impl Ended {
+    fn end(&self) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a client that has stopped waiting for the end doesn't need its exit code"
+        )]
+        let _ = self.0.send(Some(self.1.load(Ordering::SeqCst)));
     }
-
-    fn kill(&mut self) {}
 }
 
 /// Answers each request the client writes to `input` until it sends `exit` or closes the input: each
@@ -286,23 +200,28 @@ impl Process for FakeProcess {
 /// with an empty result. A lookup in a document the client hasn't opened fails, as clangd's does, and
 /// `documents` logs each the client opens or closes. It does what `initialize` says with `initialize`.
 fn serve(
-    input: PipeReader,
+    input: &mut impl BufRead,
     replies: &Sender<Option<Value>>,
     (answers, asked, documents): (&[Value], &AtomicUsize, &Mutex<Vec<Notified>>),
     initialize: Initialize,
 ) {
-    let mut input = BufReader::new(input);
     let mut open = HashSet::new();
-    while let Some(message) = read_message(&mut input) {
+    // The fake ends as a server does whose input breaks off.
+    while let Ok(Some(message)) = read_message(input) {
         let (Some(method), id) = (message["method"].as_str(), message.get("id")) else {
             continue;
         };
         let document = message["params"]["textDocument"]["uri"].clone();
         let document = serde_json::from_value::<Uri>(document).ok();
         let result = match method {
-            "exit" => return,
+            // A real server's output ends with its process. The test still holds a sender of the fake's, so
+            // the client would wait out `EXIT_PATIENCE` for the end, then kill the fake.
+            "exit" => {
+                say(replies, None);
+                return;
+            }
             "initialized" if initialize == Initialize::AnswerThenLeave => {
-                let _gone = replies.send(None);
+                say(replies, None);
                 return;
             }
             "initialize" if initialize == Initialize::Refuse => {
@@ -311,13 +230,17 @@ fn serve(
             "initialize" => json!({"capabilities": {}}),
             "textDocument/didOpen" => {
                 let document = document.unwrap();
-                let _new = open.insert(document.clone());
+                open.extend([document.clone()]);
                 documents.lock().unwrap().push(Notified::Opened(document));
                 Value::Null
             }
             "textDocument/didClose" => {
                 let document = document.unwrap();
-                let _was = open.remove(&document);
+                #[expect(
+                    unused_results,
+                    reason = "`documents` logs each close, and the tests read it there"
+                )]
+                open.remove(&document);
                 documents.lock().unwrap().push(Notified::Closed(document));
                 Value::Null
             }
@@ -325,51 +248,30 @@ fn serve(
                 let message = "trying to get AST for non-added document";
                 json!({"error": {"code": -32602, "message": message}})
             }
-            "textDocument/definition" => {
-                let count = asked.fetch_add(1, Ordering::SeqCst);
-                answers[count.min(answers.len() - 1)].clone()
-            }
+            "textDocument/definition" => nth_answer(answers, asked.fetch_add(1, Ordering::SeqCst)),
             _ => Value::Null,
         };
-        // A notification gets no answer, nor does a request whose answer is `silent`, and an answer with
-        // an `error` fails its request.
-        if let Some(id) = id.filter(|_| result.get("silent").is_none()) {
-            let reply = match result.get("error") {
-                Some(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
-                None => json!({"jsonrpc": "2.0", "id": id, "result": result}),
-            };
-            let _gone = replies.send(Some(reply));
+        // A notification gets no answer.
+        if let Some(reply) = id.and_then(|id| reply_to(id, result)) {
+            say(replies, Some(reply));
         }
     }
 }
 
-/// The next message on `input`, or `None` once it has ended.
-fn read_message(input: &mut impl BufRead) -> Option<Value> {
-    // The client writes one header, `Content-Length`, then a blank line.
-    let mut header = String::new();
-    let _read = input.read_line(&mut header).ok()?;
-    let length = header
-        .strip_prefix("Content-Length:")?
-        .trim()
-        .parse()
-        .ok()?;
-    let mut blank = String::new();
-    let _read = input.read_line(&mut blank).ok()?;
-    let mut body = vec![0; length];
-    input.read_exact(&mut body).ok()?;
-    serde_json::from_slice(&body).ok()
+/// Hands `said` to the fake's writer: a message, or `None` to end its output.
+fn say(replies: &Sender<Option<Value>>, said: Option<Value>) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the writer ends only once the client stops reading, and then nothing hears the fake"
+    )]
+    let _ = replies.send(said);
 }
 
 /// Writes each message `said` gives to `output`, framed, until the client stops reading.
-fn write_messages(mut output: PipeWriter, said: &Receiver<Option<Value>>) {
+fn write_messages(output: &mut impl Write, said: &Receiver<Option<Value>>) {
     // A `None` ends the output.
     while let Ok(Some(message)) = said.recv() {
-        let body = message.to_string();
-        let header = format!("Content-Length: {}\r\n\r\n", body.len());
-        let written = (output.write_all(header.as_bytes()))
-            .and_then(|()| output.write_all(body.as_bytes()))
-            .and_then(|()| output.flush());
-        if written.is_err() {
+        if write_message(output, &message).is_err() {
             return;
         }
     }

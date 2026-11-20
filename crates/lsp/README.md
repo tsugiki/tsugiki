@@ -53,6 +53,12 @@ and the tests replace it: each one plays the server itself over in-memory pipes 
 file is the one the coverage gate leaves out. `tests/crash.rs` runs real processes on Windows: it kills a
 parent that started a server, and checks the server and the process it started have ended.
 
+The `testing` feature also builds `tsugiki-fake-server` (`src/bin/fake_server.rs`), a fake server that runs
+as a process, from a script beside its program. The core's tests start it where they check what the core
+does as it starts, stops or replaces a server, and a real one would only slow them down.
+`scripts/test-servers.ts` builds it and names it in `TSUGIKI_FAKE_SERVER`. The coverage gate leaves this
+file out too: the tests run that build, not the one the gate measures.
+
 process-wrap puts each server in a job object of its own, which doesn't kill what is in it when Tsugiki's
 process ends. So `src/process.rs` also puts the server, while it is still suspended, in a second job object
 that does, through the `win32job` crate, so the crate keeps no unsafe code of its own.

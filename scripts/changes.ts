@@ -19,40 +19,23 @@
 //     On a PR: whether the whole PR changes what they read against its base, not since its last run.
 //     CodSpeed fills a benchmark a run skips with the base's figure, so a run can skip only what the PR
 //     doesn't change.
-import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
+import { git, stop } from "./run.ts";
 import {
   cargoDiffArgs,
+  changedJobs,
+  changedPaths,
   EVERY_JOB,
   type Job,
-  jobs,
   narrowed,
   needsRustBenchmarks,
   outputs,
-  paths,
   sincePassed,
-  type TreeGit,
 } from "./scope.ts";
 
-function git(...args: string[]): string {
-  return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-
-/** What `git diff -U0` prints for the Cargo files from `from` to the checkout, or "" when git can't say. */
-function cargoDiffSince(from: string): string {
-  try {
-    return git(...cargoDiffArgs(from, "HEAD"));
-  } catch {
-    return "";
-  }
-}
-
-const TREE_GIT: TreeGit = {
-  mergeTree: (base, head) => git("merge-tree", "--write-tree", base, head),
-  changedSince: (tree) => paths(git("diff", "--no-renames", "--name-only", tree, "HEAD")),
-  cargoDiffSince,
-};
+/** The PR's checkout against its base. */
+const AGAINST_BASE = ["HEAD^1", "HEAD"];
 
 /** The file's text, or `undefined` when it can't be read. */
 function readIfThere(file: string): string | undefined {
@@ -63,9 +46,8 @@ function readIfThere(file: string): string | undefined {
   }
 }
 
-/** The paths the PR changes against its base, which it logs. */
-function changedAgainstBase(): string[] {
-  const changed = paths(git("diff", "--no-renames", "--name-only", "HEAD^1", "HEAD"));
+/** Logs `changed`, the paths the PR changes against its base, and passes them on. */
+function logged(changed: string[]): string[] {
   console.log(
     `Against its base the PR changes ${changed.length > 0 ? changed.join(", ") : "nothing git can name"}.`,
   );
@@ -74,9 +56,10 @@ function changedAgainstBase(): string[] {
 
 /** The jobs this PR's run needs, and writes what it tests to `record`. */
 function prJobs(lastTested: string, record: string): Job[] {
-  const whole = jobs(changedAgainstBase(), () => cargoDiffSince("HEAD^1"));
-  console.log(`The whole PR needs ${JSON.stringify(whole)}.`);
-  const since = sincePassed(readIfThere(lastTested), TREE_GIT);
+  const whole = changedJobs(git, AGAINST_BASE);
+  logged(whole.paths);
+  console.log(`The whole PR needs ${JSON.stringify(whole.jobs)}.`);
+  const since = sincePassed(readIfThere(lastTested), git);
   console.log(
     since.jobs === undefined ? since.note : `${since.note} That needs ${JSON.stringify(since.jobs)}.`,
   );
@@ -84,7 +67,7 @@ function prJobs(lastTested: string, record: string): Job[] {
     record,
     JSON.stringify({ head: git("rev-parse", "HEAD^2"), base: git("rev-parse", "HEAD^1") }),
   );
-  return narrowed(whole, since.jobs);
+  return narrowed(whole.jobs, since.jobs);
 }
 
 /** The line for CI's jobs. */
@@ -109,12 +92,12 @@ if (output !== undefined && mode === "--every") {
 } else if (output !== undefined && mode === "--all-benchmarks") {
   line = benchmarksLine(true);
 } else if (output !== undefined && mode === "--benchmarks") {
-  line = benchmarksLine(needsRustBenchmarks(changedAgainstBase(), () => cargoDiffSince("HEAD^1")));
+  const changed = logged(changedPaths(git, AGAINST_BASE));
+  line = benchmarksLine(needsRustBenchmarks(changed, () => git(...cargoDiffArgs(...AGAINST_BASE))));
 } else {
-  console.error(
+  stop(
     "Usage: `node scripts/changes.ts` with `--every`, `--pr <last-tested.json> <tested.json>`, " +
       "`--all-benchmarks` or `--benchmarks`, from a GitHub Actions step.",
   );
-  process.exit(1);
 }
 appendFileSync(output, line);

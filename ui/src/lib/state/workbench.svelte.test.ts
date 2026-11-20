@@ -5,6 +5,9 @@ import {
   type InboxPage_Deserialize as InboxPage,
   type ListOrder,
 } from "$lib/data/bindings";
+import { done, ok, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import { nextTask } from "$lib/testing/helpers";
+import { catchChanged } from "$lib/testing/state";
 import {
   WorkbenchState,
   type FilterLine,
@@ -20,6 +23,10 @@ vi.mock("$lib/data/bindings", () => ({
     inbox: vi.fn(),
     markSeen: vi.fn(),
     markUnseen: vi.fn(),
+    archive: vi.fn(),
+    unarchive: vi.fn(),
+    mute: vi.fn(),
+    unmute: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
   },
   events: { changed: { listen: vi.fn() } },
@@ -27,83 +34,43 @@ vi.mock("$lib/data/bindings", () => ({
 
 /** The mark that Mark Seen sends for `numbers`, with nothing new on them. */
 const seen = (...numbers: number[]): Seen => ({
-  mark: { numbers, up_to: null },
+  mark: { numbers, up_to: null, findings: [] },
   state: "seen",
 });
 
 const item = (number: number): ListedItem => ({
   attention: null,
+  key: { kind: "pull_request", number },
+  hidden: null,
   kind: "standalone_pr",
-  number,
-  title: `PR ${String(number)}`,
-  author: "octocat",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: ["own_pr"],
-  your_review: { kind: "unreviewed" },
-  seen: seen(number),
+  ...workbenchRow(number, { title: `PR ${String(number)}`, author: "octocat", reasons: ["own_pr"] }),
   backports: [],
 });
 
 /** A PR in an Issue's tree. */
-const row: WorkbenchRow = {
-  number: 0,
-  title: "PR",
-  author: "octocat",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: null,
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "unreviewed" },
-  seen: seen(0),
-};
+const row: WorkbenchRow = workbenchRow(0, { title: "PR", author: "octocat", ci: null });
 
 const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 1, problem: null };
 const whole = { kind: "whole" } as const;
 const onlyMine = { kind: "filter", query: mine.query } as const;
 
-const answer = (...numbers: number[]) => ({
-  status: "ok" as const,
-  data: {
-    items: numbers.map(item),
-    count: numbers.length,
-    review_requests: 0,
-    stale_reviews: 0,
-    filters: [mine],
-  },
-});
-
-const refused = { status: "error" as const, error: { kind: "internal" as const, message: "no database" } };
-
-/** Catches the listener the state registers, so a test can say a Repository changed as the core would, and
- * which items. */
-const catchListener = () => {
-  const stop = vi.fn();
-  const send = vi.fn();
-  vi.mocked(events.changed.listen).mockImplementation(async (callback) => {
-    send.mockImplementation((repository: string, items: number[] = []) => {
-      callback({ event: "changed", id: 1, payload: { repository, items } });
-    });
-    return stop;
-  });
-  return { stop, send };
-};
+/** The Workbench listing items `numbers`, counting each as Needing attention, with the Filter `mine`. */
+const answer = (...numbers: number[]) =>
+  workbenchPage(numbers.map(item), { count: numbers.length, filters: [mine] });
 
 const numbers = (state: WorkbenchState) => state.items?.map((i) => i.number);
 
 /** Issue `number` with one PR, `pr`, in its tree. */
 const issueWith = (number: number, pr: number): ListedItem => ({
   attention: null,
+  key: { kind: "issue", number },
+  hidden: null,
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
   state: "OPEN",
   people: [],
+  mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", number: pr, seen: seen(pr), backports: [] }],
   seen: seen(number, pr),
@@ -115,7 +82,7 @@ describe("WorkbenchState", () => {
   });
 
   it("moves the cursor through the list, and stops at each end", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2, 1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -134,7 +101,7 @@ describe("WorkbenchState", () => {
   });
 
   it("follows the item under the cursor to its new line when a change moves it down the list", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -151,7 +118,7 @@ describe("WorkbenchState", () => {
   });
 
   it("says whether the list has a line", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2));
     const state = new WorkbenchState("python/cpython");
     const pr = (number: number, issue?: number) => ({ number, kind: "pull_request" as const, issue });
@@ -170,7 +137,7 @@ describe("WorkbenchState", () => {
   });
 
   it("knows the title of each line it lists", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(3, 2));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -180,12 +147,9 @@ describe("WorkbenchState", () => {
   });
 
   it("names the view on show as the Sidebar does, and a Filter it no longer has by its search", async () => {
-    catchListener();
+    catchChanged();
     const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [mine] },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([], { filters: [mine] }));
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
@@ -205,14 +169,17 @@ describe("WorkbenchState", () => {
   });
 
   it("stops on each PR and Backport in an Issue's tree, and knows the Issue", async () => {
-    catchListener();
+    catchChanged();
     const tree: ListedItem = {
       attention: null,
+      key: { kind: "issue", number: 10 },
+      hidden: null,
       kind: "issue",
       number: 10,
       title: "Issue 10",
       state: "OPEN",
       people: [],
+      mute_author: { kind: "mute", login: "issue-author" },
       updated_at: "2026-11-04T10:00:00Z",
       seen: seen(10, 11, 12, 13),
       pull_requests: [
@@ -227,17 +194,10 @@ describe("WorkbenchState", () => {
       number: 30,
       backport: "manual",
       attention: null,
+      key: { kind: "pull_request", number: 30 },
+      hidden: null,
     };
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [tree, standalone, lone],
-        count: 3,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([tree, standalone, lone], { count: 3 }));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     const walk = (steps: number) =>
@@ -265,28 +225,24 @@ describe("WorkbenchState", () => {
   });
 
   it("passes a PR that fixes two Issues once under each", async () => {
-    catchListener();
+    catchChanged();
     const tree = (number: number): ListedItem => ({
       attention: null,
+      key: { kind: "issue", number },
+      hidden: null,
       kind: "issue",
       number,
       title: `Issue ${String(number)}`,
       state: "OPEN",
       people: [],
+      mute_author: { kind: "mute", login: "issue-author" },
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
       seen: seen(number, 5),
     });
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [tree(10), tree(20), item(30)],
-        count: 3,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([tree(10), tree(20), item(30)], { count: 3 }),
+    );
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.unfold(10);
@@ -309,18 +265,9 @@ describe("WorkbenchState", () => {
   });
 
   it("starts each Issue folded, and keeps what each view unfolds for itself", async () => {
-    catchListener();
+    catchChanged();
     const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [issueWith(10, 11)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [mine],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(10, 11)], { filters: [mine] }));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     const pr = { number: 11, kind: "pull_request" as const, issue: 10 };
@@ -338,17 +285,8 @@ describe("WorkbenchState", () => {
   });
 
   it("moves the cursor from a PR to its Issue as the Issue folds, and unfolds it to put the cursor on a PR", async () => {
-    catchListener();
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [issueWith(10, 11), issueWith(20, 21)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(10, 11), issueWith(20, 21)]));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     const pr = { number: 11, kind: "pull_request" as const, issue: 10 };
@@ -369,16 +307,10 @@ describe("WorkbenchState", () => {
   });
 
   it("keeps the folds of the items on show until the newly selected view's answer arrives", async () => {
-    catchListener();
+    catchChanged();
     const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
-    const listed = {
-      items: [issueWith(10, 11)],
-      count: 0,
-      review_requests: 0,
-      stale_reviews: 0,
-      filters: [mine],
-    };
-    vi.mocked(commands.workbench).mockResolvedValueOnce({ status: "ok", data: listed });
+    const listed = workbenchPage([issueWith(10, 11)], { filters: [mine] });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(listed);
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.unfold(10);
@@ -391,7 +323,7 @@ describe("WorkbenchState", () => {
 
     const selecting = state.select({ kind: "filter", query: mine.query });
     const meanwhile = state.unfolded(10);
-    answer({ status: "ok", data: listed });
+    answer(listed);
     await selecting;
 
     expect([meanwhile, state.unfolded(10)]).toEqual([true, false]);
@@ -399,18 +331,9 @@ describe("WorkbenchState", () => {
   });
 
   it("unfolds the Issue over the PR under the cursor in a view that has it folded", async () => {
-    catchListener();
+    catchChanged();
     const mine = { name: "Mine", query: "is:open author:@me", on_workbench: true, count: 0, problem: null };
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [issueWith(10, 11)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [mine],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(10, 11)], { filters: [mine] }));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.moveTo({ number: 11, kind: "pull_request", issue: 10 });
@@ -421,33 +344,74 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("folds a Filter's Muted items at the list's end, where the cursor goes only while they show", async () => {
+    catchChanged();
+    const muted: ListedItem = { ...item(5), hidden: "muted" };
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([item(3)], { muted: [muted], filters: [mine] }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const stop = { number: 5, kind: "pull_request" as const, issue: undefined };
+
+    state.moveCursor(1);
+    state.moveCursor(1);
+    const folded = [state.mutedShown, state.cursor?.number, state.lists(stop), state.titleOf(5)];
+    state.toggleMuted();
+    state.moveCursor(1);
+    const shown = [state.mutedShown, state.cursor?.number];
+    const acts = [state.hiddenHolding(stop, "muted"), state.hidingBy(stop)?.key, state.seenOf(stop)];
+    state.toggleMuted();
+
+    expect(folded).toEqual([false, 3, true, "PR 5"]);
+    expect(shown).toEqual([true, 5]);
+    expect(acts).toEqual([muted.key, muted.key, muted.seen]);
+    expect([state.mutedShown, state.cursor?.number]).toEqual([false, 3]);
+    state.stop();
+  });
+
+  it("shows the folded Muted items to put the cursor on one, and each view keeps its own fold", async () => {
+    catchChanged();
+    const muted: ListedItem = { ...item(5), hidden: "muted" };
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([item(3)], { muted: [muted], filters: [mine] }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    state.moveTo({ number: 5, kind: "pull_request", issue: undefined });
+    const shown = [state.mutedShown, state.underCursor?.number];
+    state.moveTo({ number: 3, kind: "pull_request", issue: undefined });
+    await state.select(onlyMine);
+    const inFilter = state.mutedShown;
+    await state.select(whole);
+
+    expect(shown).toEqual([true, 5]);
+    expect([inFilter, state.mutedShown]).toEqual([false, true]);
+    state.stop();
+  });
+
   it("follows a PR to its new line when a change puts it under an Issue", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     state.moveCursor(1);
     const tree: ListedItem = {
       attention: null,
+      key: { kind: "issue", number: 10 },
+      hidden: null,
       kind: "issue",
       number: 10,
       title: "Issue 10",
       state: "OPEN",
       people: [],
+      mute_author: { kind: "mute", login: "issue-author" },
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
       seen: seen(10, 5),
     };
-    vi.mocked(commands.workbench).mockResolvedValueOnce({
-      status: "ok",
-      data: {
-        items: [tree, item(6)],
-        count: 2,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([tree, item(6)], { count: 2 }));
 
     send("python/cpython");
 
@@ -460,7 +424,7 @@ describe("WorkbenchState", () => {
   });
 
   it("starts the cursor over when a change takes its item off the list", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -478,8 +442,168 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
+  it("lands the cursor after an archived item once the item leaves, and forgets an archive whose item left", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6, 7));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    const reload = async (...listed: number[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(answer(...listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(numbers(state)).toEqual(listed);
+      });
+    };
+
+    await state.archive({ key: item(5).key, mark: item(5).seen.mark });
+    await reload(5, 6);
+    expect(state.cursor?.number, "a sync's answer can come before the archive's").toBe(5);
+    await reload(6, 7);
+    expect(state.cursor?.number).toBe(6);
+
+    // Archived from the Detail pane, with the cursor elsewhere, then back on the list.
+    await state.archive({ key: item(7).key, mark: item(7).seen.mark });
+    await reload(6);
+    await reload(6, 7);
+    state.moveCursor(1);
+    expect(state.cursor?.number).toBe(7);
+    await reload(6);
+
+    expect(state.underCursor, "it left for another reason, as a closed item does").toBeUndefined();
+    state.stop();
+  });
+
+  it("lands the cursor after a muted item once it goes into a Filter's folded Muted items, which stay folded", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.mute).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6, 7));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+
+    await state.mute({ key: item(5).key, mark: item(5).seen.mark });
+    const page = workbenchPage([6, 7].map(item), { muted: [{ ...item(5), hidden: "muted" }] });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(page);
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6, 7]);
+    });
+
+    expect([state.cursor?.number, state.mutedShown]).toEqual([6, false]);
+    state.stop();
+  });
+
+  it("lands the cursor after a muted item with the Muted items shown, and closes them once they empty", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.mute).mockResolvedValue(done);
+    const muted = (number: number): ListedItem => ({ ...item(number), hidden: "muted" });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(
+      workbenchPage([5, 6].map(item), { muted: [muted(9)] }),
+    );
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.toggleMuted();
+    state.moveCursor(1);
+    const answer = async (listed: number[], folded: number[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(
+        workbenchPage(listed.map(item), { muted: folded.map(muted) }),
+      );
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.muted.map((one) => one.number)).toEqual(folded);
+      });
+    };
+
+    await state.mute({ key: item(5).key, mark: item(5).seen.mark });
+    await answer([6], [5, 9]);
+    const muting = [state.cursor?.number, state.mutedShown];
+    await answer([5, 6, 9], []);
+    await answer([5, 6], [9]);
+
+    expect(muting).toEqual([6, true]);
+    expect(state.mutedShown).toBe(false);
+    state.stop();
+  });
+
+  it("lands the cursor after an item a change puts into the folded Muted items, and leaves them folded", async () => {
+    const { send } = catchChanged();
+    const landed = vi.fn();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    state.moveCursor(1);
+    const page = workbenchPage([item(6)], { muted: [{ ...item(5), hidden: "muted" }] });
+    vi.mocked(commands.workbench).mockResolvedValueOnce(page);
+
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6]);
+    });
+
+    expect([state.cursor?.number, state.mutedShown, landed.mock.calls.length]).toEqual([6, false, 1]);
+    state.stop();
+  });
+
+  it("forgets an archive whose item a Filter's view keeps listing, Archived", async () => {
+    const { send } = catchChanged();
+    const landed = vi.fn();
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([5, 6].map(item)));
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    state.moveCursor(1);
+    const reload = async (...listed: ListedItem[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage(listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.items).toEqual(listed);
+      });
+    };
+
+    await state.archive({ key: item(5).key, mark: item(5).seen.mark });
+    await reload({ ...item(5), hidden: "archived" }, item(6));
+    const kept = state.underCursor?.number;
+    await reload(item(6));
+
+    expect(kept).toBe(5);
+    expect([state.underCursor, landed.mock.calls.length]).toEqual([undefined, 0]);
+    state.stop();
+  });
+
+  it("waits for an unarchived item to leave only in the Archived view, as any other keeps listing it", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.unarchive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(5, 6));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    state.moveCursor(1);
+    const reload = async (...listed: number[]) => {
+      vi.mocked(commands.workbench).mockResolvedValueOnce(answer(...listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(numbers(state)).toEqual(listed);
+      });
+    };
+
+    // From the Issue view's button, while the Workbench lists the item it brings back.
+    await state.unarchive(item(5).key);
+    await reload(5, 6);
+    await reload(6);
+    expect(state.underCursor, "it left for another reason, as a closed item does").toBeUndefined();
+
+    vi.mocked(commands.workbench).mockResolvedValueOnce(answer(7, 8));
+    await state.select({ kind: "archived" });
+    state.moveCursor(1);
+    await state.unarchive(item(7).key);
+    await reload(8);
+    expect(state.cursor?.number).toBe(8);
+    state.stop();
+  });
+
   it("starts the cursor over when its item has left the list", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -500,7 +624,7 @@ describe("WorkbenchState", () => {
   });
 
   it("holds what the core lists for its Repository", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
     expect(state.items).toBeUndefined();
@@ -513,20 +637,31 @@ describe("WorkbenchState", () => {
   });
 
   it("holds the counts of the Built-in views", async () => {
-    catchListener();
-    vi.mocked(commands.workbench).mockResolvedValueOnce({
-      status: "ok",
-      data: { items: [item(4)], count: 0, review_requests: 3, stale_reviews: 2, filters: [] },
-    });
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(
+      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2, archived: 6 }),
+    );
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
     expect(state.reviewRequests).toBe(3);
     expect(state.staleReviews).toBe(2);
+    expect(state.archived).toBe(6);
+  });
+
+  it("names the Archived view", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([]));
+    const state = new WorkbenchState("python/cpython");
+
+    await state.select({ kind: "archived" });
+
+    expect(state.title).toBe("Archived");
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "archived" });
   });
 
   it("asks for a Filter the user selects, and for the whole Workbench again", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
     expect(state.selected).toEqual(whole);
@@ -545,7 +680,7 @@ describe("WorkbenchState", () => {
   });
 
   it("knows the line of the selected Filter, and of no other view", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -558,14 +693,14 @@ describe("WorkbenchState", () => {
   });
 
   it("puts a Filter on the Workbench and asks again, or says why it couldn't", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     await state.select(onlyMine);
     vi.mocked(commands.workbench).mockClear();
 
-    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce({ status: "ok", data: null });
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce(done);
     await state.putOnWorkbench(mine.query, false);
     expect(commands.putFilterOnWorkbench).toHaveBeenLastCalledWith({
       repository: "python/cpython",
@@ -575,7 +710,7 @@ describe("WorkbenchState", () => {
     expect(state.switchProblem).toBeUndefined();
     expect(commands.workbench).toHaveBeenCalledTimes(1);
 
-    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce(refused);
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce(refused("no database"));
     await state.putOnWorkbench(mine.query, false);
     expect(state.switchProblem).toBe("no database");
     expect(commands.workbench).toHaveBeenCalledTimes(2);
@@ -585,14 +720,14 @@ describe("WorkbenchState", () => {
     expect(state.switchProblem).toBe("Error: gone");
     expect(state.switching).toBe(false);
 
-    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce({ status: "ok", data: null });
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValueOnce(done);
     await state.putOnWorkbench(mine.query, false);
     expect(state.switchProblem).toBeUndefined();
   });
 
   /** A Workbench whose one Filter is off, and the save of its switch, which the test answers. */
   const switchingOn = async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const off = () => ({
       ...answer(1),
       data: { ...answer(1).data, filters: [{ ...mine, on_workbench: false }] },
@@ -600,7 +735,7 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.workbench).mockResolvedValue(off());
     const state = new WorkbenchState("python/cpython");
     await state.load();
-    const save = Promise.withResolvers<{ status: "ok"; data: null } | typeof refused>();
+    const save = Promise.withResolvers<typeof done | ReturnType<typeof refused>>();
     vi.mocked(commands.putFilterOnWorkbench).mockReturnValueOnce(save.promise);
     const line = () => state.filters[0] as FilterLine;
     return { state, save, line, send, off };
@@ -608,11 +743,11 @@ describe("WorkbenchState", () => {
 
   it("keeps the first save's problem when a later one in the same run saves", async () => {
     const { state, save } = await switchingOn();
-    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValue({ status: "ok", data: null });
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValue(done);
 
     const switching = state.putOnWorkbench(mine.query, true);
     await state.putOnWorkbench("label:bug", true);
-    save.resolve(refused);
+    save.resolve(refused("no database"));
     await switching;
 
     expect(commands.putFilterOnWorkbench).toHaveBeenCalledTimes(2);
@@ -621,26 +756,25 @@ describe("WorkbenchState", () => {
 
   it("drops an answer to a question asked before a save landed", async () => {
     const { state, save, line, send, off } = await switchingOn();
-    // Settles what the answers so far set going. No polling, as a question out past the HUD's budget would
-    // have the HUD record a miss.
-    const settle = () => new Promise((settled) => setTimeout(settled, 0));
+    // Each `nextTask` settles what the answers so far set going. No polling, as a question out past the HUD's
+    // budget would have the HUD record a miss.
     const stale = Promise.withResolvers<ReturnType<typeof off>>();
     vi.mocked(commands.workbench).mockReturnValueOnce(stale.promise);
     send("python/cpython");
-    const other = Promise.withResolvers<{ status: "ok"; data: null }>();
+    const other = Promise.withResolvers<typeof done>();
     vi.mocked(commands.putFilterOnWorkbench).mockReturnValueOnce(other.promise);
 
     const switching = state.putOnWorkbench(mine.query, true);
     await state.putOnWorkbench("label:bug", true);
-    save.resolve({ status: "ok", data: null });
-    await settle();
+    save.resolve(done);
+    await nextTask();
     expect(commands.putFilterOnWorkbench).toHaveBeenCalledTimes(2);
     stale.resolve(off());
-    await settle();
+    await nextTask();
 
     expect(commands.workbench).toHaveBeenCalledTimes(2);
     expect(state.onWorkbench(line())).toBe(true);
-    other.resolve({ status: "ok", data: null });
+    other.resolve(done);
     await switching;
   });
 
@@ -650,7 +784,7 @@ describe("WorkbenchState", () => {
     const switching = state.putOnWorkbench(mine.query, true);
     expect(state.switching).toBe(true);
     expect(state.onWorkbench(line())).toBe(true);
-    save.resolve(refused);
+    save.resolve(refused("no database"));
     await switching;
 
     expect(state.switching).toBe(false);
@@ -664,7 +798,7 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.workbench).mockReturnValueOnce(asked.promise);
 
     const switching = state.putOnWorkbench(mine.query, true);
-    save.resolve({ status: "ok", data: null });
+    save.resolve(done);
     await vi.waitFor(() => {
       expect(commands.workbench).toHaveBeenCalledTimes(2);
     });
@@ -677,14 +811,14 @@ describe("WorkbenchState", () => {
 
   it("saves a switch changed while another save is out once that one is in, as last set", async () => {
     const { state, save } = await switchingOn();
-    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValue({ status: "ok", data: null });
+    vi.mocked(commands.putFilterOnWorkbench).mockResolvedValue(done);
 
     const switching = state.putOnWorkbench(mine.query, true);
     await state.putOnWorkbench(mine.query, false);
     await state.putOnWorkbench("label:bug", true);
     await state.putOnWorkbench("label:bug", false);
     expect(commands.putFilterOnWorkbench).toHaveBeenCalledOnce();
-    save.resolve({ status: "ok", data: null });
+    save.resolve(done);
     await switching;
 
     const sent = vi.mocked(commands.putFilterOnWorkbench).mock.calls.map(([change]) => change);
@@ -702,14 +836,14 @@ describe("WorkbenchState", () => {
     const switching = state.putOnWorkbench(mine.query, true);
     await state.putOnWorkbench(mine.query, false);
     await state.putOnWorkbench(mine.query, true);
-    save.resolve({ status: "ok", data: null });
+    save.resolve(done);
     await switching;
 
     expect(commands.putFilterOnWorkbench).toHaveBeenCalledOnce();
   });
 
   it("keeps a selected Filter when the facts change", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -725,7 +859,7 @@ describe("WorkbenchState", () => {
   });
 
   it("drops the answer for a line the user has already left", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -742,7 +876,7 @@ describe("WorkbenchState", () => {
   });
 
   it("listens before it asks, so no change is lost in between", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     await new WorkbenchState("python/cpython").load();
     const listened = vi.mocked(events.changed.listen).mock.invocationCallOrder[0];
@@ -751,7 +885,7 @@ describe("WorkbenchState", () => {
   });
 
   it("asks again when its Repository changes", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -765,7 +899,7 @@ describe("WorkbenchState", () => {
   });
 
   it("doesn't ask when another Repository changes", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -774,7 +908,7 @@ describe("WorkbenchState", () => {
   });
 
   it("keeps the newest answer when an older one arrives after it", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const first = Promise.withResolvers<ReturnType<typeof answer>>();
     vi.mocked(commands.workbench).mockReturnValueOnce(first.promise);
     const state = new WorkbenchState("python/cpython");
@@ -795,12 +929,12 @@ describe("WorkbenchState", () => {
   });
 
   it("says why the core refused, and keeps the items it has", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
-    vi.mocked(commands.workbench).mockResolvedValueOnce(refused);
+    vi.mocked(commands.workbench).mockResolvedValueOnce(refused("no database"));
     send("python/cpython");
 
     await vi.waitFor(() => {
@@ -810,8 +944,8 @@ describe("WorkbenchState", () => {
   });
 
   it("forgets a refusal when the next answer arrives", async () => {
-    const { send } = catchListener();
-    vi.mocked(commands.workbench).mockResolvedValueOnce(refused);
+    const { send } = catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(refused("no database"));
     const state = new WorkbenchState("python/cpython");
     await state.load();
     expect(state.error).toBe("no database");
@@ -826,7 +960,7 @@ describe("WorkbenchState", () => {
   });
 
   it("says so when a question breaks", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockRejectedValue(new Error("the core is gone"));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -842,7 +976,7 @@ describe("WorkbenchState", () => {
   });
 
   it("stops listening when stopped", async () => {
-    const { stop } = catchListener();
+    const { stop } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -851,7 +985,7 @@ describe("WorkbenchState", () => {
   });
 
   it("stops listening and asks nothing if stopped before it could listen", async () => {
-    const { stop } = catchListener();
+    const { stop } = catchChanged();
     const state = new WorkbenchState("python/cpython");
     const loading = state.load();
     state.stop();
@@ -865,21 +999,12 @@ describe("WorkbenchState", () => {
   });
 
   it("finds each line's part in Mark Seen: an Issue's covers its tree, and a PR's the PR alone", async () => {
-    catchListener();
+    catchChanged();
     const standalone = {
       ...item(3),
       backports: [{ ...row, number: 4, seen: seen(4), backport: "bot" as const }],
     };
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [issueWith(1, 2), standalone],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(1, 2), standalone]));
     const state = new WorkbenchState("python/cpython");
     const numbersOf = (number: number, kind: "issue" | "pull_request", issue?: number) =>
       state.seenOf({ number, kind, issue })?.mark.numbers;
@@ -894,17 +1019,62 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("sends Mark Seen and Mark Unseen to the core, and says what went wrong", async () => {
-    vi.mocked(commands.markSeen).mockResolvedValue({ status: "ok", data: null });
-    vi.mocked(commands.markUnseen).mockResolvedValue(refused);
+  it("archives or mutes the item that holds a line, with its tree's part in Mark Seen", async () => {
+    catchChanged();
+    const standalone = {
+      ...item(3),
+      backports: [{ ...row, number: 4, seen: seen(4), backport: "bot" as const }],
+    };
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issueWith(1, 2), standalone]));
     const state = new WorkbenchState("python/cpython");
-    const mark = { numbers: [1, 2], up_to: "2026-11-04T10:00:00Z" };
+    const hiding = (number: number, kind: "issue" | "pull_request", issue?: number) =>
+      state.hidingBy({ number, kind, issue });
+    expect(hiding(1, "issue"), "before the first answer").toBeUndefined();
+    expect(state.hiddenHolding({ number: 1, kind: "issue", issue: undefined }, "archived")).toBeUndefined();
+    await state.load();
+
+    expect(hiding(2, "pull_request", 1)).toEqual({
+      key: { kind: "issue", number: 1 },
+      mark: issueWith(1, 2).seen.mark,
+    });
+    expect(hiding(4, "pull_request")?.key).toEqual({ kind: "pull_request", number: 3 });
+    expect(hiding(9, "issue")).toBeUndefined();
+    state.stop();
+  });
+
+  it("says which item holding a line the list draws Muted, and sends Mute and Unmute to the core", async () => {
+    catchChanged();
+    vi.mocked(commands.mute).mockResolvedValue(done);
+    vi.mocked(commands.unmute).mockResolvedValue(refused("no database"));
+    const muted: ListedItem = { ...issueWith(1, 2), hidden: "muted" };
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([muted, item(3)]));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    const key = { kind: "issue" as const, number: 1 };
+
+    expect(state.hiddenHolding({ number: 2, kind: "pull_request", issue: 1 }, "muted")).toEqual(key);
+    expect(
+      state.hiddenHolding({ number: 3, kind: "pull_request", issue: undefined }, "muted"),
+    ).toBeUndefined();
+    expect(state.hiddenHolding({ number: 1, kind: "issue", issue: undefined }, "archived")).toBeUndefined();
+    expect(await state.mute({ key, mark: muted.seen.mark })).toBeUndefined();
+    expect(await state.unmute(key)).toBe("no database");
+    expect(commands.mute).toHaveBeenCalledWith("python/cpython", key, muted.seen.mark);
+    expect(commands.unmute).toHaveBeenCalledWith("python/cpython", key);
+    state.stop();
+  });
+
+  it("sends Mark Seen and Mark Unseen to the core, and says what went wrong", async () => {
+    vi.mocked(commands.markSeen).mockResolvedValue(done);
+    vi.mocked(commands.markUnseen).mockResolvedValue(refused("no database"));
+    const state = new WorkbenchState("python/cpython");
+    const mark = { numbers: [1, 2], up_to: "2026-11-04T10:00:00Z", findings: [] };
 
     expect(await state.markSeen(mark)).toBeUndefined();
     expect(await state.markUnseen(7)).toBe("no database");
 
     expect(commands.markSeen).toHaveBeenCalledWith("python/cpython", mark);
-    expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7);
+    expect(commands.markUnseen).toHaveBeenCalledWith("python/cpython", 7, null);
   });
 
   /** Item `number`, with a Review request waiting on the user. */
@@ -915,22 +1085,15 @@ describe("WorkbenchState", () => {
 
   /** The list the core answers: the items of `waits` Need attention, and those of `rest` below them don't. */
   const answering = (waits: number[], rest: number[] = []) => {
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [...waits.map(waiting), ...rest.map(item)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([...waits.map(waiting), ...rest.map(item)], { count: 0 }),
+    );
   };
 
   /** A list of the waiting `items` with the cursor on its line `at`, counted from the top, what it calls
    * each time the cursor lands, and the order the window holds, which a test may change. */
   const listingWithCursor = async (items: number[], at: number) => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     answering(items);
     const landed = vi.fn();
     const order = { now: "attention" as ListOrder };
@@ -960,7 +1123,7 @@ describe("WorkbenchState", () => {
   });
 
   it("lands the cursor with nobody told when it was made without a callback", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     answering([3, 2]);
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -989,11 +1152,8 @@ describe("WorkbenchState", () => {
   });
 
   it("lands the cursor on the last line, under an unfolded Issue, when the item under it was the last and left the list", async () => {
-    const { send } = catchListener();
-    const listing = (...items: ListedItem[]) => ({
-      status: "ok" as const,
-      data: { items, count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    });
+    const { send } = catchChanged();
+    const listing = (...items: ListedItem[]) => workbenchPage(items, { count: 0 });
     const issue = { ...issueWith(7, 8), attention: waiting(7).attention };
     vi.mocked(commands.workbench).mockResolvedValue(listing(issue, waiting(3)));
     const landed = vi.fn();
@@ -1015,16 +1175,9 @@ describe("WorkbenchState", () => {
   it("lands the cursor on the item that came after the one under it in an order that leaves it in place", async () => {
     const { state, send, landed } = await listingWithCursor([3, 2, 1], 0);
 
-    vi.mocked(commands.workbench).mockResolvedValue({
-      status: "ok",
-      data: {
-        items: [item(3), waiting(2), waiting(1)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    vi.mocked(commands.workbench).mockResolvedValue(
+      workbenchPage([item(3), waiting(2), waiting(1)], { count: 0 }),
+    );
     send("python/cpython", [3]);
 
     await vi.waitFor(() => {
@@ -1091,7 +1244,7 @@ describe("WorkbenchState", () => {
   });
 
   it("leaves the cursor in place when the item under it, with nothing waiting, changes or leaves the list", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     answering([], [3, 2, 1]);
     const landed = vi.fn();
     const state = new WorkbenchState("python/cpython", { landed });
@@ -1141,7 +1294,7 @@ describe("WorkbenchState", () => {
   });
 
   it("leaves the cursor on a PR in a tree when the Issue over it stops waiting", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     const pr = (number: number) => ({
       ...row,
       kind: "pr" as const,
@@ -1151,25 +1304,20 @@ describe("WorkbenchState", () => {
     });
     const issue = (attention: ListedItem["attention"]): ListedItem => ({
       attention,
+      key: { kind: "issue", number: 5 },
+      hidden: null,
       kind: "issue",
       number: 5,
       title: "Issue 5",
       state: "OPEN",
       people: [],
+      mute_author: { kind: "mute", login: "issue-author" },
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [pr(10), pr(11)],
       seen: seen(5, 10, 11),
     });
-    const listing = (attention: ListedItem["attention"]) => ({
-      status: "ok" as const,
-      data: {
-        items: [issue(attention), waiting(3)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    const listing = (attention: ListedItem["attention"]) =>
+      workbenchPage([issue(attention), waiting(3)], { count: 0 });
     vi.mocked(commands.workbench).mockResolvedValue(listing(waiting(5).attention));
     const landed = vi.fn();
     const state = new WorkbenchState("python/cpython", { landed });
@@ -1200,20 +1348,11 @@ describe("WorkbenchState", () => {
 
     send("python/cpython");
     state.stop();
-    answer({
-      status: "ok",
-      data: {
-        items: [waiting(4), waiting(2), waiting(1), item(3)],
-        count: 0,
-        review_requests: 0,
-        stale_reviews: 0,
-        filters: [],
-      },
-    });
+    answer(workbenchPage([waiting(4), waiting(2), waiting(1), item(3)], { count: 0 }));
     await vi.waitFor(() => {
       expect(commands.workbench).toHaveBeenCalledTimes(2);
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTask();
 
     expect(numbers(state)).toEqual([4, 3, 2, 1]);
     expect(state.cursor?.number).toBe(3);
@@ -1237,7 +1376,7 @@ describe("WorkbenchState", () => {
     const { state, send, landed, order } = await listingWithCursor([4, 3, 2, 1], 1);
 
     // The order changes and changes back, and neither answer shows.
-    vi.mocked(commands.workbench).mockResolvedValue(refused);
+    vi.mocked(commands.workbench).mockResolvedValue(refused("no database"));
     order.now = "last_update";
     await state.reorder();
     order.now = "attention";
@@ -1264,7 +1403,7 @@ describe("WorkbenchState", () => {
   });
 
   it("tells the page before a change's answer replaces the lines on show, and again once the cursor is placed", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     answering([], [4, 3, 2]);
     const order = { now: "attention" as ListOrder };
     /** The lines and the cursor at each call, before the answer and after it. */
@@ -1308,12 +1447,9 @@ const at = (number: number, hour: number): InboxCursor => ({
 });
 
 /** A page of the Inbox holding items `numbers`, whose next older page starts after `older`. */
-const page = (numbers: number[], older: InboxCursor | null = null) => ({
-  status: "ok" as const,
-  data: { items: numbers.map(item), older },
-});
+const page = (numbers: number[], older: InboxCursor | null = null) => ok({ items: numbers.map(item), older });
 
-type Page = ReturnType<typeof page> | typeof refused;
+type Page = ReturnType<typeof page> | ReturnType<typeof refused>;
 
 /** How a test names a page of the Inbox: `latest`, `all`, `older 3` for the page after item 3, or `through 3`
  * for the pages down to item 3. */
@@ -1331,15 +1467,16 @@ const named = (asked: InboxPage): string => {
 
 /** Answers each page of the Inbox by its name, as `named` gives it, and refuses one the test didn't name. */
 const paging = (pages: Record<string, Page | Promise<Page>>) => {
-  vi.mocked(commands.inbox).mockImplementation(async (_, asked) => pages[named(asked)] ?? refused);
+  vi.mocked(commands.inbox).mockImplementation(
+    async (_, asked) => pages[named(asked)] ?? refused("no database"),
+  );
 };
 
 /** The pages of the Inbox asked for, by name. */
 const pagesAsked = () => vi.mocked(commands.inbox).mock.calls.map(([, asked]) => named(asked));
 
-/** Lets each read the state chained run, as no promise a test holds says when the last is done. */
-const settle = () => new Promise((settled) => setTimeout(settled, 0));
-
+// Its tests wait a `nextTask` to let each read the state chained run, as no promise a test holds says when
+// the last is done.
 describe("WorkbenchState's Inbox", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -1354,7 +1491,7 @@ describe("WorkbenchState's Inbox", () => {
   }
 
   it("lists the Inbox's first page, with the Sidebar's counts from the Workbench", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(9));
     paging({ latest: page([3, 2], at(2, 9)) });
     const state = await showingInbox();
@@ -1375,7 +1512,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads the older pages onto the end, each item once, until the cache holds nothing older", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3, 2], at(2, 9)), "older 2": page([2, 1]) });
     const state = await showingInbox();
@@ -1391,7 +1528,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads nothing older while a view of the Workbench is on show", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
@@ -1402,7 +1539,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads the next page once, however often the list asks while it reads", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const next = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "older 3": next.promise });
@@ -1418,7 +1555,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads the pages on show again after a change in one page, which ends where they ended", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([5, 4], at(4, 9)), "older 4": page([3, 2], at(2, 7)) });
     const state = await showingInbox();
@@ -1436,21 +1573,21 @@ describe("WorkbenchState's Inbox", () => {
     expect(commands.inbox).toHaveBeenLastCalledWith("python/cpython", { kind: "through", until: at(2, 7) });
     expect(state.olderToRead).toBe(true);
     send("python/cpython");
-    await settle();
+    await nextTask();
     expect(pagesAsked()).toEqual(["through 2", "through 2"]);
     state.stop();
   });
 
   it("reads only the first page's items again after a change while only that page is on show", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3], at(0, 7)), "through 0": page([4, 3], at(0, 7)) });
     const state = await showingInbox();
 
     send("python/cpython");
-    await settle();
+    await nextTask();
     send("python/cpython");
-    await settle();
+    await nextTask();
 
     // The first page's start moves with the clock, but the pages on show end where they did.
     expect(pagesAsked()).toEqual(["latest", "through 0", "through 0"]);
@@ -1459,7 +1596,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads the pages again once for a burst of changes that land while a read is under way", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const next = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "older 3": next.promise, all: page([4, 3, 2]) });
@@ -1471,7 +1608,7 @@ describe("WorkbenchState's Inbox", () => {
     send("python/cpython");
     next.resolve(page([2]));
     await reading;
-    await settle();
+    await nextTask();
 
     expect(pagesAsked()).toEqual(["latest", "older 3", "all"]);
     expect(numbers(state)).toEqual([4, 3, 2]);
@@ -1479,7 +1616,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads every page again after a change once those on show reached the end", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3], at(3, 9)), "older 3": page([2]) });
     const state = await showingInbox();
@@ -1497,7 +1634,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads the first page again when the Inbox is selected anew, however far it read before", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(9));
     paging({ latest: page([3], at(3, 9)), "older 3": page([2]) });
     const state = await showingInbox();
@@ -1512,7 +1649,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("puts an older page on the end that lands while a change waits, then reads through it", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const next = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "older 3": next.promise, "through 2": page([4, 3, 2], at(2, 8)) });
@@ -1520,7 +1657,7 @@ describe("WorkbenchState's Inbox", () => {
     const reading = state.readOlder();
 
     send("python/cpython");
-    await settle();
+    await nextTask();
     // The change's answer waits for the page under way.
     expect(pagesAsked()).toEqual(["latest", "older 3"]);
     next.resolve(page([2], at(2, 8)));
@@ -1536,16 +1673,16 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads an older page asked while a change's answer is on its way once that answer is on show", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const again = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "through 3": again.promise, "older 2": page([1]) });
     const state = await showingInbox();
 
     send("python/cpython");
-    await settle();
+    await nextTask();
     const reading = state.readOlder();
-    await settle();
+    await nextTask();
     expect(pagesAsked()).toEqual(["latest", "through 3"]);
     // The change put 2 below 3, so the next page starts after 2.
     again.resolve(page([4, 3, 2], at(2, 8)));
@@ -1557,14 +1694,14 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("reads no older page that a change's answer, landing first, left nothing to read below", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const again = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "through 3": again.promise });
     const state = await showingInbox();
 
     send("python/cpython");
-    await settle();
+    await nextTask();
     const reading = state.readOlder();
     again.resolve(page([4, 3]));
     await reading;
@@ -1575,7 +1712,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("asks nothing for a change that a newly selected view followed while it waited", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const next = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "older 3": next.promise });
@@ -1588,7 +1725,7 @@ describe("WorkbenchState's Inbox", () => {
     const asked = vi.mocked(commands.workbench).mock.calls.length;
     next.resolve(page([2]));
     await reading;
-    await settle();
+    await nextTask();
 
     // Nor does the older page land on the Workbench's list.
     expect(numbers(state)).toEqual([9]);
@@ -1598,7 +1735,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("goes on reading the Inbox after a page's hook throws while an answer goes on show", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({
       latest: page([3], at(3, 9)),
@@ -1631,7 +1768,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("says why a change's answer didn't go on show when a page's hook throws", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3], at(3, 9)), "through 3": page([4, 3], at(3, 9)) });
     const hook = { throws: true };
@@ -1645,20 +1782,20 @@ describe("WorkbenchState's Inbox", () => {
     await state.select(inbox);
 
     send("python/cpython");
-    await settle();
+    await nextTask();
     expect(state.error).toBe("Error: the hook broke");
     expect(numbers(state)).toEqual([3]);
 
     hook.throws = false;
     send("python/cpython");
-    await settle();
+    await nextTask();
     expect(state.error).toBeUndefined();
     expect(numbers(state)).toEqual([4, 3]);
     state.stop();
   });
 
   it("drops an older page that lands after the window left the Repository", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     const next = Promise.withResolvers<Page>();
     paging({ latest: page([3], at(3, 9)), "older 3": next.promise });
@@ -1672,7 +1809,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("says why it couldn't read the Inbox, and keeps the list on show with the Workbench's counts", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(9));
     paging({});
     const state = new WorkbenchState("python/cpython");
@@ -1687,12 +1824,12 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("says why it couldn't read the Workbench's counts, and lists the Inbox", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(9));
     paging({ latest: page([3]) });
     const state = new WorkbenchState("python/cpython");
     await state.load();
-    vi.mocked(commands.workbench).mockResolvedValue(refused);
+    vi.mocked(commands.workbench).mockResolvedValue(refused("no database"));
     await state.select(inbox);
 
     expect(state.error).toBe("no database");
@@ -1702,7 +1839,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("says apart why it couldn't read the next page, and clears that once a page comes", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3], at(3, 9)) });
     const state = await showingInbox();
@@ -1720,12 +1857,12 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("keeps saying why it couldn't read the pages again once an older page comes", async () => {
-    const { send } = catchListener();
+    const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3], at(3, 9)) });
     const state = await showingInbox();
     send("python/cpython");
-    await settle();
+    await nextTask();
     expect(state.error).toBe("no database");
 
     paging({ "older 3": page([2]) });
@@ -1736,7 +1873,7 @@ describe("WorkbenchState's Inbox", () => {
   });
 
   it("clears why it couldn't read the next page once another view's answer is on show", async () => {
-    catchListener();
+    catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(9));
     paging({ latest: page([3], at(3, 9)) });
     const state = await showingInbox();

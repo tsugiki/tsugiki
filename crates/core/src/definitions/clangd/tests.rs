@@ -1,7 +1,7 @@
 use std::fs;
 
-use super::super::testing::Fixture;
 use super::*;
+use crate::testing::Fixture;
 use crate::testing::temp_path;
 
 /// Writes an empty file at each of `paths` under `folder`.

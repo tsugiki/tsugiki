@@ -22,10 +22,11 @@
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::{self, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{env, thread};
 
 use tsugiki_lsp::{Launch, Server};
+use tsugiki_test_git::within;
 
 const TEST: &str = "a_killed_parent_leaves_no_server_behind";
 /// The role a run of this binary plays: none for the test itself.
@@ -66,7 +67,10 @@ fn a_killed_parent_leaves_no_server_behind() {
     }
 
     parent.kill().unwrap();
-    let _killed = parent.wait().unwrap();
+    assert!(
+        !parent.wait().unwrap().success(),
+        "the parent wasn't killed"
+    );
     for role in ["server", "worker"] {
         let lock = File::open(folder.join(format!("{role}.lock"))).unwrap();
         assert!(
@@ -104,7 +108,11 @@ fn parent() -> ! {
 /// A server that never reads what the client writes, so it doesn't notice its input close, and that
 /// starts a worker.
 fn server() -> ! {
-    let _worker = Command::new(env::current_exe().unwrap())
+    #[expect(
+        unused_results,
+        reason = "the worker runs on after the server stops looking at it, until the test kills both"
+    )]
+    Command::new(env::current_exe().unwrap())
         .args(rerun())
         .env(ROLE, "worker")
         .stdin(Stdio::null())
@@ -122,16 +130,4 @@ fn hold(role: &str) -> ! {
     fs::write(folder().join(format!("{role}.ready")), "").unwrap();
     thread::sleep(LIFETIME);
     process::exit(0);
-}
-
-/// Whether `check` holds within `patience`.
-fn within(patience: Duration, check: impl Fn() -> bool) -> bool {
-    let until = Instant::now() + patience;
-    while Instant::now() < until {
-        if check() {
-            return true;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    check()
 }

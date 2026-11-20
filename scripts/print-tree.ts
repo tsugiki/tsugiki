@@ -3,13 +3,13 @@
 // with no open blocker. `tree.ts` holds the layout.
 import { execFileSync } from "node:child_process";
 
+import { stop } from "./run.ts";
 import { QUERY, ticketsFromPages, treeLines } from "./tree.ts";
 
 const args = process.argv.slice(2);
 const bad = args.filter((arg) => !/^\d+$/.test(arg));
 if (bad.length > 0) {
-  console.error(`just tree takes ticket numbers, not ${bad.join(", ")}`);
-  process.exit(1);
+  stop(`just tree takes ticket numbers, not ${bad.join(", ")}`);
 }
 const named = args.map(Number);
 
@@ -36,8 +36,7 @@ if (warning !== undefined) {
 const open = new Set(tickets.map((ticket) => ticket.number));
 const closed = named.filter((number) => !open.has(number));
 if (closed.length > 0) {
-  console.error(`Not an open issue: ${closed.map((n) => `#${String(n)}`).join(", ")}`);
-  process.exit(1);
+  stop(`Not an open issue: ${closed.map((n) => `#${String(n)}`).join(", ")}`);
 }
 const lines = treeLines(tickets, named);
 console.log(lines.length === 0 ? "No open tickets." : lines.join("\n"));

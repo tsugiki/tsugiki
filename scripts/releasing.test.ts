@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { notesFor } from "./release-notes.ts";
 import {
   type Tree,
+  byVersion,
   isoDate,
+  isReleaseBranch,
   mainCi,
   prepareRefusal,
+  releaseBranch,
   releaseVersion,
   shipRefusal,
   tagRefusal,
@@ -54,6 +58,32 @@ describe("releaseVersion", () => {
   );
 });
 
+describe("byVersion", () => {
+  it("puts the earliest version first, a short one as if padded, and other titles last", () => {
+    const titles = ["Backlog", "1.0.0", "0.10.0", "0.4.1", "0.2.0", "0.4", "Someday"];
+    expect(titles.sort(byVersion)).toEqual([
+      "0.2.0",
+      "0.4",
+      "0.4.1",
+      "0.10.0",
+      "1.0.0",
+      "Backlog",
+      "Someday",
+    ]);
+  });
+});
+
+describe("releaseBranch", () => {
+  it("names the branch after the version, as a release branch", () => {
+    expect(releaseBranch("0.2.4")).toBe("release/0.2.4");
+    expect(isReleaseBranch(releaseBranch("0.2.4"))).toBe(true);
+  });
+
+  it("tells another branch from a release branch", () => {
+    expect(isReleaseBranch("860-fold-scripts")).toBe(false);
+  });
+});
+
 describe("withVersion", () => {
   it("sets the workspace's version and nothing else", () => {
     expect(withVersion(CARGO_TOML, "0.2.4")).toBe(
@@ -79,6 +109,10 @@ describe("withReleasedWip", () => {
     );
   });
 
+  it("writes a heading that the release check reads back", () => {
+    expect(notesFor(withReleasedWip(CHANGELOG, "0.2.4", "2026-11-20"), "0.2.4")).toContain("### Added");
+  });
+
   it("fails without a WIP section", () => {
     expect(() => withReleasedWip("# Changelog\n", "0.2.4", "2026-11-20")).toThrow('no section "## WIP"');
   });
@@ -89,6 +123,11 @@ describe("withReleasedWip", () => {
 
   it("fails when the version has a section already", () => {
     expect(() => withReleasedWip(CHANGELOG, "0.2.3", "2026-11-20")).toThrow("already");
+  });
+
+  it("fails when the version has a section with a date the release check can't read", () => {
+    const changelog = `${CHANGELOG}\n## Version 0.2.4 (unreleased)\n`;
+    expect(() => withReleasedWip(changelog, "0.2.4", "2026-11-20")).toThrow("already");
   });
 });
 

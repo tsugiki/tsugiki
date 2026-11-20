@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { HOUR_POINTS } from "$lib/testing/fixtures";
 import { pointsTip, pointsWords } from "./points";
 
-const points = {
-  limit: 5000,
-  used: 3760,
-  remaining: 1240,
-  resets_at: "2026-11-17T14:32:00Z",
-  spent: 3610,
-  since: null,
-};
+const points = HOUR_POINTS;
 
 const time = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 

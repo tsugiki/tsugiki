@@ -7,18 +7,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use specta::Type;
 
-use crate::conventions::{Conventions, gh_number};
+pub use rules::{FixedReader, LinkRule, Reading};
+
+use crate::conventions::Conventions;
 use crate::facts::CommitSha;
 use crate::facts::pull_requests::PullRequestFacts;
 use crate::login::Login;
-use crate::repository::{RepositoryName, issue_number};
+use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
-
-/// GitHub's closing keywords, in each form it accepts.
-const KEYWORDS: [&str; 9] = [
-    "close", "closes", "closed", "fix", "fixes", "fixed", "resolve", "resolves", "resolved",
-];
-const GITHUB_URL: &str = "https://github.com/";
 
 /// A Backport's kind: it shares its Origin PR's review state, or it gets a review of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -39,7 +35,8 @@ pub struct BackportLink<K = BackportKind> {
     pub kind: K,
 }
 
-/// The merged PRs Tsugiki has, by the commit each became, for the cherry-pick lines to find.
+/// The merged PRs Tsugiki has, by the commit each became, for the cherry-pick lines to find. How it finds
+/// one is `LinkRule::CherryPickLine`'s, as the store's `Keeper` finds one, so a change to it is a new rule.
 pub struct MergeCommits(BTreeMap<CommitSha, u32>);
 
 impl MergeCommits {
@@ -68,10 +65,18 @@ pub fn backport_of(
     if !conventions.has_backports() {
         return None;
     }
-    let origin = conventions.origin_in_title(&facts.title).or_else(|| {
-        let mut picked = off_default.cherry_picked_from.iter();
-        picked.find_map(|sha| merges.number_of(sha))
-    })?;
+    let in_title = origins_in_title(&LinkRule::SET, &LinkSignals::of(facts)).into_iter();
+    let origin = in_title
+        .filter(|(under, _)| *under == conventions)
+        .map(|(_, origin)| origin)
+        .next()
+        .or_else(|| {
+            let mut picked = off_default.cherry_picked_from.iter();
+            let reads = reads_cherry_picks(&LinkRule::SET);
+            reads
+                .then(|| picked.find_map(|sha| merges.number_of(sha)))
+                .flatten()
+        })?;
     Some(BackportLink {
         origin,
         kind: backport_kind(facts, conventions),
@@ -103,45 +108,26 @@ pub fn backport_kind(facts: &PullRequestFacts, conventions: Conventions) -> Back
 /// Conventions re-groups its Workbench with no re-sync (ADR 0011). A cherry-pick line isn't here, because it
 /// names a commit, and only the PRs Tsugiki has can answer for that.
 pub fn possible_origin(facts: &PullRequestFacts) -> Option<u32> {
-    facts
-        .off_default
-        .as_ref()
-        .and_then(|_| Conventions::origin_in_title_under_any(&facts.title))
+    let named = origins_in_title(&LinkRule::SET, &LinkSignals::of(facts));
+    named.first().map(|(_, origin)| *origin)
 }
 
 /// The numbers `facts` names as fixed under `repository`'s Conventions. All signals add up, with no order of
 /// trust (ADR 0011).
 pub fn fixed_numbers(facts: &PullRequestFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
-    repository
-        .conventions
-        .issues_in_title(&facts.title)
+    let named = fixed_under_each(&LinkRule::SET, &LinkSignals::of(facts), &repository.name);
+    let counted = named
         .into_iter()
-        .chain(signals_of_every_convention(
-            &LinkSignals::of(facts),
-            &repository.name,
-        ))
-        .collect()
+        .filter(|(_, under)| under.is_none_or(|conventions| conventions == repository.conventions));
+    counted.map(|(number, _)| number).collect()
 }
 
 /// The numbers `facts` could name under any Conventions. A sync fetches all of these, so changing a
 /// Repository's Conventions re-groups its Workbench with no re-sync (ADR 0011).
 pub fn possible_numbers(facts: &PullRequestFacts, repository: &RepositoryName) -> BTreeSet<u32> {
-    Conventions::issues_in_title_under_any(&facts.title)
-        .into_iter()
-        .chain(signals_of_every_convention(
-            &LinkSignals::of(facts),
-            repository,
-        ))
-        .collect()
+    let named = fixed_under_each(&LinkRule::SET, &LinkSignals::of(facts), repository);
+    named.into_iter().map(|(number, _)| number).collect()
 }
-
-/// The version of the rules behind the links the store keeps, which it keeps beside them. Raise it with any
-/// change to the rows those rules leave: to what `fixed_under_each` and `origins_in_title` give, a new
-/// Conventions among them, to how the store's `Keeper` matches a cherry-pick line to a merge commit, or to
-/// how it spells the Conventions a row counts under. The store then works out the links of every PR it holds
-/// again as it opens, since a PR that never syncs again would keep the old ones. A store test pins the rows
-/// to this number.
-pub const RULES_VERSION: u32 = 1;
 
 /// What the links that the store keeps are worked out from (#833): the title, GitHub's closing references,
 /// and the description of a PR that doesn't target the default branch, where GitHub ignores closing
@@ -164,113 +150,41 @@ impl<'a> LinkSignals<'a> {
     }
 }
 
-/// The numbers `signals` names as fixed, each with the Conventions it counts under, or `None` for a number
-/// every Conventions counts. The store keeps these, so a change of Conventions picks other rows and rewrites
-/// none (#833). Under `conventions`, the numbers whose `Conventions` is `None` or `conventions` are
-/// `fixed_numbers`.
+/// The numbers the rules of `rules` name as fixed in `signals`, each with the Conventions it counts under,
+/// or `None` for a number every Conventions counts. The store keeps these, so a change of Conventions picks
+/// other rows and rewrites none (#833). Under `conventions`, the numbers whose `Conventions` is `None` or
+/// `conventions` are `fixed_numbers`.
 pub fn fixed_under_each(
+    rules: &[LinkRule],
     signals: &LinkSignals<'_>,
     repository: &RepositoryName,
 ) -> Vec<(u32, Option<Conventions>)> {
-    let in_titles = Conventions::ALL.into_iter().flat_map(|conventions| {
-        let named = conventions.issues_in_title(signals.title).into_iter();
-        named.map(move |number| (number, Some(conventions)))
+    let named = rules.iter().flat_map(|rule| match rule.reading() {
+        Reading::Fixed(read) => read(signals, repository),
+        Reading::OriginInTitle(_) | Reading::OriginPicked => Vec::new(),
     });
-    let every = signals_of_every_convention(signals, repository).into_iter();
-    in_titles
-        .chain(every.map(|number| (number, None)))
-        .collect()
-}
-
-/// The Origin PR that the title in `signals` names under each Conventions with Backports, if the PR doesn't
-/// target the default branch. The store keeps these beside the cherry-pick lines, which name a commit: under
-/// a Conventions with Backports, the title's marker comes first, as `backport_of` reads them.
-pub fn origins_in_title(signals: &LinkSignals<'_>) -> Vec<(Conventions, u32)> {
-    if signals.off_default_description.is_none() {
-        return Vec::new();
-    }
-    let with_backports = Conventions::ALL.into_iter().filter(|c| c.has_backports());
-    let named = with_backports.filter_map(|c| Some((c, c.origin_in_title(signals.title)?)));
     named.collect()
 }
 
-fn signals_of_every_convention(signals: &LinkSignals<'_>, repository: &RepositoryName) -> Vec<u32> {
-    let in_description = (signals.off_default_description).map_or_else(Vec::new, |description| {
-        closing_keywords(description, repository)
+/// The Origin PRs that the rules of `rules` name in the title in `signals`, each with the Conventions that
+/// read it, if the PR doesn't target the default branch. The store keeps these beside the cherry-pick lines,
+/// which name a commit: under a Conventions with Backports, the title's marker comes first, as `backport_of`
+/// reads them.
+pub fn origins_in_title(rules: &[LinkRule], signals: &LinkSignals<'_>) -> Vec<(Conventions, u32)> {
+    let named = rules.iter().filter_map(|rule| match rule.reading() {
+        Reading::OriginInTitle(read) => read(signals),
+        Reading::Fixed(_) | Reading::OriginPicked => None,
     });
-    let closing = signals.closing_issues.iter().copied();
-    closing.chain(in_description).collect()
+    named.collect()
 }
 
-/// The numbers a closing keyword names in `text`, leaving out the parts GitHub doesn't read as text:
-/// comments, code blocks and inline code.
-fn closing_keywords(text: &str, repository: &RepositoryName) -> Vec<u32> {
-    let shown = without_comments(text);
-    let mut in_code = false;
-    let mut found = Vec::new();
-    for line in shown.lines() {
-        let line_start = line.trim_start();
-        if line_start.starts_with("```") || line_start.starts_with("~~~") {
-            in_code = !in_code;
-        } else if !in_code {
-            // Every second piece between backticks is inline code.
-            for piece in line.split('`').step_by(2) {
-                found.extend(keywords_in(piece, repository));
-            }
-        }
-    }
-    found
+/// True when one of `rules` reads cherry-pick lines, which only the PRs Tsugiki has can answer for.
+pub fn reads_cherry_picks(rules: &[LinkRule]) -> bool {
+    let reads = |rule: &LinkRule| matches!(rule.reading(), Reading::OriginPicked);
+    rules.iter().any(reads)
 }
 
-/// `text` without its HTML comments. A comment nobody closes runs to the end, as it does on GitHub.
-fn without_comments(text: &str) -> String {
-    let mut shown = String::new();
-    let mut rest = text;
-    while let Some((before, comment)) = rest.split_once("<!--") {
-        shown.push_str(before);
-        rest = comment.split_once("-->").map_or("", |(_, after)| after);
-    }
-    shown.push_str(rest);
-    shown
-}
-
-fn keywords_in(text: &str, repository: &RepositoryName) -> Vec<u32> {
-    let words = text.split_whitespace();
-    words
-        .clone()
-        .zip(words.skip(1))
-        .filter(|(word, _)| is_keyword(word))
-        .filter_map(|(_, next)| named_issue(next, repository))
-        .collect()
-}
-
-fn is_keyword(word: &str) -> bool {
-    let word = word
-        .trim_start_matches(['(', '*', '_'])
-        .trim_end_matches([':', '*', '_']);
-    KEYWORDS
-        .iter()
-        .any(|keyword| word.eq_ignore_ascii_case(keyword))
-}
-
-/// The number in `#N`, `GH-N`, `owner/name#N` or an Issue's URL, if it is in `repository`.
-fn named_issue(word: &str, repository: &RepositoryName) -> Option<u32> {
-    let word = word
-        .trim_start_matches(['(', '[', '*', '_'])
-        .trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']', '*', '_']);
-    let here =
-        |named: &str| RepositoryName::parse(named).is_ok_and(|name| name.is_same(repository));
-    if let Some(path) = word.strip_prefix(GITHUB_URL) {
-        let (named, rest) = path.split_once("/issues/")?;
-        let (digits, _) = rest.split_once('#').unwrap_or((rest, ""));
-        return here(named).then(|| issue_number(digits)).flatten();
-    }
-    match word.split_once('#') {
-        Some(("", digits)) => issue_number(digits),
-        Some((named, digits)) => here(named).then(|| issue_number(digits)).flatten(),
-        None => gh_number(word),
-    }
-}
+mod rules;
 
 #[cfg(test)]
 mod tests;

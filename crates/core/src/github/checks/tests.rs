@@ -1,11 +1,8 @@
 use serde_json::{Value, json};
 
 use super::*;
-use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::github::testing::{self, RATE_LIMIT, Scripted, github};
+use crate::testing::cpython;
 
 fn run(name: &str, conclusion: Option<&str>, workflow: Option<&str>) -> Value {
     let run = workflow.map(|name| json!({ "workflow": { "name": name } }));
@@ -23,11 +20,8 @@ fn status(context: &str, state: &str) -> Value {
 
 /// A `GitHub` that gives one `answer`.
 fn answering(data: &Value) -> GitHub {
-    let mut data = data.clone();
-    data["rateLimit"] = rate_limit();
-    let reply = reply_ok(&json!({ "data": data }).to_string());
-    let (script, _asked) = Scripted::new(vec![reply]);
-    GitHub::new(Box::new(script), token())
+    let (script, _asked) = Scripted::new(vec![testing::answer(data.clone(), RATE_LIMIT)]);
+    github(script)
 }
 
 fn answer(contexts: &[Value]) -> Value {

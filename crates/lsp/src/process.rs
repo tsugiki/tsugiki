@@ -7,12 +7,12 @@
     reason = "this is the one file in the LSP client that starts a process"
 )]
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io::{self, Read, Write};
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 #[cfg(windows)]
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
@@ -49,21 +49,23 @@ impl Server {
         launch: &Launch,
         log: Option<Box<dyn Write + Send>>,
     ) -> io::Result<(Starting, Receiver<Event>)> {
-        let mut command = Command::new(&launch.program);
-        let _ = command
-            .args(&launch.args)
-            .envs(launch.env.iter().map(|(name, value)| (name, value)))
-            .current_dir(&launch.folder)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut command = windowless(CommandWrap::from(command));
+        let mut command = set_up(&launch.program, |command| {
+            command
+                .args(&launch.args)
+                .envs(launch.env.iter().map(|(name, value)| (name, value)))
+                .current_dir(&launch.folder)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+        });
+        let command = windowless(&mut command);
         #[cfg(windows)]
         let job = EndsWithTsugiki::create();
         #[cfg(windows)]
-        if let Some(job) = &job {
-            let _ = command.wrap(EndsWithTsugiki(Arc::clone(&job.0)));
-        }
+        let command = match &job {
+            Some(job) => command.wrap(EndsWithTsugiki(Arc::clone(&job.0))),
+            None => command,
+        };
         let mut child = command.spawn()?;
         let input = child.stdin().take();
         let output = child.stdout().take();
@@ -75,7 +77,6 @@ impl Server {
         };
         let (Some(input), Some(output), Some(errors)) = (input, output, errors) else {
             process.kill();
-            let _code = process.wait();
             return Err(io::Error::other(
                 "the language server's streams weren't piped",
             ));
@@ -103,20 +104,29 @@ const LET_GO_WITHIN: Duration = Duration::from_secs(1);
 /// [`LET_GO_WITHIN`] after it exited is killed, and the run gives what was printed by then. One that
 /// survives that fails too.
 pub fn version_of(program: &Path, patience: Duration) -> io::Result<String> {
-    let mut command = Command::new(program);
-    let _ = command
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = windowless(CommandWrap::from(command)).spawn()?;
+    let mut command = set_up(program, |command| {
+        command
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+    });
+    let mut child = windowless(&mut command).spawn()?;
     let output = child.stdout().take().map(read_all);
     let errors = child.stderr().take().map(read_all);
     let until = Instant::now() + patience;
     while child.try_wait()?.is_none() {
         if Instant::now() >= until {
-            let _kill = child.start_kill();
-            let _code = child.wait();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the run fails for its patience either way, whatever the kill does"
+            )]
+            let _ = child.start_kill();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the run fails for its patience either way, and this only reaps the killed process"
+            )]
+            let _ = child.wait();
             let seconds = patience.as_secs();
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
@@ -127,7 +137,11 @@ pub fn version_of(program: &Path, patience: Duration) -> io::Result<String> {
     }
     let readings = [&output, &errors];
     if !read_by(&readings, Instant::now() + LET_GO_WITHIN) {
-        let _kill = child.start_kill();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the read after it says whether the processes let go, however the kill went"
+        )]
+        let _ = child.start_kill();
         if !read_by(&readings, Instant::now() + LET_GO_WITHIN) {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
@@ -167,21 +181,42 @@ fn read_by(readings: &[&Option<JoinHandle<String>>], until: Instant) -> bool {
 fn read_all(mut stream: impl Read + Send + 'static) -> JoinHandle<String> {
     thread::spawn(move || {
         let mut bytes = Vec::new();
-        let _read = stream.read_to_end(&mut bytes);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a stream that fails partway leaves what it read by then, which is all the version needs"
+        )]
+        let _ = stream.read_to_end(&mut bytes);
         String::from_utf8_lossy(&bytes).into_owned()
     })
 }
 
+/// A command that runs `program`, set up by `set`, ready for [`windowless`].
+pub fn set_up(
+    program: impl AsRef<OsStr>,
+    set: impl FnOnce(&mut Command) -> &mut Command,
+) -> CommandWrap {
+    CommandWrap::with_new(program, |command| {
+        #[expect(
+            unused_results,
+            reason = "`set` hands back the command it set up, which `with_new` keeps"
+        )]
+        set(command);
+    })
+}
+
 /// `command` with no console window of its own on Windows, in a job object, or in a process group of its
-/// own elsewhere, so the processes it starts end with it.
-fn windowless(mut command: CommandWrap) -> CommandWrap {
-    #[cfg(windows)]
-    let _ = command
-        .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))
-        .wrap(process_wrap::std::JobObject);
-    #[cfg(not(windows))]
-    let _ = command.wrap(process_wrap::std::ProcessGroup::leader());
+/// own elsewhere, so the processes it starts end with it. The core starts git this way too.
+#[cfg(windows)]
+pub fn windowless(command: &mut CommandWrap) -> &mut CommandWrap {
     command
+        .wrap(process_wrap::std::CreationFlags(CREATE_NO_WINDOW))
+        .wrap(process_wrap::std::JobObject)
+}
+
+/// `command` in a process group of its own, so the processes it starts end with it.
+#[cfg(not(windows))]
+pub fn windowless(command: &mut CommandWrap) -> &mut CommandWrap {
+    command.wrap(process_wrap::std::ProcessGroup::leader())
 }
 
 /// A server's process, with the processes it started.
@@ -192,18 +227,24 @@ struct Child {
     _job: Option<EndsWithTsugiki>,
 }
 
-impl Process for Child {
+impl Child {
     /// Waits for the server alone, then ends what it left running. A wait on the whole job object, or
     /// process group, would last as long as a process the server started, which could be never.
-    fn wait(&mut self) -> Option<i32> {
+    fn waited(&mut self) -> io::Result<ExitStatus> {
         let waited = self.process.inner_mut().wait();
         if let Err(cause) = self.process.start_kill() {
             log::debug!("Tsugiki found nothing a language server left running to stop: {cause}");
         }
-        match waited {
+        waited
+    }
+}
+
+impl Process for Child {
+    fn wait(&mut self) -> Option<i32> {
+        match self.waited() {
             Ok(status) => status.code(),
             Err(cause) => {
-                log::warn!("Tsugiki can't wait for a language server: {cause}");
+                unwaited(&cause);
                 None
             }
         }
@@ -213,7 +254,15 @@ impl Process for Child {
         if let Err(cause) = self.process.start_kill() {
             log::warn!("Tsugiki can't stop a language server: {cause}");
         }
+        if let Err(cause) = self.waited() {
+            unwaited(&cause);
+        }
     }
+}
+
+/// Logs that Tsugiki couldn't wait for a language server to end, for `cause`.
+fn unwaited(cause: &io::Error) {
+    log::warn!("Tsugiki can't wait for a language server: {cause}");
 }
 
 /// A job object that kills the processes in it once its last handle closes, as when Tsugiki's process ends,

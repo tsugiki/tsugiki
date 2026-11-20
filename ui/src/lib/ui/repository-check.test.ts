@@ -1,18 +1,9 @@
 import { expect, it } from "vitest";
 import type { RepositoryCheck } from "$lib/state/add-repository.svelte";
+import { repositoryCheck } from "$lib/testing/fixtures";
 import { describeCheck, describeMirror } from "./repository-check";
 
-const gcmon: RepositoryCheck = {
-  repository: { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
-  open_issues: 10,
-  open_prs: 3,
-  size: "small",
-  window_days: 30,
-  first_sync_items: 48,
-  first_sync_seconds: 5,
-  first_sync_points: 12,
-  mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
-};
+const gcmon = repositoryCheck();
 
 const cpython: RepositoryCheck = {
   repository: { name: "python/cpython", conventions: "cpython", filters: [] },
@@ -37,9 +28,9 @@ it("describes a small Repository", () => {
 
 it("describes a large Repository", () => {
   expect(describeCheck(cpython)).toEqual([
-    "6935 open Issues, 2308 open PRs.",
+    "6,935 open Issues, 2,308 open PRs.",
     "Large: Tsugiki loads what changed in the last 30 days.",
-    "First sync, estimated: 4754 Issues and PRs, about 9 minutes, about 223 points of your 5,000 an hour.",
+    "First sync, estimated: 4,754 Issues and PRs, about 9 minutes, about 223 points of your 5,000 an hour.",
     "Conventions: CPython.",
   ]);
 });

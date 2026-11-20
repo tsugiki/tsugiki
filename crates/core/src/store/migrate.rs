@@ -139,6 +139,46 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 28,
         sql: super::pr_links::SCHEMA,
     },
+    Migration {
+        version: 29,
+        sql: super::activity::ACKNOWLEDGED,
+    },
+    Migration {
+        version: 30,
+        sql: super::activity::ARCHIVED,
+    },
+    Migration {
+        version: 31,
+        sql: super::activity::ARCHIVED_AT,
+    },
+    Migration {
+        version: 32,
+        sql: super::activity::MUTED,
+    },
+    Migration {
+        version: 33,
+        sql: super::pull_requests::HEAD_AT,
+    },
+    Migration {
+        version: 34,
+        sql: super::activity::CLOSINGS,
+    },
+    Migration {
+        version: 35,
+        sql: super::activity::OPENINGS,
+    },
+    Migration {
+        version: 36,
+        sql: super::activity::MUTED_AUTHORS,
+    },
+    Migration {
+        version: 37,
+        sql: super::patch_ids::STALE_REVIEWS,
+    },
+    Migration {
+        version: 38,
+        sql: super::pr_links::RULE_NAMES,
+    },
 ];
 
 /// The version a file has after all of `migrations`.
@@ -234,8 +274,9 @@ fn back_up(connection: &Connection, path: &Path, version: u32) -> Result<(), Err
         fs::remove_file(&partial).map_err(saying(CANT_UPDATE))?;
     }
     let target = partial.to_string_lossy();
-    let _copied = connection
+    connection
         .execute("VACUUM INTO :target", named_params! { ":target": target })
+        .map(drop)
         .map_err(saying(CANT_UPDATE))?;
     fs::rename(&partial, &backup).map_err(saying(CANT_UPDATE))?;
     remove_old_backups(path, &backup);

@@ -3,9 +3,11 @@
 // the toolchain that `rust-toolchain.toml` pins, which rustup installs with its components. Tsugiki itself
 // downloads nothing: the user supplies each language server (ADR 0020).
 //
-// The Rust tests that start a server read its path from `TSUGIKI_TY`, `TSUGIKI_RUST_ANALYZER` or
-// `TSUGIKI_CLANGD`. Given a command, this runs it with each set, as `npm run cargo-test` and
-// `npm run rust-coverage` do. Alone, it prints the paths to set them to.
+// It also builds `tsugiki-fake-server`, the fake server some tests start in a real one's place.
+//
+// The Rust tests that start a server read its path from `TSUGIKI_TY`, `TSUGIKI_RUST_ANALYZER`,
+// `TSUGIKI_CLANGD` or `TSUGIKI_FAKE_SERVER`. Given a command, this runs it with each set, as
+// `npm run cargo-test` and `npm run rust-coverage` do. Alone, it prints the paths to set them to.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -158,15 +160,51 @@ function rustAnalyzer(): string {
   return which.stdout.trim();
 }
 
+/** What cargo says of a target it built, as `--message-format=json` writes it, as far as this reads it. */
+interface Artifact {
+  reason: string;
+  target?: { name: string };
+  executable?: string | null;
+}
+
+/**
+ * Builds the fake language server in `tsugiki-lsp`, which the core's tests start where a real one would only
+ * slow them down, and returns its program's path. It builds apart from the tests, so coverage doesn't count
+ * it.
+ */
+function fakeServer(): string {
+  const name = "tsugiki-fake-server";
+  const args = ["build", "-p", "tsugiki-lsp", "--features", "testing", "--bin", name];
+  // cargo writes a line of JSON for each crate it builds, which outgrows the default 1 MiB.
+  const build = spawnSync("cargo", [...args, "--message-format=json-render-diagnostics"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (build.status !== 0) throw new Error(`cargo couldn't build ${name}.`);
+  const built = build.stdout
+    .split("\n")
+    .filter((line) => line.startsWith("{"))
+    .map((line) => JSON.parse(line) as Artifact)
+    .find((artifact) => artifact.reason === "compiler-artifact" && artifact.target?.name === name);
+  const program = built?.executable;
+  if (program === undefined || program === null) throw new Error(`cargo built no ${name}.`);
+  return program;
+}
+
 const servers = {
   TSUGIKI_TY: await fetchTool(TY),
   TSUGIKI_RUST_ANALYZER: rustAnalyzer(),
   TSUGIKI_CLANGD: await fetchTool(CLANGD),
+  TSUGIKI_FAKE_SERVER: fakeServer(),
 };
 const [command, ...args] = process.argv.slice(2);
 if (command === undefined) {
   const set = Object.entries(servers).map(([name, path]) => `${name}=${path}`);
   console.log(`Set ${set.join(", ")} to run the Rust tests with cargo alone.`);
+  console.log(
+    "Run this again after a change to the fake server: `cargo test -p tsugiki-core` doesn't build it.",
+  );
 } else {
   const run = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, ...servers } });
   if (run.error !== undefined) throw run.error;

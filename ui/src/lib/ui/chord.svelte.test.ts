@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { keydown } from "$lib/testing/helpers";
 import { type ChordRun, ChordWait, takesChords } from "./chord.svelte";
-
-function press(init: KeyboardEventInit): KeyboardEvent {
-  return new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
-}
 
 const ctrlK = { key: "k", code: "KeyK", ctrlKey: true };
 const z = { key: "z", code: "KeyZ" };
@@ -22,14 +19,14 @@ const anywhere =
 /** A wait that Ctrl+K has started, whose chords run `run`. */
 function waiting(run?: ChordRun): ChordWait {
   const wait = new ChordWait("other");
-  wait.read(press(ctrlK), anywhere(run));
+  wait.read(keydown(ctrlK), anywhere(run));
   return wait;
 }
 
 describe("ChordWait", () => {
   it("waits for the second key after Ctrl+K, and keeps Ctrl+K from anything else", () => {
     const wait = new ChordWait("other");
-    const event = press(ctrlK);
+    const event = keydown(ctrlK);
     expect(wait.read(event, anywhere())).toBe(true);
     expect(wait.first).toBe("ctrl+k");
     expect(stopped(event)).toBe(true);
@@ -37,13 +34,13 @@ describe("ChordWait", () => {
 
   it("names Cmd+K as Ctrl+K on macOS", () => {
     const wait = new ChordWait("mac");
-    wait.read(press({ key: "k", code: "KeyK", metaKey: true }), anywhere());
+    wait.read(keydown({ key: "k", code: "KeyK", metaKey: true }), anywhere());
     expect(wait.first).toBe("ctrl+k");
   });
 
   it("asks where the chord starts with its first press and the press itself", () => {
     const start = vi.fn(() => null);
-    const event = press(ctrlK);
+    const event = keydown(ctrlK);
     new ChordWait("other").read(event, start);
     expect(start).toHaveBeenCalledWith("ctrl+k", event);
   });
@@ -51,7 +48,7 @@ describe("ChordWait", () => {
   it("runs a bound chord's action at the second key as told where it started, and the wait ends", () => {
     const run = vi.fn<ChordRun>();
     const wait = waiting(run);
-    const event = press(z);
+    const event = keydown(z);
     expect(wait.read(event, () => null)).toBe(true);
     expect(run).toHaveBeenCalledExactlyOnceWith("toggle_detail_only", event);
     expect(wait.first).toBeNull();
@@ -60,7 +57,7 @@ describe("ChordWait", () => {
 
   it("reads the second key by where it is on a non-Latin layout", () => {
     const run = vi.fn<ChordRun>();
-    waiting(run).read(press({ key: "з", code: "KeyP" }), anywhere());
+    waiting(run).read(keydown({ key: "з", code: "KeyP" }), anywhere());
     expect(run.mock.calls[0]?.[0]).toBe("pin");
   });
 
@@ -72,7 +69,7 @@ describe("ChordWait", () => {
     ]) {
       const run = vi.fn<ChordRun>();
       const wait = waiting(run);
-      const event = press(init);
+      const event = keydown(init);
       expect(wait.read(event, anywhere()), init.key).toBe(true);
       expect(wait.first, init.key).toBeNull();
       expect(stopped(event), init.key).toBe(true);
@@ -82,7 +79,7 @@ describe("ChordWait", () => {
 
   it("ends at a key it can't name, like one with the Windows key", () => {
     const wait = waiting();
-    const event = press({ key: "z", code: "KeyZ", metaKey: true });
+    const event = keydown({ key: "z", code: "KeyZ", metaKey: true });
     expect(wait.read(event, anywhere())).toBe(true);
     expect(wait.first).toBeNull();
   });
@@ -96,7 +93,7 @@ describe("ChordWait", () => {
       { key: "CapsLock", code: "CapsLock" },
       { ...ctrlK, repeat: true },
     ]) {
-      expect(wait.read(press(init), anywhere()), init.key).toBe(true);
+      expect(wait.read(keydown(init), anywhere()), init.key).toBe(true);
       expect(wait.first, init.key).toBe("ctrl+k");
     }
   });
@@ -110,7 +107,7 @@ describe("ChordWait", () => {
   it("leaves a key alone when no wait is on and it starts no chord, without asking where", () => {
     const wait = new ChordWait("other");
     const start = vi.fn(anywhere());
-    const event = press(z);
+    const event = keydown(z);
     expect(wait.read(event, start)).toBe(false);
     expect(event.defaultPrevented || event.cancelBubble).toBe(false);
     expect(start).not.toHaveBeenCalled();
@@ -118,7 +115,7 @@ describe("ChordWait", () => {
 
   it("starts no wait where the page says no chord starts, as in a text box", () => {
     const wait = new ChordWait("other");
-    const event = press(ctrlK);
+    const event = keydown(ctrlK);
     expect(wait.read(event, () => null)).toBe(false);
     expect(wait.first).toBeNull();
     expect(event.cancelBubble).toBe(false);
@@ -138,8 +135,8 @@ describe("ChordWait", () => {
       wait.read(e, anywhere(run));
     });
     for (const second of [z, { key: "o", code: "KeyO" }]) {
-      pane.dispatchEvent(press(ctrlK));
-      pane.dispatchEvent(press(second));
+      pane.dispatchEvent(keydown(ctrlK));
+      pane.dispatchEvent(keydown(second));
     }
     stop();
     pane.remove();

@@ -8,22 +8,21 @@ use std::time::Duration;
 
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::github::{GitHub, GitHubAccess, Reply, Request, Transport, Unreachable};
-use tsugiki_core::logfile;
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::session::{Connections, Intervals, Session};
+use tsugiki_core::settings::SettingsView;
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
 use tsugiki_core::token::{GhOutput, Token, read_token};
 use tsugiki_core::version::Version;
+use tsugiki_core::{latest, logfile};
+use tsugiki_token::testing::gh_prints;
 
 /// A token no shape gives away, so only hiding it by its value keeps it out of the log.
 const NO_KNOWN_SHAPE: &str = "0123456789abcdef";
 
 fn gh_prints_a_token_of_no_known_shape(_: &[&str]) -> io::Result<GhOutput> {
-    Ok(GhOutput {
-        success: true,
-        stdout: format!("{NO_KNOWN_SHAPE}\n"),
-    })
+    gh_prints(&format!("{NO_KNOWN_SHAPE}\n"))
 }
 
 fn gh_is_missing(_: &[&str]) -> io::Result<GhOutput> {
@@ -123,10 +122,12 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
                 run_gh: gh_is_missing,
             },
             mirrors: mirrors.requests(),
+            settings: latest::channel(SettingsView::default()).1,
         },
         Intervals {
             status: Duration::from_secs(3600),
             repository: Duration::from_secs(3600),
+            on_screen: Duration::from_secs(3600),
         },
     );
     session.stop(Duration::from_secs(10));

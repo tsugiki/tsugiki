@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Answer, DefinitionLookup, DiffLine, Hit, LineInDiff, Waiting } from "$lib/data/bindings";
+import { diffFile, diffThread, foundText, ok, readyFiles, type ReadyFiles } from "$lib/testing/fixtures";
+import { nextTask } from "$lib/testing/helpers";
 import {
   CHUNK,
   DiffViewChoice,
@@ -30,7 +32,7 @@ interface IndexChannel {
   onmessage: (message: IndexNews) => void;
 }
 
-vi.mock("@tauri-apps/api/core", () => ({
+vi.mock("$lib/data/channel", () => ({
   Channel: class {
     onmessage: (message: Waiting) => void = () => {};
   },
@@ -78,71 +80,41 @@ const core = vi.hoisted(() => {
   return core;
 });
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    pullRequestFiles: core.pullRequestFiles,
-    pullRequestRows: core.pullRequestRows,
-    pullRequestSpans: core.pullRequestSpans,
-    pullRequestLines: core.pullRequestLines,
-    pullRequestFind: core.pullRequestFind,
-    definitions: core.definitions,
-    cancelDefinitions: core.cancelDefinitions,
-    pullRequestRow: core.pullRequestRow,
-    cloning: core.cloning,
-    mirrorStates: core.mirrorStates,
-    mirrorsHeld: core.mirrorsHeld,
-  },
-  events: {
-    headsFetched: core.listener("headsFetched"),
-    headsFetchFailed: core.listener("headsFetchFailed"),
-    changed: core.listener("changed"),
-    cloningChanged: core.listener("cloningChanged"),
-    mirrorStatesChanged: core.listener("mirrorStatesChanged"),
-    mirrorsHeldChanged: core.listener("mirrorsHeldChanged"),
-  },
-}));
-
-/** A file of the diff whose header is row `row`. */
-const file = (path: string, row: number, generated = false): DiffFile => ({
-  path,
-  old_path: null,
-  change: { kind: "lines", added: 1, removed: 0 },
-  row,
-  columns: 4,
-  generated,
-  gaps: [],
-  rest: null,
-  pairs: [],
+vi.mock("$lib/data/bindings", async () => {
+  const { prFilesEvents } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      pullRequestFiles: core.pullRequestFiles,
+      pullRequestRows: core.pullRequestRows,
+      pullRequestSpans: core.pullRequestSpans,
+      pullRequestLines: core.pullRequestLines,
+      pullRequestFind: core.pullRequestFind,
+      definitions: core.definitions,
+      cancelDefinitions: core.cancelDefinitions,
+      pullRequestRow: core.pullRequestRow,
+      cloning: core.cloning,
+      mirrorStates: core.mirrorStates,
+      mirrorsHeld: core.mirrorsHeld,
+    },
+    events: prFilesEvents((name) => core.listener(name).listen),
+  };
 });
 
 /** A diff from `base` to `head`. */
-const ready = (
-  head: string,
-  rows: number,
-  files = [file("NEWS", 0)],
-  base = "base",
-): Extract<PrFiles, { state: "ready" }> => ({
-  state: "ready",
-  head,
-  base,
-  files,
-  rows,
-  news: [],
-  threads: { kind: "shown", threads: [] },
-});
+const ready = (head: string, rows: number, files = [diffFile("NEWS", 0)], base = "base"): ReadyFiles =>
+  readyFiles(rows, { head, base, files });
 
 /** A file, a Generated one from row 10 to the third chunk, and a file in the third chunk. */
 const withGenerated = (head: string) =>
   ready(head, 3 * CHUNK, [
-    file("Lib/ast.py", 0),
-    file("Python/generated_cases.c.h", 10, true),
-    file("Lib/os.py", 2 * CHUNK),
+    diffFile("Lib/ast.py", 0),
+    diffFile("Python/generated_cases.c.h", 10, { generated: true }),
+    diffFile("Lib/os.py", 2 * CHUNK),
   ]);
 
 /** Where each chunk asked for starts. */
 const starts = () => core.pullRequestRows.mock.calls.map(([chunk]) => chunk.start);
 
-const ok = <T>(data: T) => ({ status: "ok" as const, data });
 const added = (text: string): DiffRow => ({ kind: "added", new: 1, text });
 /** The spans the fake core sends for the first row of the chunk at `start`. */
 const keyword = (start: number) => [{ start: 0, end: start + 1, highlight: "keyword" as const }];
@@ -182,9 +154,6 @@ const heldRows = () => {
     answer(rows);
   };
 };
-
-/** Waits until what the answers so far set going has run its course. */
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Spans that come only when the test answers them. */
 const heldSpans = () => {
@@ -535,6 +504,7 @@ it("stops listening, even when it stops before it started", async () => {
     "headsFetched",
     "mirrorStatesChanged",
     "mirrorsHeldChanged",
+    "readFailed",
   ]);
 
   core.stopped = [];
@@ -543,7 +513,7 @@ it("stops listening, even when it stops before it started", async () => {
   early.stop();
   await loading;
 
-  expect(core.stopped).toHaveLength(6);
+  expect(core.stopped).toHaveLength(7);
   expect(core.cloning).toHaveBeenCalledTimes(1);
 });
 
@@ -714,14 +684,14 @@ const staleAt = (head: string, ...paths: string[]): YourReview => ({
 /** Five files and a Generated one: `Lib/ast.py` changed since the Review, `Lib/os.py` only in
  * whitespace, and `Lib/new.py`, renamed from `Lib/old.py`, changed under its old name. */
 const reviewedDiff = () => {
-  const renamed = { ...file("Lib/new.py", 40), old_path: "Lib/old.py" };
+  const renamed = diffFile("Lib/new.py", 40, { old_path: "Lib/old.py" });
   return ready("abc", 60, [
-    file("Doc/whatsnew.rst", 0),
-    file("Lib/ast.py", 10),
-    file("Python/generated_cases.c.h", 20, true),
-    file("Lib/os.py", 30),
+    diffFile("Doc/whatsnew.rst", 0),
+    diffFile("Lib/ast.py", 10),
+    diffFile("Python/generated_cases.c.h", 20, { generated: true }),
+    diffFile("Lib/os.py", 30),
     renamed,
-    file("Lib/re.py", 50),
+    diffFile("Lib/re.py", 50),
   ]);
 };
 
@@ -830,7 +800,7 @@ it("moves to whichever of a thread and the changes was asked for last before the
   const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   files.followReview(staleReview("Lib/ast.py"));
   const loading = files.load();
-  await settled();
+  await nextTask();
 
   files.showChanges();
   files.reveal("T5");
@@ -857,7 +827,7 @@ it("shows the first changed file, opened, and one asked for before the diff came
   const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   files.followReview(staleReview("Lib/re.py", "~Lib/os.py"));
   const loading = files.load();
-  await settled();
+  await nextTask();
 
   files.showChanges();
   files.unfoldUnchanged();
@@ -904,7 +874,7 @@ it("paints the answer to the latest ask for a chunk's spans, whichever comes las
     expect(core.pullRequestSpans).toHaveBeenCalledTimes(4);
   });
   answerOlder(ok([keyword(99)]));
-  await settled();
+  await nextTask();
 
   expect(files.spans(0)).toEqual(keyword(0));
 });
@@ -943,9 +913,9 @@ it("keeps a chunk's spans when asking again fails, and drops those that come onc
   // The Generated file's rows reach into the last file's first chunk.
   const diff = (head: string) =>
     ready(head, 3 * CHUNK, [
-      file("Lib/ast.py", 0),
-      file("Python/generated_cases.c.h", 10, true),
-      file("Lib/os.py", 2 * CHUNK + 10),
+      diffFile("Lib/ast.py", 0),
+      diffFile("Python/generated_cases.c.h", 10, { generated: true }),
+      diffFile("Lib/os.py", 2 * CHUNK + 10),
     ]);
   const files = await loaded(diff("abc"));
   files.need(0, 5);
@@ -979,7 +949,8 @@ it("collapses the Generated files of a new head again", async () => {
 });
 
 it("starts over when the PR moves to another branch with the same head, and drops the old rows late", async () => {
-  const diff = (base: string) => ready("abc", 10, [file("NEWS", 0), file("Lib/generated.py", 5, true)], base);
+  const diff = (base: string) =>
+    ready("abc", 10, [diffFile("NEWS", 0), diffFile("Lib/generated.py", 5, { generated: true })], base);
   const files = await loaded(diff("on-main"));
   files.toggle(1);
   files.need(0, 9);
@@ -995,7 +966,7 @@ it("starts over when the PR moves to another branch with the same head, and drop
   const answerNew = heldRows();
   files.need(0, 9);
   answerLate(ok([added("from 3.14")]));
-  await settled();
+  await nextTask();
 
   expect(files.row(0)).toBeUndefined();
   expect(files.collapsed(1)).toBe(true);
@@ -1042,7 +1013,7 @@ it("lets go of the chunks far from what shows, and of those that arrive once far
 });
 
 it("keeps asking for a chunk of the newer diff when the same chunk of the older one fails", async () => {
-  const diff = (base: string) => ready("abc", 10, [file("NEWS", 0)], base);
+  const diff = (base: string) => ready("abc", 10, [diffFile("NEWS", 0)], base);
   const files = await loaded(diff("on-main"));
   const failOld = heldRows();
   files.need(0, 9);
@@ -1052,7 +1023,7 @@ it("keeps asking for a chunk of the newer diff when the same chunk of the older 
   files.need(0, 9);
 
   failOld({ status: "error", error: { message: "gone" } });
-  await settled();
+  await nextTask();
   answerNew(ok([added("on 3.14")]));
 
   await vi.waitFor(() => {
@@ -1127,16 +1098,14 @@ const gapped = (base = "base") =>
     "abc",
     30,
     [
-      {
-        ...file("a.py", 0),
+      diffFile("a.py", 0, {
         gaps: [
           { row: 1, old: 1, new: 1, lines: 5 },
           { row: 6, old: 10, new: 12, lines: 45 },
         ],
         rest: { old: 60, new: 62 },
-        pairs: [],
-      },
-      file("b.py", 20),
+      }),
+      diffFile("b.py", 20),
     ],
     base,
   );
@@ -1276,7 +1245,7 @@ it("expands nothing until the diff is ready, nor after a file that ends with its
 
 it("lays the diff out in the view the window chose, which one choice holds for every PR", async () => {
   const choice = new DiffViewChoice();
-  const changed = { ...file("a.py", 0), pairs: [{ row: 2, removed: 2, added: 1 }] };
+  const changed = diffFile("a.py", 0, { pairs: [{ row: 2, removed: 2, added: 1 }] });
   core.pullRequestFiles.mockResolvedValue(ok(ready("abc", 6, [changed])));
   const one = new PrFilesState("python/cpython", 11, new PanesState(), timer(), choice);
   const other = new PrFilesState("python/cpython", 12, new PanesState(), timer(), choice);
@@ -1291,35 +1260,19 @@ it("lays the diff out in the view the window chose, which one choice holds for e
   expect(one.shownAs).toBe("unified");
 });
 
-/** An open thread `id` at `at`, a row of the diff when a number, with `comments` comments. */
-const thread = (
-  id: string,
-  at: number | DiffThread["at"],
-  resolution: "open" | "resolved" = "open",
-  comments = 1,
-): DiffThread => ({
-  id,
-  at: typeof at === "number" ? { kind: "row", row: at } : at,
-  resolution,
-  comments: Array.from({ length: comments }, () => ({
-    id: null,
-    author: "some-reviewer",
-    created_at: "2026-11-04T10:00:00Z",
-    body_html: "<p>Why?</p>",
-    hidden: null,
-    submission: "submitted",
-  })),
-  later_comments: 0,
-});
-
 /** The threads `threads`, as the core sends them with a diff. */
 const shown = (...threads: DiffThread[]) => ({ kind: "shown" as const, threads });
 
 /** A diff of 40 rows: a file, a Generated one from row 20, and threads under rows 2, 5, 9 and 25, the
  * second resolved. */
-const threaded = (): Extract<PrFiles, { state: "ready" }> => ({
-  ...ready("abc", 40, [file("Lib/ast.py", 0), file("Python/generated.c.h", 20, true)]),
-  threads: shown(thread("T2", 2, "open", 2), thread("T5", 5, "resolved"), thread("T9", 9), thread("T25", 25)),
+const threaded = (): ReadyFiles => ({
+  ...ready("abc", 40, [diffFile("Lib/ast.py", 0), diffFile("Python/generated.c.h", 20, { generated: true })]),
+  threads: shown(
+    diffThread("T2", 2, "open", 2),
+    diffThread("T5", 5, "resolved"),
+    diffThread("T9", 9),
+    diffThread("T25", 25),
+  ),
 });
 
 /** The places each thread takes, by its id, and `-` for one that doesn't show. */
@@ -1373,13 +1326,13 @@ it("starts from the last thread going back, and goes nowhere without an open thr
   expect(files.jump).toEqual({ id: "T25" });
   // A new diff without the thread starts from the end again.
   core.pullRequestFiles.mockResolvedValue(
-    ok({ ...threaded(), threads: shown(thread("T2", 2), thread("T9", 9)) }),
+    ok({ ...threaded(), threads: shown(diffThread("T2", 2), diffThread("T9", 9)) }),
   );
   await files.ask();
   files.nextThread(1);
   expect(files.jump).toEqual({ id: "T2" });
 
-  const none = await loaded({ ...threaded(), threads: shown(thread("T5", 5, "resolved")) });
+  const none = await loaded({ ...threaded(), threads: shown(diffThread("T5", 5, "resolved")) });
   none.nextThread(1);
   expect(none.jump).toBeUndefined();
 });
@@ -1393,7 +1346,7 @@ it("reveals a thread open, even a resolved one, and one asked for before the dif
   );
   const files = new PrFilesState("python/cpython", 11, new PanesState(), timer());
   const loading = files.load();
-  await settled();
+  await nextTask();
 
   files.reveal("T5");
   expect(files.jump).toBeUndefined();
@@ -1429,11 +1382,11 @@ it("puts a file's own threads at its top, its Outdated ones after them, and thre
   const files = await loaded({
     ...threaded(),
     threads: shown(
-      thread("whole", { kind: "file", file: 1 }),
-      thread("outdated", { kind: "outdated", file: 1, code: code(9) }),
-      thread("bare", { kind: "outdated", file: 1, code: null }),
-      thread("in it", 25),
-      thread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
+      diffThread("whole", { kind: "file", file: 1 }),
+      diffThread("outdated", { kind: "outdated", file: 1, code: code(9) }),
+      diffThread("bare", { kind: "outdated", file: 1, code: null }),
+      diffThread("in it", 25),
+      diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
     ),
   });
   files.toggle(1);
@@ -1447,7 +1400,10 @@ it("puts a file's own threads at its top, its Outdated ones after them, and thre
 });
 
 it("puts a thread on a file the diff doesn't have at the top, should a payload name one", async () => {
-  const files = await loaded({ ...threaded(), threads: shown(thread("lost", { kind: "file", file: 9 })) });
+  const files = await loaded({
+    ...threaded(),
+    threads: shown(diffThread("lost", { kind: "file", file: 9 })),
+  });
 
   expect(threadPlaces(files)).toEqual(["lost 1"]);
 });
@@ -1456,8 +1412,8 @@ it("reveals a thread at the top of a collapsed file, opening the file, and one o
   const files = await loaded({
     ...threaded(),
     threads: shown(
-      thread("outdated", { kind: "outdated", file: 1, code: null }),
-      thread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
+      diffThread("outdated", { kind: "outdated", file: 1, code: null }),
+      diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null }),
     ),
   });
 
@@ -1468,7 +1424,7 @@ it("reveals a thread at the top of a collapsed file, opening the file, and one o
 });
 
 it("opens the lines around a thread on a line no hunk shows, once, and its thread sits under the line", async () => {
-  const outside = thread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
+  const outside = diffThread("outside", { kind: "outside", file: 0, line: 28, head_line: 30 });
   const files = await loaded({ ...gapped(), threads: shown(outside) });
   await vi.waitFor(() => {
     expect(files.line(0, 33)).toEqual({ text: "line 33", spans: [] });
@@ -1477,7 +1433,7 @@ it("opens the lines around a thread on a line no hunk shows, once, and its threa
   core.pullRequestFiles.mockResolvedValue(
     ok({
       ...gapped(),
-      threads: shown(outside, thread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
+      threads: shown(outside, diffThread("near", { kind: "outside", file: 0, line: 1, head_line: 2 })),
     }),
   );
   await files.ask();
@@ -1541,6 +1497,76 @@ it("hears that GitHub's ref for the PR is elsewhere without asking again, so no 
   expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
 });
 
+it("asks again when the Conversation read that names the PR's head fails, and the core says why", async () => {
+  const files = await loaded({ state: "finding_head" });
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "unread", why: "not_on_github" }));
+
+  core.heard.readFailed?.({ payload: { repository: "python/peps", number: 11, why: "other" } });
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 12, why: "other" } });
+  // A failure for all of GitHub leaves the tab waiting, and asking would queue the read again.
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "waits_on_github" } });
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "not_on_github" } });
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "unread", why: "not_on_github" });
+  });
+});
+
+it("asks again when the read its first question queued fails before the answer lands", async () => {
+  let answer: (answer: unknown) => void = () => {};
+  core.pullRequestFiles.mockReturnValueOnce(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const files = new PrFilesState("python/cpython", 11, new PanesState());
+  const loading = files.load();
+  await vi.waitFor(() => {
+    expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  });
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "unread", why: "other" }));
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+  answer(ok({ state: "finding_head" }));
+  await loading;
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "unread", why: "other" });
+  });
+});
+
+it("asks again when a later read fails for another reason, and not for the same one", async () => {
+  const files = await loaded({ state: "unread", why: "other" });
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  core.pullRequestFiles.mockResolvedValue(ok({ state: "unread", why: "not_on_github" }));
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "not_on_github" } });
+
+  await vi.waitFor(() => {
+    expect(files.view).toEqual({ state: "unread", why: "not_on_github" });
+  });
+});
+
+it("leaves a tab that fetches a head it knows as it is when the PR's Conversation read fails", async () => {
+  const files = await loaded({ state: "fetching" });
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  expect(files.view).toEqual({ state: "fetching" });
+});
+
+it("leaves a tab with a diff as it is when the PR's Conversation read fails", async () => {
+  const files = await loaded(gapped("older"));
+
+  core.heard.readFailed?.({ payload: { repository: "python/cpython", number: 11, why: "other" } });
+
+  expect(core.pullRequestFiles).toHaveBeenCalledTimes(1);
+  expect(files.layout.diff).toBe("older..abc");
+});
+
 it("reveals a thread asked for while the older diff holds its threads back, once the newer diff comes", async () => {
   const files = await loaded({ ...threaded(), threads: { kind: "held_back", newer: "newer", count: 4 } });
 
@@ -1555,14 +1581,13 @@ it("reveals a thread asked for while the older diff holds its threads back, once
  * from row 23. */
 const changed = () =>
   ready("abc", 40, [
-    {
-      ...file("Lib/ast.py", 0),
+    diffFile("Lib/ast.py", 0, {
       pairs: [
         { row: 2, removed: 1, added: 1 },
         { row: 6, removed: 0, added: 2 },
       ],
-    },
-    { ...file("Python/generated.c.h", 20, true), pairs: [{ row: 23, removed: 1, added: 0 }] },
+    }),
+    diffFile("Python/generated.c.h", 20, { generated: true, pairs: [{ row: 23, removed: 1, added: 0 }] }),
   ]);
 
 /** Where the tab moves on each of `times` presses of F7, or of Shift+F7 for `step` -1. */
@@ -1594,15 +1619,10 @@ it("moves to the last change first with Shift+F7, and nowhere in a diff without 
   expect(changes(await loaded(), 1, 1)).toEqual([undefined]);
 });
 
-/** The core's answer to a search, which found `matches`, each a row and where in it the text starts and
- * ends. */
-const found = (matches: [number, number, number][], more = false) =>
-  ok({ matches: matches.map(([row, start, end]) => ({ row, start, end })), more });
-
 it("finds text in every row through the core, moves to the first match, and goes round the matches", async () => {
   const files = await loaded(changed());
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 2],
       [3, 4, 6],
       [24, 1, 3],
@@ -1644,7 +1664,7 @@ it("finds text in every row through the core, moves to the first match, and goes
 it("keeps to the match it was on, or the first after it, as the query grows", async () => {
   const files = await loaded(changed());
   core.pullRequestFind.mockResolvedValueOnce(
-    found([
+    foundText([
       [3, 0, 1],
       [9, 0, 1],
       [24, 0, 1],
@@ -1654,7 +1674,7 @@ it("keeps to the match it was on, or the first after it, as the query grows", as
   files.nextMatch(1);
 
   core.pullRequestFind.mockResolvedValueOnce(
-    found([
+    foundText([
       [3, 0, 2],
       [12, 0, 2],
     ]),
@@ -1666,13 +1686,13 @@ it("keeps to the match it was on, or the first after it, as the query grows", as
 
 it("says when it finds nothing or more than the core sends, and an empty query asks nothing", async () => {
   const files = await loaded(changed());
-  core.pullRequestFind.mockResolvedValueOnce(found([]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([]));
   await files.find("zz");
   const none = files.search;
   // Nowhere to move to.
   files.nextMatch(1);
   expect(files.jump).toBeUndefined();
-  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 1]], true));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[3, 0, 1]], true));
   await files.find("z");
   const more = files.search;
 
@@ -1696,10 +1716,10 @@ it("drops the answer to an older query that comes after a newer one", async () =
     }),
   );
   const older = files.find("a");
-  core.pullRequestFind.mockResolvedValueOnce(found([[9, 0, 2]]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[9, 0, 2]]));
   await files.find("ab");
 
-  answer(found([[3, 0, 1]]));
+  answer(foundText([[3, 0, 1]]));
   await older;
 
   expect([files.query, files.search?.count, files.jump]).toEqual(["ab", 1, { row: 9 }]);
@@ -1710,7 +1730,7 @@ it("searches the newer diff again for the same text, and asks nothing before a d
   await files.find("ab");
   expect(core.pullRequestFind).not.toHaveBeenCalled();
 
-  core.pullRequestFind.mockResolvedValue(found([[3, 0, 2]]));
+  core.pullRequestFind.mockResolvedValue(foundText([[3, 0, 2]]));
   core.pullRequestFiles.mockResolvedValue(ok(changed()));
   await files.ask();
   await vi.waitFor(() => {
@@ -1732,7 +1752,7 @@ it("says in the search why it failed, and leaves the tab's error to the diff", a
   await files.find("abc");
   const rejected = files.searchProblem;
 
-  core.pullRequestFind.mockResolvedValueOnce(found([[3, 0, 2]]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[3, 0, 2]]));
   await files.find("ab");
 
   expect(failed).toEqual([undefined, "gone", undefined]);
@@ -1742,7 +1762,7 @@ it("says in the search why it failed, and leaves the tab's error to the diff", a
 
 it("searches a new diff again without moving, and drops the matches of the diff before at once", async () => {
   const files = await loaded(changed());
-  core.pullRequestFind.mockResolvedValueOnce(found([[24, 0, 2]]));
+  core.pullRequestFind.mockResolvedValueOnce(foundText([[24, 0, 2]]));
   await files.find("ab");
   files.jump = undefined;
   let answer: (answer: unknown) => void = () => {};
@@ -1755,7 +1775,7 @@ it("searches a new diff again without moving, and drops the matches of the diff 
   core.pullRequestFiles.mockResolvedValue(ok({ ...changed(), head: "def" }));
   await files.ask();
   const meanwhile = [files.search, files.foundIn(24)];
-  answer(found([[3, 0, 2]]));
+  answer(foundText([[3, 0, 2]]));
   await vi.waitFor(() => {
     expect(files.search?.count).toBe(1);
   });
@@ -1770,7 +1790,7 @@ it("searches a new diff again without moving, and drops the matches of the diff 
 
 it("closes the search, forgetting its text and its matches", async () => {
   const files = await loaded(changed());
-  core.pullRequestFind.mockResolvedValue(found([[3, 0, 2]]));
+  core.pullRequestFind.mockResolvedValue(foundText([[3, 0, 2]]));
   files.openSearch();
   await files.find("ab");
 
@@ -1815,7 +1835,7 @@ it("opens on all the files unless the settings say one at a time", async () => {
 
 it("opens one file at a time on the NEWS entries, then walks the files in order and stops at either end", async () => {
   const files = await oneAtATime({
-    ...ready("abc", 6, [file("Lib/ast.py", 0), file("Misc/NEWS.d/next/x.rst", 3)]),
+    ...ready("abc", 6, [diffFile("Lib/ast.py", 0), diffFile("Misc/NEWS.d/next/x.rst", 3)]),
     news: [newsEntry("Misc/NEWS.d/next/x.rst")],
   });
 
@@ -1846,7 +1866,7 @@ it("gives a Generated file its turn, collapsed to its header", async () => {
 it("shows the threads on files the PR no longer changes on a last page of their own", async () => {
   const files = await oneAtATime({
     ...threaded(),
-    threads: shown(thread("T2", 2), thread("gone", { kind: "gone", path: "Lib/old.py", code: null })),
+    threads: shown(diffThread("T2", 2), diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null })),
   });
 
   files.nextFile(1);
@@ -1971,7 +1991,7 @@ it("starts F8 from the first thread after a move to the NEWS entries", async () 
 it("finds text across the whole PR, showing the file of each match", async () => {
   const files = await oneAtATime(changed());
   core.pullRequestFind.mockResolvedValue(
-    found([
+    foundText([
       [3, 0, 2],
       [24, 1, 3],
     ]),
@@ -2066,7 +2086,11 @@ it("keeps the file on show when a newer diff comes, wherever that one lists it",
 
   core.pullRequestFiles.mockResolvedValue(
     ok(
-      ready("def", 30, [file("Lib/new.py", 0), file("Lib/os.py", 5), file("Python/generated.c.h", 10, true)]),
+      ready("def", 30, [
+        diffFile("Lib/new.py", 0),
+        diffFile("Lib/os.py", 5),
+        diffFile("Python/generated.c.h", 10, { generated: true }),
+      ]),
     ),
   );
   await files.ask();
@@ -2087,7 +2111,7 @@ const picking: DiffRow[] = [
  * names, past its rows. */
 const pickable = async (head = "abc", more: DiffFile[] = []) => {
   core.pullRequestRows.mockResolvedValue(ok(picking));
-  const files = await loaded(ready(head, picking.length, [file("a.py", 0), ...more]));
+  const files = await loaded(ready(head, picking.length, [diffFile("a.py", 0), ...more]));
   files.need(0, picking.length - 1);
   await vi.waitFor(() => {
     expect(files.row(4)).toBeDefined();
@@ -2170,7 +2194,7 @@ it("lets go of the pick when a newer diff comes, as its rows are other lines", a
   const files = await pickable();
   files.pickWord({ kind: "row", row: 4 }, null, 12, false);
 
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
 
   expect(files.picked).toBeUndefined();
@@ -2246,7 +2270,7 @@ it("looks up the picked word at the head, and at the base for a removed line", a
 it("looks up a removed line of a renamed file at its old path", async () => {
   core.definitions.mockResolvedValue(ok(answerWith()));
   core.pullRequestRows.mockResolvedValue(ok(picking));
-  const files = await loaded(ready("abc", picking.length, [{ ...file("b.py", 0), old_path: "a.py" }]));
+  const files = await loaded(ready("abc", picking.length, [diffFile("b.py", 0, { old_path: "a.py" })]));
   files.need(0, picking.length - 1);
   await vi.waitFor(() => {
     expect(files.row(4)).toBeDefined();
@@ -2266,7 +2290,7 @@ it("looks up a removed line of a renamed file at its old path", async () => {
 it("looks up at the commit the diff shows while a newer head is fetched", async () => {
   core.definitions.mockResolvedValue(ok(answerWith()));
   core.pullRequestRows.mockResolvedValue(ok(picking));
-  const before = ready("older", picking.length, [file("a.py", 0)]);
+  const before = ready("older", picking.length, [diffFile("a.py", 0)]);
   const files = await loaded({ ...before, threads: { kind: "held_back", newer: "newer", count: 1 } });
   files.need(0, picking.length - 1);
   await vi.waitFor(() => {
@@ -2441,7 +2465,7 @@ it("cancels the lookup that waits when a newer diff closes its peek", async () =
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   const looking = files.peekDefinition();
 
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
   answer(ok({ state: "cancelled" }));
   await looking;
@@ -2872,7 +2896,7 @@ it("goes on while the lines around a hit come, and Escape or a newer diff then s
   await vi.waitFor(() => {
     expect(answers).toHaveLength(2);
   });
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
   answers[1]?.(ok(headLines(47, 54)));
   await outrun;
@@ -2932,7 +2956,7 @@ it("turns to the file of a hit on a line no hunk shows while the tab shows one f
   core.definitions.mockResolvedValue(hitsFound(hitAt("b.py", "head", 5)));
   core.pullRequestRow.mockResolvedValue(ok<LineInDiff>({ kind: "hidden", file: 1, head_line: 5 }));
   core.pullRequestLines.mockImplementation(({ start, end }) => Promise.resolve(ok(headLines(start, end))));
-  const files = await pickable("abc", [file("b.py", picking.length)]);
+  const files = await pickable("abc", [diffFile("b.py", picking.length)]);
   files.mode = "one";
   const before = files.shown;
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
@@ -3248,7 +3272,7 @@ it("says over the diff for a moment that no line shows a hit whose row the core 
   core.pullRequestRow.mockResolvedValueOnce(ok(null));
   core.pullRequestRow.mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "no" } });
   core.pullRequestRow.mockRejectedValueOnce(new Error("The window lost the core."));
-  const changed = ["gone.py", "error.py", "thrown.py"].map((path) => file(path, picking.length));
+  const changed = ["gone.py", "error.py", "thrown.py"].map((path) => diffFile(path, picking.length));
   const files = await pickable("abc", changed);
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   await files.goToDefinition();
@@ -3418,11 +3442,10 @@ it("reads the first hit's code once, whether the peek or the file view shows it"
 it("opens the file view on a hit in a file the PR only renames, as the diff shows none of its lines", async () => {
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/forms.py", "head", 3)));
-  const renamed: DiffFile = {
-    ...file("Lib/forms.py", picking.length),
+  const renamed = diffFile("Lib/forms.py", picking.length, {
     old_path: "Lib/shapes.py",
     change: { kind: "lines", added: 0, removed: 0 },
-  };
+  });
   const files = await pickable("abc", [renamed]);
   files.pickWord({ kind: "row", row: 3 }, null, 13, false);
 
@@ -3448,7 +3471,7 @@ it("closes the file view and hands the diff its focus back, and keeps it while a
   await files.goToDefinition();
   const opened = files.fileView;
 
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
   const afterNewerDiff = files.fileView;
   files.closeFileView();
@@ -3463,7 +3486,7 @@ it("tells the history of each file view the user opens or closes, and nothing th
   core.definitions.mockResolvedValue(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
   const moved = vi.fn();
   core.pullRequestRows.mockResolvedValue(ok(picking));
-  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", picking.length, [diffFile("a.py", 0)])));
   const files = new PrFilesState("python/cpython", 11, new PanesState(), timer(), undefined, "all", moved);
   await files.load();
   files.need(0, picking.length - 1);
@@ -3524,7 +3547,7 @@ it("drops the search's words and the mark when a newer diff comes", async () => 
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   const going = files.goToDefinition();
 
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
   answer(hitsFound());
   await going;
@@ -3539,7 +3562,7 @@ it("closes the peek when a newer diff comes, as its rows are other lines", async
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   await files.peekDefinition();
 
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
 
   expect(files.peek).toBeUndefined();
@@ -3707,7 +3730,7 @@ it("asks nothing from the file view with no word picked there, though the diff h
 
 it("says it can't look up from a file view at a commit the PR has moved on from, and asks nothing", async () => {
   const { files, view } = await inFileView();
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)], "rebased")));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)], "rebased")));
   await files.ask();
   vi.useFakeTimers();
 
@@ -3723,11 +3746,10 @@ it("says it can't look up from a file view at a commit the PR has moved on from,
 
 it("looks up from a file view at the PR's head at the head", async () => {
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/forms.py", "head", 3)));
-  const renamed: DiffFile = {
-    ...file("Lib/forms.py", picking.length),
+  const renamed = diffFile("Lib/forms.py", picking.length, {
     old_path: "Lib/shapes.py",
     change: { kind: "lines", added: 0, removed: 0 },
-  };
+  });
   const files = await pickable("head", [renamed]);
   files.pickWord({ kind: "row", row: 2 }, null, 6, false);
   await files.goToDefinition();
@@ -3746,7 +3768,7 @@ it("lets a lookup from the file view go nowhere once the PR leaves the Detail pa
   const moved = vi.fn();
   core.definitions.mockResolvedValueOnce(hitsFound(hitAt("Lib/shapes.py", "base", 3)));
   core.pullRequestRows.mockResolvedValue(ok(picking));
-  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("abc", picking.length, [diffFile("a.py", 0)])));
   const files = new PrFilesState("python/cpython", 11, new PanesState(), timer(), undefined, "all", moved);
   await files.load();
   files.need(0, picking.length - 1);
@@ -3803,11 +3825,10 @@ it("closes the file view to open a match in a file the PR changes, and opens the
 });
 
 it("opens a match in a file the PR doesn't touch in the file view at the base, and one it only renames at the head", async () => {
-  const renamed: DiffFile = {
-    ...file("Lib/forms.py", picking.length),
+  const renamed = diffFile("Lib/forms.py", picking.length, {
     old_path: "Lib/shapes.py",
     change: { kind: "lines", added: 0, removed: 0 },
-  };
+  });
   const files = await pickable("abc", [renamed]);
 
   await files.openMatch("Lib/os.py", 12, MATCHED);
@@ -3834,7 +3855,7 @@ it("says for a moment that no line shows a match the core can't find, and goes n
   core.pullRequestRow.mockReturnValueOnce(row.promise);
 
   const going = files.openMatch("a.py", 9, MATCHED);
-  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [file("a.py", 0)])));
+  core.pullRequestFiles.mockResolvedValue(ok(ready("def", picking.length, [diffFile("a.py", 0)])));
   await files.ask();
   row.resolve(inRow(4));
   await going;

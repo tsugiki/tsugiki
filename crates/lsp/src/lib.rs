@@ -10,8 +10,8 @@ mod client;
 mod framing;
 mod process;
 mod rpc;
-#[cfg(test)]
-mod testing;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod types;
 pub mod utf16;
 
@@ -19,7 +19,7 @@ pub use client::{
     Canceller, Document, Event, Exit, Fallback, Init, Pending, Process, RequestError, Server,
     Starting, Streams,
 };
-pub use process::{Launch, version_of};
+pub use process::{Launch, set_up, version_of, windowless};
 pub use types::{
     Definitions, Diagnostic, Diagnostics, Language, Location, LocationLink, Position, Progress,
     ProgressToken, Range, ServerInfo, Severity, Status, Uri, WorkDone,

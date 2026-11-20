@@ -1,25 +1,16 @@
 use serde_json::{Value, json};
 use std::sync::mpsc::Receiver;
-use time::format_description::well_known::Rfc3339;
 
 use super::*;
-use crate::github::testing::{Scripted, rate_limit, reply_ok, token};
+use crate::github::testing::{RATE_LIMIT, Scripted, answer, github};
 use crate::login::Login;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn moment(text: &str) -> OffsetDateTime {
-    OffsetDateTime::parse(text, &Rfc3339).unwrap()
-}
+use crate::testing::{cpython, moment};
 
 /// A `GitHub` that gives one `issue`, and what it was asked.
 fn answering(issue: &Value) -> (GitHub, Receiver<(String, Value)>) {
-    let data = json!({ "repository": { "issue": issue }, "rateLimit": rate_limit() });
-    let body = json!({ "data": data }).to_string();
-    let (script, asked) = Scripted::new(vec![reply_ok(&body)]);
-    (GitHub::new(Box::new(script), token()), asked)
+    let data = json!({ "repository": { "issue": issue } });
+    let (script, asked) = Scripted::new(vec![answer(data, RATE_LIMIT)]);
+    (github(script), asked)
 }
 
 #[test]

@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
+import { workbenchRow } from "$lib/testing/fixtures";
 import {
   ago,
   backportWords,
@@ -15,36 +16,33 @@ import {
 } from "./workbench-row";
 
 /** The commit the user's Review covered. */
+/** What the list says of an item beside its facts: nothing Needs attention, and it isn't hidden. The key
+ * plays no part here. */
+const unmarked = { attention: null, key: { kind: "issue", number: 1 } as const, hidden: null };
+
 const REVIEWED = "1".repeat(40);
 /** The head the check compared it with. */
 const HEAD = "2".repeat(40);
 
-const row: WorkbenchRow = {
-  number: 160662,
+const row: WorkbenchRow = workbenchRow(160662, {
   title: "gh-112564: Fix UAF for gc debug print",
   author: "some-author",
-  state: "OPEN",
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS",
-  updated_at: "2026-11-04T10:00:00Z",
   reasons: ["review_request"],
-  your_review: { kind: "unreviewed" },
-  seen: { mark: { numbers: [160662], up_to: null }, state: "seen" },
-};
+});
 
 const issue: IssueItem = {
   number: 112564,
   title: "GIL drop during collection",
   state: "OPEN",
   people: ["issue-author", "some-author"],
+  mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     { kind: "pr", ...row, backports: [] },
     { kind: "pr", ...row, number: 160663, backports: [] },
   ],
   seen: {
-    mark: { numbers: [112564, 160662, 160663], up_to: null },
+    mark: { numbers: [112564, 160662, 160663], up_to: null, findings: [] },
     state: "seen",
   },
 };
@@ -166,7 +164,7 @@ it("counts each Backport and each PR in an Issue's tree", () => {
     ],
   };
   expect(treeCount(tree)).toBe("3 PRs");
-  expect(summary({ kind: "issue", ...tree, attention: null })).toBe("2 open of 3 PRs");
+  expect(summary({ kind: "issue", ...tree, ...unmarked })).toBe("2 open of 3 PRs");
 });
 
 it("counts one PR in the singular", () => {
@@ -178,24 +176,25 @@ it("starts an Issue with its number and title", () => {
 });
 
 it("names the people an Issue involves, or a PR's author", () => {
-  expect(peopleOf({ kind: "issue", ...issue, attention: null })).toBe("issue-author, some-author");
-  expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe("some-author");
-  expect(
-    peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", attention: null }),
-  ).toBe("deleted user");
+  expect(peopleOf({ kind: "issue", ...issue, ...unmarked })).toBe("issue-author, some-author");
+  expect(peopleOf({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe("some-author");
+  expect(peopleOf({ kind: "standalone_backport", ...row, author: null, backport: "bot", ...unmarked })).toBe(
+    "deleted user",
+  );
 });
 
 it("shows a dash for an Issue whose people have all gone", () => {
-  expect(peopleOf({ kind: "issue", ...issue, people: [], attention: null })).toBe("—");
+  expect(peopleOf({ kind: "issue", ...issue, people: [], ...unmarked })).toBe("—");
 });
 
 it("says an Issue has no PR yet, and gives a PR's facts", () => {
-  expect(summary({ kind: "issue", ...issue, pull_requests: [], attention: null })).toBe("No PR yet");
-  expect(summary({ kind: "standalone_pr", ...row, backports: [], attention: null })).toBe(details(row));
+  expect(summary({ kind: "issue", ...issue, pull_requests: [], ...unmarked })).toBe("No PR yet");
+  expect(summary({ kind: "standalone_pr", ...row, backports: [], ...unmarked })).toBe(details(row));
 });
 
 it.each<[Why, string]>([
   [{ kind: "review_requested" }, "Review requested from you"],
+  [{ kind: "assigned" }, "Assigned to you"],
   [{ kind: "stale_review" }, "Changed since your Review"],
   [{ kind: "ci_failed", checks: [] }, "CI failed"],
   [{ kind: "ci_failed", checks: ["Tests / Ubuntu", "Docs"] }, "CI failed: Tests / Ubuntu, Docs"],

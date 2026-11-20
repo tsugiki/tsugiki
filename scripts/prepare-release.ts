@@ -5,22 +5,16 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { workspaceVersion } from "./release-notes.ts";
-import { isoDate, prepareRefusal, releaseVersion, withReleasedWip, withVersion } from "./releasing.ts";
-
-function stop(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
-
-/** Runs a command and returns its output, or stops with `failed` after the command's own message. */
-function run(failed: string, command: string, ...args: string[]): string {
-  try {
-    return execFileSync(command, args, { encoding: "utf8" }).trim();
-  } catch {
-    stop(failed);
-  }
-}
+import { versionHeading, workspaceVersion } from "./release-notes.ts";
+import {
+  isoDate,
+  prepareRefusal,
+  releaseBranch,
+  releaseVersion,
+  withReleasedWip,
+  withVersion,
+} from "./releasing.ts";
+import { messageOf, run, stop } from "./run.ts";
 
 const cargoToml = readFileSync("Cargo.toml", "utf8");
 const changelog = readFileSync("CHANGELOG.md", "utf8");
@@ -29,7 +23,7 @@ let current: string;
 try {
   current = workspaceVersion(cargoToml);
 } catch (cause) {
-  stop(cause instanceof Error ? cause.message : String(cause));
+  stop(messageOf(cause));
 }
 run("git fetch failed.", "git", "fetch", "-q", "origin", "main");
 const refusal = prepareRefusal(
@@ -45,13 +39,14 @@ const refusal = prepareRefusal(
 if (refusal !== undefined || version === undefined) stop(refusal ?? "No version.");
 
 // Both texts are ready before anything changes, so a CHANGELOG.md it can't rewrite changes nothing.
+const date = isoDate(new Date());
 let texts: [string, string];
 try {
-  texts = [withVersion(cargoToml, version), withReleasedWip(changelog, version, isoDate(new Date()))];
+  texts = [withVersion(cargoToml, version), withReleasedWip(changelog, version, date)];
 } catch (cause) {
-  stop(cause instanceof Error ? cause.message : String(cause));
+  stop(messageOf(cause));
 }
-const branch = `release/${version}`;
+const branch = releaseBranch(version);
 run(`git can't make the branch ${branch}.`, "git", "switch", "-q", "-c", branch);
 writeFileSync("Cargo.toml", texts[0]);
 writeFileSync("CHANGELOG.md", texts[1]);
@@ -65,6 +60,7 @@ try {
 }
 console.log(
   `On ${branch}, with version ${version} in Cargo.toml and Cargo.lock.\n` +
-    `Write the notes under "## Version ${version}" in CHANGELOG.md, and \`just release-check\` prints them.\n` +
+    `Write the notes under "${versionHeading(version, date)}" in CHANGELOG.md, and \`just release-check\` ` +
+    "prints them.\n" +
     "Then commit, ask the user, and run `just ship --release`.",
 );

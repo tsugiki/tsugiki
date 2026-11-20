@@ -17,7 +17,7 @@ impl Place {
     ) -> (Mirrors, Receiver<FakeStart>, States) {
         let (telling, told) = channel();
         let announce = Announce {
-            states: Box::new(move |states| drop(telling.send(states.to_vec()))),
+            states: Box::new(move |states| pass_on(&telling, states.to_vec())),
             ..Announce::cloning_only(Box::new(|_| {}))
         };
         let (mirrors, starts) = self.start_faked_from(remotes, announce, versions);
@@ -168,10 +168,12 @@ fn a_clone_that_waits_for_an_answer_says_so_until_the_answer_comes() {
     wait_for(&told, &[mirror(&hello, MirrorState::Asking)]);
     assert!(requests.asks(&named("Octo-Org/Hello")));
     requests.clone_mirror(hello.clone(), download());
-    let _clone = starts.recv_timeout(PLENTY).unwrap();
+    // Held until the worker has stopped, so a clone that ends first still has its fake to answer it.
+    let clone = starts.recv_timeout(PLENTY).unwrap();
     wait_for(&told, &[mirror(&hello, cloning(CloneProgress::Starting))]);
     assert!(!requests.asks(&hello));
     mirrors.stop_cleanly(PLENTY);
+    drop(clone);
 }
 
 #[test]

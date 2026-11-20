@@ -3,18 +3,19 @@
 
 use std::collections::BTreeMap;
 
-use rusqlite::{Row, Transaction, named_params};
+use rusqlite::{OptionalExtension, Row, Transaction, named_params};
+use time::OffsetDateTime;
 
 use super::Connection;
 use super::columns::UnixTime;
-use super::{issue_content, sync_state};
+use super::{issue_content, pull_requests, sync_state};
 use crate::facts::CommitSha;
 use crate::facts::issue_content::Comment;
 use crate::facts::pull_request_content::{
     DiffHunk, Opening, PullRequestContent, Review, Side, Subject, ThreadComment, ThreadId,
     ThreadLine,
 };
-use crate::facts::pull_requests::{ReviewState, ReviewedCommit};
+use crate::facts::pull_requests::{PrHead, ReviewState, ReviewedCommit};
 use crate::repository::RepositoryName;
 
 /// The Reviews, and a line for each thread one started (#156). A comment hidden on GitHub keeps its reason.
@@ -109,45 +110,57 @@ pub(super) const DATABASE_IDS: &str = "
     ALTER TABLE review_thread_comments ADD COLUMN database_id INTEGER;
 ";
 
-/// Replaces what's kept of PR `number` with `content`, in one transaction.
+/// Replaces what's kept of PR `number` with `content`, read when GitHub's `updatedAt` for it was
+/// `updated_at`, in one transaction.
 pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
     number: u32,
-    content: &PullRequestContent,
-) -> rusqlite::Result<()> {
+    (content, updated_at): (&PullRequestContent, OffsetDateTime),
+) -> rusqlite::Result<ConversationSaved> {
     let transaction = connection.transaction()?;
+    let reviewed_before = reviewed_commit(&transaction, repository, number)?;
     issue_content::save_in(&transaction, repository, number, &content.conversation)?;
     let asked = named_params! { ":repository": repository, ":number": number };
-    let _ = transaction.execute(
+    transaction.execute(
         "DELETE FROM review_thread_comments WHERE repository = :repository AND number = :number",
         asked,
-    )?;
-    let _ = transaction.execute(
-        "DELETE FROM review_threads WHERE repository = :repository AND number = :number",
-        asked,
-    )?;
-    let _ = transaction.execute(
-        "DELETE FROM pr_reviews WHERE repository = :repository AND number = :number",
-        asked,
-    )?;
-    let _ = transaction.execute(
-        "UPDATE issue_content SET earlier_reviews = :earlier, head_sha = :head
-         WHERE repository = :repository AND number = :number",
-        named_params! {
-            ":repository": repository,
-            ":number": number,
-            ":earlier": content.earlier_reviews,
-            ":head": content.head,
-        },
-    )?;
+    ).map(drop)?;
+    transaction
+        .execute(
+            "DELETE FROM review_threads WHERE repository = :repository AND number = :number",
+            asked,
+        )
+        .map(drop)?;
+    transaction
+        .execute(
+            "DELETE FROM pr_reviews WHERE repository = :repository AND number = :number",
+            asked,
+        )
+        .map(drop)?;
+    transaction
+        .execute(
+            "UPDATE issue_content SET earlier_reviews = :earlier, head_sha = :head
+             WHERE repository = :repository AND number = :number",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":earlier": content.earlier_reviews,
+                ":head": content.head,
+            },
+        )
+        .map(drop)?;
+    let kept = match &content.head {
+        Some(commit) => head_kept(&transaction, repository, number, (commit, updated_at))?,
+        None => HeadKept::Unnamed,
+    };
     let mut position = 0_u32;
     for review in &content.reviews {
         save_review(&transaction, repository, (number, position), review)?;
         position += 1;
     }
     if !content.pending.is_empty() {
-        let _ = transaction.execute(
+        transaction.execute(
             "INSERT INTO pr_reviews (repository, number, position, state, submitted_at, body_html)
              VALUES (:repository, :number, :position, :state, 0, '')",
             named_params! {
@@ -156,13 +169,97 @@ pub(super) fn save(
                 ":position": position,
                 ":state": ReviewState::Pending,
             },
-        )?;
+        ).map(drop)?;
         let pending = (number, position);
         save_threads(&transaction, repository, pending, &content.pending)?;
     }
     // A refresh that owed this read, and stops before it finishes, leaves the next one less to read.
     sync_state::forget_read_ahead_of(&transaction, repository, number)?;
-    transaction.commit()
+    let reviewed_moved = reviewed_commit(&transaction, repository, number)? != reviewed_before;
+    transaction.commit()?;
+    Ok(ConversationSaved {
+        head: kept,
+        reviewed_moved,
+    })
+}
+
+/// What saving a PR's Conversation changed beside it: the head in the PR's facts, and whether the commit the
+/// user's latest Review of the PR covered moved, which the Mirror keeps for the Stale review check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSaved {
+    pub head: HeadKept,
+    pub reviewed_moved: bool,
+}
+
+/// What saving a PR's Conversation did to the head in the PR's facts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeadKept {
+    /// The Conversation names no head.
+    Unnamed,
+    /// The facts hold no PR of that number, so nothing there keeps the head.
+    NoFacts,
+    /// The facts keep the head they held: a read as new as the Conversation's or newer named it, or it is
+    /// the head the Conversation names. The Files tab asks for it.
+    Had(PrHead),
+    /// The facts held no head or an older read's, and keep the one the Conversation names.
+    Moved(PrHead),
+}
+
+/// The commit the user's latest Review of PR `number` covered, as `reviewed_commits` says.
+fn reviewed_commit(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<CommitSha>> {
+    let reviewed = reviewed_commits(transaction, repository)?;
+    Ok((reviewed.into_iter())
+        .find(|reviewed| reviewed.number == number)
+        .map(|reviewed| reviewed.commit))
+}
+
+/// Keeps `commit`, the head a Conversation read at GitHub's `updatedAt` `updated_at` names, in the PR's
+/// facts if that read is the newer, as `pull_requests::keep_head` decides. A PR stored before Tsugiki kept
+/// heads has none, and the sync reads it again only once it changes, so it takes the Conversation's whatever
+/// its age (#782).
+fn head_kept(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+    (commit, updated_at): (&CommitSha, OffsetDateTime),
+) -> rusqlite::Result<HeadKept> {
+    let before = stored_head(transaction, repository, number)?;
+    pull_requests::keep_head(transaction, repository, number, (commit, updated_at))?;
+    // `keep_head` leaves no PR it finds without a head.
+    let Some((Some(commit), target_branch)) = stored_head(transaction, repository, number)? else {
+        return Ok(HeadKept::NoFacts);
+    };
+    let moved = before.and_then(|(head, _)| head).as_ref() != Some(&commit);
+    let head = PrHead {
+        number,
+        commit,
+        target_branch,
+    };
+    Ok(if moved {
+        HeadKept::Moved(head)
+    } else {
+        HeadKept::Had(head)
+    })
+}
+
+/// PR `number`'s head and Target branch as the store keeps them, if it holds the PR.
+fn stored_head(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<(Option<CommitSha>, String)>> {
+    transaction
+        .query_row(
+            "SELECT head, target_branch FROM pull_requests
+             WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+            |row| Ok((row.get("head")?, row.get("target_branch")?)),
+        )
+        .optional()
 }
 
 fn save_review(
@@ -171,7 +268,7 @@ fn save_review(
     (number, position): (u32, u32),
     review: &Review,
 ) -> rusqlite::Result<()> {
-    let _ = transaction.execute(
+    transaction.execute(
         "INSERT INTO pr_reviews (repository, number, position, database_id, author, state, commit_sha,
                                  submitted_at, body_html, hidden)
          VALUES (:repository, :number, :position, :database_id, :author, :state, :commit, :submitted_at,
@@ -188,7 +285,7 @@ fn save_review(
             ":body_html": review.body_html,
             ":hidden": review.hidden,
         },
-    )?;
+    ).map(drop)?;
     save_threads(transaction, repository, (number, position), &review.threads)
 }
 
@@ -223,7 +320,7 @@ fn save_thread(
             original,
         } => (Some(side), line, original),
     };
-    let _ = transaction.execute(
+    transaction.execute(
         "INSERT INTO review_threads (repository, number, review, position, node_id, path, side, line,
                                      original_line, words, hidden, replies, resolution, anchor, diff_hunk)
          VALUES (:repository, :number, :review, :position, :node_id, :path, :side, :line, :original,
@@ -245,7 +342,7 @@ fn save_thread(
             ":anchor": thread.anchor,
             ":diff_hunk": thread.hunk.as_ref().map(DiffHunk::as_str),
         },
-    )?;
+    ).map(drop)?;
     for (
         at,
         ThreadComment {
@@ -255,7 +352,7 @@ fn save_thread(
         },
     ) in (0_u32..).zip(&thread.comments)
     {
-        let _ = transaction.execute(
+        transaction.execute(
             "INSERT INTO review_thread_comments (repository, number, review, thread, position, database_id,
                                                  author, created_at, body_html, hidden, submission)
              VALUES (:repository, :number, :review, :thread, :position, :database_id, :author, :created_at,
@@ -273,7 +370,7 @@ fn save_thread(
                 ":hidden": comment.hidden,
                 ":submission": submission,
             },
-        )?;
+        ).map(drop)?;
     }
     Ok(())
 }
@@ -339,6 +436,20 @@ fn comment_in(row: &Row<'_>) -> rusqlite::Result<((u32, u32), ThreadComment)> {
     };
     Ok(((row.get("review")?, row.get("thread")?), comment))
 }
+
+/// The head each of `repository`'s held Conversations was read at, of those read with one.
+pub(super) fn read_heads(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, CommitSha>> {
+    let mut select = connection.prepare(SELECT_HEADS)?;
+    let asked = named_params! { ":repository": repository };
+    let heads = select.query_map(asked, |row| Ok((row.get("number")?, row.get("head_sha")?)))?;
+    heads.collect()
+}
+
+const SELECT_HEADS: &str = "SELECT number, head_sha FROM issue_content
+                            WHERE repository = :repository AND head_sha IS NOT NULL";
 
 fn earlier_in(row: &Row<'_>) -> rusqlite::Result<(u32, Option<CommitSha>)> {
     Ok((row.get("earlier_reviews")?, row.get("head_sha")?))

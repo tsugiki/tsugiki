@@ -20,18 +20,16 @@ use tsugiki_core::login::Login;
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::RepositorySettings;
 use tsugiki_core::settings::ListOrder;
-use tsugiki_core::store::{self, OpenReader, Store, StoreReader};
-use tsugiki_core::workbench::inbox::{Inbox, InboxCursor, InboxPage};
-use tsugiki_core::workbench::issue_view::IssueView;
-use tsugiki_core::workbench::pr_view::PrView;
-use tsugiki_core::workbench::quick_open;
-use tsugiki_core::workbench::{Workbench, WorkbenchView};
+use tsugiki_core::store::Store;
+use tsugiki_core::testing::Reads;
+use tsugiki_core::workbench::WorkbenchView;
+use tsugiki_core::workbench::inbox::{InboxCursor, InboxPage};
 
 fn main() {
     divan::main();
 }
 
-/// The PRs a first sync of CPython held on 2026-11-05 (ADR 0015). The view queries' 50 ms budget is held to
+/// The PRs a first sync of CPython held (ADR 0015). The view queries' 50 ms budget is held to
 /// this size (ADR 0017).
 const FIRST_SYNC_PRS: u32 = 3_631;
 
@@ -48,7 +46,7 @@ const FIRST_ISSUE: u32 = 200_000;
 #[divan::bench(args = PRS)]
 fn work_facts(bencher: divan::Bencher<'_, '_>, prs: u32) {
     let held = Held::new("work-facts", prs);
-    bencher.bench(|| held.reader.work_facts(&held.repository));
+    bencher.bench(|| held.reads.work_facts(&held.repository));
     held.close();
 }
 
@@ -86,9 +84,12 @@ fn read_workbench(
     let held = Held::with_views(name);
     let view = view_of(&held.settings);
     let order = ListOrder::Attention;
-    let shown = Workbench::read(&held.reader, &held.settings, &view, order).expect("the view");
+    let shown = held
+        .reads
+        .workbench(&held.settings, &view, order)
+        .expect("the view");
     assert!(!shown.items.is_empty(), "the view lists items");
-    bencher.bench(|| Workbench::read(&held.reader, &held.settings, &view, order));
+    bencher.bench(|| held.reads.workbench(&held.settings, &view, order));
     held.close();
 }
 
@@ -101,12 +102,15 @@ fn read_workbench(
 fn inbox_latest(bencher: divan::Bencher<'_, '_>, prs: u32) {
     let held = Held::new("inbox-latest", prs);
     let (now, page) = (updated(0), InboxPage::Latest);
-    let shown = Inbox::read(&held.reader, &held.settings, page, now).expect("the page");
+    let shown = held
+        .reads
+        .inbox(&held.settings, page, now)
+        .expect("the page");
     assert!(
         !shown.items.is_empty() && shown.older.is_some(),
         "the page lists items and has older ones after it"
     );
-    bencher.bench(|| Inbox::read(&held.reader, &held.settings, page, now));
+    bencher.bench(|| held.reads.inbox(&held.settings, page, now));
     held.close();
 }
 
@@ -123,12 +127,15 @@ fn inbox_older(bencher: divan::Bencher<'_, '_>, prs: u32) {
         number: 0,
     };
     let (now, page) = (updated(0), InboxPage::Older { after });
-    let shown = Inbox::read(&held.reader, &held.settings, page, now).expect("the page");
+    let shown = held
+        .reads
+        .inbox(&held.settings, page, now)
+        .expect("the page");
     assert!(
         !shown.items.is_empty() && shown.older.is_some(),
         "the page lists items and has older ones after it"
     );
-    bencher.bench(|| Inbox::read(&held.reader, &held.settings, page, now));
+    bencher.bench(|| held.reads.inbox(&held.settings, page, now));
     held.close();
 }
 
@@ -140,11 +147,13 @@ fn inbox_older(bencher: divan::Bencher<'_, '_>, prs: u32) {
 )]
 fn issue_view(bencher: divan::Bencher<'_, '_>) {
     let held = Held::with_views("issue-view");
-    let shown = IssueView::read(&held.reader, &held.settings, VIEWED_ISSUE)
+    let shown = held
+        .reads
+        .issue_view(&held.settings, VIEWED_ISSUE)
         .expect("the view")
         .expect("an Issue the store holds");
     assert!(shown.content.is_some() && !shown.issue.pull_requests.is_empty());
-    bencher.bench(|| IssueView::read(&held.reader, &held.settings, VIEWED_ISSUE));
+    bencher.bench(|| held.reads.issue_view(&held.settings, VIEWED_ISSUE));
     held.close();
 }
 
@@ -163,11 +172,13 @@ const VIEWED_PR: u32 = 7;
 )]
 fn pr_view(bencher: divan::Bencher<'_, '_>) {
     let held = Held::with_views("pr-view");
-    let shown = PrView::read(&held.reader, &held.settings, VIEWED_PR)
+    let shown = held
+        .reads
+        .pr_view(&held.settings, VIEWED_PR)
         .expect("the view")
         .expect("a PR the store holds");
     assert!(shown.content.is_some());
-    bencher.bench(|| PrView::read(&held.reader, &held.settings, VIEWED_PR));
+    bencher.bench(|| held.reads.pr_view(&held.settings, VIEWED_PR));
     held.close();
 }
 
@@ -183,12 +194,15 @@ const TYPED: [&str; 3] = ["", "gh-200007", "fix thing"];
 )]
 fn quick_open(bencher: divan::Bencher<'_, '_>, typed: &str) {
     let held = Held::new("quick-open", FIRST_SYNC_PRS);
-    let found = quick_open::find(&held.reader, &held.repository, typed).expect("the search");
+    let found = held
+        .reads
+        .quick_open(&held.repository, typed)
+        .expect("the search");
     assert!(
         found.named.is_some() || !found.others.is_empty(),
         "the search finds items"
     );
-    bencher.bench(|| quick_open::find(&held.reader, &held.repository, typed));
+    bencher.bench(|| held.reads.quick_open(&held.repository, typed));
     held.close();
 }
 
@@ -224,8 +238,7 @@ fn open_prs(settings: &RepositorySettings) -> &Filter {
 struct Held {
     folder: PathBuf,
     store: Store,
-    open: OpenReader,
-    reader: StoreReader,
+    reads: Reads,
     repository: RepositoryName,
     settings: RepositorySettings,
 }
@@ -252,13 +265,11 @@ impl Held {
         store
             .save_fetched_issues(&repository, issues, activity)
             .expect("the Issues");
-        let (to_open, reader) = store::reader();
-        let open = to_open.open(&path).expect("a reader");
+        let reads = Reads::open(&path).expect("a reader");
         Self {
             folder,
             store,
-            open,
-            reader,
+            reads,
             settings: settings(&repository),
             repository,
         }
@@ -300,10 +311,13 @@ impl Held {
     }
 
     fn close(self) {
-        self.open.close();
+        self.reads.close();
         self.store.close();
-        // A folder left behind sits in the ignored `.temp`, and the next run gets a new one.
-        drop(fs::remove_dir_all(&self.folder));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a folder left behind sits in the ignored `.temp`, and the next run gets a new one"
+        )]
+        let _ = fs::remove_dir_all(&self.folder);
     }
 }
 

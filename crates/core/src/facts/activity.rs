@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::login::Login;
@@ -43,6 +45,54 @@ pub struct ItemActivity {
     pub events: Vec<Activity>,
 }
 
+/// Names a Workbench item in the user's own state that hides it: Archived, and Muted (#492). Issues and PRs
+/// share their numbers in a Repository, and a Standalone PR and a Standalone Backport are both PRs.
+/// Dependency updates join it as a kind of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ItemKey {
+    Issue { number: u32 },
+    PullRequest { number: u32 },
+}
+
+impl ItemKey {
+    /// The number of the Issue or PR that heads the item.
+    pub fn number(self) -> u32 {
+        match self {
+            Self::Issue { number } | Self::PullRequest { number } => number,
+        }
+    }
+}
+
+/// One item the user archived (#490).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Archive {
+    /// The moment Archive marked the item seen up to. What the user acknowledges after it brings the item
+    /// back.
+    pub seen_up_to: OffsetDateTime,
+    /// When the user put the item away, which orders the Archived view (#491).
+    pub archived_at: OffsetDateTime,
+}
+
+/// When Archive puts its item away, which orders the Archived view (#491).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PutAway {
+    /// Now, as E, the palette's Archive and the Issue view's button do: the item goes to the top of the
+    /// Archived view.
+    Now,
+    /// When it was last put away, as Mark Seen does on an item the window draws Archived: the item keeps its
+    /// place in the Archived view.
+    AsBefore,
+}
+
+/// A person or bot whose items the user muted in a Repository (#494).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutedAuthor {
+    pub login: Login,
+    /// The moment of the mute. A Review request or an assignment that starts after it shows their item.
+    pub at: OffsetDateTime,
+}
+
 /// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
 /// list costs no query for each item.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -50,8 +100,20 @@ pub struct ActivityFacts {
     /// The moment the Repository's first sync began, once a first sync has finished.
     pub first_sync: Option<OffsetDateTime>,
     pub last_seen: BTreeMap<u32, OffsetDateTime>,
+    /// The moment the user last acknowledged each item: a Review request, a Stale review or failed CI that
+    /// started before it no longer Needs attention. Mark Seen moves it with Last seen, and a write to GitHub
+    /// (#395) is to leave it.
+    pub acknowledged: BTreeMap<u32, OffsetDateTime>,
     /// The moment the user marked each item unseen, for the items still flagged.
     pub marked_unseen: BTreeMap<u32, OffsetDateTime>,
+    /// The items the user archived. Whether each is still Archived or has come back, `workbench` judges
+    /// (#490).
+    pub archived: BTreeMap<ItemKey, Archive>,
+    /// The items the user muted, each with the moment Mute marked it seen up to (#492).
+    pub muted: BTreeMap<ItemKey, OffsetDateTime>,
+    /// The Muted authors of the Repository, by login (#494). Their items count as Muted, worked out from
+    /// each item's author, so the store keeps no Mute on each of them.
+    pub muted_authors: Vec<MutedAuthor>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.

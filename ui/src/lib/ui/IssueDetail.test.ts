@@ -2,70 +2,63 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/sve
 import { beforeEach, expect, it, vi } from "vitest";
 import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
+import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
 import IssueDetail from "./IssueDetail.svelte";
 
 const core = vi.hoisted(() => ({
   issue: vi.fn(),
   openIssue: vi.fn(),
-  fetchIssue: vi.fn(),
   openOnGithub: vi.fn(),
   openLink: vi.fn(),
   listen: vi.fn(),
 }));
 
-vi.mock("$lib/data/bindings", () => ({
-  commands: {
-    issue: core.issue,
-    openIssue: core.openIssue,
-    fetchIssue: core.fetchIssue,
-    openOnGithub: core.openOnGithub,
-    openLink: core.openLink,
-  },
-  events: { changed: { listen: core.listen }, readFailed: { listen: core.listen } },
-}));
+vi.mock("$lib/data/bindings", async () => {
+  const { itemMoves } = await import("$lib/testing/fixtures");
+  return {
+    commands: {
+      issue: core.issue,
+      openIssue: core.openIssue,
+      ...itemMoves(),
+      openOnGithub: core.openOnGithub,
+      openLink: core.openLink,
+    },
+    events: { changed: { listen: core.listen }, readFailed: { listen: core.listen } },
+  };
+});
 
-const row = {
-  title: "gh-7: Fix it",
-  author: "some-author",
-  state: "MERGED" as const,
-  is_draft: false,
-  target_branch: "main",
-  ci: "SUCCESS" as const,
-  updated_at: "2026-11-04T10:00:00Z",
-  reasons: [],
-  your_review: { kind: "reviewed" as const },
-  seen: { mark: { numbers: [], up_to: null }, state: "seen" as const },
-};
+/** PR `number`'s row, merged and reviewed. */
+const row = (number: number) =>
+  workbenchRow(number, { author: "some-author", state: "MERGED", your_review: { kind: "reviewed" } });
 
 const opened: TreeEntry = {
   kind: "pr",
-  number: 13,
-  ...row,
+  ...row(13),
   state: "OPEN",
   your_review: { kind: "unreviewed" },
-  reasons: [],
   backports: [],
 };
-const orphan: TreeEntry = { kind: "backport", number: 14, ...row, target_branch: "3.12", backport: "manual" };
+const orphan: TreeEntry = { kind: "backport", ...row(14), target_branch: "3.12", backport: "manual" };
 
 const view: IssueView = {
   number: 7,
   title: "It crashes",
   state: "OPEN",
   people: ["issue-author"],
+  mute_author: { kind: "mute", login: "issue-author" },
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
   labels: [],
   needs_attention: [],
+  hidden: null,
   pull_requests: [
     {
       kind: "pr",
-      number: 10,
-      ...row,
+      ...row(10),
       backports: [
-        { number: 11, ...row, target_branch: "3.14", backport: "bot" },
-        { number: 12, ...row, state: "OPEN", target_branch: "3.13", backport: "manual" },
+        { ...row(11), target_branch: "3.14", backport: "bot" },
+        { ...row(12), state: "OPEN", target_branch: "3.13", backport: "manual" },
       ],
     },
     opened,
@@ -74,7 +67,7 @@ const view: IssueView = {
   merged: [],
   merged_count: 0,
   seen: {
-    mark: { numbers: [7, 10, 11, 12, 13, 14], up_to: null },
+    mark: { numbers: [7, 10, 11, 12, 13, 14], up_to: null, findings: [] },
     state: "seen",
   },
   content: {
@@ -106,11 +99,20 @@ const NOW = new Date("2026-11-04T11:00:00Z");
 /** The commit the user's Review covered, and the head the check compared it with. */
 const REVIEWED = { reviewed: "1".repeat(40), head: "2".repeat(40) };
 
-const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.fn()) => {
-  core.issue.mockResolvedValue({ status: "ok", data: answer });
+const shown = async (
+  answer: IssueView | null,
+  onopenpr = vi.fn(),
+  onmark = vi.fn(),
+  onarchive = vi.fn(),
+  onmute = vi.fn(),
+  onmuteauthor = vi.fn(),
+) => {
+  core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
-  render(IssueDetail, { repository: "python/cpython", issue: state, now: NOW, onopenpr, onmark });
+  const issue = state;
+  const on = { onopenpr, onmark, onarchive, onmute, onmuteauthor };
+  render(IssueDetail, { repository: "python/cpython", issue, now: NOW, ...on });
   state.stop();
   return state;
 };
@@ -118,9 +120,9 @@ const shown = async (answer: IssueView | null, onopenpr = vi.fn(), onmark = vi.f
 beforeEach(() => {
   vi.resetAllMocks();
   core.listen.mockResolvedValue(vi.fn());
-  core.openIssue.mockResolvedValue({ status: "ok", data: null });
-  core.openOnGithub.mockResolvedValue({ status: "ok", data: null });
-  core.openLink.mockResolvedValue({ status: "ok", data: null });
+  core.openIssue.mockResolvedValue(done);
+  core.openOnGithub.mockResolvedValue(done);
+  core.openLink.mockResolvedValue(done);
 });
 
 it("shows the title and author, the description and the recent comments", async () => {
@@ -137,7 +139,7 @@ it("offers Mark Seen in its header while something is new or it is Marked unseen
   const onmark = vi.fn();
   const seen = (state: "seen" | "new_activity" | "marked_unseen") => ({
     ...view,
-    seen: { mark: { numbers: [7], up_to: "2026-11-04T10:00:00Z" }, state },
+    seen: { mark: { numbers: [7], up_to: "2026-11-04T10:00:00Z", findings: [] }, state },
   });
 
   await shown(seen("seen"), vi.fn(), onmark);
@@ -151,9 +153,63 @@ it("offers Mark Seen in its header while something is new or it is Marked unseen
   expect(screen.getByRole("button", { name: "Mark Seen" })).toBeTruthy();
 });
 
+it("offers Archive beside Mark Seen, and Unarchive on an Archived Issue", async () => {
+  const onarchive = vi.fn();
+
+  await shown(view, vi.fn(), vi.fn(), onarchive);
+  const buttons = screen.getAllByRole("button").map((button) => button.textContent);
+  expect(buttons).toEqual(expect.arrayContaining(["Archive", "Mark Unseen"]));
+  await fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+  expect(onarchive).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  await shown({ ...view, hidden: "archived" });
+  expect(screen.getByRole("button", { name: "Unarchive" })).toBeTruthy();
+});
+
+/** The header's buttons, by their words. */
+const headerButtons = () =>
+  screen.getAllByRole("button", { name: /^(un)?(archive|mute|mark)/i }).map((button) => button.textContent);
+
+it("offers Mute beside Archive, and on a Muted Issue Unmute and Mute author", async () => {
+  const onmute = vi.fn();
+
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), onmute);
+  expect(headerButtons()).toEqual(["Archive", "Mute", "Mute issue-author", "Mark Unseen"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Mute" }));
+  expect(onmute).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  const muted = { ...view, hidden: "muted" as const };
+  await shown(muted, vi.fn(), vi.fn(), vi.fn(), onmute);
+  expect(headerButtons()).toEqual(["Unmute", "Mute issue-author"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
+  expect(onmute).toHaveBeenLastCalledWith(muted);
+});
+
+it("offers Mute author for the Issue's author, only Unmute author for a Muted author, and none for the user", async () => {
+  const onmuteauthor = vi.fn();
+  const byMuted: IssueView = {
+    ...view,
+    hidden: "muted_author",
+    mute_author: { kind: "unmute", login: "issue-author" },
+  };
+
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), onmuteauthor);
+  await fireEvent.click(screen.getByRole("button", { name: "Mute issue-author" }));
+  expect(onmuteauthor).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  await shown(byMuted, vi.fn(), vi.fn(), vi.fn(), vi.fn(), onmuteauthor);
+  expect(headerButtons()).toEqual(["Unmute issue-author"]);
+  await fireEvent.click(screen.getByRole("button", { name: "Unmute issue-author" }));
+  expect(onmuteauthor).toHaveBeenLastCalledWith(byMuted);
+  cleanup();
+  await shown({ ...view, author: "me", mute_author: { kind: "off" } });
+  const off = screen.getByRole("button", { name: "Mute author" });
+  expect((off as HTMLButtonElement).disabled).toBe(true);
+});
+
 /** The line under the title, and the part of it that names who opened the Issue, in the text colour. */
 const authorLine = () => {
-  const author = screen.getByText((_, element) => element?.matches("p.by b") ?? false);
+  const author = screen.getByText((_, element) => element?.matches("p.byline b") ?? false);
   return { author, opened: author.parentElement as HTMLElement, line: author.closest("p") as HTMLElement };
 };
 
@@ -235,7 +291,7 @@ it("shows a Stale review in the danger tone, with the files changed since the Re
 it("keeps the Stale review of a merged PR, whose check froze with it, with the changed files", async () => {
   const files = [{ path: "Lib/ast.py", whitespace_only: false }];
   const review = { kind: "stale_review" as const, ...REVIEWED, files };
-  const merged: TreeEntry = { kind: "pr", number: 15, ...row, your_review: review, backports: [] };
+  const merged: TreeEntry = { kind: "pr", ...row(15), your_review: review, backports: [] };
   await shown({ ...view, pull_requests: [merged] });
 
   const words = [...document.querySelectorAll(".words")].map((line) => line.textContent);
@@ -340,12 +396,11 @@ const withMerged: IssueView = {
   merged: [
     {
       kind: "pr",
-      number: 20,
-      ...row,
+      ...row(20),
       title: "gh-7: First fix",
-      backports: [{ number: 21, ...row, target_branch: "3.14", backport: "bot" }],
+      backports: [{ ...row(21), target_branch: "3.14", backport: "bot" }],
     },
-    { kind: "pr", number: 22, ...row, title: "gh-7: Second fix", backports: [] },
+    { kind: "pr", ...row(22), title: "gh-7: Second fix", backports: [] },
   ],
   merged_count: 3,
 };
@@ -431,10 +486,7 @@ it("opens a PR row and a Backport in the PR view", async () => {
 });
 
 it("sends a link in a comment to the browser, and says if that fails", async () => {
-  core.openLink.mockResolvedValue({
-    status: "error",
-    error: { kind: "internal", message: "Tsugiki couldn't open the system browser." },
-  });
+  core.openLink.mockResolvedValue(refused("Tsugiki couldn't open the system browser."));
   await shown(view);
 
   await fireEvent.click(screen.getByRole("link", { name: "A link" }));
@@ -527,7 +579,7 @@ it("keeps how far down the user scrolled its pane", async () => {
 });
 
 it("says why it can't show the Issue", async () => {
-  core.issue.mockResolvedValue({ status: "error", error: { kind: "internal", message: "no database" } });
+  core.issue.mockResolvedValue(refused("no database"));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   render(IssueDetail, {
@@ -536,6 +588,9 @@ it("says why it can't show the Issue", async () => {
     now: NOW,
     onopenpr: vi.fn(),
     onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
   });
   state.stop();
 

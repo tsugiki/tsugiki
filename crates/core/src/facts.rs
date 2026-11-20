@@ -15,7 +15,7 @@ pub mod references;
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::facts::activity::ActivityFacts;
 use crate::facts::filters::FilterResults;
@@ -33,6 +33,15 @@ pub struct CommitSha(String);
 impl Serialize for CommitSha {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.0)
+    }
+}
+
+/// The window sends a SHA back as the text it read, as a mark carries the finding it drew.
+impl<'de> Deserialize<'de> for CommitSha {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text)
+            .ok_or_else(|| serde::de::Error::custom(format!("{text} isn't a commit's SHA")))
     }
 }
 

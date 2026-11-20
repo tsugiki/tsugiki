@@ -34,7 +34,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Open on GitHub | `Ctrl+Shift+G` |
 | Switch Repository | `Ctrl+R`, or the command palette |
 | Reset the layout | the command palette |
-| Archive / Mute the selected item | `E` / `M` |
+| Archive, the row under the cursor or the Detail pane's item, by focus | `E` |
+| Mute, the row under the cursor or the Detail pane's item, by focus | `M` |
+| Mute or unmute the author of the row under the cursor or of the Detail pane's item, by focus | the command palette |
 | Mark seen / unseen, the row under the cursor or the Detail pane's item, by focus | `Q` / `Shift+Q` |
 | Settings | `Ctrl+,`, or the command palette |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
@@ -92,11 +94,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the table's order, each with its key in force on the right, remaps included, or no key. Running one does
   what its key does there, once the palette has handed the focus back, and in a text box too, where the box
   would keep the key. So the Issue list's palette has Unfold and Fold, and the diff's has Next Change and Find
-  in Diff, and Mark Seen marks what `Q` would. An action with nothing built behind it yet, such as Archive,
-  isn't listed, and neither are the palette's own two keys, which open the box it is. A command the palette
-  had before keeps its title, such as Hide Sidebar, which turns into Show Sidebar, or View: Files in the
-  Rail. The commands that run no action, such as Sort by Attention and a switch to each other Repository,
-  come after the actions.
+  in Diff, and Mark Seen marks what `Q` would. An action with nothing built behind it yet, such as Pin or
+  Unpin, isn't listed, and neither are the palette's own two keys, which open the box it is. A command the
+  palette had before keeps its title, such as Hide Sidebar, which turns into Show Sidebar, or View: Files in
+  the Rail. The commands that run no action, such as Sort by Attention and a switch to each other
+  Repository, come after the actions.
 - The command palette lists the commands the user ran at the top, newest first, then those never run, in
   their usual order. Typing filters the list by substring and keeps that order. `machine.toml` keeps the
   last 50 commands run, newest first, in `recent_commands` beside the recent Repositories, so the order

@@ -1,10 +1,13 @@
 use time::Duration;
 
 use super::*;
+use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, stranger};
-use crate::workbench::{TreeEntry, WorkbenchItem};
+use crate::store::testing::{OpenStore, archived_on_closing};
+use crate::store::{Archiving, AuthorMuting, Muting, Opened};
+use crate::testing::{cpython, cpython_settings};
+use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
 
 /// A moment well after the epoch, so two days before it is too.
 fn now() -> OffsetDateTime {
@@ -38,25 +41,11 @@ fn pr_at(number: u32, issue: Option<u32>, updated_at: OffsetDateTime) -> PullReq
 
 /// Each item as its kind and number, with the PRs it shows after it.
 fn outline(inbox: &Inbox) -> Vec<(&'static str, u32, Vec<u32>)> {
-    (inbox.items.iter())
-        .map(|listed| match &listed.item {
-            WorkbenchItem::Issue(issue) => {
-                let rows = issue.pull_requests.iter().flat_map(TreeEntry::rows);
-                ("issue", issue.number, rows.map(|row| row.number).collect())
-            }
-            WorkbenchItem::StandalonePr(tree) => {
-                let beneath = tree.backports.iter().map(|below| below.row.number);
-                ("standalone", tree.row.number, beneath.collect())
-            }
-            WorkbenchItem::StandaloneBackport(backport) => {
-                ("standalone backport", backport.row.number, vec![])
-            }
-        })
-        .collect()
+    outline_of(&inbox.items)
 }
 
 fn read(world: &ViewWorld, page: InboxPage) -> Inbox {
-    Inbox::read(&world.reader, &world.settings(), page, now()).unwrap()
+    Inbox::read(&world.db.reader, &world.settings(), page, now()).unwrap()
 }
 
 fn in_state(state: PrState, facts: PullRequestFacts) -> PullRequestFacts {
@@ -128,6 +117,44 @@ fn a_closed_issue_leaves_with_its_prs_and_so_does_a_standalone_pr_with_none_open
 }
 
 #[test]
+fn a_closed_issue_a_pr_brought_back_stands_at_its_prs_latest_update() {
+    let world = ViewWorld::new("inbox-brought-back");
+    let closed = |number, updated_at| IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue_at(number, updated_at)
+    };
+    world.has(
+        vec![pr_at(10, Some(1), ago(80)), pr_at(20, Some(4), ago(90))],
+        vec![
+            closed(1, ago(60)),
+            issue_at(2, ago(1)),
+            issue_at(3, ago(70)),
+            closed(4, ago(85)),
+        ],
+    );
+    let store = &world.db.store;
+    archived_on_closing(store, &[ItemKey::Issue { number: 1 }], ago(60));
+    let opened = Opened {
+        issues: vec![1],
+        openings: BTreeSet::new(),
+    };
+    store.bring_back(&cpython(), opened).unwrap();
+
+    let latest = read(&world, InboxPage::Latest);
+    let after = latest.older.unwrap();
+    let older = read(&world, InboxPage::Older { after });
+    world.finish();
+
+    assert_eq!(outline(&latest), [("issue", 2, vec![])]);
+    // The walk meets the updates of open Issues and of PRs, so the comment on Issue 1 after it closed
+    // doesn't move it. Nothing brought back the closed Issue 4.
+    assert_eq!(
+        outline(&older),
+        [("issue", 3, vec![]), ("issue", 1, vec![10])]
+    );
+}
+
+#[test]
 fn a_backport_whose_origin_pr_merged_sits_beneath_it_under_its_issue() {
     let world = ViewWorld::new("inbox-merged-origin");
     world.has(
@@ -163,7 +190,7 @@ fn a_change_of_conventions_regroups_the_prs_with_no_sync() {
     };
 
     let under_cpython = read(&world, InboxPage::Latest);
-    let under_github = Inbox::read(&world.reader, &github, InboxPage::Latest, now()).unwrap();
+    let under_github = Inbox::read(&world.db.reader, &github, InboxPage::Latest, now()).unwrap();
     world.finish();
 
     assert_eq!(outline(&under_cpython), [("issue", 1, vec![10, 11])]);
@@ -279,6 +306,115 @@ fn the_first_page_holds_the_last_two_days_and_the_next_the_older_batch() {
         ]
     );
     assert_eq!(older.older, None);
+}
+
+#[test]
+fn archive_takes_an_item_out_and_a_page_of_archived_items_gives_way_to_the_next() {
+    let world = ViewWorld::new("inbox-archived");
+    world.has(
+        vec![pr_at(20, None, ago(1)), pr_at(21, None, ago(50))],
+        vec![issue_at(1, ago(2)), issue_at(2, ago(60))],
+    );
+    let archive = |key, number| {
+        let archiving = Archiving {
+            key,
+            numbers: vec![number],
+            up_to: Some(ago(0)),
+            put_away: PutAway::Now,
+            findings: vec![],
+        };
+        world
+            .db
+            .store
+            .archive(&cpython(), archiving, now())
+            .unwrap();
+    };
+    archive(ItemKey::PullRequest { number: 20 }, 20);
+    archive(ItemKey::Issue { number: 1 }, 1);
+    archive(ItemKey::Issue { number: 2 }, 2);
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
+    assert_eq!(latest.older, None);
+}
+
+#[test]
+fn mute_takes_an_item_out() {
+    let world = ViewWorld::new("inbox-muted");
+    world.has(
+        vec![pr_at(20, None, ago(1)), pr_at(21, None, ago(50))],
+        vec![issue_at(1, ago(2))],
+    );
+    let mute = |key, number| {
+        let muting = Muting {
+            key,
+            numbers: vec![number],
+            up_to: Some(ago(0)),
+            findings: vec![],
+        };
+        world.db.store.mute(&cpython(), muting, now()).unwrap();
+    };
+    mute(ItemKey::PullRequest { number: 20 }, 20);
+    mute(ItemKey::Issue { number: 1 }, 1);
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
+}
+
+#[test]
+fn a_muted_authors_items_stay_unless_muted_or_archived_on_their_own() {
+    let world = ViewWorld::new("inbox-muted-author");
+    world.has(
+        vec![
+            pr_at(20, None, ago(1)),
+            pr_at(21, None, ago(3)),
+            pr_at(22, None, ago(4)),
+        ],
+        vec![issue_at(1, ago(2))],
+    );
+    let muting = Muting {
+        key: ItemKey::PullRequest { number: 21 },
+        numbers: vec![21],
+        up_to: Some(ago(0)),
+        findings: vec![],
+    };
+    world.db.store.mute(&cpython(), muting, now()).unwrap();
+    let archiving = Archiving {
+        key: ItemKey::PullRequest { number: 22 },
+        numbers: vec![22],
+        up_to: Some(ago(0)),
+        put_away: PutAway::Now,
+        findings: vec![],
+    };
+    world
+        .db
+        .store
+        .archive(&cpython(), archiving, now())
+        .unwrap();
+    let author = stranger().author.unwrap();
+    let muting = AuthorMuting {
+        author,
+        marks: Vec::new(),
+    };
+    world
+        .db
+        .store
+        .mute_author(&cpython(), muting, now())
+        .unwrap();
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    // #825 is to leave out a Muted author's items, behind a switch.
+    assert_eq!(
+        outline(&latest),
+        [("standalone", 20, vec![]), ("issue", 1, vec![])]
+    );
+    assert_eq!(latest.items[0].hidden, Some(Hidden::MutedAuthor));
 }
 
 #[test]
@@ -515,7 +651,7 @@ fn an_item_updated_in_the_second_the_first_page_starts_is_on_it_alone() {
     let within_a_second = now() + Duration::milliseconds(500);
 
     let latest = Inbox::read(
-        &world.reader,
+        &world.db.reader,
         &world.settings(),
         InboxPage::Latest,
         within_a_second,
@@ -580,27 +716,18 @@ fn rows_carry_what_the_workbench_rows_carry() {
 
 #[test]
 fn nothing_is_listed_before_anyone_signs_in() {
-    let folder = crate::testing::temp_path("inbox-no-viewer");
-    std::fs::create_dir_all(&folder).unwrap();
-    let path = folder.join("tsugiki.db");
-    let store = crate::store::Store::open(&path).unwrap();
-    let name = crate::workbench::testing::cpython().name;
-    store.save_issues(&name, vec![issue_at(1, ago(1))]).unwrap();
+    let db = OpenStore::new("inbox-no-viewer");
+    let store = &db.store;
     store
-        .save_pull_requests(&name, vec![fixing(10, 1)])
+        .save_issues(&cpython(), vec![issue_at(1, ago(1))])
         .unwrap();
-    let (to_open, reader) = crate::store::reader();
-    let open = to_open.open(&path).unwrap();
+    store
+        .save_pull_requests(&cpython(), vec![fixing(10, 1)])
+        .unwrap();
 
-    let read = Inbox::read(
-        &reader,
-        &crate::workbench::testing::cpython(),
-        InboxPage::Latest,
-        now(),
-    );
+    let read = Inbox::read(&db.reader, &cpython_settings(), InboxPage::Latest, now());
 
-    open.close();
-    store.close();
+    db.close();
     let read = read.unwrap();
     assert_eq!(outline(&read), []);
     assert_eq!(read.older, None);

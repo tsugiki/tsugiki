@@ -1,23 +1,23 @@
 // The status bar's words for when the open Repository last synced, for a sync under way, for the other
 // Repositories syncing, and for a mirror's clone and what keeps one from starting.
+import { counted } from "$lib/state/counted";
 import type { Cloning, MirrorProblem, RepositoryMirror, SyncActivity } from "$lib/state/status.svelte";
+import { elapsed } from "./time";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
 /** How far a clone has got once GitHub has started sending. */
 type CloneUnderWay = Exclude<Cloning["progress"], { stage: "starting" }>;
 
-const MINUTE_MS = 60_000;
-const MINUTES_IN_HOUR = 60;
-const MINUTES_IN_DAY = 1440;
+const SYNCED_UNITS = { minute: "min", hour: "h", day: "d" } as const;
 
+/** When the open Repository last synced: "Synced just now", "Synced 3 min ago", or not yet. */
 export function syncedWords(at: string | null, now: Date): string {
   if (at === null) return "Not synced yet";
-  const minutes = Math.floor((now.getTime() - new Date(at).getTime()) / MINUTE_MS);
-  if (minutes < 1) return "Synced just now";
-  if (minutes < MINUTES_IN_HOUR) return `Synced ${String(minutes)} min ago`;
-  if (minutes < MINUTES_IN_DAY) return `Synced ${String(Math.floor(minutes / MINUTES_IN_HOUR))} h ago`;
-  return `Synced ${String(Math.floor(minutes / MINUTES_IN_DAY))} d ago`;
+  const time = elapsed(at, now);
+  return time.unit === "now"
+    ? "Synced just now"
+    : `Synced ${String(time.count)} ${SYNCED_UNITS[time.unit]} ago`;
 }
 
 const PART_WORDS = {
@@ -41,8 +41,7 @@ export function syncingWords(activity: SyncActivity | null): string | null {
   if (!open || open.part === "refresh") return null;
   if (open.load) return `${PART_WORDS[open.part]} · ${loadWords(open.load)}`;
   if (open.pages === 0) return PART_WORDS[open.part];
-  const pages = open.pages === 1 ? "1 page" : `${String(open.pages)} pages`;
-  return `${PART_WORDS[open.part]} · ${pages}`;
+  return `${PART_WORDS[open.part]} · ${counted(open.pages, "page", "pages")}`;
 }
 
 /** The other Repositories syncing, which take turns with the open one: the next by name, then a count. */

@@ -49,7 +49,7 @@ pub(super) struct HitFiles {
 
 impl HitFiles {
     pub(super) fn name(&self, path: PathBuf) {
-        let _new = lock(&self.named).insert(path);
+        lock(&self.named).extend([path]);
     }
 
     /// The lines `wanted` names: of a file of the Repository whose Mirror is at `mirror`, or of one outside
@@ -108,7 +108,11 @@ impl HitFiles {
         let lines = read
             .get_or_init(|| {
                 #[cfg(test)]
-                let _before = self.reads.fetch_add(1, Ordering::Relaxed);
+                #[expect(
+                    unused_results,
+                    reason = "the tests read the count, and none needs the old one"
+                )]
+                self.reads.fetch_add(1, Ordering::Relaxed);
                 text_of(mirror, file).map(|text| split(&text).into())
             })
             .clone();
@@ -140,7 +144,7 @@ fn text_of(mirror: &Path, file: &HitFile) -> Result<String, Error> {
             let short = commit.as_str().get(..7).unwrap_or_default();
             let missing = format!("Tsugiki's copy of the Repository has no {path} at {short}.");
             let name = diff::object_name(commit, path);
-            let blob = name.and_then(|name| diff::blobs(mirror, &[&name]).into_iter().next());
+            let blob = diff::blobs(mirror, &[&name]).into_iter().next();
             blob.flatten()
                 .ok_or_else(|| Error::new(ErrorKind::NotFound, &missing))
         }

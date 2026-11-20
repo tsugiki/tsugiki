@@ -1,12 +1,10 @@
 use std::cell::Cell;
-use std::fs;
 
-use tsugiki_test_git::git;
+use tsugiki_test_git::mirror_with_branch;
 
 use super::*;
 use crate::diff::{Diff, PrAt, Start, read};
 use crate::facts::CommitSha;
-use crate::repository::RepositoryName;
 use crate::testing::TempPath;
 
 #[test]
@@ -28,30 +26,9 @@ struct Repo {
 impl Repo {
     fn new(name: &str, base: &[(&str, &str)], head: &[(&str, &str)]) -> Self {
         let root = crate::testing::temp_path(&format!("highlighter-{name}"));
-        let work = root.join("work");
-        fs::create_dir_all(&work).unwrap();
-        let write = |files: &[(&str, &str)]| {
-            for (path, text) in files {
-                let path = work.join(path);
-                if text.is_empty() {
-                    fs::remove_file(path).unwrap();
-                } else {
-                    fs::create_dir_all(path.parent().unwrap()).unwrap();
-                    fs::write(path, text).unwrap();
-                }
-            }
-            let _ = git(&work, &["add", "-A"]);
-            let _ = git(&work, &["commit", "-qm", "Files"]);
-        };
-        let _ = git(&work, &["init", "-q", "-b", "main"]);
-        write(base);
-        let _ = git(&work, &["switch", "-qc", "pr"]);
-        write(head);
         let mirror = root.join("mirror.git");
-        let (from, to) = (work.to_string_lossy(), mirror.to_string_lossy());
-        let _ = git(&root, &["clone", "-q", "--bare", &from, &to]);
-        let head = git(&mirror, &["rev-parse", "refs/heads/pr"]);
-        let head = CommitSha::parse(head.trim()).unwrap();
+        let head = mirror_with_branch(&root.join("work"), &mirror, base, head);
+        let head = CommitSha::parse(&head).unwrap();
         Self { mirror, head, root }
     }
 
@@ -74,7 +51,7 @@ impl Repo {
 
 fn pr(number: u32, head: &CommitSha) -> PrAt {
     PrAt {
-        repository: RepositoryName::parse("python/cpython").unwrap(),
+        repository: crate::testing::cpython(),
         number,
         head: head.clone(),
     }
@@ -526,20 +503,6 @@ fn the_thread_parses_ahead_between_chunks_and_ends_with_the_last_highlighter() {
     worker.run(&incoming);
 
     assert_eq!(shelved(&shelf, &diff, &ALL), ALL);
-}
-
-#[test]
-fn git_s_batch_gives_each_blob_s_text_and_nothing_for_the_rest() {
-    let output = b"1111 blob 3\nab\n\n\
-        2222:Lib/x.py missing\n\
-        3333 tree 4\n\0\0\0\0\n\
-        4444:Lib/spaced name.py missing\n\
-        5555 blob 20\ncut short";
-
-    let blobs = parse_batch(output);
-
-    let ab = Some("ab\n".to_owned());
-    assert_eq!(blobs, [ab, None, None, None]);
 }
 
 #[test]

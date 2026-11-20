@@ -10,7 +10,6 @@
 )]
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use time::{Duration, OffsetDateTime};
 use tsugiki_core::error::Error;
@@ -48,7 +47,7 @@ const ONLY_PAGE: PageRequest<'static> = PageRequest {
 };
 
 fn main() {
-    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github");
+    let fixtures = tsugiki_core::testing::recordings();
     let token = read_token(run_gh).expect("read gh's token");
     let scout = GitHub::new(
         Box::new(Https::new()),
@@ -61,7 +60,8 @@ fn main() {
         println!("Recorded to {}", fixtures.display());
         return;
     }
-    let _ = github.viewer().expect("ask GitHub who the user is");
+    let viewer = github.viewer().expect("ask GitHub who the user is");
+    println!("Recording as {}", viewer.login.as_str());
     let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
     record_a_refresh(&github, &repository);
     record_first_sync(&github, &scout);
@@ -107,9 +107,13 @@ fn record_a_refresh(github: &GitHub, repository: &RepositoryName) {
         filters: &[],
         size: REFRESH_PAGE,
     };
-    let _proved = github
+    let proved = github
         .poll_repository(repository, &no_searches)
         .expect("poll with no searches");
+    println!(
+        "A poll with no searches found {} PRs",
+        proved.pull_requests.len()
+    );
     let asked = PollRequest {
         since: OffsetDateTime::now_utc() - REFRESH_WINDOW,
         issues: &start,
@@ -144,9 +148,10 @@ fn record_a_refresh(github: &GitHub, repository: &RepositoryName) {
 /// those Issues' trees. Each recording holds one answer, so more pages would only keep the last.
 fn record_first_sync(github: &GitHub, scout: &GitHub) {
     let repository = RepositoryName::parse(WORK_REPOSITORY).expect("a Repository's name");
-    let _checked = github
+    let checked = github
         .check_repository(&repository, OffsetDateTime::now_utc().date())
         .expect("check the Repository");
+    println!("{} has {} open PRs", checked.name, checked.counts.open_prs);
     let mut ids = Vec::new();
     let first_page = PageRequest {
         size: SEARCH_PAGE,
@@ -187,9 +192,13 @@ fn record_first_sync(github: &GitHub, scout: &GitHub) {
     );
     let work: BTreeSet<u32> = batch.pull_requests.iter().map(|pr| pr.number).collect();
     let shown: Vec<u32> = issues.issues.iter().map(|issue| issue.number).collect();
-    let _references = github
+    let references = github
         .fetch_issue_references(&repository, &shown, FETCH_BATCH)
         .expect("read the cross-references of the Issues the PRs name");
+    println!(
+        "{} Issues' cross-references read",
+        references.references.len()
+    );
     let chosen = issue_with_a_backport(scout, &repository, shown, &work)
         .expect("look for an Issue with a Backport");
     let Some(issue) = chosen else {
@@ -220,7 +229,7 @@ fn record_a_filter(
     println!("{} items of {} in a Filter", page.hits.len(), page.total);
     for hit in page.hits {
         match hit.kind {
-            FilterHitKind::Issue => drop(named.insert(hit.number)),
+            FilterHitKind::Issue => named.extend([hit.number]),
             FilterHitKind::PullRequest(id) => {
                 if !ids.contains(&id) {
                     ids.push(id);

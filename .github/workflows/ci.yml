@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # The Windows and macOS coverage jobs install the same version. No name here starts with CARGO_:
+  # rust-cache hashes those into its key, so a new value would miss every Rust cache main saved.
+  LLVM_COV_TOOL: cargo-llvm-cov@0.9.1
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -189,10 +194,40 @@ jobs:
             echo "::error::Change release.yml on a release/ branch, so the Release workflow rehearses it."
             exit 1
           fi
-          if [ "$(git show HEAD^1:Cargo.toml | grep -m1 '^version = ')" != "$(grep -m1 '^version = ' Cargo.toml)" ]; then
+          version() {
+            node -e 'import("./scripts/release-notes.ts").then(({ workspaceVersion }) =>
+              console.log(workspaceVersion(require("node:fs").readFileSync(0, "utf8"))))'
+          }
+          # Each in an assignment of its own, so a failed node stops the step. Inside the test, two failures
+          # would both read as "" and match.
+          base=$(git show HEAD^1:Cargo.toml | version) || exit 1
+          head=$(version < Cargo.toml) || exit 1
+          if [ "$base" != "$head" ]; then
             echo "::error::Set the version on a release/ branch, so the Release workflow rehearses it."
             exit 1
           fi
+
+  # jscpd compares the Rust under crates/ with itself, and the UI and the scripts with themselves, so a change
+  # to either runs it. It takes a second, so one job runs both scans.
+  dupes:
+    name: dupes
+    needs: [changes]
+    if: >-
+      ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') ||
+      contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      # The root's packages alone, jscpd among them: the scan needs nothing of the ui workspace.
+      - run: npm ci --workspaces=false
+      - run: npm run dupes
 
   # Codecov carries the last Rust figure forward on a run that skips this job (codecov.yml).
   rust-coverage:
@@ -212,7 +247,7 @@ jobs:
         run: rustup toolchain install
       - uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
-          tool: cargo-llvm-cov@0.9.1
+          tool: ${{ env.LLVM_COV_TOOL }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: rust-coverage
@@ -318,7 +353,7 @@ jobs:
       - if: ${{ env.RUST_STEPS == 'true' }}
         uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
-          tool: cargo-llvm-cov@0.9.1
+          tool: ${{ env.LLVM_COV_TOOL }}
       - if: ${{ env.RUST_STEPS == 'true' }}
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -377,14 +412,16 @@ jobs:
       - rust
       - dependencies
       - release-check
+      - dupes
       - rust-coverage
       - ui
       - playwright
       - macos
     runs-on: ubuntu-latest
     steps:
-      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS job reads both, and
-      # the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets a line.
+      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS and dupes jobs read
+      # both, and the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets
+      # a line.
       - name: Every job succeeded, or skipped because the change doesn't reach what it reads
         env:
           JOBS: ${{ needs.changes.outputs.jobs }}
@@ -399,7 +436,7 @@ jobs:
               rust | rust-coverage) reads='"rust"' ;;
               dependencies) reads='"dependencies"' ;;
               ui | playwright) reads='"ui"' ;;
-              macos) reads='"rust", "ui"' ;;
+              macos | dupes) reads='"rust", "ui"' ;;
               *) echo "CI passed doesn't know what $job reads"; exit 1 ;;
             esac
             listed=$(jq -r "[\"always\"] + . | any(.[]; IN($reads))" <<< "$JOBS")

@@ -1,40 +1,17 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
-use crate::github::testing::{RATE_LIMIT, Scripted, reply_ok, token};
+use crate::github::testing::{
+    RATE_LIMIT, Scripted, answer, github, issue_node, not_found, replied, reply_ok,
+};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
+use crate::testing::{cpython, moment};
 use serde_json::Value;
-use std::path::Path;
-use time::format_description::well_known::Rfc3339;
 
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn github(script: Scripted) -> GitHub {
-    GitHub::new(Box::new(script), token())
-}
-
-fn answer(repository: &Value) -> Result<Reply, Unreachable> {
-    reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{RATE_LIMIT}}}}}"#
-    ))
-}
-
-fn issue_json(number: u32) -> Value {
-    json!({
-        "__typename": "Issue",
-        "number": number,
-        "title": format!("Issue {number}"),
-        "updatedAt": "2026-11-04T10:00:00Z",
-        "state": "OPEN",
-        "stateReason": null,
-        "assignees": { "nodes": [] },
-        "labels": { "nodes": [] },
-        "timelineItems": { "nodes": [] },
-        "author": { "login": "some-author" },
-    })
+/// GitHub's answer whose `repository` holds the fields of `repository`.
+fn in_repository(repository: &Value) -> Result<Reply, Unreachable> {
+    answer(json!({ "repository": repository }), RATE_LIMIT)
 }
 
 fn event(source: &Value) -> Value {
@@ -56,7 +33,7 @@ fn timeline(nodes: &[Value], previous: Option<&str>) -> Result<Reply, Unreachabl
             "pageInfo": { "hasPreviousPage": previous.is_some(), "startCursor": previous.or(Some("start")) },
             "nodes": nodes,
         } });
-    answer(&json!({ "issue": issue }))
+    in_repository(&json!({ "issue": issue }))
 }
 
 fn page(after: Option<&str>) -> PageRequest<'_> {
@@ -116,11 +93,11 @@ fn cross_references_say_where_the_older_ones_start() {
 
 #[test]
 fn an_issue_github_no_longer_has_has_no_cross_references() {
-    let body = format!(
-        r#"{{"data":{{"repository":{{"issue":null}},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND",
-                "message":"gone","path":["repository","issue"]}}]}}"#
+    let gone = not_found(
+        json!({ "repository": { "issue": null } }),
+        json!(["repository", "issue"]),
     );
-    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
+    let (script, _asked) = Scripted::new(vec![gone]);
 
     let found = github(script)
         .fetch_cross_references(&cpython(), 7, page(None))
@@ -132,12 +109,7 @@ fn an_issue_github_no_longer_has_has_no_cross_references() {
 
 #[test]
 fn a_page_of_cross_references_github_cant_answer_is_asked_for_at_half_size() {
-    let bad_gateway = Ok(Reply {
-        status: 502,
-        reset: None,
-        date: None,
-        body: "Bad Gateway".to_owned(),
-    });
+    let bad_gateway = replied(502, "Bad Gateway");
     let (script, asked) = Scripted::new(vec![bad_gateway, timeline(&[], None)]);
 
     drop(
@@ -155,7 +127,7 @@ fn a_page_of_cross_references_github_cant_answer_is_asked_for_at_half_size() {
 
 #[test]
 fn a_fetched_issue_is_read_into_its_facts() {
-    let reply = answer(&json!({ "i7": issue_json(7) }));
+    let reply = in_repository(&json!({ "i7": issue_node(7) }));
     let (script, asked) = Scripted::new(vec![reply]);
 
     let fetched = github(script).fetch_issues(&cpython(), &[7], 25).unwrap();
@@ -168,7 +140,7 @@ fn a_fetched_issue_is_read_into_its_facts() {
             author: Some(Login::new("some-author")),
             assignees: vec![],
             labels: vec![],
-            updated_at: OffsetDateTime::parse("2026-11-04T10:00:00Z", &Rfc3339).unwrap(),
+            updated_at: moment("2026-11-04T10:00:00Z"),
             state: Some(IssueState::Open),
         }]
     );
@@ -182,12 +154,12 @@ fn a_fetched_issue_is_read_into_its_facts() {
 #[test]
 fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
     let closed = |number: u32, reason: Value| {
-        let mut issue = issue_json(number);
+        let mut issue = issue_node(number);
         issue["state"] = json!("CLOSED");
         issue["stateReason"] = reason;
         issue
     };
-    let mut reopened = issue_json(6);
+    let mut reopened = issue_node(6);
     reopened["stateReason"] = json!("REOPENED");
     let mut repository = json!({ "i6": reopened });
     for (number, reason) in [
@@ -199,7 +171,7 @@ fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
     ] {
         repository[format!("i{number}")] = closed(number, reason);
     }
-    let (script, _asked) = Scripted::new(vec![answer(&repository)]);
+    let (script, _asked) = Scripted::new(vec![in_repository(&repository)]);
 
     let fetched = github(script)
         .fetch_issues(&cpython(), &[6, 7, 8, 9, 10, 11], 25)
@@ -226,7 +198,7 @@ fn a_closed_issue_keeps_how_it_closed_as_github_draws_it() {
 
 #[test]
 fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
-    let mut issue = issue_json(7);
+    let mut issue = issue_node(7);
     issue["labels"] = json!({ "nodes": [
         { "name": "type-bug" },
         null,
@@ -234,10 +206,10 @@ fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
         { "name": "3.14" },
         { "name": "interpreter-core" },
     ] });
-    let mut unlabelled = issue_json(8);
+    let mut unlabelled = issue_node(8);
     unlabelled["labels"] = Value::Null;
     let repository = json!({ "i7": issue, "i8": unlabelled });
-    let (script, _asked) = Scripted::new(vec![answer(&repository)]);
+    let (script, _asked) = Scripted::new(vec![in_repository(&repository)]);
 
     let fetched = github(script)
         .fetch_issues(&cpython(), &[7, 8], 25)
@@ -253,9 +225,9 @@ fn an_issue_keeps_the_names_of_its_labels_in_name_order_whatever_their_case() {
 
 #[test]
 fn an_issue_whose_author_has_gone_has_no_author() {
-    let mut issue = issue_json(7);
+    let mut issue = issue_node(7);
     issue["author"] = Value::Null;
-    let (script, _asked) = Scripted::new(vec![answer(&json!({ "i7": issue }))]);
+    let (script, _asked) = Scripted::new(vec![in_repository(&json!({ "i7": issue }))]);
 
     let fetched = github(script).fetch_issues(&cpython(), &[7], 25).unwrap();
 
@@ -264,12 +236,13 @@ fn an_issue_whose_author_has_gone_has_no_author() {
 
 #[test]
 fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
-    let body = format!(
-        r#"{{"data":{{"repository":{},{RATE_LIMIT}}},"errors":[{{"type":"NOT_FOUND","message":"gone",
-                "path":["repository","i3"]}}]}}"#,
-        json!({ "i1": issue_json(1), "i2": { "__typename": "PullRequest" }, "i3": null })
+    let repository =
+        json!({ "i1": issue_node(1), "i2": { "__typename": "PullRequest" }, "i3": null });
+    let gone = not_found(
+        json!({ "repository": repository }),
+        json!(["repository", "i3"]),
     );
-    let (script, _asked) = Scripted::new(vec![reply_ok(&body)]);
+    let (script, _asked) = Scripted::new(vec![gone]);
 
     let fetched = github(script)
         .fetch_issues(&cpython(), &[1, 2, 3], 25)
@@ -297,7 +270,7 @@ fn a_repository_that_has_gone_is_still_an_error() {
 fn a_batch_asks_for_its_size_and_a_retry_for_half() {
     let replies = vec![
         Err(Unreachable::Offline),
-        answer(&json!({ "i1": issue_json(1) })),
+        in_repository(&json!({ "i1": issue_node(1) })),
     ];
     let (script, _asked) = Scripted::new(replies);
 
@@ -324,7 +297,7 @@ fn the_query_names_each_number_and_opens_with_its_operation() {
 
 #[test]
 fn the_recording_holds_the_query_the_client_sends() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/github/FetchIssues.json");
+    let path = crate::testing::recordings().join("FetchIssues.json");
     let recording: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let recorded = recording["query"].as_str().unwrap();
     let numbers: Vec<u32> = recorded

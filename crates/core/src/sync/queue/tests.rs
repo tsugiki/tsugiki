@@ -1,5 +1,4 @@
 use super::*;
-use crate::conventions::Conventions;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::github::clock::GitHubClock;
 use crate::github::pull_requests::RateLimit;
@@ -7,11 +6,11 @@ use crate::github::testing::{dated, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
-    Harness, RATE_LIMIT, cpython, cross_references, fetched, fetched_nodes, found,
-    issue_references_with_more, issues, merged_node, nothing, plain, pr_node, run_to_the_end,
-    searches_finding, soon, up_to_the_first_issue,
+    Harness, RATE_LIMIT, a_tree_over_two_pages, cpython, cross_references, fetched, fetched_nodes,
+    issues, merged_node, nothing, plain, pr_node, run_to_the_end, search_page, searches_finding,
+    soon,
 };
-use crate::sync::{Ahead, Phase, RATE_LIMIT_FLOOR, pause_until};
+use crate::sync::{RATE_LIMIT_FLOOR, pause_until};
 use serde_json::{Value, json};
 
 fn limited_until(from_now: i64) -> Error {
@@ -23,7 +22,7 @@ fn limited_until(from_now: i64) -> Error {
 /// Whether a sync is still queued after `tries` failures for `problem`.
 fn queued_after(tries: u8, problem: &Error) -> bool {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     for _ in 0..tries {
         syncs.after_failure(&failed(problem.clone()), soon(), GitHubClock::default());
     }
@@ -47,18 +46,21 @@ fn a_failed_step_keeps_its_place_and_runs_again() {
     let harness = Harness::new(
         "failure",
         vec![
-            found(&["a"], Some("next"), RATE_LIMIT),
+            search_page(&["a"], Some("next"), RATE_LIMIT),
             Err(Unreachable::Offline),
             Err(Unreachable::Offline),
-            found(&["b"], None, RATE_LIMIT),
+            search_page(&["b"], None, RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
+    syncs.add_listed(plain(cpython()));
+    assert_eq!(
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
+        None
+    );
 
-    let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    let failed = syncs.step(&harness.github, &harness.db.store).unwrap_err();
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
     assert_eq!(failed.problem.kind, ErrorKind::Offline);
     let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
@@ -69,7 +71,7 @@ fn a_failed_step_keeps_its_place_and_runs_again() {
 #[test]
 fn a_held_back_step_says_when() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let later = Instant::now() + Duration::from_secs(60);
 
     syncs.wait_until(later);
@@ -83,7 +85,10 @@ fn nothing_queued_means_nothing_to_do() {
     let mut syncs = Syncs::default();
 
     assert_eq!(syncs.ready_at(), None);
-    assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
+    assert_eq!(
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
+        None
+    );
     assert_eq!(harness.operations(), [""; 0]);
     harness.finish();
 }
@@ -100,8 +105,8 @@ fn a_repository_already_queued_isnt_queued_twice() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    syncs.add(plain(RepositoryName::parse("Python/CPython").unwrap()));
+    syncs.add_listed(plain(cpython()));
+    syncs.add_listed(plain(RepositoryName::parse("Python/CPython").unwrap()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -164,12 +169,12 @@ fn repositories_take_turns_and_the_open_one_has_every_other_step() {
             .collect(),
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    syncs.add(plain(devguide()));
-    syncs.add(plain(peps()));
+    syncs.add_listed(plain(cpython()));
+    syncs.add_listed(plain(devguide()));
+    syncs.add_listed(plain(peps()));
 
     for _ in 0..6 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
 
     assert_eq!(
@@ -191,18 +196,18 @@ fn a_sync_carries_on_from_its_place_between_turns() {
     let harness = Harness::new(
         "between-turns",
         vec![
-            found(&["a"], Some("next"), RATE_LIMIT),
+            search_page(&["a"], Some("next"), RATE_LIMIT),
             nothing(RATE_LIMIT),
-            found(&[], None, RATE_LIMIT),
+            search_page(&[], None, RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    syncs.add(plain(peps()));
+    syncs.add_listed(plain(cpython()));
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    syncs.add_listed(plain(peps()));
 
     for _ in 0..2 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
 
     let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
@@ -230,17 +235,17 @@ fn a_refresh_of_the_open_repository_takes_the_next_turn_beside_another_sync() {
     replies.push(refused());
     let harness = Harness::new("refresh-next", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
     syncs
         .queue
         .retain(|queued| queued.sync.repository == peps());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
-    syncs.refresh_open(&harness.store);
-    drop(syncs.step(&harness.github, &harness.store).unwrap_err());
+    syncs.refresh_open(&harness.db.store);
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap_err());
 
     let asked = repositories_asked(&harness);
     assert_eq!(asked[4..], ["python/peps", "python/cpython"]);
@@ -254,15 +259,15 @@ fn a_failure_of_one_repository_holds_back_only_that_one() {
         vec![refused(), nothing(RATE_LIMIT), nothing(RATE_LIMIT)],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
-    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
+    let problem = syncs.step(&harness.github, &harness.db.store).unwrap_err();
     assert!(!problem.problem.kind.speaks_for_all_of_github());
 
     syncs.after_failure(&problem, soon(), GitHubClock::default());
     assert!(syncs.ready_at().unwrap() <= Instant::now());
     for _ in 0..2 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
 
     assert_eq!(
@@ -276,9 +281,9 @@ fn a_failure_of_one_repository_holds_back_only_that_one() {
 fn a_problem_with_all_of_github_holds_back_every_repository() {
     let harness = Harness::new("held-all", vec![Err(Unreachable::Offline)]);
     let mut syncs = Syncs::default();
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
-    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
+    let problem = syncs.step(&harness.github, &harness.db.store).unwrap_err();
     let later = soon();
 
     syncs.after_failure(&problem, later, GitHubClock::default());
@@ -290,9 +295,9 @@ fn a_problem_with_all_of_github_holds_back_every_repository() {
 #[test]
 fn the_activity_is_the_open_repositorys_and_names_the_others_syncing_by_name() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(peps()));
-    syncs.add(plain(devguide()));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(devguide()));
+    syncs.add_listed(plain(cpython()));
 
     let activity = syncs.activity().unwrap();
 
@@ -304,10 +309,10 @@ fn the_activity_is_the_open_repositorys_and_names_the_others_syncing_by_name() {
 fn with_the_open_repository_idle_the_activity_only_names_the_others() {
     let harness = Harness::new("idle-open", searches_finding(&[]));
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
     syncs
         .queue
         .retain(|queued| queued.sync.repository == peps());
@@ -328,13 +333,13 @@ fn the_others_turns_dont_change_the_names_in_the_activity() {
             .collect(),
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(devguide()));
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(devguide()));
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
 
     let mut names = Vec::new();
     for _ in 0..4 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
         names.push(syncs.activity().unwrap().elsewhere);
     }
 
@@ -346,11 +351,11 @@ fn the_others_turns_dont_change_the_names_in_the_activity() {
 fn another_repositorys_failure_names_it() {
     let harness = Harness::new("names-failure", vec![nothing(RATE_LIMIT), refused()]);
     let mut syncs = Syncs::default();
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
-    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let failure = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 
     assert!(
         failure.problem.message.starts_with("python/peps: "),
@@ -364,7 +369,7 @@ fn another_repositorys_failure_names_it() {
 fn a_failed_fetch_of_an_issue_holds_back_no_sync_unless_all_of_github_is_out() {
     let later = soon();
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     for _ in 0..TRIES {
         syncs.after_fetch_failure(
@@ -385,7 +390,7 @@ fn a_rate_limit_with_nothing_queued_holds_back_the_next_sync() {
     let mut syncs = Syncs::default();
 
     syncs.after_fetch_failure(&limited_until(3000), soon(), GitHubClock::default());
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     assert!(syncs.ready_at().unwrap() > soon());
 }
@@ -394,7 +399,7 @@ fn a_rate_limit_with_nothing_queued_holds_back_the_next_sync() {
 fn with_nothing_open_a_refresh_queues_nothing() {
     let harness = Harness::new("refresh-nothing", Vec::new());
     let mut syncs = Syncs::default();
-    syncs.refresh_open(&harness.store);
+    syncs.refresh_open(&harness.db.store);
     syncs.refresh_now();
     assert_eq!(syncs.ready_at(), None);
     harness.finish();
@@ -404,13 +409,13 @@ fn with_nothing_open_a_refresh_queues_nothing() {
 fn the_timer_leaves_a_first_sync_that_gave_up_and_a_click_starts_it_again() {
     let harness = Harness::new("gave-up", Vec::new());
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     for _ in 0..TRIES {
         syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
     }
     assert_eq!(syncs.ready_at(), None);
 
-    syncs.refresh_open(&harness.store);
+    syncs.refresh_open(&harness.db.store);
     assert_eq!(syncs.ready_at(), None);
 
     syncs.refresh_now();
@@ -424,7 +429,7 @@ fn a_click_ends_a_wait_for_the_network_and_keeps_a_wait_for_points() {
     let offline = Error::new(ErrorKind::Offline, "No network.");
     let spent = Error::new(ErrorKind::RateLimited { resets_at: None }, "No points.");
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     syncs.after_failure(&failed(offline.clone()), later, GitHubClock::default());
     syncs.refresh_now();
@@ -440,7 +445,7 @@ fn a_click_while_github_stays_away_queues_the_open_repository_behind_the_wait() 
     let harness = Harness::new("click-offline", Vec::new());
     let later = Instant::now() + Duration::from_secs(3600);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     for _ in 0..TRIES {
         syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
     }
@@ -462,18 +467,18 @@ fn the_last_sync_says_when_it_finished_and_the_next_asks_from_when_it_started() 
     let harness = Harness::new("finish-time", replies);
     drop(harness.github.viewer().unwrap());
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let mut finished = None;
     while syncs.ready_at().is_some() {
         if let Some(Progress::Finished(last_sync)) =
-            syncs.step(&harness.github, &harness.store).unwrap()
+            syncs.step(&harness.github, &harness.db.store).unwrap()
         {
             finished = last_sync.at;
         }
     }
 
-    let state = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
     assert_eq!(finished, Some(state.finished_at));
     assert!((state.started_at - began).abs() < time::Duration::seconds(2));
     assert!(state.finished_at > began + time::Duration::minutes(59));
@@ -484,13 +489,13 @@ fn the_last_sync_says_when_it_finished_and_the_next_asks_from_when_it_started() 
 fn a_refresh_of_the_open_repository_joins_the_queue_once() {
     let harness = Harness::new("refresh-open", searches_finding(&[]));
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
     let operations = harness.operations().len();
     assert_eq!(operations, 4, "one sync's four searches");
 
-    syncs.refresh_open(&harness.store);
-    syncs.refresh_open(&harness.store);
+    syncs.refresh_open(&harness.db.store);
+    syncs.refresh_open(&harness.db.store);
 
     assert_eq!(syncs.queue.len(), 1);
     harness.finish();
@@ -502,12 +507,12 @@ fn after_a_switch_the_timer_refreshes_only_the_repository_opened_last() {
     replies.extend(searches_finding(&[]));
     let harness = Harness::new("switch-refresh", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
-    syncs.add(plain(peps()));
+    syncs.add_listed(plain(peps()));
     drop(run_to_the_end(&mut syncs, &harness));
 
-    syncs.refresh_open(&harness.store);
+    syncs.refresh_open(&harness.db.store);
 
     let queued: Vec<&RepositoryName> = syncs
         .queue
@@ -525,12 +530,12 @@ fn only_the_open_repository_says_its_sync_finished() {
     replies.extend(searches_finding(&[]));
     let harness = Harness::new("finished", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(peps));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(peps));
+    syncs.add_listed(plain(cpython()));
 
     let mut finished = Vec::new();
     while syncs.ready_at().is_some() {
-        let progress = syncs.step(&harness.github, &harness.store).unwrap();
+        let progress = syncs.step(&harness.github, &harness.db.store).unwrap();
         if let Some(Progress::Finished(last_sync)) = progress {
             finished.push(last_sync.repository);
         }
@@ -542,19 +547,15 @@ fn only_the_open_repository_says_its_sync_finished() {
 
 #[test]
 fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
-    let mut replies = up_to_the_first_issue();
-    replies.push(issue_references_with_more(1, &[3], "older", RATE_LIMIT));
-    replies.push(cross_references(&[2], None, RATE_LIMIT));
-    replies.push(fetched_nodes(&[merged_node(3), merged_node(2)], RATE_LIMIT));
-    let harness = Harness::new("gave-way-listed", replies);
+    let harness = Harness::new("gave-way-listed", a_tree_over_two_pages());
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let mut before_it_gave_way = Vec::new();
     while !before_it_gave_way
         .iter()
         .any(|(operation, _)| operation == "FetchIssueReferences")
     {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
         before_it_gave_way.extend(harness.asked.try_iter());
     }
 
@@ -579,8 +580,8 @@ fn a_first_sync_that_gave_way_keeps_the_cross_references_it_had_listed() {
 #[test]
 fn a_step_that_keeps_failing_gives_way_to_the_next_sync() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(peps()));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(peps()));
+    syncs.add_listed(plain(cpython()));
 
     // Each try comes once the last one's wait is over.
     for _ in 0..TRIES {
@@ -611,12 +612,12 @@ fn an_outage_shorter_than_the_tries_doesnt_end_a_sync() {
 fn a_step_that_works_starts_the_count_again() {
     let harness = Harness::new("recovers", vec![nothing(RATE_LIMIT)]);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     for _ in 0..TRIES - 1 {
         syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
     }
 
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
 
     assert_eq!(syncs.queue.len(), 1);
@@ -626,12 +627,12 @@ fn a_step_that_works_starts_the_count_again() {
 #[test]
 fn asking_again_starts_the_count_again() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     for _ in 0..TRIES - 1 {
         syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
     }
 
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     syncs.after_failure(&failed(broken()), soon(), GitHubClock::default());
 
     assert_eq!(syncs.queue.len(), 1);
@@ -657,10 +658,10 @@ fn a_sync_held_by_a_certificate_outside_its_dates_carries_on_from_its_place() {
     replies.insert(1, Err(Unreachable::CertificateDates));
     let harness = Harness::new("certificate-dates", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    syncs.add_listed(plain(cpython()));
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
-    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let problem = syncs.step(&harness.github, &harness.db.store).unwrap_err();
     syncs.after_failure(&problem, Instant::now(), GitHubClock::default());
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -670,14 +671,14 @@ fn a_sync_held_by_a_certificate_outside_its_dates_carries_on_from_its_place() {
         5,
         "the failed search, asked once, and the four"
     );
-    assert!(harness.store.sync_state(&cpython()).unwrap().is_some());
+    assert!(harness.db.store.sync_state(&cpython()).unwrap().is_some());
     harness.finish();
 }
 
 #[test]
 fn a_failure_waits_for_the_next_refresh() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let next_refresh = soon();
 
     syncs.after_failure(&failed(broken()), next_refresh, GitHubClock::default());
@@ -688,7 +689,7 @@ fn a_failure_waits_for_the_next_refresh() {
 #[test]
 fn a_rate_limit_waits_for_its_reset() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     syncs.after_failure(&failed(limited_until(3000)), soon(), GitHubClock::default());
 
@@ -711,7 +712,7 @@ fn a_rate_limit_waits_for_its_reset_by_githubs_clock_whatever_the_local_clock_sa
             "limited",
         );
         let mut syncs = Syncs::default();
-        syncs.add(plain(cpython()));
+        syncs.add_listed(plain(cpython()));
 
         syncs.after_failure(&failed(limited.clone()), soon(), clock);
 
@@ -724,7 +725,7 @@ fn a_rate_limit_waits_for_its_reset_by_githubs_clock_whatever_the_local_clock_sa
 #[test]
 fn a_rate_limit_whose_reset_has_passed_still_waits_for_the_next_refresh() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let next_refresh = soon();
 
     syncs.after_failure(
@@ -741,7 +742,7 @@ fn a_save_that_fails_is_the_steps_failure() {
     let harness = Harness::new(
         "save-fails",
         vec![
-            found(&["a"], None, RATE_LIMIT),
+            search_page(&["a"], None, RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
@@ -749,9 +750,9 @@ fn a_save_that_fails_is_the_steps_failure() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     for _ in 0..5 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     let stopped = Store::stopped();
 
@@ -775,7 +776,7 @@ fn a_pause_is_as_long_as_the_reset_is_away_within_reason() {
 mod activity {
     use super::*;
     use crate::status::{SyncActivity, SyncPart};
-    use crate::sync::testing::{FEW, empty_window_page, hours_ago, window_issue, window_page};
+    use crate::sync::testing::{FEW, empty_window_page, hours_ago_text, window_issue, window_page};
 
     fn part_and_pages(syncs: &Syncs) -> (SyncPart, u32) {
         let activity = syncs.activity().unwrap().open.unwrap();
@@ -791,7 +792,7 @@ mod activity {
     fn a_first_sync_says_its_part_and_the_pages_it_has_read() {
         let mut replies = searches_finding(&[]);
         replies.push(window_page(
-            &[window_issue(1, &hours_ago(1))],
+            &[window_issue(1, &hours_ago_text(1))],
             Some("more"),
             RATE_LIMIT,
         ));
@@ -799,11 +800,11 @@ mod activity {
         replies.push(empty_window_page());
         let harness = Harness::with_window("activity-parts", replies);
         let mut syncs = Syncs::default();
-        syncs.add(plain(cpython()));
+        syncs.add_listed(plain(cpython()));
 
         let mut seen = Vec::new();
         while syncs.ready_at().is_some() {
-            drop(syncs.step(&harness.github, &harness.store).unwrap());
+            drop(syncs.step(&harness.github, &harness.db.store).unwrap());
             // The fill that follows the sync isn't part of it, and shows nothing.
             if syncs.activity().is_some() {
                 seen.push(part_and_pages(&syncs));
@@ -832,9 +833,9 @@ mod activity {
     fn a_sync_below_the_floor_says_when_it_goes_on() {
         let harness = Harness::new("activity-floor", vec![nothing(FEW)]);
         let mut syncs = Syncs::default();
-        syncs.add(plain(cpython()));
+        syncs.add_listed(plain(cpython()));
 
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
         let Some(SyncActivity { paused_until, .. }) = syncs.activity() else {
             panic!("the sync is under way");
@@ -847,7 +848,7 @@ mod activity {
     #[test]
     fn a_wait_for_the_network_isnt_a_wait_for_points() {
         let mut syncs = Syncs::default();
-        syncs.add(plain(cpython()));
+        syncs.add_listed(plain(cpython()));
 
         syncs.wait_until(Instant::now() + Duration::from_secs(60));
 
@@ -861,7 +862,7 @@ fn after_a_first_sync(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> (
     all.extend(replies);
     let harness = Harness::new(name, all);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     drop(run_to_the_end(&mut syncs, &harness));
     drop(harness.operations());
     (syncs, harness)
@@ -878,7 +879,7 @@ fn opening_an_issue_after_a_first_sync_reads_its_whole_tree_once() {
             issues(&[1], RATE_LIMIT),
         ],
     );
-    let last_sync = harness.store.sync_state(&cpython()).unwrap();
+    let last_sync = harness.db.store.sync_state(&cpython()).unwrap();
 
     syncs.open_issue(&cpython(), 7);
     syncs.open_issue(&cpython(), 7);
@@ -889,7 +890,7 @@ fn opening_an_issue_after_a_first_sync_reads_its_whole_tree_once() {
     );
     assert_eq!(run_to_the_end(&mut syncs, &harness), [cpython(), cpython()]);
     assert_eq!(harness.numbers(), [20, 21]);
-    assert_eq!(harness.store.sync_state(&cpython()).unwrap(), last_sync);
+    assert_eq!(harness.db.store.sync_state(&cpython()).unwrap(), last_sync);
     // A view on screen asks about once a minute, and by now the tree has been read.
     syncs.open_issue(&cpython(), 7);
     assert_eq!(syncs.ready_at(), None);
@@ -918,7 +919,7 @@ fn a_click_on_refresh_waits_behind_a_tree_and_still_runs() {
         SyncPart::Trees
     );
     while !syncs.trees.is_empty() {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     assert_eq!(
         syncs.activity().unwrap().open.unwrap().part,
@@ -931,7 +932,7 @@ fn a_click_on_refresh_waits_behind_a_tree_and_still_runs() {
 #[test]
 fn opening_an_issue_with_no_queue_to_join_reads_its_tree_alone() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     syncs.open_issue(&cpython(), 7);
 
@@ -943,7 +944,7 @@ fn opening_an_issue_with_no_queue_to_join_reads_its_tree_alone() {
 fn only_the_open_repository_reads_an_opened_tree() {
     let mut syncs = Syncs::default();
     syncs.open_issue(&cpython(), 7);
-    syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
+    syncs.add_listed(plain(RepositoryName::parse("python/peps").unwrap()));
     syncs.open_issue(&cpython(), 7);
 
     assert!(syncs.trees.is_empty());
@@ -952,10 +953,10 @@ fn only_the_open_repository_reads_an_opened_tree() {
 #[test]
 fn coming_back_to_a_repository_reads_an_opened_tree_again() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     syncs.open_issue(&cpython(), 7);
-    syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(RepositoryName::parse("python/peps").unwrap()));
+    syncs.add_listed(plain(cpython()));
 
     syncs.open_issue(&cpython(), 7);
 
@@ -966,10 +967,10 @@ fn coming_back_to_a_repository_reads_an_opened_tree_again() {
 fn another_repository_doesnt_wait_behind_an_opened_tree() {
     let peps = RepositoryName::parse("python/peps").unwrap();
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     syncs.open_issue(&cpython(), 7);
 
-    syncs.add(plain(peps.clone()));
+    syncs.add_listed(plain(peps.clone()));
 
     assert_eq!(syncs.activity().unwrap().open.unwrap().repository, peps);
 }
@@ -997,7 +998,7 @@ fn a_tree_github_refuses_leaves_at_once_and_can_be_asked_for_again() {
     syncs.refresh_now();
 
     assert!(matches!(
-        syncs.step(&harness.github, &harness.store),
+        syncs.step(&harness.github, &harness.db.store),
         Ok(None)
     ));
 
@@ -1016,7 +1017,7 @@ fn a_tree_waits_while_github_cant_be_reached() {
     let (mut syncs, harness) = after_a_first_sync("tree-offline", vec![Err(Unreachable::Offline)]);
     syncs.open_issue(&cpython(), 7);
 
-    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let problem = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 
     assert_eq!(problem.problem.kind, ErrorKind::Offline);
     assert_eq!(syncs.trees.len(), 1);
@@ -1043,6 +1044,7 @@ fn a_tree_brings_only_the_issues_its_prs_name_that_tsugiki_lacks() {
         ],
     );
     harness
+        .db
         .store
         .save_fetched_issues(&cpython(), facts_of_issue(7), Vec::new())
         .unwrap();
@@ -1058,7 +1060,7 @@ fn a_tree_brings_only_the_issues_its_prs_name_that_tsugiki_lacks() {
             "FetchIssues"
         ]
     );
-    let held = harness.store.issues(&cpython()).unwrap();
+    let held = harness.db.store.issues(&cpython()).unwrap();
     let mut numbers: Vec<u32> = held.iter().map(|issue| issue.number).collect();
     numbers.sort_unstable();
     assert_eq!(numbers, [5, 7]);
@@ -1078,6 +1080,7 @@ fn a_tree_whose_prs_name_issues_tsugiki_has_asks_for_no_more() {
         ],
     );
     harness
+        .db
         .store
         .save_fetched_issues(&cpython(), facts_of_issue(7), Vec::new())
         .unwrap();
@@ -1095,7 +1098,7 @@ fn a_tree_whose_prs_name_issues_tsugiki_has_asks_for_no_more() {
 #[test]
 fn a_tree_that_keeps_failing_gives_way_to_the_sync_behind_it() {
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     syncs.open_issue(&cpython(), 7);
 
     // A tree's own trouble ends its read at once, so only a failure of all of GitHub counts here.
@@ -1132,17 +1135,24 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
         updated_at: OffsetDateTime::UNIX_EPOCH,
         state: None,
     };
-    harness.store.save_issues(&cpython(), vec![issue]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![issue])
+        .unwrap();
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     while !matches!(
-        syncs.step(&harness.github, &harness.store).unwrap(),
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
         Some(Progress::Finished(_))
     ) {}
     // The fill's first step asks the store which Issues to fetch.
-    assert_eq!(syncs.step(&harness.github, &harness.store).unwrap(), None);
+    assert_eq!(
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
+        None
+    );
 
-    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let failure = syncs.step(&harness.github, &harness.db.store).unwrap_err();
     syncs.after_failure(&failure, soon(), GitHubClock::default());
     let held = syncs.ready_at().unwrap();
     // A failure that counts towards giving up doesn't end a fill.
@@ -1153,84 +1163,43 @@ fn a_fill_that_fails_for_all_of_github_waits_and_tries_again() {
     for _ in 0..TRIES {
         syncs.after_failure(&refused, soon(), GitHubClock::default());
     }
-    let retried = syncs.step(&harness.github, &harness.store).unwrap();
+    let retried = syncs.step(&harness.github, &harness.db.store).unwrap();
 
     assert_eq!(failure.problem.kind, ErrorKind::Offline);
     assert!(held > Instant::now(), "{held:?}");
     assert!(matches!(retried, Some(Progress::Changed(_))), "{retried:?}");
     assert_eq!(syncs.ready_at(), None);
-    let stored = harness.store.issues(&cpython()).unwrap();
+    let stored = harness.db.store.issues(&cpython()).unwrap();
     assert_eq!(stored[0].state, Some(IssueState::Open));
     harness.finish();
 }
 
 #[test]
-fn new_settings_replace_those_the_syncs_read_and_leave_the_open_repository_and_the_queue() {
+fn the_syncs_know_each_repository_opened_since_launch_in_any_case() {
     let mut syncs = Syncs::default();
-    assert_eq!(syncs.replace_settings(plain(cpython())), None);
-    assert_eq!(syncs.settings(&cpython()), None);
-    syncs.add(plain(cpython()));
-    syncs.add(plain(peps()));
-    let changed = RepositorySettings {
-        filters: crate::filters::Filter::starters(),
-        ..plain(cpython())
-    };
+    syncs.list(plain(cpython()));
+    let not_yet = syncs.was_opened(&cpython());
 
-    let before = syncs.replace_settings(changed.clone());
+    syncs.add_listed(plain(cpython()));
+    syncs.add_listed(plain(peps()));
 
-    assert_eq!(before, Some(plain(cpython())));
-    assert_eq!(syncs.settings(&cpython()), Some(&changed));
-    assert!(syncs.is_open(&peps()));
-    let queued: Vec<&RepositoryName> = (syncs.queue.iter())
-        .map(|queued| &queued.sync.repository)
-        .collect();
-    assert_eq!(queued, [&peps(), &cpython()]);
+    assert!(!not_yet, "listed, but not opened");
+    let upper = RepositoryName::parse("Python/CPython").unwrap();
+    assert!(syncs.was_opened(&upper));
+    assert!(syncs.was_opened(&peps()));
+    assert!(!syncs.was_opened(&devguide()));
 }
 
 #[test]
-fn a_sync_whose_settings_went_missing_says_it_is_tsugikis_mistake_and_asks_github_nothing() {
-    let harness = Harness::new("settings-lost", vec![]);
+fn a_sync_of_a_repository_the_settings_no_longer_list_goes_on_under_the_defaults() {
+    let harness = Harness::new("settings-unlisted", vec![]);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    syncs.settings.clear();
+    syncs.add(cpython());
 
-    let failure = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let failure = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 
-    assert_eq!(failure.problem.kind, ErrorKind::Internal);
-    assert_eq!(failure.problem.message, NO_SETTINGS);
-    assert_eq!(harness.operations(), Vec::<String>::new());
+    // GitHub, which has no answer scripted, is asked, where a sync that lost its settings would stop.
+    assert_eq!(failure.problem.kind, ErrorKind::Offline);
+    assert!(!harness.operations().is_empty());
     harness.finish();
-}
-
-#[test]
-fn new_settings_have_a_read_ahead_under_way_ask_the_store_again_and_keep_what_it_tried() {
-    let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
-    let ahead = Ahead {
-        left: Some(BTreeSet::from([3, 4])),
-        tried: BTreeSet::from([2]),
-    };
-    syncs.queue[0].sync.phase = Phase::ReadingAhead(ahead);
-
-    let same = syncs.replace_settings(plain(cpython()));
-    let kept = matches!(
-        &syncs.queue[0].sync.phase,
-        Phase::ReadingAhead(ahead) if ahead.left.is_some()
-    );
-    let regrouped = RepositorySettings {
-        conventions: Conventions::Github,
-        ..plain(cpython())
-    };
-    let replaced = syncs.replace_settings(regrouped);
-
-    assert_eq!(same, None);
-    assert!(
-        kept,
-        "settings the syncs hold already leave the read ahead be"
-    );
-    assert_eq!(replaced, Some(plain(cpython())));
-    assert!(matches!(
-        &syncs.queue[0].sync.phase,
-        Phase::ReadingAhead(ahead) if ahead.left.is_none() && ahead.tried == BTreeSet::from([2])
-    ));
 }

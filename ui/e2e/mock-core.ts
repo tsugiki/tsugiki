@@ -6,12 +6,9 @@ import type { commands } from "../src/lib/data/bindings.ts";
  * points, a refresh has nothing to say, a mirror can be made, asking to check again has nothing to say, no
  * mirror waits for an answer or has a state, no newer version is out, the panes take their default layout,
  * the palette has no recent commands and puts each run first, the themes set no token, so the system's
- * colours stand in, and the window turns without saying a side, so the page goes on with its media query. */
+ * colours stand in, the window turns without saying a side, so the page goes on with its media query, and
+ * the core takes what the user did with an item or the window. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
-
-/** What `machine.toml` says of the language servers when it says nothing: none set up, and the idle time's
- * default. */
-export const noServers = { ty: null, "rust-analyzer": null, clangd: null, idle_minutes: 30 };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
 type MockWindow = { mockEventListeners: Record<string, Listener[]>; mockAnswers: Record<string, unknown> };
@@ -49,6 +46,12 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       mirrorsHeld: false,
       newVersion: null,
       refresh: null,
+      hideItem: { status: "ok", data: null },
+      showItem: { status: "ok", data: null },
+      closeItem: { status: "ok", data: null },
+      windowLoaded: null,
+      windowHidden: null,
+      windowShown: null,
       paneLayout: panes,
       themes: {
         status: "ok",

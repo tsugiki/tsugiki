@@ -11,6 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Instant;
 
 use serde_json::{Value, json};
+use tsugiki_test_git::pass_on;
 
 use super::testing::Harness;
 use super::{Progress, Syncs};
@@ -64,8 +65,8 @@ impl Transport for Recording {
         let asked = asked_by_post(request);
         let next = self.posts.borrow_mut().pop_front();
         let reply = next.expect("the scenario has a reply for each request")?;
-        drop(self.posted.send((asked.clone(), reply.clone())));
-        drop(self.served.send(asked));
+        pass_on(&self.posted, (asked.clone(), reply.clone()));
+        pass_on(&self.served, asked);
         Ok(reply)
     }
 
@@ -77,8 +78,8 @@ impl Transport for Recording {
         let asked = asked_by_get(request);
         let next = self.checks.borrow_mut().pop_front();
         let reply = next.expect("the scenario has a reply for each list check");
-        drop(self.checked.send((asked.clone(), reply.clone())));
-        drop(self.served.send(asked));
+        pass_on(&self.checked, (asked.clone(), reply.clone()));
+        pass_on(&self.served, asked);
         Ok(reply)
     }
 }
@@ -98,7 +99,7 @@ impl Replaying {
     fn serve<T: Clone>(&self, answers: &[(Asked, T)], asked: Asked) -> T {
         let known = answers.iter().find(|(request, _)| *request == asked);
         let (_, answer) = known.expect("a request the run with no failure didn't make");
-        drop(self.served.send(asked));
+        pass_on(&self.served, asked);
         answer.clone()
     }
 }
@@ -157,7 +158,7 @@ fn run(
     quit_before: Option<usize>,
 ) -> Run {
     let mut syncs = Syncs::default();
-    syncs.add(settings.clone());
+    syncs.add_listed(settings.clone());
     let mut told_the_window = Vec::new();
     let mut steps = 0;
     let mut sync_steps = 0;
@@ -166,7 +167,7 @@ fn run(
         assert!(steps < MOST_STEPS, "the sync doesn't end");
         if quit_before == Some(steps) {
             syncs = Syncs::default();
-            syncs.add(settings.clone());
+            syncs.add_listed(settings.clone());
         }
         if syncs.activity().is_some() {
             sync_steps += 1;
@@ -181,12 +182,12 @@ fn run(
         }
         steps += 1;
     }
-    let state = harness.store.sync_state(&settings.name).unwrap();
+    let state = harness.db.store.sync_state(&settings.name).unwrap();
     let ended = Ended {
         // A retried save notices its events and CI results a little later, which nothing compares.
         facts: WorkFacts {
             activity: ActivityFacts::default(),
-            ..harness.reader.work_facts(&settings.name).unwrap()
+            ..harness.db.reader.work_facts(&settings.name).unwrap()
         },
         check: state.as_ref().map(|state| state.check.clone()),
         refresh_under_way: state.map(|state| state.refresh_under_way),
@@ -238,7 +239,7 @@ impl Failing<'_> {
         let harness = Harness::answering(&name, Box::new(transport));
         (self.scenario.prepare)(&harness);
 
-        let (flaky, _calls) = harness.store.failing_at_call(lost);
+        let (flaky, _calls) = harness.db.store.failing_at_call(lost);
         let failed = run(&self.scenario.settings, &harness, &flaky, quit_before);
         flaky.close();
 
@@ -292,7 +293,7 @@ fn run_clean(scenario: &Scenario) -> Clean {
     };
     let harness = Harness::answering(scenario.name, Box::new(transport));
     (scenario.prepare)(&harness);
-    let (counted, calls) = harness.store.failing_at_call(None);
+    let (counted, calls) = harness.db.store.failing_at_call(None);
     let clean = run(&scenario.settings, &harness, &counted, None);
     counted.close();
     harness.finish();

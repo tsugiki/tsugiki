@@ -8,15 +8,14 @@ use crate::conventions::Conventions;
 use crate::filters::Filter;
 use crate::repository::{FoundRepository, RepositoryName, RepositorySize, WINDOW_DAYS};
 
-/// Measured on CPython's last 30 days (#132): 4,760 items took about 485 points and 20.5 minutes, one request
-/// at a time, with whole trees for the user's own Issues. About 10 of those points are the user's own work
-/// and don't grow with the window.
+/// Fitted to a first sync of CPython's last 30 days (ADR 0015, #133), one request at a time, with whole trees
+/// for the user's own Issues. `FIXED_POINTS` is the user's own work, which doesn't grow with the window.
 const FIXED_POINTS: u32 = 10;
 const POINTS_PER_THOUSAND_ITEMS: u32 = 100;
 const MILLISECONDS_PER_ITEM: u32 = 260;
 
-/// Measured on CPython (#13), whose size on GitHub is about 913,000 KB: a plain clone took about 3.5
-/// minutes, and one that borrowed objects from a clone on the same disk about 36 s.
+/// Fitted to two clones of CPython (#13): a plain one, and one that borrowed objects from a clone on the same
+/// disk.
 const DOWNLOAD_KB_PER_SECOND: u64 = 4_350;
 const BORROW_KB_PER_SECOND: u64 = 25_000;
 const KB_PER_MB: u64 = 1024;
@@ -28,6 +27,43 @@ pub enum SavedBy {
     Window,
     /// A hand edit of the files, which a reload took in. The window hears of it from the session (#822).
     HandEdit,
+}
+
+/// A save that changed a Repository's settings, as the settings owner hands it to the session. The
+/// settings it replaced, if any, are of the same Repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsSave {
+    replaced: Option<RepositorySettings>,
+    saved: RepositorySettings,
+    by: SavedBy,
+}
+
+impl SettingsSave {
+    /// The save of `saved`, as `by` made it, over the settings of its Repository that `earlier` holds: none
+    /// for a Repository `earlier` doesn't hold, which the save added.
+    pub fn new(saved: RepositorySettings, earlier: &[RepositorySettings], by: SavedBy) -> Self {
+        let replaced = (earlier.iter()).find(|held| held.name.is_same(&saved.name));
+        Self {
+            replaced: replaced.cloned(),
+            saved,
+            by,
+        }
+    }
+
+    /// The settings the save replaced, or none for a Repository the save added.
+    pub fn replaced(&self) -> Option<&RepositorySettings> {
+        self.replaced.as_ref()
+    }
+
+    /// The settings the save wrote.
+    pub fn saved(&self) -> &RepositorySettings {
+        &self.saved
+    }
+
+    /// The window or the hand edit that saved them.
+    pub fn by(&self) -> SavedBy {
+        self.by
+    }
 }
 
 /// A Repository the user added, as `settings.toml` holds it.

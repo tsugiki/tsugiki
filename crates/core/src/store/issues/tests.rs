@@ -1,23 +1,16 @@
-use super::super::testing::temp_database;
+use super::super::testing::{OpenStore, database_before, temp_database};
 use super::super::*;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::login::Login;
+use crate::testing::{cpython, issue_facts};
 use time::OffsetDateTime;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
 
 fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        number,
-        title: format!("Issue {number}"),
         author: Some(Login::new("some-author")),
-        assignees: vec![],
-        labels: vec![],
         updated_at: OffsetDateTime::from_unix_timestamp(7).unwrap(),
-        state: Some(IssueState::Open),
+        ..issue_facts(number)
     }
 }
 
@@ -27,16 +20,12 @@ fn saved(
     repository: &RepositoryName,
     saves: Vec<(RepositoryName, Vec<IssueFacts>)>,
 ) -> Vec<IssueFacts> {
-    let (path, _folder) = temp_database(name);
-    let store = Store::open(&path).unwrap();
-    let (to_open, reader) = reader();
-    let open = to_open.open(&path).unwrap();
+    let db = OpenStore::new(name);
     for (repository, issues) in saves {
-        store.save_issues(&repository, issues).unwrap();
+        db.store.save_issues(&repository, issues).unwrap();
     }
-    let read = reader.work_facts(repository).unwrap();
-    open.close();
-    store.close();
+    let read = db.reader.work_facts(repository).unwrap();
+    db.close();
     read.issues
 }
 
@@ -126,22 +115,12 @@ fn an_issue_keeps_its_labels_and_a_save_replaces_them() {
 
 #[test]
 fn an_issue_stored_before_tsugiki_kept_labels_has_none_after_the_migration() {
-    let (path, _folder) = temp_database("issues-before-labels");
-    let before = MIGRATIONS
-        .iter()
-        .position(|step| step.sql == super::LABELS)
-        .unwrap();
-    open_with(&path, &MIGRATIONS[..before]).unwrap().close();
-    // A store of that age can't run today's save, which writes labels, so SQL stands in for it.
-    let inserted = Connection::open(&path)
-        .unwrap()
-        .execute(
-            "INSERT INTO issues (repository, number, title, author, updated_at, state)
-             VALUES ('python/cpython', 1, 'Issue 1', 'some-author', 7, 'OPEN')",
-            [],
-        )
-        .unwrap();
-    assert_eq!(inserted, 1);
+    let (path, _folder) = database_before(
+        "issues-before-labels",
+        super::LABELS,
+        "INSERT INTO issues (repository, number, title, author, updated_at, state)
+         VALUES ('python/cpython', 1, 'Issue 1', 'some-author', 7, 'OPEN')",
+    );
 
     let store = Store::open(&path).unwrap();
     let read = store.issues(&cpython()).unwrap();
@@ -223,9 +202,9 @@ fn a_time_tsugiki_cant_understand_is_a_read_error() {
     let (to_open, reader) = reader();
     let open = to_open.open(&path).unwrap();
     store.save_issues(&cpython(), vec![issue(1)]).unwrap();
-    let _ = store
+    store
         .call(|connection| {
-            connection.execute("UPDATE issues SET updated_at = 9223372036854775807", [])
+            (connection.execute("UPDATE issues SET updated_at = 9223372036854775807", [])).map(drop)
         })
         .unwrap()
         .unwrap();

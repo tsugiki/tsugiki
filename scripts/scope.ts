@@ -4,7 +4,8 @@
 /**
  * What a CI job reads, which decides when it runs. `rust` is rustfmt, Clippy and the Rust tests with their
  * coverage gate, on Windows and macOS. `dependencies` is cargo-deny and cargo-machete. `ui` is ESLint,
- * Prettier, svelte-check, token-deps, Vitest and Playwright, on Windows and macOS.
+ * Prettier, svelte-check, token-deps, Vitest and Playwright, on Windows and macOS. The dupes gate reads both
+ * `rust` and `ui`, so either runs it.
  */
 export type Job = "rust" | "dependencies" | "ui";
 
@@ -82,6 +83,33 @@ export function paths(listed: string): string[] {
 /** git's arguments for the diff of the two Cargo files between `revisions` that `isVersionBump` reads. */
 export function cargoDiffArgs(...revisions: string[]): string[] {
   return ["diff", "-U0", "--no-color", "--no-ext-diff", ...revisions, "--", "Cargo.toml", "Cargo.lock"];
+}
+
+/** Runs git with these arguments and returns what it printed, or throws when git fails. */
+export type Git = (...args: string[]) => string;
+
+/** The paths a change touches, and the jobs it needs. */
+export interface Changed {
+  paths: string[];
+  jobs: Job[];
+}
+
+/** The paths that changed between `revisions`, as `git diff` takes them. A rename counts as both. */
+export function changedPaths(git: Git, revisions: readonly string[]): string[] {
+  return paths(git("diff", "--no-renames", "--name-only", ...revisions));
+}
+
+/**
+ * The paths that changed between `revisions`, as `changedPaths` gives them, and the jobs they need.
+ * `untracked` lists files git would add, which count as changed too.
+ */
+export function changedJobs(
+  git: Git,
+  revisions: readonly string[],
+  untracked: readonly string[] = [],
+): Changed {
+  const changed = [...changedPaths(git, revisions), ...untracked];
+  return { paths: changed, jobs: jobs(changed, () => git(...cargoDiffArgs(...revisions))) };
 }
 
 /** The files a release PR changes when it only sets the version (docs/releasing.md). */
@@ -192,22 +220,13 @@ export function readTested(text: string): Tested | undefined {
     : undefined;
 }
 
-/** The git calls `sincePassed` makes, which tests replace. Each throws when git fails. */
-export interface TreeGit {
-  /** The tree git gets from merging `head` into `base` again, as the CI run that tested them did. */
-  mergeTree(base: string, head: string): string;
-  /** The paths that differ between `tree` and the checkout. */
-  changedSince(tree: string): string[];
-  /** What `git diff -U0` prints for the two Cargo files between `tree` and the checkout. */
-  cargoDiffSince(tree: string): string;
-}
-
 /**
  * The jobs whose inputs changed between the tree a PR's last passed run tested and the checkout, with a line
  * for the log that says why. `jobs` is `undefined` when that tree can't be had, and then the whole PR counts:
- * `lastTested` is that run's `tested.json`, or `undefined` when no run passed or it left none.
+ * `lastTested` is that run's `tested.json`, or `undefined` when no run passed or it left none. The tree is
+ * the one git gets from merging that run's head into its base again, as the run did.
  */
-export function sincePassed(lastTested: string | undefined, git: TreeGit): { jobs?: Job[]; note: string } {
+export function sincePassed(lastTested: string | undefined, git: Git): { jobs?: Job[]; note: string } {
   if (lastTested === undefined) {
     return { note: "No run on this PR has passed yet, or it left no tested.json, so the whole PR counts." };
   }
@@ -217,24 +236,21 @@ export function sincePassed(lastTested: string | undefined, git: TreeGit): { job
   }
   let tree: string;
   try {
-    tree = git.mergeTree(tested.base, tested.head);
+    tree = git("merge-tree", "--write-tree", tested.base, tested.head);
   } catch {
     return { note: `git can't merge ${tested.head} into ${tested.base} again, so the whole PR counts.` };
   }
-  let changed: string[];
+  let changed: Changed;
   try {
-    changed = git.changedSince(tree);
+    changed = changedJobs(git, [tree, "HEAD"]);
   } catch {
     return { note: `git can't diff the tree ${tree} with the checkout, so the whole PR counts.` };
   }
   const testedAt = `The last passed run tested ${tested.head} on ${tested.base}, the tree ${tree}`;
-  if (changed.length === 0) {
+  if (changed.paths.length === 0) {
     return { jobs: [], note: `${testedAt}, and nothing changed since.` };
   }
-  return {
-    jobs: jobs(changed, () => git.cargoDiffSince(tree)),
-    note: `${testedAt}. Since then: ${changed.join(", ")}.`,
-  };
+  return { jobs: changed.jobs, note: `${testedAt}. Since then: ${changed.paths.join(", ")}.` };
 }
 
 /**

@@ -5,21 +5,34 @@ use std::time::SystemTime;
 
 use super::*;
 
-/// Long enough for a clone that was going to start to have started.
-const A_MOMENT: Duration = Duration::from_millis(300);
-
 impl Place {
     /// A clone of `name`'s remote outside Tsugiki's folders, as a user keeps one, whose `origin` is the URL
     /// Tsugiki clones from.
     fn user_clone(&self, name: &RepositoryName) -> PathBuf {
         self.remote(name);
-        let folder = self.remotes.with_file_name(format!("user-{}", name.name()));
-        let url = self.clone_source().url(name);
-        let _ = git(
+        let (folder, url) = self.user_folder(name);
+        run_git(
             &self.remotes,
             &["clone", "-q", &url, &folder.to_string_lossy()],
         );
         folder
+    }
+
+    /// A clone of `name` as the fake git sees one a user keeps, whose `origin` is the URL Tsugiki clones
+    /// from.
+    fn fake_clone(&self, name: &RepositoryName) -> PathBuf {
+        let (folder, url) = self.user_folder(name);
+        let git_folder = folder.join(".git");
+        fs::create_dir_all(&git_folder).unwrap();
+        let config = format!("[remote \"origin\"]\n\turl = {url}\n");
+        fs::write(git_folder.join("config"), config).unwrap();
+        folder
+    }
+
+    /// Where the user keeps their clone of `name`, outside Tsugiki's folders, and the URL of its `origin`.
+    fn user_folder(&self, name: &RepositoryName) -> (PathBuf, String) {
+        let folder = self.remotes.with_file_name(format!("user-{}", name.name()));
+        (folder, self.clone_source().url(name))
     }
 
     fn prefixes(&self) -> Vec<String> {
@@ -38,7 +51,7 @@ fn snapshot(folder: &Path) -> BTreeMap<PathBuf, (u64, SystemTime)> {
             if metadata.is_dir() {
                 folders.push(entry.path());
             } else {
-                let _ = files.insert(entry.path(), (metadata.len(), metadata.modified().unwrap()));
+                files.extend([(entry.path(), (metadata.len(), metadata.modified().unwrap()))]);
             }
         }
     }
@@ -50,7 +63,7 @@ fn start_asking(place: &Place) -> (Mirrors, Receiver<FakeStart>, Receiver<Option
     let (asking, asked) = channel();
     let announce = Announce {
         question: Box::new(move |repository| {
-            drop(asking.send(repository.map(ToString::to_string)));
+            pass_on(&asking, repository.map(ToString::to_string));
         }),
         ..Announce::cloning_only(Box::new(|_| {}))
     };
@@ -124,7 +137,7 @@ fn a_worktree_lends_the_git_folder_of_the_clone_it_belongs_to() {
     let hello = named("octo-org/hello");
     let folder = place.user_clone(&hello);
     let worktree = folder.with_file_name("user-hello-feature");
-    let _ = git(
+    run_git(
         &folder,
         &["worktree", "add", "-q", &worktree.to_string_lossy()],
     );
@@ -153,7 +166,7 @@ fn a_folder_that_cant_lend_is_refused_with_the_reason() {
     let elsewhere = lender(&LiveGit, &prefixes, &clone, &other);
     fs::write(clone.join(".git/shallow"), "").unwrap();
     let shallow = lender(&LiveGit, &prefixes, &clone, &hello);
-    let _ = git(&clone, &["remote", "remove", "origin"]);
+    run_git(&clone, &["remote", "remove", "origin"]);
     let no_remote = lender(&LiveGit, &prefixes, &clone, &hello);
 
     assert_eq!(missing, Err(CloneRefusal::NotAFolder));
@@ -192,7 +205,7 @@ fn requests_check_a_clone_as_the_worker_will() {
 fn a_mirror_that_borrows_clones_with_the_lenders_objects_and_keeps_none_of_its_links() {
     let place = Place::new("borrow-args");
     let hello = named("octo-org/hello");
-    let folder = place.user_clone(&hello);
+    let folder = place.fake_clone(&hello);
     let (_versions, answers) = channel();
     let (mirrors, starts) = place.start_faked_from(
         place.clone_source(),
@@ -269,7 +282,8 @@ fn a_clone_nobody_has_answered_for_asks_and_starts_on_the_answer() {
     requests.clone_mirror(hello.clone(), None);
     let question = asked.recv_timeout(PLENTY).unwrap();
     requests.clone_mirror(hello.clone(), None);
-    let held = starts.recv_timeout(A_MOMENT).is_err();
+    mirrors.wait_idle();
+    let held = starts.try_recv().is_err();
     requests.clone_mirror_next(hello, download());
     let answered = asked.recv_timeout(PLENTY).unwrap();
     let clone = starts.recv_timeout(PLENTY).unwrap();
@@ -298,7 +312,8 @@ fn a_switch_to_a_clone_that_waits_for_an_answer_asks_nothing_new_and_the_answer_
     requests.clone_mirror(named("octo-org/waiting"), download());
     // The switch, which has no answer to give.
     requests.clone_mirror_next(asking.clone(), None);
-    let asked_again = asked.recv_timeout(A_MOMENT).ok();
+    mirrors.wait_idle();
+    let asked_again = asked.try_recv().ok();
     // The answer, as the window gives it.
     requests.clone_mirror_next(asking.clone(), download());
     let answered = asked.recv_timeout(PLENTY).unwrap();
@@ -347,7 +362,8 @@ fn an_app_that_hears_only_of_clones_still_holds_a_clone_nobody_answered_for() {
     mirrors
         .requests()
         .clone_mirror(named("octo-org/hello"), None);
-    let held = starts.recv_timeout(A_MOMENT).is_err();
+    mirrors.wait_idle();
+    let held = starts.try_recv().is_err();
     mirrors.stop_cleanly(PLENTY);
 
     assert!(held);

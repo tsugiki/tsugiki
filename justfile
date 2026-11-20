@@ -76,13 +76,13 @@ fmt:
 # bindings, so `cargo-test` and `stale-bindings` stay out. It runs no doctests, and the workspace has none.
 # `smoke` isn't one: it opens a window and presses real keys.
 # Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs
-check: lint doc-width svelte-check vitest rust-gates release-check e2e
+check: lint doc-width dupes svelte-check vitest rust-gates release-check e2e
 
 # The fastest gates go first. The Vitest and Rust tests run in full: their coverage gates count every file.
 # Like `check`, it skips Clippy and `rust-coverage` on a branch that changes only `ui/` and docs. It leaves
 # out the rest of `check`: ESLint, token-deps, pre-commit, deny, machete, release-check and e2e.
 # Run the gates a first push most often fails on, one at a time, and stop at the first that fails
-preflight: rustfmt prettier doc-width svelte-check vitest
+preflight: rustfmt prettier doc-width dupes svelte-check vitest
     node scripts/rust-gates.ts clippy rust-coverage
 
 # Check the formatting, lint with ESLint, and run the pre-commit hooks on the workflows and the spelling
@@ -100,6 +100,10 @@ prettier:
 # Fail on a line of Markdown, a comment or a docstring past 110 columns
 doc-width:
     npm run doc-width
+
+# Fail when two files hold the same block of code, unless scripts/copies.ts lets the repeat stay
+dupes:
+    npm run dupes
 
 # List the prose this branch adds that's worth rereading, or that of the files you name. It never fails.
 prose-check *files:
@@ -128,12 +132,13 @@ test: vitest cargo-test stale-bindings
 vitest:
     npm run vitest -- --maxWorkers=2
 
-# Run the Rust tests, after fetching the ty and clangd they start
+# Run the Rust tests, after fetching the ty and clangd they start and building their fake server
 cargo-test:
     npm run cargo-test
 
-# Fetch the ty and clangd that the Rust tests start into target/tools, unless they are there, and print the
-# paths for TSUGIKI_TY, TSUGIKI_RUST_ANALYZER and TSUGIKI_CLANGD
+# Fetch the ty and clangd that the Rust tests start into target/tools, unless they are there, build their
+# fake server, and print the paths for TSUGIKI_TY, TSUGIKI_RUST_ANALYZER, TSUGIKI_CLANGD and
+# TSUGIKI_FAKE_SERVER
 test-servers:
     npm run test-servers
 

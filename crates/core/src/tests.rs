@@ -1,10 +1,12 @@
+use tsugiki_test_git::{Generated, GeneratedFile, check_generated};
+
 use super::*;
 
 /// `diff --exit-code` fails on files that differ, and says how on stdout, where git says some failures.
 #[test]
 #[should_panic(expected = "diff --git a/Cargo.toml b/src/lib.rs")]
 fn a_test_git_that_fails_ends_the_test_with_what_it_printed() {
-    let _ = tsugiki_test_git::git(
+    tsugiki_test_git::run_git(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")),
         &[
             "diff",
@@ -62,6 +64,50 @@ fn a_test_that_fails_leaves_its_path_for_reading() {
     let left = left.unwrap();
     assert!(left.join("below").exists(), "{left:?}");
     drop(testing::temp_path("failed"));
+}
+
+#[test]
+fn a_generated_file_updated_says_what_generated_it_whatever_its_line_ends() {
+    let path = testing::temp_path("generated");
+    let file = generated(&path);
+
+    check_generated(&file, "fresh\n", Generated::Update);
+    let updated = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, "fresh\r\n").unwrap();
+    check_generated(&file, "fresh\n", Generated::Compare);
+
+    assert_eq!(updated, "fresh\n");
+}
+
+#[test]
+fn a_generated_file_that_differs_says_how_to_bring_it_up_to_date() {
+    let path = testing::temp_path("generated-stale");
+    std::fs::write(&path, "stale\n").unwrap();
+
+    // Caught, so the file goes when the test passes.
+    let failed = std::panic::catch_unwind(|| {
+        check_generated(&generated(&path), "fresh\n", Generated::Compare);
+    });
+
+    let message = *failed.unwrap_err().downcast::<String>().unwrap();
+    let says = "is out of date: run `just generate` and commit the result";
+    assert!(message.contains(says), "{message}");
+}
+
+#[test]
+#[should_panic(expected = "is out of date (it can't be read: ")]
+fn a_generated_file_that_cant_be_read_says_why() {
+    let path = testing::temp_path("generated-missing");
+    check_generated(&generated(&path), "fresh\n", Generated::Compare);
+}
+
+/// The generated file at `path`, which `just generate` would write.
+fn generated(path: &std::path::Path) -> GeneratedFile<'_> {
+    GeneratedFile {
+        path: path.to_str().unwrap(),
+        update_with: "TSUGIKI_UPDATE_NOTHING",
+        fix: "just generate",
+    }
 }
 
 #[test]

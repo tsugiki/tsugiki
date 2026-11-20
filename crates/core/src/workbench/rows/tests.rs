@@ -1,7 +1,7 @@
 use crate::facts::pull_requests::{CiState, PrState, PullRequestFacts};
 use crate::work::{SeenMark, WorkReason, YourReview};
 use crate::workbench::testing::{at, me, mine, workbench};
-use crate::workbench::{PrTree, Seen, SeenState, WorkbenchItem, WorkbenchRow};
+use crate::workbench::{MuteAuthor, PrTree, Seen, SeenState, WorkbenchItem, WorkbenchRow};
 
 #[test]
 fn a_row_carries_what_the_list_shows() {
@@ -32,9 +32,11 @@ fn a_row_carries_what_the_list_shows() {
                     mark: SeenMark {
                         numbers: vec![3],
                         up_to: Some(at(3)),
+                        findings: vec![],
                     },
                     state: SeenState::Seen,
                 },
+                mute_author: MuteAuthor::Off,
             },
             backports: vec![],
         })

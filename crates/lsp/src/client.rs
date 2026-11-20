@@ -53,7 +53,7 @@ pub struct Streams {
 pub trait Process: Send {
     /// Waits for the process to end, and gives its exit code if it had one.
     fn wait(&mut self) -> Option<i32>;
-    /// Ends the process now.
+    /// Ends the process now, and waits until it has ended.
     fn kill(&mut self);
 }
 
@@ -233,8 +233,12 @@ struct ToOwner(Sender<Input>);
 
 impl ToOwner {
     fn send(&self, input: Input) {
-        // The owner ends only once the `Server` has dropped, and then nothing is left to do for this message.
-        let _gone = self.0.send(input);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the owner ends only once the `Server` has dropped, and then nothing is left to do for \
+                      this message"
+        )]
+        let _ = self.0.send(input);
     }
 }
 
@@ -318,12 +322,24 @@ impl Server {
         } = streams;
         let (errors_open, errors_closed) = mpsc::channel::<()>();
         let reads = inputs.clone();
-        let _errors = thread::spawn(move || read_errors((errors, log), &reads, errors_open));
+        #[expect(
+            unused_results,
+            reason = "it ends when the server's error output closes, once the server exits or is killed"
+        )]
+        thread::spawn(move || read_errors((errors, log), &reads, errors_open));
         let reads = inputs.clone();
-        let _output = thread::spawn(move || read_output(output, &errors_closed, &reads));
+        #[expect(
+            unused_results,
+            reason = "it ends when the server's output closes, once the server exits or is killed"
+        )]
+        thread::spawn(move || read_output(output, &errors_closed, &reads));
         let (writes, bodies) = mpsc::channel();
         let writer = inputs.clone();
-        let _input = thread::spawn(move || write_input(input, &bodies, &writer));
+        #[expect(
+            unused_results,
+            reason = "it ends when the owner drops `writes`, or when the server stops reading"
+        )]
+        thread::spawn(move || write_input(input, &bodies, &writer));
         let owner = Owner {
             writes,
             process,
@@ -336,7 +352,12 @@ impl Server {
             tail: Vec::new(),
             life: Life::Running,
         };
-        let _owner = thread::spawn(move || owner.run(&received));
+        #[expect(
+            unused_results,
+            reason = "`stop` and a drop return at once, and the thread ends once the server has exited or \
+                      been killed"
+        )]
+        thread::spawn(move || owner.run(&received));
         (
             Starting(Self {
                 inputs,
@@ -385,8 +406,20 @@ impl Server {
             params: Value::Null,
             then: Some(Then::Exit),
         };
-        let _agreed: Pending<()> = self.ask(call, identity);
+        // Nobody waits for the answer: `Then::Exit` acts on it.
+        #[expect(
+            unused_results,
+            reason = "nobody cancels the `shutdown`, so its id has no use"
+        )]
+        self.send_ask(call, Box::new(|_| {}));
         self.inputs.send(Input::Stop(patience));
+    }
+
+    /// Sends a request whose answer goes to `answer`, and gives the id it went with.
+    fn send_ask(&self, call: Call, answer: Answer) -> i64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.inputs.send(Input::Ask(Ask { id, call, answer }));
+        id
     }
 
     /// Sends a request whose answer parses as a `W`, and hands the caller `convert` of it.
@@ -395,7 +428,6 @@ impl Server {
         call: Call,
         convert: fn(W) -> T,
     ) -> Pending<T> {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (sender, outcome) = mpsc::sync_channel(1);
         let answer: Answer = Box::new(move |result| {
             let parsed = result.and_then(|value| {
@@ -403,12 +435,14 @@ impl Server {
                     .map(convert)
                     .map_err(RequestError::Unparsable)
             });
-            // The caller may have stopped waiting.
-            let _unheard = sender.send(parsed);
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "this fails only if the caller has stopped waiting, and then nobody wants the answer"
+            )]
+            let _ = sender.send(parsed);
         });
-        self.inputs.send(Input::Ask(Ask { id, call, answer }));
         Pending {
-            id,
+            id: self.send_ask(call, answer),
             outcome,
             inputs: self.inputs.clone(),
         }
@@ -598,7 +632,6 @@ impl Owner {
         self.waiting.clear();
         if self.life != Life::Exited {
             self.process.kill();
-            let _code = self.process.wait();
         }
     }
 
@@ -610,9 +643,7 @@ impl Owner {
         }
         let mut deadline = Instant::now() + patience;
         let mut exiting = false;
-        while let Ok(input) =
-            inputs.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        {
+        while let Some(input) = received_by(inputs, deadline) {
             match input {
                 Input::Arrived(incoming) => self.arrived(incoming),
                 Input::Errors(bytes) => self.keep_tail(&bytes),
@@ -649,7 +680,7 @@ impl Owner {
         } = ask;
         if self.life == Life::Running {
             self.write(rpc::request(id, method.name(), params));
-            let _none = self.waiting.insert(id, Waiting { answer, then });
+            self.waiting.extend([(id, Waiting { answer, then })]);
             if let Method::Shutdown = method {
                 self.life = Life::ShuttingDown;
             }
@@ -670,8 +701,11 @@ impl Owner {
 
     /// Hands one message to the writer thread, which says if the server has stopped reading.
     fn write(&self, body: Vec<u8>) {
-        // The writer has gone only after it said the server stopped reading.
-        let _gone = self.writes.send(body);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the writer has gone only after it said the server stopped reading"
+        )]
+        let _ = self.writes.send(body);
     }
 
     fn arrived(&mut self, incoming: Incoming) {
@@ -786,8 +820,7 @@ impl Owner {
             _ => return,
         };
         match event {
-            // The caller may not listen.
-            Ok(event) => drop(self.events.send(event)),
+            Ok(event) => self.tell(event),
             Err(cause) => log::warn!("A language server's {method} doesn't parse: {cause}"),
         }
     }
@@ -870,7 +903,16 @@ impl Owner {
         let code = self.process.wait();
         self.life = Life::Exited;
         let stderr_tail = String::from_utf8_lossy(&self.tail).into_owned();
-        let _unheard = self.events.send(Event::Exited(Exit { code, stderr_tail }));
+        self.tell(Event::Exited(Exit { code, stderr_tail }));
+    }
+
+    /// Hands the caller `event`.
+    fn tell(&self, event: Event) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the caller has dropped the events, and then nobody wants to hear it"
+        )]
+        let _ = self.events.send(event);
     }
 }
 
@@ -883,6 +925,14 @@ fn write_input(mut input: Box<dyn Write + Send>, bodies: &Receiver<Vec<u8>>, inp
             return;
         }
     }
+}
+
+/// The next message on `receiver`, waiting until `deadline` at most. Nothing once `deadline` has passed,
+/// though more is queued, since `recv_timeout` with a wait of zero would still hand out each queued message,
+/// for as long as a busy sender keeps the queue full.
+fn received_by<T>(receiver: &Receiver<T>, deadline: Instant) -> Option<T> {
+    let wait = (deadline.checked_duration_since(Instant::now())).filter(|wait| !wait.is_zero())?;
+    receiver.recv_timeout(wait).ok()
 }
 
 /// Reads the server's messages until its output ends, then waits for its error output to end too, so the
@@ -902,8 +952,11 @@ fn read_output(output: Box<dyn Read + Send>, errors_closed: &Receiver<()>, input
             }
         }
     }
-    // Closed, or held open past the patience, which the owner can't tell apart.
-    let _closed_or_not = errors_closed.recv_timeout(ERRORS_PATIENCE);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "closed, or held open past the patience, which the owner can't tell apart"
+    )]
+    let _ = errors_closed.recv_timeout(ERRORS_PATIENCE);
     inputs.send(Input::OutputEnded);
 }
 

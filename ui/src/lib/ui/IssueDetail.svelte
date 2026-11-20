@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import { openLink, openOnGitHub, type GitHubItem } from "$lib/state/browser";
+  import { counted } from "$lib/state/counted";
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
-  import { treeRows, type TreeEntry } from "$lib/state/workbench.svelte";
+  import { LinkOpener } from "$lib/state/link-opener.svelte";
+  import { isMuted, treeRows, type MuteAuthor, type TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
@@ -17,6 +18,9 @@
     now,
     onopenpr,
     onmark,
+    onarchive,
+    onmute,
+    onmuteauthor,
     focusable = false,
     header,
   }: {
@@ -26,6 +30,14 @@
     onopenpr: (number: number) => void;
     /** Mark Seen or Mark Unseen, whichever the header's button offers. */
     onmark: () => void;
+    /** Archive, or Unarchive on an Archived Issue, as the header's button offers for the view on show
+     * (#490). */
+    onarchive: (view: IssueView) => void;
+    /** Mute, or Unmute on a Muted Issue, as the header's button offers for the view on show (#492). */
+    onmute: (view: IssueView) => void;
+    /** Mute author on the Issue's author, or Unmute author on a Muted author, as the header's button offers
+     * for the view on show (#494). */
+    onmuteauthor: (view: IssueView) => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -43,6 +55,12 @@
     other: "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why.",
   };
 
+  /** The Mute author button's words for what `offered` offers: the author it mutes or unmutes (#494). */
+  const muteAuthorWords = (offered: MuteAuthor) =>
+    offered.kind === "off"
+      ? "Mute author"
+      : `${offered.kind === "mute" ? "Mute" : "Unmute"} ${offered.login}`;
+
   /** The words for an Issue Tsugiki doesn't hold, such as one a link named, and why once a read failed. */
   const notHeld = (number: number, why: ReadFailure | undefined) => {
     const issue = `Issue #${String(number)}`;
@@ -56,14 +74,7 @@
     return words[why ?? "reading"];
   };
 
-  let browserProblem = $state<string>();
-
-  const onGitHub = async (item: GitHubItem) => {
-    browserProblem = await openOnGitHub(repository, item);
-  };
-  const followLink = async (address: string) => {
-    browserProblem = await openLink(address);
-  };
+  const links = new LinkOpener();
   const openPr = (number: number) => () => {
     onopenpr(number);
   };
@@ -113,12 +124,12 @@
 
   /** The line the fully merged PRs fold into, which says what a click does (#588). */
   const mergedWords = (shown: boolean, count: number) =>
-    `${shown ? "Hide" : "Show"} ${String(count)} merged ${count === 1 ? "PR" : "PRs"}`;
+    `${shown ? "Hide" : "Show"} ${counted(count, "merged PR", "merged PRs")}`;
 </script>
 
 <!-- The pane mounts afresh each time the view shows, so it goes back to where the view says it was. -->
 <section
-  class="detail"
+  class="detail-pane"
   aria-label="Issue view"
   tabindex={focusable ? -1 : undefined}
   data-pane="detail"
@@ -133,8 +144,8 @@
   {#if issue.error}
     <p role="alert">{`Tsugiki can't show this Issue: ${issue.error}`}</p>
   {/if}
-  {#if browserProblem}
-    <p role="alert">{browserProblem}</p>
+  {#if links.problem}
+    <p role="alert">{links.problem}</p>
   {/if}
   {#if issue.view === null}
     <p>{notHeld(issue.number, issue.failedRead)}</p>
@@ -142,6 +153,7 @@
     {@const view = issue.view}
     {@const icon = issueIcon(view.state)}
     {@const by = opened(view)}
+    {@const muted = isMuted(view.hidden)}
     <div class="page">
       <!-- The icon in the heading names the state to a screen reader already. -->
       <p class="crumb" aria-hidden="true">{icon?.label ?? "Issue"}</p>
@@ -149,11 +161,14 @@
         {#if icon}
           <StateIcon {icon} />
         {/if}
-        <button class="link" onclick={() => void onGitHub({ kind: "issue", number: view.number })}>
+        <button
+          class="link"
+          onclick={() => void links.openOnGitHub(repository, { kind: "issue", number: view.number })}
+        >
           {headline(view)}
         </button>
       </h2>
-      <p class="by"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
+      <p class="byline"><span title={by.title}><b>{by.who}</b>{by.words}</span>{restOfLine(view)}</p>
       <div class="meta">
         {#if view.labels.length > 0}
           <ul class="labels" role="list" aria-label="Labels">
@@ -162,7 +177,30 @@
             {/each}
           </ul>
         {/if}
-        <MarkButton seen={view.seen} {onmark} />
+        <!-- A Muted Issue offers Unmute and Mute author (#492), and a Muted author's Issue only Unmute author
+             (#494). Mute author is off on the user's own Issue. -->
+        <MarkButton seen={view.seen} {onmark} marks={!muted}>
+          {#if !muted}
+            <button
+              onclick={() => {
+                onarchive(view);
+              }}>{view.hidden === "archived" ? "Unarchive" : "Archive"}</button
+            >
+          {/if}
+          {#if view.hidden !== "muted_author"}
+            <button
+              onclick={() => {
+                onmute(view);
+              }}>{muted ? "Unmute" : "Mute"}</button
+            >
+          {/if}
+          <button
+            disabled={view.mute_author.kind === "off"}
+            onclick={() => {
+              onmuteauthor(view);
+            }}>{muteAuthorWords(view.mute_author)}</button
+          >
+        </MarkButton>
       </div>
 
       {#snippet tree(entries: TreeEntry[], name: string)}
@@ -209,11 +247,11 @@
         <ul class="counts" role="list" aria-label="PR counts">
           {#each counts as { words, icon, count } (words)}
             <li class={{ none: count === 0 }}>
-              <span aria-hidden="true"><StateIcon {icon} /></span><span>{words}</span>{@render counted(count)}
+              <span aria-hidden="true"><StateIcon {icon} /></span><span>{words}</span>{@render tally(count)}
             </li>
           {/each}
           <li class={{ none: view.needs_attention.length === 0 }}>
-            <span><span aria-hidden="true"><b>Bold</b>:</span> Needs attention</span>{@render counted(
+            <span><span aria-hidden="true"><b>Bold</b>:</span> Needs attention</span>{@render tally(
               view.needs_attention.length,
             )}
           </li>
@@ -234,9 +272,9 @@
       {/if}
 
       {#if view.content}
-        <Conversation content={view.content} {now} onlink={(address) => void followLink(address)} />
+        <Conversation content={view.content} {now} onlink={(address) => void links.openLink(address)} />
       {:else}
-        <p class="by">{UNREAD[issue.failedRead ?? "reading"]}</p>
+        <p class="byline">{UNREAD[issue.failedRead ?? "reading"]}</p>
       {/if}
     </div>
   {/if}
@@ -249,19 +287,11 @@
   >{` ${row.title}`}{/snippet}
 
 <!-- A count in the row above the tree, after a comma only a screen reader hears: "Open, 1". -->
-{#snippet counted(count: number)}<span class="for-screen-readers">{PAUSE}</span><span class="count"
+{#snippet tally(count: number)}<span class="for-screen-readers">{PAUSE}</span><span class="count"
     >{count}</span
   >{/snippet}
 
 <style>
-  /* Takes the window's height and scrolls by itself, as each pane does, and the wheel stops at its end. */
-  .detail {
-    flex: 1;
-    min-width: 320px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
   /* Lines stay short enough to read in a wide window. */
   .page {
     max-width: 900px;
@@ -277,17 +307,6 @@
   h2 {
     margin: 4px 0 2px;
     font-size: 18px;
-  }
-
-  .by {
-    margin: 0 0 8px;
-    font-size: 13px;
-    color: var(--fg-muted);
-  }
-
-  .by b {
-    font-weight: 600;
-    color: var(--fg);
   }
 
   /* The labels' chips, then the Mark Seen button, on one line that wraps in a narrow pane. */

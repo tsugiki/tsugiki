@@ -132,10 +132,7 @@ impl Default for StandIns {
 
 impl StandIns {
     fn add_viewer(&mut self, login: &str) {
-        drop(
-            self.by_login
-                .insert(login.to_ascii_lowercase(), VIEWER_STAND_IN.to_owned()),
-        );
+        (self.by_login).extend([(login.to_ascii_lowercase(), VIEWER_STAND_IN.to_owned())]);
     }
 
     /// The stand-in for `login`, a new one the first time.

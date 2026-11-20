@@ -13,5 +13,10 @@ rustls.workspace = true
 ureq.workspace = true
 url.workspace = true
 
+[features]
+# Makes `testing`, what tests give in place of gh, reachable from other crates' tests. Only
+# `[dev-dependencies]` turn it on, so no release build has it.
+testing = []
+
 [lints]
 workspace = true

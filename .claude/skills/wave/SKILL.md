@@ -46,7 +46,7 @@ ticket's title gives. It prints the worktree's path and branch, which the builde
 A ticket that starts on a sibling's branch gets its worktree the same way, then merges that branch:
 `git -C .temp/wt-<n> merge <sibling-branch>`. The worktrees share one repository, so the name is enough.
 
-Add the wave's entry to `## Wave log`, from the form in step 7, with the agents' start time.
+Add the wave's entry to `## Wave log`, from the form in step 8, with the agents' start time.
 
 Done when each ticket has a worktree with `node_modules` installed, and the log has the wave's entry.
 
@@ -84,6 +84,9 @@ When a round finds an owner's data reaching another thread in a different order 
 because each caller forwards its copy after the owner answers, ask the builder to have the owner send it
 itself, from its own thread, in save order: in 0.3.3 that took a stale copy out of every path at once.
 
+When a ticket only moves code, and a round finds bugs that main has too, ask the builder to keep main's
+behaviour there and file a ticket for the bugs: in 0.3.4 each of #896's fixes to such a bug opened a new case.
+
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
 that drive what it changed, as [builder.md](builder.md) says.
@@ -112,7 +115,16 @@ the tests found with no conflict.
 Once those tests pass, push: CI runs the full gates on the push. Ask for `just preflight` again only when a
 resolution rewrote code, a moderate or hard conflict, where a failed CI round trip costs more than the run.
 
-### 7. Close the wave
+### 7. Look for copies the siblings made
+
+Once the wave's last PR has merged, run `just merged` and then `just dupes` on main. Each PR passed against
+the main it started from, so a helper two siblings each wrote shows up only once both are in. Fold each copy
+it finds into one place both use, in one small PR, and wait for it to merge before the next wave starts. If a
+repeat has to stay, the PR adds it to `ALLOWED` in `scripts/copies.ts` with why.
+
+Done when `just dupes` passes on main.
+
+### 8. Close the wave
 
 The wave's entry in `## Wave log` takes this form:
 

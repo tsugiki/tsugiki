@@ -18,6 +18,52 @@ fn a_failed_git_says_its_reason_rather_than_the_hint_after_it() {
     assert_eq!(gist(""), "");
 }
 
+#[test]
+fn git_s_batch_gives_each_blob_s_bytes_and_nothing_for_the_rest() {
+    let output = b"1111 blob 3\nab\n\n\
+        2222:Lib/x.py missing\n\
+        3333 tree 4\n\0\0\0\0\n\
+        4444:Lib/spaced name.py missing\n\
+        5555 blob 20\ncut short";
+
+    let blobs = parse_batch(output);
+
+    assert_eq!(blobs, [Some(b"ab\n".to_vec()), None, None, None]);
+}
+
+#[test]
+fn reading_no_blob_asks_git_for_nothing() {
+    assert!(read_blobs(Path::new("no-folder"), &[]).unwrap().is_empty());
+}
+
+#[test]
+fn a_name_with_a_line_break_gets_nothing_and_the_blobs_after_it_keep_their_places() {
+    let mirrored = crate::diff::testing::Mirrored::new("line-break-name");
+    let head = mirrored.head.as_str();
+    let names = [
+        format!("{head}:Tools/run.sh"),
+        format!("{head}:Lib/x.py\n{head}:Lib/ast.py"),
+        format!("{head}:Lib/spaced name ü.py"),
+    ];
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+
+    let blobs = read_blobs(&mirrored.mirror, &names).unwrap();
+
+    assert_eq!(
+        blobs,
+        [Some(b"echo hi\n".to_vec()), None, Some(b"pass\n".to_vec())]
+    );
+}
+
+#[test]
+fn names_git_would_read_as_others_ask_git_for_nothing() {
+    let names = ["1111:Lib/x.py\nLib/y.py", "1111:Lib/x.py\r"];
+
+    let blobs = read_blobs(Path::new("no-folder"), &names).unwrap();
+
+    assert_eq!(blobs, [None, None]);
+}
+
 /// A helper can leave git's tree while git runs: its parent ends first, as here, or it starts while
 /// `taskkill /T` reads the tree (#208). On Windows, a process left running in the folder keeps it there. On
 /// macOS, a process that starts while the kill runs can outlive it (#309), so the alias goes on starting
@@ -26,7 +72,7 @@ fn a_failed_git_says_its_reason_rather_than_the_hint_after_it() {
 fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     let folder = crate::testing::temp_path("stop-git");
     // An alias runs at the top of its repository, so this one needs its own.
-    let _ = tsugiki_test_git::git(
+    tsugiki_test_git::run_git(
         folder.parent().unwrap(),
         &["init", "-q", &folder.to_string_lossy()],
     );
@@ -47,10 +93,15 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     // worker waits for it to.
     let mut output = io::BufReader::new(output);
     let mut line = String::new();
-    let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
-    let _succeeded = git.stop();
+    #[expect(unused_results, reason = "the test checks the line itself at the end")]
+    io::BufRead::read_line(&mut output, &mut line).unwrap();
+    git.stop();
     let (closing, closed) = std::sync::mpsc::channel();
-    let _reading = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "a join would hang on the orphans this test checks for, where the timeout fails it"
+    )]
+    thread::spawn(move || {
         let mut rest = Vec::new();
         closing
             .send(io::Read::read_to_end(&mut output, &mut rest).is_ok())

@@ -15,6 +15,8 @@ import {
   type Why,
   type YourReview,
 } from "$lib/state/workbench.svelte";
+import { counted } from "$lib/state/counted";
+import { elapsed } from "./time";
 
 const REASONS: Record<WorkReason, string> = {
   review_request: "Review request",
@@ -46,6 +48,8 @@ function saying(why: Why): string {
   switch (why.kind) {
     case "review_requested":
       return "Review requested from you";
+    case "assigned":
+      return "Assigned to you";
     case "stale_review":
       return "Changed since your Review";
     case "ci_failed":
@@ -80,26 +84,21 @@ export const offersMarkSeen = (seen: Seen) => seen.state !== "seen";
 /** The reasons an item Needs attention, the newest first. */
 export const preview = (attention: Attention) => attention.why.map(saying).join(" · ");
 
-const MINUTE = 60_000;
-const MINUTES_IN_HOUR = 60;
-const MINUTES_IN_DAY = 24 * MINUTES_IN_HOUR;
+const AGO_UNITS = { minute: "m", hour: "h", day: "d" } as const;
 
-/** The time since `updatedAt`. A clock behind GitHub's gives a time in the future, which reads as now. */
+/** The time since `updatedAt`: "just now", "3m ago", "5h ago" or "2d ago". */
 export function ago(updatedAt: string, now: Date): string {
-  const minutes = Math.floor((now.getTime() - new Date(updatedAt).getTime()) / MINUTE);
-  if (minutes < 1) return "just now";
-  if (minutes < MINUTES_IN_HOUR) return `${String(minutes)}m ago`;
-  if (minutes < MINUTES_IN_DAY) return `${String(Math.floor(minutes / MINUTES_IN_HOUR))}h ago`;
-  return `${String(Math.floor(minutes / MINUTES_IN_DAY))}d ago`;
+  const time = elapsed(updatedAt, now);
+  return time.unit === "now" ? "just now" : `${String(time.count)}${AGO_UNITS[time.unit]} ago`;
 }
 
 /** How many comments an Issue, a PR or a review thread has. */
-export const commentCount = (count: number) => (count === 1 ? "1 comment" : `${String(count)} comments`);
+export const commentCount = (count: number) => counted(count, "comment", "comments");
 
 /** An Issue's or a PR's first line. */
 export const headline = (item: { number: number; title: string }) => `#${String(item.number)} ${item.title}`;
 
-const prCount = (count: number) => (count === 1 ? "1 PR" : `${String(count)} PRs`);
+const prCount = (count: number) => counted(count, "PR", "PRs");
 
 /** An item's first line: the people an Issue involves, a dash once they have all gone, or a PR's author. */
 export function peopleOf(item: ListedItem): string {
@@ -131,7 +130,7 @@ export type WordTone = "request" | "bad" | "good" | "plain";
 /** A word of a PR's state, and what its hover says, if it says more. */
 export type StateWord = { words: string; tone: WordTone; hover?: string };
 
-const fileCount = (count: number) => (count === 1 ? "1 file" : `${String(count)} files`);
+const fileCount = (count: number) => counted(count, "file", "files");
 
 /** Why the Stale review check can't run, for the hover of a Stale review it couldn't check, `cant` naming
  * the Review. */

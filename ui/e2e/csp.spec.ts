@@ -1,20 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { mockCore, noServers } from "./mock-core.ts";
+import { loadedSettings } from "../src/lib/testing/fixtures.ts";
+import { mockCore } from "./mock-core.ts";
 import { cspViolations, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
-import { appearance } from "./themes.ts";
 
-const settings = {
-  settings: {
-    status_bar: { visible: true },
-    releases: { check: true },
-    appearance,
-    diff: { files: "all" as const, peek: "inline" as const },
-    keys: {},
-    repositories: [],
-  },
-  language_servers: noServers,
-  problems: [],
-};
+const settings = loadedSettings();
 
 test("the window keeps the status bar at its foot under Tauri's CSP, which the page breaks no rule of", async ({
   page,

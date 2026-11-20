@@ -19,7 +19,7 @@
   import AdvancedPage from "./AdvancedPage.svelte";
   import GeneralPage from "./GeneralPage.svelte";
   import KeyboardPage from "./KeyboardPage.svelte";
-  import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
+  import Dialog from "./Dialog.svelte";
 
   let {
     settings,
@@ -77,107 +77,67 @@
   async function apply() {
     if (await dialog.apply()) onclose();
   }
-  function cancelOnEscape(e: KeyboardEvent) {
-    if (e.key === "Escape") cancel();
-  }
 </script>
 
-<svelte:window onkeydown={cancelOnEscape} />
-
-<!-- The keyboard's way out is Esc, on the window above. This is the mouse's, beside ✕. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="settings-scrim" onmousedown={closeOnPress(cancel)}>
-  <div
-    class="dialog"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Settings"
-    tabindex="-1"
-    {@attach takeFocus}
-    onkeydown={keepFocusIn}
-    onmousedown={(e) => {
-      e.stopPropagation();
-    }}
-  >
-    <header>
-      <h2>Settings</h2>
-      <button class="close" aria-label="Close" title="Close without applying (Esc)" onclick={cancel}>✕</button
-      >
-    </header>
-    <div class="body">
-      <nav aria-label="Settings pages">
-        {#each SETTINGS_PAGES as page (page)}
-          <button
-            aria-current={pageShown(page)}
-            onclick={() => {
-              dialog.shown = { page };
-            }}>{page}</button
-          >
-          {#if page === "Repositories"}
-            <!-- By place: a name written twice in settings.toml lists twice. -->
-            {#each dialog.repositories as repository, at (at)}
-              <button
-                class="repository"
-                aria-label={repository}
-                title={repository}
-                aria-current={repositoryShown(repository)}
-                onclick={() => {
-                  dialog.shown = { repository };
-                }}><span class="mono">{short(repository)}</span></button
-              >
-            {/each}
-          {/if}
-        {/each}
-      </nav>
-      <section aria-label={title}>
-        {#if "repository" in dialog.shown}
-          <h3 class="repository mono">{dialog.shown.repository}</h3>
-          <p class="empty">Nothing to set here yet.</p>
-        {:else if dialog.shown.page === "General"}
-          <GeneralPage {dialog} />
-        {:else if dialog.shown.page === "Account"}
-          <AccountPage {status} {about} />
-        {:else if dialog.shown.page === "Keyboard"}
-          <KeyboardPage />
-        {:else if dialog.shown.page === "Advanced"}
-          <AdvancedPage {dialog} {repository} {at} />
-        {:else}
-          <p class="empty">Nothing to set here yet.</p>
+<Dialog label="Settings" testid="settings" size="large" flush onclose={cancel}>
+  <header>
+    <h2>Settings</h2>
+    <button class="close" aria-label="Close" title="Close without applying (Esc)" onclick={cancel}>✕</button>
+  </header>
+  <div class="body">
+    <nav aria-label="Settings pages">
+      {#each SETTINGS_PAGES as page (page)}
+        <button
+          aria-current={pageShown(page)}
+          onclick={() => {
+            dialog.shown = { page };
+          }}>{page}</button
+        >
+        {#if page === "Repositories"}
+          <!-- By place: a name written twice in settings.toml lists twice. -->
+          {#each dialog.repositories as repository, at (at)}
+            <button
+              class="repository"
+              aria-label={repository}
+              title={repository}
+              aria-current={repositoryShown(repository)}
+              onclick={() => {
+                dialog.shown = { repository };
+              }}><span class="mono">{short(repository)}</span></button
+            >
+          {/each}
         {/if}
-      </section>
-    </div>
-    <footer>
-      {#if dialog.problem !== undefined}
-        <p role="alert">{dialog.problem}</p>
+      {/each}
+    </nav>
+    <section aria-label={title}>
+      {#if "repository" in dialog.shown}
+        <h3 class="mono">{dialog.shown.repository}</h3>
+        <p class="empty">Nothing to set here yet.</p>
+      {:else if dialog.shown.page === "General"}
+        <GeneralPage {dialog} />
+      {:else if dialog.shown.page === "Account"}
+        <AccountPage {status} {about} />
+      {:else if dialog.shown.page === "Keyboard"}
+        <KeyboardPage />
+      {:else if dialog.shown.page === "Advanced"}
+        <AdvancedPage {dialog} {repository} {at} />
+      {:else}
+        <p class="empty">Nothing to set here yet.</p>
       {/if}
-      <button disabled={dialog.applying} onclick={cancel}>Cancel</button>
-      <button class="primary" disabled={dialog.applying} onclick={() => void apply()}
-        >{dialog.changed ? "Apply" : "OK"}</button
-      >
-    </footer>
+    </section>
   </div>
-</div>
+  <footer>
+    {#if dialog.problem !== undefined}
+      <p role="alert">{dialog.problem}</p>
+    {/if}
+    <button disabled={dialog.applying} onclick={cancel}>Cancel</button>
+    <button class="primary" disabled={dialog.applying} onclick={() => void apply()}
+      >{dialog.changed ? "Apply" : "OK"}</button
+    >
+  </footer>
+</Dialog>
 
 <style>
-  .dialog {
-    display: flex;
-    flex-direction: column;
-    width: min(760px, calc(100vw - 32px));
-    height: min(520px, calc(100vh - 80px));
-    margin: 40px auto 0;
-    box-sizing: border-box;
-    overflow: hidden;
-    font-size: 13px;
-    background: var(--bg-overlay);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 8px 30px var(--shadow);
-  }
-
-  .dialog:focus {
-    outline: none;
-  }
-
   header {
     display: flex;
     align-items: center;
@@ -250,11 +210,16 @@
     overflow: auto;
   }
 
-  h3.repository {
-    margin: 4px 0 8px;
+  /* A heading over a group of settings, on each page and over a Repository's. */
+  section :global(h3) {
+    margin: 16px 0 8px;
     padding-bottom: 4px;
     font-size: 13px;
     border-bottom: 1px solid var(--border);
+  }
+
+  section :global(h3:first-child) {
+    margin-top: 4px;
   }
 
   .empty {

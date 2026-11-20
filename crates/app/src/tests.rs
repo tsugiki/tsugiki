@@ -15,12 +15,7 @@ use tsugiki_test_git::TempPath;
 pub(crate) fn temp_folders(name: &str) -> (Folders, TempPath) {
     let root = tsugiki_test_git::temp_path(&format!("app-{name}"));
     std::fs::create_dir_all(&root).unwrap();
-    let folders = Folders {
-        data: root.to_path_buf(),
-        settings: root.to_path_buf(),
-        logs: root.to_path_buf(),
-    };
-    (folders, root)
+    (tsugiki_core::testing::one_folder(&root), root)
 }
 
 pub(crate) fn cpython() -> Home {

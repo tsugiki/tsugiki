@@ -1,46 +1,22 @@
 use std::collections::BTreeSet;
 
-use time::{Duration, OffsetDateTime};
-
-use super::super::testing::{migrated, temp_database};
+use super::super::testing::{
+    OLDER_RULES, at_second, database_before, keep_old_links, kept_fixes, migrated,
+    name_a_newer_rule, refuse_new_links, store_with_old_links, stored_texts, temp_database,
+};
 use super::super::{Connection, MIGRATIONS, Store, issues, open_with, pull_requests};
 use super::*;
-use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{OffDefault, PrState};
 use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn at(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::UNIX_EPOCH + Duration::seconds(seconds)
-}
-
-fn sha(text: &str) -> CommitSha {
-    CommitSha::parse(text).unwrap()
-}
+use crate::testing::{TempPath, cpython, gcmon, issue_facts, pr_facts, sha};
 
 fn pr(number: u32, title: &str) -> PullRequestFacts {
     PullRequestFacts {
-        number,
         title: title.to_owned(),
-        state: PrState::Open,
-        is_draft: false,
-        author: None,
-        target_branch: "main".to_owned(),
-        ci: None,
-        updated_at: at(i64::from(number)),
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: None,
-        off_default: None,
+        updated_at: at_second(i64::from(number)),
+        ..pr_facts(number)
     }
 }
 
@@ -67,13 +43,8 @@ fn merged_as(number: u32, title: &str, commit: &str) -> PullRequestFacts {
 
 fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        number,
-        title: format!("Issue {number}"),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
-        updated_at: at(i64::from(number)),
-        state: Some(IssueState::Open),
+        updated_at: at_second(i64::from(number)),
+        ..issue_facts(number)
     }
 }
 
@@ -103,7 +74,6 @@ fn links(
 
 #[test]
 fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conventions() {
-    let mut connection = migrated();
     let prs = vec![
         merged_as(10, "gh-1: Fix it", "aaaa111"),
         on_branch(11, "[3.14] gh-1: Fix it (GH-10)", "", &[]),
@@ -119,10 +89,28 @@ fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conven
         },
         on_branch(14, "[3.13] Fix it (GH-99)", "", &["bbbb222"]),
     ];
-    save(&mut connection, &prs);
-    save_issues(&mut connection, &[1, 2, 3]);
-    let known: BTreeSet<u32> = [1, 2, 3].into();
+    assert_kept_as_ruled(&[prs], &[1, 2, 3]);
+}
+
+#[test]
+fn the_store_keeps_the_links_the_rules_read_from_the_facts_of_each_rule_s_sample_prs() {
+    let batches: Vec<Vec<PullRequestFacts>> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| released(rule).0)
+        .collect();
+    let issues: Vec<u32> = (1..=20).collect();
+    assert_kept_as_ruled(&batches, &issues);
+}
+
+/// Checks that, once the store has saved `batches` in turn and holds Issues `issues`, it keeps for each PR
+/// the links that the rules read from its facts, under each Conventions.
+fn assert_kept_as_ruled(batches: &[Vec<PullRequestFacts>], issues: &[u32]) {
+    let mut connection = saved(batches);
+    save_issues(&mut connection, issues);
+    let mut prs = batches.concat();
+    prs.sort_by_key(|facts| facts.number);
+    let known: BTreeSet<u32> = issues.iter().copied().collect();
     let merges = MergeCommits::of(&prs);
+    let numbers: Vec<u32> = prs.iter().map(|facts| facts.number).collect();
 
     for conventions in Conventions::ALL {
         let settings = RepositorySettings {
@@ -141,8 +129,9 @@ fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conven
             })
             .collect();
         assert_eq!(
-            links(&connection, conventions, &[10, 11, 12, 13, 14]),
-            ruled
+            links(&connection, conventions, &numbers),
+            ruled,
+            "{conventions:?}"
         );
     }
 }
@@ -265,7 +254,7 @@ fn the_prs_naming_an_origin_pr_are_found_by_it_under_conventions_with_backports(
 }
 
 #[test]
-fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
+fn a_store_whose_links_no_rules_worked_out_leaves_them_to_the_refill_of_its_repositories() {
     let (path, _folder) = temp_database("links-filled");
     let before_links = &MIGRATIONS[..MIGRATIONS.len() - 1];
     open_with(&path, before_links).unwrap().close();
@@ -287,8 +276,13 @@ fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
     .unwrap();
     drop(old);
 
-    Store::open(&path).unwrap().close();
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    refill_whole(&store, &cpython());
+    store.keep_link_rules().unwrap();
 
+    assert_eq!(store.stale_links().unwrap(), None);
+    store.close();
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10, 11]),
@@ -296,24 +290,19 @@ fn the_step_that_makes_the_tables_fills_them_from_the_prs_the_store_holds() {
     );
 }
 
-/// Opens the store at `path` once its links say version `version` of the rules worked them out, with only a
-/// number among them that the rules never gave.
-fn open_with_old_links(path: &std::path::Path, version: u32) {
-    let old = Connection::open(path).unwrap();
-    old.execute_batch(&format!(
-        "DELETE FROM pr_fixes;
-         DELETE FROM pr_origins;
-         INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('python/cpython', 10, 6, 'every');
-         UPDATE link_rules SET version = {version};"
-    ))
-    .unwrap();
-    drop(old);
-    Store::open(path).unwrap().close();
+/// The store at `path`, opened again once its links say the rules `rules` name worked them out, with only
+/// a number among them that the rules never gave: PR 10 fixes Issue 6.
+fn open_with_old_links(path: &std::path::Path, rules: &[LinkRule]) -> Store {
+    let store = Store::open(path).unwrap();
+    keep_old_links(&store, rules, &[(cpython(), 10, 6)]);
+    store.close();
+    Store::open(path).unwrap()
 }
 
-#[test]
-fn a_store_works_its_links_out_again_as_it_opens_after_the_rules_change() {
-    let (path, _folder) = temp_database("links-stale");
+/// A store at a new path that holds PR 10, which fixes Issue 5, and Backport 11, which comes from it, with
+/// Issues 5 and 6.
+fn store_with_a_backport(name: &str) -> (std::path::PathBuf, TempPath) {
+    let (path, folder) = temp_database(name);
     let store = Store::open(&path).unwrap();
     let saved = vec![
         merged_as(10, "gh-5: Fix it", "aaaa1112222"),
@@ -324,33 +313,75 @@ fn a_store_works_its_links_out_again_as_it_opens_after_the_rules_change() {
         .save_issues(&cpython(), vec![issue(5), issue(6)])
         .unwrap();
     store.close();
+    (path, folder)
+}
 
-    open_with_old_links(&path, RULES_VERSION - 1);
-
-    let connection = Connection::open(&path).unwrap();
+/// Works out the links of every PR of `repository` that `store` holds again, in one batch.
+fn refill_whole(store: &Store, repository: &RepositoryName) {
     assert_eq!(
-        links(&connection, Conventions::Cpython, &[10, 11]),
-        [(10, vec![5], None), (11, vec![], Some(10))]
+        store.refill_links(repository, 0, NonZeroU32::MAX).unwrap(),
+        None
     );
 }
 
 #[test]
-fn a_store_whose_links_this_version_worked_out_keeps_them_as_it_opens() {
-    let (path, _folder) = temp_database("links-current");
-    let store = Store::open(&path).unwrap();
-    store
-        .save_pull_requests(
-            &cpython(),
-            vec![merged_as(10, "gh-5: Fix it", "aaaa1112222")],
-        )
-        .unwrap();
-    store
-        .save_issues(&cpython(), vec![issue(5), issue(6)])
-        .unwrap();
+fn a_refill_takes_a_repositorys_prs_a_batch_at_a_time_in_number_order() {
+    let (path, _folder) = store_with_a_backport("links-batches");
+    let store = open_with_old_links(&path, OLDER_RULES);
+    let connection = Connection::open(&path).unwrap();
+    let refill = |from| {
+        store
+            .refill_links(&cpython(), from, NonZeroU32::MIN)
+            .unwrap()
+    };
+
+    assert_eq!(refill(0), Some(11));
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5], None), (11, vec![], None)]
+    );
+    assert_eq!(refill(11), Some(12));
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5], None), (11, vec![], Some(10))]
+    );
+    assert_eq!(refill(12), None);
     store.close();
+}
 
-    open_with_old_links(&path, RULES_VERSION);
+#[test]
+fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_refill() {
+    let (path, _folder) = store_with_a_backport("links-stale");
 
+    let store = open_with_old_links(&path, OLDER_RULES);
+
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![6], None), (11, vec![], None)]
+    );
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    refill_whole(&store, &cpython());
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![5], None), (11, vec![], Some(10))]
+    );
+    // The refill of each Repository comes first, so a crash before this refills them all again.
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.keep_link_rules().unwrap();
+    assert_eq!(store.stale_links().unwrap(), None);
+    assert_eq!(kept_rule_names(&connection), set_names());
+    store.close();
+}
+
+#[test]
+fn a_store_whose_links_the_set_worked_out_keeps_them_as_it_opens() {
+    let (path, _folder) = store_with_a_backport("links-current");
+
+    let store = open_with_old_links(&path, &LinkRule::SET);
+
+    assert_eq!(store.stale_links().unwrap(), None);
+    store.close();
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
         links(&connection, Conventions::Cpython, &[10]),
@@ -358,62 +389,189 @@ fn a_store_whose_links_this_version_worked_out_keeps_them_as_it_opens() {
     );
 }
 
-/// The text each of `all` leaves in a column, once it has read back as itself.
-fn stored_texts<T: ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialEq>(
-    all: &[T],
-) -> Vec<String> {
-    let connection = Connection::open_in_memory().unwrap();
-    let through = |value: &T| {
-        let (text, read): (String, T) = connection
-            .query_row(
-                "SELECT :value AS value",
-                named_params! { ":value": value },
-                |row| Ok((row.get("value")?, row.get("value")?)),
-            )
-            .unwrap();
-        assert_eq!(&read, value);
-        text
-    };
-    all.iter().map(through).collect()
+#[test]
+fn a_store_that_holds_no_pr_keeps_the_sets_rules_as_it_opens() {
+    let (path, _folder) = temp_database("links-empty");
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.stale_links().unwrap(), None);
+    keep_old_links(&store, OLDER_RULES, &[]);
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+
+    assert_eq!(store.stale_links().unwrap(), None);
+    store.close();
 }
 
-/// The rows the store keeps for PRs that try each of the rules behind them, one line for each row.
-fn kept_rows() -> Vec<String> {
-    let description = "Fixes #4\n`Closes #5` <!-- Fixes #6 -->\n```\nFixes #7\n```\n\
-                       Resolves https://github.com/python/cpython/issues/8\n\
-                       Fixes other/repo#9, see gh-10, closes GH-11";
+#[test]
+fn a_refill_works_out_only_its_own_repositorys_links() {
+    let store = store_with_old_links(&[cpython(), gcmon()]);
+    let mut stale = store.stale_links().unwrap().unwrap();
+    stale.sort_by_key(ToString::to_string);
+    assert_eq!(stale, [cpython(), gcmon()]);
+
+    refill_whole(&store, &gcmon());
+
+    let (python, gcmon) = (cpython().to_string(), gcmon().to_string());
+    assert_eq!(kept_fixes(&store), [(python, 10, 6), (gcmon, 10, 5)]);
+}
+
+#[test]
+fn the_end_of_a_refill_forgets_the_links_of_names_that_spell_no_repository() {
+    let (path, _folder) = store_with_a_backport("links-unparsed");
+    let store = open_with_old_links(&path, OLDER_RULES);
+    store.close();
+    let old = Connection::open(&path).unwrap();
+    // One name that doesn't parse, and one that parses to python/cpython but isn't spelled so.
+    for name in ["no-slash", "python/cpython.git"] {
+        old.execute_batch(&format!(
+            "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch,
+                                        updated_at)
+                 VALUES ('{name}', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
+             INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('{name}', 10, 6, 'every');"
+        ))
+        .unwrap();
+    }
+    drop(old);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+
+    refill_whole(&store, &cpython());
+    store.keep_link_rules().unwrap();
+
+    assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 5)]);
+    store.close();
+}
+
+#[test]
+fn a_refill_that_fails_keeps_the_links_it_found_and_their_rules() {
+    let (path, _folder) = store_with_a_backport("links-refused");
+    let store = open_with_old_links(&path, OLDER_RULES);
+    refuse_new_links(&store);
+
+    assert!(store.refill_links(&cpython(), 0, NonZeroU32::MAX).is_err());
+
+    assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 6)]);
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.close();
+}
+
+/// The PRs that try `rule`, in the batches the store saves them in, and the rows `rule` alone keeps for
+/// them, one line for each. A released rule keeps these rows: a change to them is a new rule (`LinkRule`).
+fn released(rule: LinkRule) -> (Vec<Vec<PullRequestFacts>>, Vec<&'static str>) {
+    match rule {
+        LinkRule::ClosingReferences => (
+            vec![vec![
+                PullRequestFacts {
+                    closing_issues: vec![2],
+                    ..pr(1, "gh-1: Fix it")
+                },
+                PullRequestFacts {
+                    closing_issues: vec![3, 4],
+                    ..on_branch(2, "[3.14] gh-5: Fix it (GH-6)", "Fixes #7", &[])
+                },
+            ]],
+            vec![
+                "PR 1 fixes 2 under every",
+                "PR 2 fixes 3 under every",
+                "PR 2 fixes 4 under every",
+            ],
+        ),
+        LinkRule::DescriptionKeywords => {
+            let description = "Fixes #4\n`Closes #5` <!-- Fixes #6 -->\n```\nFixes #7\n```\n\
+                               Resolves https://github.com/python/cpython/issues/8\n\
+                               Fixes other/repo#9, see gh-10, closes GH-11";
+            (
+                vec![vec![PullRequestFacts {
+                    closing_issues: vec![14],
+                    ..on_branch(10, "[3.14] gh-12: Fix it (GH-13)", description, &[])
+                }]],
+                vec![
+                    "PR 10 fixes 4 under every",
+                    "PR 10 fixes 8 under every",
+                    "PR 10 fixes 11 under every",
+                ],
+            )
+        }
+        LinkRule::CpythonTitleIssues => (
+            vec![vec![
+                pr(20, "gh-1: Fix it"),
+                pr(21, "GH-3: Fix it"),
+                pr(22, "[3.14] gh-12: Fix it (GH-13)"),
+                on_branch(23, "[3.14] gh-12, gh-14: Fix it (GH-13)", "Fixes #15", &[]),
+            ]],
+            vec![
+                "PR 20 fixes 1 under cpython",
+                "PR 21 fixes 3 under cpython",
+                "PR 22 fixes 12 under cpython",
+                "PR 23 fixes 12 under cpython",
+                "PR 23 fixes 14 under cpython",
+            ],
+        ),
+        LinkRule::CpythonTitleOrigin => (
+            vec![vec![
+                on_branch(30, "[3.14] gh-12: Fix it (GH-13)", "", &[]),
+                // On the default branch.
+                pr(31, "[3.14] gh-12: Fix it (GH-13)"),
+                on_branch(32, "[3.13] Fix it (#15)", "", &[]),
+            ]],
+            vec!["PR 30 comes from 13 by cpython"],
+        ),
+        LinkRule::CherryPickLine => (
+            vec![
+                vec![
+                    // Saved before the PR its line names.
+                    on_branch(40, "Fix it on 3.13", "", &["bbbb222"]),
+                    // The first of its commits, in the order of their SHAs, that a PR became.
+                    on_branch(41, "Fix it on 3.12", "", &["aaaa111", "cccc333"]),
+                    // A merge commit that sorts after the line's commit without starting with it.
+                    on_branch(42, "Fix it on 3.11", "", &["dddd444"]),
+                    on_branch(43, "[3.14] Fix it (GH-30)", "", &["bbbb222"]),
+                ],
+                vec![
+                    merged_as(50, "Fix it", "bbbb2223333"),
+                    merged_as(51, "Fix it", "cccc3334444"),
+                    merged_as(52, "Fix it", "dddd5555"),
+                ],
+            ],
+            vec![
+                "PR 40 comes from 50 by cherry_pick",
+                "PR 41 comes from 51 by cherry_pick",
+                "PR 43 comes from 50 by cherry_pick",
+            ],
+        ),
+    }
+}
+
+/// A store that saved `batches` in turn, under `LinkRule::SET`.
+fn saved(batches: &[Vec<PullRequestFacts>]) -> Connection {
     let mut connection = migrated();
-    save(
-        &mut connection,
-        &[
-            PullRequestFacts {
-                closing_issues: vec![2],
-                ..pr(1, "gh-1: Fix it")
-            },
-            pr(2, "GH-3: Fix it"),
-            pr(3, "[3.14] gh-12: Fix it (GH-13)"),
-            PullRequestFacts {
-                closing_issues: vec![14],
-                ..on_branch(4, "[3.14] gh-12: Fix it (GH-13)", description, &[])
-            },
-            on_branch(5, "[3.13] Fix it (#15)", "", &[]),
-            // Saved before the PR its line names.
-            on_branch(6, "Fix it on 3.13", "", &["bbbb222"]),
-            // The first of its commits, in the order of their SHAs, that a PR became.
-            on_branch(7, "Fix it on 3.12", "", &["aaaa111", "cccc333"]),
-            // A merge commit that sorts after the line's commit without starting with it.
-            on_branch(8, "Fix it on 3.11", "", &["dddd444"]),
-            on_branch(9, "[3.14] Fix it (GH-30)", "", &["bbbb222"]),
-        ],
-    );
-    save(
-        &mut connection,
-        &[
-            merged_as(20, "Fix it", "bbbb2223333"),
-            merged_as(21, "Fix it", "cccc3334444"),
-            merged_as(22, "Fix it", "dddd5555"),
-        ],
-    );
+    for batch in batches {
+        save(&mut connection, batch);
+    }
+    connection
+}
+
+/// The rows `rule` alone keeps for the PRs of `batches`, once the store holds them all.
+fn kept_by(rule: LinkRule, batches: &[Vec<PullRequestFacts>]) -> Vec<String> {
+    let connection = saved(batches);
+    (connection.execute_batch("DELETE FROM pr_fixes; DELETE FROM pr_origins;")).unwrap();
+    let rules = [rule];
+    let repository = cpython();
+    {
+        let mut keeper = Keeper {
+            rules: &rules,
+            ..Keeper::new(&connection, &repository).unwrap()
+        };
+        for facts in batches.iter().flatten() {
+            keeper.rewrite(facts).unwrap();
+        }
+    }
+    kept_rows(&connection)
+}
+
+/// The rows the store keeps, one line for each row.
+fn kept_rows(connection: &Connection) -> Vec<String> {
     let mut rows = Vec::new();
     let fixes = "SELECT number, issue, under FROM pr_fixes ORDER BY number, issue, under";
     let mut statement = connection.prepare(fixes).unwrap();
@@ -441,38 +599,152 @@ fn kept_rows() -> Vec<String> {
 }
 
 #[test]
-fn the_kept_rows_change_only_with_the_version_of_their_rules() {
-    assert_eq!(
-        (RULES_VERSION, kept_rows()),
-        (
-            1,
-            [
-                "PR 1 fixes 1 under cpython",
-                "PR 1 fixes 2 under every",
-                "PR 2 fixes 3 under cpython",
-                "PR 3 fixes 12 under cpython",
-                "PR 4 fixes 4 under every",
-                "PR 4 fixes 8 under every",
-                "PR 4 fixes 11 under every",
-                "PR 4 fixes 12 under cpython",
-                "PR 4 fixes 14 under every",
-                "PR 4 comes from 13 by cpython",
-                "PR 6 comes from 20 by cherry_pick",
-                "PR 7 comes from 21 by cherry_pick",
-                "PR 9 comes from 20 by cherry_pick",
-                "PR 9 comes from 30 by cpython",
-            ]
-            .map(str::to_owned)
-            .to_vec()
-        ),
-        "raise RULES_VERSION with the rows its rules leave, so the store works out every PR's links again"
-    );
+fn each_released_rule_keeps_the_rows_it_kept_for_its_sample_prs() {
+    for rule in LinkRule::SET {
+        let (batches, rows) = released(rule);
+        assert_eq!(
+            kept_by(rule, &batches),
+            rows,
+            "{rule:?} kept other rows: a released rule never changes what it gives, so make the change a \
+             new LinkRule in its place in LinkRule::SET"
+        );
+    }
+}
+
+#[test]
+fn the_set_keeps_the_rows_each_of_its_rules_keeps_alone() {
+    let batches: Vec<Vec<PullRequestFacts>> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| released(rule).0)
+        .collect();
+    let alone: BTreeSet<String> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| kept_by(rule, &batches))
+        .collect();
+    let together: BTreeSet<String> = kept_rows(&saved(&batches)).into_iter().collect();
+    assert_eq!(together, alone);
 }
 
 #[test]
 fn each_link_keeps_the_text_earlier_versions_stored() {
     assert_eq!(stored_texts(Under::ALL), ["every", "cpython", "github"]);
     assert_eq!(stored_texts(FoundIn::ALL), ["cpython", "cherry_pick"]);
+}
+
+/// The names of the first set of rules, which the step that names the rules gives a store at version 1.
+const FIRST_SET: [&str; 5] = [
+    "closing_references",
+    "description_keywords",
+    "cpython_title_issues",
+    "cpython_title_origin",
+    "cherry_pick_line",
+];
+
+#[test]
+fn each_rule_keeps_the_name_earlier_versions_stored() {
+    assert_eq!(stored_texts(LinkRule::ALL), FIRST_SET);
+}
+
+/// The names the store keeps for `LinkRule::SET`.
+fn set_names() -> BTreeSet<String> {
+    stored_texts(&LinkRule::SET).into_iter().collect()
+}
+
+/// The names of `names`, as `kept_rule_names` answers them.
+fn names_of(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
+}
+
+/// The names `link_rules` holds in the database `connection` reads.
+fn kept_rule_names(connection: &Connection) -> BTreeSet<String> {
+    let mut statement = connection.prepare("SELECT name FROM link_rules").unwrap();
+    let names = statement.query_map([], |row| row.get("name")).unwrap();
+    names.collect::<rusqlite::Result<_>>().unwrap()
+}
+
+#[test]
+fn a_store_that_names_a_rule_this_build_doesnt_know_fails_to_open_and_stays_as_it_was() {
+    let (path, _folder) = store_with_a_backport("links-newer");
+    let store = Store::open(&path).unwrap();
+    keep_old_links(
+        &store,
+        &[LinkRule::ClosingReferences],
+        &[(cpython(), 10, 6)],
+    );
+    name_a_newer_rule(&store, "a_rule_of_a_newer_tsugiki");
+    store.close();
+
+    let Err(problem) = Store::open(&path) else {
+        panic!("a store with a newer rule's links opened");
+    };
+
+    assert!(problem.message.contains("newer"), "{}", problem.message);
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(
+        kept_rule_names(&connection),
+        names_of(&["closing_references", "a_rule_of_a_newer_tsugiki"])
+    );
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![6], None), (11, vec![], None)]
+    );
+}
+
+#[test]
+fn links_that_name_a_rule_this_build_doesnt_know_once_the_store_is_open_owe_no_refill() {
+    let store = store_with_old_links(&[cpython()]);
+
+    name_a_newer_rule(&store, "a_rule_of_a_newer_tsugiki");
+
+    assert_eq!(store.stale_links().unwrap(), None);
+}
+
+/// A database at `path` before the step that names the link rules, which holds PR 10, whose links an older
+/// Tsugiki kept as version `version` of the rules: it fixes Issue 6.
+fn database_at_rules_version(name: &str, version: u32) -> (std::path::PathBuf, TempPath) {
+    database_before(
+        name,
+        RULE_NAMES,
+        &format!(
+            "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch,
+                                        updated_at)
+                 VALUES ('python/cpython', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
+             INSERT INTO pr_fixes (repository, number, issue, under)
+                 VALUES ('python/cpython', 10, 6, 'every');
+             INSERT INTO issues (repository, number, title, updated_at, state)
+                 VALUES ('python/cpython', 6, 'It broke on 3.13', 0, 'OPEN');
+             INSERT INTO link_rules (id, version) VALUES (1, {version});"
+        ),
+    )
+}
+
+#[test]
+fn a_store_whose_links_version_1_of_the_rules_kept_names_the_first_set_and_owes_no_refill_under_it()
+{
+    let (path, _folder) = database_at_rules_version("links-version-1", 1);
+
+    let store = Store::open(&path).unwrap();
+
+    // Once a later set takes the first one's place, the store owes a refill.
+    let owed = set_names() != names_of(&FIRST_SET);
+    assert_eq!(store.stale_links().unwrap().is_some(), owed);
+    store.close();
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(kept_rule_names(&connection), names_of(&FIRST_SET));
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10]),
+        [(10, vec![6], None)]
+    );
+}
+
+#[test]
+fn a_store_whose_links_another_version_of_the_rules_kept_names_none_and_owes_a_refill() {
+    let (path, _folder) = database_at_rules_version("links-version-0", 0);
+
+    let store = Store::open(&path).unwrap();
+
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.close();
+    let connection = Connection::open(&path).unwrap();
+    assert!(kept_rule_names(&connection).is_empty());
 }
 
 #[test]
@@ -548,7 +820,7 @@ fn each_read_and_write_of_the_links_finds_its_rows_by_a_key_or_an_index() {
     let naming = naming_origins(&connection, &name, conventions, &listed).unwrap();
     let whole = pull_requests::read(&connection, &name, super::super::Items::Numbered(&listed));
     let before = Updates::Before {
-        before: at(100),
+        before: at_second(100),
         at_least: 1,
     };
     let walked = updated(&connection, &name, before).unwrap();
@@ -577,7 +849,7 @@ fn a_walk_reads_at_least_what_it_asks_for_and_the_rest_of_the_last_second() {
     let prs: Vec<PullRequestFacts> = [(1, 50), (2, 40), (3, 40), (4, 30), (5, 20)]
         .into_iter()
         .map(|(number, seconds)| PullRequestFacts {
-            updated_at: at(seconds),
+            updated_at: at_second(seconds),
             ..pr(number, "Fix it")
         })
         .collect();
@@ -588,7 +860,7 @@ fn a_walk_reads_at_least_what_it_asks_for_and_the_rest_of_the_last_second() {
     };
 
     let before = |seconds: i64, at_least: u32| Updates::Before {
-        before: at(seconds),
+        before: at_second(seconds),
         at_least,
     };
     assert_eq!(
@@ -601,5 +873,5 @@ fn a_walk_reads_at_least_what_it_asks_for_and_the_rest_of_the_last_second() {
         [4, 5],
         "fewer than asked means none are left"
     );
-    assert_eq!(numbers(Updates::Since(at(40))), [1, 3, 2]);
+    assert_eq!(numbers(Updates::Since(at_second(40))), [1, 3, 2]);
 }

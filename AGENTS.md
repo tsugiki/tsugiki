@@ -35,15 +35,28 @@ closure behind `cfg!(windows)` leaves a line macOS's coverage never runs. Once a
 new commits and bring main in with `git merge origin/main`. An amend or a rebase needs a force push, and each
 force push needs the user's say. The PR squash-merges anyway.
 
+Build each change that becomes a PR in a worktree of its own, and leave the main checkout on a clean main,
+for reading, the tracker and research. Other sessions work on this computer at the same time, and when you
+switch branches or commit in a checkout you share, you take their work along half-done.
+Each PR starts from a ticket, so file one first for a change that has none. `just worktree <n>` makes the
+worktree for ticket n under `.temp/`. Each worktree builds Rust from scratch into a `target/` of its own, so
+delete it once its PR has merged: `just worktree-remove <n>` deletes the worktree, its builds and its branch.
+Use it in place of `just merged`, which switches to main, as git refuses that while the main checkout holds
+main.
+
 To build several tickets of a milestone at once, one background agent per ticket, use the `wave` skill in
-`.claude/skills/wave/`. `just worktree <n>` makes a worktree ready to build ticket n under `.temp/`, and
-`just worktree-remove <n>` deletes it, and its branch once the PR has merged.
+`.claude/skills/wave/`.
 
 `just preflight` runs the gates a first push most often fails on, one at a time, and stops at the first that
 fails; the `justfile` lists them. It runs the full Vitest and Rust suites with their coverage gates, which
 count every file, so a change can fail them in a file it never touched. Run it before a wave's first push,
 where a CI round trip costs more. It takes less time than `just check`, and catches nothing that only macOS
 fails on.
+
+When the Rust coverage gate finds a file short of its lines, and the lines it lists as never ran don't make up
+the gap, look there for a closure whose `})?;` sits on a line of its own. The gate can count such a line as
+unrun although the closure ran, and its list of gaps skips a `?`. Put the `?` on the line of the call it ends:
+pass a named function, as `statement.query_map(asked, event_in)?` does in `store/activity.rs`.
 
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
 log's tail. Use it for a PR that changes the gates themselves: the `justfile`, `scripts/` or
@@ -80,10 +93,36 @@ loads `sync/refresh/tests.rs`, and a `mod.rs` or `lib.rs` loads the `tests.rs` b
 scan of the source can tell the two by path. `crates/app/tests/rules.rs` fails on an inline
 `#[cfg(test)] mod name { ... }`.
 
+Before you write a test helper, grep for one that does the job. A Rust helper lives in the `testing.rs` of the
+module or crate it serves. When the tests of several crates need it, it goes in `crates/test-git` if it uses
+no crate's types, and otherwise in a public `testing` module of the crate whose types it uses:
+`tsugiki_core::testing`, `tsugiki_core::github::testing`, `tsugiki_core::releases::testing`,
+`tsugiki_lsp::testing` or `tsugiki_token::testing`. Such a module compiles under
+`cfg(any(test, feature = "testing"))`, and the crates that use it turn on `testing` in `[dev-dependencies]`,
+so no release build has it. It can't use `crates/test-git`, which only tests may depend on, so what needs that
+stays behind `cfg(test)` inside it. A helper that a second test file needs moves there.
+
+The UI's shared test helpers live in `ui/src/lib/testing/`, which only tests may import. `setup.ts` fills
+jsdom's gaps, such as `ResizeObserver`, for every test file. `fixtures.ts` builds what the core answers, such
+as a Workbench page or a ready diff, and imports no Vitest, so the e2e specs use it too. `helpers.ts` drives
+the DOM, as `keydown` and `nextTask` do, and `state.ts` holds the helpers that reach into the app's bindings
+and state. What the e2e specs alone share lives in `ui/e2e/fixtures.ts`.
+
+## One copy
+
+Code that a second place needs moves to one place that both use, in Rust, TypeScript, Svelte and the
+scripts alike. Two copies drift apart once someone edits one and misses the other. Keep two
+copies only where they change for different reasons, and say why in the PR. Two files that can't share code,
+such as a workflow and a script, get a test that fails when they disagree. A comment that names the other
+copy goes stale.
+
+`just dupes` fails when two files hold the same block of code, from about five lines up. A repeat that stays
+goes in `ALLOWED` in `scripts/copies.ts`, with why. Repeats inside one file pass.
+
 ## Rust design rules
 
 Clippy enforces most of our rules, and `Cargo.toml` and `clippy.toml` give the reason for each. No tool can
-check these six, so check them yourself when you write or review Rust:
+check these, so check them yourself when you write or review Rust:
 
 - **Make invalid states unrepresentable.** Put each field on the enum variant it belongs to. Otherwise each
   reader has to remember which combinations can't happen, and the compiler can't help them.
@@ -103,8 +142,9 @@ check these six, so check them yourself when you write or review Rust:
 
 ## Writing prose
 
-Check docs, commit messages, issues and PRs with `/stop-slop` before you publish them. Run `just prose-check`
-first: it lists lines worth rereading from what the branch adds, or from a draft you name, and never fails.
+Route each statement to the file that owns it, as `docs/agents/prose.md` says, then check docs, commit
+messages, issues and PRs with `/stop-slop` before you publish them. Run `just prose-check` first: it lists
+lines worth rereading from what the branch adds, or from a draft you name, and never fails.
 
 Wrap the docs you write at 110 columns: Markdown files, comments and docstrings. Leave tables unwrapped.
 `just doc-width` fails on a line past that, and `just check` runs it.

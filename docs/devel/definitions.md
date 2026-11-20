@@ -38,6 +38,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   keeps as `[language_servers.ty] path`. A relative path, which a hand edit can write, starts at
   `machine.toml`'s folder. We test with ty 0.0.103, which `just test-servers`
   fetches. The tests read its path from `TSUGIKI_TY`, which `just cargo-test` and `just rust-coverage` set.
+  The tests of what the core does as it starts or stops a server run a fake server program instead, which
+  those recipes build and name in `TSUGIKI_FAKE_SERVER`.
 - Each Repository gets its own ty. It starts when a PR that changes a `.py` or `.pyi` file opens, once the
   Lookup checkout is at that PR, and never when Tsugiki starts. A lookup that comes first starts it too. A
   PR at other commits gets a new ty, as the checkout has moved, and Tsugiki stops each ty when it quits.

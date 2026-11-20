@@ -1,23 +1,27 @@
 //! Test helpers for the Workbench: facts to read, and an outline of what they show.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use time::OffsetDateTime;
 
-use super::{IssueItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView};
-use crate::facts::WorkFacts;
-use crate::facts::activity::ActivityFacts;
-use crate::facts::issues::{IssueFacts, IssueState};
+use super::{
+    IssueItem, ListedItem, TreeEntry, Workbench, WorkbenchItem, WorkbenchRow, WorkbenchView,
+    candidates_of,
+};
+use crate::conventions::Conventions;
+use crate::facts::activity::{ActivityFacts, ItemKey, PutAway};
+use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{OffDefault, PrState, PullRequestFacts};
+use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
-use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
-use crate::work::{WorkReason, reasons};
+use crate::store::testing::OpenStore;
+use crate::store::{Archiving, Flagging, Muting};
+use crate::testing::{cpython, cpython_settings, issue_facts, pr_facts};
+use crate::work::{Causes, WorkReason, reasons};
 
-pub(crate) fn me() -> Login {
-    Login::new("octocat")
-}
+pub(crate) use crate::testing::me;
 
 pub(crate) fn someone() -> Login {
     Login::new("some-author")
@@ -26,23 +30,10 @@ pub(crate) fn someone() -> Login {
 /// A PR that has nothing to do with the viewer.
 pub(crate) fn stranger() -> PullRequestFacts {
     PullRequestFacts {
-        number: 1,
         title: "gh-1: Fix it".to_owned(),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(someone()),
-        target_branch: "main".to_owned(),
-        ci: None,
         updated_at: at(1),
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: None,
-        off_default: None,
+        ..pr_facts(1)
     }
 }
 
@@ -50,19 +41,19 @@ pub(crate) fn at(seconds: i64) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp(seconds).unwrap()
 }
 
-pub(crate) fn cpython() -> RepositorySettings {
-    RepositorySettings::new(RepositoryName::parse("python/cpython").unwrap())
-}
-
 pub(crate) fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        number,
-        title: format!("Issue {number}"),
         author: Some(Login::new("issue-author")),
-        assignees: vec![],
-        labels: vec![],
         updated_at: at(1),
-        state: Some(IssueState::Open),
+        ..issue_facts(number)
+    }
+}
+
+/// Issue `number`, open and assigned to the user.
+pub(crate) fn assigned_issue(number: u32) -> IssueFacts {
+    IssueFacts {
+        assignees: vec![me()],
+        ..issue(number)
     }
 }
 
@@ -97,7 +88,7 @@ pub(crate) fn workbench(
 
 /// The view `view` of the Workbench of `facts`.
 pub(crate) fn view_of(facts: WorkFacts, view: &WorkbenchView) -> Workbench {
-    Workbench::from_facts(facts, &cpython(), view)
+    Workbench::from_facts(facts, &cpython_settings(), view)
 }
 
 /// Each PR `item` shows, in the order the list shows them.
@@ -119,13 +110,17 @@ pub(crate) fn reviewed_workbench(
         activity: ActivityFacts::default(),
         reviews,
     };
-    Workbench::from_facts(facts, &cpython(), &WorkbenchView::Whole)
+    Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole)
 }
 
-/// Each item as its kind and number, with an Issue's PRs after it.
+/// Each item of `workbench` as its kind and number, with the PRs it shows after it.
 pub(crate) fn outline(workbench: &Workbench) -> Vec<(&'static str, u32, Vec<u32>)> {
-    workbench
-        .items
+    outline_of(&workbench.items)
+}
+
+/// Each of `items` as its kind and number, with the PRs it shows after it.
+pub(crate) fn outline_of(items: &[ListedItem]) -> Vec<(&'static str, u32, Vec<u32>)> {
+    items
         .iter()
         .map(|listed| match &listed.item {
             WorkbenchItem::Issue(issue) => {
@@ -191,42 +186,131 @@ pub(crate) fn own(facts: PullRequestFacts) -> PullRequestFacts {
 
 /// A database with the user signed in, and a reader of it, for the Detail pane's views.
 pub(crate) struct ViewWorld {
-    pub(crate) store: crate::store::Store,
-    pub(crate) reader: crate::store::StoreReader,
-    open: crate::store::OpenReader,
-    /// Dropped last, once `finish` has closed the database in it.
-    _folder: crate::testing::TempPath,
+    pub(crate) db: OpenStore,
 }
 
 impl ViewWorld {
     pub(crate) fn new(name: &str) -> Self {
-        let folder = crate::testing::temp_path(name);
-        std::fs::create_dir_all(&folder).unwrap();
-        let path = folder.join("tsugiki.db");
-        let store = crate::store::Store::open(&path).unwrap();
-        store.remember_login(&me()).unwrap();
-        let (to_open, reader) = crate::store::reader();
-        let open = to_open.open(&path).unwrap();
-        Self {
-            store,
-            reader,
-            open,
-            _folder: folder,
-        }
+        let db = OpenStore::new(name);
+        db.store.remember_login(&me()).unwrap();
+        Self { db }
     }
 
     pub(crate) fn settings(&self) -> RepositorySettings {
-        cpython()
+        cpython_settings()
     }
 
     pub(crate) fn has(&self, pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) {
-        let name = cpython().name;
-        self.store.save_pull_requests(&name, pull_requests).unwrap();
-        self.store.save_issues(&name, issues).unwrap();
+        let store = &self.db.store;
+        store.save_pull_requests(&cpython(), pull_requests).unwrap();
+        store.save_issues(&cpython(), issues).unwrap();
+    }
+
+    /// Mute on Issue `number`, whose tree holds `numbers`, from now.
+    pub(crate) fn mute_issue(&self, number: u32, numbers: Vec<u32>) {
+        let muting = Muting {
+            key: ItemKey::Issue { number },
+            numbers,
+            up_to: None,
+            findings: vec![],
+        };
+        let now = OffsetDateTime::now_utc();
+        self.db.store.mute(&cpython(), muting, now).unwrap();
+    }
+
+    /// Issues 1 to 3, and PRs whose links cross between them: Backports beneath an Origin PR that fix
+    /// another Issue than it, a Backport by cherry-pick, a Backport of a Backport, a Backport whose Origin PR
+    /// Tsugiki lacks, a Backport of one of those that fixes an Issue, which leaves the one it names a
+    /// Standalone backport, a PR that fixes two Issues, a Standalone PR a Backport puts under an Issue, and
+    /// one that stays on its own. Each PR has an update of its own. Issue 1 is archived, and PR 30 in its
+    /// tree is marked unseen since, which only a read of its whole tree sees.
+    pub(crate) fn has_crossed_links(&self) {
+        let merged = |facts: PullRequestFacts| PullRequestFacts {
+            state: PrState::Merged,
+            merge_commit: CommitSha::parse(&format!("{:040x}", facts.number)),
+            ..facts
+        };
+        let picked = PullRequestFacts {
+            off_default: Some(OffDefault {
+                description: format!("(cherry picked from commit {:040x})", 10),
+                cherry_picked_from: CommitSha::parse(&format!("{:040x}", 10))
+                    .into_iter()
+                    .collect(),
+                committers: vec![Some(someone())],
+            }),
+            ..backport(13, "Fix it on 3.12", vec![])
+        };
+        let both = PullRequestFacts {
+            closing_issues: vec![3],
+            ..fixing(30, 1)
+        };
+        let pull_requests = vec![
+            merged(fixing(10, 1)),
+            bots_backport(11, "[3.14] gh-1: Fix it (GH-10)"),
+            backport(12, "[3.13] gh-2: Fix it (GH-10)", vec![]),
+            picked,
+            bots_backport(14, "[3.12] gh-1: Fix it (GH-11)"),
+            own(fixing(20, 2)),
+            both,
+            stranger_numbered(40),
+            bots_backport(41, "[3.14] gh-3: Fix it (GH-40)"),
+            backport(50, "[3.14] gh-1: Fix it (GH-99)", vec![]),
+            backport(51, "[3.13] Fix it (GH-98)", vec![]),
+            bots_backport(52, "[3.12] gh-2: Fix it (GH-51)"),
+            stranger_numbered(60),
+        ];
+        let updated =
+            (pull_requests.into_iter().zip(1..)).map(|(facts, seconds)| PullRequestFacts {
+                updated_at: at(seconds),
+                ..facts
+            });
+        self.has(updated.collect(), vec![issue(1), issue(2), issue(3)]);
+        let archiving = Archiving {
+            key: ItemKey::Issue { number: 1 },
+            numbers: vec![1],
+            up_to: None,
+            put_away: PutAway::Now,
+            findings: vec![],
+        };
+        let now = OffsetDateTime::now_utc();
+        let store = &self.db.store;
+        store.archive(&cpython(), archiving, now).unwrap();
+        store
+            .mark_unseen(&cpython(), Flagging::on(30), now)
+            .unwrap();
     }
 
     pub(crate) fn finish(self) {
-        self.open.close();
-        self.store.close();
+        self.db.close();
     }
+}
+
+/// A PR numbered `number` that names no Issue and has nothing to do with the viewer.
+fn stranger_numbered(number: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        number,
+        title: format!("PR {number}"),
+        ..stranger()
+    }
+}
+
+/// Each item the grouping of every Issue and PR the store holds gives under `settings`, and the causes it
+/// judged them by: what the Issue view and the PR view read before they read one tree (#842).
+pub(crate) fn grouped_whole(
+    world: &ViewWorld,
+    settings: &RepositorySettings,
+) -> (Vec<WorkbenchItem>, Causes) {
+    let facts = world.db.reader.work_facts(&settings.name).unwrap();
+    let causes = Causes::of(&facts, settings.conventions);
+    let items = candidates_of(facts, settings, &BTreeSet::new(), &causes);
+    (items, causes)
+}
+
+/// `settings` under each Conventions.
+pub(crate) fn under_each(settings: &RepositorySettings) -> Vec<RepositorySettings> {
+    let under = |conventions| RepositorySettings {
+        conventions,
+        ..settings.clone()
+    };
+    vec![under(Conventions::Cpython), under(Conventions::Github)]
 }

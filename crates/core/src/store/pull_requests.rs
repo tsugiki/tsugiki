@@ -4,12 +4,13 @@
 use std::collections::BTreeMap;
 
 use rusqlite::types::FromSql;
-use rusqlite::{Statement, ToSql, named_params};
+use rusqlite::{OptionalExtension, Statement, ToSql, named_params};
 use time::OffsetDateTime;
 
+use super::activity::StateMove;
 use super::{Connection, TitledItem, TitledKind};
 use crate::facts::CommitSha;
-use crate::facts::activity::ItemActivity;
+use crate::facts::activity::{ItemActivity, ItemKey};
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, OffDefault, PrState, PullRequestFacts};
 use crate::login::Login;
@@ -73,6 +74,15 @@ pub(super) const LINK_FACTS: &str = "
 /// has none until the next sync fetches it.
 pub(super) const HEADS: &str = "ALTER TABLE pull_requests ADD COLUMN head TEXT;";
 
+/// GitHub's `updatedAt` at the read whose head the row keeps, a PR list's or a Conversation's (#905). A
+/// read whose `updatedAt` is later replaces the head. A head kept before this counts from the PR's last list
+/// read. A head a Conversation filled in (#782) may come from a later read, which the store kept no time of,
+/// so a lagging list read between the two can still replace it once.
+pub(super) const HEAD_AT: &str = "
+    ALTER TABLE pull_requests ADD COLUMN head_at INTEGER;
+    UPDATE pull_requests SET head_at = updated_at WHERE head IS NOT NULL;
+";
+
 /// The commit of the Target branch GitHub compares each PR with (#212). A merged PR stored before this has
 /// none, and stays frozen without it.
 pub(super) const BASES: &str = "ALTER TABLE pull_requests ADD COLUMN base TEXT;";
@@ -111,7 +121,19 @@ pub(super) const BACKPORT_FACTS: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
+/// What a PR the store doesn't hold yet says as a save stores it (#823).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FirstSave {
+    /// It changed since the last refresh, so it may have opened since, and is an opening if it names an
+    /// Archived Issue.
+    MayHaveOpened,
+    /// A read of what the store lacks, such as an Issue's tree, an older batch or an Origin PR, loads it
+    /// from before, and it opened nothing.
+    Loaded,
+}
+
+/// Stores `pull_requests` in one transaction, each replacing what Tsugiki knew about it (ADR 0010). A PR
+/// the store doesn't hold yet was loaded from before.
 pub(super) fn save(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -119,34 +141,58 @@ pub(super) fn save(
     events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    save_in(&transaction, repository, pull_requests, events)?;
+    let saving = (pull_requests, FirstSave::Loaded);
+    save_in(&transaction, repository, saving, events)?;
     transaction.commit()
 }
 
-/// Does what `save` does inside a transaction the caller holds, which can save more beside it.
+/// Does what `save` does inside a transaction the caller holds, which can save more beside it, with what
+/// `first` says of each PR the store doesn't hold yet.
 pub(super) fn save_in(
     transaction: &Connection,
     repository: &RepositoryName,
-    pull_requests: &[PullRequestFacts],
+    (pull_requests, first): (&[PullRequestFacts], FirstSave),
     events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     // Before the PRs, because a commit counts differently on a PR the store holds.
     activity::save(transaction, repository, events)?;
     let mut keeper = pr_links::Keeper::new(transaction, repository)?;
     for pull_request in pull_requests {
-        replace(transaction, (repository, &mut keeper), pull_request)?;
+        replace(
+            transaction,
+            (repository, &mut keeper),
+            (pull_request, first),
+        )?;
     }
     Ok(())
 }
 
-/// Replaces what the store knew about the PR of `facts`, and the links `keeper` keeps for it.
+/// Replaces what the store knew about the PR of `facts`, and the links `keeper` keeps for it, unless the
+/// store holds a newer read of it. A replica of GitHub's that lags can serve an older read. `first` says
+/// what the PR is if the store doesn't hold it yet.
 fn replace(
     connection: &Connection,
     (repository, keeper): (&RepositoryName, &mut pr_links::Keeper<'_>),
-    facts: &PullRequestFacts,
+    (facts, first): (&PullRequestFacts, FirstSave),
 ) -> rusqlite::Result<()> {
     let number = facts.number;
-    save_pull_request(connection, repository, facts)?;
+    let held: Option<PrState> = connection
+        .query_row(
+            "SELECT state FROM pull_requests WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+            |row| row.get("state"),
+        )
+        .optional()?;
+    if !save_pull_request(connection, repository, facts)? {
+        return Ok(());
+    }
+    let is_open = |state: PrState| Some(state == PrState::Open);
+    let moved = StateMove::of(held.and_then(is_open), is_open(facts.state));
+    let key = ItemKey::PullRequest { number };
+    activity::follow_state(connection, repository, key, moved)?;
+    if let Some(head) = &facts.head {
+        keep_head(connection, repository, number, (head, facts.updated_at))?;
+    }
     forget_review_requests(connection, repository, number)?;
     forget_latest_reviews(connection, repository, number)?;
     forget_assignees(connection, repository, number)?;
@@ -173,21 +219,28 @@ fn replace(
         save_closing_reference(connection, repository, number, *issue)?;
     }
     // After the cherry-picks, which it reads.
-    keeper.rewrite(facts)
+    keeper.rewrite(facts)?;
+    if held.is_none() && first == FirstSave::MayHaveOpened {
+        // After the links, which it reads.
+        activity::note_opening(connection, repository, number)?;
+    }
+    Ok(())
 }
 
+/// Writes the facts of `facts` that `pull_requests` holds beside the head, unless the row holds a read with
+/// a later `updatedAt`. A read as old as the row replaces it, as a probe reads CI while `updatedAt` stays.
+/// Says whether the row took the read.
 fn save_pull_request(
     connection: &Connection,
     repository: &RepositoryName,
     facts: &PullRequestFacts,
-) -> rusqlite::Result<()> {
-    connection
-        .execute(
-            "INSERT INTO pull_requests
+) -> rusqlite::Result<bool> {
+    let saved = connection.execute(
+        "INSERT INTO pull_requests
                  (repository, number, title, state, is_draft, author, target_branch, ci, updated_at,
-                  off_default_description, merge_commit, base, head, ci_finished_at)
+                  off_default_description, merge_commit, base, ci_finished_at)
              VALUES (:repository, :number, :title, :state, :is_draft, :author, :target_branch, :ci,
-                     :updated_at, :off_default_description, :merge_commit, :base, :head, CASE
+                     :updated_at, :off_default_description, :merge_commit, :base, CASE
                          WHEN :ci IN ('SUCCESS', 'FAILURE', 'ERROR')
                              AND EXISTS (SELECT 1 FROM first_syncs WHERE repository = :repository)
                          THEN :now END)
@@ -208,26 +261,58 @@ fn save_pull_request(
                  updated_at = excluded.updated_at,
                  off_default_description = excluded.off_default_description,
                  merge_commit = excluded.merge_commit,
-                 base = excluded.base,
-                 head = excluded.head",
-            named_params! {
-                ":repository": repository,
-                ":number": facts.number,
-                ":title": facts.title,
-                ":state": facts.state,
-                ":is_draft": facts.is_draft,
-                ":author": facts.author,
-                ":target_branch": facts.target_branch,
-                ":ci": facts.ci,
-                ":updated_at": facts.updated_at.unix_timestamp(),
-                ":off_default_description": facts.off_default.as_ref().map(|off| &off.description),
-                ":merge_commit": facts.merge_commit,
-                ":base": facts.base,
-                ":head": facts.head,
-                ":now": OffsetDateTime::now_utc().unix_timestamp(),
-            },
+                 base = excluded.base
+             WHERE excluded.updated_at >= pull_requests.updated_at",
+        named_params! {
+            ":repository": repository,
+            ":number": facts.number,
+            ":title": facts.title,
+            ":state": facts.state,
+            ":is_draft": facts.is_draft,
+            ":author": facts.author,
+            ":target_branch": facts.target_branch,
+            ":ci": facts.ci,
+            ":updated_at": facts.updated_at.unix_timestamp(),
+            ":off_default_description": facts.off_default.as_ref().map(|off| &off.description),
+            ":merge_commit": facts.merge_commit,
+            ":base": facts.base,
+            ":now": OffsetDateTime::now_utc().unix_timestamp(),
+        },
+    );
+    saved.map(|written| written > 0)
+}
+
+/// Keeps `head` as PR `number`'s head when the read that names it, whose `updatedAt` is `updated_at`, is
+/// later than the read whose head the row keeps, or the row keeps none. A tie leaves the head. Both reads
+/// that name a head, the PR list and the Conversation, write it here, so the store holds the newer one's.
+pub(super) fn keep_head(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+    (head, updated_at): (&CommitSha, OffsetDateTime),
+) -> rusqlite::Result<()> {
+    let asked = named_params! {
+        ":repository": repository,
+        ":number": number,
+        ":head": head,
+        ":updated_at": updated_at.unix_timestamp(),
+    };
+    let moved = connection.execute(
+        "UPDATE pull_requests SET head = :head, head_at = :updated_at
+         WHERE repository = :repository AND number = :number
+           AND (head_at IS NULL OR head_at < :updated_at) AND head IS NOT :head",
+        asked,
+    );
+    // The same head, named by a newer read, dates from that read.
+    let dated = moved.and_then(|_moved| {
+        connection.execute(
+            "UPDATE pull_requests SET head_at = :updated_at
+             WHERE repository = :repository AND number = :number AND head = :head
+               AND head_at < :updated_at",
+            asked,
         )
-        .map(drop)
+    });
+    dated.map(drop)
 }
 
 fn forget_review_requests(

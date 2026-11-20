@@ -4,12 +4,14 @@
 
 pub mod activity;
 pub mod build;
+pub mod calls;
 pub mod conventions;
+pub(crate) mod deadline;
 pub mod definitions;
 pub mod diff;
 pub mod error;
 pub mod facts;
-pub mod fetching;
+pub(crate) mod fetching;
 pub mod filters;
 pub mod folders;
 pub mod github;
@@ -22,6 +24,7 @@ pub mod logfile;
 pub mod login;
 pub mod measurement;
 pub mod mirror;
+pub mod mirror_queue;
 pub mod mirror_source;
 pub mod misses;
 pub mod patch_ids;
@@ -67,9 +70,9 @@ pub fn about(version: &version::Version, build: build::Build) -> About {
     }
 }
 
-/// What the core's tests share.
-#[cfg(test)]
-pub(crate) mod testing;
+/// What the core's tests share, and share with other crates' tests.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 #[cfg(test)]
 mod tests;

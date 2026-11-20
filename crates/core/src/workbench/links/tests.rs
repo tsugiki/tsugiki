@@ -4,8 +4,9 @@ use crate::facts::activity::ActivityFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::PullRequestFacts;
 use crate::repository_settings::RepositorySettings;
+use crate::testing::cpython_settings;
 use crate::workbench::testing::{
-    backport, cpython, fixing, issue, me, mine, outline, own, stranger, workbench,
+    backport, fixing, issue, me, mine, outline, own, stranger, workbench,
 };
 use crate::workbench::{Workbench, WorkbenchView};
 use std::collections::BTreeMap;
@@ -40,10 +41,10 @@ fn changing_a_repositorys_conventions_regroups_the_same_facts() {
     };
     let github = RepositorySettings {
         conventions: Conventions::Github,
-        ..cpython()
+        ..cpython_settings()
     };
 
-    let under_cpython = Workbench::from_facts(facts(), &cpython(), &WorkbenchView::Whole);
+    let under_cpython = Workbench::from_facts(facts(), &cpython_settings(), &WorkbenchView::Whole);
     let under_github = Workbench::from_facts(facts(), &github, &WorkbenchView::Whole);
 
     assert_eq!(outline(&under_cpython), [("issue", 1, vec![10])]);
@@ -73,7 +74,7 @@ fn an_issue_lists_every_pr_fixing_it_once_one_is_the_users() {
 fn under_githubs_conventions_a_pr_on_a_branch_is_an_ordinary_pr() {
     let github = RepositorySettings {
         conventions: Conventions::Github,
-        ..cpython()
+        ..cpython_settings()
     };
     let facts = WorkFacts {
         activity: ActivityFacts::default(),

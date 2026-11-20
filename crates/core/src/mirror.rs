@@ -6,7 +6,6 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, BufReader, Read};
 use std::mem;
-use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -17,29 +16,32 @@ use specta::Type;
 
 use crate::error::Error;
 use crate::facts::CommitSha;
-use crate::facts::patch_ids::PatchesOf;
+use crate::facts::patch_ids::{FilePatch, PatchesOf};
 use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::folders::Folders;
 use crate::github::{GitHub, Transport, live};
 use crate::latest::{self, LatestReader, LatestWriter};
+use crate::mirror_queue::{self, Next, Pace, Problem, Queue, Queued, Waiting};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::status::Status;
 use crate::token::{RunGh, read_token};
 
+mod heads;
 mod lookup;
 mod patches;
 mod reviewed;
 mod source;
 mod upkeep;
+use heads::{Prs, Retry};
 use lookup::{Lookup, Move};
 pub use lookup::{LookupAt, LookupCheckout};
 use patches::Patches;
 use reviewed::{KeepReviewed, Reviews};
 pub use source::CloneRefusal;
 use source::{GITHUB_PREFIXES, lender};
-use upkeep::{Schedule, Upkeep, Upkept, delete_broken, says_broken};
+use upkeep::{Schedule, Upkeep, Upkept, delete_broken, has_broken, says_broken};
 
 /// How far a clone has got, from what `git clone --progress` writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -76,6 +78,23 @@ pub enum MirrorProblem {
         needed_mb: u32,
         free_mb: u32,
     },
+}
+
+impl MirrorProblem {
+    /// The jobs the problem holds back: every one without a usable git. Short of disk, the clones, and a
+    /// move that would make its Lookup checkout afresh, which the move refuses itself as it answers the
+    /// readers who wait for it.
+    fn holds_back(&self) -> Problem {
+        match self {
+            Self::NoGit | Self::OldGit { .. } => Problem::Git,
+            Self::DiskShort { .. } => Problem::DiskShort,
+        }
+    }
+
+    /// Whether the problem leaves no usable git.
+    fn leaves_no_git(&self) -> bool {
+        self.holds_back() == Problem::Git
+    }
 }
 
 /// How far a Repository's mirror is from ready, so the Repository picker can say why its diffs aren't there
@@ -325,6 +344,8 @@ enum Message {
     Opened(RepositoryName, u32),
     /// A PR the user opened before the session knew its head, whose head goes first once it does.
     Awaited(RepositoryName, u32),
+    /// A PR whose head no read will name, so its await ends.
+    Unawaited(RepositoryName, u32),
     /// Heads of a Repository's PRs that a sync step saved.
     Saved(RepositoryName, Vec<PrHead>),
     /// Where the PR on screen wants a Repository's Lookup checkout.
@@ -341,6 +362,10 @@ enum Message {
     Ended {
         last_words: String,
     },
+    /// A test asks to hear once the worker has handled the messages before this one and has nothing to do
+    /// at once, so it can say that no other git started.
+    #[cfg(test)]
+    Idle(Sender<()>),
     Stop,
 }
 
@@ -404,7 +429,7 @@ impl MirrorRequests {
     /// Fetches the PR heads in `heads` into `repository`'s mirror, as `refs/tsugiki/pull/N/head`, once
     /// its mirror is there. Heads handed over while a fetch is under way go in the next one, all in one.
     /// `heads` is the whole set the rules want, so it replaces the last: a head that left it and is still
-    /// waiting isn't fetched, unless the user opened its PR.
+    /// waiting isn't fetched. It leaves the head of a PR the user opened as it was.
     pub fn fetch_heads(&self, repository: RepositoryName, heads: Vec<PrHead>) {
         self.send(Message::Heads(repository, heads));
     }
@@ -431,8 +456,9 @@ impl MirrorRequests {
     }
 
     /// Fetches the head of a PR the user opened, which `repository`'s mirror lacks, ahead of the heads
-    /// waiting, in a fetch of its own. The worker fetches it whatever it noted of it before, so a ref GitHub
-    /// made late arrives.
+    /// waiting, in a fetch of its own, or in the fetch of that PR at the same commit under way. The worker
+    /// fetches it whatever it noted of it before, so a ref GitHub made late arrives. A hand-over never
+    /// replaces it, and the app hears it is behind only from the fetches it was in.
     pub fn fetch_first(&self, repository: RepositoryName, head: PrHead) {
         self.send(Message::First(repository, head));
     }
@@ -446,6 +472,12 @@ impl MirrorRequests {
     /// does, and fetches its head as `fetch_first` does once `heads_saved` names it.
     pub fn await_head(&self, repository: RepositoryName, number: u32) {
         self.send(Message::Awaited(repository, number));
+    }
+
+    /// Ends the await of PR `number`, whose Conversation named no head or couldn't be read, so a head a sync
+    /// step saves later takes its turn with the others. Its ref stays until the next launch.
+    pub fn no_head(&self, repository: RepositoryName, number: u32) {
+        self.send(Message::Unawaited(repository, number));
     }
 
     /// Says a sync step saved `heads` of `repository`'s PRs. The head of a PR `await_head` named goes first,
@@ -521,6 +553,16 @@ impl HeardRequests {
         (requests, heard)
     }
 
+    /// The Repositories whose clones were asked for since the last call.
+    pub(crate) fn clones(&self) -> Vec<RepositoryName> {
+        self.take(|message| {
+            let Message::Clone(repository, ..) = message else {
+                return Err(message);
+            };
+            Ok(repository)
+        })
+    }
+
     /// The heads asked for first since the last call.
     pub(crate) fn firsts(&self) -> Vec<(RepositoryName, PrHead)> {
         self.take(|message| {
@@ -575,6 +617,9 @@ impl HeardRequests {
             }
             Message::Opened(repository, number) => Ok(format!("{repository} opened #{number}")),
             Message::Awaited(repository, number) => Ok(format!("{repository} awaits #{number}")),
+            Message::Unawaited(repository, number) => {
+                Ok(format!("{repository} awaits no head of #{number}"))
+            }
             other @ (Message::Clone(..)
             | Message::PatchesTo(_)
             | Message::First(..)
@@ -584,6 +629,7 @@ impl HeardRequests {
             | Message::CheckAgain
             | Message::Progress(_)
             | Message::Ended { .. }
+            | Message::Idle(_)
             | Message::Stop) => Err(other),
         })
     }
@@ -682,6 +728,8 @@ impl Mirrors {
             told_states: Vec::new(),
             upkept: Vec::new(),
             replaced: Vec::new(),
+            #[cfg(test)]
+            awaiting_idle: Vec::new(),
         };
         let worker = thread::spawn(move || {
             // `stop` learns the worker is over when this goes, however the thread ends. Locals go in reverse
@@ -763,6 +811,8 @@ trait Git: Send {
     fn start(&self, args: &[&OsStr], input: &[u8]) -> io::Result<Started>;
     /// Runs a git that only reads a mirror, so it ends at once, and gives its output.
     fn read(&self, args: &[&OsStr]) -> io::Result<String>;
+    /// Reads the patch-ids of each file `of` changes in `mirror`, with the several gits that takes.
+    fn read_patch_ids(&self, mirror: &Path, of: &PatchesOf) -> io::Result<Vec<FilePatch>>;
 }
 
 /// A git the worker started.
@@ -778,7 +828,7 @@ trait Run: Send {
     fn succeeded(&mut self) -> bool;
     /// Ends git and the helpers it started, and says if git had ended before the stop, having done what it
     /// was asked.
-    fn stop(&mut self) -> bool;
+    fn stop_finished(&mut self) -> bool;
 }
 
 struct LiveGit;
@@ -795,6 +845,10 @@ impl Git for LiveGit {
     fn read(&self, args: &[&OsStr]) -> io::Result<String> {
         live::read_git(args)
     }
+
+    fn read_patch_ids(&self, mirror: &Path, of: &PatchesOf) -> io::Result<Vec<FilePatch>> {
+        crate::diff::read_patch_ids(mirror, &of.target_branch, &of.commit)
+    }
 }
 
 impl Run for live::StartedGit {
@@ -802,8 +856,8 @@ impl Run for live::StartedGit {
         Self::succeeded(self)
     }
 
-    fn stop(&mut self) -> bool {
-        Self::stop(self)
+    fn stop_finished(&mut self) -> bool {
+        Self::stop_finished(self)
     }
 }
 
@@ -828,139 +882,30 @@ struct Clone {
 struct Fetch {
     repository: RepositoryName,
     mirror: PathBuf,
-    batch: Batch,
+    /// Each head it fetches, at the commit asked for, with the Target branch it brings up to date.
+    batch: Vec<PrHead>,
+    /// When it started, which says of a head that joined it whether its moment was over.
+    started: Instant,
     git: Box<dyn Run>,
     /// Heads or a status came while it ran, so if it fails, the next fetch has a reason to try again.
     news: bool,
-}
-
-/// Which git may start next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Pace {
-    Going,
-    /// The last fetch failed, so the next waits for news: heads handed over, or a new status. Clones go on.
-    Stalled,
-    /// GitHub can't be reached, so no git starts.
-    Held,
 }
 
 /// How long a head whose fetch brought another commit waits before it is fetched once more. GitHub moves
 /// `refs/pull/N/head` a few seconds after a push.
 const BEHIND_PATIENCE: Duration = Duration::from_secs(10);
 
-/// What one fetch brings into a mirror: PR heads, and the Target branches their diffs start from.
-#[derive(Debug, Default)]
-struct Batch {
-    heads: BTreeMap<u32, CommitSha>,
-    branches: BTreeSet<String>,
-    /// The heads the user asked for, with their Target branches, in a batch of only those. A batch of the
-    /// heads the rules want has none.
-    first: BTreeMap<u32, String>,
-}
-
 /// What the worker knows of one Repository's PR heads.
 struct Heads {
     repository: RepositoryName,
-    /// Heads handed over and not fetched yet, which go in the next fetch.
-    waiting: BTreeMap<u32, CommitSha>,
-    /// The Target branches of the heads waiting, which the next fetch brings up to date with them.
-    branches: BTreeSet<String>,
-    /// Heads whose fetch left their ref somewhere else, as GitHub hadn't moved it yet (#201), found no ref,
-    /// or whose ref couldn't be read back. One with no ref is here only until its retry.
-    behind: BTreeMap<u32, Behind>,
-    /// The heads fetched since Tsugiki started, and those GitHub had no ref for at their retry. A head that
-    /// moves on is fetched again.
-    settled: BTreeMap<u32, CommitSha>,
-    /// The heads of `waiting` the user asked for, each with its Target branch: those of the PRs they opened.
-    /// They go in a fetch of their own, ahead of the heads the rules want and of the other Repositories',
-    /// even when this Repository's fetch is under way.
-    first: BTreeMap<u32, String>,
-    /// The PRs the user opened before the session knew their heads, whose heads go in `first` once a sync
-    /// step saves them.
-    awaited: BTreeSet<u32>,
-    /// The PRs of the last hand-over: those in Reach. Nothing before the first one.
-    handed: Option<BTreeSet<u32>>,
-    /// The PRs the user opened since launch, whose refs stay though they're out of Reach.
-    viewed: BTreeSet<u32>,
+    /// Where each PR's ref stands, the head the rules want and the head the user asked for.
+    prs: Prs,
     /// The commits the user's Reviews covered.
     reviews: Reviews,
     /// The commits whose patch-ids the Stale review check needs.
     patches: Patches,
     /// The Repository's Lookup checkout.
     lookup: Lookup,
-}
-
-/// The outcome of a fetch that succeeded, for the heads it asked for.
-#[derive(Debug, Default)]
-struct Noted {
-    /// The PRs whose heads landed.
-    arrived: Vec<u32>,
-    /// The PRs whose heads didn't land at their retry either, by why. One with no ref is settled; the others
-    /// wait for a hand-over.
-    stuck: BTreeMap<Unfetched, Vec<u32>>,
-}
-
-impl Heads {
-    /// Notes where the heads of a fetch that succeeded `landed`, or why that couldn't be read. A head that
-    /// didn't land for the first time since it was handed over is fetched once more at `retry`.
-    fn note_fetched(
-        &mut self,
-        batch: BTreeMap<u32, CommitSha>,
-        landed: Result<&BTreeMap<u32, CommitSha>, &Unfetched>,
-        retry: Instant,
-    ) -> Noted {
-        let mut noted = Noted::default();
-        for (number, commit) in batch {
-            // The same head handed over during the fetch asks for nothing more.
-            if self.waiting.get(&number) == Some(&commit) {
-                drop(self.waiting.remove(&number));
-            }
-            let why = match landed {
-                Ok(landed) => match landed.get(&number) {
-                    Some(at) if *at == commit => {
-                        noted.arrived.push(number);
-                        drop(self.behind.remove(&number));
-                        drop(self.settled.insert(number, commit));
-                        continue;
-                    }
-                    Some(at) => {
-                        let (repository, had, handed) =
-                            (&self.repository, at.as_str(), commit.as_str());
-                        log::info!(
-                            "GitHub had PR #{number} of {repository} at {had} rather than {handed}"
-                        );
-                        Unfetched::Behind
-                    }
-                    None => Unfetched::NotOnGitHub,
-                },
-                Err(unread) => unread.clone(),
-            };
-            let retried = Behind::Retried {
-                commit: commit.clone(),
-            };
-            if self.behind.get(&number) != Some(&retried) {
-                let due = Behind::Due { commit, at: retry };
-                drop(self.behind.insert(number, due));
-                continue;
-            }
-            // A head GitHub doesn't have is settled until it moves on, so a hand-over doesn't fetch it.
-            if why == Unfetched::NotOnGitHub {
-                drop(self.behind.remove(&number));
-                drop(self.settled.insert(number, commit));
-            }
-            noted.stuck.entry(why).or_default().push(number);
-        }
-        noted
-    }
-}
-
-/// A head whose fetch didn't bring it. It is fetched once more after a moment, and after that only when
-/// it is handed over again, so a ref GitHub never moves doesn't keep a fetch going. The app hears of it
-/// after that second fetch.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Behind {
-    Due { commit: CommitSha, at: Instant },
-    Retried { commit: CommitSha },
 }
 
 struct Worker {
@@ -1010,6 +955,9 @@ struct Worker {
     upkept: Vec<(RepositoryName, Upkept)>,
     /// The Repositories whose broken mirror the worker cloned again since launch.
     replaced: Vec<RepositoryName>,
+    /// The tests that wait to hear the worker is idle.
+    #[cfg(test)]
+    awaiting_idle: Vec<Sender<()>>,
 }
 
 /// A Repository whose clone failed.
@@ -1024,10 +972,16 @@ struct FailedClone {
 impl Worker {
     fn run(&mut self, incoming: &Receiver<Message>) {
         loop {
-            self.start_next();
+            // One time for the turn, so a head whose moment ends after the pick wakes the next turn.
+            let now = Instant::now();
+            // At once, after the messages that came meanwhile.
+            let pick_again = self.start_next(now).then(Instant::now);
             self.tell_states();
             self.tell_unchecked();
-            let message = match self.next_due() {
+            let due = self.next_due(pick_again, now);
+            #[cfg(test)]
+            self.tell_idle(due);
+            let message = match due {
                 Some(at) => {
                     match incoming.recv_timeout(at.saturating_duration_since(Instant::now())) {
                         Err(RecvTimeoutError::Timeout) => continue,
@@ -1054,12 +1008,14 @@ impl Worker {
                     self.wake();
                     self.put_first(&repository, head);
                 }
-                Ok(Message::Opened(repository, number)) => self.note_opened(&repository, number),
+                Ok(Message::Opened(repository, number)) => {
+                    self.change_heads(&repository, |known| known.prs.opened(number));
+                }
                 Ok(Message::Awaited(repository, number)) => {
-                    self.note_opened(&repository, number);
-                    self.change_heads(&repository, |known| {
-                        let _ = known.awaited.insert(number);
-                    });
+                    self.change_heads(&repository, |known| known.prs.await_head(number));
+                }
+                Ok(Message::Unawaited(repository, number)) => {
+                    self.change_heads(&repository, |known| known.prs.no_head(number));
                 }
                 Ok(Message::Saved(repository, heads)) => self.saved(&repository, heads),
                 Ok(Message::LookUp(repository, at)) => self.look_up(&repository, at),
@@ -1081,34 +1037,34 @@ impl Worker {
                         self.finish_job(job, &last_words);
                     }
                 }
+                #[cfg(test)]
+                Ok(Message::Idle(reply)) => self.awaiting_idle.push(reply),
                 Ok(Message::Stop) | Err(_) => break,
             }
         }
-        match self.job.take() {
+        let Some(job) = self.job.take() else {
+            return;
+        };
+        let (mut git, cloned) = match job {
             // The stop can come as git ends having cloned it all, and the next launch moves that clone.
-            Some(Job::Clone(Clone {
-                mut git,
+            Job::Clone(Clone {
+                git,
                 cloning,
                 partial,
                 ..
-            })) => {
-                // The mark goes before the wait for helpers, which can outlast the time quitting gives.
-                if git.stop() {
-                    mark_cloned(&cloning.repository, &partial);
-                }
-                wait_for_helpers(incoming);
-            }
-            Some(
-                Job::Fetch(Fetch { mut git, .. })
-                | Job::Reviewed(KeepReviewed { mut git, .. })
-                | Job::Upkeep(Upkeep { mut git, .. })
-                | Job::Lookup(Move { mut git, .. }),
-            ) => {
-                let _succeeded = git.stop();
-                wait_for_helpers(incoming);
-            }
-            None => {}
+            }) => (git, Some((cloning.repository, partial))),
+            Job::Fetch(Fetch { git, .. })
+            | Job::Reviewed(KeepReviewed { git, .. })
+            | Job::Upkeep(Upkeep { git, .. })
+            | Job::Lookup(Move { git, .. }) => (git, None),
+        };
+        // The mark goes before the wait for helpers, which can outlast the time quitting gives.
+        if git.stop_finished()
+            && let Some((repository, partial)) = cloned
+        {
+            mark_cloned(&repository, &partial);
         }
+        wait_for_helpers(incoming);
     }
 
     fn wait(&mut self, repository: RepositoryName, turn: Turn, source: Option<MirrorSource>) {
@@ -1126,11 +1082,11 @@ impl Worker {
                 return;
             }
         }
-        if let Some(index) = self.asking.iter().position(|one| one.is_same(&repository)) {
+        if self.asking.iter().any(|one| one.is_same(&repository)) {
             if self.sources.get(&repository).is_none() {
                 return;
             }
-            drop(self.asking.remove(index));
+            self.asking.retain(|one| !one.is_same(&repository));
             self.tell_asking();
         }
         let cloning = match &self.job {
@@ -1140,26 +1096,19 @@ impl Worker {
         if cloning.is_some_and(|cloning| cloning.is_same(&repository)) {
             return;
         }
-        let waiting = self.waiting.iter().position(|one| one.is_same(&repository));
-        let failed = self
-            .failed
-            .iter()
-            .position(|failed| failed.repository.is_same(&repository));
+        let waits = |one: &RepositoryName| one.is_same(&repository);
+        let failed = |failed: &FailedClone| failed.repository.is_same(&repository);
         match turn {
             // A clone that failed goes back in line once its wait is over.
             Turn::Last => {
-                if waiting.is_none() && failed.is_none() {
+                if !self.waiting.iter().any(waits) && !self.failed.iter().any(failed) {
                     self.waiting.push_back(repository);
                 }
             }
             // The user wants this one now, so its wait is over.
             Turn::Next => {
-                if let Some(index) = waiting {
-                    drop(self.waiting.remove(index));
-                }
-                if let Some(index) = failed {
-                    drop(self.failed.remove(index));
-                }
+                self.waiting.retain(|one| !waits(one));
+                self.failed.retain(|one| !failed(one));
                 self.waiting.push_front(repository);
             }
         }
@@ -1183,14 +1132,7 @@ impl Worker {
             .and_then(|at| self.heads.remove(at))
             .unwrap_or_else(|| Heads {
                 repository: repository.clone(),
-                waiting: BTreeMap::new(),
-                branches: BTreeSet::new(),
-                behind: BTreeMap::new(),
-                settled: BTreeMap::new(),
-                first: BTreeMap::new(),
-                awaited: BTreeSet::new(),
-                handed: None,
-                viewed: BTreeSet::new(),
+                prs: Prs::default(),
                 reviews: Reviews::default(),
                 patches: Patches::default(),
                 lookup: Lookup::default(),
@@ -1223,142 +1165,120 @@ impl Worker {
         }
     }
 
-    /// Keeps each head of `heads` that the mirror may not have yet, for the next fetch. One that the fetch
-    /// under way asks for too waits, in case that fetch fails. `heads` replaces the last hand-over, so a
-    /// head that left it waits no more, unless its PR is one the user opened.
+    /// Takes `heads` as the rules' want of `repository`, which replaces the last, and puts the Repository
+    /// ahead of the others.
     fn hand_over(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
         let mut known = self.take_heads(repository);
-        let handed: BTreeSet<u32> = heads.iter().map(|head| head.number).collect();
-        let viewed = &known.viewed;
-        let kept = |number: &u32| handed.contains(number) || viewed.contains(number);
-        known.waiting.retain(|number, _| kept(number));
-        known.behind.retain(|number, _| kept(number));
-        // Those of `heads` go below. A head the user opened went with its branch in its first fetch, and
-        // `first` holds the branch of one still waiting for that.
-        known.branches.clear();
-        known.handed = Some(handed);
-        for PrHead {
-            number,
-            commit,
-            target_branch,
-        } in heads
-        {
-            // A hand-over is a reason to try a head again, so one that was behind starts afresh.
-            drop(known.behind.remove(&number));
-            if known.settled.get(&number) == Some(&commit) {
-                drop(known.waiting.remove(&number));
-            } else {
-                drop(known.waiting.insert(number, commit));
-                let _ = known.branches.insert(target_branch);
-            }
-        }
+        known.prs.hand_over(heads);
         self.heads.push_front(known);
     }
 
-    /// Keeps the ref of PR `number` in `repository`'s mirror until the next launch.
-    fn note_opened(&mut self, repository: &RepositoryName, number: u32) {
-        match (self.heads.iter_mut()).find(|known| known.repository.is_same(repository)) {
-            Some(known) => drop(known.viewed.insert(number)),
-            None => {
-                let mut known = self.take_heads(repository);
-                let _ = known.viewed.insert(number);
-                self.heads.push_back(known);
-            }
-        }
-    }
-
-    /// Puts the head of a PR the user opened in the next fetch, whatever the worker noted of it, and its
+    /// Puts the head of a PR the user opened in a fetch of its own, whatever the worker noted of it, and its
     /// Repository ahead of the others.
     fn put_first(&mut self, repository: &RepositoryName, head: PrHead) {
         let mut known = self.take_heads(repository);
-        drop(known.behind.remove(&head.number));
-        drop(known.settled.remove(&head.number));
-        let _ = known.awaited.remove(&head.number);
-        drop(known.waiting.insert(head.number, head.commit));
-        drop(known.first.insert(head.number, head.target_branch));
-        let _ = known.viewed.insert(head.number);
+        known.prs.fetch_first(head);
         self.heads.push_front(known);
     }
 
-    /// Puts first each head of `heads` whose PR the user opened before the session knew its head, unless
-    /// the mirror fetched that head since launch.
+    /// Asks for each head of `heads` whose PR the user opened before the session knew its head, unless the
+    /// mirror fetched that head since launch, and puts the Repository ahead of the others if it asked.
     fn saved(&mut self, repository: &RepositoryName, heads: Vec<PrHead>) {
         let known = (self.heads.iter_mut()).find(|known| known.repository.is_same(repository));
         let Some(known) = known else {
             return;
         };
-        let awaited: Vec<PrHead> = heads
-            .into_iter()
-            .filter(|head| known.awaited.remove(&head.number))
-            .collect();
-        let firsts: Vec<PrHead> = awaited
-            .into_iter()
-            .filter(|head| known.settled.get(&head.number) != Some(&head.commit))
-            .collect();
-        if !firsts.is_empty() {
+        if known.prs.saved(heads) {
             self.wake();
-        }
-        for head in firsts {
-            self.put_first(repository, head);
+            let known = self.take_heads(repository);
+            self.heads.push_front(known);
         }
     }
 
-    /// Starts the next git, unless one is under way. A Lookup checkout's move goes first, as a reader may
-    /// wait for it and it needs no network. A fetch goes ahead of a clone, as it takes a moment and a clone
-    /// can take minutes, and both go ahead of a mirror's upkeep, which can wait. Nothing starts without a
-    /// usable git, and short of disk only moves, fetches and upkeep do.
-    fn start_next(&mut self) {
+    /// Starts the next git, unless one is under way, in the order `mirror_queue` picks as of `now`. A job
+    /// can end before it starts a git, as when nothing it took needs one, and the next job is picked then.
+    /// Says whether it stopped picking with jobs perhaps left, after a read of patch-ids.
+    fn start_next(&mut self, now: Instant) -> bool {
         // Before the checks, so a wait that is over leaves `next_due` even while nothing can start.
-        self.retry_due();
-        self.retry_failed(Instant::now());
+        self.retry_failed(now);
         if !self.git_checked {
             self.check_git();
         }
-        if matches!(
-            self.problem,
-            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-        ) {
-            return;
+        // A Check again forgot a short disk. The next clone says whether it still is, and with none in line
+        // nothing is short.
+        if self.problem.is_none() && self.waiting.is_empty() {
+            self.set_problem(None);
         }
-        self.start_lookup_move();
-        self.start_fetch_or_clone();
-        if self.job.is_none() {
-            self.start_upkeep();
-        }
-    }
-
-    /// Starts a fetch of heads, or else the keeping of reviewed commits, or else reads the patch-ids waiting
-    /// and starts a clone, unless GitHub can't be reached.
-    fn start_fetch_or_clone(&mut self) {
-        while self.job.is_none() && self.pace != Pace::Held {
-            if let Some((repository, batch, mirror)) = self.next_batch() {
-                self.start_fetch(repository, batch, mirror);
-                continue;
-            }
-            if self.start_keeping_reviewed() {
-                continue;
-            }
-            // One read at a time, so a message waits for one read at most. `next_due` brings the loop back.
-            if self.read_waiting_patch() {
-                return;
-            }
-            if self.problem.is_some() {
-                return;
-            }
-            let Some(repository) = self.waiting.pop_front() else {
-                // A Check again found nothing left to clone, so nothing is short.
-                self.set_problem(None);
-                return;
+        while self.job.is_none() {
+            let Some(next) = mirror_queue::next(&self.queue(now)) else {
+                return false;
             };
-            if self.try_clone(repository).is_break() {
-                return;
+            match next {
+                Next::MoveLookup(repository) => self.start_lookup_move(&repository),
+                Next::FetchDemanded(repository) => {
+                    self.start_batch(&repository, |prs| prs.demanded(now).collect());
+                }
+                Next::FetchWanted(repository) => {
+                    self.start_batch(&repository, |prs| prs.wanted(now).collect());
+                }
+                Next::KeepReviewed(repository) => self.start_keeping_reviewed(&repository),
+                // One read at a time, so a message waits for one read at most. The loop picks again at
+                // once, after the messages that came meanwhile.
+                Next::ReadPatchIds(repository) => {
+                    self.read_waiting_patch(&repository);
+                    return true;
+                }
+                // `queue` puts the first in line up for its clone.
+                Next::Clone(_) => {
+                    if let Some(repository) = self.waiting.pop_front() {
+                        self.try_clone(repository);
+                    }
+                }
+                Next::Upkeep(repository) => self.start_upkeep(&repository),
             }
+        }
+        false
+    }
+
+    /// The worker's queue as of `now`, for `mirror_queue` to pick from. Only a Repository with a job waiting
+    /// has its mirror looked for.
+    fn queue(&self, now: Instant) -> Queue {
+        let folders = self.folders.as_ref().ok();
+        let there = |repository: &RepositoryName| {
+            folders.is_some_and(|folders| folders.mirror(repository).exists())
+        };
+        let repositories = (self.heads.iter())
+            .filter_map(|known| {
+                let waits = [
+                    (Waiting::LookupMove, known.lookup.waits()),
+                    (Waiting::DemandedHeads, known.prs.demands(now)),
+                    (Waiting::Heads, known.prs.wants(now)),
+                    (Waiting::Reviewed, known.reviews.waits()),
+                    (Waiting::PatchIds, known.patches.waits()),
+                ];
+                let waiting: BTreeSet<Waiting> = (waits.into_iter())
+                    .filter_map(|(kind, waits)| waits.then_some(kind))
+                    .collect();
+                let ready = !waiting.is_empty() && there(&known.repository);
+                ready.then(|| Queued {
+                    repository: known.repository.clone(),
+                    waiting,
+                })
+            })
+            .collect();
+        Queue {
+            problem: self.problem.as_ref().map(MirrorProblem::holds_back),
+            pace: self.pace,
+            reads_patch_ids: self.patched.is_some() && self.old_for_check.is_none(),
+            repositories,
+            clone: self.waiting.front().cloned(),
+            upkeep: self.upkeep_waiting(),
         }
     }
 
-    /// Starts a clone of `repository` unless it has its mirror, or can't have one yet. Breaks when the disk
-    /// is short, which holds back the clones after it too.
-    fn try_clone(&mut self, repository: RepositoryName) -> ControlFlow<()> {
+    /// Starts a clone of `repository` unless it has its mirror, or can't have one yet. Short of disk, it
+    /// puts `repository` back first in line, and the clones wait.
+    fn try_clone(&mut self, repository: RepositoryName) {
         let folders = match &self.folders {
             Ok(folders) => folders,
             Err(problem) => {
@@ -1366,23 +1286,23 @@ impl Worker {
                     "Tsugiki can't clone {repository}'s mirror: {}",
                     problem.message
                 );
-                return ControlFlow::Continue(());
+                return;
             }
         };
         let folder = folders.repository(&repository);
         let mirror = folders.mirror(&repository);
         if mirror.exists() {
-            return ControlFlow::Continue(());
+            return;
         }
         let partial = folder.join(PARTIAL);
         if partial.join(CLONED).exists() {
             self.settle(repository, &partial, &mirror);
-            return ControlFlow::Continue(());
+            return;
         }
         let Some(source) = self.sources.get(&repository).cloned() else {
             self.asking.push(repository);
             self.tell_asking();
-            return ControlFlow::Continue(());
+            return;
         };
         // What a clone cut off by quitting left goes first, or the disk would count it as taken.
         if partial.exists()
@@ -1392,7 +1312,7 @@ impl Worker {
                 "Tsugiki can't delete the clone of {repository} that a quit cut off: {cause}"
             );
             self.fail_clone(repository, cause.to_string());
-            return ControlFlow::Continue(());
+            return;
         }
         let root = folders.data.clone();
         match self.room_for(&repository, &root, &mirror) {
@@ -1400,12 +1320,12 @@ impl Worker {
             Ok(Some(short)) => {
                 self.waiting.push_front(repository);
                 self.set_problem(Some(short));
-                return ControlFlow::Break(());
+                return;
             }
             Err(cause) => {
                 log::warn!("Tsugiki can't say if {repository}'s mirror has room: {cause}");
                 self.fail_clone(repository, cause);
-                return ControlFlow::Continue(());
+                return;
             }
         }
         let reference = self.reference(&repository, &source);
@@ -1419,7 +1339,6 @@ impl Worker {
                 self.fail_clone(repository, cause.to_string());
             }
         }
-        ControlFlow::Continue(())
     }
 
     /// Runs `git --version`, and notes git as missing or too old if it is, for the mirrors or for the Stale
@@ -1443,11 +1362,7 @@ impl Worker {
             }
         };
         // A good git says nothing of a short disk the window heard of: the next clone does.
-        let told_of_git = matches!(
-            self.told,
-            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-        );
-        if problem.is_some() || told_of_git {
+        if problem.is_some() || self.told.as_ref().is_some_and(MirrorProblem::leaves_no_git) {
             self.set_problem(problem);
         }
     }
@@ -1481,8 +1396,11 @@ impl Worker {
         let size = (self.remotes.size_of)(repository).map_err(|problem| problem.message)?;
         let needed = size.saturating_add(ROOM_TO_SPARE);
         let mut free = self.free_space(root)?;
-        if free < needed && delete_broken(repository, mirror) {
-            free = self.free_space(root)?;
+        if free < needed && has_broken(mirror) {
+            delete_broken(repository, mirror);
+            // A broken mirror that couldn't be deleted gave back no room.
+            let gone = !has_broken(mirror);
+            free = (gone.then(|| self.free_space(root)).transpose()?).unwrap_or(free);
         }
         Ok((free < needed).then(|| MirrorProblem::DiskShort {
             repository: repository.clone(),
@@ -1533,108 +1451,70 @@ impl Worker {
     }
 
     /// The time the first head that is behind is due to be fetched once more, the first clone that failed
-    /// is due to go back in line, or the first mirror's upkeep falls due.
-    fn next_due(&self) -> Option<Instant> {
-        let heads = self
-            .heads
-            .iter()
-            .flat_map(|heads| heads.behind.values())
-            .filter_map(|behind| match behind {
-                Behind::Due { at, .. } => Some(*at),
-                Behind::Retried { .. } => None,
-            });
+    /// is due to go back in line, the first mirror's upkeep falls due, or `start_next` said to pick again.
+    /// A head whose moment was over at the turn's pick, `now`, waits for a pick after the next git or
+    /// message.
+    fn next_due(&self, pick_again: Option<Instant>, now: Instant) -> Option<Instant> {
+        // Only an idle worker picks a head, and a git's end wakes it, so only it wakes for one.
+        let idle = self.job.is_none().then_some(&self.heads);
+        let heads = (idle.into_iter().flatten()).filter_map(|known| known.prs.next_due(now));
         let clones = self.failed.iter().map(|failed| failed.retry_at);
         // Only an idle worker with a usable git starts an upkeep, so only it wakes for one.
-        let git_unusable = matches!(
-            self.problem,
-            Some(MirrorProblem::NoGit | MirrorProblem::OldGit { .. })
-        );
-        let upkeep = (self.job.is_none() && !git_unusable).then(|| self.upkeep_due());
-        // An idle worker reads the next patch-ids at once, after the messages that came meanwhile.
-        let reading = self.job.is_none() && !git_unusable && self.pace != Pace::Held;
-        let patches = (reading && self.patches_wait()).then(Instant::now);
+        let git_usable = !self
+            .problem
+            .as_ref()
+            .is_some_and(MirrorProblem::leaves_no_git);
+        let upkeep = (self.job.is_none() && git_usable).then(|| self.upkeep_due());
         heads
             .chain(clones)
             .chain(upkeep.flatten())
-            .chain(patches)
+            .chain(pick_again)
             .min()
     }
 
-    /// Puts each head that is due to be fetched once more with the waiting ones. A newer one handed over
-    /// meanwhile went there itself.
-    fn retry_due(&mut self) {
-        let now = Instant::now();
-        for heads in &mut self.heads {
-            for (number, behind) in &mut heads.behind {
-                if let Behind::Due { commit, at } = behind
-                    && *at <= now
-                {
-                    let _ = heads
-                        .waiting
-                        .entry(*number)
-                        .or_insert_with(|| commit.clone());
-                    *behind = Behind::Retried {
-                        commit: commit.clone(),
-                    };
-                }
+    /// Tells each test that asked that the worker is idle, unless something is `due` at once: a read of
+    /// patch-ids waits for the next turn of the loop. Something due a moment later doesn't count, so a test
+    /// that says nothing started gives its retries and upkeep longer than it runs.
+    #[cfg(test)]
+    fn tell_idle(&mut self, due: Option<Instant>) {
+        if due.is_none_or(|at| at > Instant::now()) {
+            for reply in self.awaiting_idle.drain(..) {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a test that has stopped waiting doesn't hear it"
+                )]
+                let _ = reply.send(());
             }
         }
     }
 
-    /// The heads the user asked for in the first Repository where some wait, or else the waiting heads of
-    /// the first Repository, of those whose mirror is there, with where it is. The heads of one whose mirror
-    /// isn't there wait for its clone.
-    fn next_batch(&mut self) -> Option<(RepositoryName, Batch, PathBuf)> {
-        let going = self.pace == Pace::Going;
-        let folders = self.folders.as_ref().ok().filter(|_| going)?;
-        let ready = |heads: &Heads| folders.mirror(&heads.repository).exists();
-        for heads in (self.heads.iter_mut()).filter(|heads| !heads.first.is_empty() && ready(heads))
-        {
-            // A head the fetch under way brought no longer waits, and needs no fetch of its own.
-            let mut first = mem::take(&mut heads.first);
-            first.retain(|number, _| heads.waiting.contains_key(number));
-            if first.is_empty() {
-                continue;
-            }
-            let batch = Batch {
-                heads: (first.keys())
-                    .filter_map(|number| Some((*number, heads.waiting.remove(number)?)))
-                    .collect(),
-                branches: first.values().cloned().collect(),
-                first,
-            };
-            return Some((
-                heads.repository.clone(),
-                batch,
-                folders.mirror(&heads.repository),
-            ));
+    /// Starts a fetch of the heads `pick` picks from what the worker knows of `repository`'s heads: those
+    /// the user asked for, in a fetch of their own, or those the rules want. The heads keep what they say
+    /// until the fetch's outcome.
+    fn start_batch(&mut self, repository: &RepositoryName, pick: impl FnOnce(&Prs) -> Vec<PrHead>) {
+        let found = (self.heads.iter()).find(|known| known.repository.is_same(repository));
+        if let (Ok(folders), Some(known)) = (&self.folders, found) {
+            let batch = pick(&known.prs);
+            let mirror = folders.mirror(&known.repository);
+            let repository = known.repository.clone();
+            self.start_fetch(repository, batch, mirror);
         }
-        let heads =
-            (self.heads.iter_mut()).find(|heads| !heads.waiting.is_empty() && ready(heads))?;
-        let batch = Batch {
-            heads: mem::take(&mut heads.waiting),
-            branches: mem::take(&mut heads.branches),
-            first: BTreeMap::new(),
-        };
-        Some((
-            heads.repository.clone(),
-            batch,
-            folders.mirror(&heads.repository),
-        ))
     }
 
-    /// Fetches each head and branch of `batch` in one go. A glob in each refspec lets a head or a branch
-    /// GitHub no longer has match nothing, where a plain one would fail the whole fetch (#157), and
-    /// `--prune` deletes its old ref, so the refs read back say which heads GitHub has. A branch's glob
+    /// Fetches each head of `batch` and its Target branch in one go. A glob in each refspec lets a head or
+    /// a branch GitHub no longer has match nothing, where a plain one would fail the whole fetch (#157),
+    /// and `--prune` deletes its old ref, so the refs read back say which heads GitHub has. A branch's glob
     /// also brings the branches whose names start with its name, which costs little. A connection that
     /// stalls for a minute fails the fetch, which would otherwise hold up every git after it.
-    fn start_fetch(&mut self, repository: RepositoryName, batch: Batch, mirror: PathBuf) {
-        let heads = batch
-            .heads
-            .keys()
-            .map(|number| format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*\n"));
-        let branches = (batch.branches.iter())
-            .map(|branch| format!("+refs/heads/{branch}*:refs/heads/{branch}*\n"));
+    fn start_fetch(&mut self, repository: RepositoryName, batch: Vec<PrHead>, mirror: PathBuf) {
+        let heads = (batch.iter()).map(|PrHead { number, .. }| {
+            format!("+refs/pull/{number}/head*:refs/tsugiki/pull/{number}/head*\n")
+        });
+        let targets: BTreeSet<&str> = (batch.iter())
+            .map(|head| head.target_branch.as_str())
+            .collect();
+        let branches =
+            (targets.iter()).map(|branch| format!("+refs/heads/{branch}*:refs/heads/{branch}*\n"));
         let refspecs: String = heads.chain(branches).collect();
         let args = fetch_args(&mirror, &["--prune"]);
         match self.git.start(&args, refspecs.as_bytes()) {
@@ -1644,14 +1524,15 @@ impl Worker {
                     repository,
                     mirror,
                     batch,
+                    started: Instant::now(),
                     git: started.run,
                     news: false,
                 }));
             }
             Err(cause) => {
                 log::warn!("Tsugiki can't start fetching PR heads of {repository}: {cause}");
-                let numbers: Vec<u32> = batch.heads.keys().copied().collect();
-                self.try_again_later(&repository, batch);
+                let numbers: Vec<u32> = batch.iter().map(|head| head.number).collect();
+                self.try_again_later(&repository);
                 self.pace = Pace::Stalled;
                 let why = Unfetched::Git {
                     words: cause.to_string(),
@@ -1661,39 +1542,17 @@ impl Worker {
         }
     }
 
-    /// Puts back the heads and branches of a fetch that failed, behind any newer heads handed over
-    /// meanwhile. A head the user asked for stays first. One that left the rules' want meanwhile goes, unless
-    /// its PR is one the user opened.
-    fn try_again_later(&mut self, repository: &RepositoryName, batch: Batch) {
-        let mut known = self.take_heads(repository);
-        let Batch {
-            heads,
-            branches,
-            first,
-        } = batch;
-        for (number, commit) in heads {
-            let wanted = known
-                .handed
-                .as_ref()
-                .is_none_or(|handed| handed.contains(&number));
-            if wanted || known.viewed.contains(&number) {
-                let _ = known.waiting.entry(number).or_insert(commit);
-            }
-        }
-        // A first fetch's branches are those of `first`, which goes back below.
-        if first.is_empty() {
-            known.branches.extend(branches);
-        }
-        for (number, branch) in first {
-            let _ = known.first.entry(number).or_insert(branch);
-        }
+    /// Puts a Repository's heads back after a fetch that failed. The fetch changed nothing of them, so each
+    /// waits as it did, with any hand-over that came meanwhile.
+    fn try_again_later(&mut self, repository: &RepositoryName) {
+        let known = self.take_heads(repository);
         self.requeue(known);
     }
 
     /// Puts a Repository's heads back after its fetch: behind the other Repositories', so each takes its
     /// turn, unless a head the user asked for waits.
     fn requeue(&mut self, known: Heads) {
-        if !known.first.is_empty() {
+        if known.prs.asks_wait() {
             self.heads.push_front(known);
         } else {
             self.heads.push_back(known);
@@ -1706,19 +1565,19 @@ impl Worker {
     /// GitHub moves `refs/pull/N/head` a moment after a push, so a fetch can bring the commit before the
     /// one handed over (#201). A head whose ref doesn't point at its commit is behind, and so is each head
     /// of a fetch whose refs can't be read back, and a head whose glob matched nothing, as GitHub has no
-    /// ref for it. Each is fetched once more after a moment. If that fetch doesn't bring it either, the app
-    /// hears why (#213), and a head with no ref is settled until it moves on.
+    /// ref for it. `Prs::note_fetched` says what follows.
     fn finish_fetch(&mut self, fetch: Fetch, last_words: &str) {
         let Fetch {
             repository,
             mirror,
             batch,
+            started,
             mut git,
             news,
         } = fetch;
         if !git.succeeded() {
-            let numbers: Vec<u32> = batch.heads.keys().copied().collect();
-            self.try_again_later(&repository, batch);
+            let numbers: Vec<u32> = batch.iter().map(|head| head.number).collect();
+            self.try_again_later(&repository);
             if says_broken(last_words) && self.replace_broken(&repository, &mirror, last_words) {
                 return;
             }
@@ -1741,9 +1600,22 @@ impl Worker {
                 words: cause.to_string(),
             }
         });
-        let retry = Instant::now() + self.remotes.patience;
+        if let Ok(landed) = &landed {
+            for PrHead { number, commit, .. } in &batch {
+                if let Some(at) = landed.get(number).filter(|at| *at != commit) {
+                    let (had, asked) = (at.as_str(), commit.as_str());
+                    log::info!(
+                        "GitHub had PR #{number} of {repository} at {had} rather than {asked}"
+                    );
+                }
+            }
+        }
         let mut known = self.take_heads(&repository);
-        let noted = known.note_fetched(batch.heads, landed.as_ref(), retry);
+        let retry = Retry {
+            started,
+            at: Instant::now() + self.remotes.patience,
+        };
+        let noted = known.prs.note_fetched(&batch, landed.as_ref(), retry);
         if !noted.arrived.is_empty() {
             known.patches.read_missing_again();
         }
@@ -1916,7 +1788,11 @@ impl Worker {
     /// Reads git's error output on a thread of its own, which tells the worker when git ends.
     fn listen(&self, output: Box<dyn Read + Send>) {
         let messages = self.messages.clone();
-        let _ = thread::spawn(move || read_progress_until_done(output, &messages));
+        #[expect(
+            unused_results,
+            reason = "it ends with git's error output, and its last message tells the worker so"
+        )]
+        thread::spawn(move || read_progress_until_done(output, &messages));
     }
 
     fn moved_on(&mut self, progress: CloneProgress) {
@@ -1936,8 +1812,11 @@ impl Worker {
             self.settle(repository, &clone.partial, &clone.mirror);
         } else {
             log::warn!("Tsugiki couldn't clone {repository}'s mirror: {last_words}");
-            // What is left goes before the next clone of this Repository, which says if it can't.
-            drop(fs::remove_dir_all(&clone.partial));
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "what is left goes before the next clone of this Repository, which says if it can't"
+            )]
+            let _ = fs::remove_dir_all(&clone.partial);
             self.fail_clone(repository, last_words.to_owned());
         }
         (self.announce.cloning)(None);
@@ -1984,8 +1863,8 @@ fn mark_cloned(repository: &RepositoryName, partial: &Path) {
 const HELPERS_PATIENCE: Duration = Duration::from_secs(5);
 
 /// Waits for the error output of the git stopped last to close, up to `HELPERS_PATIENCE`. Each helper holds
-/// it, so it closes once the last of them has ended. `Run::stop` waits for git, and on Windows the job
-/// object's wait returns before the helpers it killed have ended (#208).
+/// it, so it closes once the last of them has ended. `Run::stop_finished` waits for git, and on Windows the
+/// job object's wait returns before the helpers it killed have ended (#208).
 fn wait_for_helpers(incoming: &Receiver<Message>) {
     let deadline = Instant::now() + HELPERS_PATIENCE;
     loop {
@@ -2075,7 +1954,7 @@ fn read_progress_until_done(progress: Box<dyn Read + Send>, messages: &Sender<Me
         }
         let text = String::from_utf8_lossy(&line);
         match read_progress(&text) {
-            Some(progress) => drop(messages.send(Message::Progress(progress))),
+            Some(progress) => tell_worker(messages, Message::Progress(progress)),
             None if text.starts_with("fatal: ") || text.starts_with("error: ") => {
                 last_error = text.trim().to_owned();
             }
@@ -2087,7 +1966,16 @@ fn read_progress_until_done(progress: Box<dyn Read + Send>, messages: &Sender<Me
     if !last_error.is_empty() {
         last_words = last_error;
     }
-    drop(messages.send(Message::Ended { last_words }));
+    tell_worker(messages, Message::Ended { last_words });
+}
+
+/// Sends the worker `message` about the git it waits for.
+fn tell_worker(messages: &Sender<Message>, message: Message) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "this fails only once the worker has ended, and then nothing waits for git"
+    )]
+    let _ = messages.send(message);
 }
 
 /// Reads one line of `git clone --progress`. Lines from the server, and lines without a percentage, say

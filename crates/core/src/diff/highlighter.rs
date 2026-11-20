@@ -18,7 +18,6 @@
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::ffi::OsStr;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -162,14 +161,18 @@ impl ShelfWriter {
             shelves.push((Arc::clone(diff), HashMap::new()));
         }
         if let Some((_, trees)) = shelves.iter_mut().find(|(kept, _)| kept.is(diff)) {
-            drop(trees.insert(version, tree));
+            trees.extend([(version, tree)]);
         }
     }
 
     fn take(&mut self, diff: &OpenDiff, version: Version) {
         let shelves = &mut self.0.lock().unwrap_or_else(PoisonError::into_inner).diffs;
         for (_, trees) in shelves.iter_mut().filter(|(kept, _)| kept.is(diff)) {
-            drop(trees.remove(&version));
+            #[expect(
+                unused_results,
+                reason = "the thread has stopped keeping this tree, so the shelf lets go of it too"
+            )]
+            trees.remove(&version);
         }
     }
 
@@ -320,7 +323,11 @@ impl Highlighter {
         let (writer, shelf) = shelf();
         let (jobs, incoming) = mpsc::channel();
         let worker = Worker::new(writer, cap);
-        let _ = thread::spawn(move || worker.run(&incoming));
+        #[expect(
+            unused_results,
+            reason = "the worker ends once the last `Highlighter` has gone, and holds nothing to save"
+        )]
+        thread::spawn(move || worker.run(&incoming));
         Self { jobs, shelf }
     }
 
@@ -382,7 +389,7 @@ impl Highlighter {
     ) -> Vec<HeadLine> {
         let FileLines { file, lines } = wanted;
         let path = diff.diff.files.get(file).map(|file| file.path.as_str());
-        let name = path.and_then(|path| object_name(&diff.pr.head, path));
+        let name = path.map(|path| object_name(&diff.pr.head, path));
         let text = name.and_then(|name| blobs(mirror, &[&name]).into_iter().next().flatten());
         let text = text.unwrap_or_default();
         let skip = usize::try_from(lines.start.saturating_sub(1)).unwrap_or(usize::MAX);
@@ -597,7 +604,7 @@ impl Opened {
             .shelf
             .put(&self.source.diff, version, kept.tree.clone());
         store.kept += kept.cost;
-        drop(self.trees.insert(version, kept));
+        self.trees.extend([(version, kept)]);
     }
 
     /// Notes that chunk `chunk` used `versions`, and gives the trees of those it keeps.
@@ -606,7 +613,7 @@ impl Opened {
         for version in versions {
             if let Some(kept) = self.trees.get_mut(version) {
                 kept.used = chunk;
-                drop(trees.insert(*version, kept.tree.clone()));
+                trees.extend([(*version, kept.tree.clone())]);
             }
         }
         trees
@@ -927,7 +934,7 @@ impl OpenDiff {
             Side::Head => (&self.pr.head, &file.path),
         };
         let language = Language::of(path)?;
-        object_name(commit, path).map(|name| (language, name))
+        Some((language, object_name(commit, path)))
     }
 
     /// `versions` read from `mirror` with one git.
@@ -957,58 +964,24 @@ impl OpenDiff {
     }
 }
 
-/// The name git knows `path` at `commit` by, unless the path has a line break: git reads a name a line.
-pub(crate) fn object_name(commit: &CommitSha, path: &str) -> Option<String> {
-    (!path.contains('\n')).then(|| format!("{}:{path}", commit.as_str()))
+/// The name git knows `path` at `commit` by.
+pub(crate) fn object_name(commit: &CommitSha, path: &str) -> String {
+    format!("{}:{path}", commit.as_str())
 }
 
 /// The files `names` names, read from `mirror` with one `git cat-file --batch`: the text of each, or
 /// nothing for one git has no blob for. If git fails, the list stops short.
 pub(crate) fn blobs(mirror: &Path, names: &[&str]) -> Vec<Option<String>> {
-    if names.is_empty() {
-        return Vec::new();
-    }
-    let input: String = names.iter().map(|name| format!("{name}\n")).collect();
-    let args = [
-        OsStr::new("-C"),
-        mirror.as_os_str(),
-        OsStr::new("cat-file"),
-        OsStr::new("--batch"),
-    ];
-    match live::read_git_bytes(&args, input.into_bytes()) {
-        Ok(output) => parse_batch(&output),
+    match live::read_blobs(mirror, names) {
+        Ok(blobs) => (blobs.into_iter())
+            .map(|blob| blob.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+            .collect(),
         Err(cause) => {
             let mirror = mirror.display();
             log::warn!("Tsugiki can't read files from {mirror}: {cause}");
             Vec::new()
         }
     }
-}
-
-/// What `git cat-file --batch` printed: for each name, `<id> <type> <size>`, a line feed, the object and a
-/// line feed, or a line such as `<name> missing`. Only a blob gives text. Output cut short stops the list.
-fn parse_batch(mut output: &[u8]) -> Vec<Option<String>> {
-    let mut blobs = Vec::new();
-    while let Some(end) = output.iter().position(|&byte| byte == b'\n') {
-        let header = String::from_utf8_lossy(output.get(..end).unwrap_or_default());
-        output = output.get(end + 1..).unwrap_or_default();
-        let fields: Vec<&str> = header.split(' ').collect();
-        let found = match fields.as_slice() {
-            [_, kind, size] => size.parse::<usize>().ok().map(|size| (*kind, size)),
-            _ => None,
-        };
-        let Some((kind, size)) = found else {
-            log::warn!("Tsugiki can't read a file to highlight it: git says {header}");
-            blobs.push(None);
-            continue;
-        };
-        let Some(object) = output.get(..size) else {
-            break;
-        };
-        blobs.push((kind == "blob").then(|| String::from_utf8_lossy(object).into_owned()));
-        output = output.get(size + 1..).unwrap_or_default();
-    }
-    blobs
 }
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "eslint/**/*.test.ts", "../scripts/**/*.test.ts"],
+    setupFiles: ["src/lib/testing/setup.ts"],
     // TypeScript's coverage gate (ADR 0009). `npm run coverage -w ui` turns it on.
     coverage: {
       provider: "v8",
@@ -26,6 +27,8 @@ export default defineConfig({
         "../scripts/bindings.ts",
         "../scripts/rust-coverage.ts",
         "../scripts/release-check.ts",
+        // coverage: scans the real checkout and exits, with its logic in copies.ts.
+        "../scripts/dupes.ts",
         // coverage: reads the real manifest and exits, with its logic in token-crate.ts.
         "../scripts/token-deps.ts",
         // coverage: command lines around git, with their logic in the files they call.

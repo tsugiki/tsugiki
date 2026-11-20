@@ -34,7 +34,8 @@ use crate::login::Login;
 use crate::repository::{RepositoryName, WINDOW_DAYS};
 use crate::repository_settings::RepositorySettings;
 use crate::status::{LastSync, LoadProgress, SyncPart};
-use crate::store::{ChangeCheck, FirstSyncPlace, Store, SyncState};
+use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Opened, Store, SyncState};
+use crate::work::{archived_by_closing, opened_on};
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
 use issues::{fetch_issues, fetch_named_issues};
@@ -56,7 +57,7 @@ pub const FETCH_BATCH: usize = 25;
 struct UserWorkSync {
     repository: RepositoryName,
     /// The search of each Filter as the sync started, each once. Which PRs are in Reach comes from the
-    /// settings `Syncs` holds, which a switch can change while the sync runs.
+    /// settings owner's view at each step, which a switch can change while the sync runs.
     filters: Vec<FilterQuery>,
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.
@@ -82,17 +83,17 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish reads the Conversations of the PRs in Reach it owes a read, lowest number
-    /// first (#157).
+    /// A refresh that would finish reads the Conversations the rules want read ahead, lowest number first
+    /// (#157).
     ReadingAhead(Ahead),
 }
 
-/// The PRs a refresh reads ahead.
+/// The reading ahead a refresh has done.
+#[derive(Default)]
 struct Ahead {
-    /// Those still to read, or None once a change to the settings has the refresh ask the store again: a
-    /// Filter switched on can owe more, and one switched off takes PRs out of Reach.
-    left: Option<BTreeSet<u32>>,
-    /// Those this refresh has asked GitHub for, so it asks for each once.
+    /// The PRs this refresh has asked GitHub for, so it asks for each once, whatever the rules want next.
+    /// That's the queue's bookkeeping, not a rule: it keeps a PR whose Conversation GitHub wouldn't give
+    /// from being asked for again and again.
     tried: BTreeSet<u32>,
 }
 
@@ -269,6 +270,47 @@ impl Step {
     }
 }
 
+/// Archives each item of `repository` whose closing `step` saved (#820), under its `settings`, as
+/// `archived_by_closing` judges it, and forgets the closings. Only a step that saved can have closed one.
+/// A failure leaves the closings to the next step that saves.
+fn archive_closings(
+    store: &Store,
+    (repository, settings): (&RepositoryName, &RepositorySettings),
+    step: &Step,
+) -> Result<(), Error> {
+    if !matches!(step, Step::Saved { .. }) {
+        return Ok(());
+    }
+    let closings = store.closings(repository)?;
+    if closings.is_empty() {
+        return Ok(());
+    }
+    let facts = store.work_facts(repository)?;
+    let archived = archived_by_closing(facts, settings, &closings);
+    let judged = Judged { archived, closings };
+    store.archive_closed(repository, judged, OffsetDateTime::now_utc())
+}
+
+/// Brings back to the Inbox each Archived Issue of `repository` that a PR `step` saved opened on (#823),
+/// under its `settings`, as `opened_on` judges it, and forgets the openings. Only a step that saved can have
+/// seen a PR open. A failure leaves the openings to the next step that saves.
+fn bring_back_opened_on(
+    store: &Store,
+    (repository, settings): (&RepositoryName, &RepositorySettings),
+    step: &Step,
+) -> Result<(), Error> {
+    if !matches!(step, Step::Saved { .. }) {
+        return Ok(());
+    }
+    let openings = store.openings(repository)?;
+    if openings.is_empty() {
+        return Ok(());
+    }
+    let facts = store.work_facts(repository)?;
+    let issues = opened_on(&facts, settings, &openings);
+    store.bring_back(repository, Opened { issues, openings })
+}
+
 /// The clients and the Repository a sync's phases work with.
 struct Link<'a> {
     github: &'a GitHub,
@@ -314,14 +356,6 @@ impl UserWorkSync {
         sync
     }
 
-    /// The Repository's settings changed, so a read ahead under way works out again which PRs it owes a
-    /// read: a Filter switched on can owe more, and one switched off takes PRs out of Reach.
-    fn reach_changed(&mut self) {
-        if let Phase::ReadingAhead(ahead) = &mut self.phase {
-            ahead.left = None;
-        }
-    }
-
     /// A first sync's own state, if this is one.
     fn first_sync(&self) -> Option<&FirstSync> {
         match &self.kind {
@@ -343,6 +377,21 @@ impl UserWorkSync {
             Some(step) => step,
             None => self.advance(github, store, settings)?,
         };
+        // The window must hear of what the step saved, and the closings wait for the next step that saves.
+        if let Err(problem) = archive_closings(store, (&self.repository, settings), &step) {
+            log::warn!(
+                "Tsugiki couldn't archive what closed in {}: {}",
+                self.repository,
+                problem.message
+            );
+        }
+        if let Err(problem) = bring_back_opened_on(store, (&self.repository, settings), &step) {
+            log::warn!(
+                "Tsugiki couldn't bring back the Issues a PR opened on in {}: {}",
+                self.repository,
+                problem.message
+            );
+        }
         match self.save_place(store) {
             Ok(()) => Ok(step),
             Err(problem) => {
@@ -491,14 +540,9 @@ impl UserWorkSync {
         }
         let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
         if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
-            // The store keeps the PRs until the refresh finishes, so a failure here leaves them to the retry.
-            let left = refresh::to_read_ahead(&link, settings)?;
-            if !left.is_empty() {
-                let tried = BTreeSet::new();
-                let left = Some(left);
-                self.phase = Phase::ReadingAhead(Ahead { left, tried });
-                return Ok(Step::Moved);
-            }
+            // Asking the rules is no request to GitHub, so this goes straight on to the first read.
+            self.phase = Phase::ReadingAhead(Ahead::default());
+            return self.advance(github, store, settings);
         }
         if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
             (&mut self.kind, &step)
@@ -509,7 +553,8 @@ impl UserWorkSync {
     }
 
     /// Saves that this sync finished, and says when. The store keeps whole seconds, so the window hears what
-    /// a later start reads back.
+    /// a later start reads back. Only a refresh, which read ahead what the store owed, has it forget those
+    /// reads. One a Filter switch owed during a first sync waits for the next refresh (#900).
     fn finish(&self, store: &Store) -> Result<LastSync, Error> {
         let now = OffsetDateTime::now_utc();
         let finished_at = now.replace_nanosecond(0).unwrap_or(now);
@@ -519,7 +564,11 @@ impl UserWorkSync {
             check: self.check.clone(),
             refresh_under_way: false,
         };
-        store.save_sync_state(&self.repository, state)?;
+        match self.kind {
+            Kind::Refresh => store.save_finished_refresh(&self.repository, state)?,
+            // No tree gets here: the queue drops one once its steps run out (`step_tree`).
+            Kind::First(_) | Kind::Tree => store.save_sync_state(&self.repository, state)?,
+        }
         Ok(LastSync {
             repository: self.repository.clone(),
             at: Some(finished_at),

@@ -1,19 +1,17 @@
 import { expect, test } from "@playwright/test";
 import type { Filter_Serialize as Filter } from "../src/lib/data/bindings.ts";
+import { ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home, repository as cpython } from "./fixtures.ts";
 import { changeAnswer, mockCore } from "./mock-core.ts";
 
-const cpython = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
 const peps = { name: "python/peps", conventions: "github", filters: [] as Filter[] } as const;
-const workbench = { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] };
+const workbench = workbenchPage([]);
 
 test("Ctrl+R and Enter switch back to the Repository opened before", async ({ page }) => {
   await mockCore(page, {
-    home: { screen: "repository", repository: cpython, others: [peps.name, "python/devguide"] },
-    openRepository: {
-      status: "ok",
-      data: { screen: "repository", repository: peps, others: [cpython.name] },
-    },
-    workbench: { status: "ok", data: workbench },
+    home: { ...home, others: [peps.name, "python/devguide"] },
+    openRepository: ok({ screen: "repository", repository: peps, others: [cpython.name] }),
+    workbench,
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "python/cpython", exact: true })).toBeVisible();
@@ -34,10 +32,7 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
   await expect(page).toHaveTitle("python/peps · Tsugiki 1.2.3");
 
   // Back again: the core now lists cpython first among the others.
-  await changeAnswer(page, "openRepository", {
-    status: "ok",
-    data: { screen: "repository", repository: cpython, others: [peps.name] },
-  });
+  await changeAnswer(page, "openRepository", ok({ ...home, others: [peps.name] }));
   await page.keyboard.press("ControlOrMeta+R");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "python/cpython", exact: true })).toBeVisible();
@@ -47,12 +42,9 @@ test("Ctrl+R and Enter switch back to the Repository opened before", async ({ pa
 // keypress after Enter's keydown, which opened the picker again.
 test("Enter in the picker opened from the Sidebar's button leaves it closed", async ({ page }) => {
   await mockCore(page, {
-    home: { screen: "repository", repository: cpython, others: [peps.name] },
-    openRepository: {
-      status: "ok",
-      data: { screen: "repository", repository: peps, others: [cpython.name] },
-    },
-    workbench: { status: "ok", data: workbench },
+    home: { ...home, others: [peps.name] },
+    openRepository: ok({ screen: "repository", repository: peps, others: [cpython.name] }),
+    workbench,
   });
   await page.goto("/");
   await page.getByRole("button", { name: "python/cpython", exact: true }).click();

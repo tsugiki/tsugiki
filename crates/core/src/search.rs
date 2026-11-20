@@ -3,12 +3,12 @@
 //! It runs on ripgrep's crates. It reads the **Lookup checkout** for the files the PR doesn't change and its
 //! added files, and the PR's head from the **Mirror** for the files it changes, and leaves out the files it
 //! deletes. It needs nothing but the Mirror and the checkout, so it works offline at any commit the Mirror
-//! holds. Each query names the ends of the diff it searches. The Files tab's read of that diff
-//! (`PrFiles::show`) moves the checkout there, and a query never does: two queries on their own threads
-//! would send their moves in either order, and the last would win. A query that arrives while the checkout
-//! moves waits for the move: `git grep` could answer sooner, but its idea of a regex and of a word differ
-//! from ripgrep's, so a query would match differently by timing. A checkout at another diff has nothing of
-//! the query's to search, and the window then reads the diff again.
+//! holds. Each query names the ends of the diff it searches. The Files tab's call for that diff
+//! (`PullRequestWork::pr_files`) moves the checkout there, and a query never does: two queries on their own
+//! threads would send their moves in either order, and the last would win. A query that arrives while the
+//! checkout moves waits for the move: `git grep` could answer sooner, but its idea of a regex and of a word
+//! differ from ripgrep's, so a query would match differently by timing. A checkout at another diff has
+//! nothing of the query's to search, and the window then reads the diff again.
 //!
 //! One thread owns what the window reads, a [`SearchState`]. Each query runs on threads of its own, which
 //! send it what they find, and a newer query cancels the one running.
@@ -238,7 +238,11 @@ impl TextSearch {
             state: SearchState::Idle,
             current: None,
         };
-        let _ = thread::spawn(move || owner.run(&incoming));
+        #[expect(
+            unused_results,
+            reason = "it ends once this has gone and the queries it ran have ended, as the type's doc says"
+        )]
+        thread::spawn(move || owner.run(&incoming));
         Self {
             messages,
             state,
@@ -264,15 +268,22 @@ impl TextSearch {
             at,
             matcher,
         };
-        // The thread ends only once this has gone, unless it panicked, and then no query can run.
-        let _unheard = (self.messages).send(Message::Search(asked, self.messages.clone()));
+        self.send(Message::Search(asked, self.messages.clone()));
         Ok(id)
     }
 
     /// Cancels query `id` while it runs, as nobody wants what it finds any more, and leaves the state idle.
     /// A newer query, or one that has ended, goes on as it was.
     pub fn cancel(&self, id: SearchId) {
-        let _unheard = self.messages.send(Message::Cancel(id));
+        self.send(Message::Cancel(id));
+    }
+
+    fn send(&self, message: Message) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the thread ends only once this has gone, unless it panicked, and then no query can run"
+        )]
+        let _ = self.messages.send(message);
     }
 
     /// What the latest query found, or why it found nothing.
@@ -369,7 +380,11 @@ impl Owner {
         });
         self.state = SearchState::Results(Results::nothing_yet(asked.id));
         let requests = self.requests.clone();
-        let _ = thread::spawn(move || run(&asked, &requests, &cancelled, &messages));
+        #[expect(
+            unused_results,
+            reason = "a query ends by itself or on its cancel, and tells the owner through `messages`"
+        )]
+        thread::spawn(move || run(&asked, &requests, &cancelled, &messages));
     }
 
     /// Cancels the query running, if one is, whose word then changes nothing.
@@ -442,9 +457,12 @@ fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: 
         at,
         matcher,
     } = asked;
-    // The owner has stopped only when the app quits, and then nobody reads what a search says.
     let tell = |word| {
-        let _unheard = owner.send(Message::Word(*id, word));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the owner has stopped only when the app quits, and then nobody reads what a search says"
+        )]
+        let _ = owner.send(Message::Word(*id, word));
     };
     let answer = requests.ask_lookup_checkout(repository.clone());
     let checkout = match answer.recv_timeout(WAIT_UNSAID) {
@@ -475,7 +493,5 @@ fn run(asked: &Asked, requests: &MirrorRequests, cancelled: &AtomicBool, owner: 
     tell(Word::Ended(ending));
 }
 
-#[cfg(test)]
-mod testing;
 #[cfg(test)]
 mod tests;

@@ -29,10 +29,14 @@ use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::repository::RepositoryName;
-use crate::repository_settings::{NameCheck, RepositoryCheck, RepositorySettings, SavedBy};
+use crate::repository_settings::{
+    NameCheck, RepositoryCheck, RepositorySettings, SavedBy, SettingsSave,
+};
 use crate::theme::{
     GivenTheme, ThemeChoice, ThemeKind, ThemeLibrary, ThemeName, ThemePick, Themes,
 };
+
+mod saving;
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
@@ -529,9 +533,18 @@ pub struct SettingsView {
     /// status bar to name when no theme has the name it gives (#755).
     pub theme_place: String,
     pub language_servers: LanguageServers,
+    /// How many saves of a Repository's settings the owner has handed the session, those this view shows
+    /// among them. The owner publishes a view and hands its saves over in one step, under the view's lock,
+    /// so a session that has taken fewer finds the rest in its queue.
+    pub saves_told: usize,
 }
 
 impl SettingsView {
+    /// The settings of the Repository `name`, or the defaults for one the settings don't list.
+    pub fn repository(&self, name: RepositoryName) -> RepositorySettings {
+        self.loaded.settings.repository(name)
+    }
+
     /// The themes for the window, from the built-in themes and the `themes` folder read now, showing what
     /// `appearance` asks for: the file's `[appearance]`, or what Settings › General shows before Apply saves
     /// it (#757). Both go by the same rules, so the dialog's preview is what Apply shows.
@@ -962,6 +975,7 @@ impl SettingsFiles {
                     idle: minutes(given.idle_minutes),
                 }
             },
+            saves_told: 0,
         }
     }
 
@@ -1077,7 +1091,7 @@ impl SettingsFiles {
                         let path = toml_edit::value(path.to_string_lossy().into_owned());
                         merge_value(server, "path", &path, None);
                     }
-                    None => drop(server.remove("path")),
+                    None => take_out(server, "path"),
                 });
             }
         });
@@ -1097,12 +1111,7 @@ impl SettingsFiles {
             .iter()
             .filter_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
         // A name the user wrote twice, in either file, comes once.
-        let mut order: Vec<&RepositorySettings> = Vec::with_capacity(repositories.len());
-        for repository in reopened.chain(repositories) {
-            if !order.iter().any(|one| one.name.is_same(&repository.name)) {
-                order.push(repository);
-            }
-        }
+        let order = first_of_each(reopened.chain(repositories));
         match order.split_first() {
             Some((&repository, others)) => Home::Repository {
                 repository: repository.clone(),
@@ -1185,7 +1194,7 @@ impl SettingsFiles {
                     Some(size) => {
                         merge_value(section, key, &toml_edit::value(i64::from(size)), None)
                     }
-                    None => drop(section.remove(key)),
+                    None => take_out(section, key),
                 }
             }
             for (key, set) in [
@@ -1203,7 +1212,7 @@ impl SettingsFiles {
             let key = "detail_only_hid";
             match panes.detail_only_hid {
                 Some(hid) => merge_value(section, key, &toml_edit::value(hid.to_text()), None),
-                None => drop(section.remove(key)),
+                None => take_out(section, key),
             }
             merge_value(
                 section,
@@ -1315,8 +1324,6 @@ impl SettingsFiles {
 
 /// The thread that owns the settings files, so saving never waits on GitHub and GitHub never waits on a slow
 /// drive. Without folders it has nothing to save to, and each add answers with that problem.
-///
-/// Ending the process while it writes can leave a file cut short, as it could on any thread.
 #[derive(Clone)]
 pub struct SettingsOwner {
     requests: Sender<Request>,
@@ -1325,9 +1332,26 @@ pub struct SettingsOwner {
     commands: LatestReader<Vec<CommandId>>,
 }
 
-/// Where the owner's thread hands each Repository's settings a change saves otherwise: the session's queue,
-/// which `fetching`, above this module, owns.
-pub type SettingsSink = Box<dyn FnMut(RepositorySettings, SavedBy) + Send>;
+/// The settings owner's thread on its way to its end, from [`SettingsOwner::begin_stopping`].
+#[must_use = "only `wait_for_end` waits for the save under way"]
+pub struct SettingsEnding(Receiver<()>);
+
+impl SettingsEnding {
+    /// Waits up to `patience` for the thread to end. A save that outlasts it, on a drive gone slow, goes on
+    /// until the process ends, and then the file holds its old text (`saving::save`).
+    pub fn wait_for_end(self, patience: Duration) {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "running out of patience is the one failure here, and the doc above says why it is safe"
+        )]
+        let _ = self.0.recv_timeout(patience);
+    }
+}
+
+/// Where the owner's thread hands each Repository's settings a change saves otherwise, with those they
+/// replaced: the session's queue, which `fetching`, above this module, owns. It runs under the lock of the
+/// owner's view, so it mustn't read the view, and nobody reads the view while it waits.
+pub type SettingsSink = Box<dyn FnMut(SettingsSave) + Send>;
 
 /// What the owner's thread is asked.
 enum Request {
@@ -1338,6 +1362,12 @@ enum Request {
     Command {
         command: CommandId,
         reply: Sender<Result<Vec<CommandId>, Error>>,
+    },
+    /// End, having answered what was asked before, as `begin_stopping` asks. `SettingsEnding::wait_for_end`
+    /// waits for `finishing` to go, which it does as the thread ends, and also if the thread has gone before
+    /// it takes this.
+    Stop {
+        finishing: Sender<()>,
     },
 }
 
@@ -1397,7 +1427,12 @@ impl SettingsOwner {
             .unwrap_or_default();
         let (mut commands_writer, commands) = latest::channel(published.clone());
         let (requests, incoming) = mpsc::channel::<Request>();
-        let _ = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "it ends when `begin_stopping` asks or once the last sender goes, and `wait_for_end` \
+                      waits for it with a patience a join can't take"
+        )]
+        thread::spawn(move || {
             // Sends readers the palette's recent commands, unless they hold this list already.
             let mut publish_if_changed = |commands: &Vec<CommandId>| {
                 if *commands != published {
@@ -1405,8 +1440,7 @@ impl SettingsOwner {
                     published.clone_from(commands);
                 }
             };
-            // The session told of each change, with each Repository's settings as it was last told them.
-            let mut session: Option<(SettingsSink, Vec<RepositorySettings>)> = None;
+            let mut session: Option<ToldSession> = None;
             for request in incoming {
                 let change = match request {
                     Request::Change(change) => change,
@@ -1414,7 +1448,10 @@ impl SettingsOwner {
                         let told = (files.as_ref().ok())
                             .map(|files| files.view().loaded.settings.repositories)
                             .unwrap_or_default();
-                        session = Some((sink, told));
+                        // A new sink goes on counting, as the view's count goes on, and the session reading
+                        // it counts the saves it followed since launch.
+                        let saves = session.as_ref().map_or(0, |session| session.saves);
+                        session = Some(ToldSession { sink, told, saves });
                         continue;
                     }
                     Request::Command { command, reply } => {
@@ -1428,6 +1465,9 @@ impl SettingsOwner {
                         answer(&reply, saved);
                         continue;
                     }
+                    Request::Stop {
+                        finishing: _finishing,
+                    } => break,
                 };
                 // Only the Sidebar's switch saves a Repository's settings from the window. Every other change
                 // reloads the files, and so takes in a hand edit to them.
@@ -1441,7 +1481,7 @@ impl SettingsOwner {
                     | Change::Reread { .. }
                     | Change::Apply { .. } => SavedBy::HandEdit,
                 };
-                let (saved, reply) = match (&mut files, change) {
+                let (mut saved, reply) = match (&mut files, change) {
                     (
                         Ok(files),
                         Change::Add {
@@ -1511,15 +1551,19 @@ impl SettingsOwner {
                 };
                 // Before the answer, so whoever asked finds the change in `view`. Changes come through here
                 // one at a time, so an older one can't replace a newer one.
-                if let (Ok(saved), Ok(files)) = (&saved, &files) {
-                    writer.set(saved);
+                if let (Ok(saved), Ok(files)) = (&mut saved, &files) {
+                    let saves = (session.as_mut()).map(|told| told.saves(saved, by));
+                    // The saves go to the session before the answer too, so it hears of the change before
+                    // whatever the one who asked sends it next, and from this thread alone, in the order the
+                    // changes saved. They go in one step with the view, so a session that finds a save
+                    // counted in the view finds it in its queue.
+                    writer.set_then(saved, || {
+                        if let (Some(told), Some(saves)) = (&mut session, saves) {
+                            told.hand_over(saves);
+                        }
+                    });
                     // Each change reads `machine.toml` again, which may hold a hand edit to the list.
                     publish_if_changed(&files.recent_commands());
-                    // Before the answer too, so the session hears of the change before whatever the one who
-                    // asked sends it next, and from this thread alone, in the order the changes saved.
-                    if let Some((sink, told)) = &mut session {
-                        tell_session(sink, told, &saved.loaded.settings.repositories, by);
-                    }
                 }
                 answer(&reply, saved);
             }
@@ -1542,12 +1586,31 @@ impl SettingsOwner {
         self.commands.get()
     }
 
-    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with what
-    /// saved them: from the owner's thread, before it answers, in the order the changes saved. So no copy a
-    /// command read earlier can reach the session after a newer one, and a hand edit reaches it whichever
-    /// change reloaded the files first (#822).
+    /// From now on, hands `session` each Repository's settings that a change saves otherwise, with those
+    /// they replaced and what saved them: from the owner's thread, before it answers, in the order the
+    /// changes saved. So no copy a command read earlier can reach the session after a newer one, and a hand
+    /// edit reaches it whichever change reloaded the files first (#822).
     pub fn tell_session(&self, session: SettingsSink) {
-        let _sent = self.requests.send(Request::Session(session));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the owner ends only once the last sender goes, so this fails only if it panicked, and \
+                      then nothing saves"
+        )]
+        let _ = self.requests.send(Request::Session(session));
+    }
+
+    /// Tells the thread to end once it has answered what it was asked before, the save under way among them.
+    /// Every copy of this owner then refuses each request with `STOPPED_SAVING`. The caller goes on with its
+    /// own stopping, and the save with it, until it waits on what this returns.
+    pub fn begin_stopping(&self) -> SettingsEnding {
+        let (finishing, finished) = mpsc::channel::<()>();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a thread already gone hands the request back in the error, and dropping it drops \
+                      `finishing`, so the wait on what this returns ends at once"
+        )]
+        let _ = self.requests.send(Request::Stop { finishing });
+        SettingsEnding(finished)
     }
 
     /// A copy of what the settings say, for a thread that reads them later.
@@ -1675,20 +1738,69 @@ impl SettingsOwner {
     }
 }
 
-/// Hands `session` each of `repositories` that `told` holds otherwise, as `by` saved them, and keeps them as
-/// told.
-fn tell_session(
-    session: &mut SettingsSink,
-    told: &mut Vec<RepositorySettings>,
-    repositories: &[RepositorySettings],
-    by: SavedBy,
-) {
-    for repository in repositories {
-        if !told.contains(repository) {
-            session(repository.clone(), by);
+/// The session the owner hands each save to, with each Repository's settings as it was last told them, and
+/// how many saves it has been handed. Of a Repository written twice, the first counts, as in `home`.
+///
+/// `told` starts as what the files said when the session asked to hear, at launch, which the session never
+/// heard. So the first save of a Repository's settings comes with those it replaced too. Files that
+/// couldn't be read then list no Repository, and each comes as added once they can. A Repository the files
+/// stop listing, as a hand edit that takes it out or a reload that finds no `settings.toml` does, goes to
+/// the defaults, which the session reads for it then, so one that comes back moves from those.
+struct ToldSession {
+    sink: SettingsSink,
+    told: Vec<RepositorySettings>,
+    saves: usize,
+}
+
+impl ToldSession {
+    /// The saves a change makes that leaves `view` saying what it says, as `by` made it: each Repository's
+    /// settings that differ from those told, and the defaults of each one the files stopped listing. Counts
+    /// them in `view`, which the owner publishes before it hands them over.
+    fn saves(&mut self, view: &mut SettingsView, by: SavedBy) -> Vec<SettingsSave> {
+        let settings = &view.loaded.settings;
+        let listed = first_of_each(&settings.repositories);
+        let dropped = (self.told.iter())
+            .filter(|held| !listed.iter().any(|one| one.name.is_same(&held.name)))
+            .map(|held| settings.repository(held.name.clone()));
+        let now: Vec<RepositorySettings> =
+            (listed.iter().copied().cloned()).chain(dropped).collect();
+        let mut saves = Vec::new();
+        for repository in now {
+            let save = SettingsSave::new(repository.clone(), &self.told, by);
+            if save.replaced() == Some(&repository) {
+                continue;
+            }
+            saves.push(save);
+            self.saves += 1;
+            match (self.told.iter_mut()).find(|held| held.name.is_same(&repository.name)) {
+                Some(held) => *held = repository,
+                None => self.told.push(repository),
+            }
+        }
+        view.saves_told = self.saves;
+        saves
+    }
+
+    /// Hands the session `saves`, in order.
+    fn hand_over(&mut self, saves: Vec<SettingsSave>) {
+        for save in saves {
+            (self.sink)(save);
         }
     }
-    repositories.clone_into(told);
+}
+
+/// Each of `repositories` whose name none before it holds, in any case: of a Repository the user wrote
+/// twice, the first.
+fn first_of_each<'a>(
+    repositories: impl IntoIterator<Item = &'a RepositorySettings>,
+) -> Vec<&'a RepositorySettings> {
+    let mut first: Vec<&RepositorySettings> = Vec::new();
+    for repository in repositories {
+        if !first.iter().any(|one| one.name.is_same(&repository.name)) {
+            first.push(repository);
+        }
+    }
+    first
 }
 
 /// Hands `saved` to whoever asked the owner's thread.
@@ -1732,7 +1844,7 @@ impl<'a, T: DeserializeOwned> TomlEdit<'a, T> {
         if merged == self.before {
             return Ok(());
         }
-        save(self.path, &merged).map_err(|cause| {
+        saving::save(self.path, &merged).map_err(|cause| {
             refused(&format!(
                 "Tsugiki can't save {}: {cause}",
                 self.path.display()
@@ -1774,13 +1886,14 @@ fn with_filters_as_tables(mut repository: Table) -> Table {
         let filters = filters
             .into_array_of_tables()
             .map_or_else(|kept| kept, Item::ArrayOfTables);
-        drop(repository.insert(FILTERS, filters));
+        repository.extend([(FILTERS, filters)]);
     }
     repository
 }
 
 /// The `filters` of the first table of `repositories` that names `name`. A table without them gets `written`
-/// first, the Filters the settings read it as, in blocks of their own like those `append` writes.
+/// first, the Filters the settings read it as: in blocks of their own, or as an inline list in a Repository
+/// written inline, as `append` writes them.
 fn filters_in_file<'a>(
     repositories: &'a mut Item,
     name: &RepositoryName,
@@ -1796,7 +1909,10 @@ fn filters_in_file<'a>(
         let blocks = written
             .into_array_of_tables()
             .map_or_else(|kept| kept, Item::ArrayOfTables);
-        drop(repository.insert(FILTERS, blocks));
+        // Not through `entry`, which would keep the blocks as they are in a Repository written inline, where
+        // they can't be written. `insert` writes them as an inline list there.
+        #[expect(unused_results, reason = "the table has no `filters` to give back")]
+        repository.insert(FILTERS, blocks);
     }
     repository.get_mut(FILTERS)
 }
@@ -1842,8 +1958,8 @@ fn tables_of(list: &mut Item) -> Vec<&mut dyn TableLike> {
 /// `[keys]`. Merging the list would replace the file's tables, and the user's comments on them, and merging
 /// `[keys]` would write each key in Tsugiki's words over the user's: `"ctrl+k m"` over `"Ctrl+K M"`.
 fn without_hand_edits(mut document: DocumentMut) -> DocumentMut {
-    drop(document.remove(REPOSITORIES));
-    drop(document.remove(KEYS));
+    take_out(document.as_table_mut(), REPOSITORIES);
+    take_out(document.as_table_mut(), KEYS);
     document
 }
 
@@ -1871,7 +1987,7 @@ fn tidy_recent(file: &mut Table) {
         && let Some(tables) = file.remove(RECENT)
         && let Ok(list) = tables.into_value()
     {
-        drop(file.insert(RECENT, Item::Value(list)));
+        file.extend([(RECENT, Item::Value(list))]);
     }
     let has_list = file.get(RECENT).is_some_and(Item::is_array);
     let order: Vec<String> = file
@@ -1886,7 +2002,7 @@ fn tidy_recent(file: &mut Table) {
         return;
     }
     // A `recent` that isn't a list counts as none, so `last_repository` takes its place.
-    drop(file.remove(RECENT));
+    take_out(file, RECENT);
     let parsed = last
         .as_str()
         .and_then(|last| RepositoryName::parse(last).ok());
@@ -1902,7 +2018,7 @@ fn tidy_recent(file: &mut Table) {
         .cloned()
         .unwrap_or_default();
     let key = Key::new(RECENT).with_leaf_decor(key.leaf_decor().clone());
-    drop(file.insert_formatted(&key, Item::Value(recent)));
+    file.extend([(key, Item::Value(recent))]);
     let place = |key: &Key| order.iter().position(|one| one == key.get());
     file.sort_values_by(|one, _, other, _| place(one).cmp(&place(other)));
 }
@@ -1962,11 +2078,13 @@ fn put_first_in_recent_commands(file: &mut Table, command: &CommandId) -> Vec<Co
 
 /// An entry of `recent`: `name`, and when it was opened, to the second, in UTC.
 fn recent_entry(name: &RepositoryName, opened_at: Option<OffsetDateTime>) -> Value {
-    let mut entry = InlineTable::new();
-    drop(entry.insert(NAME, Value::from(name.to_string())));
-    if let Some(at) = opened_at.and_then(toml_time) {
-        drop(entry.insert(OPENED_AT, Value::from(at)));
-    }
+    let at = opened_at
+        .and_then(toml_time)
+        .map(|at| (OPENED_AT, Value::from(at)));
+    let mut entry: InlineTable = [(NAME, Value::from(name.to_string()))]
+        .into_iter()
+        .chain(at)
+        .collect();
     entry.fmt();
     Value::InlineTable(entry)
 }
@@ -2036,7 +2154,7 @@ fn set_mirror_source(file: &mut dyn TableLike, name: &RepositoryName, source: &M
             })
             .collect();
         for other in others {
-            drop(section.remove(&other));
+            take_out(section, &other);
         }
         merge_value(section, &key, &toml_edit::value(source.to_text()), None);
     });
@@ -2080,7 +2198,11 @@ fn merge_section(
 /// leaves it empty.
 fn edit_section(file: &mut dyn TableLike, key: &str, change: impl FnOnce(&mut dyn TableLike)) {
     if !file.get(key).is_some_and(Item::is_table_like) {
-        drop(file.insert(key, Item::Table(Table::new())));
+        #[expect(
+            unused_results,
+            reason = "a value there that isn't a table, such as a hand-written path, gives way to the section"
+        )]
+        file.insert(key, Item::Table(Table::new()));
     }
     if let Some(section) = file.get_mut(key).and_then(Item::as_table_like_mut) {
         change(section);
@@ -2095,7 +2217,7 @@ fn drop_if_empty(file: &mut dyn TableLike, key: &str) {
         .and_then(Item::as_table_like)
         .is_some_and(TableLike::is_empty);
     if empty && !has_comment(file, key) {
-        drop(file.remove(key));
+        take_out(file, key);
     }
 }
 
@@ -2103,7 +2225,7 @@ fn drop_if_empty(file: &mut dyn TableLike, key: &str) {
 /// tidy file, so that value stays, at its default.
 fn merge_value(file: &mut dyn TableLike, key: &str, wanted: &Item, default: Option<&Item>) {
     if default.is_some_and(|default| same(wanted, default)) && !has_comment(file, key) {
-        drop(file.remove(key));
+        take_out(file, key);
         return;
     }
     match (
@@ -2117,8 +2239,24 @@ fn merge_value(file: &mut dyn TableLike, key: &str, wanted: &Item, default: Opti
                 *current.decor_mut() = decor;
             }
         }
-        _ => drop(file.insert(key, wanted.clone())),
+        _ => {
+            #[expect(
+                unused_results,
+                reason = "the file held nothing at `key`, or something of another kind than `wanted`, which \
+                          takes its place"
+            )]
+            file.insert(key, wanted.clone());
+        }
     }
+}
+
+/// Takes `key` out of `table`, with the comments on it.
+fn take_out(table: &mut dyn TableLike, key: &str) {
+    #[expect(
+        unused_results,
+        reason = "each caller wants the key gone from the file, and none needs what it held"
+    )]
+    table.remove(key);
 }
 
 fn same(one: &Item, other: &Item) -> bool {
@@ -2153,13 +2291,6 @@ fn in_the_files_style(merged: String, before: &str) -> String {
     } else {
         merged
     }
-}
-
-/// Writes over the file rather than moving a new one onto it, so a symlink and the file's permissions stay,
-/// and a failure can't leave a second file in a dotfiles repository.
-fn save(path: &Path, text: &str) -> io::Result<()> {
-    fs::create_dir_all(path.with_file_name(""))?;
-    fs::write(path, text)
 }
 
 fn read_machine(path: &Path) -> Result<Machine, String> {

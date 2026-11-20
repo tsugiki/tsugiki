@@ -1,12 +1,9 @@
-use std::sync::mpsc::{self, Receiver};
-
+use super::testing::{handle, handle_with_headless, named};
 use super::*;
 use crate::facts::CommitSha;
-use crate::mirror::HeardRequests;
-
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
+use crate::repository_settings::{RepositorySettings, SavedBy};
+use crate::status::ItemUnread;
+use crate::testing::cpython;
 
 fn head(number: u32) -> PrHead {
     PrHead {
@@ -16,11 +13,38 @@ fn head(number: u32) -> PrHead {
     }
 }
 
-/// A handle, what reaches the session through it, and what reaches the Mirror worker.
-fn handle() -> (Fetching, Receiver<SessionMessage>, HeardRequests) {
-    let (messages, incoming) = mpsc::channel();
-    let (mirrors, heard) = HeardRequests::new();
-    (Fetching::new(messages, mirrors), incoming, heard)
+#[test]
+fn a_pr_whose_conversation_named_no_head_twice_has_a_head_again_after_one_demand() {
+    let (fetching, _incoming, _heard, headless) = handle_with_headless();
+    let pr = |number| Item {
+        repository: cpython(),
+        number,
+    };
+
+    headless.note(&pr(7), NoHead::Unnamed);
+    headless.note(&pr(8), NoHead::Unnamed);
+    headless.note(&pr(7), NoHead::Unnamed);
+    fetching.fetch_pull_request(cpython(), 7);
+
+    assert_eq!(fetching.why_no_head(&cpython(), 7), None);
+    assert_eq!(fetching.why_no_head(&cpython(), 8), Some(NoHead::Unnamed));
+}
+
+#[test]
+fn a_pr_holds_why_its_last_conversation_read_left_it_with_no_head() {
+    let (fetching, _incoming, _heard, headless) = handle_with_headless();
+    let seven = Item {
+        repository: cpython(),
+        number: 7,
+    };
+
+    headless.note(&seven, NoHead::Unnamed);
+    headless.note(&seven, NoHead::Unread(ItemUnread::Other));
+
+    assert_eq!(
+        fetching.why_no_head(&cpython(), 7),
+        Some(NoHead::Unread(ItemUnread::Other))
+    );
 }
 
 #[test]
@@ -113,29 +137,14 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     fetching.fetch_issue(cpython(), 7);
     fetching.fetch_pull_request(cpython(), 8);
     fetching.refresh();
-    fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::HandEdit);
-    fetching.settings_changed(RepositorySettings::new(cpython()), SavedBy::Window);
-    fetching.mark_unseen(cpython(), 9);
+    let saved = |by| SettingsSave::new(RepositorySettings::new(cpython()), &[], by);
+    fetching.settings_changed(saved(SavedBy::HandEdit));
+    fetching.settings_changed(saved(SavedBy::Window));
+    fetching.mark_unseen(cpython(), 9, None);
+    fetching.sync(cpython());
     fetching.stop_session();
 
-    let heard: Vec<String> = incoming
-        .try_iter()
-        .map(|message| match message {
-            SessionMessage::Fetch(Fetched::Issue(item)) => format!("Issue #{}", item.number),
-            SessionMessage::Fetch(Fetched::PullRequest(item)) => format!("PR #{}", item.number),
-            SessionMessage::Refresh => "refresh".to_owned(),
-            SessionMessage::SettingsChanged(settings, SavedBy::HandEdit) => {
-                format!("settings of {}", settings.name)
-            }
-            SessionMessage::SettingsChanged(_, SavedBy::Window) => "switch".to_owned(),
-            SessionMessage::Mark(Marked::Unseen { item, .. }) => format!("unseen #{}", item.number),
-            SessionMessage::Stop => "stop".to_owned(),
-            SessionMessage::Check { .. }
-            | SessionMessage::Sync { .. }
-            | SessionMessage::Mark(Marked::Seen { .. })
-            | SessionMessage::Patched(..) => "other".to_owned(),
-        })
-        .collect();
+    let heard: Vec<String> = incoming.try_iter().map(named).collect();
     assert_eq!(
         heard,
         [
@@ -145,6 +154,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             "settings of python/cpython",
             "switch",
             "unseen #9",
+            "other",
             "stop"
         ]
     );

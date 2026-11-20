@@ -44,7 +44,7 @@ it("lists every action with its key and where it works, in the table's order", (
   expect(rows().map(([action]) => action)).toEqual(keyTable().map((row) => row.title));
   expect(rowOf("Command Palette")).toEqual(["Command Palette", "Ctrl+Shift+P", "Anywhere"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "F7", "Diff"]);
-  expect(rowOf("Archive")).toEqual(["Archive", "E", "Issue list"]);
+  expect(rowOf("Unfold an Issue's PRs")).toEqual(["Unfold an Issue's PRs", "→", "Issue list"]);
   expect(rowOf("Send Comment")).toEqual(["Send Comment", "Ctrl+Enter", "Composer"]);
   expect(rowOf("Reset Layout")).toEqual(["Reset Layout", "No key", "Anywhere"]);
 });
@@ -58,7 +58,7 @@ it("leaves the rows whose action or key holds what the box holds, in any case", 
   render(KeyboardPage);
 
   await filter("archive");
-  expect(rows()).toEqual([["Archive", "E", "Issue list"]]);
+  expect(rows()).toEqual([["Archive", "E", "Anywhere"]]);
 
   await filter("  CTRL+K ");
   const chords = rows().map(([, key]) => key);
@@ -87,7 +87,10 @@ it("finds a key on macOS by Cmd, as the page shows it, and by Ctrl, as `[keys]` 
 it("finds the actions with no key by the words the page shows", async () => {
   render(KeyboardPage);
   await filter("no key");
-  expect(rows()).toEqual([["Reset Layout", "No key", "Anywhere"]]);
+  expect(rows()).toEqual([
+    ["Reset Layout", "No key", "Anywhere"],
+    ["Mute Author", "No key", "Anywhere"],
+  ]);
 });
 
 it("says so when no row holds what the box holds", async () => {
@@ -133,7 +136,7 @@ it("marks a remapped key, with its default, and says which action took a key", (
   remapKeys({ archive: "f7", mute: "f8", local_mark: "", reset_layout: "ctrl+k l", pin: "ctrl+k p" });
   render(KeyboardPage);
 
-  expect(rowOf("Mute")).toEqual(["Mute", "F8 remapped", "Issue list"]);
+  expect(rowOf("Mute")).toEqual(["Mute", "F8 remapped", "Anywhere"]);
   expect(rowOf("Local Mark")).toEqual(["Local Mark", "No key remapped", "Anywhere"]);
   expect(rowOf("Reset Layout")).toEqual(["Reset Layout", "Ctrl+K L remapped", "Anywhere"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "No key F7 went to Archive", "Diff"]);
@@ -154,8 +157,8 @@ it("marks a remapped key a later remapped action took as lost to it", () => {
   remapKeys({ archive: "f7", mute: "f7" });
   render(KeyboardPage);
 
-  expect(rowOf("Archive")).toEqual(["Archive", "No key remapped F7 went to Mute", "Issue list"]);
-  expect(rowOf("Mute")).toEqual(["Mute", "F7 remapped", "Issue list"]);
+  expect(rowOf("Archive")).toEqual(["Archive", "No key remapped F7 went to Mute", "Anywhere"]);
+  expect(rowOf("Mute")).toEqual(["Mute", "F7 remapped", "Anywhere"]);
   expect(rowOf("Next Change")).toEqual(["Next Change", "No key F7 went to Mute", "Diff"]);
 });
 

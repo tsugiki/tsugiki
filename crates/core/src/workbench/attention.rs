@@ -51,8 +51,13 @@ pub(super) fn seen_of(causes: &Causes, numbers: Vec<u32>) -> Seen {
     } else {
         SeenState::Seen
     };
+    let findings = causes.findings_in(&numbers);
     Seen {
-        mark: SeenMark { numbers, up_to },
+        mark: SeenMark {
+            numbers,
+            up_to,
+            findings,
+        },
         state,
     }
 }
@@ -60,7 +65,12 @@ pub(super) fn seen_of(causes: &Causes, numbers: Vec<u32>) -> Seen {
 /// The sum of `item` and the rest of its tree.
 pub(super) fn attention_of(causes: &Causes, item: &WorkbenchItem) -> Option<Attention> {
     let found = item.numbers().into_iter().map(|number| causes.on(number));
-    let mut found: Vec<&Cause> = found.flatten().collect();
+    summed(found.flatten())
+}
+
+/// The sum of `found`, the causes on an item's tree: none when there are none.
+pub(super) fn summed<'a>(found: impl IntoIterator<Item = &'a Cause>) -> Option<Attention> {
+    let mut found: Vec<&Cause> = found.into_iter().collect();
     let since = found.iter().map(|cause| cause.at).min()?;
     found.sort_by_key(|cause| std::cmp::Reverse(cause.at));
     let mut why: Vec<Why> = Vec::new();
@@ -74,16 +84,21 @@ pub(super) fn attention_of(causes: &Causes, item: &WorkbenchItem) -> Option<Atte
 
 impl WorkbenchItem {
     /// The numbers of what this item shows.
+    pub(crate) fn numbers(&self) -> Vec<u32> {
+        match self {
+            Self::Issue(issue) => issue.numbers(),
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) => {
+                self.rows().iter().map(|row| row.number).collect()
+            }
+        }
+    }
+}
+
+impl IssueItem {
+    /// The Issue's number, then the number of each PR its tree holds.
     pub(super) fn numbers(&self) -> Vec<u32> {
-        let issue = match self {
-            Self::Issue(IssueItem { number, .. }) => Some(*number),
-            Self::StandalonePr(_) | Self::StandaloneBackport(_) => None,
-        };
-        let rows = self.rows();
-        issue
-            .into_iter()
-            .chain(rows.iter().map(|row| row.number))
-            .collect()
+        let rows = self.rows().into_iter().map(|row| row.number);
+        std::iter::once(self.number).chain(rows).collect()
     }
 }
 

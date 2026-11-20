@@ -159,13 +159,6 @@
 </div>
 
 <style>
-  h3 {
-    margin: 4px 0 8px;
-    padding-bottom: 4px;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border);
-  }
-
   .row {
     margin-bottom: 14px;
     padding: 4px 6px;

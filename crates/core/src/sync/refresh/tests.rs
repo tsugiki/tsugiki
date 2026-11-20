@@ -1,38 +1,44 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::WorkFacts;
-use crate::facts::activity::{Activity, ActivityKind};
+use crate::facts::activity::{Activity, ActivityKind, ItemKey, PutAway};
 use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
 use crate::filters::{Filter, OnWorkbench};
-use crate::github::testing::{dated, rate_limit, reply_ok, signed_in_as};
+use crate::github::testing::{
+    answer, dated, filter_page, github, page_info, pr_content, pull_request_answer, replied,
+    reply_ok, signed_in_as,
+};
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::settings::ListOrder;
 use crate::status::Change;
-use crate::store::Store;
+use crate::store::testing::seeing;
+use crate::store::{Archiving, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
     FEW, Harness, RATE_LIMIT, cpython, cross_references, fetched_nodes, issues,
-    no_cross_references, pr_node,
+    no_cross_references, pr_node, searches_finding,
 };
 use crate::sync::{Progress, Syncs};
+use crate::testing::{issue_facts, me, moment};
 use crate::token::Token;
+use crate::work::Why;
+use crate::workbench::inbox::{Inbox, InboxPage};
+use crate::workbench::{Hidden, ListedItem, Workbench, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::mpsc::{self, Sender};
 use time::format_description::well_known::Rfc3339;
+use tsugiki_test_git::pass_on;
 
 const LAST_SYNC: &str = "2026-11-04T10:00:00Z";
 const AFTER_IT: &str = "2026-11-04T10:30:00Z";
 const LONG_BEFORE: &str = "2026-11-01T10:00:00Z";
-
-fn at(text: &str) -> OffsetDateTime {
-    OffsetDateTime::parse(text, &Rfc3339).unwrap()
-}
 
 fn filtering(queries: &[&str]) -> RepositorySettings {
     RepositorySettings {
@@ -52,46 +58,41 @@ fn query(text: &str) -> FilterQuery {
     text.to_owned().try_into().unwrap()
 }
 
-fn me() -> Login {
-    Login::new("octocat")
-}
-
 /// A harness whose Repository finished a sync at `LAST_SYNC`, and whose user is `octocat`.
 fn after_a_sync(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness {
     let harness = Harness::new(name, replies);
     synced(&harness, ChangeCheck::Skipped);
-    harness.store.remember_login(&me()).unwrap();
+    harness.db.store.remember_login(&me()).unwrap();
     harness
 }
 
 fn synced(harness: &Harness, check: ChangeCheck) {
     let state = SyncState {
-        started_at: at(LAST_SYNC),
-        finished_at: at(LAST_SYNC),
+        started_at: moment(LAST_SYNC),
+        finished_at: moment(LAST_SYNC),
         check,
         refresh_under_way: false,
     };
-    harness.store.save_sync_state(&cpython(), state).unwrap();
+    harness.db.store.save_sync_state(&cpython(), state).unwrap();
 }
 
 fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
     let issue = IssueFacts {
-        number,
-        title: format!("Issue {number}"),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
-        updated_at: at(updated_at),
-        state: Some(IssueState::Open),
+        updated_at: moment(updated_at),
+        ..issue_facts(number)
     };
-    harness.store.save_issues(&cpython(), vec![issue]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![issue])
+        .unwrap();
 }
 
 /// PR `number` as a fetch would read it from `node`.
 fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
     let script = fetched_nodes(std::slice::from_ref(node), RATE_LIMIT);
     let (script, _asked) = crate::github::testing::Scripted::new(vec![script]);
-    let github = crate::github::GitHub::new(Box::new(script), crate::github::testing::token());
+    let github = github(script);
     let id: NodeId = serde_json::from_value(json!("id")).unwrap();
     let batch = github
         .fetch_pull_requests(PrFetch::Work, &[id], 25)
@@ -102,6 +103,7 @@ fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
 /// Saves the PR a fetch would read from `node`.
 fn holding_pr(harness: &Harness, node: &Value) {
     harness
+        .db
         .store
         .save_pull_requests(&cpython(), read_pr(node))
         .unwrap();
@@ -113,16 +115,17 @@ fn saved_by_a_stopped_refresh(harness: &Harness, node: &Value) {
     let pull_requests = read_pr(node);
     let changed = pull_requests.iter().map(|pr| pr.number).collect();
     harness
+        .db
         .store
         .save_changed_pull_requests(&cpython(), (pull_requests, vec![]), changed)
         .unwrap();
     let state = SyncState {
-        started_at: at(LAST_SYNC),
-        finished_at: at(LAST_SYNC),
+        started_at: moment(LAST_SYNC),
+        finished_at: moment(LAST_SYNC),
         check: ChangeCheck::Skipped,
         refresh_under_way: true,
     };
-    harness.store.save_sync_state(&cpython(), state).unwrap();
+    harness.db.store.save_sync_state(&cpython(), state).unwrap();
 }
 
 fn own_open_pr(number: u32, changes: &Value) -> Value {
@@ -155,16 +158,18 @@ fn issue_node(number: u32, updated_at: &str) -> Value {
 }
 
 fn list(nodes: &[Value], next: Option<&str>) -> Value {
-    json!({
-        "pageInfo": { "hasNextPage": next.is_some(), "endCursor": next },
-        "nodes": nodes,
-    })
+    json!({ "pageInfo": page_info(next), "nodes": nodes })
 }
 
 fn search(nodes: &[Value], next: Option<&str>) -> Value {
     let mut answer = list(nodes, next);
     answer["issueCount"] = json!(nodes.len());
     answer
+}
+
+/// GitHub's answer to a Filter's search on its own, which found `nodes`.
+fn searched(nodes: &[Value], next: Option<&str>) -> Result<Reply, Unreachable> {
+    filter_page(nodes.len(), nodes, next, RATE_LIMIT)
 }
 
 fn issue_hit(number: u32) -> Value {
@@ -187,20 +192,16 @@ fn polled_with_open(
     prs: &Value,
     searches: &[Value],
 ) -> Result<Reply, Unreachable> {
-    let repository = json!({
+    let mut data = json!({ "repository": {
         "openIssues": { "totalCount": open },
         "openPrs": { "totalCount": 0 },
         "issues": issues,
         "pullRequests": prs,
-    });
-    let fields: String = searches
-        .iter()
-        .enumerate()
-        .map(|(position, answer)| format!(r#""f{position}":{answer},"#))
-        .collect();
-    reply_ok(&format!(
-        r#"{{"data":{{"repository":{repository},{fields}{RATE_LIMIT}}}}}"#
-    ))
+    } });
+    for (position, found) in searches.iter().enumerate() {
+        data[format!("f{position}")] = found.clone();
+    }
+    answer(data, RATE_LIMIT)
 }
 
 fn quiet_poll() -> Result<Reply, Unreachable> {
@@ -224,10 +225,7 @@ fn probed(states: &[(u32, &str)]) -> Result<Reply, Unreachable> {
             (format!("p{number}"), probe)
         })
         .collect();
-    reply_ok(&format!(
-        r#"{{"data":{{"repository":{},{RATE_LIMIT}}}}}"#,
-        Value::Object(fields)
-    ))
+    answer(json!({ "repository": fields }), RATE_LIMIT)
 }
 
 /// GitHub's answer about the checks of PR `number`, of which `names` failed.
@@ -245,11 +243,10 @@ fn failed_checks(number: u32, names: &[&str]) -> Result<Reply, Unreachable> {
             { "commit": { "statusCheckRollup": { "contexts": { "nodes": runs } } } }
         ] },
     });
-    let data = json!({ "data": {
-        "repository": { format!("p{number}"): pull_request },
-        "rateLimit": rate_limit(),
-    } });
-    reply_ok(&data.to_string())
+    answer(
+        json!({ "repository": { format!("p{number}"): pull_request } }),
+        RATE_LIMIT,
+    )
 }
 
 /// Runs the refresh to its end, and answers with everything it announced.
@@ -257,7 +254,7 @@ fn run(syncs: &mut Syncs, harness: &Harness) -> Vec<Change> {
     let mut changes = Vec::new();
     while syncs.ready_at().is_some() {
         if let Some(Progress::Changed(change)) =
-            syncs.step(&harness.github, &harness.store).unwrap()
+            syncs.step(&harness.github, &harness.db.store).unwrap()
         {
             changes.push(change);
         }
@@ -267,18 +264,18 @@ fn run(syncs: &mut Syncs, harness: &Harness) -> Vec<Change> {
 
 fn refreshing(settings: RepositorySettings) -> Syncs {
     let mut syncs = Syncs::default();
-    syncs.add(settings);
+    syncs.add_listed(settings);
     syncs
 }
 
 fn facts(harness: &Harness) -> WorkFacts {
-    harness.reader.work_facts(&cpython()).unwrap()
+    harness.db.reader.work_facts(&cpython()).unwrap()
 }
 
 /// A Repository that finished a sync, holding what a poll and a probe can move.
 fn holding_what_can_move(harness: &Harness) {
     synced(harness, ChangeCheck::Skipped);
-    harness.store.remember_login(&me()).unwrap();
+    harness.db.store.remember_login(&me()).unwrap();
     holding_issue(harness, 1, LONG_BEFORE);
     holding_pr(harness, &strangers_pr(3, LONG_BEFORE));
     holding_pr(harness, &own_open_pr(4, &json!({})));
@@ -302,10 +299,7 @@ fn a_refresh_recovers_from_a_failure_at_each_point() {
         fetched_nodes(&[strangers_pr(3, AFTER_IT)], RATE_LIMIT),
         probed(&[(4, "FAILURE")]),
         failed_checks(4, &["Tests"]),
-        reply_ok(&format!(
-            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
-            search(&[issue_hit(2), issue_hit(5)], None)
-        )),
+        searched(&[issue_hit(2), issue_hit(5)], None),
         issues(&[2, 5, 6, 8], RATE_LIMIT),
         cross_references(&[7], None, RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
@@ -364,13 +358,13 @@ fn a_refresh_that_redoes_an_interrupted_one_recovers_from_a_failure_at_each_poin
         settings: filtering(&[]),
         prepare: |harness| {
             let state = SyncState {
-                started_at: at(LAST_SYNC),
-                finished_at: at(LAST_SYNC),
+                started_at: moment(LAST_SYNC),
+                finished_at: moment(LAST_SYNC),
                 check: ChangeCheck::Skipped,
                 refresh_under_way: true,
             };
-            harness.store.save_sync_state(&cpython(), state).unwrap();
-            harness.store.remember_login(&me()).unwrap();
+            harness.db.store.save_sync_state(&cpython(), state).unwrap();
+            harness.db.store.remember_login(&me()).unwrap();
             holding_issue(harness, 1, LONG_BEFORE);
             holding_pr(harness, &own_open_pr(4, &json!({})));
         },
@@ -400,7 +394,7 @@ fn a_refresh_of_a_small_repository_recovers_from_a_failure_at_each_point() {
         settings: filtering(&["a"]),
         prepare: |harness| {
             synced(harness, ChangeCheck::Tagged(Etag::new("\"same\"")));
-            harness.store.remember_login(&me()).unwrap();
+            harness.db.store.remember_login(&me()).unwrap();
             holding_pr(harness, &own_open_pr(1, &json!({})));
             stored_filter(harness, "a", &[]);
         },
@@ -435,15 +429,15 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
 /// Saves Issue `number` with no state, as the migration that added states left the Issues saved before it.
 fn holding_issue_with_no_state(harness: &Harness, number: u32) {
     let issue = IssueFacts {
-        number,
-        title: format!("Issue {number}"),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
-        updated_at: at(LONG_BEFORE),
+        updated_at: moment(LONG_BEFORE),
         state: None,
+        ..issue_facts(number)
     };
-    harness.store.save_issues(&cpython(), vec![issue]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![issue])
+        .unwrap();
 }
 
 #[test]
@@ -459,10 +453,11 @@ fn a_refresh_fetches_the_issues_saved_before_tsugiki_kept_states_once() {
 
     let changes = run(&mut syncs, &harness);
     let first = harness.operations();
-    syncs.add(filtering(&[]));
+    syncs.add_listed(filtering(&[]));
     drop(run(&mut syncs, &harness));
 
     let states: Vec<Option<IssueState>> = harness
+        .db
         .store
         .issues(&cpython())
         .unwrap()
@@ -487,10 +482,11 @@ fn an_issue_github_no_longer_has_is_asked_for_once_a_launch() {
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
-    syncs.add(filtering(&[]));
+    syncs.add_listed(filtering(&[]));
     drop(run(&mut syncs, &harness));
 
     let states: Vec<Option<IssueState>> = harness
+        .db
         .store
         .issues(&cpython())
         .unwrap()
@@ -508,7 +504,7 @@ fn an_issue_github_no_longer_has_is_asked_for_once_a_launch() {
 /// Steps the open Repository's sync until it finishes.
 fn until_finished(syncs: &mut Syncs, harness: &Harness) {
     while !matches!(
-        syncs.step(&harness.github, &harness.store).unwrap(),
+        syncs.step(&harness.github, &harness.db.store).unwrap(),
         Some(Progress::Finished(_))
     ) {}
 }
@@ -523,7 +519,7 @@ fn a_refresh_goes_before_the_fetch_of_the_issues_with_no_state() {
     let mut syncs = refreshing(filtering(&[]));
 
     until_finished(&mut syncs, &harness);
-    syncs.add(filtering(&[]));
+    syncs.add_listed(filtering(&[]));
     drop(run(&mut syncs, &harness));
 
     assert_eq!(
@@ -563,15 +559,15 @@ fn a_finished_refresh_moves_the_last_sync_on_and_a_failed_one_leaves_it() {
     );
     let mut syncs = refreshing(filtering(&[]));
 
-    let failed = syncs.step(&harness.github, &harness.store).unwrap_err();
-    let during = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    let failed = syncs.step(&harness.github, &harness.db.store).unwrap_err();
+    let during = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
     drop(run(&mut syncs, &harness));
-    let after = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    let after = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
 
     assert_eq!(failed.problem.kind, ErrorKind::Offline);
-    assert_eq!(during.started_at, at(LAST_SYNC));
+    assert_eq!(during.started_at, moment(LAST_SYNC));
     assert!(during.refresh_under_way);
-    assert!(after.started_at > at(LAST_SYNC));
+    assert!(after.started_at > moment(LAST_SYNC));
     assert!(!after.refresh_under_way);
     harness.finish();
 }
@@ -628,15 +624,15 @@ fn a_refresh_keeps_the_labels_an_issue_gained_and_drops_those_it_lost() {
     ];
     let harness = after_a_sync("issue-relabelled", replies);
     let held = IssueFacts {
-        number: 1,
-        title: "Issue 1".to_owned(),
-        author: None,
-        assignees: vec![],
         labels: labels(&["pending", "type-bug"]),
-        updated_at: at(LONG_BEFORE),
-        state: Some(IssueState::Open),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(1)
     };
-    harness.store.save_issues(&cpython(), vec![held]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![held])
+        .unwrap();
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
@@ -665,7 +661,11 @@ fn a_refresh_keeps_the_labels_a_pr_gained_and_drops_those_it_lost() {
     ];
     let harness = after_a_sync("pr-relabelled", replies);
     let held = read_pr(&relabelled(&["awaiting review", "skip news"], LONG_BEFORE));
-    harness.store.save_pull_requests(&cpython(), held).unwrap();
+    harness
+        .db
+        .store
+        .save_pull_requests(&cpython(), held)
+        .unwrap();
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
@@ -685,15 +685,15 @@ fn an_issue_nothing_shows_stays_out_and_an_unchanged_one_says_nothing() {
         vec![polled(&issues_list, &list(&[], None), &[])],
     );
     let same = IssueFacts {
-        number: 2,
         title: "Issue 2 now".to_owned(),
-        author: None,
-        assignees: vec![],
-        labels: vec![],
-        updated_at: at(LONG_BEFORE),
-        state: Some(IssueState::Open),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(2)
     };
-    harness.store.save_issues(&cpython(), vec![same]).unwrap();
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![same])
+        .unwrap();
     let mut syncs = refreshing(filtering(&[]));
 
     let changes = run(&mut syncs, &harness);
@@ -805,6 +805,29 @@ fn a_fetch_that_brings_what_tsugiki_holds_says_nothing() {
 }
 
 #[test]
+fn a_fetch_older_than_what_tsugiki_holds_says_nothing_and_owes_no_read() {
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(1, AFTER_IT)], None),
+            &[],
+        ),
+        // A replica of GitHub's that lags.
+        fetched_nodes(&[strangers_pr(1, LONG_BEFORE)], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("older-again", replies);
+    holding_pr(&harness, &strangers_pr(1, LAST_SYNC));
+    let mut syncs = refreshing(filtering(&[]));
+
+    let changes = run(&mut syncs, &harness);
+
+    assert_eq!(changes, []);
+    let owed = harness.db.store.read_ahead_owed(&cpython()).unwrap();
+    assert_eq!(owed, BTreeSet::new());
+    harness.finish();
+}
+
+#[test]
 fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
     let replies = vec![
         polled(
@@ -869,6 +892,7 @@ fn github_refusing_to_name_the_failed_checks_leaves_them_for_the_next_refresh() 
         "the probe's CI, and then the Conversation"
     );
     let unread = harness
+        .db
         .store
         .pull_requests_with_unread_checks(&cpython(), &me())
         .unwrap();
@@ -906,7 +930,7 @@ fn a_probe_of_the_users_open_prs_saves_ci_and_names_only_what_moved() {
             "FetchPullRequestContent",
         ]
     );
-    let read = harness.reader.work_facts(&cpython()).unwrap();
+    let read = harness.db.reader.work_facts(&cpython()).unwrap();
     assert_eq!(
         read.activity.failed_checks.get(&2).unwrap(),
         &["Docs", "Tests"]
@@ -928,7 +952,7 @@ fn a_probe_with_many_prs_runs_in_batches_and_pauses_at_the_floor() {
         .take(25)
         .map(|number| (*number, "SUCCESS"))
         .collect();
-    let few_left = reply_ok(&format!(r#"{{"data":{{"repository":{{}},{FEW}}}}}"#));
+    let few_left = answer(json!({ "repository": {} }), FEW);
     let replies = vec![quiet_poll(), probed(&first), few_left];
     let harness = after_a_sync("probe-batches", replies);
     for number in &many {
@@ -936,11 +960,11 @@ fn a_probe_with_many_prs_runs_in_batches_and_pauses_at_the_floor() {
     }
     let mut syncs = refreshing(filtering(&[]));
 
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     let paused = syncs.ready_at().unwrap();
 
     assert_eq!(
@@ -1000,23 +1024,19 @@ fn approved() -> Result<Reply, Unreachable> {
         "minimizedReason": null,
         "commit": { "oid": "0123abc" },
     });
-    let pull_request = json!({
-        "bodyHTML": "<p>A change</p>",
-        "createdAt": "2026-11-01T09:00:00Z",
-        "comments": { "totalCount": 0, "nodes": [] },
-        "reviews": { "totalCount": 1, "nodes": [review] },
-        "reviewThreads": { "nodes": [] },
-        "headRefOid": "0123abc",
-    });
-    let data = json!({ "repository": { "pullRequest": pull_request }, "rateLimit": rate_limit() });
-    reply_ok(&json!({ "data": data }).to_string())
+    let pull_request = pr_content(&json!({ "reviews": { "totalCount": 1, "nodes": [review] } }));
+    pull_request_answer(pull_request, RATE_LIMIT)
+}
+
+/// GitHub's answer to a read of a PR's Conversation that holds no Review or comment.
+fn quiet_conversation() -> Result<Reply, Unreachable> {
+    pull_request_answer(pr_content(&json!({})), RATE_LIMIT)
 }
 
 /// The states of the Reviews Tsugiki holds of PR `number`, or nothing if it hasn't read its Conversation.
 fn reviews_held(harness: &Harness, number: u32) -> Option<Vec<ReviewState>> {
-    let (_, content) = harness
-        .reader
-        .pull_request_facts(&cpython(), number)
+    let content = (harness.db.reader)
+        .pull_request_content(&cpython(), number)
         .unwrap();
     content.map(|content| content.reviews.iter().map(|review| review.state).collect())
 }
@@ -1078,12 +1098,7 @@ fn a_pr_github_wont_give_the_conversation_of_leaves_the_rest_to_read() {
             RATE_LIMIT,
         ),
         // The query ran out of its 10 seconds on this PR.
-        Ok(Reply {
-            status: 502,
-            reset: None,
-            date: None,
-            body: String::new(),
-        }),
+        replied(502, ""),
         approved(),
     ];
     let harness = after_a_sync("read-ahead-refused", replies);
@@ -1093,7 +1108,7 @@ fn a_pr_github_wont_give_the_conversation_of_leaves_the_rest_to_read() {
 
     assert_eq!(reviews_held(&harness, 1), None);
     assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
-    let state = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
     assert!(!state.refresh_under_way, "the refresh finished");
     harness.finish();
 }
@@ -1130,6 +1145,7 @@ fn stored_filter(harness: &Harness, text: &str, numbers: &[u32]) {
         problem: None,
     };
     harness
+        .db
         .store
         .save_filter_results(&cpython(), &query(text), results)
         .unwrap();
@@ -1174,18 +1190,77 @@ fn a_filter_switched_on_during_a_refresh_has_it_read_ahead_what_the_filter_reach
     stored_filter(&harness, "a", &[2]);
     let mut off = filtering(&["a"]);
     off.filters[0].on_workbench = OnWorkbench::Off;
-    let mut syncs = refreshing(off.clone());
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    let mut syncs = refreshing(off);
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
-    let before = syncs.replace_settings(filtering(&["a"]));
+    syncs.list(filtering(&["a"]));
     drop(run(&mut syncs, &harness));
 
-    assert_eq!(before, Some(off));
     assert_eq!(
         harness.operations(),
         [
             "RefreshRepository",
             "FetchChangedPullRequests",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
+    harness.finish();
+}
+
+#[test]
+fn a_filter_switched_on_during_a_first_sync_has_the_next_refresh_read_what_the_switch_owed() {
+    let hit = json!({
+        "__typename": "PullRequest",
+        "id": "id2",
+        "number": 2,
+        "updatedAt": LONG_BEFORE,
+        "repository": { "nameWithOwner": "python/cpython" },
+    });
+    let mut replies = searches_finding(&[]);
+    replies.push(searched(&[hit], None));
+    replies.push(fetched_nodes(&[strangers_pr(2, LONG_BEFORE)], RATE_LIMIT));
+    replies.push(polled(
+        &list(&[], None),
+        &list(&[], None),
+        &[search(&[], None)],
+    ));
+    replies.push(approved());
+    let harness = Harness::new("switched-mid-first-sync", replies);
+    harness.db.store.remember_login(&me()).unwrap();
+    let mut off = filtering(&["a"]);
+    off.filters[0].on_workbench = OnWorkbench::Off;
+    let mut syncs = refreshing(off);
+    for steps in 0.. {
+        if harness.numbers().contains(&2) {
+            break;
+        }
+        assert!(steps < 20, "the first sync never fetched PR 2");
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+    let first_sync_finished = harness.db.store.sync_state(&cpython()).unwrap();
+
+    // As the session does when the user switches "a" on.
+    syncs.list(filtering(&["a"]));
+    harness
+        .db
+        .store
+        .owe_read_ahead(&cpython(), vec![2])
+        .unwrap();
+    drop(run(&mut syncs, &harness));
+    syncs.add_listed(filtering(&["a"]));
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        first_sync_finished, None,
+        "the switch came during the first sync"
+    );
+    assert_eq!(
+        harness.operations()[4..],
+        [
+            "SearchFilter",
+            "FetchPullRequests",
+            "RefreshRepository",
             "FetchPullRequestContent"
         ]
     );
@@ -1207,19 +1282,19 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     let mut b_off = filtering(&["a", "b"]);
     b_off.filters[1].on_workbench = OnWorkbench::Off;
     harness
+        .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(2, None)])
+        .owe_read_ahead(&cpython(), vec![2])
         .unwrap();
     let mut syncs = refreshing(b_off);
-    while reviews_held(&harness, 2).is_none() {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
-    }
+    read_ahead_up_to(&mut syncs, &harness, 2);
 
     // As the session does when the user switches "b" on.
-    drop(syncs.replace_settings(filtering(&["a", "b"])));
+    syncs.list(filtering(&["a", "b"]));
     harness
+        .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(3, None)])
+        .owe_read_ahead(&cpython(), vec![3])
         .unwrap();
     drop(run(&mut syncs, &harness));
 
@@ -1235,6 +1310,72 @@ fn a_filter_switched_on_while_a_refresh_reads_ahead_has_it_read_what_the_switch_
     harness.finish();
 }
 
+/// Steps `syncs` until the store holds PR `number`'s Reviews.
+fn read_ahead_up_to(syncs: &mut Syncs, harness: &Harness, number: u32) {
+    while reviews_held(harness, number).is_none() {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
+}
+
+/// A Repository whose Filters "a" and "b" find strangers' PRs 2 and 3, of which the store owes a read.
+fn owing_two_reads(name: &str) -> Harness {
+    let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
+    let harness = after_a_sync(name, vec![quiet, approved()]);
+    holding_pr(&harness, &strangers_pr(2, LONG_BEFORE));
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    stored_filter(&harness, "a", &[2]);
+    stored_filter(&harness, "b", &[3]);
+    harness
+        .db
+        .store
+        .owe_read_ahead(&cpython(), vec![2, 3])
+        .unwrap();
+    harness
+}
+
+#[test]
+fn a_filter_switched_off_while_a_refresh_reads_ahead_leaves_what_it_reached_unread() {
+    let harness = owing_two_reads("switched-off-reading-ahead");
+    let mut syncs = refreshing(filtering(&["a", "b"]));
+    read_ahead_up_to(&mut syncs, &harness, 2);
+
+    let mut b_off = filtering(&["a", "b"]);
+    b_off.filters[1].on_workbench = OnWorkbench::Off;
+    syncs.list(b_off);
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    assert_eq!(reviews_held(&harness, 3), None);
+    harness.finish();
+}
+
+#[test]
+fn a_conversation_the_pr_view_read_while_a_refresh_reads_ahead_isnt_read_again() {
+    let harness = owing_two_reads("read-by-the-pr-view");
+    let mut syncs = refreshing(filtering(&["a", "b"]));
+    read_ahead_up_to(&mut syncs, &harness, 2);
+
+    // As the PR view does when the user opens PR 3, with what GitHub answered for PR 2.
+    let read = (harness.db.reader)
+        .pull_request_content(&cpython(), 2)
+        .unwrap();
+    harness
+        .db
+        .store
+        .save_pull_request_content(&cpython(), 3, (read.unwrap(), OffsetDateTime::UNIX_EPOCH))
+        .unwrap();
+    drop(run(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchPullRequestContent"]
+    );
+    harness.finish();
+}
+
 #[test]
 fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     let quiet = polled(&list(&[], None), &list(&[], None), &[search(&[], None)]);
@@ -1244,8 +1385,9 @@ fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     stored_filter(&harness, "a", &[2]);
     // As a Filter switched on would leave PR 2, and a Filter switched on and then off again PR 3.
     harness
+        .db
         .store
-        .owe_read_ahead_at(&cpython(), vec![(2, None), (3, None)])
+        .owe_read_ahead(&cpython(), vec![2, 3])
         .unwrap();
     let mut syncs = refreshing(filtering(&["a"]));
 
@@ -1258,7 +1400,7 @@ fn a_quiet_refresh_reads_ahead_what_a_switch_owed_while_it_is_in_reach() {
     assert_eq!(reviews_held(&harness, 2), Some(vec![ReviewState::Approved]));
     assert_eq!(reviews_held(&harness, 3), None);
     assert_eq!(
-        harness.store.read_ahead_owed(&cpython()).unwrap(),
+        harness.db.store.read_ahead_owed(&cpython()).unwrap(),
         BTreeSet::new()
     );
     harness.finish();
@@ -1275,13 +1417,8 @@ fn a_backport_a_refresh_brought_gets_its_origin_pr_when_a_tree_lists_it() {
             "updatedAt": AFTER_IT,
         }),
     );
-    let origin = reply_ok(&format!(
-        r#"{{"data":{{"repository":{{"pullRequest":{}}},{RATE_LIMIT}}}}}"#,
-        pr_node(
-            9,
-            &json!({ "state": "MERGED", "mergeCommit": { "oid": "0".repeat(40) } })
-        ),
-    ));
+    let merged = json!({ "state": "MERGED", "mergeCommit": { "oid": "0".repeat(40) } });
+    let origin = pull_request_answer(pr_node(9, &merged), RATE_LIMIT);
     let replies = vec![
         polled(
             &list(&[issue_node(1, AFTER_IT)], None),
@@ -1315,7 +1452,7 @@ fn a_refresh_that_stopped_reads_the_trees_it_owed_at_the_next_start() {
     holding_issue(&harness, 1, LONG_BEFORE);
 
     let mut stopped = refreshing(filtering(&[]));
-    drop(stopped.step(&harness.github, &harness.store).unwrap());
+    drop(stopped.step(&harness.github, &harness.db.store).unwrap());
     drop(stopped);
     let mut syncs = refreshing(filtering(&[]));
     let changes = run(&mut syncs, &harness);
@@ -1325,7 +1462,7 @@ fn a_refresh_that_stopped_reads_the_trees_it_owed_at_the_next_start() {
     assert_eq!(asked[1].1["since"], "2026-11-04T09:58:00Z");
     assert_eq!(asked[2].0, "FetchCrossReferences");
     assert_eq!(changes, []);
-    let state = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
     assert!(!state.refresh_under_way);
     harness.finish();
 }
@@ -1369,7 +1506,7 @@ fn a_refresh_that_stopped_follows_the_users_pr_it_had_saved() {
         "the user's work doesn't reach a stranger's PR"
     );
     assert_eq!(
-        harness.store.read_ahead_owed(&cpython()).unwrap(),
+        harness.db.store.read_ahead_owed(&cpython()).unwrap(),
         BTreeSet::new()
     );
     harness.finish();
@@ -1386,9 +1523,7 @@ fn probed_approved(number: u32) -> Result<Reply, Unreachable> {
         ] },
         "lastCommit": { "nodes": [] },
     } });
-    reply_ok(&format!(
-        r#"{{"data":{{"repository":{fields},{RATE_LIMIT}}}}}"#
-    ))
+    answer(json!({ "repository": fields }), RATE_LIMIT)
 }
 
 #[test]
@@ -1411,7 +1546,7 @@ fn a_refresh_that_stopped_after_the_probe_reads_ahead_what_the_probe_found() {
         .iter()
         .any(|operation| operation == "ProbePullRequests")
     {
-        drop(stopped.step(&harness.github, &harness.store).unwrap());
+        drop(stopped.step(&harness.github, &harness.db.store).unwrap());
         asked.extend(harness.operations());
     }
     drop(stopped);
@@ -1486,7 +1621,7 @@ fn a_refresh_that_stopped_reading_ahead_leaves_the_next_only_what_it_hadnt_read(
         .iter()
         .any(|operation| operation == "FetchPullRequestContent")
     {
-        drop(stopped.step(&harness.github, &harness.store).unwrap());
+        drop(stopped.step(&harness.github, &harness.db.store).unwrap());
         asked.extend(harness.operations());
     }
     drop(stopped);
@@ -1532,8 +1667,8 @@ fn a_probe_that_lists_people_in_another_order_says_nothing() {
         ] },
         "lastCommit": { "nodes": [] },
     });
-    let answer = format!(r#"{{"data":{{"repository":{{"p1":{probe}}},{RATE_LIMIT}}}}}"#);
-    let harness = after_a_sync("probe-order", vec![quiet_poll(), reply_ok(&answer)]);
+    let probed = answer(json!({ "repository": { "p1": probe } }), RATE_LIMIT);
+    let harness = after_a_sync("probe-order", vec![quiet_poll(), probed]);
     holding_pr(&harness, &own_open_pr(1, &people));
     let mut syncs = refreshing(filtering(&[]));
 
@@ -1591,7 +1726,7 @@ fn the_window_hears_of_each_save_with_call_lost(lost: Option<usize>) -> usize {
     stored_filter(&harness, "a", &[]);
     stored_filter(&harness, "b", &[]);
     let mut syncs = refreshing(filtering(&["a", "b"]));
-    let (flaky, calls) = harness.store.failing_at_call(lost);
+    let (flaky, calls) = harness.db.store.failing_at_call(lost);
 
     let mut heard = BTreeSet::new();
     while syncs.ready_at().is_some() {
@@ -1628,10 +1763,7 @@ fn a_filter_with_more_than_one_page_walks_narrowed_after_the_poll() {
             &list(&[], None),
             &[search(&[issue_hit(2)], Some("more"))],
         ),
-        reply_ok(&format!(
-            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
-            search(&[issue_hit(2), issue_hit(3)], None)
-        )),
+        searched(&[issue_hit(2), issue_hit(3)], None),
         issues(&[2, 3], RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
@@ -1657,10 +1789,7 @@ fn a_filter_with_more_than_one_page_walks_narrowed_after_the_poll() {
 fn a_filter_that_has_never_run_searches_whole() {
     let replies = vec![
         quiet_poll(),
-        reply_ok(&format!(
-            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
-            search(&[issue_hit(2)], None)
-        )),
+        searched(&[issue_hit(2)], None),
         issues(&[2], RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
     ];
@@ -1691,16 +1820,11 @@ fn a_search_edited_away_loses_its_results_at_the_refresh() {
 
 #[test]
 fn a_filter_github_refused_last_time_searches_whole_and_clears_its_problem() {
-    let replies = vec![
-        quiet_poll(),
-        reply_ok(&format!(
-            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
-            search(&[], None)
-        )),
-    ];
+    let replies = vec![quiet_poll(), searched(&[], None)];
     let harness = after_a_sync("filter-refused-before", replies);
     stored_filter(&harness, "a", &[1]);
     harness
+        .db
         .store
         .save_filter_problem(&cpython(), &query("a"), "GitHub said no")
         .unwrap();
@@ -1721,10 +1845,7 @@ fn a_refused_poll_goes_again_without_its_searches_and_they_walk_alone() {
         refused.clone(),
         quiet_poll(),
         refused,
-        reply_ok(&format!(
-            r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
-            search(&[issue_hit(2)], None)
-        )),
+        searched(&[issue_hit(2)], None),
         issues(&[2], RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
     ];
@@ -1751,7 +1872,7 @@ fn a_poll_refused_with_no_searches_is_a_failure() {
     let harness = after_a_sync("poll-refused-alone", vec![refused]);
     let mut syncs = refreshing(filtering(&[]));
 
-    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let problem = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 
     assert_eq!(problem.problem.kind, ErrorKind::QueryRefused);
     harness.finish();
@@ -1763,7 +1884,7 @@ fn a_poll_that_fails_with_searches_in_it_is_a_failure_too() {
     stored_filter(&harness, "a", &[]);
     let mut syncs = refreshing(filtering(&["a"]));
 
-    let problem = syncs.step(&harness.github, &harness.store).unwrap_err();
+    let problem = syncs.step(&harness.github, &harness.db.store).unwrap_err();
 
     assert_eq!(problem.problem.kind, ErrorKind::Offline);
     harness.finish();
@@ -1789,7 +1910,7 @@ impl Transport for SmallRepository {
         _: &Token,
         request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
-        drop(self.tags.send(request.etag.map(str::to_owned)));
+        pass_on(&self.tags, request.etag.map(str::to_owned));
         self.checks
             .borrow_mut()
             .pop_front()
@@ -1809,7 +1930,7 @@ fn small_repository(
         tags,
     };
     let harness = Harness::answering(name, Box::new(transport));
-    harness.store.remember_login(&me()).unwrap();
+    harness.db.store.remember_login(&me()).unwrap();
     (harness, asked)
 }
 
@@ -1826,7 +1947,13 @@ fn small_poll() -> Result<Reply, Unreachable> {
 }
 
 fn check_after_a_refresh(harness: &Harness) -> ChangeCheck {
-    harness.store.sync_state(&cpython()).unwrap().unwrap().check
+    harness
+        .db
+        .store
+        .sync_state(&cpython())
+        .unwrap()
+        .unwrap()
+        .check
 }
 
 #[test]
@@ -1881,18 +2008,15 @@ fn a_304_skips_the_poll_and_the_probe_still_runs() {
 
     assert_eq!(tags.recv().unwrap().as_deref(), Some("\"same\""));
     assert_eq!(changes[0].items, [1]);
-    let after = harness.store.sync_state(&cpython()).unwrap().unwrap();
+    let after = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
     assert_eq!(after.check, ChangeCheck::Tagged(Etag::new("\"same\"")));
-    assert!(after.started_at > at(LAST_SYNC));
+    assert!(after.started_at > moment(LAST_SYNC));
     harness.finish();
 }
 
 #[test]
 fn a_304_still_runs_a_filter_that_has_never_searched() {
-    let search_answer = reply_ok(&format!(
-        r#"{{"data":{{"search":{},{RATE_LIMIT}}}}}"#,
-        search(&[], None)
-    ));
+    let search_answer = searched(&[], None);
     let (harness, _tags) = small_repository(
         "small-new-filter",
         vec![check_reply(304, None)],
@@ -1944,7 +2068,7 @@ fn a_name_in_another_repository_shares_nothing() {
     let other = RepositoryName::parse("python/peps").unwrap();
     let harness = after_a_sync("other", Vec::new());
 
-    let state = harness.store.sync_state(&other).unwrap();
+    let state = harness.db.store.sync_state(&other).unwrap();
 
     assert_eq!(state, None);
     harness.finish();
@@ -1955,48 +2079,56 @@ fn comment_after_it(who: &str) -> Activity {
     Activity {
         kind: ActivityKind::Comment,
         who: Login::new(who),
-        at: at(AFTER_IT),
+        at: moment(AFTER_IT),
     }
 }
 
-/// A merged PR by someone else that Tsugiki holds, and the poll that says it moved, with GitHub's next
-/// answer.
-fn a_merged_pr_moves(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness {
+/// PR 3 by `author`, merged, as GitHub answers with it at `updated_at`, its timeline holding `timeline`.
+fn merged_pr(author: &str, updated_at: &str, timeline: &[Value]) -> Value {
+    let changes = json!({
+        "author": { "login": author },
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": updated_at,
+        "timelineItems": { "nodes": timeline },
+    });
+    pr_node(3, &changes)
+}
+
+/// A harness that holds PR 3 by `author`, merged, whose next poll says it moved, and whose GitHub then
+/// answers `replies`.
+fn holding_a_merged_pr_that_moves(
+    name: &str,
+    author: &str,
+    replies: Vec<Result<Reply, Unreachable>>,
+) -> Harness {
     let moved = list(&[changed_pr(3, AFTER_IT)], None);
     let mut all = vec![polled(&list(&[], None), &moved, &[])];
     all.extend(replies);
     let harness = after_a_sync(name, all);
-    let held = json!({
-        "author": { "login": "some-author" },
-        "state": "MERGED",
-        "mergeCommit": { "oid": "0".repeat(40) },
-        "updatedAt": LONG_BEFORE,
-    });
-    holding_pr(&harness, &pr_node(3, &held));
-    drop(run(&mut refreshing(filtering(&[])), &harness));
+    holding_pr(&harness, &merged_pr(author, LONG_BEFORE, &[]));
     harness
 }
 
-#[test]
-fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
-    let conflict = json!({
+/// The Bot's comment at `AFTER_IT` that it could not backport a PR to 3.14.
+fn backport_conflict() -> Value {
+    json!({
         "__typename": "IssueComment",
         "createdAt": AFTER_IT,
         "author": { "__typename": "Bot", "login": "miss-islington-app" },
         "bodyText": "Sorry, I could not cleanly backport this to `3.14` due to a conflict.",
-    });
-    let after = json!({
-        "author": { "login": "some-author" },
-        "state": "MERGED",
-        "mergeCommit": { "oid": "0".repeat(40) },
-        "updatedAt": AFTER_IT,
-        "timelineItems": { "nodes": [conflict] },
-    });
-    let replies = vec![fetched_nodes(&[pr_node(3, &after)], RATE_LIMIT)];
+    })
+}
 
-    let harness = a_merged_pr_moves("merged-moved", replies);
+#[test]
+fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
+    let after = merged_pr("some-author", AFTER_IT, &[backport_conflict()]);
+    let replies = vec![fetched_nodes(&[after], RATE_LIMIT)];
+    let harness = holding_a_merged_pr_that_moves("merged-moved", "some-author", replies);
 
-    let events = harness.store.activity(&cpython(), 3).unwrap();
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    let events = harness.db.store.activity(&cpython(), 3).unwrap();
     assert_eq!(
         events,
         [Activity {
@@ -2004,7 +2136,7 @@ fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
                 target: "3.14".to_owned()
             },
             who: Login::new("miss-islington-app"),
-            at: at(AFTER_IT),
+            at: moment(AFTER_IT),
         }]
     );
     harness.finish();
@@ -2054,7 +2186,7 @@ fn a_refresh_probes_the_ci_of_an_open_bot_backport_of_what_the_user_wrote() {
         .iter()
         .find(|(operation, _)| operation == "ProbePullRequests");
     assert!(probe.is_some());
-    let held = harness.store.pull_requests(&cpython()).unwrap();
+    let held = harness.db.store.pull_requests(&cpython()).unwrap();
     let ci = |number: u32| held.iter().find(|pr| pr.number == number).unwrap().ci;
     assert_eq!(ci(10), Some(CiState::Failure));
     assert_eq!(ci(20), None);
@@ -2082,9 +2214,9 @@ fn a_moved_issue_keeps_who_commented_and_one_tsugiki_doesnt_hold_keeps_nothing()
 
     drop(run(&mut refreshing(filtering(&[])), &harness));
 
-    let events = harness.store.activity(&cpython(), 1).unwrap();
+    let events = harness.db.store.activity(&cpython(), 1).unwrap();
     assert_eq!(events, [comment_after_it("some-author")]);
-    assert_eq!(harness.store.activity(&cpython(), 2).unwrap(), []);
+    assert_eq!(harness.db.store.activity(&cpython(), 2).unwrap(), []);
     harness.finish();
 }
 
@@ -2102,8 +2234,8 @@ fn a_probe_keeps_a_review_that_didnt_move_the_pr() {
         "latestReviews": { "nodes": [] },
         "lastCommit": { "nodes": [] },
     } });
-    let answer = format!(r#"{{"data":{{"repository":{fields},{RATE_LIMIT}}}}}"#);
-    let harness = after_a_sync("probe-activity", vec![quiet_poll(), reply_ok(&answer)]);
+    let probed = answer(json!({ "repository": fields }), RATE_LIMIT);
+    let harness = after_a_sync("probe-activity", vec![quiet_poll(), probed]);
     holding_pr(
         &harness,
         &own_open_pr(1, &json!({ "updatedAt": LONG_BEFORE })),
@@ -2112,11 +2244,11 @@ fn a_probe_keeps_a_review_that_didnt_move_the_pr() {
     drop(run(&mut refreshing(filtering(&[])), &harness));
 
     assert_eq!(
-        harness.store.activity(&cpython(), 1).unwrap(),
+        harness.db.store.activity(&cpython(), 1).unwrap(),
         [Activity {
             kind: ActivityKind::Review,
             who: Login::new("some-reviewer"),
-            at: at(AFTER_IT),
+            at: moment(AFTER_IT),
         }]
     );
     harness.finish();
@@ -2190,5 +2322,410 @@ fn a_change_under_two_minutes_old_by_githubs_clock_keeps_its_item_in_the_filter(
 
     let results = &facts(&harness).filters[&query("a")];
     assert_eq!(results.numbers, BTreeSet::from([1, 2]));
+    harness.finish();
+}
+
+/// Issue `number` as the poll lists it, updated at `updated_at`, in `state`.
+fn issue_in(number: u32, updated_at: &str, state: &str) -> Value {
+    let mut node = issue_node(number, updated_at);
+    node["state"] = json!(state);
+    node
+}
+
+/// The keys of the items `harness` holds Archived.
+fn archived(harness: &Harness) -> Vec<ItemKey> {
+    facts(harness).activity.archived.into_keys().collect()
+}
+
+#[test]
+fn a_refresh_archives_an_issue_and_a_standalone_pr_it_sees_close_or_merge() {
+    let merged = json!({
+        "title": "Tidy up",
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": AFTER_IT,
+    });
+    let closed = json!({
+        "title": "A change",
+        "author": { "login": "some-author" },
+        "state": "CLOSED",
+        "updatedAt": AFTER_IT,
+    });
+    let replies = vec![
+        polled(
+            &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
+            &list(&[changed_pr(3, AFTER_IT), changed_pr(4, AFTER_IT)], None),
+            &[search(&[], None)],
+        ),
+        fetched_nodes(&[pr_node(3, &closed), pr_node(4, &merged)], RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-closing", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    stored_filter(&harness, "a", &[1]);
+    holding_pr(&harness, &strangers_pr(3, LONG_BEFORE));
+    let tidy = json!({ "title": "Tidy up", "updatedAt": LONG_BEFORE });
+    holding_pr(&harness, &own_open_pr(4, &tidy));
+
+    drop(run(&mut refreshing(filtering(&["a"])), &harness));
+
+    // Filter "a" put Issue 1 on the Workbench, and PR 4 was the user's. Nothing put a stranger's PR 3
+    // there.
+    let keys = [
+        ItemKey::Issue { number: 1 },
+        ItemKey::PullRequest { number: 4 },
+    ];
+    assert_eq!(archived(&harness), keys);
+    assert_eq!(
+        harness.db.store.closings(&cpython()).unwrap(),
+        BTreeSet::new()
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_archives_a_closed_issue_whose_backport_is_still_open() {
+    let replies = vec![
+        polled(
+            &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
+            &list(&[], None),
+            &[],
+        ),
+        probed(&[(10, "PENDING")]),
+        no_cross_references(RATE_LIMIT),
+        // An Archived item stays in Reach, so the refresh reads ahead the Backport's Conversation.
+        approved(),
+    ];
+    let harness = after_a_sync("archive-backport-open", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    let backport = json!({
+        "title": "[3.14] gh-1: Fix it (GH-9)",
+        "baseRefName": "3.14",
+        "updatedAt": LONG_BEFORE,
+    });
+    holding_pr(&harness, &own_open_pr(10, &backport));
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(archived(&harness), [ItemKey::Issue { number: 1 }]);
+    let backport = facts(&harness).pull_requests;
+    assert_eq!(backport[0].state, PrState::Open);
+    assert_eq!(
+        reviews_held(&harness, 10),
+        Some(vec![ReviewState::Approved])
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopens() {
+    let replies = vec![
+        polled(
+            &list(
+                &[
+                    issue_in(1, AFTER_IT, "CLOSED"),
+                    issue_in(2, AFTER_IT, "OPEN"),
+                ],
+                None,
+            ),
+            &list(&[], None),
+            &[search(&[issue_hit(1), issue_hit(2)], None)],
+        ),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-reopens", replies);
+    let closed = |number| IssueFacts {
+        state: Some(IssueState::Closed),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(number)
+    };
+    let store = &harness.db.store;
+    store
+        .save_issues(&cpython(), vec![closed(1), closed(2)])
+        .unwrap();
+    stored_filter(&harness, "a", &[1, 2]);
+    let keys = [ItemKey::Issue { number: 1 }, ItemKey::Issue { number: 2 }];
+    archived_on_closing(&harness, &keys);
+    store
+        .unarchive(&cpython(), ItemKey::Issue { number: 1 })
+        .unwrap();
+
+    drop(run(&mut refreshing(filtering(&["a"])), &harness));
+
+    // Issue 1 changed while closed, and Issue 2 reopened.
+    assert_eq!(archived(&harness), []);
+    harness.finish();
+}
+
+/// Archives the items `keys` name as a sync does when it sees them close.
+fn archived_on_closing(harness: &Harness, keys: &[ItemKey]) {
+    crate::store::testing::archived_on_closing(&harness.db.store, keys, moment(LAST_SYNC));
+}
+
+/// Item `key` as `view` lists it, read the way the window reads it, with `settings`.
+fn listed(
+    harness: &Harness,
+    settings: &RepositorySettings,
+    view: &WorkbenchView,
+    key: ItemKey,
+) -> Option<ListedItem> {
+    let page = Workbench::read(&harness.db.reader, settings, view, ListOrder::Attention).unwrap();
+    page.items.into_iter().find(|listed| listed.key == key)
+}
+
+/// Why item `key` Needs attention where the Workbench lists it. None, if the Workbench leaves it out or
+/// the Archived view lists it.
+fn why_back(harness: &Harness, settings: &RepositorySettings, key: ItemKey) -> Option<Vec<Why>> {
+    let back = listed(harness, settings, &WorkbenchView::Whole, key)?;
+    let archived = listed(harness, settings, &WorkbenchView::Archived, key);
+    archived.is_none().then(|| {
+        back.attention
+            .map_or_else(Vec::new, |attention| attention.why)
+    })
+}
+
+#[test]
+fn a_refresh_brings_back_a_closed_archived_issue_when_new_activity_on_it_needs_attention() {
+    let comment = json!({
+        "__typename": "IssueComment",
+        "createdAt": AFTER_IT,
+        "author": { "__typename": "User", "login": "some-author" },
+    });
+    let mut node = issue_in(1, AFTER_IT, "CLOSED");
+    node["author"] = json!({ "login": "octocat" });
+    node["timelineItems"] = json!({ "nodes": [comment] });
+    let replies = vec![
+        polled(
+            &list(&[node], None),
+            &list(&[], None),
+            &[search(&[issue_hit(1)], None)],
+        ),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archived-issue-back", replies);
+    let own_closed = IssueFacts {
+        author: Some(me()),
+        state: Some(IssueState::Closed),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(1)
+    };
+    (harness.db.store)
+        .save_issues(&cpython(), vec![own_closed])
+        .unwrap();
+    stored_filter(&harness, "a", &[1]);
+    let key = ItemKey::Issue { number: 1 };
+    archived_on_closing(&harness, &[key]);
+    let settings = filtering(&["a"]);
+    let put_away = listed(&harness, &settings, &WorkbenchView::Archived, key).is_some();
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    // The user opened Issue 1, and a colleague commented on it after it closed.
+    assert!(put_away);
+    let by = Login::new("some-author");
+    assert_eq!(
+        why_back(&harness, &settings, key),
+        Some(vec![Why::Comment { by }])
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_brings_back_an_archived_merged_pr_when_the_bot_says_its_backport_failed() {
+    let after = merged_pr("octocat", AFTER_IT, &[backport_conflict()]);
+    let replies = vec![
+        fetched_nodes(&[after], RATE_LIMIT),
+        // An Archived item stays in Reach, so the refresh reads ahead the PR's Conversation.
+        quiet_conversation(),
+    ];
+    let harness = holding_a_merged_pr_that_moves("archived-pr-back", "octocat", replies);
+    let key = ItemKey::PullRequest { number: 3 };
+    archived_on_closing(&harness, &[key]);
+    let settings = filtering(&[]);
+    let put_away = listed(&harness, &settings, &WorkbenchView::Archived, key).is_some();
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    assert!(put_away);
+    let target = "3.14".to_owned();
+    assert_eq!(
+        why_back(&harness, &settings, key),
+        Some(vec![Why::BackportFailed { target }])
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_leaves_a_muted_pr_hidden_on_new_activity_and_shows_it_on_a_review_request() {
+    const LATER: &str = "2026-11-04T11:00:00Z";
+    // A colleague's PR 3 that the user reviewed, with the Review requests and the timeline given.
+    let reviewed = |updated_at: &str, requests: &[Value], timeline: &[Value]| {
+        let changes = json!({
+            "author": { "login": "some-author" },
+            "title": "A change",
+            "updatedAt": updated_at,
+            "latestReviews": { "nodes": [{ "author": { "login": "octocat" }, "state": "COMMENTED" }] },
+            "reviewRequests": { "nodes": requests },
+            "timelineItems": { "nodes": timeline },
+        });
+        pr_node(3, &changes)
+    };
+    let comment = json!({
+        "__typename": "IssueComment",
+        "createdAt": AFTER_IT,
+        "author": { "__typename": "User", "login": "some-author" },
+        "bodyText": "One more thing.",
+    });
+    let commented = reviewed(AFTER_IT, &[], std::slice::from_ref(&comment));
+    let asked = json!({
+        "__typename": "ReviewRequestedEvent",
+        "createdAt": LATER,
+        "requestedReviewer": { "login": "octocat" },
+    });
+    let request = json!({ "requestedReviewer": { "login": "octocat" } });
+    let requested = reviewed(LATER, &[request], &[comment, asked]);
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(3, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(&[commented], RATE_LIMIT),
+        polled(&list(&[], None), &list(&[changed_pr(3, LATER)], None), &[]),
+        fetched_nodes(&[requested], RATE_LIMIT),
+        // The Review request puts the tree back in Reach, so the refresh reads ahead the Conversation.
+        quiet_conversation(),
+    ];
+    let harness = after_a_sync("muted-pr", replies);
+    holding_pr(&harness, &reviewed(LONG_BEFORE, &[], &[]));
+    let key = ItemKey::PullRequest { number: 3 };
+    let muting = Muting {
+        key,
+        numbers: vec![3],
+        up_to: Some(moment(LAST_SYNC)),
+        findings: vec![],
+    };
+    (harness.db.store)
+        .mute(&cpython(), muting, moment(LAST_SYNC))
+        .unwrap();
+    let settings = filtering(&[]);
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let on_comment = listed(&harness, &settings, &WorkbenchView::Whole, key);
+    let saved = harness.db.store.activity(&cpython(), 3).unwrap();
+    // The refresh started on the computer's clock, and the poll drops each PR updated before the last
+    // start, so the next poll starts from `LAST_SYNC` again.
+    synced(&harness, ChangeCheck::Skipped);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let on_request = listed(&harness, &settings, &WorkbenchView::Whole, key).unwrap();
+
+    // The user reviewed PR 3, so a colleague's comment would need attention on an item not Muted.
+    assert_eq!(saved, [comment_after_it("some-author")]);
+    assert_eq!(on_comment.map(|listed| listed.key), None);
+    assert_eq!(on_request.hidden, Some(Hidden::Muted));
+    let why = on_request.attention.map(|attention| attention.why);
+    assert_eq!(why, Some(vec![Why::ReviewRequested]));
+    harness.finish();
+}
+
+/// A harness that holds the user's Issue 1, closed and Archived on closing, whose next poll finds a
+/// colleague's new PR 5 that fixes it.
+fn a_pr_opens_on_an_archived_issue(name: &str) -> Harness {
+    let follow_up = json!({
+        "title": "gh-1: Follow up",
+        "author": { "login": "some-author" },
+        "updatedAt": AFTER_IT,
+    });
+    let replies = vec![
+        polled(
+            &list(&[], None),
+            &list(&[changed_pr(5, AFTER_IT)], None),
+            &[],
+        ),
+        fetched_nodes(&[pr_node(5, &follow_up)], RATE_LIMIT),
+    ];
+    let harness = after_a_sync(name, replies);
+    let own_closed = IssueFacts {
+        author: Some(me()),
+        state: Some(IssueState::Closed),
+        updated_at: moment(LONG_BEFORE),
+        ..issue_facts(1)
+    };
+    (harness.db.store)
+        .save_issues(&cpython(), vec![own_closed])
+        .unwrap();
+    archived_on_closing(&harness, &[ItemKey::Issue { number: 1 }]);
+    harness
+}
+
+/// The items the Inbox of `settings` lists, the latest update first.
+fn inbox_items(harness: &Harness, settings: &RepositorySettings) -> Vec<ListedItem> {
+    let read = Inbox::read(
+        &harness.db.reader,
+        settings,
+        InboxPage::All,
+        moment(AFTER_IT),
+    );
+    read.unwrap().items
+}
+
+/// The numbers of the items the Inbox of `settings` lists, each with the PRs under it.
+fn inbox(harness: &Harness, settings: &RepositorySettings) -> Vec<Vec<u32>> {
+    let items = inbox_items(harness, settings);
+    items.iter().map(|listed| listed.item.numbers()).collect()
+}
+
+#[test]
+fn a_refresh_brings_an_archived_issue_back_to_the_inbox_when_a_pr_opens_on_it() {
+    let harness = a_pr_opens_on_an_archived_issue("pr-opens-on-archived");
+    let settings = filtering(&[]);
+    let key = ItemKey::Issue { number: 1 };
+    let before = inbox(&harness, &settings);
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    assert_eq!(before, Vec::<Vec<u32>>::new());
+    assert_eq!(archived(&harness), []);
+    assert_eq!(inbox(&harness, &settings), [vec![1, 5]]);
+    // The user opened Issue 1, and still nothing on it Needs attention, so no Filter puts it on the
+    // Workbench.
+    let attention = inbox_items(&harness, &settings).remove(0).attention;
+    assert_eq!(attention, None);
+    let on_workbench = listed(&harness, &settings, &WorkbenchView::Whole, key);
+    assert_eq!(on_workbench.map(|listed| listed.key), None);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_a_pr_brought_back_stays_out_of_archived_on_mark_seen_and_leaves_the_inbox_on_archive() {
+    let harness = a_pr_opens_on_an_archived_issue("brought-back-then-archived");
+    let settings = filtering(&[]);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let store = &harness.db.store;
+
+    store
+        .mark_seen(&cpython(), seeing(vec![1, 5], Some(moment(AFTER_IT))))
+        .unwrap();
+    let after_seen = (archived(&harness), inbox(&harness, &settings));
+    let archiving = Archiving {
+        key: ItemKey::Issue { number: 1 },
+        numbers: vec![1, 5],
+        up_to: Some(moment(AFTER_IT)),
+        put_away: PutAway::Now,
+        findings: vec![],
+    };
+    store
+        .archive(&cpython(), archiving, moment(AFTER_IT))
+        .unwrap();
+    let after_archive = inbox(&harness, &settings);
+    store
+        .unarchive(&cpython(), ItemKey::Issue { number: 1 })
+        .unwrap();
+
+    assert_eq!(after_seen, (vec![], vec![vec![1, 5]]));
+    assert_eq!(after_archive, Vec::<Vec<u32>>::new());
+    // Unarchive puts a closed Issue back where its state puts it, which isn't the Inbox.
+    assert_eq!(inbox(&harness, &settings), Vec::<Vec<u32>>::new());
     harness.finish();
 }

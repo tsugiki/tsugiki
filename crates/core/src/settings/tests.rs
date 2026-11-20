@@ -3,9 +3,8 @@ use crate::conventions::Conventions;
 use crate::filters::{Filter, OnWorkbench};
 use crate::mirror_source::MirrorSource;
 use crate::repository::{FoundRepository, RepositoryCounts};
-use crate::testing::TempPath;
+use crate::testing::{TempPath, cpython, moment};
 use crate::theme::{ThemeChoice, ThemeInForce, ThemeKind, ThemeName, ThemePick};
-use time::format_description::well_known::Rfc3339;
 
 fn hidden() -> Settings {
     Settings {
@@ -34,10 +33,6 @@ const WHENEVER: OffsetDateTime = OffsetDateTime::UNIX_EPOCH;
 
 fn repository(text: &str) -> RepositoryName {
     RepositoryName::parse(text).unwrap()
-}
-
-fn at(text: &str) -> OffsetDateTime {
-    OffsetDateTime::parse(text, &Rfc3339).unwrap()
 }
 
 /// Adds each of `names` through the settings' own write, the first at `first`, each later one an hour after
@@ -983,8 +978,7 @@ fn a_settings_toml_removed_from_its_usual_folder_means_the_defaults_again() {
 
 #[test]
 fn an_empty_list_of_filters_stays_in_a_repositorys_table() {
-    let mut table = Table::new();
-    drop(table.insert(FILTERS, toml_edit::value(toml_edit::Array::new())));
+    let table = Table::from_iter([(FILTERS, toml_edit::value(toml_edit::Array::new()))]);
 
     let kept = with_filters_as_tables(table);
 
@@ -1218,6 +1212,35 @@ fn a_switch_on_a_repository_without_filters_writes_out_the_starters_it_reads_as(
 }
 
 #[test]
+fn a_switch_on_a_repository_written_inline_without_filters_writes_out_the_starters_inline() {
+    let (mut files, folders, _root) = settings_saying(
+        "switch-starters-inline",
+        "repositories = [{ name = \"a/b\" }]\n",
+    );
+
+    files
+        .put_on_workbench(
+            &repository("a/b"),
+            &query("is:open involves:@me -author:@me"),
+            OnWorkbench::On,
+        )
+        .unwrap();
+    let after = fs::read_to_string(folders.settings_file()).unwrap();
+    let reloaded = SettingsFiles::load(folders);
+
+    assert_eq!(
+        after,
+        "repositories = [{ name = \"a/b\" , filters = [{ name = \"Mine\", query = \"is:open author:@me\", \
+         on_workbench = false }, { name = \"Involved\", query = \"is:open involves:@me -author:@me\", \
+         on_workbench = true }] }]\n"
+    );
+    assert_eq!(
+        switches(&reloaded),
+        [("Mine".to_owned(), false), ("Involved".to_owned(), true)]
+    );
+}
+
+#[test]
 fn a_switch_refuses_a_repository_or_a_search_the_file_doesnt_hold_and_saves_nothing() {
     let before = "[[repositories]]\nname = \"a/b\"\nfilters = []\n";
     let (mut files, folders, _root) = settings_saying("switch-refused", before);
@@ -1258,6 +1281,144 @@ fn the_owner_saves_a_switch_and_answers_with_what_the_files_say() {
     assert_eq!(owner.view(), saved);
 }
 
+/// A save the session heard of, in brief: the Repository, the Conventions and the first Filter's switch
+/// it saved, those it replaced, and what saved them.
+type Told = (
+    String,
+    (Conventions, OnWorkbench),
+    Option<(Conventions, OnWorkbench)>,
+    SavedBy,
+);
+
+/// Has `owner` hand the session each save, which the receiver hears in brief.
+fn telling_session(owner: &SettingsOwner) -> mpsc::Receiver<Told> {
+    let (sent, incoming) = mpsc::channel();
+    let said =
+        |settings: &RepositorySettings| (settings.conventions, settings.filters[0].on_workbench);
+    owner.tell_session(Box::new(move |save: SettingsSave| {
+        let replaced = save.replaced().map(said);
+        let saved = save.saved();
+        sent.send((saved.name.to_string(), said(saved), replaced, save.by()))
+            .unwrap();
+    }));
+    incoming
+}
+
+#[test]
+fn a_session_told_again_goes_on_from_the_count_of_saves_told_before() {
+    let bugs = |switch: &str| {
+        format!(
+            "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \"label:bug\"\n{switch}"
+        )
+    };
+    let (files, folders, _root) = settings_saying("owner-tells-again", &bugs(""));
+    let owner = SettingsOwner::start(Ok(files));
+    let first = telling_session(&owner);
+    fs::write(folders.settings_file(), bugs("on_workbench = true\n")).unwrap();
+    assert!(owner.reread().is_ok());
+
+    let second = telling_session(&owner);
+    fs::write(folders.settings_file(), bugs("")).unwrap();
+    let counted = owner.reread().unwrap().saves_told;
+
+    assert_eq!(counted, 2);
+    assert_eq!(
+        (first.try_iter().count(), second.try_iter().count()),
+        (1, 1)
+    );
+}
+
+#[test]
+fn a_repository_the_files_drop_goes_to_the_defaults_and_comes_back_from_them() {
+    let bugs = |switch: &str| {
+        format!("\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n{switch}")
+    };
+    let a_b = format!("[[repositories]]\nname = \"a/b\"\n{}", bugs(""));
+    let c_d = |switch| format!("\n[[repositories]]\nname = \"c/d\"\n{}", bugs(switch));
+    let (files, folders, _root) =
+        settings_saying("owner-tells-return", &format!("{a_b}{}", c_d("")));
+    let owner = SettingsOwner::start(Ok(files));
+    // Each save in brief: the Repository, and whether the settings it saved and those it replaced hold the
+    // Bugs Filter, which the defaults don't.
+    let (sent, incoming) = mpsc::channel();
+    let has_bugs = |settings: &RepositorySettings| {
+        (settings.filters.iter()).any(|filter| filter.query == query("label:bug"))
+    };
+    owner.tell_session(Box::new(move |save: SettingsSave| {
+        let told = (
+            save.saved().name.to_string(),
+            has_bugs(save.saved()),
+            save.replaced().map(has_bugs),
+        );
+        sent.send(told).unwrap();
+    }));
+
+    // A hand edit takes c/d out, an editor's save leaves no file for a moment, and a hand edit puts both
+    // back.
+    fs::write(folders.settings_file(), &a_b).unwrap();
+    assert!(owner.reread().is_ok());
+    fs::remove_file(folders.settings_file()).unwrap();
+    let emptied = owner.reread().unwrap();
+    let saved_out: Vec<_> = incoming.try_iter().collect();
+    fs::write(folders.settings_file(), format!("{a_b}{}", c_d(""))).unwrap();
+    assert!(owner.reread().is_ok());
+    let counted = owner.view().saves_told;
+    drop(owner);
+
+    assert_eq!(emptied.loaded.settings.repositories, []);
+    // The view counts the saves it shows, for the session to tell those on their way.
+    assert_eq!(counted, 4);
+    // The session reads the defaults for a Repository the files don't list, so it hears each go to them.
+    assert_eq!(
+        saved_out,
+        [
+            ("c/d".to_owned(), false, Some(true)),
+            ("a/b".to_owned(), false, Some(true)),
+        ]
+    );
+    assert_eq!(
+        incoming.try_iter().collect::<Vec<_>>(),
+        [
+            ("a/b".to_owned(), true, Some(false)),
+            ("c/d".to_owned(), true, Some(false)),
+        ]
+    );
+}
+
+#[test]
+fn of_a_repository_written_twice_the_session_hears_of_the_first() {
+    let a_b = |switch: &str| {
+        format!(
+            "\n[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \"label:bug\"\n{switch}"
+        )
+    };
+    let on = "on_workbench = true\n";
+    let (files, folders, _root) =
+        settings_saying("owner-tells-twice", &format!("{}{}", a_b(""), a_b(on)));
+    let owner = SettingsOwner::start(Ok(files));
+    let incoming = telling_session(&owner);
+
+    // Each reload reads both, and the second would undo what the first said.
+    drop(owner.reread().unwrap());
+    drop(owner.reread().unwrap());
+    fs::write(folders.settings_file(), format!("{}{}", a_b(on), a_b(""))).unwrap();
+    drop(owner.reread().unwrap());
+    drop(owner.reread().unwrap());
+    drop(owner);
+
+    assert_eq!(
+        incoming.try_iter().collect::<Vec<_>>(),
+        [(
+            "a/b".to_owned(),
+            (Conventions::Github, OnWorkbench::On),
+            Some((Conventions::Github, OnWorkbench::Off)),
+            SavedBy::HandEdit
+        )]
+    );
+}
+
 #[test]
 fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwise_in_save_order() {
     let (files, folders, _root) = settings_saying(
@@ -1265,12 +1426,7 @@ fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwi
         "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n",
     );
     let owner = SettingsOwner::start(Ok(files));
-    let (sent, incoming) = mpsc::channel();
-    owner.tell_session(Box::new(move |settings: RepositorySettings, by| {
-        let switch = settings.filters[0].on_workbench;
-        sent.send((settings.name.to_string(), settings.conventions, switch, by))
-            .unwrap();
-    }));
+    let incoming = telling_session(&owner);
 
     drop(owner.save_panes(PaneLayout::default()).unwrap());
     drop(
@@ -1292,19 +1448,20 @@ fn the_owner_hands_the_session_each_repository_s_settings_a_change_saves_otherwi
 
     let told: Vec<_> = incoming.try_iter().collect();
     assert_ne!(edited, file, "{file}");
+    // The first change replaced the settings the files held at launch, which the session never heard.
     assert_eq!(
         told,
         [
             (
                 "a/b".to_owned(),
-                Conventions::Github,
-                OnWorkbench::On,
+                (Conventions::Github, OnWorkbench::On),
+                Some((Conventions::Github, OnWorkbench::Off)),
                 SavedBy::Window
             ),
             (
                 "a/b".to_owned(),
-                Conventions::Cpython,
-                OnWorkbench::On,
+                (Conventions::Cpython, OnWorkbench::On),
+                Some((Conventions::Github, OnWorkbench::On)),
                 SavedBy::HandEdit
             ),
         ]
@@ -1348,7 +1505,7 @@ fn a_blank_filter_query_is_a_problem_with_the_file_and_the_last_values_stay() {
 #[test]
 fn a_repositorys_settings_come_from_the_list_whatever_the_case_of_its_name() {
     let chosen = RepositorySettings {
-        name: RepositoryName::parse("python/cpython").unwrap(),
+        name: cpython(),
         conventions: Conventions::Github,
         filters: Vec::new(),
     };
@@ -1450,7 +1607,7 @@ fn a_check_github_refuses_says_why() {
 
 #[test]
 fn a_repository_the_user_hasnt_added_gets_new_settings() {
-    let name = RepositoryName::parse("python/cpython").unwrap();
+    let name = cpython();
     assert_eq!(
         Settings::default().repository(name.clone()),
         RepositorySettings::new(name)
@@ -1945,7 +2102,11 @@ fn additions_that_overlap_all_reach_the_view() {
     thread::scope(|scope| {
         for name in ["a/one", "a/two", "a/three", "a/four"] {
             let owner = owner.clone();
-            let _ = scope.spawn(move || {
+            #[expect(
+                unused_results,
+                reason = "the scope joins each thread, and a panic in one fails the test"
+            )]
+            scope.spawn(move || {
                 owner
                     .add_repository(repository(name), MirrorSource::Download)
                     .unwrap()
@@ -1969,6 +2130,55 @@ fn an_owner_whose_thread_has_gone_says_so() {
         .unwrap_err();
 
     assert_eq!(refused.message, STOPPED_SAVING);
+}
+
+/// Longer than a working owner takes to save.
+const PLENTY: Duration = Duration::from_secs(60);
+
+/// The owner is held up in the middle of adding a Repository, with a pane layout to save asked after it, as
+/// when the user drags a split and closes the window at once (#939).
+#[test]
+fn stop_waits_for_the_save_under_way_and_the_saves_asked_before_it() {
+    let (folders, _root) = temp_folders("owner-stop");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (arrived, arrival) = mpsc::channel();
+    let (release, released) = mpsc::channel::<()>();
+    let (reply, panes_answer) = mpsc::channel();
+    let mut panes = Some(Request::from(Change::Panes {
+        layout: WIDE,
+        reply,
+    }));
+    let requests = owner.requests.clone();
+    owner.tell_session(Box::new(move |_| {
+        // From the owner's own thread, so the pane layout waits behind the addition this holds up.
+        if let Some(panes) = panes.take() {
+            requests.send(panes).unwrap();
+            arrived.send(()).unwrap();
+            released.recv_timeout(PLENTY).unwrap();
+        }
+    }));
+    let adding = {
+        let owner = owner.clone();
+        thread::spawn(move || owner.add_repository(repository("a/b"), MirrorSource::Download))
+    };
+    arrival.recv_timeout(PLENTY).unwrap();
+    // Late enough that a `stop` that didn't wait would have returned before it.
+    let releasing = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(200));
+        release.send(()).unwrap();
+    });
+
+    owner.begin_stopping().wait_for_end(PLENTY);
+
+    let after_stop = owner.save_panes(PaneLayout {
+        sidebar: Some(300),
+        ..WIDE
+    });
+    releasing.join().unwrap();
+    assert!(adding.join().unwrap().is_ok());
+    assert!(panes_answer.try_recv().unwrap().is_ok());
+    assert_eq!(SettingsFiles::load(folders).view().panes, WIDE);
+    assert_eq!(after_stop.unwrap_err().message, STOPPED_SAVING);
 }
 
 const WIDE: PaneLayout = PaneLayout {
@@ -2803,7 +3013,7 @@ fn adding_puts_the_repository_first_in_recent_with_the_time() {
     add_all(
         &mut files,
         &["a/first", "a/second", "A/First"],
-        at("2026-11-10T09:00:00.5+03:00"),
+        moment("2026-11-10T09:00:00.5+03:00"),
     );
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let settings = fs::read_to_string(folders.settings_file()).unwrap();
@@ -2915,7 +3125,7 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
     let home = files.home();
     let problems = files.loaded().problems.clone();
 
-    add_all(&mut files, &["a/second"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/second"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -2950,7 +3160,7 @@ fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() 
     let mut files = SettingsFiles::load(folders.clone());
     let reopened = files.home();
 
-    add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/new"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -2978,7 +3188,7 @@ fn adding_the_last_repository_from_0_2_0_again_leaves_one_entry_for_it() {
     fs::write(folders.machine_file(), "last_repository = \"a/old\"\n").unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    add_all(&mut files, &["a/Old"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/Old"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert!(
@@ -3048,7 +3258,7 @@ fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
     let mut files = SettingsFiles::load(folders.clone());
     let reopened = files.home();
 
-    add_all(&mut files, &["a/new"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/new"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -3077,7 +3287,7 @@ fn a_recent_written_as_tables_keeps_its_entries() {
     let mut files = SettingsFiles::load(folders.clone());
     let reopened = files.home();
 
-    add_all(&mut files, &["a/three"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/three"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
@@ -3109,7 +3319,7 @@ fn a_repository_added_again_keeps_the_comment_on_its_entry() {
     fs::write(folders.machine_file(), mine).unwrap();
     let mut files = SettingsFiles::load(folders.clone());
 
-    add_all(&mut files, &["a/two"], at("2026-11-10T09:00:00Z"));
+    add_all(&mut files, &["a/two"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert!(
@@ -3220,12 +3430,15 @@ fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
     add_all(
         &mut files,
         &["a/first", "a/second"],
-        at("2026-11-10T07:00:00Z"),
+        moment("2026-11-10T07:00:00Z"),
     );
     let settings = fs::read_to_string(folders.settings_file()).unwrap();
 
     let home = files
-        .open_repository(&repository("A/First"), at("2026-11-10T09:00:00.5+01:00"))
+        .open_repository(
+            &repository("A/First"),
+            moment("2026-11-10T09:00:00.5+01:00"),
+        )
         .unwrap();
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();

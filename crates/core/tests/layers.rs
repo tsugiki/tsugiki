@@ -23,7 +23,9 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use tsugiki_test_git::without_visibility;
 
 /// A top-level module of `crates/core/src`, the modules it may use, and why.
 #[derive(Clone, Copy)]
@@ -54,6 +56,11 @@ const LAYERS: &[Layer] = &[
         module: "latest",
         uses: &[],
         why: "Shares a value between threads, and knows no domain type.",
+    },
+    Layer {
+        module: "deadline",
+        uses: &[],
+        why: "Reads a channel until a deadline, and knows no domain type.",
     },
     Layer {
         module: "version",
@@ -112,6 +119,12 @@ const LAYERS: &[Layer] = &[
         uses: &["repository"],
         why: "Names where each Repository's mirror gets its objects, which `settings` keeps and `mirror` \
               clones by, so `settings` needn't use `mirror`.",
+    },
+    Layer {
+        module: "mirror_queue",
+        uses: &["repository"],
+        why: "Picks the Mirror worker's next job from what it holds queued in each Repository, so a test of \
+              the order needs no thread and no git.",
     },
     Layer {
         module: "web",
@@ -240,6 +253,7 @@ const LAYERS: &[Layer] = &[
             "folders",
             "github",
             "latest",
+            "mirror_queue",
             "mirror_source",
             "patch_ids",
             "repository",
@@ -247,12 +261,14 @@ const LAYERS: &[Layer] = &[
             "token",
         ],
         why: "Clones and fetches PR heads into this build's folders with the token, and says how on the \
-              status board. It reads the patch-ids of the commits it keeps through `diff`. Its requests \
-              read a copy of the clones that wait for an answer.",
+              status board. It reads the patch-ids of the commits it keeps through `diff`, and runs the \
+              jobs in the order `mirror_queue` picks. Its requests read a copy of the clones that wait for \
+              an answer.",
     },
     Layer {
         module: "definitions",
         uses: &[
+            "deadline",
             "diff",
             "error",
             "facts",
@@ -310,24 +326,27 @@ const LAYERS: &[Layer] = &[
             "work",
         ],
         why: "Groups what `work` judges into the Workbench's items and builds the view models, which show \
-              what each module below works out. A read sends nothing: the command asks `fetching` for what \
-              it found missing.",
+              what each module below works out. A read sends nothing: the screen's call in `calls` asks \
+              `fetching` for what it found missing.",
     },
     Layer {
         module: "fetching",
         uses: &[
             "error",
             "facts",
+            "login",
             "mirror",
             "mirror_source",
             "patch_ids",
             "repository",
             "repository_settings",
+            "status",
             "work",
         ],
         why: "Takes the user's demands and the rules' wants, and hands each to the queue that owns it: the \
               Mirror worker's through `mirror`, and the session's, whose messages it defines so the session \
-              above can take them. A Mark Seen names what `work` marks.",
+              above can take them. A Mark Seen names what `work` marks, and Mute author the `login` it \
+              mutes. A PR whose Conversation read failed keeps the `status` failure, for its Files tab.",
     },
     Layer {
         module: "sync",
@@ -337,17 +356,20 @@ const LAYERS: &[Layer] = &[
             "facts",
             "filters",
             "github",
+            "latest",
             "links",
             "login",
             "repository",
             "repository_settings",
+            "settings",
             "status",
             "store",
             "token",
             "work",
         ],
         why: "Asks GitHub for facts and saves them, then tells the Workbench and the status what changed. \
-              `work` says which PRs it reads ahead.",
+              `work` says which PRs it reads ahead, under each Repository's settings, which it reads from \
+              the view `settings` shares through `latest`.",
     },
     Layer {
         module: "session",
@@ -357,19 +379,58 @@ const LAYERS: &[Layer] = &[
             "fetching",
             "folders",
             "github",
+            "latest",
+            "login",
             "mirror",
             "patch_ids",
             "repository",
             "repository_settings",
+            "settings",
             "status",
             "store",
             "sync",
             "token",
             "work",
+            "workbench",
         ],
         why: "Runs the session thread, which owns the store and the syncs and takes the messages `fetching` \
               sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
-              which it builds on the requests `mirror` gives.",
+              which it builds on the requests `mirror` gives. Mute author asks `workbench` which items of \
+              the `login` it mutes the window lists, to mark them seen. Each Repository's settings come \
+              from the view `settings` shares through `latest`.",
+    },
+    Layer {
+        module: "calls",
+        uses: &[
+            "definitions",
+            "diff",
+            "error",
+            "facts",
+            "fetching",
+            "folders",
+            "highlight",
+            "latest",
+            "login",
+            "mirror",
+            "mirror_source",
+            "repository",
+            "repository_settings",
+            "session",
+            "settings",
+            "status",
+            "store",
+            "work",
+            "workbench",
+        ],
+        why: "The handle the app calls the core through, made from the `session`'s queues and its `store` \
+              reader. Each screen's call reads through a view model in `workbench`, queues through \
+              `fetching` what the read found missing, and holds the job in an answer that waits for its \
+              data, or names the `status` failure of the read that would have brought it. Only a \
+              Repository `settings` lists gets a clone, read through `latest` when the read finds no \
+              mirror. The diff on show opens its files on the language servers through `definitions`, and \
+              its rows and their `highlight` come from `diff`. Each of the user's actions goes through \
+              `fetching`: a Mark Seen names what `work` marks, Mute author the `login` it mutes, and a \
+              clone the `mirror_source` it takes its objects from.",
     },
 ];
 
@@ -384,12 +445,13 @@ struct Cycle {
 const CYCLES: &[Cycle] = &[];
 
 /// The functional core: these modules take facts and return values.
-const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "work"];
+const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "mirror_queue", "work"];
 
 /// The imperative shell, which the functional core may not use: the database, `github`'s client, the
-/// Mirrors, the values threads share, the requests for data, and the threads that sync.
+/// Mirrors, the values threads share, the waits on their messages, the requests for data, and the threads
+/// that sync.
 const SHELL: &[&str] = &[
-    "fetching", "github", "latest", "mirror", "session", "store", "sync",
+    "deadline", "fetching", "github", "latest", "mirror", "session", "store", "sync",
 ];
 
 /// What a group of modules keeps out of, and the words a broken rule says.
@@ -411,7 +473,8 @@ const CORE: KeptOut = KeptOut {
     why: "the functional core keeps out of the shell",
 };
 
-/// A view model's `read` sends nothing (ADR 0022): the command asks for what the read found missing.
+/// A view model's `read` sends nothing (ADR 0022): the screen's call asks for what the read found missing
+/// (ADR 0023).
 const VIEW_MODELS: KeptOut = KeptOut {
     group: "the view models",
     modules: &["workbench"],
@@ -441,16 +504,6 @@ fn is_test(path: &str) -> bool {
 
 fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
-}
-
-/// `item` without the `pub` or `pub(...)` in front of it.
-fn without_visibility(item: &str) -> &str {
-    let item = match item.strip_prefix("pub") {
-        Some(after) if after.starts_with('(') => after.split_once(')').map_or("", |(_, rest)| rest),
-        Some(after) => after,
-        None => item,
-    };
-    item.trim_start()
 }
 
 /// The modules `lib.rs` declares, apart from its test modules.
@@ -538,7 +591,11 @@ fn crate_paths(Source { path, text }: &Source, found: &mut Scan) {
                     .hidden
                     .push(format!("{at}: a `crate::` path this test can't read"));
             } else if target != module && target != "testing" {
-                let _ = found.uses.entry((module.to_owned(), target)).or_insert(at);
+                // The first place a module uses another is the one a failure names.
+                let used = (module.to_owned(), target);
+                if !found.uses.contains_key(&used) {
+                    found.uses.extend([(used, at)]);
+                }
             }
         }
     }
@@ -674,23 +731,20 @@ impl Table<'_> {
     clippy::expect_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
-fn sources(root: &Path, dir: &Path) -> Vec<Source> {
-    let mut found = Vec::new();
-    for entry in fs::read_dir(dir).expect("list a source folder") {
-        let path = entry.expect("read a source folder entry").path();
-        if path.is_dir() {
-            found.extend(sources(root, &path));
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            let relative = path.strip_prefix(root).expect("a path below the root");
-            let parts: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
-            let text = fs::read_to_string(&path).expect("read a source file");
-            found.push(Source {
-                path: parts.join("/"),
-                text,
-            });
+fn sources(root: &Path) -> Vec<Source> {
+    let read = |path: PathBuf| {
+        let relative = path.strip_prefix(root).expect("a path below the root");
+        let parts: Vec<_> = relative.iter().map(|part| part.to_string_lossy()).collect();
+        let text = fs::read_to_string(&path).expect("read a source file");
+        Source {
+            path: parts.join("/"),
+            text,
         }
-    }
-    found
+    };
+    tsugiki_test_git::rust_sources(root)
+        .into_iter()
+        .map(read)
+        .collect()
 }
 
 /// Each module of `rule`'s group whose line in `layers` lets it use a module it keeps out of, and each with
@@ -953,7 +1007,7 @@ fn the_view_models_send_nothing() {
 #[test]
 fn the_core_keeps_to_its_layers() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let sources = sources(&root, &root);
+    let sources = sources(&root);
     let lib = &sources
         .iter()
         .find(|source| source.path == "lib.rs")

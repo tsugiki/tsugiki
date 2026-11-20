@@ -25,6 +25,7 @@ use super::{
     DiffEnd, EXIT_NEWS, EXIT_PATIENCE, Hit, IndexedFiles, Lookup, NotReady, PATIENCE, Place,
     ServerName, ServerProblem, plain, server_log, slashed, uri,
 };
+use crate::deadline::received_until;
 use crate::diff;
 use crate::error::Error;
 use crate::latest::{self, LatestReader, LatestWriter};
@@ -173,14 +174,16 @@ impl Stopping {
     /// Waits until the server's process has ended, or until `until`. The events end once the client has
     /// killed it.
     pub(super) fn wait(self, until: Instant) {
-        let _exit = exit_by(&self.0, until);
+        (received_until(&self.0, until))
+            .take_while(|event| !matches!(event, Event::Exited(_)))
+            .for_each(drop);
     }
 }
 
 /// How the server whose `events` these are exited, once it has, waiting until `until` at most. Nothing if
 /// it hasn't by then, or its events ended without it, as when it was killed.
 fn exit_by(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
-    while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
+    for event in received_until(events, until) {
         if let Event::Exited(exit) = event {
             return Some(exit);
         }
@@ -284,7 +287,7 @@ impl LanguageServer {
         (checkout, changed): (LookupCheckout, &[String]),
         news: OnNews,
     ) -> Result<Self, NotReady> {
-        let (folder, _root) = located(&checkout.folder)?;
+        let (folder, _) = located(&checkout.folder)?;
         let didnt_start = |problem: Error| {
             NotReady::Problem(ServerProblem::DidNotStart {
                 cause: problem.message,
@@ -337,15 +340,14 @@ impl LanguageServer {
         };
         let version = (info.and_then(|info| info.version)).and_then(|text| version_in(&text));
         let names: Vec<String> = (changed.iter())
-            .flat_map(|path| {
-                [&at.head, &at.base].map(|commit| format!("{}:{path}", commit.as_str()))
-            })
+            .flat_map(|path| [&at.head, &at.base].map(|commit| diff::object_name(commit, path)))
             .collect();
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
         let mut texts = diff::blobs(&folder, &names).into_iter();
         let mut open = Vec::new();
         for path in changed {
-            // A file the PR deletes has no text at the head, and the checkout holds its base.
+            // A file the PR deletes has no text at the head, and the checkout holds its base. git can't read
+            // a file whose path has a line break, so the server isn't told of it.
             let (Some(Some(head)), base) = (texts.next(), texts.next().flatten()) else {
                 continue;
             };
@@ -358,7 +360,7 @@ impl LanguageServer {
             });
         }
         if let Ready::Quiescent = setup.ready
-            && let Some(exit) = quiescent(&events)
+            && let Some(exit) = quiescent(&events, Instant::now() + PATIENCE)
         {
             return Err(NotReady::Problem(ServerProblem::stopped(exit)));
         }
@@ -434,7 +436,12 @@ impl LanguageServer {
 
     /// Asks the server to stop with `shutdown` and `exit`, and returns at once. One that hasn't agreed within
     /// [`EXIT_PATIENCE`], or hasn't exited [`EXIT_PATIENCE`] after `exit`, is killed.
-    pub(super) fn stop(self) -> Stopping {
+    pub(super) fn stop(self) {
+        self.server.stop(EXIT_PATIENCE);
+    }
+
+    /// Asks the server to stop, as [`LanguageServer::stop`] does, and gives what waits for its end.
+    pub(super) fn stopping(self) -> Stopping {
         self.server.stop(EXIT_PATIENCE);
         Stopping(self.events)
     }
@@ -457,7 +464,7 @@ impl LanguageServer {
     /// turns its answer into hits. On clangd, a file the PR doesn't change opens first, if it isn't open.
     pub(super) fn ask(&mut self, request: &Request) -> (Pending<Definitions>, Hits) {
         self.used = Instant::now();
-        let _unread = self.events.try_iter().count();
+        self.events.try_iter().for_each(drop);
         self.show(request.side);
         self.visit(&request.document);
         let pending = self.server.definition(&request.document, request.at);
@@ -501,12 +508,16 @@ impl LanguageServer {
         };
         if visited.len() >= VISITED {
             // Dropping it sends `didClose`.
-            let _closed = visited.pop_front();
+            drop(visited.pop_front());
         }
         let text = String::from_utf8_lossy(&text);
         visited.push_back(self.server.open(document.clone(), self.language, &text));
         // clangd reads its compile database, and starts its index, once a file is open on it.
-        let _heard = self.watcher.send(Heard::Opened);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only once the server's events have ended, and then no index is left to start"
+        )]
+        let _ = self.watcher.send(Heard::Opened);
     }
 
     /// Gives the open files their text at `side`, if they don't have it.
@@ -596,10 +607,14 @@ fn watch(
     // A thread of their own hands the events on, so the watcher hears a file opened while it waits.
     let (hears, heard) = mpsc::channel();
     let forwards = hears.clone();
-    let _forwards = thread::spawn(move || {
-        let _gone = (events.into_iter().map(Heard::Event))
+    #[expect(
+        unused_results,
+        reason = "it ends when the server's events end, or when the watcher has gone and a send to it fails"
+    )]
+    thread::spawn(move || {
+        (events.into_iter().map(Heard::Event))
             .chain([Heard::Ended])
-            .try_for_each(|heard| forwards.send(heard));
+            .try_for_each(|heard| forwards.send(heard))
     });
     let first = if watched.index.is_some() {
         Indexing::Unreported
@@ -617,7 +632,11 @@ fn watch(
         told: (first, Instant::now()),
         latest: first,
     };
-    let _reads = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "it ends when the server's events end, or when nothing reads them"
+    )]
+    thread::spawn(move || {
         loop {
             let event = match heard.recv_timeout(watcher.wait()) {
                 Ok(Heard::Event(event)) => event,
@@ -649,7 +668,11 @@ fn watch(
 /// and tells `news` of each problem they show, until nothing sends any more.
 fn read_headers(mut headers: Headers, news: OnNews) -> Sender<Diagnostics> {
     let (sends, diagnosed) = mpsc::channel::<Diagnostics>();
-    let _reads = thread::spawn(move || {
+    #[expect(
+        unused_results,
+        reason = "it ends when the watcher drops the sender this gives"
+    )]
+    thread::spawn(move || {
         for diagnostics in diagnosed {
             if let Some(problem) = headers.problem(&diagnostics) {
                 news(News::Troubled(problem));
@@ -727,8 +750,11 @@ impl Watcher {
         if let Event::Diagnostics(diagnostics) = event
             && let Some(headers) = &self.headers
         {
-            // The thread that reads them ends only once this one has.
-            let _sent = headers.send(diagnostics.clone());
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the thread that reads them ends only once this one has, so this doesn't fail"
+            )]
+            let _ = headers.send(diagnostics.clone());
         }
         if let Event::Exited(exit) = event {
             // First, so the servers' thread finds this server has ended when it hears.
@@ -744,24 +770,19 @@ impl Watcher {
     }
 }
 
-/// Waits until the server says it is quiescent, or has ended, for at most [`PATIENCE`]. A server that is
-/// still loading then answers what it can. One that has ended gives how.
-fn quiescent(events: &Receiver<Event>) -> Option<Exit> {
-    let until = Instant::now() + PATIENCE;
-    let mut ended = None;
-    while let Ok(event) = events.recv_timeout(until.saturating_duration_since(Instant::now())) {
+/// Waits until the server whose `events` these are says it is quiescent, or has ended, or until `until`. A
+/// server that is still loading then answers what it can. One that has ended gives how.
+fn quiescent(events: &Receiver<Event>, until: Instant) -> Option<Exit> {
+    for event in received_until(events, until) {
         match event {
             Event::Status(Status {
                 quiescent: true, ..
-            }) => break,
-            Event::Exited(exit) => {
-                ended = Some(exit);
-                break;
-            }
+            }) => return None,
+            Event::Exited(exit) => return Some(exit),
             Event::Status(_) | Event::Progress(_) | Event::Diagnostics(_) => {}
         }
     }
-    ended
+    None
 }
 
 /// Why a server whose `initialize` failed with `cause` didn't start: how it stopped, if it ended and the

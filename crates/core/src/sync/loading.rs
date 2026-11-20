@@ -9,6 +9,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use super::issues::save_issue_batch;
+use super::origins::save_origin;
 use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step, pause_until};
 use crate::error::Error;
 use crate::facts::issues::ListedPr;
@@ -78,8 +80,8 @@ pub(super) struct Loading {
     since: OffsetDateTime,
     /// Issues whose trees go before everything else: the user's own, and any they open.
     urgent_issues: Vec<u32>,
-    /// Each Issue that has been in `urgent_issues`. A view on screen asks about once a minute, and one read
-    /// of its tree is enough.
+    /// Each Issue that has been in `urgent_issues`. The session reads an Issue on screen again about once a
+    /// minute, and one read of its tree is enough.
     opened: BTreeSet<u32>,
     /// The urgent Issues with more cross-references to read.
     long_reads: VecDeque<LongRead>,
@@ -378,7 +380,11 @@ fn read_long(
         .fetch_cross_references(link.repository, read.number, asked)?;
     let frozen = frozen(link)?;
     loading.join(page.listed, Urgency::Urgent, &held(fetched, &frozen));
-    drop(loading.long_reads.pop_front());
+    #[expect(
+        unused_results,
+        reason = "it is `read`, whose page this step has read, and a read of its next page, if any, goes first"
+    )]
+    loading.long_reads.pop_front();
     if let Some(cursor) = page.next {
         let number = read.number;
         loading.long_reads.push_front(LongRead { number, cursor });
@@ -453,16 +459,11 @@ fn fetch_named_issues(
     loading: &mut Loading,
     numbers: &[u32],
 ) -> Result<Step, Error> {
-    let batch = link
-        .github
-        .fetch_issues(link.repository, numbers, FETCH_BATCH)?;
-    let touched = batch.issues.iter().map(|issue| issue.number).collect();
-    link.store
-        .save_fetched_issues(link.repository, batch.issues, batch.activity)?;
+    let saved = save_issue_batch(link, numbers)?;
     loading
         .issues_seen
-        .extend(numbers.iter().take(batch.asked_for).copied());
-    Ok(Step::saved_if_any(touched, pause_until(batch.rate_limit)))
+        .extend(numbers.iter().take(saved.asked_for).copied());
+    Ok(Step::saved_if_any(saved.touched, saved.pause_until))
 }
 
 fn read_issue_page(
@@ -566,30 +567,11 @@ fn load_origin(
     number: u32,
     fetched: &mut BTreeSet<u32>,
 ) -> Result<Step, Error> {
-    let answer = link
-        .github
-        .fetch_origin_pull_request(link.repository, number)?;
-    let pause_until = pause_until(answer.rate_limit);
-    let step = if let Some((pull_request, activity)) = answer.pull_request {
-        let named = possible_numbers(&pull_request, link.repository);
-        link.store.save_fetched_pull_requests(
-            link.repository,
-            vec![pull_request],
-            vec![activity],
-        )?;
-        loading.leads.named.extend(named);
-        Step::Saved {
-            touched: vec![number],
-            pause_until,
-        }
-    } else {
-        Step::Searched { pause_until }
-    };
+    let step = save_origin(link, &mut loading.leads, number)?;
     loading
         .urgent_leads
         .origins
         .retain(|origin| *origin != number);
-    loading.leads.origins.retain(|origin| *origin != number);
     loading.queue.retain(|pr| pr.number != number);
     fetched.extend([number]);
     Ok(step)

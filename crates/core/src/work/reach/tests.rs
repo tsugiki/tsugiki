@@ -3,13 +3,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;
-use crate::facts::activity::ActivityFacts;
-use crate::facts::issues::IssueFacts;
+use crate::facts::activity::{ActivityFacts, Archive, ItemKey, MutedAuthor};
+use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
+use crate::login::Login;
+use crate::testing::{cpython_settings, hours_ago, sha};
 use crate::workbench::WorkbenchView;
 use crate::workbench::testing::{
-    backport, bots_backport, cpython, fixing, issue, me, mine, rows_of, someone, stranger, view_of,
+    assigned_issue, backport, bots_backport, fixing, issue, me, mine, rows_of, someone, stranger,
+    view_of,
 };
 
 fn facts(pull_requests: Vec<PullRequestFacts>, issues: Vec<IssueFacts>) -> WorkFacts {
@@ -43,10 +46,31 @@ fn a_pr_in_a_reached_issues_tree_is_reached_open_merged_or_closed() {
         colleagues(14, 2, PrState::Open),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![issue(1), issue(2)]), &cpython());
+    let reached = reach(
+        &facts(pull_requests, vec![issue(1), issue(2)]),
+        &cpython_settings(),
+    );
 
     // The user's PR 10 puts Issue 1 on the Workbench. Nothing puts Issue 2 there.
     assert_eq!(reached, BTreeSet::from([1, 10, 11, 12, 13]));
+}
+
+#[test]
+fn a_review_request_the_user_marked_seen_leaves_the_workbench_and_stays_in_reach() {
+    let asked = PullRequestFacts {
+        number: 5,
+        review_requests: vec![me()],
+        ..stranger()
+    };
+    let mut facts = facts(vec![asked], vec![]);
+    let later = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    facts.activity.acknowledged.extend([(5, later)]);
+    let settings = cpython_settings();
+
+    let causes = Causes::of(&facts, settings.conventions);
+
+    assert_eq!(in_own_right(&facts, &settings, &causes), BTreeSet::new());
+    assert_eq!(reach(&facts, &settings), BTreeSet::from([5]));
 }
 
 #[test]
@@ -73,7 +97,7 @@ fn a_backport_of_a_reached_pr_is_reached_and_so_is_the_origin_pr_of_a_reached_ba
         bots_backport(41, "[3.14] Tidy up more (GH-40)"),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings());
 
     // The user's PR 20 reaches its Backport 21. The Review request on Backport 31 reaches its Origin PR 30,
     // and through it Backport 32.
@@ -88,7 +112,7 @@ fn an_issue_that_a_backport_of_the_users_pr_fixes_is_reached_with_its_tree() {
         colleagues(30, 5, PrState::Open),
     ];
 
-    let reached = reach(&facts(pull_requests, vec![issue(5)]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![issue(5)]), &cpython_settings());
 
     // The list draws PR 20 with its Backport under Issue 5, beside PR 30.
     assert_eq!(reached, BTreeSet::from([5, 20, 21, 30]));
@@ -110,7 +134,7 @@ fn a_backport_of_a_backport_brings_no_family_of_its_own() {
         asked,
     ];
 
-    let reached = reach(&facts(pull_requests, vec![]), &cpython());
+    let reached = reach(&facts(pull_requests, vec![]), &cpython_settings());
 
     // A tree stays two levels deep, so Backport 42 stands on its own, as the list draws it.
     assert_eq!(reached, BTreeSet::from([42]));
@@ -158,7 +182,7 @@ fn reach_holds_every_pr_the_whole_workbench_shows() {
         .map(|row| row.number)
         .collect();
 
-    let reached = reach(&facts(pull_requests, issues), &cpython());
+    let reached = reach(&facts(pull_requests, issues), &cpython_settings());
 
     assert_eq!(rows, BTreeSet::from([10, 11, 20, 21, 30, 60, 61, 62, 63]));
     assert!(rows.is_subset(&reached), "{rows:?} in {reached:?}");
@@ -166,7 +190,7 @@ fn reach_holds_every_pr_the_whole_workbench_shows() {
 
 #[test]
 fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
-    let repository = cpython();
+    let repository = cpython_settings();
     let found = |numbers: &[u32]| FilterResults {
         numbers: numbers.iter().copied().collect(),
         problem: None,
@@ -190,28 +214,43 @@ fn a_filters_find_is_reached_and_a_search_edited_away_reaches_nothing() {
     assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
 }
 
-#[test]
-fn a_filter_switched_on_reaches_its_find_and_one_switched_off_reaches_nothing() {
-    let repository = cpython();
-    let [on, off] = [&repository.filters[0], &repository.filters[1]];
+/// `facts`, in which the first of `repository`'s Filters, which is on, finds `on`, and the second, which is
+/// off, finds `off`.
+fn found_by_two_filters(
+    repository: &RepositorySettings,
+    (on, off): (&[u32], &[u32]),
+    facts: WorkFacts,
+) -> WorkFacts {
+    let [first, second] = [&repository.filters[0], &repository.filters[1]];
     assert_eq!(
-        [on.on_workbench, off.on_workbench],
+        [first.on_workbench, second.on_workbench],
         [OnWorkbench::On, OnWorkbench::Off]
     );
-    let found = |number: u32| FilterResults {
-        numbers: BTreeSet::from([number]),
+    let found = |numbers: &[u32]| FilterResults {
+        numbers: numbers.iter().copied().collect(),
         problem: None,
     };
-    let facts = WorkFacts {
-        filters: BTreeMap::from([(on.query.clone(), found(2)), (off.query.clone(), found(3))]),
-        ..facts(
-            vec![
-                colleagues(11, 2, PrState::Open),
-                colleagues(12, 3, PrState::Open),
-            ],
-            vec![issue(2), issue(3)],
-        )
-    };
+    WorkFacts {
+        filters: BTreeMap::from([
+            (first.query.clone(), found(on)),
+            (second.query.clone(), found(off)),
+        ]),
+        ..facts
+    }
+}
+
+#[test]
+fn a_filter_switched_on_reaches_its_find_and_one_switched_off_reaches_nothing() {
+    let repository = cpython_settings();
+    let pull_requests = vec![
+        colleagues(11, 2, PrState::Open),
+        colleagues(12, 3, PrState::Open),
+    ];
+    let facts = found_by_two_filters(
+        &repository,
+        (&[2], &[3]),
+        facts(pull_requests, vec![issue(2), issue(3)]),
+    );
 
     // Issue 3 and its PR 12 stay out: Tsugiki fetches no head and reads ahead no Conversation for them.
     assert_eq!(reach(&facts, &repository), BTreeSet::from([2, 11]));
@@ -224,5 +263,508 @@ fn nothing_is_reached_before_anyone_signs_in() {
         ..facts(vec![fixing(10, 1)], vec![issue(1)])
     };
 
-    assert_eq!(reach(&facts, &cpython()), BTreeSet::new());
+    assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::new());
+}
+
+#[test]
+fn the_conversations_worth_reading_ahead_are_the_owed_ones_in_reach() {
+    let pull_requests = vec![
+        mine(10),
+        PullRequestFacts {
+            number: 20,
+            ..stranger()
+        },
+        mine(30),
+    ];
+    let owed = BTreeSet::from([10, 20]);
+
+    let to_read = conversations_to_read(&facts(pull_requests, vec![]), &owed, &cpython_settings());
+
+    // A stranger's PR waits until the user opens it, and nothing owes a read of PR 30.
+    assert_eq!(to_read, BTreeSet::from([10]));
+}
+
+#[test]
+fn a_filter_switched_on_owes_the_conversations_it_reaches_unless_read_at_their_heads() {
+    let before = cpython_settings();
+    let mut now = before.clone();
+    now.filters[1].on_workbench = OnWorkbench::On;
+    let strangers = |number: u32, head: Option<&str>| PullRequestFacts {
+        number,
+        head: head.map(sha),
+        ..stranger()
+    };
+    let pull_requests = vec![
+        strangers(11, Some("1111111")),
+        strangers(12, Some("2222222")),
+        strangers(13, None),
+        strangers(14, Some("4444444")),
+        strangers(15, Some("5555555")),
+        strangers(20, Some("2020202")),
+    ];
+    let facts = found_by_two_filters(
+        &before,
+        (&[11], &[12, 13, 14, 15]),
+        facts(pull_requests, vec![]),
+    );
+    let read_at = BTreeMap::from([(14, sha("4444444")), (15, sha("0555555"))]);
+
+    let from = |settings| ReachFrom {
+        facts: &facts,
+        settings,
+    };
+    let (on, owed_on) = moved(from(&before), from(&now), &read_at);
+    let (off, owed_off) = moved(from(&now), from(&before), &read_at);
+    let owed = BTreeSet::from([11, 12, 13, 15, 20]);
+    let to_read_on = conversations_to_read(&facts, &owed, &now);
+    let to_read_off = conversations_to_read(&facts, &owed, &before);
+
+    // PR 14's Conversation was read at its head, PR 15's at an older one, and PR 13's head is unknown.
+    assert_eq!(owed_on, [12, 13, 15]);
+    let fetched: Vec<u32> = on.unwrap().heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [11, 12, 14, 15]);
+    assert_eq!(owed_off, Vec::<u32>::new());
+    assert_eq!(off, Some(MirrorWork::of(&facts, &before)));
+    // PR 20 is owed a read, but out of Reach either way.
+    assert_eq!(to_read_on, BTreeSet::from([11, 12, 13, 15]));
+    assert_eq!(to_read_off, BTreeSet::from([11]));
+}
+
+/// `facts` with the items `keys` name Muted, as of an hour ago.
+fn muting(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
+    let muted = keys.iter().map(|key| (*key, hours_ago(1)));
+    facts.activity.muted.extend(muted);
+    facts
+}
+
+fn issue_key(number: u32) -> ItemKey {
+    ItemKey::Issue { number }
+}
+
+/// `facts` with `author` a Muted author, as of an hour ago (#494).
+fn muting_author(mut facts: WorkFacts, author: &str) -> WorkFacts {
+    let login = Login::new(author);
+    let muted = MutedAuthor {
+        login,
+        at: hours_ago(1),
+    };
+    facts.activity.muted_authors.push(muted);
+    facts
+}
+
+/// Issue `number`, which `author` opened.
+fn opened_by(author: &str, number: u32) -> IssueFacts {
+    IssueFacts {
+        author: Some(Login::new(author)),
+        ..issue(number)
+    }
+}
+
+#[test]
+fn a_muted_authors_trees_leave_reach_unless_an_ask_stands_in_them() {
+    let pull_requests = vec![
+        fixing(10, 1),
+        colleagues(20, 2, PrState::Open),
+        PullRequestFacts {
+            review_requests: vec![me()],
+            ..colleagues(30, 3, PrState::Open)
+        },
+        fixing(40, 4),
+    ];
+    let issues = vec![
+        opened_by("issue-author", 1),
+        opened_by("issue-author", 2),
+        opened_by("issue-author", 3),
+        opened_by("another-author", 4),
+    ];
+    let facts = muting_author(facts(pull_requests, issues), "Issue-Author");
+
+    let sets = Reach::of(&facts, &cpython_settings());
+
+    // The user's PR 10 sits in Issue 1's tree, so it leaves with it. The Review request on PR 30 keeps
+    // Issue 3's tree.
+    assert_eq!(sets.without_muted, BTreeSet::from([4, 40]));
+    assert_eq!(sets.muted_asking, BTreeSet::from([3, 30]));
+}
+
+#[test]
+fn closing_or_a_pr_opening_leaves_a_muted_authors_item_as_it_is() {
+    let open = |facts: IssueFacts| IssueFacts {
+        state: Some(IssueState::Open),
+        ..facts
+    };
+    let muted = || {
+        let pull_requests = vec![fixing(5, 7), colleagues(20, 1, PrState::Open)];
+        let issues = vec![
+            open(opened_by("issue-author", 7)),
+            opened_by("issue-author", 1),
+        ];
+        let facts = facts(pull_requests, issues);
+        muting_author(archiving(facts, &[issue_key(1)]), "issue-author")
+    };
+    let settings = cpython_settings();
+
+    // The user's PR 5 holds Issue 7 in Reach, and PR 20 opens on Archived Issue 1.
+    let archived = archived_by_closing(muted(), &settings, &BTreeSet::from([7]));
+    let opened = opened_on(&muted(), &settings, &BTreeSet::from([20]));
+
+    assert_eq!(archived, []);
+    assert_eq!(opened, Vec::<u32>::new());
+}
+
+#[test]
+fn a_muted_tree_leaves_reach_and_a_pr_another_item_links_to_comes_back() {
+    let pull_requests = vec![
+        fixing(10, 1),
+        colleagues(11, 1, PrState::Open),
+        PullRequestFacts {
+            number: 12,
+            title: "gh-1, gh-2: Fix both".to_owned(),
+            ..stranger()
+        },
+        colleagues(30, 1, PrState::Merged),
+        bots_backport(31, "[3.14] gh-3: Fix it (GH-30)"),
+        fixing(20, 2),
+        fixing(40, 3),
+    ];
+    let issues = [1, 2, 3].map(issue).to_vec();
+    let facts = muting(facts(pull_requests, issues), &[issue_key(1)]);
+
+    let sets = Reach::of(&facts, &cpython_settings());
+
+    // The user's PR 10 is in Issue 1's tree, so it leaves with it. PR 12 comes back as it fixes Issue 2, and
+    // PR 30 as its Backport 31 fixes Issue 3.
+    assert_eq!(
+        sets.without_muted,
+        BTreeSet::from([2, 3, 12, 20, 30, 31, 40])
+    );
+    assert_eq!(sets.muted_asking, BTreeSet::new());
+}
+
+#[test]
+fn a_start_in_a_muted_tree_keeps_the_trees_it_shares_with_unmuted_items() {
+    let pull_requests = vec![
+        PullRequestFacts {
+            title: "gh-1, gh-2: Fix both".to_owned(),
+            ..mine(12)
+        },
+        colleagues(11, 1, PrState::Open),
+        colleagues(21, 2, PrState::Open),
+        fixing(30, 3),
+        bots_backport(31, "[3.14] gh-1: Fix it (GH-30)"),
+    ];
+    let issues = [1, 2, 3].map(issue).to_vec();
+    let facts = muting(facts(pull_requests, issues), &[issue_key(1)]);
+
+    let reached = reach(&facts, &cpython_settings());
+
+    // The user's PR 12 puts Issue 2 on the Workbench as well as Muted Issue 1, and their PR 30 puts Issue 3
+    // there with its Backport 31, which fixes Issue 1 too.
+    assert_eq!(reached, BTreeSet::from([2, 3, 12, 21, 30, 31]));
+}
+
+#[test]
+fn a_muted_prs_key_names_no_tree_once_the_pr_sits_under_an_issue_or_an_origin_pr() {
+    let pull_requests = vec![
+        fixing(10, 1),
+        colleagues(50, 1, PrState::Open),
+        PullRequestFacts {
+            title: "Tidy up".to_owned(),
+            ..mine(40)
+        },
+        bots_backport(41, "[3.14] Tidy up (GH-40)"),
+    ];
+    let keys = [50, 41].map(|number| ItemKey::PullRequest { number });
+    let facts = muting(facts(pull_requests, vec![issue(1)]), &keys);
+
+    let reached = reach(&facts, &cpython_settings());
+
+    // The user muted PRs 50 and 41 while they stood alone, before a title edit linked PR 50 to Issue 1 and
+    // a sync fetched PR 41's Origin PR. The list draws them under items the user hasn't muted.
+    assert_eq!(reached, BTreeSet::from([1, 10, 40, 41, 50]));
+}
+
+#[test]
+fn a_muted_item_where_an_ask_stands_stays_in_reach_with_its_tree_until_the_ask_ends() {
+    let review_requested = |facts: PullRequestFacts| PullRequestFacts {
+        review_requests: vec![me()],
+        ..facts
+    };
+    let pull_requests = vec![
+        colleagues(11, 1, PrState::Open),
+        colleagues(12, 1, PrState::Closed),
+        colleagues(21, 2, PrState::Open),
+        review_requested(PullRequestFacts {
+            number: 5,
+            title: "Tidy up".to_owned(),
+            ..stranger()
+        }),
+        review_requested(colleagues(61, 6, PrState::Open)),
+        colleagues(62, 6, PrState::Open),
+    ];
+    let issues = vec![assigned_issue(1), issue(2), issue(6)];
+    let mut facts = facts(pull_requests, issues);
+    // Mark Seen acknowledges an ask, which stands all the same.
+    let later = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    facts.activity.acknowledged.extend([(1, later)]);
+    let standalone = ItemKey::PullRequest { number: 5 };
+    let keys = [issue_key(1), issue_key(2), issue_key(6), standalone];
+    let mut facts = muting(facts, &keys);
+    let settings = cpython_settings();
+
+    let asking = Reach::of(&facts, &settings);
+    facts.issues[0].assignees.clear();
+    let unassigned = Reach::of(&facts, &settings);
+
+    // Muted Issue 2 asks nothing of the user.
+    assert_eq!(asking.without_muted, BTreeSet::new());
+    assert_eq!(
+        asking.muted_asking,
+        BTreeSet::from([1, 5, 6, 11, 12, 61, 62])
+    );
+    assert_eq!(unassigned.muted_asking, BTreeSet::from([5, 6, 61, 62]));
+}
+
+#[test]
+fn reach_joins_the_items_without_the_muted_ones_and_the_muted_ones_that_ask() {
+    let pull_requests = vec![
+        mine(20),
+        colleagues(11, 1, PrState::Open),
+        colleagues(31, 3, PrState::Open),
+    ];
+    let issues = vec![assigned_issue(1), issue(3)];
+    let facts = muting(facts(pull_requests, issues), &[issue_key(1), issue_key(3)]);
+    let settings = cpython_settings();
+
+    let sets = Reach::of(&facts, &settings);
+
+    assert_eq!(sets.without_muted, BTreeSet::from([20]));
+    assert_eq!(sets.muted_asking, BTreeSet::from([1, 11]));
+    assert_eq!(reach(&facts, &settings), BTreeSet::from([1, 11, 20]));
+}
+
+#[test]
+fn the_walk_stops_at_a_second_issue_that_a_pr_of_a_reached_issue_fixes() {
+    let repository = cpython_settings();
+    let pull_requests = vec![
+        PullRequestFacts {
+            number: 11,
+            title: "gh-1, gh-2: Fix both".to_owned(),
+            ..stranger()
+        },
+        colleagues(12, 2, PrState::Open),
+    ];
+    let facts = found_by_two_filters(
+        &repository,
+        (&[1], &[]),
+        facts(pull_requests, vec![issue(1), issue(2)]),
+    );
+
+    // A walk that went on would chain Issue 1's tree to Issue 2's through PR 11.
+    assert_eq!(reach(&facts, &repository), BTreeSet::from([1, 11]));
+}
+
+#[test]
+fn an_archived_item_stays_in_reach() {
+    let mut facts = facts(vec![fixing(10, 1)], vec![issue(1)]);
+    let archive = Archive {
+        seen_up_to: hours_ago(1),
+        archived_at: hours_ago(1),
+    };
+    facts.activity.archived.extend([(issue_key(1), archive)]);
+
+    // The Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
+    assert_eq!(reach(&facts, &cpython_settings()), BTreeSet::from([1, 10]));
+}
+
+fn closed(number: u32) -> IssueFacts {
+    IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue(number)
+    }
+}
+
+#[test]
+fn closing_archives_each_issue_and_standalone_pr_that_reach_held_while_open() {
+    let merged = |facts: PullRequestFacts| PullRequestFacts {
+        state: PrState::Merged,
+        ..facts
+    };
+    let pull_requests = vec![
+        merged(fixing(10, 1)),
+        merged(mine(5)),
+        PullRequestFacts {
+            number: 30,
+            title: "Tidy up".to_owned(),
+            state: PrState::Closed,
+            ..stranger()
+        },
+        merged(fixing(40, 4)),
+    ];
+    let issues = vec![closed(1), closed(3), issue(4)];
+    let facts = facts(pull_requests, issues);
+    let closings = BTreeSet::from([1, 3, 5, 10, 30, 40]);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &closings);
+
+    // PR 10 merged and closed Issue 1, both the user's work while open. PR 5 stood alone. Nothing put
+    // Issue 3 or a stranger's PR 30 on the Workbench, and PRs 10 and 40 sit under their Issues, which stay
+    // open in Issue 4's case.
+    assert_eq!(archived, [issue_key(1), ItemKey::PullRequest { number: 5 }]);
+}
+
+#[test]
+fn closing_leaves_a_muted_item_as_it_is_an_ask_in_its_tree_or_not() {
+    let merged = PullRequestFacts {
+        state: PrState::Merged,
+        ..mine(5)
+    };
+    // The assignment keeps Issue 7 in Reach while it is Muted.
+    let assigned = IssueFacts {
+        state: Some(IssueState::Closed),
+        ..assigned_issue(7)
+    };
+    let keys = [ItemKey::PullRequest { number: 5 }, issue_key(7)];
+    let facts = muting(facts(vec![merged], vec![assigned]), &keys);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &BTreeSet::from([5, 7]));
+
+    assert_eq!(archived, []);
+}
+
+/// `facts` with the items `keys` name Archived.
+fn archiving(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
+    let archive = Archive {
+        seen_up_to: hours_ago(1),
+        archived_at: hours_ago(1),
+    };
+    facts
+        .activity
+        .archived
+        .extend(keys.iter().map(|key| (*key, archive)));
+    facts
+}
+
+#[test]
+fn a_pr_opens_on_each_archived_issue_it_fixes_and_a_backport_on_none() {
+    let pull_requests = vec![
+        PullRequestFacts {
+            title: "gh-1, gh-2, gh-3: Follow up".to_owned(),
+            ..colleagues(20, 1, PrState::Open)
+        },
+        colleagues(30, 4, PrState::Merged),
+        bots_backport(31, "[3.14] gh-4: Fix it (GH-30)"),
+        bots_backport(32, "[3.14] gh-6: Fix it (GH-60)"),
+        colleagues(40, 5, PrState::Merged),
+    ];
+    let issues = (vec![closed(1), issue(2), closed(3), closed(4)])
+        .into_iter()
+        .chain([closed(5), closed(6)])
+        .collect();
+    let keys = [1, 2, 4, 5, 6].map(issue_key);
+    let facts = archiving(facts(pull_requests, issues), &keys);
+    let openings = BTreeSet::from([20, 31, 32, 40]);
+
+    let opened = opened_on(&facts, &cpython_settings(), &openings);
+
+    // PR 20 fixes Issues 1 and 2, open or not, and Issue 3, which isn't Archived. Backports 31 and 32
+    // carry older changes to 3.14, whether Tsugiki holds their Origin PRs yet or not. PR 40 opened and
+    // merged between two refreshes.
+    assert_eq!(opened, [1, 2, 5]);
+}
+
+#[test]
+fn a_pr_that_opens_on_a_muted_archived_issue_leaves_it_as_it_is() {
+    let facts = facts(vec![colleagues(20, 1, PrState::Open)], vec![closed(1)]);
+    let facts = muting(archiving(facts, &[issue_key(1)]), &[issue_key(1)]);
+
+    let opened = opened_on(&facts, &cpython_settings(), &BTreeSet::from([20]));
+
+    assert_eq!(opened, Vec::<u32>::new());
+}
+
+/// The user's PR `facts` with head `head`.
+fn at_head(head: &str, facts: PullRequestFacts) -> PullRequestFacts {
+    PullRequestFacts {
+        head: Some(sha(head)),
+        ..facts
+    }
+}
+
+#[test]
+fn the_mirror_fetches_no_head_and_reads_ahead_no_conversation_of_a_muted_items_prs() {
+    let pull_requests = vec![
+        at_head("1010101", fixing(10, 1)),
+        at_head("2020202", mine(20)),
+    ];
+    let facts = muting(facts(pull_requests, vec![issue(1)]), &[issue_key(1)]);
+    let settings = cpython_settings();
+    let owed = BTreeSet::from([10, 20]);
+
+    let work = MirrorWork::of(&facts, &settings);
+    let to_read = conversations_to_read(&facts, &owed, &settings);
+
+    let fetched: Vec<u32> = work.heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [20]);
+    assert_eq!(to_read, BTreeSet::from([20]));
+}
+
+#[test]
+fn unmute_owes_the_conversations_it_puts_back_in_reach_unless_read_at_their_heads() {
+    let pull_requests = vec![
+        at_head("1111111", colleagues(11, 1, PrState::Open)),
+        at_head("2222222", colleagues(12, 1, PrState::Open)),
+        at_head("2020202", mine(20)),
+        at_head("3030303", fixing(30, 1)),
+    ];
+    let unmuted = facts(pull_requests.clone(), vec![issue(1)]);
+    let muted = muting(facts(pull_requests, vec![issue(1)]), &[issue_key(1)]);
+    let read_at = BTreeMap::from([(12, sha("2222222")), (20, sha("0000000"))]);
+    let settings = cpython_settings();
+    let from = |facts| ReachFrom {
+        facts,
+        settings: &settings,
+    };
+
+    let (work, owed) = moved(from(&muted), from(&unmuted), &read_at);
+
+    let work = work.unwrap();
+    let fetched: Vec<u32> = work.heads.iter().map(|head| head.number).collect();
+    assert_eq!(fetched, [11, 12, 20, 30]);
+    // PR 12's Conversation was read at its head, and PR 20 was in Reach all along.
+    assert_eq!(owed, [11, 30]);
+    assert_eq!(work, MirrorWork::of(&unmuted, &settings));
+}
+
+#[test]
+fn a_move_that_leaves_the_mirrors_work_as_it_was_hands_over_none() {
+    let before = cpython_settings();
+    let mut renamed = before.clone();
+    renamed.filters[0].name = "Something else".to_owned().try_into().unwrap();
+    let mut switched = before.clone();
+    switched.filters[1].on_workbench = OnWorkbench::On;
+    let strangers = |number: u32, head: &str| {
+        let pr = PullRequestFacts {
+            number,
+            ..stranger()
+        };
+        at_head(head, pr)
+    };
+    let pull_requests = vec![strangers(12, "2222222"), strangers(13, "3333333")];
+    let facts = found_by_two_filters(&before, (&[12], &[13]), facts(pull_requests, vec![]));
+    let from = |settings| ReachFrom {
+        facts: &facts,
+        settings,
+    };
+
+    let (work, owed) = moved(from(&before), from(&renamed), &BTreeMap::new());
+    let (switched_work, _) = moved(from(&before), from(&switched), &BTreeMap::new());
+
+    // The renamed Filter still finds PR 12, so the Mirror worker fetches the same heads.
+    assert_eq!(work, None);
+    assert_eq!(owed, Vec::<u32>::new());
+    let fetched: Vec<u32> = (switched_work.unwrap().heads.iter())
+        .map(|head| head.number)
+        .collect();
+    assert_eq!(fetched, [12, 13]);
 }

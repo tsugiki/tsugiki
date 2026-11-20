@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 
 import { workspaceVersion } from "./release-notes.ts";
+import { messageOf, stop } from "./run.ts";
 
 const BUILT = resolve("target/release/tsg.exe");
 const STAGE = resolve(".temp/portable");
@@ -80,7 +81,7 @@ async function waitUntilRunning(app: ChildProcess, data: string): Promise<void> 
   }
 }
 
-function stop(app: ChildProcess): void {
+function stopApp(app: ChildProcess): void {
   if (app.pid !== undefined && app.exitCode === null) {
     const stopped = spawnSync("taskkill", ["/pid", String(app.pid), "/t", "/f"]);
     if (stopped.status !== 0) {
@@ -108,7 +109,7 @@ async function tryZip(zip: string): Promise<void> {
   try {
     await Promise.race([waitUntilRunning(app, data), notStarted]);
   } finally {
-    stop(app);
+    stopApp(app);
   }
 
   const created = foldersOutside().filter((folder) => existsSync(folder) && !before.includes(folder));
@@ -125,6 +126,5 @@ try {
     await tryZip(zip);
   }
 } catch (cause) {
-  console.error(cause instanceof Error ? cause.message : String(cause));
-  process.exit(1);
+  stop(messageOf(cause));
 }

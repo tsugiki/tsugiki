@@ -13,50 +13,41 @@ use tsugiki_core::facts::pull_request_content::{
     Anchor, DiffHunk, Opening, PullRequestContent, Resolution, Review, Side, Subject, Submission,
     ThreadComment, ThreadId, ThreadLine,
 };
-use tsugiki_core::facts::pull_requests::{PrState, PullRequestFacts, ReviewState};
+use tsugiki_core::facts::pull_requests::{PullRequestFacts, ReviewState};
 use tsugiki_core::github::replay::Replayer;
+use tsugiki_core::github::testing::{Canned, RATE_LIMIT, answer, page_info, signed_in_gh};
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
 use tsugiki_core::mirror_source::MirrorSource;
+use tsugiki_core::releases::testing::{offline, release};
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::RepositorySettings;
-use tsugiki_core::settings::SettingsFiles;
-use tsugiki_core::token::{GhOutput, Token};
+use tsugiki_core::settings::{Home, SettingsFiles};
+use tsugiki_core::testing::pr_facts;
+use tsugiki_core::token::Token;
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_test_git::git;
+use tsugiki_test_git::{
+    TempPath, mirror_with_branch, pass_on, run_git, ty, wait_for_message, wait_until,
+};
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
 
-fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
-    Ok(GhOutput {
-        success: true,
-        stdout: "gho_example".to_owned(),
-    })
+/// GitHub reached through `transport`, with gh signed in.
+fn access(transport: impl Transport + 'static) -> GitHubAccess {
+    GitHubAccess {
+        transport: Box::new(transport),
+        run_gh: signed_in_gh,
+    }
 }
 
 /// Real GitHub's answers, recorded for the core's fixtures.
 fn recordings() -> GitHubAccess {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/tests/fixtures/github");
-    GitHubAccess {
-        transport: Box::new(Replayer::new(dir)),
-        run_gh: signed_in_gh,
-    }
-}
-
-struct NoNetwork;
-
-impl Transport for NoNetwork {
-    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-        Err(Unreachable::Offline)
-    }
+    access(Replayer::new(tsugiki_core::testing::recordings()))
 }
 
 fn no_network() -> GitHubAccess {
-    GitHubAccess {
-        transport: Box::new(NoNetwork),
-        run_gh: signed_in_gh,
-    }
+    access(Canned(Err(Unreachable::Offline)))
 }
 
 /// Says when a request arrives, then holds it until the test lets go. A regression then shows up as
@@ -72,23 +63,6 @@ impl Transport for StuckGitHub {
         self.released.recv_timeout(PLENTY).unwrap_or(());
         Err(Unreachable::Offline)
     }
-}
-
-fn releases_offline() -> Result<tsugiki_token::Reply, tsugiki_token::Unreachable> {
-    Err(tsugiki_token::Unreachable::Offline(
-        "no network in tests".to_owned(),
-    ))
-}
-
-/// GitHub Releases with `tag` as the latest release.
-fn latest_release(tag: &str) -> Result<tsugiki_token::Reply, tsugiki_token::Unreachable> {
-    Ok(tsugiki_token::Reply {
-        status: 200,
-        body: json!({ "tag_name": tag }).to_string(),
-        date: None,
-        ratelimit_reset: None,
-        etag: None,
-    })
 }
 
 /// The app as `startup.rs` wires it, on Tauri's mock runtime with a webview to send commands from. It
@@ -137,7 +111,7 @@ impl Wired {
     ) -> Self {
         let outside = Outside {
             github,
-            releases: Box::new(|_| releases_offline()),
+            releases: Box::new(|_| offline()),
             remotes,
             pick,
         };
@@ -214,6 +188,13 @@ impl Wired {
         .map(|answer| answer.deserialize().unwrap())
     }
 
+    /// Calls `command` with `arguments`, as [`Wired::ask`] does, for what it does, and fails the test unless
+    /// it succeeds.
+    fn call(&self, command: &str, arguments: Value) {
+        let answer = self.ask(command, arguments);
+        assert!(answer.is_ok(), "{command} failed: {answer:?}");
+    }
+
     fn stop(self) -> Self {
         self.core.stop(PLENTY);
         self
@@ -223,8 +204,12 @@ impl Wired {
 /// Each payload of `event`, as the webview would get it.
 fn hear(app: &App<MockRuntime>, event: &str) -> Receiver<Value> {
     let (heard, payloads) = channel();
-    let _ = app.listen(event, move |event| {
-        drop(heard.send(serde_json::from_str(event.payload()).unwrap()));
+    #[expect(
+        unused_results,
+        reason = "the listener lasts as long as the app, which the test drops at its end"
+    )]
+    app.listen(event, move |event| {
+        pass_on(&heard, serde_json::from_str(event.payload()).unwrap());
     });
     payloads
 }
@@ -345,7 +330,7 @@ fn a_newer_version_reaches_the_window_as_an_event_and_through_its_command() {
     let (folders, _root) = temp_folders("wired-new-version");
     let outside = Outside {
         github: no_network(),
-        releases: Box::new(|_| latest_release("v999.0.0")),
+        releases: Box::new(|_| release("v999.0.0")),
         remotes: Remotes::under("no-remotes/".to_owned()),
         pick: Arc::new(|_| None),
     };
@@ -383,7 +368,7 @@ fn assert_releases_hear_nothing(name: &str, settings: &str) {
         github: no_network(),
         releases: Box::new(move |_| {
             asking.send(()).unwrap_or(());
-            latest_release("v999.0.0")
+            release("v999.0.0")
         }),
         remotes: Remotes::under("no-remotes/".to_owned()),
         pick: Arc::new(|_| None),
@@ -648,11 +633,7 @@ fn an_add_and_a_read_dont_wait_for_github() {
     let (folders, _root) = temp_folders("wired-stuck");
     let (arrived, request_arrived) = channel();
     let (release, released) = channel();
-    let access = GitHubAccess {
-        transport: Box::new(StuckGitHub { arrived, released }),
-        run_gh: signed_in_gh,
-    };
-    let wired = Wired::start(Ok(folders), access);
+    let wired = Wired::start(Ok(folders), access(StuckGitHub { arrived, released }));
     request_arrived.recv_timeout(PLENTY).unwrap();
 
     let started = Instant::now();
@@ -772,11 +753,9 @@ fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
 fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     let (folders, _root) = temp_folders("wired-switch");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let peps = json!({ "name": "python/peps", "source": { "kind": "download" } });
-    let _ = wired
-        .ask("add_repository", json!({ "repository": peps }))
-        .unwrap();
+    wired.call("add_repository", json!({ "repository": peps }));
 
     let opened = wired.ask("open_repository", json!({ "name": "Python/CPython" }));
     let home = wired.ask("home", json!({})).unwrap();
@@ -831,10 +810,15 @@ fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window(
     let (folders, _root) = temp_folders("wired-open-issue");
     let wired = Wired::start(Ok(folders), no_network());
     let issue_7 = json!({ "repository": CPYTHON, "number": 7 });
-    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z" });
+    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
 
     drop(wired.ask("open_issue", issue_7.clone()).unwrap());
-    drop(wired.ask("fetch_issue", issue_7.clone()).unwrap());
+    for moved in ["hide_item", "show_item", "close_item"] {
+        drop(wired.ask(moved, issue_7.clone()).unwrap());
+    }
+    for moved in ["window_hidden", "window_shown", "window_loaded"] {
+        drop(wired.ask(moved, json!({})).unwrap());
+    }
     drop(
         wired
             .ask("mark_unseen", json!({ "repository": CPYTHON, "number": 8 }))
@@ -857,12 +841,101 @@ fn opening_an_issue_moves_nothing_and_mark_unseen_and_mark_seen_tell_the_window(
 }
 
 #[test]
-fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
+fn archive_keep_archived_unarchive_and_mark_unseen_tell_the_window() {
+    let (folders, _root) = temp_folders("wired-archive");
+    let wired = Wired::start(Ok(folders), no_network());
+    let item = json!({ "kind": "issue", "number": 7 });
+    let mark = json!({ "numbers": [7, 8], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
+
+    let archive = json!({ "repository": CPYTHON, "item": item, "mark": mark });
+    drop(wired.ask("archive", archive.clone()).unwrap());
+    let archived = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.ask("keep_archived", archive.clone()).unwrap());
+    let kept = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let unseen = json!({ "repository": CPYTHON, "number": 8, "archived": item });
+    drop(wired.ask("mark_unseen", unseen).unwrap());
+    let flagged = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.ask("archive", archive).unwrap());
+    drop(wired.workbenches.recv_timeout(PLENTY).unwrap());
+    let unarchive = json!({ "repository": CPYTHON, "item": item });
+    drop(wired.ask("unarchive", unarchive).unwrap());
+    let unarchived = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let unknown = json!({ "kind": "dependency_updates" });
+    let refused = wired.ask(
+        "unarchive",
+        json!({ "repository": CPYTHON, "item": unknown }),
+    );
+    drop(wired.stop());
+
+    assert_eq!(archived, json!({ "repository": CPYTHON, "items": [7, 8] }));
+    assert_eq!(kept, archived);
+    assert_eq!(flagged, json!({ "repository": CPYTHON, "items": [8, 7] }));
+    assert_eq!(unarchived, json!({ "repository": CPYTHON, "items": [7] }));
+    assert!(refused.is_err(), "a kind this version doesn't know");
+}
+
+#[test]
+fn mute_and_unmute_tell_the_window() {
+    let (folders, _root) = temp_folders("wired-mute");
+    let wired = Wired::start(Ok(folders), no_network());
+    let item = json!({ "kind": "pull_request", "number": 9 });
+    let mark = json!({ "numbers": [9], "up_to": "2026-11-01T09:00:00Z", "findings": [] });
+
+    let mute = json!({ "repository": CPYTHON, "item": item, "mark": mark });
+    drop(wired.ask("mute", mute).unwrap());
+    let muted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(
+        wired
+            .ask("unmute", json!({ "repository": CPYTHON, "item": item }))
+            .unwrap(),
+    );
+    let unmuted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.stop());
+
+    assert_eq!(muted, json!({ "repository": CPYTHON, "items": [9] }));
+    assert_eq!(unmuted, muted);
+}
+
+#[test]
+fn mute_author_and_unmute_author_tell_the_window() {
+    let (folders, _root) = temp_folders("wired-mute-author");
+    let wired = Wired::start(Ok(folders), no_network());
+    let asked = json!({ "repository": CPYTHON, "author": "some-author" });
+
+    drop(wired.ask("mute_author", asked.clone()).unwrap());
+    let muted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.ask("unmute_author", asked).unwrap());
+    let unmuted = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let refused = wired.ask(
+        "mute_author",
+        json!({ "repository": "no-slash", "author": "a" }),
+    );
+    drop(wired.stop());
+
+    // The store holds none of their items yet.
+    assert_eq!(muted, json!({ "repository": CPYTHON, "items": [] }));
+    assert_eq!(unmuted, muted);
+    assert!(refused.is_err(), "a Repository name that isn't one");
+}
+
+#[test]
+fn a_mark_seen_with_a_moment_or_a_commit_that_isnt_one_is_refused() {
     let (folders, _root) = temp_folders("wired-bad-mark");
     let wired = Wired::start(Ok(folders), no_network());
-    let mark = json!({ "numbers": [7], "up_to": "yesterday" });
+    let mark = json!({ "numbers": [7], "up_to": "yesterday", "findings": [] });
+    let finding = json!({
+        "number": 7,
+        "reviewed": "1111111111111111111111111111111111111111",
+        "head": "not a commit",
+        "found_at": "2026-11-01T09:00:00Z",
+    });
+    let unparsed = json!({ "numbers": [7], "up_to": null, "findings": [finding] });
 
     let refused = wired.ask("mark_seen", json!({ "repository": CPYTHON, "mark": mark }));
+    let bad_commit = wired.ask(
+        "mark_seen",
+        json!({ "repository": CPYTHON, "mark": unparsed }),
+    );
     let bad_name = wired.ask(
         "mark_unseen",
         json!({ "repository": "not a name", "number": 7 }),
@@ -870,6 +943,7 @@ fn a_mark_seen_with_a_moment_that_isnt_one_is_refused() {
     let wired = wired.stop();
 
     assert!(refused.is_err());
+    assert!(bad_commit.is_err());
     assert_eq!(bad_name.unwrap_err()["kind"], "not_found");
     assert!(wired.workbenches.try_recv().is_err());
 }
@@ -882,7 +956,7 @@ fn a_pr_read_github_cant_answer_tells_the_window_it_waits_on_github() {
     drop(
         wired
             .ask(
-                "fetch_pull_request",
+                "open_pull_request",
                 json!({ "repository": CPYTHON, "number": 7 }),
             )
             .unwrap(),
@@ -909,18 +983,36 @@ fn issue_over(workbench: &Value, number: u64) -> &Value {
 
 /// Waits for a `changed` event that names item `number`.
 fn wait_for_change_to(changes: &Receiver<Value>, number: &Value) {
-    while !changes.recv_timeout(PLENTY).unwrap()["items"]
-        .as_array()
-        .unwrap()
-        .contains(number)
-    {}
+    heard_until(changes, |change| {
+        change["items"]
+            .as_array()
+            .unwrap()
+            .contains(number)
+            .then_some(())
+    });
+}
+
+/// What `found` finds in the first of what `events` hears that it finds anything in.
+fn heard_until<T, U>(events: &Receiver<T>, mut found: impl FnMut(T) -> Option<U>) -> U {
+    loop {
+        if let Some(found) = found(events.recv_timeout(PLENTY).unwrap()) {
+            return found;
+        }
+    }
+}
+
+/// What `events` hears up to the first null, which ends a run of announcements.
+fn heard_until_null(events: &Receiver<Value>) -> Vec<Value> {
+    std::iter::repeat_with(|| events.recv_timeout(PLENTY).unwrap())
+        .take_while(|heard| !heard.is_null())
+        .collect()
 }
 
 #[test]
 fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_marks_seen() {
     let (folders, _root) = temp_folders("wired-offline-start");
     let wired = Wired::start(Ok(folders.clone()), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let synced = workbench_after_sync(&wired);
     let number = issue_over(&synced, 154_019)["number"].clone();
     let issue = json!({ "repository": CPYTHON, "number": number });
@@ -928,7 +1020,7 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
     // Reading a PR's Conversation keeps it, as a read ahead does.
     drop(wired.ask("open_pull_request", pr.clone()).unwrap());
     while wired.ask("pull_request", pr.clone()).unwrap()["content"].is_null() {
-        let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        wait_for_message(&wired.workbenches, PLENTY);
     }
     drop(wired.stop());
 
@@ -979,7 +1071,7 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
 fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers() {
     let (folders, _root) = temp_folders("wired-open-pr");
     let wired = Wired::start(Ok(folders), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let number = workbench["items"]
         .as_array()
@@ -993,10 +1085,9 @@ fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers()
     drop(wired.ask("open_pull_request", pr.clone()).unwrap());
     let mut after = Value::Null;
     while after["content"].is_null() {
-        let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        wait_for_message(&wired.workbenches, PLENTY);
         after = wired.ask("pull_request", pr.clone()).unwrap();
     }
-    drop(wired.ask("fetch_pull_request", pr).unwrap());
     drop(wired.stop());
 
     assert_eq!(before["number"], number);
@@ -1018,22 +1109,26 @@ fn a_name_that_isnt_a_repository_opens_nothing() {
     let bad = json!({ "repository": "not a name", "number": 7 });
 
     let open = wired.ask("open_issue", bad.clone()).unwrap_err();
-    let fetch = wired.ask("fetch_issue", bad.clone()).unwrap_err();
     let read = wired.ask("issue", bad.clone()).unwrap_err();
     let typed = json!({ "repository": "not a name", "typed": "7" });
     let found = wired.ask("quick_open", typed).unwrap_err();
-    let pr_errors: Vec<Value> = ["open_pull_request", "fetch_pull_request", "pull_request"]
-        .into_iter()
+    let item_commands = [
+        "open_pull_request",
+        "pull_request",
+        "hide_item",
+        "show_item",
+        "close_item",
+    ];
+    let item_errors: Vec<Value> = (item_commands.into_iter())
         .map(|command| wired.ask(command, bad.clone()).unwrap_err()["kind"].clone())
         .collect();
     let page = crate::open_github_page("not a name", GitHubItem::Issue { number: 7 }, no_browser);
     drop(wired.stop());
 
     assert_eq!(open["kind"], "not_found");
-    assert_eq!(fetch["kind"], "not_found");
     assert_eq!(read["kind"], "not_found");
     assert_eq!(found["kind"], "not_found");
-    assert_eq!(pr_errors, ["not_found", "not_found", "not_found"]);
+    assert_eq!(item_errors, ["not_found"; 5]);
     assert!(page.is_err());
 }
 
@@ -1153,7 +1248,7 @@ fn inbox_pages(wired: &Wired) -> Vec<Value> {
 fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
     let (folders, _root) = temp_folders("wired-inbox");
     let wired = Wired::start(Ok(folders), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let pages = inbox_pages(&wired);
     let bad = json!({ "repository": "not a name", "page": { "kind": "latest" } });
@@ -1220,7 +1315,7 @@ fn the_inbox_reads_the_synced_open_items_a_page_at_a_time_latest_first() {
 fn the_app_syncs_the_repository_it_reopens() {
     let (folders, _root) = temp_folders("wired-reopen");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     drop(wired.stop());
 
     let reopened = Wired::start(Ok(folders), recordings());
@@ -1235,7 +1330,7 @@ fn a_filter_edited_in_the_file_shows_in_the_sidebar_and_the_workbench_after_a_re
     const EDITED: &str = "is:open author:@me label:type-bug";
     let (folders, _root) = temp_folders("wired-filter-edit");
     let wired = Wired::start(Ok(folders.clone()), no_network());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     drop(wired.stop());
     let settings = std::fs::read_to_string(folders.settings_file()).unwrap();
     let edited = settings
@@ -1298,9 +1393,8 @@ struct Refreshing {
 
 impl Transport for Refreshing {
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        drop(self.asked.send(request.operation.to_owned()));
-        let rate = json!({ "cost": 1, "limit": 5000, "used": 1000, "remaining": 4000, "resetAt": "2999-01-01T00:00:00Z" });
-        let page = |nodes: Value| json!({ "pageInfo": { "hasNextPage": false, "endCursor": null }, "nodes": nodes });
+        pass_on(&self.asked, request.operation.to_owned());
+        let page = |nodes: Value| json!({ "pageInfo": page_info(None), "nodes": nodes });
         let data = match request.operation {
             "Viewer" => json!({ "viewer": { "login": "octocat" } }),
             "RefreshRepository" => json!({
@@ -1320,24 +1414,16 @@ impl Transport for Refreshing {
                     }])),
                     "pullRequests": page(json!([])),
                 },
-                "rateLimit": rate,
             }),
-            "FetchCrossReferences" => {
-                json!({ "repository": { "issue": null }, "rateLimit": rate })
-            }
-            _ => json!({ "repository": {}, "rateLimit": rate }),
+            "FetchCrossReferences" => json!({ "repository": { "issue": null } }),
+            _ => json!({ "repository": {} }),
         };
-        Ok(Reply {
-            status: 200,
-            reset: None,
-            date: None,
-            body: json!({ "data": data }).to_string(),
-        })
+        answer(data, RATE_LIMIT)
     }
 }
 
 fn wait_for(asked: &Receiver<String>, operation: &str) {
-    while asked.recv_timeout(PLENTY).unwrap() != operation {}
+    heard_until(asked, |asked| (asked == operation).then_some(()));
 }
 
 /// The first thing the first item of a Workbench says about itself.
@@ -1349,7 +1435,7 @@ fn first_issue(workbench: &Value) -> &Value {
 fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
     let (folders, _root) = temp_folders("wired-refresh");
     let wired = Wired::start(Ok(folders.clone()), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
     let never = wired.last_syncs.recv_timeout(PLENTY).unwrap();
     let first = wired.last_syncs.recv_timeout(PLENTY).unwrap();
@@ -1357,11 +1443,7 @@ fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
     let number = first_issue(&workbench)["number"].as_u64().unwrap();
 
     let (asked, questions) = channel();
-    let access = GitHubAccess {
-        transport: Box::new(Refreshing { number, asked }),
-        run_gh: signed_in_gh,
-    };
-    let reopened = Wired::start(Ok(folders), access);
+    let reopened = Wired::start(Ok(folders), access(Refreshing { number, asked }));
     let shown = reopened.last_syncs.recv_timeout(PLENTY).unwrap();
     let changed = reopened.workbenches.recv_timeout(PLENTY).unwrap();
     let after = reopened.ask("workbench", the_whole_workbench()).unwrap();
@@ -1386,24 +1468,20 @@ fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
 fn an_add_syncs_what_waits_on_the_user_and_the_status_bar_hears_each_part() {
     let (folders, _root) = temp_folders("wired-activity");
     let wired = Wired::start(Ok(folders), recordings());
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let workbench = workbench_after_sync(&wired);
 
-    let mut parts = Vec::new();
-    let ended = loop {
-        let heard = wired.activities.recv_timeout(PLENTY).unwrap();
-        if heard.is_null() {
-            break heard;
-        }
-        parts.push(heard["open"]["part"].as_str().unwrap().to_owned());
-    };
+    // The activity ends with a null.
+    let heard = heard_until_null(&wired.activities);
+    let mut parts: Vec<&str> = (heard.iter())
+        .map(|heard| heard["open"]["part"].as_str().unwrap())
+        .collect();
     parts.dedup();
     let asked = wired.ask("sync_activity", json!({})).unwrap();
     drop(wired.stop());
 
     assert_is_the_recorded_work(&workbench);
     assert_eq!(parts, ["refresh", "your_work", "trees", "window"]);
-    assert_eq!(ended, Value::Null);
     assert_eq!(asked, Value::Null);
 }
 
@@ -1424,14 +1502,8 @@ struct SignedIn;
 
 impl Transport for SignedIn {
     fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
-        let rate = json!({ "cost": 1, "limit": 5000, "used": 10, "remaining": 4990, "resetAt": "2999-01-01T00:00:00Z" });
-        Ok(Reply {
-            status: 200,
-            reset: None,
-            date: None,
-            body: json!({ "data": { "viewer": { "login": "octocat" }, "rateLimit": rate } })
-                .to_string(),
-        })
+        let rate = r#""rateLimit":{"cost":1,"limit":5000,"used":10,"remaining":4990,"resetAt":"2999-01-01T00:00:00Z"}"#;
+        answer(json!({ "viewer": { "login": "octocat" } }), rate)
     }
 }
 
@@ -1442,11 +1514,7 @@ fn the_hour_points_reach_the_window_once_github_has_answered() {
     let before = unanswered.ask("hour_points", json!({})).unwrap();
     drop(unanswered.stop());
 
-    let signed_in = GitHubAccess {
-        transport: Box::new(SignedIn),
-        run_gh: signed_in_gh,
-    };
-    let wired = Wired::start(Ok(folders), signed_in);
+    let wired = Wired::start(Ok(folders), access(SignedIn));
     let heard = wired.points.recv_timeout(PLENTY).unwrap();
     let asked = wired.ask("hour_points", json!({})).unwrap();
     drop(wired.stop());
@@ -1490,17 +1558,13 @@ fn remotes(root: &Path, names: &[&str]) -> Remotes {
 /// The Repositories each clone announced, in turn, as the webview heard them.
 fn clones(wired: &Wired, count: usize) -> Vec<Vec<Value>> {
     (0..count)
-        .map(|_| {
-            let mut clone = Vec::new();
-            loop {
-                let heard = wired.clonings.recv_timeout(PLENTY).unwrap();
-                if heard.is_null() {
-                    break clone;
-                }
-                clone.push(heard);
-            }
-        })
+        .map(|_| heard_until_null(&wired.clonings))
         .collect()
+}
+
+/// Waits until the clone under way has ended, as the webview hears it.
+fn clone_ended(wired: &Wired) {
+    while !wired.clonings.recv_timeout(PLENTY).unwrap().is_null() {}
 }
 
 #[test]
@@ -1509,7 +1573,7 @@ fn adding_a_repository_shows_its_clone_until_it_ends() {
     let remotes = remotes(&root, &[CPYTHON]);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let clone = clones(&wired, 1).remove(0);
     let asked = wired.ask("cloning", json!({})).unwrap();
     drop(wired.stop());
@@ -1533,7 +1597,7 @@ fn the_window_hears_each_mirrors_state_as_it_changes_and_can_ask_for_it() {
     let remotes = remotes(&root, &[CPYTHON]);
     let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let ready = json!([{ "repository": CPYTHON, "state": { "state": "ready" } }]);
     let mut heard = Vec::new();
     while heard.last() != Some(&ready) {
@@ -1563,10 +1627,10 @@ fn a_disk_short_of_room_for_a_clone_says_so_and_check_again_looks_once_more() {
     );
     let wired = Wired::start_cloning_from(Ok(folders), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
+    wired.call("add_repository", add_cpython());
     let short = wired.problems.recv_timeout(PLENTY).unwrap();
     let asked = wired.ask("mirror_problem", json!({})).unwrap();
-    let _ = wired.ask("check_mirrors_again", json!({})).unwrap();
+    wired.call("check_mirrors_again", json!({}));
     let measured = measures
         .recv_timeout(PLENTY)
         .and(measures.recv_timeout(PLENTY));
@@ -1589,15 +1653,8 @@ fn a_disk_short_of_room_for_a_clone_says_so_and_check_again_looks_once_more() {
 #[test]
 fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_the_answer() {
     let (folders, root) = temp_folders("wiring-borrow");
-    let mut files = SettingsFiles::load(folders.clone());
     let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
-    let _ = files
-        .add_repository(
-            &RepositorySettings::new(cpython.clone()),
-            &MirrorSource::Download,
-            time::OffsetDateTime::now_utc(),
-        )
-        .unwrap();
+    added_before_launch(&folders, &[CPYTHON]);
     // As 0.1 left it: the Repository, and no answer.
     std::fs::write(
         folders.machine_file(),
@@ -1607,7 +1664,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
     let remotes = remotes(&root, &[CPYTHON]);
     let lender = root.join("user-cpython");
     let url = remotes.url(&cpython);
-    let _ = git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
+    run_git(&root, &["clone", "-q", &url, &lender.to_string_lossy()]);
     let picked = lender.clone();
     let wired = Wired::start_picking(
         Ok(folders.clone()),
@@ -1653,15 +1710,7 @@ fn a_repository_from_before_asks_where_its_mirror_gets_objects_and_borrows_on_th
 #[test]
 fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
     let (folders, root) = temp_folders("wiring-answer-unsaved");
-    let mut files = SettingsFiles::load(folders.clone());
-    let cpython = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
-    let _ = files
-        .add_repository(
-            &RepositorySettings::new(cpython.clone()),
-            &MirrorSource::Download,
-            time::OffsetDateTime::now_utc(),
-        )
-        .unwrap();
+    added_before_launch(&folders, &[CPYTHON]);
     std::fs::write(
         folders.machine_file(),
         "last_repository = \"python/cpython\"\n",
@@ -1673,7 +1722,7 @@ fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
         remotes(&root, &[CPYTHON]),
     );
 
-    let _ = wired.questions.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.questions, PLENTY);
     // Broken after the launch read it, as a user's edit in another window would leave it.
     std::fs::write(folders.machine_file(), "last_repository = \n").unwrap();
     let chose = wired.ask(
@@ -1705,13 +1754,17 @@ fn added_before_launch(folders: &Folders, names: &[&str]) {
     let mut files = SettingsFiles::load(folders.clone());
     for name in names {
         let name = RepositoryName::parse(name).unwrap();
-        let _ = files
+        let home = files
             .add_repository(
-                &RepositorySettings::new(name),
+                &RepositorySettings::new(name.clone()),
                 &MirrorSource::Download,
                 time::OffsetDateTime::now_utc(),
             )
             .unwrap();
+        assert!(
+            matches!(&home, Home::Repository { repository, .. } if repository.name == name),
+            "{home:?}"
+        );
     }
 }
 
@@ -1792,40 +1845,26 @@ fn a_sync_fetches_the_heads_of_the_users_prs_into_the_mirror() {
     let commit = pull_request_on(&root, CPYTHON, 157_178);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
 
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let _clone = clones(&wired, 1);
+    wired.call("add_repository", add_cpython());
+    clone_ended(&wired);
     let mirror = folders.mirror(&tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap());
     let fetched = mirror.join("refs/tsugiki/pull/157178/head");
-    let deadline = Instant::now() + PLENTY;
-    while !fetched.exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_until(PLENTY, || fetched.exists());
     drop(wired.stop());
     let head = std::fs::read_to_string(&fetched).unwrap_or_default();
 
     assert_eq!(head.trim(), commit);
 }
 
-/// PR #1 of cpython, someone else's, at `commit`, which no sync step reads.
+/// PR #1 of cpython, someone else's, at `commit`, which no sync step reads. The PR list read it after the
+/// recorded Conversation, so its facts keep `commit` when that Conversation saves.
 fn someone_elses_pr_1(folders: &Folders, commit: &str) {
     let pr = PullRequestFacts {
-        number: 1,
         title: "gh-1: Fix it".to_owned(),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(Login::new("some-author")),
-        target_branch: "main".to_owned(),
-        ci: None,
-        updated_at: time::OffsetDateTime::UNIX_EPOCH,
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
         head: CommitSha::parse(commit),
-        off_default: None,
+        updated_at: tsugiki_core::testing::moment("2026-11-01T00:00:00Z"),
+        ..pr_facts(1)
     };
     let name = tsugiki_core::repository::RepositoryName::parse(CPYTHON).unwrap();
     let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
@@ -1834,8 +1873,8 @@ fn someone_elses_pr_1(folders: &Folders, commit: &str) {
 }
 
 #[test]
-fn the_files_tab_of_a_pr_whose_mirror_isnt_there_shows_the_clone() {
-    let (folders, _root) = temp_folders("wiring-files-no-mirror");
+fn the_files_tab_of_a_pr_in_a_repository_the_settings_dont_list_says_it_has_no_mirror() {
+    let (folders, _root) = temp_folders("wiring-files-unlisted");
     someone_elses_pr_1(&folders, "89abcde89abcde89abcde89abcde89abcde89abc");
     let wired = Wired::start(Ok(folders), no_network());
 
@@ -1845,7 +1884,8 @@ fn the_files_tab_of_a_pr_whose_mirror_isnt_there_shows_the_clone() {
     );
     drop(wired.stop());
 
-    assert_eq!(files.unwrap(), json!({ "state": "cloning" }));
+    let problem = files.unwrap_err();
+    assert_eq!(problem["kind"], json!("not_found"), "{problem}");
 }
 
 #[test]
@@ -1855,8 +1895,8 @@ fn opening_a_pr_fetches_its_head_first_and_its_files_tab_then_reads_its_diff_in_
     let commit = pull_request_on(&root, CPYTHON, 1);
     someone_elses_pr_1(&folders, &commit);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let _clone = clones(&wired, 1);
+    wired.call("add_repository", add_cpython());
+    clone_ended(&wired);
     let files = || {
         wired.ask(
             "pull_request_files",
@@ -1956,8 +1996,8 @@ fn a_failed_fetch_of_a_prs_head_reaches_the_window_with_why() {
     let commit = pull_request_on(&root, CPYTHON, 1);
     someone_elses_pr_1(&folders, &commit);
     let wired = Wired::start_cloning_from(Ok(folders.clone()), recordings(), remotes);
-    let _ = wired.ask("add_repository", add_cpython()).unwrap();
-    let _clone = clones(&wired, 1);
+    wired.call("add_repository", add_cpython());
+    clone_ended(&wired);
     // GitHub's copy goes after the clone, so the fetch of the head fails.
     let bare = root.join("remotes").join(format!("{CPYTHON}.git"));
     std::fs::remove_dir_all(bare).unwrap();
@@ -1986,8 +2026,6 @@ fn a_failed_fetch_of_a_prs_head_reaches_the_window_with_why() {
 /// A mirror of cpython in `folders` whose `Lib/spam.py` has 30 lines on main, and PR #1's commit, which
 /// changes line 15, on the branch `pr`. Gives the PR's commit.
 fn mirror_with_pr_1(folders: &Folders, root: &Path) -> String {
-    let work = root.join("work");
-    std::fs::create_dir_all(work.join("Lib")).unwrap();
     let lines = |line_15: &str| {
         (1..=30)
             .map(|line| match line {
@@ -1996,37 +2034,51 @@ fn mirror_with_pr_1(folders: &Folders, root: &Path) -> String {
             })
             .collect::<String>()
     };
-    let _ = git(&work, &["init", "-q", "-b", "main"]);
-    std::fs::write(work.join("Lib/spam.py"), lines("x15 = 15")).unwrap();
-    let _ = git(&work, &["add", "."]);
-    let _ = git(&work, &["commit", "-qm", "One"]);
-    let _ = git(&work, &["switch", "-qc", "pr"]);
-    std::fs::write(work.join("Lib/spam.py"), lines("x15 = 'fifteen'")).unwrap();
-    let _ = git(&work, &["commit", "-qam", "PR 1"]);
-    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
+    let (base, head) = (lines("x15 = 15"), lines("x15 = 'fifteen'"));
+    cpython_mirror(
+        folders,
+        root,
+        &[("Lib/spam.py", &base)],
+        &[("Lib/spam.py", &head)],
+    )
+}
+
+/// The app with no network and the ty that `just cargo-test` and `just rust-coverage` fetch set up in
+/// `machine.toml`, on folders in a new folder named for `name`, where `mirror` makes cpython's mirror with
+/// someone else's PR #1. Gives the folder, the app once it holds the PR, and the PR's base and head.
+fn offline_with_ty(
+    name: &str,
+    mirror: fn(&Folders, &Path) -> String,
+) -> (TempPath, Wired, String, String) {
+    let (folders, root) = temp_folders(name);
+    let head = mirror(&folders, &root);
+    someone_elses_pr_1(&folders, &head);
+    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty().display());
+    std::fs::write(folders.machine_file(), machine).unwrap();
+    let wired = Wired::start(Ok(folders), no_network());
+    wait_for_message(&wired.held, PLENTY);
+    let pr = json!({ "repository": CPYTHON, "number": 1 });
+    let files = wired.ask("pull_request_files", pr).unwrap();
+    let base = files["base"].as_str().unwrap_or_default().to_owned();
+    (root, wired, base, head)
+}
+
+/// [`mirror_with_branch`] for the mirror of cpython in `folders`, from a working copy in `root`.
+fn cpython_mirror(
+    folders: &Folders,
+    root: &Path,
+    base: &[(&str, &str)],
+    head: &[(&str, &str)],
+) -> String {
     let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
-    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
-    let (work, mirror) = (work.to_string_lossy(), mirror.to_string_lossy());
-    let _ = git(root, &["clone", "-q", "--bare", &work, &mirror]);
-    commit
+    mirror_with_branch(&root.join("work"), &mirror, base, head)
 }
 
 #[test]
 fn offline_a_lookup_asks_ty_in_the_lookup_checkout_at_a_commit_the_mirror_holds() {
-    let (folders, root) = temp_folders("wiring-offline-definitions");
-    let head = mirror_with_pr_1(&folders, &root);
-    someone_elses_pr_1(&folders, &head);
-    // The ty that `just cargo-test` and `just rust-coverage` fetch.
-    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
-    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
-    std::fs::write(folders.machine_file(), machine).unwrap();
-    let wired = Wired::start(Ok(folders), no_network());
+    let (_root, wired, base, head) =
+        offline_with_ty("wiring-offline-definitions", mirror_with_pr_1);
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
-    let pr = json!({ "repository": CPYTHON, "number": 1 });
-    let files = wired.ask("pull_request_files", pr).unwrap();
-    let base = files["base"].as_str().unwrap_or_default().to_owned();
     let look = |ticket: u32, side: &str, path: &str| {
         let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": path, "side": side, "line": 15, "column": 0, "ticket": ticket });
         // The window hears what the lookup waits for on a channel of its own, and how a server's index goes
@@ -2109,7 +2161,7 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
     let wired = Wired::start(Ok(folders), no_network());
     let changes = hear(&wired._app, "text-search-changed");
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.held, PLENTY);
     let before = wired.ask("text_search_state", json!({}));
     // The query names the ends of the diff the Files tab shows.
     let pr = json!({ "repository": CPYTHON, "number": 1 });
@@ -2124,16 +2176,13 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
     let not_a_repository = search("cpython", base, "x", "literal");
     let not_a_commit = search(CPYTHON, &json!("main"), "x", "literal");
     let asked = search(CPYTHON, base, "FIFTEEN", "literal").unwrap();
-    let found = loop {
-        let _changed = changes.recv_timeout(PLENTY).unwrap();
+    let found = heard_until(&changes, |_| {
         let state = wired.ask("text_search_state", json!({})).unwrap();
-        if state["state"] == "results" && state["end"] != "running" {
-            break state;
-        }
-    };
+        (state["state"] == "results" && state["end"] != "running").then_some(state)
+    });
     // A query that has ended has nothing to cancel, and its results stay.
     let cancelled = wired.ask("text_search_cancel", json!({ "id": asked["id"] }));
-    let _changed = changes.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&changes, PLENTY);
     let after = wired.ask("text_search_state", json!({})).unwrap();
     drop(wired.stop());
 
@@ -2153,17 +2202,11 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
 
 /// The first row the window hears for `server` that `wanted` accepts.
 fn server_row(wired: &Wired, server: &str, wanted: impl Fn(&Value) -> bool) -> Value {
-    loop {
-        let rows = wired.servers.recv_timeout(PLENTY).unwrap();
-        let row = rows
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["server"] == server);
-        if let Some(row) = row.filter(|row| wanted(row)) {
-            return row.clone();
-        }
-    }
+    heard_until(&wired.servers, |rows| {
+        let rows = rows.as_array().unwrap();
+        let row = rows.iter().find(|row| row["server"] == server);
+        row.filter(|row| wanted(row)).cloned()
+    })
 }
 
 /// What Open log opens for ty in cpython, without a program to show it; and the answers to Open log for
@@ -2175,7 +2218,7 @@ fn open_logs(
     Result<Value, Value>,
     Result<Value, Value>,
 ) {
-    let opened = crate::server_log_of(CPYTHON, ServerName::Ty, &wired.webview.state::<DiffWork>());
+    let opened = crate::server_log_of(CPYTHON, ServerName::Ty, &wired.webview.state::<Calls>());
     let no_log = json!({ "repository": CPYTHON, "server": "clangd" });
     let not_a_name = json!({ "repository": "not a name", "server": "ty" });
     (
@@ -2192,14 +2235,13 @@ fn a_server_set_up_in_settings_shows_its_version_answers_lookups_and_opens_its_l
     let (folders, root) = temp_folders("wiring-server-settings");
     let head = mirror_with_pr_1(&folders, &root);
     someone_elses_pr_1(&folders, &head);
-    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
+    let ty = ty();
     let program = ty.clone();
     let pick = Arc::new(move |what| (what == crate::Pick::Program).then(|| program.clone()));
     let remotes = Remotes::under("no-remotes/".to_owned());
     let wired = Wired::start_picking(Ok(folders.clone()), no_network(), remotes, pick);
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.held, PLENTY);
     let pr = json!({ "repository": CPYTHON, "number": 1 });
     let files = wired.ask("pull_request_files", pr).unwrap();
     let base = files["base"].as_str().unwrap_or_default().to_owned();
@@ -2261,41 +2303,17 @@ fn a_server_set_up_in_settings_shows_its_version_answers_lookups_and_opens_its_l
 /// A mirror of cpython in `folders` whose PR #1, on the branch `pr`, calls `ham` in `spam.py`, which
 /// `eggs.py` defines and the PR doesn't change. Gives the PR's commit.
 fn mirror_with_a_call_into_an_unchanged_file(folders: &Folders, root: &Path) -> String {
-    let work = root.join("work");
-    std::fs::create_dir_all(&work).unwrap();
-    let _ = git(&work, &["init", "-q", "-b", "main"]);
     let eggs = "x = 1\n\n\ndef ham():\n    return 2\n";
-    std::fs::write(work.join("eggs.py"), eggs).unwrap();
-    std::fs::write(work.join("spam.py"), "from eggs import ham\n").unwrap();
-    let _ = git(&work, &["add", "."]);
-    let _ = git(&work, &["commit", "-qm", "One"]);
-    let _ = git(&work, &["switch", "-qc", "pr"]);
-    std::fs::write(work.join("spam.py"), "from eggs import ham\n\nham()\n").unwrap();
-    let _ = git(&work, &["commit", "-qam", "PR 1"]);
-    let commit = git(&work, &["rev-parse", "HEAD"]).trim().to_owned();
-    let mirror = folders.mirror(&RepositoryName::parse(CPYTHON).unwrap());
-    std::fs::create_dir_all(mirror.parent().unwrap()).unwrap();
-    let (work, mirror) = (work.to_string_lossy(), mirror.to_string_lossy());
-    let _ = git(root, &["clone", "-q", "--bare", &work, &mirror]);
-    commit
+    let base = [("eggs.py", eggs), ("spam.py", "from eggs import ham\n")];
+    let head = [("spam.py", "from eggs import ham\n\nham()\n")];
+    cpython_mirror(folders, root, &base, &head)
 }
 
 #[test]
 fn offline_go_to_definition_into_an_unchanged_file_reads_it_from_the_mirror_at_the_base() {
-    let (folders, root) = temp_folders("wiring-offline-file-view");
-    let head = mirror_with_a_call_into_an_unchanged_file(&folders, &root);
-    someone_elses_pr_1(&folders, &head);
-    // The ty that `just cargo-test` and `just rust-coverage` fetch.
-    let ty = Path::new(&std::env::var_os("TSUGIKI_TY").unwrap_or_default()).to_owned();
-    assert!(ty.is_file(), "TSUGIKI_TY={ty:?}: see just test-servers");
-    let machine = format!("[language_servers.ty]\npath = '{}'\n", ty.display());
-    std::fs::write(folders.machine_file(), machine).unwrap();
-    let wired = Wired::start(Ok(folders), no_network());
+    let mirror = mirror_with_a_call_into_an_unchanged_file;
+    let (_root, wired, base, head) = offline_with_ty("wiring-offline-file-view", mirror);
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
-    let pr = json!({ "repository": CPYTHON, "number": 1 });
-    let files = wired.ask("pull_request_files", pr).unwrap();
-    let base = files["base"].as_str().unwrap_or_default().to_owned();
     // F12 on `ham` in `ham()`, which the PR adds.
     let lookup = json!({ "repository": CPYTHON, "base": base, "head": head, "path": "spam.py", "side": "head", "line": 3, "column": 0, "ticket": 1 });
     let found = wired.ask(
@@ -2401,7 +2419,10 @@ fn offline_a_pr_whose_head_the_mirror_holds_shows_its_diff_highlighting_and_thre
     let store = tsugiki_core::store::Store::open(&folders.database()).unwrap();
     let name = RepositoryName::parse(CPYTHON).unwrap();
     let content = conversation_of_pr_1(&commit);
-    store.save_pull_request_content(&name, 1, content).unwrap();
+    let updated_at = time::OffsetDateTime::UNIX_EPOCH;
+    store
+        .save_pull_request_content(&name, 1, (content, updated_at))
+        .unwrap();
     store.close();
     let wired = Wired::start(Ok(folders), no_network());
 
@@ -2446,4 +2467,95 @@ fn offline_a_pr_whose_head_the_mirror_holds_shows_its_diff_highlighting_and_thre
     assert_eq!(lines[0]["text"], "x1 = 1");
     assert_eq!(lines[1]["text"], "x2 = 2");
     assert_ne!(lines[0]["spans"], json!([]));
+}
+
+/// The settings owner is held up in the middle of adding a Repository when the window closes (#939).
+#[test]
+fn stopping_waits_for_the_settings_change_under_way() {
+    let (folders, _root) = temp_folders("wired-settings-stop");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    let settings = wired.webview.state::<SettingsOwner>().inner().clone();
+    let (arrived, arrival) = channel();
+    let (release, released) = channel::<()>();
+    let (finished, finishing) = channel();
+    let mut held = false;
+    // In place of the session's, which takes each change without waiting.
+    settings.tell_session(Box::new(move |_| {
+        if !held {
+            held = true;
+            arrived.send(()).unwrap();
+            released.recv_timeout(PLENTY).unwrap();
+            finished.send(()).unwrap();
+        }
+    }));
+    let adding = std::thread::spawn(move || {
+        settings.add_repository(
+            RepositoryName::parse(CPYTHON).unwrap(),
+            MirrorSource::Download,
+        )
+    });
+    arrival.recv_timeout(PLENTY).unwrap();
+    // Late enough that a stop that didn't wait would have returned before it.
+    let releasing = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        release.send(()).unwrap();
+    });
+
+    let wired = wired.stop();
+
+    let finished_first = finishing.try_recv();
+    let after_stop = wired.ask("save_pane_layout", json!({ "layout": { "sidebar": 240 } }));
+    releasing.join().unwrap();
+    assert!(adding.join().unwrap().is_ok());
+    assert_eq!(finished_first, Ok(()));
+    let after_stop = after_stop.unwrap_err();
+    assert!(
+        after_stop["message"]
+            .as_str()
+            .unwrap()
+            .contains("stopped saving"),
+        "{after_stop}"
+    );
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    assert!(file.contains(CPYTHON), "{file}");
+}
+
+/// A save under way when the window closes reaches the session before it stops (#939): a pane layout whose
+/// reload takes in Conventions edited by hand, held up while another program reads `machine.toml`.
+/// Windows alone lets a program hold a file so.
+#[cfg(windows)]
+#[test]
+fn stopping_hands_the_session_a_settings_change_that_ends_during_the_stop() {
+    use tsugiki_core::settings::PaneLayout;
+    use tsugiki_test_git::{SHARE_READ, SHARE_WRITE, held_open};
+
+    let (folders, _root) = temp_folders("wired-stop-hands-over");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    drop(wired.ask("add_repository", add_cpython()).unwrap());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    let edited = file.replace("conventions = \"cpython\"", "conventions = \"github\"");
+    std::fs::write(folders.settings_file(), &edited).unwrap();
+    let machine = folders.machine_file();
+    let held = held_open(&machine, SHARE_READ | SHARE_WRITE);
+    let settings = wired.webview.state::<SettingsOwner>().inner().clone();
+    let saving = std::thread::spawn(move || {
+        settings.save_panes(PaneLayout {
+            sidebar: Some(240),
+            ..PaneLayout::default()
+        })
+    });
+    let new = machine.with_file_name(format!(".machine.toml.{}.tmp", std::process::id()));
+    wait_until(PLENTY, || new.exists());
+    let letting_go = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        drop(held);
+    });
+
+    let wired = wired.stop();
+
+    let heard: Vec<Value> = wired.workbenches.try_iter().collect();
+    letting_go.join().unwrap();
+    assert!(saving.join().unwrap().is_ok());
+    assert_ne!(edited, file, "{file}");
+    assert_eq!(heard, [json!({ "repository": CPYTHON, "items": [] })]);
 }

@@ -178,8 +178,9 @@ pub struct OffDefault {
 }
 
 impl PullRequestFacts {
-    /// True when a sync needn't fetch this PR again, because it has merged or closed (ADR 0011). A merged PR
-    /// with no merge commit came from a Tsugiki that kept none, so a fetch still has facts to bring.
+    /// True when it has merged or closed, so that only a refresh whose poll sees its `updatedAt` move fetches
+    /// this PR again (ADR 0011). A merged PR with no merge commit came from a Tsugiki that kept none, so a
+    /// fetch still has facts to bring.
     pub fn is_frozen(&self) -> bool {
         match self.state {
             PrState::Open => false,

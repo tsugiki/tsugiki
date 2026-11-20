@@ -174,7 +174,7 @@ fn full_scans(connection: &Connection, sql: &str) -> Vec<String> {
 /// Each statement the reads a screen waits on run, as SQLite traces them. One row in each table makes a
 /// query inside a loop over rows run too. A query behind a condition these rows don't meet stays unseen.
 fn view_statements(connection: &mut Connection) -> Vec<String> {
-    let cpython = RepositoryName::parse("python/cpython").unwrap();
+    let cpython = crate::testing::cpython();
     let viewer = Login::new("octocat");
     let saved_at = OffsetDateTime::UNIX_EPOCH;
     let pull_request = PullRequestFacts {
@@ -304,7 +304,20 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
         head: CommitSha::parse("0123abc"),
         pending: vec![drafted],
     };
-    pull_request_content::save(connection, &cpython, 1, &reviewed).unwrap();
+    let updated_at = OffsetDateTime::UNIX_EPOCH;
+    let saved =
+        pull_request_content::save(connection, &cpython, 1, (&reviewed, updated_at)).unwrap();
+    // The list read the PR as late as the Conversation, so the head stays the list's.
+    let head = crate::facts::pull_requests::PrHead {
+        number: 1,
+        commit: CommitSha::parse("4567def").unwrap(),
+        target_branch: "main".to_owned(),
+    };
+    let kept = pull_request_content::ConversationSaved {
+        head: pull_request_content::HeadKept::Had(head),
+        reviewed_moved: true,
+    };
+    assert_eq!(saved, kept);
     let patched = ["0123abc", "4567def"].map(|commit| crate::facts::patch_ids::CommitPatches {
         of: crate::facts::patch_ids::PatchesOf {
             commit: CommitSha::parse(commit).unwrap(),
@@ -326,11 +339,8 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     };
     let codes = TraceEventCodes::SQLITE_TRACE_STMT;
     connection.trace_v2(codes, Some(trace)).unwrap();
-    let (read, kept) = read_issue_facts(connection, &cpython, 1).unwrap();
+    let read = read_work_facts(connection, &cpython).unwrap();
     assert_eq!(read.pull_requests.len(), 1);
-    assert_eq!(kept, Some(content));
-    let (_, kept) = read_pull_request_facts(connection, &cpython, 1).unwrap();
-    assert_eq!(kept, Some(reviewed));
     assert_eq!(read_titled(connection, &cpython).unwrap().len(), 2);
     let snapshot = Snapshot {
         transaction: connection.transaction().unwrap(),
@@ -356,6 +366,9 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     let prs_before = snapshot.pull_requests_updated(before).unwrap();
     drop(snapshot.activity_of(Some(&viewer), &one).unwrap());
     let reviews = snapshot.reviews_of(&open).unwrap();
+    assert_eq!(snapshot.issue_content(1).unwrap(), Some(content));
+    assert_eq!(snapshot.pull_request_content(1).unwrap(), Some(reviewed));
+    assert_eq!(snapshot.filter_results().unwrap().len(), 1);
     drop(snapshot);
     let found = [linked.len(), fixing.len(), naming.len(), open.len()];
     let updated = [prs_since.len(), prs_before.len()];

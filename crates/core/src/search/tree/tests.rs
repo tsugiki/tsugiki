@@ -2,8 +2,8 @@ use std::fs;
 
 use super::*;
 use crate::facts::CommitSha;
-use crate::search::testing::Fixture;
 use crate::search::{Case, Cut, MatchRange, Query, Syntax, Words};
+use crate::testing::Fixture;
 
 fn query(text: &str) -> Query {
     Query {
@@ -42,7 +42,7 @@ fn searched(fixture: &Fixture, query: &Query) -> (Found, Outcome) {
 }
 
 fn pr(name: &str) -> Fixture {
-    Fixture::new(
+    Fixture::of_bytes(
         name,
         &[
             ("Lib/unchanged.py", b"def spam():\n    return 1\n"),
@@ -139,7 +139,7 @@ fn whole_word_and_match_case_and_a_regex_apply_to_every_file() {
 
 #[test]
 fn a_binary_file_is_skipped_and_a_generated_file_says_so() {
-    let fixture = Fixture::new(
+    let fixture = Fixture::of_bytes(
         "search-tree-kinds",
         &[
             (
@@ -173,7 +173,7 @@ fn a_search_stops_at_the_most_matches_and_says_so() {
     let base: Vec<(&str, &[u8])> = (files.iter())
         .map(|(path, text)| (path.as_str(), text.as_slice()))
         .collect();
-    let fixture = Fixture::new("search-tree-most", &base, &[]);
+    let fixture = Fixture::of_bytes("search-tree-most", &base, &[]);
     let matcher = Matcher::new(&query("spam")).unwrap();
     let mut matches = 0;
     let outcome = search(
@@ -275,10 +275,4 @@ fn keep_first_keeps_the_matches_that_fit_and_their_lines() {
         .map(|line| (line.line, line.ranges.len()))
         .collect();
     assert_eq!(kept, [(1, 2), (2, 2)]);
-}
-
-#[test]
-fn a_batch_cut_short_ends_the_list_and_a_missing_object_reads_as_nothing() {
-    let output = b"abc missing\n111 blob 4\nspam\n222 blob 9\nshort";
-    assert_eq!(parse_batch(output), [None, Some(b"spam".to_vec())]);
 }

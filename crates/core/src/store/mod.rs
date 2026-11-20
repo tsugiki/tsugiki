@@ -20,6 +20,10 @@ mod pull_requests;
 mod schema;
 mod sync_state;
 
+pub use activity::{Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, Seeing};
+
+use pull_requests::FirstSave;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -36,11 +40,11 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
-use crate::facts::activity::{ActivityFacts, ItemActivity};
+use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
-use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
+use crate::facts::patch_ids::{CommitPatches, Findings, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
 use crate::facts::{CommitSha, WorkFacts};
@@ -52,6 +56,7 @@ pub use columns::Numbers;
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use pr_links::Updates;
+pub use pull_request_content::{ConversationSaved, HeadKept};
 pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -125,7 +130,8 @@ impl Store {
 
     /// Stores PRs a refresh fetched or probed, as `save_fetched_pull_requests` does, and in the same
     /// transaction owes a read of the Conversation of each of `changed`. A refresh that stops after this has
-    /// saved them can't tell they changed, so the next one reads them ahead from here (#205).
+    /// saved them can't tell they changed, so the next one reads them ahead from here (#205). A PR the store
+    /// doesn't hold yet may have opened since the last refresh (#823).
     pub fn save_changed_pull_requests(
         &self,
         repository: &RepositoryName,
@@ -135,35 +141,45 @@ impl Store {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
             let transaction = connection.transaction()?;
-            pull_requests::save_in(&transaction, &repository, &pull_requests, &events)?;
+            let saving = (pull_requests.as_slice(), FirstSave::MayHaveOpened);
+            pull_requests::save_in(&transaction, &repository, saving, &events)?;
             sync_state::owe_read_ahead(&transaction, &repository, &changed)?;
             transaction.commit()
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Owes a read of the Conversation of each PR of `heads` at its head, for the next refresh of
-    /// `repository` to read ahead, unless the store holds one read at that head. A PR whose head Tsugiki
-    /// doesn't know is owed one. A Filter switched on puts PRs in Reach that no change on GitHub would owe a
-    /// read (#819).
-    pub fn owe_read_ahead_at(
+    /// Owes a read of the Conversation of each of `numbers`, PRs of `repository`, until a read of it saves or
+    /// a refresh finishes.
+    pub fn owe_read_ahead(
         &self,
         repository: &RepositoryName,
-        heads: Vec<(u32, Option<CommitSha>)>,
+        numbers: Vec<u32>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            sync_state::owe_read_ahead_at(connection, &repository, &heads)
+            sync_state::owe_read_ahead(connection, &repository, &numbers)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The PRs of `repository` whose Conversations a refresh owes a read. Saving a PR's Conversation clears
-    /// its debt, and saving a finished sync clears them all.
+    /// The PRs of `repository` whose Conversations the store owes a read. Saving a PR's Conversation pays
+    /// its debt, and saving a finished refresh pays them all.
     pub fn read_ahead_owed(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
         let read =
             self.call(move |connection| sync_state::read_ahead_owed(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The head each of `repository`'s held Conversations was read at, of those read with one.
+    pub fn conversation_heads(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<BTreeMap<u32, CommitSha>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| pull_request_content::read_heads(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 
@@ -185,7 +201,8 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
-    /// The merged and closed PRs of `repository`, which a sync doesn't fetch again (ADR 0011).
+    /// The merged and closed PRs of `repository`, which only a refresh that sees one move fetches again
+    /// (ADR 0011).
     pub fn frozen_pull_requests(
         &self,
         repository: &RepositoryName,
@@ -257,18 +274,34 @@ impl Store {
         read.map_err(saying(CANT_READ))
     }
 
+    /// Saves where `repository`'s syncs stand: a refresh under way, or a first sync that finished. Neither
+    /// has read ahead, so the reads the store owes stay owed for the next refresh (#900).
     pub fn save_sync_state(
         &self,
         repository: &RepositoryName,
         state: SyncState,
     ) -> Result<(), Error> {
         let repository = repository.clone();
-        let started_at = state.started_at;
         let saved = self.call(move |connection| {
             let transaction = connection.transaction()?;
-            sync_state::save(&transaction, &repository, &state)?;
-            sync_state::forget_place(&transaction, &repository)?;
-            activity::remember_first_sync(&transaction, &repository, started_at)?;
+            save_sync_state_in(&transaction, &repository, &state)?;
+            transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Saves that a refresh of `repository` finished, as `save_sync_state` does, and in the same transaction
+    /// forgets every read ahead the store owed: the refresh read each PR it owed, or found it out of Reach.
+    pub fn save_finished_refresh(
+        &self,
+        repository: &RepositoryName,
+        state: SyncState,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            save_sync_state_in(&transaction, &repository, &state)?;
+            sync_state::forget_read_ahead(&transaction, &repository)?;
             transaction.commit()
         })?;
         saved.map_err(saying(CANT_WRITE))
@@ -393,17 +426,31 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Keeps what PR `number` says, its Reviews included, in place of what was kept before. A refresh no
-    /// longer owes a read of it.
+    /// Keeps what PR `number` says, its Reviews included, in place of what was kept before. `read` pairs the
+    /// content with GitHub's `updatedAt` for the PR at the read. A refresh no longer owes a read of it. The
+    /// PR's facts keep the head the content names when that `updatedAt` is later than at the read whose head
+    /// they keep.
     pub fn save_pull_request_content(
         &self,
         repository: &RepositoryName,
         number: u32,
-        content: PullRequestContent,
+        read: (PullRequestContent, OffsetDateTime),
     ) -> Result<(), Error> {
+        let saved = self.save_read_of_pull_request(repository, number, read);
+        saved.map(|_kept| ())
+    }
+
+    /// Keeps what PR `number` says as `save_pull_request_content` does, and says what that did to the head
+    /// in the PR's facts and to the commit the user's latest Review covered.
+    pub fn save_read_of_pull_request(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        (content, updated_at): (PullRequestContent, OffsetDateTime),
+    ) -> Result<ConversationSaved, Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            pull_request_content::save(connection, &repository, number, &content)
+            pull_request_content::save(connection, &repository, number, (&content, updated_at))
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
@@ -454,6 +501,36 @@ impl Store {
         forgot.map_err(saying(CANT_WRITE))
     }
 
+    /// The Repositories whose kept links rules other than `LinkRule::SET` worked out, which the session
+    /// refills, or nothing while the set worked them out (#950).
+    pub fn stale_links(&self) -> Result<Option<Vec<RepositoryName>>, Error> {
+        let found = self.call(|connection| pr_links::stale(connection))?;
+        found.map_err(saying(CANT_READ))
+    }
+
+    /// Works out the links of the first `most` PRs of `repository` from number `from` up again, under
+    /// `LinkRule::SET`, in place of those kept. Answers with the number the next batch starts from, or
+    /// nothing once the Repository has no PR left. A batch that fails keeps the links it would replace.
+    pub fn refill_links(
+        &self,
+        repository: &RepositoryName,
+        from: u32,
+        most: std::num::NonZeroU32,
+    ) -> Result<Option<u32>, Error> {
+        let repository = repository.clone();
+        let refilled =
+            self.call(move |connection| pr_links::refill(connection, &repository, from, most))?;
+        refilled.map_err(saying(CANT_WRITE))
+    }
+
+    /// Saves the names of `LinkRule::SET` as the rules that worked out the kept links, once the session has
+    /// refilled those of each Repository `stale_links` named. The links of a Repository whose stored name no
+    /// longer parses go with it.
+    pub fn keep_link_rules(&self) -> Result<(), Error> {
+        let kept = self.call(pr_links::refilled)?;
+        kept.map_err(saying(CANT_WRITE))
+    }
+
     /// Keeps each of `checks` as its PR's last check, whose verdict stands while a newer check waits.
     pub fn save_last_checks(
         &self,
@@ -467,31 +544,147 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Mark Seen on items `numbers`: clears their Marked unseen, and moves their Last seen on to `up_to`, if
-    /// it's given.
-    pub fn mark_seen(
+    /// Keeps `findings` of when checks first found Reviews stale, each found one dated `now`.
+    pub fn save_findings(
         &self,
         repository: &RepositoryName,
-        numbers: Vec<u32>,
-        up_to: Option<OffsetDateTime>,
+        findings: Findings,
+        now: OffsetDateTime,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            activity::mark_seen(connection, &repository, &numbers, up_to)
+            patch_ids::save_findings(connection, &repository, &findings, now)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Flags item `number` Marked unseen from `at`.
+    /// Mark Seen on `seeing`'s items: clears their Marked unseen, moves their Last seen on to its `up_to`, if
+    /// it's given, and acknowledges its findings, the Stale reviews the window drew on them (#908).
+    pub fn mark_seen(&self, repository: &RepositoryName, seeing: Seeing) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::mark_seen(connection, &repository, &seeing))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Flags `flagging`'s Issue or PR Marked unseen from `at`, and unarchives what it names.
     pub fn mark_unseen(
         &self,
         repository: &RepositoryName,
-        number: u32,
+        flagging: Flagging,
         at: OffsetDateTime,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self
-            .call(move |connection| activity::mark_unseen(connection, &repository, number, at))?;
+            .call(move |connection| activity::mark_unseen(connection, &repository, flagging, at))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Archive on `archiving`'s item: Mark Seen on its numbers, and the item kept as archived from their
+    /// `up_to`, or from `now` without one, as `activity::archive` says.
+    pub fn archive(
+        &self,
+        repository: &RepositoryName,
+        archiving: Archiving,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self
+            .call(move |connection| activity::archive(connection, &repository, &archiving, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The Issues and PRs of `repository` a save found closed that the store held open, whose closing the
+    /// sync hasn't judged yet (#820).
+    pub fn closings(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::closings(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Archives the items whose closing `judged` says archives them, put away `now`, and forgets the
+    /// closings it judged, as `activity::archive_closed` says.
+    pub fn archive_closed(
+        &self,
+        repository: &RepositoryName,
+        judged: Judged,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let archive = move |connection: &mut Connection| {
+            activity::archive_closed(connection, &repository, &judged, now)
+        };
+        let saved = self.call(archive)?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The PRs of `repository` a save stored for the first time that name an Archived Issue, whose opening
+    /// the sync hasn't judged yet (#823).
+    pub fn openings(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::openings(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Brings back to the Inbox the Issues a PR opened on, as `opened` judges them, and forgets the openings
+    /// it judged, as `activity::bring_back` says.
+    pub fn bring_back(&self, repository: &RepositoryName, opened: Opened) -> Result<(), Error> {
+        let repository = repository.clone();
+        let bring = move |connection: &mut Connection| {
+            activity::bring_back(connection, &repository, &opened)
+        };
+        let saved = self.call(bring)?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unarchives the item `key` names.
+    pub fn unarchive(&self, repository: &RepositoryName, key: ItemKey) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::unarchive(connection, &repository, key))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Mute on `muting`'s item: Mark Seen on its numbers, and the item kept as muted, as `activity::mute`
+    /// says.
+    pub fn mute(
+        &self,
+        repository: &RepositoryName,
+        muting: Muting,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::mute(connection, &repository, &muting, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unmutes the item `key` names.
+    pub fn unmute(&self, repository: &RepositoryName, key: ItemKey) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| activity::unmute(connection, &repository, key))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Mute author on `muting`'s author: Mark Seen on the items it names, and the author kept as muted, as
+    /// `activity::mute_author` says.
+    pub fn mute_author(
+        &self,
+        repository: &RepositoryName,
+        muting: AuthorMuting,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self
+            .call(move |connection| activity::mute_author(connection, &repository, &muting, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unmutes `author`.
+    pub fn unmute_author(&self, repository: &RepositoryName, author: &Login) -> Result<(), Error> {
+        let (repository, author) = (repository.clone(), author.clone());
+        let saved =
+            self.call(move |connection| activity::unmute_author(connection, &repository, &author))?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -540,7 +733,11 @@ impl Store {
             for (call, job) in calls.iter().enumerate() {
                 seen.send(call).expect("the test holds the receiver");
                 if lost != Some(call) {
-                    drop(database.send(job));
+                    #[expect(
+                        clippy::let_underscore_must_use,
+                        reason = "a store thread that has gone drops the job, and its caller hears it failed"
+                    )]
+                    let _ = database.send(job);
                 }
             }
         });
@@ -630,30 +827,6 @@ fn work_facts_in(
     })
 }
 
-/// The facts behind the Issue view, from one transaction, so a view never mixes two saves (ADR 0018).
-fn read_issue_facts(
-    connection: &mut Connection,
-    repository: &RepositoryName,
-    number: u32,
-) -> rusqlite::Result<(WorkFacts, Option<IssueContent>)> {
-    let transaction = connection.transaction()?;
-    let facts = work_facts_in(&transaction, repository)?;
-    let content = issue_content::read(&transaction, repository, number)?;
-    Ok((facts, content))
-}
-
-/// The facts behind the PR view of PR `number`, from one transaction (ADR 0018).
-fn read_pull_request_facts(
-    connection: &mut Connection,
-    repository: &RepositoryName,
-    number: u32,
-) -> rusqlite::Result<(WorkFacts, Option<PullRequestContent>)> {
-    let transaction = connection.transaction()?;
-    let facts = work_facts_in(&transaction, repository)?;
-    let content = pull_request_content::read(&transaction, repository, number)?;
-    Ok((facts, content))
-}
-
 /// The Issues and the PRs that quick open searches, from one transaction (ADR 0018).
 fn read_titled(
     connection: &mut Connection,
@@ -677,6 +850,11 @@ impl Snapshot<'_> {
     /// The user signed in when Tsugiki last reached GitHub, if it ever has.
     pub fn viewer(&self) -> Result<Option<Login>, Error> {
         read_last_login(&self.transaction).map_err(saying(CANT_READ))
+    }
+
+    /// The Issues a PR that opened on them brought back to the Inbox (#823), closed or not.
+    pub fn brought_back(&self) -> Result<BTreeSet<u32>, Error> {
+        activity::brought_back(&self.transaction, &self.repository).map_err(saying(CANT_READ))
     }
 
     /// The links of each PR with these numbers that the store holds, under `conventions`, in number order.
@@ -780,11 +958,27 @@ impl Snapshot<'_> {
         patch_ids::read_facts(&self.transaction, &self.repository, pull_requests)
             .map_err(saying(CANT_READ))
     }
+
+    /// Each search of the Repository, with its last results.
+    pub fn filter_results(&self) -> Result<BTreeMap<FilterQuery, FilterResults>, Error> {
+        filters::read_all(&self.transaction, &self.repository).map_err(saying(CANT_READ))
+    }
+
+    /// What Issue `number` says, once Tsugiki has read it.
+    pub fn issue_content(&self, number: u32) -> Result<Option<IssueContent>, Error> {
+        issue_content::read(&self.transaction, &self.repository, number).map_err(saying(CANT_READ))
+    }
+
+    /// PR `number`'s Conversation, once Tsugiki has read it.
+    pub fn pull_request_content(&self, number: u32) -> Result<Option<PullRequestContent>, Error> {
+        let (transaction, repository) = (&self.transaction, &self.repository);
+        pull_request_content::read(transaction, repository, number).map_err(saying(CANT_READ))
+    }
 }
 
 /// Asks the read-only connection, from any thread. A question asked before the database opens waits for it.
 #[derive(Clone)]
-pub struct StoreReader {
+pub(crate) struct StoreReader {
     jobs: Weak<Sender<Job>>,
 }
 
@@ -796,28 +990,20 @@ impl StoreReader {
         read.map_err(saying(CANT_READ))
     }
 
-    /// The facts behind the Issue view of Issue `number`.
-    pub fn issue_facts(
+    /// PR `number`'s facts, and its Conversation once Tsugiki has read it, or nothing if the store lacks the
+    /// PR.
+    pub fn pull_request(
         &self,
         repository: &RepositoryName,
         number: u32,
-    ) -> Result<(WorkFacts, Option<IssueContent>), Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| read_issue_facts(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
-    }
-
-    /// The facts behind the PR view of PR `number`.
-    pub fn pull_request_facts(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-    ) -> Result<(WorkFacts, Option<PullRequestContent>), Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| read_pull_request_facts(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
+    ) -> Result<Option<(PullRequestFacts, Option<PullRequestContent>)>, Error> {
+        self.read_snapshot(repository, move |snapshot| {
+            let held = snapshot.pull_requests_numbered(&BTreeSet::from([number]))?;
+            let Some(pr) = held.into_iter().next() else {
+                return Ok(None);
+            };
+            Ok(Some((pr, snapshot.pull_request_content(number)?)))
+        })
     }
 
     /// The number, title, state and last update of each Issue and PR of `repository`, in no order.
@@ -855,7 +1041,7 @@ impl StoreReader {
 
 /// The read-only connection before the database is ready for it. Dropping this answers what's waiting.
 #[must_use = "dropping this tells every reader that the database stopped"]
-pub struct ReaderToOpen {
+pub(crate) struct ReaderToOpen {
     jobs: Arc<Sender<Job>>,
     queue: Receiver<Job>,
 }
@@ -863,13 +1049,13 @@ pub struct ReaderToOpen {
 /// The read-only connection, on its thread. Only this keeps the thread going, so the app's readers can't keep
 /// the file open once the session ends.
 #[must_use = "dropping this leaves the connection open until the process ends"]
-pub struct OpenReader {
+pub(crate) struct OpenReader {
     jobs: Arc<Sender<Job>>,
     thread: JoinHandle<()>,
 }
 
 /// A way to ask the read-only connection, and what opens it when `Store::open` has made the file current.
-pub fn reader() -> (ReaderToOpen, StoreReader) {
+pub(crate) fn reader() -> (ReaderToOpen, StoreReader) {
     let (jobs, queue) = mpsc::channel::<Job>();
     let jobs = Arc::new(jobs);
     let reader = StoreReader {
@@ -942,9 +1128,14 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
         .pragma_update(None, "foreign_keys", true)
         .map_err(saying(CANT_OPEN))?;
     migrate::run(&mut connection, path, migrations)?;
-    // Only a file at the newest schema has the tables this version's code reads.
+    // Only a file at the newest schema has the tables this version's code reads. Stale links stay as they
+    // are: the session refills them, and a refill that fails leaves the store open (#950). Links a newer
+    // Tsugiki worked out stay as they are too, and the store with them (#971).
     if migrate::latest(migrations) == migrate::latest(MIGRATIONS) {
-        pr_links::refill_if_stale(&mut connection).map_err(saying(CANT_UPDATE))?;
+        if pr_links::written_by_newer(&connection).map_err(saying(CANT_OPEN))? {
+            return Err(Error::new(ErrorKind::Internal, NEWER));
+        }
+        pr_links::keep_set_if_empty(&mut connection).map_err(saying(CANT_UPDATE))?;
     }
     // A crash, a force-kill or a quit during a slow request skips closing the store, which would leave a new
     // version in the `-wal` file, where `file::check` can't see it. If another connection blocks this, SQLite
@@ -998,6 +1189,17 @@ fn lock(path: &Path) -> Result<Option<File>, Error> {
             locked => return locked.map(|()| Some(file)).map_err(saying(CANT_OPEN)),
         }
     }
+}
+
+/// Saves `state` as `repository`'s sync state, which leaves its first sync no place to come back to.
+fn save_sync_state_in(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+    state: &SyncState,
+) -> rusqlite::Result<()> {
+    sync_state::save(transaction, repository, state)?;
+    sync_state::forget_place(transaction, repository)?;
+    activity::remember_first_sync(transaction, repository, state.started_at)
 }
 
 /// Turns a failure into words a user can read (`Error`). SQLite's or the OS's reason goes to the log.

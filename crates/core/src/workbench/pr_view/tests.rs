@@ -1,20 +1,17 @@
 use time::OffsetDateTime;
 
+use super::testing::reviewed;
 use super::*;
-use crate::facts::CommitSha;
-use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
-use crate::facts::pull_request_content::{
-    Anchor, DiffHunk, Opening, Resolution, Review, ReviewId, Side, Subject, Submission,
-    ThreadComment, ThreadCommentId, ThreadId, ThreadLine,
-};
-use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
-use crate::login::Login;
+use crate::facts::pull_requests::PullRequestFacts;
+use crate::store::testing::OpenStore;
+use crate::testing::{cpython, cpython_settings};
+use crate::workbench::issue_view::IssueView;
 use crate::workbench::testing::{
-    ViewWorld, backport, bots_backport, fixing, issue, someone, stranger,
+    ViewWorld, backport, bots_backport, fixing, grouped_whole, issue, someone, stranger, under_each,
 };
 
 fn view(world: &ViewWorld, number: u32) -> Option<PrView> {
-    PrView::read(&world.reader, &world.settings(), number).unwrap()
+    PrView::read(&world.db.reader, &world.settings(), number).unwrap()
 }
 
 #[test]
@@ -28,6 +25,21 @@ fn a_pr_tsugiki_doesnt_hold_has_no_view() {
 }
 
 #[test]
+fn neither_view_shows_anything_before_anyone_signs_in() {
+    let db = OpenStore::new("views-no-viewer");
+    db.store
+        .save_pull_requests(&cpython(), vec![fixing(5, 1)])
+        .unwrap();
+    db.store.save_issues(&cpython(), vec![issue(1)]).unwrap();
+
+    let pr = PrView::read(&db.reader, &cpython_settings(), 5).unwrap();
+    let issue = IssueView::read(&db.reader, &cpython_settings(), 1).unwrap();
+
+    db.close();
+    assert_eq!((pr, issue), (None, None));
+}
+
+#[test]
 fn a_pr_in_an_issues_tree_shows_its_row_before_tsugiki_has_read_its_conversation() {
     let world = ViewWorld::new("pr-view-before-reading");
     world.has(vec![fixing(5, 1)], vec![issue(1)]);
@@ -37,6 +49,18 @@ fn a_pr_in_an_issues_tree_shows_its_row_before_tsugiki_has_read_its_conversation
     assert_eq!(view.row.number, 5);
     assert_eq!(view.row.title, "gh-1: Fix it");
     assert_eq!(view.content, None);
+    world.finish();
+}
+
+#[test]
+fn a_pr_says_whether_the_item_that_holds_it_is_muted() {
+    let world = ViewWorld::new("pr-view-muted");
+    world.has(vec![fixing(5, 1)], vec![issue(1)]);
+    assert_eq!(view(&world, 5).unwrap().hidden, None);
+
+    world.mute_issue(1, vec![1, 5]);
+
+    assert_eq!(view(&world, 5).unwrap().hidden, Some(Hidden::Muted));
     world.finish();
 }
 
@@ -67,96 +91,6 @@ fn a_bot_backport_names_the_origin_pr_whose_review_state_it_shares() {
     world.finish();
 }
 
-/// A PR's Conversation with two Reviews, oldest first, one of them hidden and with two threads.
-pub(crate) fn reviewed() -> PullRequestContent {
-    // A thread on `line`, whose one comment GitHub numbers `number`.
-    let thread = |line: Option<u32>, number, opening| ThreadLine {
-        id: ThreadId::new(&format!("T{line:?}")),
-        path: "Lib/ast.py".to_owned(),
-        opening,
-        replies: 1,
-        resolution: Resolution::Open,
-        anchor: if line.is_none() {
-            Anchor::Outdated
-        } else {
-            Anchor::Current
-        },
-        subject: Subject::Line {
-            side: Side::Right,
-            line,
-            original: Some(7),
-        },
-        comments: vec![ThreadComment {
-            id: Some(ThreadCommentId::new(number)),
-            comment: Comment {
-                author: Some(Login::new("some-reviewer")),
-                created_at: OffsetDateTime::UNIX_EPOCH,
-                body_html: "<p>Why?</p>".to_owned(),
-                hidden: line.is_none().then_some(HiddenReason::Abuse),
-            },
-            submission: Submission::Submitted,
-        }],
-        hunk: DiffHunk::parse("@@ -6,2 +6,2 @@\n x = 1\n-y = 2\n+y = 3"),
-    };
-    PullRequestContent {
-        conversation: IssueContent {
-            body_html: "<p>Fixes the crash</p>".to_owned(),
-            comments: vec![IssueComment {
-                id: Some(CommentId::new(6_065_108_504)),
-                comment: Comment {
-                    author: None,
-                    created_at: OffsetDateTime::UNIX_EPOCH,
-                    body_html: "<p>Looks good</p>".to_owned(),
-                    hidden: Some(HiddenReason::OffTopic),
-                },
-            }],
-            earlier_comments: 2,
-            opened_at: Some(OffsetDateTime::UNIX_EPOCH),
-        },
-        reviews: vec![
-            Review {
-                id: Some(ReviewId::new(5_481_796_336)),
-                author: Some(Login::new("some-reviewer")),
-                state: ReviewState::ChangesRequested,
-                commit: CommitSha::parse("0123abc"),
-                submitted_at: OffsetDateTime::UNIX_EPOCH,
-                body_html: "<p>Some notes</p>".to_owned(),
-                hidden: Some(HiddenReason::Spam),
-                threads: vec![
-                    thread(
-                        Some(12),
-                        4_224_108_382,
-                        Opening::Words {
-                            words: "Why not a set?".to_owned(),
-                        },
-                    ),
-                    thread(
-                        None,
-                        4_240_170_720,
-                        Opening::Hidden {
-                            reason: HiddenReason::Abuse,
-                        },
-                    ),
-                ],
-            },
-            // Kept from before Tsugiki asked for GitHub's numbers.
-            Review {
-                id: None,
-                author: None,
-                state: ReviewState::Approved,
-                commit: None,
-                submitted_at: OffsetDateTime::UNIX_EPOCH + time::Duration::hours(1),
-                body_html: String::new(),
-                hidden: None,
-                threads: vec![],
-            },
-        ],
-        earlier_reviews: 3,
-        head: CommitSha::parse("0123abc"),
-        pending: Vec::new(),
-    }
-}
-
 #[test]
 fn a_pr_shows_its_reviews_oldest_first_with_their_threads_as_last_read() {
     let world = ViewWorld::new("pr-view-after-reading");
@@ -166,8 +100,13 @@ fn a_pr_shows_its_reviews_oldest_first_with_their_threads_as_last_read() {
     };
     world.has(vec![standalone], vec![]);
     world
+        .db
         .store
-        .save_pull_request_content(&world.settings().name, 9, reviewed())
+        .save_pull_request_content(
+            &world.settings().name,
+            9,
+            (reviewed(), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
 
     let view = view(&world, 9).unwrap();
@@ -188,8 +127,13 @@ fn the_window_gets_githubs_number_for_each_comment_and_review() {
         vec![],
     );
     world
+        .db
         .store
-        .save_pull_request_content(&world.settings().name, 9, reviewed())
+        .save_pull_request_content(
+            &world.settings().name,
+            9,
+            (reviewed(), OffsetDateTime::UNIX_EPOCH),
+        )
         .unwrap();
 
     let sent = serde_json::to_value(view(&world, 9).unwrap()).unwrap();
@@ -219,16 +163,19 @@ fn each_read_of_a_pr_replaces_its_reviews() {
     );
     let name = world.settings().name;
     world
+        .db
         .store
-        .save_pull_request_content(&name, 9, reviewed())
+        .save_pull_request_content(&name, 9, (reviewed(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
     let mut again = reviewed();
-    drop(again.reviews.remove(0));
+    // The read again lacks the first Review.
+    again.reviews = again.reviews.split_off(1);
     again.earlier_reviews = 0;
 
     world
+        .db
         .store
-        .save_pull_request_content(&name, 9, again.clone())
+        .save_pull_request_content(&name, 9, (again.clone(), OffsetDateTime::UNIX_EPOCH))
         .unwrap();
 
     assert_eq!(view(&world, 9).unwrap().content, Some(again));
@@ -247,6 +194,7 @@ fn a_pr_read_before_tsugiki_read_reviews_has_none_until_the_next_read() {
     );
     let conversation = reviewed().conversation;
     world
+        .db
         .store
         .save_issue_content(&world.settings().name, 9, conversation.clone())
         .unwrap();
@@ -255,5 +203,33 @@ fn a_pr_read_before_tsugiki_read_reviews_has_none_until_the_next_read() {
 
     assert_eq!(content.conversation, conversation);
     assert_eq!((content.reviews, content.earlier_reviews), (vec![], 0));
+    world.finish();
+}
+
+#[test]
+fn a_pr_shows_the_row_the_grouping_of_every_pr_gives_it_under_each_conventions() {
+    let world = ViewWorld::new("pr-view-whole");
+    world.has_crossed_links();
+
+    for settings in under_each(&world.settings()) {
+        let (items, causes) = grouped_whole(&world, &settings);
+        let facts = world.db.reader.work_facts(&settings.name).unwrap();
+        let shared = SharedReviews::of(&facts.pull_requests, settings.conventions);
+        for number in facts.pull_requests.iter().map(|pr| pr.number) {
+            let conventions = settings.conventions;
+            let shown = PrView::read(&world.db.reader, &settings, number)
+                .unwrap()
+                .unwrap();
+            let holding = (items.iter())
+                .find(|item| item.rows().iter().any(|row| row.number == number))
+                .unwrap();
+
+            let row = holding.rows().into_iter().find(|row| row.number == number);
+            assert_eq!(Some(&shown.row), row, "PR {number} under {conventions:?}");
+            let hidden = Hidden::of(&causes, holding.key(), &holding.numbers());
+            assert_eq!(shown.hidden, hidden, "PR {number} under {conventions:?}");
+            assert_eq!(shown.shares_review_of, shared.origin_of(number));
+        }
+    }
     world.finish();
 }

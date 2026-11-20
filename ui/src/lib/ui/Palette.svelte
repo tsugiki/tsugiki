@@ -99,7 +99,8 @@
   // for the Issues and PRs it names, and lists the rows `found` brings back, in the order they come. With
   // `files`, those rows hold the files of the PR on show too (#558).
   import { tick, untrack } from "svelte";
-  import { closeOnPress, takeFocus } from "./focus";
+  import Dialog from "./Dialog.svelte";
+  import { takeFocus } from "./focus";
   import { actionLabel, currentOs } from "./keys";
 
   const os = currentOs();
@@ -276,108 +277,78 @@
       else if (pickedCommand) run(pickedCommand);
     }
   }
-
-  function closeOnEscape(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      cancel();
-    }
-  }
 </script>
 
-<svelte:window onkeydown={closeOnEscape} />
-
-<!-- The keyboard's way out is Esc, on the window above. This is the mouse's. It goes by the press, because a
-     drag that starts in the text box and ends out here also counts as a click out here. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="scrim" data-testid="palette-scrim" onmousedown={closeOnPress(cancel)}>
-  <div
-    class="palette"
-    role="dialog"
-    aria-modal="true"
-    aria-label={shownWords.dialog}
-    tabindex="-1"
-    onmousedown={(e) => {
-      e.stopPropagation();
+{#snippet option(command: PaletteCommand, i: number)}
+  {@const id = `palette-command-${String(i)}`}
+  {@const key = command.action === undefined ? null : actionLabel(command.action, os)}
+  <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. The key
+       describes the row, and stays out of its name, which is what the user picks. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <li
+    {id}
+    role="option"
+    aria-selected={i === picked}
+    aria-current={command.current ? "true" : undefined}
+    aria-disabled={command.disabled ? "true" : undefined}
+    aria-describedby={key === null ? undefined : `${id}-key`}
+    onclick={() => {
+      run(command);
     }}
   >
-    <input
-      {@attach takeFocus}
-      bind:value={typed}
-      oninput={() => {
-        pickedKey = undefined;
-        enterWaits = false;
-      }}
-      onkeydown={pick}
-      role="combobox"
-      aria-expanded={matching.length > 0}
-      aria-controls="palette-commands"
-      aria-activedescendant={matching.length > 0 ? `palette-command-${String(picked)}` : undefined}
-      aria-label={shownWords.input}
-      placeholder={shownWords.placeholder}
-    />
-    {#snippet option(command: PaletteCommand, i: number)}
-      {@const id = `palette-command-${String(i)}`}
-      {@const key = command.action === undefined ? null : actionLabel(command.action, os)}
-      <!-- The keys pick from the text box, which keeps the focus, so a click is the mouse's way. The key
-           describes the row, and stays out of its name, which is what the user picks. -->
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <li
-        {id}
-        role="option"
-        aria-selected={i === picked}
-        aria-current={command.current ? "true" : undefined}
-        aria-disabled={command.disabled ? "true" : undefined}
-        aria-describedby={key === null ? undefined : `${id}-key`}
-        onclick={() => {
-          run(command);
-        }}
-      >
-        {#if key !== null}<kbd id={`${id}-key`} aria-hidden="true">{key}</kbd
-          >{/if}{command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
-          >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
-      </li>
-    {/snippet}
-    {#if matching.length > 0}
-      <ul id="palette-commands" role="listbox" aria-label={shownWords.list} bind:this={list}>
-        {#each sections as section (section.group ?? section.start)}
-          {#if section.group === undefined}
-            {#each section.rows as command, i (keyOf(command))}
-              {@render option(command, section.start + i)}
-            {/each}
-          {:else}
-            <!-- The group's label names it to a screen reader, so the heading is only for the eye. -->
-            <li class="group" role="group" aria-label={section.group}>
-              <div class="heading" aria-hidden="true">{section.group}</div>
-              <ul role="none">
-                {#each section.rows as command, i (keyOf(command))}
-                  {@render option(command, section.start + i)}
-                {/each}
-              </ul>
-            </li>
-          {/if}
-        {/each}
-      </ul>
-    {/if}
-    <!-- Why some rows couldn't be searched for shows under the rows that could, as the files of the PR on
+    {#if key !== null}<kbd id={`${id}-key`} aria-hidden="true">{key}</kbd
+      >{/if}{command.title}{#if command.note}<span class="note">{` · ${command.note}`}</span
+      >{/if}{#if command.current}&nbsp;<span class="note open">{words.mark ?? "open"}</span>{/if}
+  </li>
+{/snippet}
+
+<Dialog label={shownWords.dialog} testid="palette" size="wide" flush childTakesFocus onclose={cancel}>
+  <input
+    {@attach takeFocus}
+    bind:value={typed}
+    oninput={() => {
+      pickedKey = undefined;
+      enterWaits = false;
+    }}
+    onkeydown={pick}
+    role="combobox"
+    aria-expanded={matching.length > 0}
+    aria-controls="palette-commands"
+    aria-activedescendant={matching.length > 0 ? `palette-command-${String(picked)}` : undefined}
+    aria-label={shownWords.input}
+    placeholder={shownWords.placeholder}
+  />
+  {#if matching.length > 0}
+    <ul id="palette-commands" role="listbox" aria-label={shownWords.list} bind:this={list}>
+      {#each sections as section (section.group ?? section.start)}
+        {#if section.group === undefined}
+          {#each section.rows as command, i (keyOf(command))}
+            {@render option(command, section.start + i)}
+          {/each}
+        {:else}
+          <!-- The group's label names it to a screen reader, so the heading is only for the eye. -->
+          <li class="group" role="group" aria-label={section.group}>
+            <div class="heading" aria-hidden="true">{section.group}</div>
+            <ul role="none">
+              {#each section.rows as command, i (keyOf(command))}
+                {@render option(command, section.start + i)}
+              {/each}
+            </ul>
+          </li>
+        {/if}
+      {/each}
+    </ul>
+  {/if}
+  <!-- Why some rows couldn't be searched for shows under the rows that could, as the files of the PR on
          show need no search of the core's. -->
-    {#if quick && found?.problem !== undefined}
-      <p id={matching.length > 0 ? undefined : "palette-commands"} role="alert">{found.problem}</p>
-    {:else if matching.length === 0 && !waiting}
-      <p id="palette-commands">{shownWords.none}</p>
-    {/if}
-  </div>
-</div>
+  {#if quick && found?.problem !== undefined}
+    <p id={matching.length > 0 ? undefined : "palette-commands"} role="alert">{found.problem}</p>
+  {:else if matching.length === 0 && !waiting}
+    <p id="palette-commands">{shownWords.none}</p>
+  {/if}
+</Dialog>
 
 <style>
-  .palette {
-    width: min(640px, calc(100vw - 32px));
-    margin: 60px auto 0;
-    background: var(--bg-overlay);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    box-shadow: 0 8px 30px var(--shadow);
-  }
-
   input {
     width: 100%;
     box-sizing: border-box;

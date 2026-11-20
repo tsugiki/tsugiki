@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import { HitCode } from "$lib/state/hit-code.svelte";
+import { ok } from "$lib/testing/fixtures";
+import { clickAt } from "$lib/testing/helpers";
 import PeekCode from "./PeekCode.svelte";
 
 const core = vi.hoisted(() => ({
@@ -12,22 +14,6 @@ const core = vi.hoisted(() => ({
 vi.mock("$lib/data/bindings", () => ({
   commands: { definitionCode: core.definitionCode, definitionSpans: core.definitionSpans },
 }));
-
-beforeEach(() => {
-  // jsdom lays nothing out, so bind:clientHeight has nothing to observe.
-  vi.stubGlobal(
-    "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const hit = {
   place: { kind: "repository" as const, path: "Lib/a.py", side: "head" as const, commit: "abc" },
@@ -52,11 +38,10 @@ it("scrolls to each new hit's line, and back to where the user left a hit's code
 });
 
 it("paints each line's spans in the theme's syntax colours once they come", async () => {
-  const ok = <T>(data: T) => Promise.resolve({ status: "ok" as const, data });
-  core.definitionCode.mockReturnValueOnce(ok({ count: 3, lines: ["x = 1", "", "def area(self):"] }));
+  core.definitionCode.mockResolvedValueOnce(ok({ count: 3, lines: ["x = 1", "", "def area(self):"] }));
   const keyword = { start: 0, end: 3, highlight: "keyword" };
   const area = { start: 4, end: 8, highlight: "function" };
-  core.definitionSpans.mockReturnValueOnce(ok([[], [], [keyword, area]]));
+  core.definitionSpans.mockResolvedValueOnce(ok([[], [], [keyword, area]]));
   const code = new HitCode("python/cpython", hit, 0);
   render(PeekCode, { code, mark: hit });
 
@@ -79,20 +64,6 @@ it("paints each line's spans in the theme's syntax colours once they come", asyn
   expect(hitLine?.textContent).toBe("def area(self):");
 });
 
-/** Clicks `element` with the caret `offset` characters into its text, where Chromium leaves a collapsed
- * selection after a click; jsdom lays nothing out to find the caret from. */
-const clickAt = async (element: Element, offset: number, init: MouseEventInit = {}) => {
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  let left = offset;
-  let node = walker.nextNode() as Text | null;
-  while (node !== null && left > node.length) {
-    left -= node.length;
-    node = walker.nextNode() as Text | null;
-  }
-  getSelection()?.collapse(node ?? element, node === null ? 0 : left);
-  await fireEvent.click(element, init);
-};
-
 /** The code of the file's line `line`, once it has come. */
 const codeOf = async (line: number) =>
   vi.waitFor(() => {
@@ -110,13 +81,12 @@ const picked = () =>
 /** A peek's code of `hit`'s file, which reads `x = width` and `def area(self):`, with its keyword and its
  * function's name highlighted. `ongo` hears a Ctrl+click on a word, as in the file view. */
 const pickableCode = (ongo?: () => void) => {
-  const ok = <T>(data: T) => Promise.resolve({ status: "ok" as const, data });
-  core.definitionCode.mockReturnValueOnce(ok({ count: 3, lines: ["x = width", "", "def area(self):"] }));
+  core.definitionCode.mockResolvedValueOnce(ok({ count: 3, lines: ["x = width", "", "def area(self):"] }));
   const spans = [
     { start: 0, end: 3, highlight: "keyword" },
     { start: 4, end: 8, highlight: "function" },
   ];
-  core.definitionSpans.mockReturnValueOnce(ok([[], [], spans]));
+  core.definitionSpans.mockResolvedValueOnce(ok([[], [], spans]));
   const code = new HitCode("python/cpython", hit, 0);
   render(PeekCode, { code, mark: hit, ...(ongo && { ongo }) });
   return code;

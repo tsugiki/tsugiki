@@ -3,37 +3,14 @@
 // unless the tree is clean, the branch is main and main matches origin/main after a fetch, and CI passed on
 // main's commit. It also refuses when the tag exists here or on GitHub, or `just release-check` fails. Then
 // it tags HEAD, pushes the tag and prints the release run's link.
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { notesFor, workspaceVersion } from "./release-notes.ts";
 import { mainCi, tagRefusal } from "./releasing.ts";
+import { attempt, messageOf, run, stop } from "./run.ts";
 
 const WORKFLOW = "https://github.com/tsugiki/tsugiki/actions/workflows/release.yml";
-
-function stop(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
-
-/** Runs a command and returns its output, or stops with `failed` after the command's own message. */
-function run(failed: string, command: string, ...args: string[]): string {
-  try {
-    return execFileSync(command, args, { encoding: "utf8" }).trim();
-  } catch {
-    stop(failed);
-  }
-}
-
-/** Runs a command and returns its output, or `undefined` when it fails. */
-function attempt(command: string, ...args: string[]): string | undefined {
-  try {
-    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return undefined;
-  }
-}
 
 const cargoToml = readFileSync("Cargo.toml", "utf8");
 const changelog = readFileSync("CHANGELOG.md", "utf8");
@@ -41,7 +18,7 @@ let version: string;
 try {
   version = workspaceVersion(cargoToml);
 } catch (cause) {
-  stop(cause instanceof Error ? cause.message : String(cause));
+  stop(messageOf(cause));
 }
 const tag = `v${version}`;
 run("git fetch failed.", "git", "fetch", "-q", "origin", "main");
@@ -82,7 +59,7 @@ if (refusal !== undefined) stop(refusal);
 try {
   notesFor(changelog, version);
 } catch (cause) {
-  stop(`\`just release-check\` fails: ${cause instanceof Error ? cause.message : String(cause)}`);
+  stop(`\`just release-check\` fails: ${messageOf(cause)}`);
 }
 
 run(`git can't make the tag ${tag}.`, "git", "tag", tag);

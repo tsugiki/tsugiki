@@ -20,7 +20,7 @@ fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issues", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -29,9 +29,7 @@ fn a_sync_fetches_the_issues_its_prs_name_after_the_prs() {
         asked[4..],
         ["FetchPullRequests", "FetchIssues", "FetchIssueReferences",]
     );
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
-    let stored: Vec<u32> = facts.issues.iter().map(|issue| issue.number).collect();
-    assert_eq!(stored, [1, 2]);
+    assert_eq!(harness.issue_numbers(), [1, 2]);
     assert_eq!(changed, [cpython(), cpython()]);
     harness.finish();
 }
@@ -42,7 +40,7 @@ fn a_sync_with_no_named_issues_asks_for_none() {
     replies.push(fetched(&[1], RATE_LIMIT));
     let harness = Harness::new("no-issues", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -58,7 +56,7 @@ fn a_sync_fetches_a_titles_issue_whatever_the_conventions_of_its_repository() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("conventions", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(RepositoryName::parse("python/peps").unwrap()));
+    syncs.add_listed(plain(RepositoryName::parse("python/peps").unwrap()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -79,12 +77,12 @@ fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issue-batches", replies);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
     // Four searches, two moves, the PRs, two moves and the first batch of Issues.
     for _ in 0..10 {
-        drop(syncs.step(&harness.github, &harness.store).unwrap());
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     let ready = syncs.ready_at().unwrap();
     assert!(ready > before + Duration::from_secs(3000), "{ready:?}");
@@ -92,7 +90,7 @@ fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
     drop(run_to_the_end(&mut syncs, &harness));
     assert_eq!(syncs.ready_at(), None);
 
-    let facts = harness.reader.work_facts(&cpython()).unwrap();
+    let facts = harness.db.reader.work_facts(&cpython()).unwrap();
     assert_eq!(facts.issues.len(), 2);
     harness.finish();
 }

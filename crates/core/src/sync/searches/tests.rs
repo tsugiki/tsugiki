@@ -1,24 +1,24 @@
 use crate::sync::testing::{
-    FEW, Harness, RATE_LIMIT, cpython, fetched, found, nothing, plain, run_to_the_end,
+    FEW, Harness, RATE_LIMIT, cpython, fetched, nothing, plain, run_to_the_end, search_page,
 };
 use crate::sync::{Syncs, WORK_SEARCHES};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
 #[test]
-fn a_sync_searches_in_order_then_stores_what_it_found() {
+fn a_sync_searches_in_order_then_stores_what_it_search_page() {
     let harness = Harness::new(
         "order",
         vec![
-            found(&["a"], None, RATE_LIMIT),
-            found(&["b"], None, RATE_LIMIT),
-            found(&["c"], None, RATE_LIMIT),
-            found(&["d"], None, RATE_LIMIT),
+            search_page(&["a"], None, RATE_LIMIT),
+            search_page(&["b"], None, RATE_LIMIT),
+            search_page(&["c"], None, RATE_LIMIT),
+            search_page(&["d"], None, RATE_LIMIT),
             fetched(&[1, 2, 3, 4], RATE_LIMIT),
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     let changed = run_to_the_end(&mut syncs, &harness);
 
@@ -42,8 +42,8 @@ fn a_search_follows_its_pages_before_the_next_search() {
     let harness = Harness::new(
         "pages",
         vec![
-            found(&["a"], Some("next"), RATE_LIMIT),
-            found(&["b"], None, RATE_LIMIT),
+            search_page(&["a"], Some("next"), RATE_LIMIT),
+            search_page(&["b"], None, RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
             nothing(RATE_LIMIT),
@@ -51,7 +51,7 @@ fn a_search_follows_its_pages_before_the_next_search() {
         ],
     );
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
 
     drop(run_to_the_end(&mut syncs, &harness));
 
@@ -69,10 +69,10 @@ fn a_search_follows_its_pages_before_the_next_search() {
 fn a_search_below_the_floor_holds_the_next_step_back() {
     let harness = Harness::new("floor-search", vec![nothing(FEW)]);
     let mut syncs = Syncs::default();
-    syncs.add(plain(cpython()));
+    syncs.add_listed(plain(cpython()));
     let before = Instant::now();
 
-    drop(syncs.step(&harness.github, &harness.store).unwrap());
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
 
     let ready = syncs.ready_at().unwrap();
     assert!(ready > before + Duration::from_secs(3000), "{ready:?}");

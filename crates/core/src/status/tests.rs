@@ -1,11 +1,12 @@
 use super::testing::{announced, watched_board};
 use super::*;
 use crate::error::ErrorKind;
+use crate::testing::cpython;
 
 #[test]
 fn a_change_or_a_last_sync_with_nobody_listening_isnt_a_new_status() {
     let (mut board, seen) = watched_board();
-    let repository = RepositoryName::parse("python/cpython").unwrap();
+    let repository = cpython();
 
     board.changed(&Change {
         repository: repository.clone(),
@@ -21,7 +22,7 @@ fn a_change_or_a_last_sync_with_nobody_listening_isnt_a_new_status() {
 
 #[test]
 fn a_last_sync_reaches_the_ui_as_a_time_or_as_nothing() {
-    let repository = RepositoryName::parse("python/cpython").unwrap();
+    let repository = cpython();
     let at = OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap();
     let never = LastSync {
         repository: repository.clone(),

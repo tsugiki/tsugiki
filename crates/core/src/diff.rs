@@ -604,16 +604,11 @@ fn remove(path: &Path) {
 
 /// The NEWS entries among `files`, rendered from `head`. Those git can't read stay out.
 fn news(mirror: &Path, head: &CommitSha, files: &[DiffFile]) -> Vec<NewsEntry> {
-    // git reads a name a line.
-    let paths: Vec<&str> = files
-        .iter()
+    let paths: Vec<&str> = (files.iter())
         .map(|file| file.path.as_str())
-        .filter(|path| NewsEntry::is_entry(path) && !path.contains('\n'))
+        .filter(|path| NewsEntry::is_entry(path))
         .collect();
-    let names: Vec<String> = paths
-        .iter()
-        .map(|path| format!("{}:{path}", head.as_str()))
-        .collect();
+    let names: Vec<String> = paths.iter().map(|path| object_name(head, path)).collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     highlighter::blobs(mirror, &names)
         .into_iter()
@@ -858,4 +853,6 @@ mod news;
 mod patch_ids;
 
 #[cfg(test)]
-pub(crate) mod tests;
+pub(crate) mod testing;
+#[cfg(test)]
+mod tests;

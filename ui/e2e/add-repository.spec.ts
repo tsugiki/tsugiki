@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import type { Filter_Serialize as Filter } from "../src/lib/data/bindings.ts";
+import { done, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home, repository } from "./fixtures.ts";
 import { mockCore } from "./mock-core.ts";
 
 const check = {
-  repository: { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] },
+  repository,
   open_issues: 6935,
   open_prs: 2308,
   size: "large",
@@ -14,22 +15,14 @@ const check = {
   mirror: { mirror_mb: 891, download_seconds: 209, borrow_seconds: 36 },
 } as const;
 
-const cpython = {
-  screen: "repository",
-  repository: check.repository,
-  others: [] as string[],
-} as const;
 const onboarding = { screen: "onboarding", token: "gh" } as const;
 
 test("adding the first Repository goes from onboarding to the Repository", async ({ page }) => {
   await mockCore(page, {
     home: onboarding,
-    checkRepository: { status: "ok", data: { kind: "new", check } },
-    addRepository: { status: "ok", data: cpython },
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    checkRepository: ok({ kind: "new", check }),
+    addRepository: ok(home),
+    workbench: workbenchPage([]),
   });
   await page.goto("/");
   await expect(page.getByText("Your token comes from the GitHub CLI")).toBeVisible();
@@ -41,7 +34,7 @@ test("adding the first Repository goes from onboarding to the Repository", async
   await input.press("Enter");
 
   const dialog = page.getByRole("dialog", { name: "Add repository" });
-  await expect(dialog.getByText("6935 open Issues, 2308 open PRs.")).toBeVisible();
+  await expect(dialog.getByText("6,935 open Issues, 2,308 open PRs.")).toBeVisible();
   await expect(dialog.getByText(/^Large:/)).toBeVisible();
   await expect(dialog.getByText(/about 9 minutes, about 223 points/)).toBeVisible();
   await expect(dialog.getByText("Conventions: CPython.")).toBeVisible();
@@ -71,13 +64,7 @@ test("a Repository GitHub doesn't have is named in the dialog, and Esc leaves on
 });
 
 test("a normal launch opens on the Repository the core names", async ({ page }) => {
-  await mockCore(page, {
-    home: cpython,
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
-  });
+  await mockCore(page, { home, workbench: workbenchPage([]) });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "python/cpython", exact: true })).toBeVisible();
   await expect(page.getByText("Your token comes from")).toBeHidden();
@@ -86,14 +73,11 @@ test("a normal launch opens on the Repository the core names", async ({ page }) 
 test("the dialog borrows objects from a clone the user picks", async ({ page }) => {
   await mockCore(page, {
     home: onboarding,
-    checkRepository: { status: "ok", data: { kind: "new", check } },
-    pickFolder: { status: "ok", data: "D:/cpython" },
-    checkClone: { status: "ok", data: null },
-    addRepository: { status: "ok", data: cpython },
-    workbench: {
-      status: "ok",
-      data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
+    checkRepository: ok({ kind: "new", check }),
+    pickFolder: ok("D:/cpython"),
+    checkClone: done,
+    addRepository: ok(home),
+    workbench: workbenchPage([]),
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Add repository" }).click();

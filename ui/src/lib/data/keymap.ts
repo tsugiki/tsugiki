@@ -210,13 +210,19 @@ export const KEYMAP = [
     "action": "archive",
     "title": "Archive",
     "key": "e",
-    "context": "issue_list"
+    "context": "anywhere"
   },
   {
     "action": "mute",
     "title": "Mute",
     "key": "m",
-    "context": "issue_list"
+    "context": "anywhere"
+  },
+  {
+    "action": "mute_author",
+    "title": "Mute Author",
+    "key": null,
+    "context": "anywhere"
   },
   {
     "action": "mark_seen",

@@ -1,19 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
-import type {
-  Filter_Serialize as Filter,
-  IssueView_Serialize as IssueView,
-  ListedItem_Serialize as ListedItem,
-} from "../src/lib/data/bindings.ts";
+import type { IssueView_Serialize as IssueView } from "../src/lib/data/bindings.ts";
+import { done, listedIssue, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home, repository } from "./fixtures.ts";
 import { changeAnswer, type CoreAnswers, emitFromCore, mockCore } from "./mock-core.ts";
 
-const repository = { name: "python/cpython", conventions: "cpython", filters: [] as Filter[] } as const;
-
 const core: CoreAnswers = {
-  home: { screen: "repository", repository, others: [] as string[] },
-  workbench: {
-    status: "ok",
-    data: { items: [], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-  },
+  home,
+  workbench: workbenchPage([]),
   timeRunning: 640,
   recordMeasurement: "Performance of Tsugiki 0.1.0 over 1.0 s: frame p95 16.7 ms",
 };
@@ -110,17 +103,7 @@ test("the recording button stays put when a line about a long frame shows", asyn
 });
 
 test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => {
-  const listed: ListedItem & { kind: "issue" } = {
-    kind: "issue",
-    number: 7,
-    title: "Issue 7",
-    state: "OPEN",
-    people: ["issue-author"],
-    updated_at: "2026-11-04T10:00:00Z",
-    pull_requests: [],
-    seen: { mark: { numbers: [7], up_to: null }, state: "seen" },
-    attention: null,
-  };
+  const listed = listedIssue(7, { people: ["issue-author"] });
   const unread: IssueView = {
     ...listed,
     merged: [],
@@ -133,12 +116,9 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
   };
   await mockCore(page, {
     ...core,
-    workbench: {
-      status: "ok",
-      data: { items: [listed], count: 0, review_requests: 0, stale_reviews: 0, filters: [] },
-    },
-    openIssue: { status: "ok", data: null },
-    issue: { status: "ok", data: unread },
+    workbench: workbenchPage([listed]),
+    openIssue: done,
+    issue: ok(unread),
   });
   await page.goto("/");
   const listedButton = page.getByRole("button", { name: "#7 Issue 7" });
@@ -150,7 +130,7 @@ test("the HUD times an Issue whose text comes from GitHub", async ({ page }) => 
   await expect(value(page, "Issue from GitHub")).toHaveText("waiting");
 
   const content = { body_html: "<p>It crashes</p>", comments: [], earlier_comments: 0, opened_at: null };
-  await changeAnswer(page, "issue", { status: "ok", data: { ...unread, content } });
+  await changeAnswer(page, "issue", ok({ ...unread, content }));
   await emitFromCore(page, "changed", { repository: repository.name, items: [7] });
   await expect(value(page, "Issue from GitHub")).toHaveText(/^\d+\.\d ms$/);
 });

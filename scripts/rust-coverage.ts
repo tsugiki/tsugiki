@@ -14,16 +14,22 @@ const EXCLUDED = [
   // coverage: thin async commands. The report calls the block Tauri's macro writes unrun, and IPC tests
   // run it.
   "crates/app/src/slow_commands\\.rs$",
-  // coverage: the real network and the real gh, which tests replace and release checks exercise (ADR 0019).
+  // coverage: the real network and the real gh, which tests replace (ADR 0019).
   "crates/token/src/live\\.rs$",
   // coverage: the real git, which tests run, and the hand-off to the token crate's client, which they
   // replace.
   "crates/core/src/github/live\\.rs$",
   // coverage: starting a real language server, which tests replace with a fake one over in-memory pipes.
   "crates/lsp/src/process\\.rs$",
+  // coverage: a fake server program for the core's tests. They run the build `scripts/test-servers.ts` makes,
+  // not the one this gate measures.
+  "crates/lsp/src/bin/fake_server\\.rs$",
   // coverage: one call on a real webview, which `npm run smoke` shows working.
   "crates/webview-keys/src/lib\\.rs$",
 ];
+
+/** The report this gate leaves, which CI hands to Codecov. */
+const LCOV = "target/coverage/lcov.info";
 
 mkdirSync("target/coverage", { recursive: true });
 const ignore = EXCLUDED.join("|").replaceAll("/", "[/\\\\]");
@@ -32,7 +38,7 @@ const args = [
   "--workspace",
   "--lcov",
   "--output-path",
-  "target/coverage/lcov.info",
+  LCOV,
   "--ignore-filename-regex",
   ignore,
   "--fail-under-lines",
@@ -44,7 +50,6 @@ const args = [
 
 /** Says what never ran. A closure or a `?` can sit on a covered line, and then cargo-llvm-cov doesn't say. */
 function printGaps(): void {
-  const lcovPath = "target/coverage/lcov.info";
   const report = "target/coverage/report.txt";
   const made = spawnSync("cargo", [
     "llvm-cov",
@@ -59,7 +64,7 @@ function printGaps(): void {
     console.error("`cargo llvm-cov report` failed, so these are counts with no source lines.");
   }
   const text = made.status === 0 ? readFileSync(report, "utf8") : "";
-  for (const gap of filesWithGaps(readFileSync(lcovPath, "utf8"))) {
+  for (const gap of filesWithGaps(readFileSync(LCOV, "utf8"))) {
     console.error(`${gap.path}: lines ${gap.lines}, functions ${gap.functions}`);
     for (const { at, source, whole } of unrunRegions(text, gap.path)) {
       console.error(`  ${at}: ${whole ? "never ran" : "part never ran"}: ${source}`);
@@ -103,7 +108,7 @@ if (status !== 0 && keep && staleBuildsThere()) {
 }
 if (status !== 0) {
   // A failed test leaves the last run's report in place, so only a fresh report says anything about now.
-  const fresh = statSync("target/coverage/lcov.info", { throwIfNoEntry: false });
+  const fresh = statSync(LCOV, { throwIfNoEntry: false });
   if (fresh !== undefined && fresh.mtimeMs >= started) {
     printGaps();
     console.error("Coverage is below 100%. A `?` or a closure alone on a line needs its own covered line.");

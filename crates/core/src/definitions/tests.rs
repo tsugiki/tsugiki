@@ -1,15 +1,19 @@
-//! Each test that looks a name up starts the real ty that CI fetches, on a Repository built with the real
-//! git, and nothing reaches the network.
+//! A test of what a server finds starts the real ty, rust-analyzer or clangd that CI fetches, on a
+//! Repository built with the real git, and nothing reaches the network. A test of what the owner does with a
+//! server, such as a cancel or a PR that moves, runs a [`FakeClangd`] in its place where it can, and the
+//! fake server program of [`fake_program`] where the owner starts the server itself.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
+use tsugiki_test_git::{pass_on, wait_until};
 
-use super::server::Ready;
-use super::testing::{FakeClangd, Fixture, Initialize, Notified, ty};
+use super::server::{Ready, Setup};
+use super::testing::{FakeClangd, Initialize, Notified, fake_program, ty};
 use super::*;
 use crate::diff::FileChange;
+use crate::testing::{Fixture, TempPath, cpython};
 
 const PATCHLEVEL: &str = "#define PY_MAJOR_VERSION        3\n#define PY_MINOR_VERSION        14\n";
 
@@ -48,12 +52,12 @@ class Shop:
 
 /// A PR in a Repository with CPython's layout: it changes `Tools/shop.py`, adds `Lib/added.py` and deletes
 /// `Lib/gone.py`.
-fn cpython(name: &str) -> Fixture {
-    cpython_at(name, PATCHLEVEL)
+fn cpython_pr(name: &str) -> Fixture {
+    cpython_pr_at(name, PATCHLEVEL)
 }
 
-/// [`cpython`], whose `Include/patchlevel.h` is `patchlevel`.
-fn cpython_at(name: &str, patchlevel: &str) -> Fixture {
+/// [`cpython_pr`], whose `Include/patchlevel.h` is `patchlevel`.
+fn cpython_pr_at(name: &str, patchlevel: &str) -> Fixture {
     Fixture::new(
         name,
         &[
@@ -81,10 +85,6 @@ fn ty_of(repository: RepositoryName) -> Key {
     (repository, ServerName::Ty)
 }
 
-fn repository() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
 /// The Python files the PR changes, as its diff lists them.
 fn changed() -> Vec<String> {
     [SHOP, "Lib/added.py", "Lib/gone.py"]
@@ -94,12 +94,37 @@ fn changed() -> Vec<String> {
 
 /// Sources that give the fixture's checkout and the pinned ty.
 fn sources(checkout: Option<LookupCheckout>, ty: Option<PathBuf>) -> Sources {
+    sources_for(checkout, ServerName::Ty, ty)
+}
+
+/// Sources that give `checkout`, and `server` at `program` and no other server.
+fn sources_for(
+    checkout: Option<LookupCheckout>,
+    server: ServerName,
+    program: Option<PathBuf>,
+) -> Sources {
     Sources {
         checkout: Box::new(move |_| checkout.clone()),
-        servers: Box::new(move |server| (server == ServerName::Ty).then(|| ty.clone()).flatten()),
+        servers: Box::new(move |asked| (asked == server).then(|| program.clone()).flatten()),
         idle: idle_after(Duration::from_secs(3600)),
         changed: Box::new(|_| {}),
     }
+}
+
+/// A fake ty in a folder of its own named `name`, which answers lookups with `answers` as [`fake_program`]
+/// says, and the folder. For a test of what the owner does as it starts or stops ty, which a real one would
+/// only slow down: the real ty has tests of its own.
+fn ty_program(name: &str, answers: Vec<serde_json::Value>) -> (PathBuf, TempPath) {
+    let folder = crate::testing::temp_path(name);
+    let program = folder.join("ty.exe");
+    let version = format!("ty {}", ServerName::Ty.tested()[0]);
+    fake_program(&program, &version, answers);
+    (program, folder)
+}
+
+/// Where ty finds `only_head` in `Tools/shop.py` at the head, as a server names a location.
+fn only_head_in_shop(fixture: &Fixture) -> serde_json::Value {
+    location(fixture, SHOP, (4, 4))
 }
 
 /// An idle time of `idle`, which the tests that don't stop an idle server set past their end.
@@ -112,14 +137,25 @@ fn owner_of(sources: Sources) -> Owner {
     Owner::new(sources).0
 }
 
-/// The servers' thread, run here, with the fixture's PR opened.
+/// The servers' thread, run here, with ty set up and the fixture's PR opened.
 fn opened(fixture: &Fixture) -> Owner {
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    opened_with(fixture, (ServerName::Ty, ty()), changed())
+}
+
+/// The servers' thread, run here, with `server` at `program` and the fixture's PR, which changes the files
+/// `changed` names, opened.
+fn opened_with(
+    fixture: &Fixture,
+    (server, program): (ServerName, PathBuf),
+    changed: Vec<String>,
+) -> Owner {
+    let checkout = Some(fixture.checkout.clone());
+    let mut owner = owner_of(sources_for(checkout, server, Some(program)));
     let pr = Pr {
         at: fixture.checkout.at.clone(),
-        changed: changed(),
+        changed,
     };
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr);
     owner
 }
 
@@ -129,18 +165,7 @@ fn lookup(fixture: &Fixture, side: DiffEnd, line: u32, word: &str) -> Lookup {
         DiffEnd::Base => SHOP_AT_BASE,
         DiffEnd::Head => SHOP_AT_HEAD,
     };
-    let found = (text.lines())
-        .nth(usize::try_from(line - 1).unwrap())
-        .unwrap();
-    let byte = found.find(word).unwrap();
-    Lookup {
-        repository: repository(),
-        at: fixture.checkout.at.clone(),
-        path: SHOP.to_owned(),
-        side,
-        line,
-        column: tsugiki_lsp::utf16::column_of(found, byte),
-    }
+    lookup_in(fixture, (SHOP, side), (line, word), text)
 }
 
 fn hits(answer: Result<Answer, Error>) -> Vec<Hit> {
@@ -155,6 +180,14 @@ fn hits(answer: Result<Answer, Error>) -> Vec<Hit> {
     }
 }
 
+/// Fails the test unless `answer` found the name, wherever it did.
+fn assert_found(answer: Result<Answer, Error>) {
+    assert!(
+        matches!(answer, Ok(Answer::Found { .. })),
+        "found nothing: {answer:?}"
+    );
+}
+
 /// A lookup's answer, what it heard it waits for, and what it heard of its server's index.
 struct Asked {
     answer: Receiver<Result<Answer, Error>>,
@@ -165,26 +198,37 @@ struct Asked {
 /// Asks the owner `lookup` with `ticket`, as the handle does, without waiting for the answer.
 fn ask(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) -> Asked {
     let (reply, answer) = mpsc::channel();
-    let (heard, waited) = mpsc::channel();
-    let waiting = Box::new(move |waiting| {
-        let _unheard = heard.send(waiting);
-    });
-    let (heard, indexed) = mpsc::channel();
-    let index = Box::new(move |index| {
-        let _unheard = heard.send(index);
-    });
+    let (waiting, waited) = heard();
+    let (index, indexed) = heard();
     let asker = Asker {
         ticket,
         reply,
         waiting,
         index,
     };
-    let _goes_on = owner.handle(Message::LookUp(lookup.clone(), asker));
+    owner.handle(Message::LookUp(lookup.clone(), asker));
     Asked {
         answer,
         waited,
         indexed,
     }
+}
+
+/// Asks the owner `lookup` with `ticket`, as `ask` does, with nobody to hear the answer.
+fn ask_unheard(owner: &mut Owner, lookup: &Lookup, ticket: Ticket) {
+    let asker = Asker {
+        ticket,
+        reply: mpsc::channel().0,
+        waiting: Box::new(|_| {}),
+        index: unheard(),
+    };
+    owner.handle(Message::LookUp(lookup.clone(), asker));
+}
+
+/// A listener that hands each value it hears to the receiver it comes with.
+fn heard<T: Send + 'static>() -> (Box<dyn Fn(T) + Send>, Receiver<T>) {
+    let (hears, heard) = mpsc::channel();
+    (Box::new(move |value| pass_on(&hears, value)), heard)
 }
 
 /// A listener to a server's index that ignores it.
@@ -199,7 +243,7 @@ fn answer_of(owner: &mut Owner, asked: &Asked) -> Result<Answer, Error> {
             return answer;
         }
         let message = owner.next().unwrap();
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
     }
 }
 
@@ -235,7 +279,7 @@ fn hit(
 
 #[test]
 fn a_name_at_the_head_is_found_where_the_head_defines_it() {
-    let fixture = cpython("definitions-head");
+    let fixture = cpython_pr("definitions-head");
     let mut owner = opened(&fixture);
     let at_head = |line, word| lookup(&fixture, DiffEnd::Head, line, word);
 
@@ -269,7 +313,7 @@ fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
     // A CPython newer than the ty in use: ty 0.0.103 knows up to 3.15, and drops all of its settings over
     // a version past them, `Lib` with the rest.
     let patchlevel = "#define PY_MAJOR_VERSION 3\n#define PY_MINOR_VERSION 99\n";
-    let fixture = cpython_at("definitions-unknown-version", patchlevel);
+    let fixture = cpython_pr_at("definitions-unknown-version", patchlevel);
     let mut owner = opened(&fixture);
     let eggs = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     let spam = [hit(
@@ -282,24 +326,21 @@ fn a_python_version_ty_doesn_t_know_is_sent_again_without_it_and_lib_holds() {
     // ty asks for its settings again once it has refused them, which a lookup at once can beat, and a
     // lookup while its workspace comes back may fail. Each miss waits a moment before the next try. The
     // 5 s cap is approximate: a lookup that starts at 4.9 s runs to its own end.
-    let until = Instant::now() + Duration::from_secs(5);
-    let found = (0..)
-        .map(|tries: u32| {
-            thread::sleep(Duration::from_millis(50) * tries.min(1));
-            look(&mut owner, &eggs)
-        })
-        .find(|answer| {
-            let landed = matches!(answer, Ok(Answer::Found { hits }) if *hits == spam);
-            landed || Instant::now() > until
-        })
-        .unwrap();
+    let mut found = None;
+    wait_until(Duration::from_secs(5), || {
+        let answer = look(&mut owner, &eggs);
+        let landed = matches!(&answer, Ok(Answer::Found { hits }) if *hits == spam);
+        found = Some(answer);
+        landed
+    });
+    let found = found.unwrap();
 
     assert_eq!(hits(found), spam);
 }
 
 #[test]
 fn a_name_on_a_removed_line_is_found_at_the_base_and_the_next_lookup_is_at_the_head_again() {
-    let fixture = cpython("definitions-base");
+    let fixture = cpython_pr("definitions-base");
     let mut owner = opened(&fixture);
     let removed = lookup(&fixture, DiffEnd::Base, 10, "old_name");
     let added = lookup(&fixture, DiffEnd::Head, 12, "only_head");
@@ -315,7 +356,7 @@ fn a_name_on_a_removed_line_is_found_at_the_base_and_the_next_lookup_is_at_the_h
 
 #[test]
 fn a_builtin_is_found_outside_the_repository() {
-    let fixture = cpython("definitions-outside");
+    let fixture = cpython_pr("definitions-outside");
     let mut owner = opened(&fixture);
 
     let found = hits(look(
@@ -346,7 +387,7 @@ fn a_builtin_is_found_outside_the_repository() {
 
 #[test]
 fn a_name_defined_nowhere_finds_nothing() {
-    let fixture = cpython("definitions-nowhere");
+    let fixture = cpython_pr("definitions-nowhere");
     let mut owner = opened(&fixture);
     // The `return` keyword names nothing.
     let keyword = lookup(&fixture, DiffEnd::Head, 6, "return");
@@ -356,7 +397,7 @@ fn a_name_defined_nowhere_finds_nothing() {
 
 #[test]
 fn without_a_server_a_lookup_says_to_set_it_up_and_another_language_has_no_server() {
-    let fixture = cpython("definitions-not-set-up");
+    let fixture = cpython_pr("definitions-not-set-up");
     let mut owner = owner_of(sources(Some(fixture.checkout.clone()), None));
     let python = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     let header = Lookup {
@@ -372,7 +413,7 @@ fn without_a_server_a_lookup_says_to_set_it_up_and_another_language_has_no_serve
         at: fixture.checkout.at.clone(),
         changed: changed(),
     };
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr);
 
     let rust = Lookup {
         path: "src/lib.rs".to_owned(),
@@ -397,7 +438,7 @@ fn without_a_server_a_lookup_says_to_set_it_up_and_another_language_has_no_serve
 
 #[test]
 fn a_lookup_before_its_pr_opened_starts_ty_with_no_file_open() {
-    let fixture = cpython("definitions-unopened");
+    let fixture = cpython_pr("definitions-unopened");
     let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
 
     let found = hits(look(
@@ -412,12 +453,13 @@ fn a_lookup_before_its_pr_opened_starts_ty_with_no_file_open() {
 
 #[test]
 fn a_pr_at_other_commits_gets_a_new_ty() {
-    let fixture = cpython("definitions-moved");
+    let fixture = cpython_pr("definitions-moved");
     let other = another("definitions-moved-other");
-    let mut owner = opened(&fixture);
+    let (ty, _ty_folder) = ty_program("definitions-moved-ty", vec![json!([])]);
+    let mut owner = opened_with(&fixture, (ServerName::Ty, ty), changed());
     let first = owner
         .servers
-        .get(&ty_of(repository()))
+        .get(&ty_of(cpython()))
         .map(|ty| ty.at().clone());
     let asked = ask(
         &mut owner,
@@ -431,11 +473,11 @@ fn a_pr_at_other_commits_gets_a_new_ty() {
         at: other.checkout.at.clone(),
         changed: changed(),
     };
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr);
 
     let now = owner
         .servers
-        .get(&ty_of(repository()))
+        .get(&ty_of(cpython()))
         .map(|ty| ty.at().clone());
     assert_eq!(first, Some(fixture.checkout.at.clone()));
     assert_eq!(now, Some(other.checkout.at.clone()));
@@ -446,7 +488,7 @@ fn a_pr_at_other_commits_gets_a_new_ty() {
 
 #[test]
 fn a_lookup_while_the_checkout_is_elsewhere_fails_and_starts_nothing() {
-    let fixture = cpython("definitions-elsewhere");
+    let fixture = cpython_pr("definitions-elsewhere");
     let other = another("definitions-elsewhere-other");
     let mut owner = owner_of(sources(Some(other.checkout.clone()), Some(ty())));
 
@@ -466,29 +508,30 @@ fn a_lookup_while_the_checkout_is_elsewhere_fails_and_starts_nothing() {
 
 #[test]
 fn a_lookup_at_commits_the_checkout_isn_t_at_leaves_the_running_ty_alone() {
-    let fixture = cpython("definitions-stale");
+    let fixture = cpython_pr("definitions-stale");
     let other = another("definitions-stale-other");
-    let mut owner = opened(&fixture);
+    let (mut owner, _fake) = fake_ty(&fixture, vec![json!([])]);
 
     let answer = look(&mut owner, &lookup(&other, DiffEnd::Head, 12, "eggs"));
 
     assert!(answer.is_err());
     let running = owner
         .servers
-        .get(&ty_of(repository()))
+        .get(&ty_of(cpython()))
         .map(|ty| ty.at().clone());
     assert_eq!(running, Some(fixture.checkout.at.clone()));
 }
 
 #[test]
 fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
-    let fixture = cpython("definitions-again");
+    let fixture = cpython_pr("definitions-again");
     let asked = Arc::new(AtomicU32::new(0));
     let counted = Arc::clone(&asked);
     // Each start looks for the checkout first.
     let mut owner = owner_of(Sources {
         checkout: Box::new(move |_| {
-            let _before = counted.fetch_add(1, Ordering::Relaxed);
+            #[expect(unused_results, reason = "the test reads the count at the end")]
+            counted.fetch_add(1, Ordering::Relaxed);
             None
         }),
         servers: Box::new(move |_| Some(PathBuf::from("no-ty.exe"))),
@@ -500,25 +543,26 @@ fn the_files_tab_reading_its_pr_again_starts_nothing_again() {
         changed: changed(),
     };
 
-    owner.opened(&repository(), pr.clone());
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr.clone());
+    owner.opened(&cpython(), pr);
 
     assert_eq!(asked.load(Ordering::Relaxed), 1);
 }
 
 #[test]
 fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_again() {
-    let fixture = cpython("definitions-idle");
+    let fixture = cpython_pr("definitions-idle");
+    let (ty, _ty_folder) = ty_program("definitions-idle-ty", vec![only_head_in_shop(&fixture)]);
     let idle = Duration::from_secs(1);
     let mut owner = owner_of(Sources {
         idle: idle_after(idle),
-        ..sources(Some(fixture.checkout.clone()), Some(ty()))
+        ..sources(Some(fixture.checkout.clone()), Some(ty))
     });
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed: changed(),
     };
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
     let asked = ask(&mut owner, &at_head, Ticket(1));
@@ -527,12 +571,12 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
     let first = hits(answer_of(&mut owner, &asked));
     // The answer counts as a use.
     owner.stop_idle(Instant::now() + idle / 2, idle);
-    let kept = owner.servers.contains_key(&ty_of(repository()));
+    let kept = owner.servers.contains_key(&ty_of(cpython()));
     // The thread waits for its next message only until ty has been idle that long, and then stops it.
     let own = owner.own.clone();
-    let _later = thread::spawn(move || {
+    let later = thread::spawn(move || {
         thread::sleep(idle * 2);
-        let _unheard = own.send(Message::Cancel(Ticket(9)));
+        own.send(Message::Cancel(Ticket(9))).is_ok()
     });
     // The ty it stops says it ended before the cancel comes.
     let message = loop {
@@ -540,8 +584,9 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
         if matches!(message, Message::Cancel(_)) {
             break message;
         }
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
     };
+    assert!(later.join().unwrap(), "the owner stopped listening");
     let stopped = owner.servers.is_empty();
     let idle_row = ty_row(&owner.told);
     let again = ask(&mut owner, &at_head, Ticket(2));
@@ -561,9 +606,10 @@ fn a_ty_no_lookup_reaches_for_the_idle_time_stops_and_the_next_lookup_starts_it_
 
 #[test]
 fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_the_others() {
-    let fixture = cpython("definitions-remove");
+    let fixture = cpython_pr("definitions-remove");
     let second = another("definitions-remove-other");
     let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();
+    let (ty, _ty_folder) = ty_program("definitions-remove-ty", vec![json!([])]);
     let (checkout, elsewhere, theirs) = (
         fixture.checkout.clone(),
         second.checkout.clone(),
@@ -577,13 +623,13 @@ fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_
                 checkout.clone()
             })
         }),
-        ..sources(None, Some(ty()))
+        ..sources(None, Some(ty))
     });
     let pr = |fixture: &Fixture, changed: Vec<String>| Pr {
         at: fixture.checkout.at.clone(),
         changed,
     };
-    owner.opened(&repository(), pr(&fixture, changed()));
+    owner.opened(&cpython(), pr(&fixture, changed()));
     owner.opened(&other, pr(&second, vec!["a.py".to_owned()]));
     let asked = ask(
         &mut owner,
@@ -592,37 +638,37 @@ fn removing_a_repository_stops_its_servers_cancels_the_lookup_on_one_and_leaves_
     );
 
     let (reply, removed) = mpsc::channel();
-    let goes_on = owner.handle(Message::Remove(repository(), reply));
+    owner.handle(Message::Remove(cpython(), reply));
     // ty's process works in the checkout, so on Windows the folder goes only once it has ended.
     let deleted = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
 
-    assert!(goes_on);
     removed.try_recv().unwrap();
     assert!(matches!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled))));
     deleted.unwrap();
     let left: Vec<&Key> = owner.servers.keys().collect();
     assert_eq!(left, [&ty_of(other)]);
-    assert!(!owner.prs.contains_key(&repository()));
+    assert!(!owner.prs.contains_key(&cpython()));
 }
 
 #[test]
 fn the_handle_removes_a_repository_once_its_ty_has_ended() {
-    let fixture = cpython("definitions-handle-remove");
-    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let fixture = cpython_pr("definitions-handle-remove");
+    let (ty, _ty_folder) = ty_program("definitions-handle-remove-ty", vec![json!([])]);
+    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at = fixture.checkout.at.clone();
 
-    definitions.opened(repository(), at, &[diff_file(SHOP)]);
-    definitions.remove(repository());
+    definitions.opened(cpython(), at, &[diff_file(SHOP)]);
+    definitions.remove(cpython());
     let deleted = std::fs::remove_dir_all(fixture.checkout.folder.parent().unwrap());
     definitions.stop(Duration::from_secs(10));
-    definitions.remove(repository());
+    definitions.remove(cpython());
 
     deleted.unwrap();
 }
 
 #[test]
 fn a_new_lookup_cancels_the_one_running_whose_late_answer_goes_nowhere() {
-    let fixture = cpython("definitions-cancel-newer");
+    let fixture = cpython_pr("definitions-cancel-newer");
     let mut owner = opened(&fixture);
     let first = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     let second = lookup(&fixture, DiffEnd::Head, 12, "only_head");
@@ -641,17 +687,17 @@ fn a_new_lookup_cancels_the_one_running_whose_late_answer_goes_nowhere() {
 
 #[test]
 fn a_cancel_cancels_the_lookup_running_and_ty_goes_on() {
-    let fixture = cpython("definitions-cancel");
+    let fixture = cpython_pr("definitions-cancel");
     let mut owner = opened(&fixture);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
     let asked = ask(&mut owner, &at_head, Ticket(2));
     // A late cancel for an older lookup leaves this one be.
-    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
-    let _goes_on = owner.handle(Message::Cancel(Ticket(2)));
+    owner.handle(Message::Cancel(Ticket(1)));
+    owner.handle(Message::Cancel(Ticket(2)));
     let cancelled = answer_of(&mut owner, &asked);
     // A cancel for a lookup that has answered does nothing.
-    let _goes_on = owner.handle(Message::Cancel(Ticket(2)));
+    owner.handle(Message::Cancel(Ticket(2)));
     let again = hits(look(&mut owner, &at_head));
 
     assert_eq!(cancelled, Ok(Answer::Cancelled));
@@ -660,29 +706,31 @@ fn a_cancel_cancels_the_lookup_running_and_ty_goes_on() {
 
 #[test]
 fn a_cancel_the_core_takes_before_its_lookup_cancels_it_and_ty_is_asked_nothing() {
-    let fixture = cpython("definitions-cancel-early");
-    let mut owner = opened(&fixture);
+    let fixture = cpython_pr("definitions-cancel-early");
+    let (mut owner, fake) = fake_ty(&fixture, vec![json!([])]);
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
-    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    owner.handle(Message::Cancel(Ticket(1)));
     let asked = ask(&mut owner, &at_head, Ticket(1));
 
     assert_eq!(asked.answer.try_recv(), Ok(Ok(Answer::Cancelled)));
     assert_eq!(asked.waited.try_iter().count(), 0);
     assert!(owner.running.is_none());
     assert_eq!(owner.asked, 0);
+    assert_eq!(fake.asked(), 0);
 }
 
 #[test]
 fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
-    let fixture = cpython("definitions-waiting");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let fixture = cpython_pr("definitions-waiting");
+    let (ty, _ty_folder) = ty_program("definitions-waiting-ty", vec![only_head_in_shop(&fixture)]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
 
     let first = ask(&mut owner, &at_head, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &first));
+    assert_found(answer_of(&mut owner, &first));
     let second = ask(&mut owner, &at_head, Ticket(2));
-    let _found = hits(answer_of(&mut owner, &second));
+    assert_found(answer_of(&mut owner, &second));
 
     let server = ServerName::Ty;
     let starting = Waiting::Starting { server };
@@ -696,8 +744,9 @@ fn a_lookup_says_ty_starts_then_that_it_asks_and_a_running_ty_is_only_asked() {
 
 #[test]
 fn a_lookup_asked_again_while_ty_starts_asks_ty_nothing() {
-    let fixture = cpython("definitions-again-starting");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let fixture = cpython_pr("definitions-again-starting");
+    let (ty, _ty_folder) = ty_program("definitions-again-starting-ty", vec![json!([])]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     // The newer lookup waits in the thread's messages while ty starts.
     let (reply, _answer) = mpsc::channel();
@@ -721,8 +770,9 @@ fn a_lookup_asked_again_while_ty_starts_asks_ty_nothing() {
 
 #[test]
 fn a_lookup_cancelled_while_ty_starts_asks_ty_nothing() {
-    let fixture = cpython("definitions-cancel-starting");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let fixture = cpython_pr("definitions-cancel-starting");
+    let (ty, _ty_folder) = ty_program("definitions-cancel-starting-ty", vec![json!([])]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "eggs");
     // The cancels wait in the thread's messages while ty starts: one for an older lookup, and one for this.
     owner.own.send(Message::Cancel(Ticket(1))).unwrap();
@@ -742,15 +792,17 @@ fn a_lookup_cancelled_while_ty_starts_asks_ty_nothing() {
 
 #[test]
 fn a_cancel_for_an_older_lookup_while_ty_starts_leaves_the_new_one_be() {
-    let fixture = cpython("definitions-cancel-older");
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let fixture = cpython_pr("definitions-cancel-older");
+    let eggs = location(&fixture, "Lib/spam.py", (0, 4));
+    let (ty, _ty_folder) = ty_program("definitions-cancel-older-ty", vec![eggs]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let at_base = lookup(&fixture, DiffEnd::Base, 10, "eggs");
     // Nor does a PR that opens meanwhile.
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed: changed(),
     };
-    owner.own.send(Message::Opened(repository(), pr)).unwrap();
+    owner.own.send(Message::Opened(cpython(), pr)).unwrap();
     owner.own.send(Message::Cancel(Ticket(1))).unwrap();
 
     let asked = ask(&mut owner, &at_base, Ticket(2));
@@ -761,14 +813,16 @@ fn a_cancel_for_an_older_lookup_while_ty_starts_leaves_the_new_one_be() {
 
 #[test]
 fn a_ty_that_ends_before_it_answers_fails_its_lookup_and_the_next_one_starts_it_again() {
-    let fixture = cpython("definitions-stopped");
-    let mut owner = opened(&fixture);
+    let fixture = cpython_pr("definitions-stopped");
+    // The fake runs on after the client says it ended, as the core then hears no exit.
+    let (ty, _ty_folder) = ty_program("definitions-stopped-ty", vec![only_head_in_shop(&fixture)]);
+    let mut owner = opened_with(&fixture, (ServerName::Ty, ty), changed());
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
     let asked = ask(&mut owner, &at_head, Ticket(1));
     let id = owner.running.as_ref().unwrap().id;
     // What the client hands back when ty ends before it answers. ty's own answer then goes nowhere.
-    let _goes_on = owner.handle(Message::Answered(id, Err(RequestError::Exited)));
+    owner.handle(Message::Answered(id, Err(RequestError::Exited)));
     let failed = answer_of(&mut owner, &asked);
     let again = hits(look(&mut owner, &at_head));
 
@@ -779,7 +833,7 @@ fn a_ty_that_ends_before_it_answers_fails_its_lookup_and_the_next_one_starts_it_
 
 #[test]
 fn a_ty_that_doesnt_start_says_why() {
-    let fixture = cpython("definitions-no-start");
+    let fixture = cpython_pr("definitions-no-start");
     let missing = fixture.checkout.folder.join("no-ty.exe");
     let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(missing)));
 
@@ -809,7 +863,7 @@ fn git_program(folder: &Path) -> PathBuf {
 
 #[test]
 fn a_program_that_isnt_a_language_server_stops_and_says_how() {
-    let fixture = cpython("definitions-not-a-server");
+    let fixture = cpython_pr("definitions-not-a-server");
     // git ends at once on `git server`, before it answers `initialize`.
     let git = git_program(&fixture.checkout.folder);
     let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(git)));
@@ -836,12 +890,11 @@ fn a_rust_analyzer_outside_a_toolchain_didnt_start_and_says_why() {
     // Its folder's parent holds no `lib/rustlib`, as rustup's proxy in `~/.cargo/bin` doesn't.
     let program = fixture.checkout.folder.join("rust-analyzer.exe");
     let checkout = fixture.checkout.clone();
-    let mut owner = owner_of(Sources {
-        servers: Box::new(move |server| {
-            (server == ServerName::RustAnalyzer).then(|| program.clone())
-        }),
-        ..sources(Some(checkout), None)
-    });
+    let mut owner = owner_of(sources_for(
+        Some(checkout),
+        ServerName::RustAnalyzer,
+        Some(program),
+    ));
 
     let found = look(&mut owner, &rust_lookup(&fixture, 10, "only_head"));
 
@@ -862,7 +915,7 @@ fn not_ready(fixture: &Fixture, initialize: Initialize) -> Option<NotReady> {
     let (_fake, client) = FakeClangd::starting(vec![json!(null)], initialize);
     let mut setup = clangd::setup(&fixture.checkout.folder, Path::new("clangd")).unwrap();
     setup.ready = Ready::Quiescent;
-    let key = (repository(), ServerName::Clangd);
+    let key = (cpython(), ServerName::Clangd);
     let none: [String; 0] = [];
     let checkout = (fixture.checkout.clone(), none.as_slice());
     LanguageServer::initialize((setup, client), checkout, news(&owner.own, &key)).err()
@@ -927,8 +980,9 @@ fn diff_file(path: &str) -> DiffFile {
 #[cfg(windows)]
 #[test]
 fn a_lookup_at_a_path_that_isn_t_a_file_of_the_checkout_fails_and_ty_goes_on() {
-    let fixture = cpython("definitions-odd-path");
-    let mut owner = opened(&fixture);
+    let fixture = cpython_pr("definitions-odd-path");
+    let only_head = location(&fixture, SHOP, (4, 4));
+    let (mut owner, _fake) = fake_ty(&fixture, vec![only_head]);
     let odd = Lookup {
         path: "D:odd.py".to_owned(),
         ..lookup(&fixture, DiffEnd::Head, 12, "eggs")
@@ -981,18 +1035,16 @@ fn the_files_a_server_reads_are_python_rust_and_c_files() {
 
 #[test]
 fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
-    let fixture = cpython("definitions-handle");
-    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let fixture = cpython_pr("definitions-handle");
+    let (ty, _ty_folder) = ty_program("definitions-handle-ty", vec![only_head_in_shop(&fixture)]);
+    let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(ty)));
     let files = [SHOP, "Lib/added.py", "README.rst"].map(diff_file);
     let at = fixture.checkout.at.clone();
     let at_head = lookup(&fixture, DiffEnd::Head, 12, "only_head");
 
-    definitions.opened(repository(), at.clone(), &files);
-    definitions.opened(repository(), at, &[diff_file("c.c")]);
-    let (heard, waited) = mpsc::channel();
-    let hears = Box::new(move |waiting| {
-        let _unheard = heard.send(waiting);
-    });
+    definitions.opened(cpython(), at.clone(), &files);
+    definitions.opened(cpython(), at, &[diff_file("c.c")]);
+    let (hears, waited) = heard();
     let found = hits(definitions.look_up(at_head.clone(), Ticket(1), (hears, unheard())));
     // The lookup has answered, so nothing is cancelled.
     definitions.cancel(Ticket(1));
@@ -1015,12 +1067,12 @@ fn the_handle_starts_ty_for_a_python_pr_and_looks_up_on_its_thread() {
 
 #[test]
 fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
-    let fixture = cpython("definitions-handle-no-start");
+    let fixture = cpython_pr("definitions-handle-no-start");
     let missing = fixture.checkout.folder.join("no-ty.exe");
     let definitions = Definitions::start(sources(Some(fixture.checkout.clone()), Some(missing)));
     let at = fixture.checkout.at.clone();
 
-    definitions.opened(repository(), at, &[diff_file(SHOP)]);
+    definitions.opened(cpython(), at, &[diff_file(SHOP)]);
     let found = definitions.look_up(
         lookup(&fixture, DiffEnd::Head, 12, "eggs"),
         Ticket(1),
@@ -1043,7 +1095,7 @@ fn a_pr_whose_ty_doesnt_start_is_logged_and_its_lookup_says_why() {
 
 #[test]
 fn the_thread_stops_once_the_last_handle_is_gone() {
-    let fixture = cpython("definitions-dropped");
+    let fixture = cpython_pr("definitions-dropped");
     // The thread holds the sources, so this channel closes once it has ended.
     let (alive, ended) = mpsc::channel::<()>();
     let definitions = Definitions::start(Sources {
@@ -1165,38 +1217,14 @@ pub fn shout(_: TokenStream) -> TokenStream {
 
 /// The servers' thread, run here, with rust-analyzer set up and the fixture's PR opened.
 fn rust_opened(fixture: &Fixture) -> Owner {
-    let checkout = fixture.checkout.clone();
-    let program = super::testing::rust_analyzer();
-    let mut owner = owner_of(Sources {
-        checkout: Box::new(move |_| Some(checkout.clone())),
-        servers: Box::new(move |server| {
-            (server == ServerName::RustAnalyzer).then(|| program.clone())
-        }),
-        idle: idle_after(Duration::from_secs(3600)),
-        changed: Box::new(|_| {}),
-    });
-    let pr = Pr {
-        at: fixture.checkout.at.clone(),
-        changed: vec![SHOP_RS.to_owned()],
-    };
-    owner.opened(&repository(), pr);
-    owner
+    let rust_analyzer = (ServerName::RustAnalyzer, super::testing::rust_analyzer());
+    opened_with(fixture, rust_analyzer, vec![SHOP_RS.to_owned()])
 }
 
 /// A lookup of `word` on line `line` of `src/lib.rs` at the head.
 fn rust_lookup(fixture: &Fixture, line: u32, word: &str) -> Lookup {
-    let found = (SHOP_RS_AT_HEAD.lines())
-        .nth(usize::try_from(line - 1).unwrap())
-        .unwrap();
-    let byte = found.find(word).unwrap();
-    Lookup {
-        repository: repository(),
-        at: fixture.checkout.at.clone(),
-        path: SHOP_RS.to_owned(),
-        side: DiffEnd::Head,
-        line,
-        column: tsugiki_lsp::utf16::column_of(found, byte),
-    }
+    let at = (SHOP_RS, DiffEnd::Head);
+    lookup_in(fixture, at, (line, word), SHOP_RS_AT_HEAD)
 }
 
 #[test]
@@ -1242,7 +1270,20 @@ fn rust_analyzer_finds_a_local_a_method_a_function_elsewhere_or_at_the_head_and_
 fn a_pr_at_other_commits_stops_its_rust_analyzer_and_cancels_the_lookup_on_it() {
     let fixture = crate_with_a_build_script("definitions-rust-moved");
     let moved = another("definitions-rust-moved-on");
-    let mut owner = rust_opened(&fixture);
+    let program = super::testing::rust_analyzer();
+    let sources = sources_for(
+        Some(fixture.checkout.clone()),
+        ServerName::RustAnalyzer,
+        Some(program.clone()),
+    );
+    let mut setup = rust_analyzer::setup(&program).unwrap();
+    // The fake never says it is quiescent: a real rust-analyzer takes seconds to load the workspace, as
+    // `rust_analyzer_finds_a_local_…` waits for.
+    setup.ready = Ready::Initialized;
+    let playing = (ServerName::RustAnalyzer, setup, vec![SHOP_RS.to_owned()]);
+    // Its answer never comes, so the lookup is under way when the PR moves.
+    let silent = vec![json!({"silent": true})];
+    let (mut owner, _fake) = fake_server(&fixture, sources, playing, (silent, &|_| {}));
     let asked = ask(&mut owner, &rust_lookup(&fixture, 10, "left"), Ticket(1));
     let started = owner.servers.len();
 
@@ -1250,7 +1291,7 @@ fn a_pr_at_other_commits_stops_its_rust_analyzer_and_cancels_the_lookup_on_it() 
         at: moved.checkout.at.clone(),
         changed: Vec::new(),
     };
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr);
 
     assert_eq!(started, 1);
     assert!(owner.servers.is_empty());
@@ -1325,20 +1366,8 @@ fn c_files(name: &str) -> Fixture {
 
 /// The servers' thread, run here, with clangd set up and the fixture's PR opened.
 fn c_opened(fixture: &Fixture) -> Owner {
-    let checkout = fixture.checkout.clone();
-    let program = super::testing::clangd();
-    let mut owner = owner_of(Sources {
-        checkout: Box::new(move |_| Some(checkout.clone())),
-        servers: Box::new(move |server| (server == ServerName::Clangd).then(|| program.clone())),
-        idle: idle_after(Duration::from_secs(3600)),
-        changed: Box::new(|_| {}),
-    });
-    let pr = Pr {
-        at: fixture.checkout.at.clone(),
-        changed: vec![EGGS_C.to_owned()],
-    };
-    owner.opened(&repository(), pr);
-    owner
+    let clangd = (ServerName::Clangd, super::testing::clangd());
+    opened_with(fixture, clangd, vec![EGGS_C.to_owned()])
 }
 
 /// A lookup of `word` on line `line` of `Objects/eggs.c` at `side`.
@@ -1362,7 +1391,7 @@ fn lookup_in(
         .unwrap();
     let byte = found.find(word).unwrap();
     Lookup {
-        repository: repository(),
+        repository: cpython(),
         at: fixture.checkout.at.clone(),
         path: path.to_owned(),
         side,
@@ -1434,12 +1463,16 @@ fn after_its_index_clangd_finds_a_function_defined_in_another_file() {
         "int spam_count(int limit)",
     );
 
-    let until = Instant::now() + PATIENCE;
-    let mut found = hits(look(&mut owner, &lookup));
-    while found != [defined.clone()] && Instant::now() < until {
-        thread::sleep(Duration::from_millis(100));
+    let mut found = Vec::new();
+    // Each try asks clangd while it indexes, so a miss waits a little longer than `wait_until` would.
+    wait_until(PATIENCE, || {
         found = hits(look(&mut owner, &lookup));
-    }
+        let landed = found == [defined.clone()];
+        if !landed {
+            thread::sleep(Duration::from_millis(80));
+        }
+        landed
+    });
 
     assert_eq!(found, [defined]);
     // clangd keeps its index beside its compile database, outside the checkout.
@@ -1501,35 +1534,60 @@ fn fake_clangd_within(
     fixture: &Fixture,
     sources: Sources,
     (answers, index_within): (Vec<serde_json::Value>, Duration),
-    before: &dyn Fn(&FakeClangd),
+    before: Before<'_>,
+) -> (Owner, FakeClangd) {
+    let program = (sources.servers)(ServerName::Clangd).unwrap();
+    let mut setup = clangd::setup(&fixture.checkout.folder, &program).unwrap();
+    setup.troubles.as_mut().unwrap().index_within = index_within;
+    let playing = (ServerName::Clangd, setup, vec![EGGS_C.to_owned()]);
+    fake_server(fixture, sources, playing, (answers, before))
+}
+
+/// Has a [`FakeClangd`] say what it says before it answers `initialize`.
+type Before<'a> = &'a dyn Fn(&FakeClangd);
+
+/// The servers' thread, run here, with the fixture's PR, which changes the files `changed` names, opened and
+/// a [`FakeClangd`] playing `server` with `setup` on its checkout. The fake gives `answers` as
+/// [`FakeClangd::start`] says, and `before` has it say what it says before it answers `initialize`. For a
+/// test of what the owner does with a server, which a real one would only slow down: the real ty and
+/// rust-analyzer each have tests of their own. As clangd does, the fake refuses a lookup in a document it
+/// wasn't sent, so a test of another server looks up a file the PR changes. The owner is as `opened` leaves
+/// it, without the call: [`Owner::opened`] would start the real server.
+fn fake_server(
+    fixture: &Fixture,
+    sources: Sources,
+    (server, setup, changed): (ServerName, Setup, Vec<String>),
+    (answers, before): (Vec<serde_json::Value>, Before<'_>),
 ) -> (Owner, FakeClangd) {
     let mut owner = owner_of(sources);
     let (fake, client) = FakeClangd::start(answers);
     // What the fake says now comes before its answer to `initialize`.
     before(&fake);
-    let key = (repository(), ServerName::Clangd);
-    let program = (owner.sources.servers)(ServerName::Clangd).unwrap();
-    let mut setup = clangd::setup(&fixture.checkout.folder, &program).unwrap();
-    setup.troubles = Some(clangd::Troubles {
-        program,
-        index_within,
-    });
-    let changed = [EGGS_C.to_owned()];
+    let key = (cpython(), server);
     let server = LanguageServer::initialize(
         (setup, client),
         (fixture.checkout.clone(), &changed),
         news(&owner.own, &key),
     )
     .unwrap();
-    let _none = owner.servers.insert(key, server);
+    owner.servers.extend([(key, server)]);
     let pr = Pr {
         at: fixture.checkout.at.clone(),
-        changed: changed.to_vec(),
+        changed,
     };
-    let _none = owner.prs.insert(repository(), pr);
+    owner.prs.extend([(cpython(), pr)]);
     // The rows show the Repository whose PR is open, as the window opened it.
-    owner.shown = Some(repository());
+    owner.shown = Some(cpython());
     (owner, fake)
+}
+
+/// The owner of [`opened`], with a [`FakeClangd`] in ty's place that gives `answers` as
+/// [`FakeClangd::start`] says, put there as [`fake_server`] says.
+fn fake_ty(fixture: &Fixture, answers: Vec<serde_json::Value>) -> (Owner, FakeClangd) {
+    let sources = sources_for(Some(fixture.checkout.clone()), ServerName::Ty, Some(ty()));
+    let setup = ty::setup(&fixture.checkout.folder);
+    let playing = (ServerName::Ty, setup, changed());
+    fake_server(fixture, sources, playing, (answers, &|_| {}))
 }
 
 /// [`with_fake_clangd`] with sources that hold the fixture's checkout, and answers about `spam_count`.
@@ -1580,7 +1638,7 @@ fn index_moved_on(owner: &mut Owner, count: usize) {
             Message::Indexing(_) | Message::Exited(..)
         ));
         moved += usize::from(matches!(message, Message::Indexing(_)));
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
     }
 }
 
@@ -1591,7 +1649,7 @@ fn heard_next(owner: &mut Owner, asked: &Asked) -> Index {
             return index;
         }
         let message = owner.next().unwrap();
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
     }
 }
 
@@ -1696,12 +1754,12 @@ fn a_lookup_in_a_seventeenth_file_the_pr_doesnt_change_closes_the_one_asked_abou
     let in_file = |path: &str| lookup_in(&fixture, (path, DiffEnd::Head), (1, "spam_count"), text);
 
     for path in &paths[..16] {
-        let _found = hits(look(&mut owner, &in_file(path)));
+        assert_found(look(&mut owner, &in_file(path)));
     }
     // Asked about again, the first file counts as the latest, so the second has waited longest.
-    let _found = hits(look(&mut owner, &in_file(&paths[0])));
+    assert_found(look(&mut owner, &in_file(&paths[0])));
     let before = fake.documents().len();
-    let _found = hits(look(&mut owner, &in_file(&paths[16])));
+    assert_found(look(&mut owner, &in_file(&paths[16])));
 
     let sent = fake.documents();
     assert_eq!(before, 17);
@@ -1751,7 +1809,7 @@ fn a_clangd_started_with_no_file_open_waits_for_its_index_from_the_first_file_a_
     thread::sleep(soon * 2);
     let before: Vec<Message> = owner.incoming.try_iter().collect();
     // Not waiting for the answer, so the problem can't come while the owner waits for it.
-    let _asked = ask(&mut owner, &lookup, Ticket(1));
+    ask_unheard(&mut owner, &lookup, Ticket(1));
     let status = troubled_next(&mut owner);
 
     assert!(
@@ -1773,7 +1831,10 @@ fn a_system_header_clangd_can_t_find_in_a_file_a_lookup_opened_says_so() {
     let text = "#include <corecrt_spam.h>\n";
     let lookup = lookup_in(&fixture, (wrap, DiffEnd::Head), (1, "corecrt_spam"), text);
 
-    let _answer = look(&mut owner, &lookup);
+    assert_eq!(
+        look(&mut owner, &lookup),
+        Ok(Answer::Found { hits: Vec::new() })
+    );
     let file = plain(&fixture.checkout.folder).join(wrap);
     fake.diagnose(&file, (0, "'corecrt_spam.h' file not found"));
     let status = troubled_next(&mut owner);
@@ -1792,8 +1853,8 @@ fn a_lookup_cancelled_after_it_answered_hears_nothing_more_and_isn_t_asked_again
     index_moved_on(&mut owner, 1);
 
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
-    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    assert_found(answer_of(&mut owner, &asked));
+    owner.handle(Message::Cancel(Ticket(1)));
     fake.progress(json!({"kind": "report", "message": "300/452", "percentage": 66}));
     fake.progress(json!({"kind": "end"}));
     index_moved_on(&mut owner, 2);
@@ -1811,12 +1872,12 @@ fn a_lookup_cancelled_while_clangd_is_asked_again_hears_that_the_index_brings_no
     fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
     index_moved_on(&mut owner, 1);
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
+    assert_found(answer_of(&mut owner, &asked));
     fake.progress(json!({"kind": "end"}));
     index_moved_on(&mut owner, 1);
     let asking_again = owner.running.is_some();
 
-    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    owner.handle(Message::Cancel(Ticket(1)));
 
     assert!(asking_again);
     assert!(owner.running.is_none());
@@ -1831,14 +1892,11 @@ fn an_index_built_after_clangd_was_asked_and_before_it_answered_asks_it_again_at
     let lookup = c_lookup(&fixture, DiffEnd::Head, 11, "spam_count");
     fake.progress(json!({"kind": "report", "message": "451/452", "percentage": 99}));
     index_moved_on(&mut owner, 1);
-    let key = (repository(), ServerName::Clangd);
+    let key = (cpython(), ServerName::Clangd);
 
     let asked = ask(&mut owner, &lookup, Ticket(1));
     fake.progress(json!({"kind": "end"}));
-    let until = Instant::now() + PATIENCE;
-    while owner.indexing_of(&key) != Indexing::Built && Instant::now() < until {
-        thread::sleep(Duration::from_millis(10));
-    }
+    wait_until(PATIENCE, || owner.indexing_of(&key) == Indexing::Built);
     let found = hits(answer_of(&mut owner, &asked));
     let built = heard_next(&mut owner, &asked);
 
@@ -1880,16 +1938,16 @@ fn a_removed_repository_or_a_crash_tells_the_lookup_that_clangd_stopped() {
     fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
     index_moved_on(&mut owner, 1);
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
+    assert_found(answer_of(&mut owner, &asked));
     let crashing = c_files("definitions-indexing-crash");
     let (mut other, crashes) = fake_clangd(&crashing);
     crashes.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
     index_moved_on(&mut other, 1);
     let lookup = c_lookup(&crashing, DiffEnd::Head, 11, "spam_count");
     let crashed = ask(&mut other, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut other, &crashed));
+    assert_found(answer_of(&mut other, &crashed));
 
-    owner.remove(&repository());
+    owner.remove(&cpython());
     crashes.crash(3, "clangd: out of memory\n");
     index_moved_on(&mut other, 1);
 
@@ -1941,17 +1999,17 @@ fn handle_first(owner: &mut Owner, first: fn(&Message) -> bool) {
     loop {
         let message = owner.next().unwrap();
         if first(&message) {
-            let _goes_on = owner.handle(message);
+            owner.handle(message);
             break;
         }
         if is_answered(&message) || is_exited(&message) {
             held.push(message);
         } else {
-            let _goes_on = owner.handle(message);
+            owner.handle(message);
         }
     }
     for message in held {
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
     }
 }
 
@@ -2006,24 +2064,26 @@ fn a_pr_at_other_commits_tells_the_lookup_that_its_clangd_stopped() {
     fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
     index_moved_on(&mut owner, 1);
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
+    assert_found(answer_of(&mut owner, &asked));
     let moved = Fixture::new(
         "definitions-indexing-moved-on",
         &[("a.c", "")],
         &[("a.c", Some("int a;\n"))],
     );
     checkout.lock().unwrap().clone_from(&moved.checkout);
+    // The clangd the owner starts in the moved checkout can't, so no real one runs, and the owner stops the
+    // old one all the same. The owner read each path once, as it started.
+    let missing = Some(fixture.checkout.folder.join("no-clangd.exe"));
+    owner.known.extend([(ServerName::Clangd, missing)]);
 
     let pr = Pr {
         at: moved.checkout.at.clone(),
         changed: vec!["a.c".to_owned()],
     };
-    owner.opened(&repository(), pr);
+    owner.opened(&cpython(), pr);
 
     let heard: Vec<Index> = asked.indexed.try_iter().collect();
     assert_eq!(heard, [uncounted(), Index::Stopped]);
-    // The real clangd started in the moved checkout, so that folder goes once the owner has stopped it.
-    drop(owner);
 }
 
 #[test]
@@ -2034,7 +2094,7 @@ fn a_count_clangd_reports_within_a_second_of_the_last_comes_once_the_second_has_
     begin(&fake, 120);
     index_moved_on(&mut owner, 2);
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
+    assert_found(answer_of(&mut owner, &asked));
     let with_answer: Vec<Index> = asked.indexed.try_iter().collect();
 
     let reported = Instant::now();
@@ -2057,13 +2117,13 @@ fn a_clangd_whose_index_a_lookup_watches_isn_t_idle() {
     fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
     index_moved_on(&mut owner, 1);
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
-    let (idle, key) = (Duration::from_secs(1), (repository(), ServerName::Clangd));
+    assert_found(answer_of(&mut owner, &asked));
+    let (idle, key) = (Duration::from_secs(1), (cpython(), ServerName::Clangd));
 
     owner.stop_idle(Instant::now() + idle * 10, idle);
     let watched = owner.servers.contains_key(&key);
     let until_idle = owner.until_idle(Instant::now(), idle);
-    let _goes_on = owner.handle(Message::Cancel(Ticket(1)));
+    owner.handle(Message::Cancel(Ticket(1)));
     owner.stop_idle(Instant::now() + idle * 10, idle);
 
     assert!(watched);
@@ -2093,7 +2153,7 @@ fn a_lookup_clangd_fails_once_asked_again_hears_that_it_stopped_and_clangd_keeps
     assert_eq!(with_answer, uncounted());
     assert_eq!(again, Index::Stopped);
     assert_eq!(fake.asked(), 2);
-    let key = (repository(), ServerName::Clangd);
+    let key = (cpython(), ServerName::Clangd);
     assert_eq!(owner.indexing_of(&key), Indexing::Built);
 }
 
@@ -2105,10 +2165,10 @@ fn an_early_cancel_outlasts_the_cancels_after_it_and_its_late_lookup_leaves_the_
     fake.progress(json!({"kind": "begin", "title": "indexing", "percentage": 0}));
     index_moved_on(&mut owner, 1);
     // The window cancels lookup 5 before the core takes it, then closes the peek of an older one.
-    let _goes_on = owner.handle(Message::Cancel(Ticket(5)));
-    let _goes_on = owner.handle(Message::Cancel(Ticket(4)));
+    owner.handle(Message::Cancel(Ticket(5)));
+    owner.handle(Message::Cancel(Ticket(4)));
     let asked = ask(&mut owner, &lookup, Ticket(1));
-    let _found = hits(answer_of(&mut owner, &asked));
+    assert_found(answer_of(&mut owner, &asked));
 
     let late = ask(&mut owner, &lookup, Ticket(5));
     let late_answer = late.answer.try_recv().unwrap();
@@ -2140,9 +2200,7 @@ fn settable(
                 .flatten()
         }),
         idle: Box::new(move || *idle.lock().unwrap()),
-        changed: Box::new(move |changed| {
-            let _unheard = rows.send(changed.to_vec());
-        }),
+        changed: Box::new(move |changed| pass_on(&rows, changed.to_vec())),
     }
 }
 
@@ -2158,11 +2216,11 @@ fn ty_row(rows: &[ServerRow]) -> ServerRow {
 /// said, such as the news of a ty that stopped.
 fn set_ty(owner: &mut Owner, ty: &Mutex<Option<PathBuf>>, path: PathBuf) -> ServerRow {
     *ty.lock().unwrap() = Some(path);
-    let _goes_on = owner.handle(Message::Reconfigured);
+    owner.handle(Message::Reconfigured);
     loop {
         let message = owner.incoming.recv_timeout(PATIENCE).unwrap();
         let checked = matches!(message, Message::Checked(..));
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
         if checked {
             return ty_row(&owner.told);
         }
@@ -2171,19 +2229,20 @@ fn set_ty(owner: &mut Owner, ty: &Mutex<Option<PathBuf>>, path: PathBuf) -> Serv
 
 #[test]
 fn a_path_set_in_settings_is_checked_with_version_and_stops_the_server_it_replaces() {
-    let fixture = cpython("definitions-check");
+    let fixture = cpython_pr("definitions-check");
     let ty = Arc::new(Mutex::new(None));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, heard) = mpsc::channel();
     let mut owner = owner_of(settable(&fixture, (&ty, &idle), rows));
     let first = heard.try_recv().unwrap();
+    let (fake, _fake_folder) = ty_program("definitions-check-ty", vec![json!([])]);
 
-    let found = set_ty(&mut owner, &ty, super::testing::ty());
+    let found = set_ty(&mut owner, &ty, fake);
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed: changed(),
     };
-    let _goes_on = owner.handle(Message::Opened(repository(), pr));
+    owner.handle(Message::Opened(cpython(), pr));
     let running = ty_row(&owner.told);
     let not_ty = set_ty(&mut owner, &ty, git_program(&fixture.checkout.folder));
     let stopped = owner.servers.is_empty();
@@ -2215,7 +2274,7 @@ fn a_path_set_in_settings_is_checked_with_version_and_stops_the_server_it_replac
 
 #[test]
 fn a_path_that_doesnt_start_says_why_and_a_cleared_path_is_not_set_up() {
-    let fixture = cpython("definitions-check-missing");
+    let fixture = cpython_pr("definitions-check-missing");
     let ty = Arc::new(Mutex::new(None));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, _heard) = mpsc::channel();
@@ -2223,7 +2282,7 @@ fn a_path_that_doesnt_start_says_why_and_a_cleared_path_is_not_set_up() {
 
     let missing = set_ty(&mut owner, &ty, fixture.checkout.folder.join("no-ty.exe"));
     *ty.lock().unwrap() = None;
-    let _goes_on = owner.handle(Message::Reconfigured);
+    owner.handle(Message::Reconfigured);
     let cleared = ty_row(&owner.told);
 
     assert!(matches!(
@@ -2237,7 +2296,7 @@ fn a_path_that_doesnt_start_says_why_and_a_cleared_path_is_not_set_up() {
 
 #[test]
 fn a_check_answered_after_the_path_changed_again_is_dropped() {
-    let fixture = cpython("definitions-check-late");
+    let fixture = cpython_pr("definitions-check-late");
     let ty = Arc::new(Mutex::new(None));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, _heard) = mpsc::channel();
@@ -2251,22 +2310,22 @@ fn a_check_answered_after_the_path_changed_again_is_dropped() {
             flaw: None,
         }),
     );
-    let _goes_on = owner.handle(late);
+    owner.handle(late);
     let nothing = Found {
         version: None,
         flaw: None,
     };
     let silent = Message::Checked(ServerName::Ty, PathBuf::new(), Ok(nothing));
     *ty.lock().unwrap() = Some(PathBuf::new());
-    let _goes_on = owner.handle(Message::Reconfigured);
-    let _goes_on = owner.handle(silent);
+    owner.handle(Message::Reconfigured);
+    owner.handle(silent);
 
     assert_eq!(ty_row(&owner.told).version, None);
 }
 
 #[test]
 fn a_path_changed_in_the_settings_counts_once_the_thread_hears_of_the_change() {
-    let fixture = cpython("definitions-unheard");
+    let fixture = cpython_pr("definitions-unheard");
     let ty = Arc::new(Mutex::new(None));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, _heard) = mpsc::channel();
@@ -2278,7 +2337,7 @@ fn a_path_changed_in_the_settings_counts_once_the_thread_hears_of_the_change() {
         &lookup(&fixture, DiffEnd::Head, 12, "only_head"),
     );
     let row = ty_row(&owner.told);
-    let _goes_on = owner.handle(Message::Reconfigured);
+    owner.handle(Message::Reconfigured);
     let heard = ty_row(&owner.told);
 
     assert!(
@@ -2296,7 +2355,7 @@ fn a_path_changed_in_the_settings_counts_once_the_thread_hears_of_the_change() {
 
 #[test]
 fn a_new_path_forgets_the_problem_the_old_program_had() {
-    let fixture = cpython("definitions-new-path");
+    let fixture = cpython_pr("definitions-new-path");
     let ty = Arc::new(Mutex::new(Some(fixture.checkout.folder.join("no-ty.exe"))));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, _heard) = mpsc::channel();
@@ -2308,7 +2367,7 @@ fn a_new_path_forgets_the_problem_the_old_program_had() {
     );
     let troubled = ty_row(&owner.told);
     *ty.lock().unwrap() = Some(fixture.checkout.folder.join("other-ty.exe"));
-    let _goes_on = owner.handle(Message::Reconfigured);
+    owner.handle(Message::Reconfigured);
     let renewed = ty_row(&owner.told);
 
     assert!(matches!(failed, Ok(Answer::Problem { .. })), "{failed:?}");
@@ -2319,9 +2378,10 @@ fn a_new_path_forgets_the_problem_the_old_program_had() {
 
 #[test]
 fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
-    let fixture = cpython("definitions-rows-shown");
+    let fixture = cpython_pr("definitions-rows-shown");
     let other = RepositoryName::parse("tsugiki/tsugiki").unwrap();
-    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty())));
+    let (ty, _ty_folder) = ty_program("definitions-rows-shown-ty", vec![json!([])]);
+    let mut owner = owner_of(sources(Some(fixture.checkout.clone()), Some(ty)));
     let pr = Pr {
         at: fixture.checkout.at.clone(),
         changed: changed(),
@@ -2331,21 +2391,21 @@ fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
         stderr_tail: "ty broke\n".to_owned(),
     };
     // python/cpython's ty ended on its own, and nothing has started it again.
-    owner.trouble(&ty_of(repository()), crashed.clone());
+    owner.trouble(&ty_of(cpython()), crashed.clone());
     let idle = Duration::from_secs(1);
     let readme = Lookup {
         path: "README.rst".to_owned(),
         ..lookup(&fixture, DiffEnd::Head, 12, "only_head")
     };
 
-    let _goes_on = owner.handle(Message::Opened(other.clone(), pr));
+    owner.handle(Message::Opened(other.clone(), pr));
     let running = ty_row(&owner.told);
     owner.stop_idle(Instant::now() + idle * 10, idle);
     owner.publish();
     let stopped = ty_row(&owner.told);
     let no_server = look(&mut owner, &readme);
     let back = ty_row(&owner.told);
-    owner.remove(&repository());
+    owner.remove(&cpython());
     owner.publish();
     let removed = ty_row(&owner.told);
 
@@ -2358,24 +2418,25 @@ fn the_rows_show_the_servers_of_the_repository_last_opened_or_looked_up_in() {
 
 #[test]
 fn a_shorter_idle_time_applies_at_the_next_idle_check_which_a_change_of_settings_brings_on() {
-    let fixture = cpython("definitions-idle-changed");
-    let ty = Arc::new(Mutex::new(Some(super::testing::ty())));
+    let fixture = cpython_pr("definitions-idle-changed");
+    let (fake, _fake_folder) = ty_program("definitions-idle-changed-ty", vec![json!([])]);
+    let ty = Arc::new(Mutex::new(Some(fake)));
     let idle = Arc::new(Mutex::new(Duration::from_secs(3600)));
     let (rows, heard) = mpsc::channel();
     let definitions = Definitions::start(settable(&fixture, (&ty, &idle), rows));
-    let status = |wanted: ServerStatus| loop {
-        let rows = heard.recv_timeout(PATIENCE).unwrap();
-        if ty_row(&rows).status == wanted {
-            return rows;
-        }
-    };
+    let status = || ty_row(&heard.recv_timeout(PATIENCE).unwrap()).status;
 
     let at = fixture.checkout.at.clone();
-    definitions.opened(repository(), at, &[diff_file(SHOP)]);
-    let _running = status(ServerStatus::Running);
+    definitions.opened(cpython(), at, &[diff_file(SHOP)]);
+    while status() != ServerStatus::Running {}
     *idle.lock().unwrap() = Duration::ZERO;
     definitions.reconfigured();
-    let stopped = status(ServerStatus::Idle);
+    let stopped = loop {
+        let rows = heard.recv_timeout(PATIENCE).unwrap();
+        if ty_row(&rows).status == ServerStatus::Idle {
+            break rows;
+        }
+    };
     let read = definitions.rows();
     definitions.stop(Duration::from_secs(10));
 
@@ -2384,14 +2445,15 @@ fn a_shorter_idle_time_applies_at_the_next_idle_check_which_a_change_of_settings
 
 #[test]
 fn each_start_writes_the_server_s_log_beside_the_checkout_and_keeps_the_last_one() {
-    let fixture = cpython("definitions-log");
-    let mut owner = opened(&fixture);
+    let fixture = cpython_pr("definitions-log");
+    let (ty, _ty_folder) = ty_program("definitions-log-ty", vec![only_head_in_shop(&fixture)]);
+    let mut owner = opened_with(&fixture, (ServerName::Ty, ty), changed());
     let log = server_log(&fixture.checkout.folder, ServerName::Ty);
-    let first = owner.servers.remove(&ty_of(repository())).unwrap();
-    first.stop().wait(Instant::now() + PATIENCE);
+    let first = owner.servers.remove(&ty_of(cpython())).unwrap();
+    first.stopping().wait(Instant::now() + PATIENCE);
     std::fs::write(&log, "the first start\n").unwrap();
 
-    let _found = hits(look(
+    assert_found(look(
         &mut owner,
         &lookup(&fixture, DiffEnd::Head, 12, "only_head"),
     ));
@@ -2403,7 +2465,8 @@ fn each_start_writes_the_server_s_log_beside_the_checkout_and_keeps_the_last_one
 }
 
 /// A folder unpacked from clangd's archive, as far as `files` go, and the path of its `bin\clangd.exe`,
-/// which is empty: a fake clangd runs nothing. Then the folder.
+/// which is empty, as a [`FakeClangd`] runs nothing, until [`fake_program`] puts a program there. Then the
+/// folder.
 fn clangd_folder(name: &str, files: &[&str]) -> (PathBuf, crate::testing::TempPath) {
     let root = crate::testing::temp_path(name);
     for path in ["bin/clangd.exe"].iter().chain(files) {
@@ -2447,7 +2510,7 @@ fn clangd_finding_nothing_after(
     fixture: &Fixture,
     program: PathBuf,
     index_within: Duration,
-    before: &dyn Fn(&FakeClangd),
+    before: Before<'_>,
 ) -> (Owner, FakeClangd) {
     let checkout = Arc::new(Mutex::new(fixture.checkout.clone()));
     let sources = clangd_sources(checkout, program);
@@ -2457,12 +2520,18 @@ fn clangd_finding_nothing_after(
 /// Handles the owner's messages up to the first that says clangd runs with a problem, and gives clangd's
 /// status then.
 fn troubled_next(owner: &mut Owner) -> ServerStatus {
+    handle_until_troubled(owner);
+    clangd_status(owner)
+}
+
+/// Handles the owner's messages up to the first that says clangd runs with a problem.
+fn handle_until_troubled(owner: &mut Owner) {
     loop {
         let message = owner.incoming.recv_timeout(PATIENCE).unwrap();
         let troubled = matches!(message, Message::Troubled(..));
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
         if troubled {
-            return clangd_status(owner);
+            return;
         }
     }
 }
@@ -2470,7 +2539,7 @@ fn troubled_next(owner: &mut Owner) -> ServerStatus {
 /// What a lookup in `Objects/eggs.c` answers, which finds nothing.
 fn nothing_found(owner: &mut Owner, fixture: &Fixture) -> Result<Answer, Error> {
     let lookup = Lookup {
-        repository: repository(),
+        repository: cpython(),
         at: fixture.checkout.at.clone(),
         path: EGGS_C.to_owned(),
         side: DiffEnd::Head,
@@ -2540,11 +2609,11 @@ fn clangd_settable(fixture: &Fixture, clangd: &Arc<Mutex<Option<PathBuf>>>) -> S
 /// Sets clangd's path to `path`, as Apply does, and gives clangd's row once its check has answered.
 fn set_clangd(owner: &mut Owner, clangd: &Mutex<Option<PathBuf>>, path: PathBuf) -> ServerRow {
     *clangd.lock().unwrap() = Some(path);
-    let _goes_on = owner.handle(Message::Reconfigured);
+    owner.handle(Message::Reconfigured);
     loop {
         let message = owner.incoming.recv_timeout(PATIENCE).unwrap();
         let checked = matches!(message, Message::Checked(..));
-        let _goes_on = owner.handle(message);
+        owner.handle(message);
         if checked {
             return owner.row(ServerName::Clangd);
         }
@@ -2554,13 +2623,13 @@ fn set_clangd(owner: &mut Owner, clangd: &Mutex<Option<PathBuf>>, path: PathBuf)
 #[test]
 fn apply_of_a_clangd_unpacked_without_its_built_in_headers_says_so_and_shows_its_version() {
     let fixture = c_including("definitions-built-ins-apply", "int eggs;\n");
-    // The real clangd, linked into a folder that has nothing else.
+    // A clangd in a folder that has nothing else, and one unpacked whole. The real clangd's `--version` has a
+    // test in `health`.
+    let version = format!("clangd version {}", ServerName::Clangd.tested()[0]);
     let (lone, _lone_folder) = clangd_folder("definitions-built-ins-apply-lone", &[]);
-    std::fs::remove_file(&lone).unwrap();
-    let clangd = super::testing::clangd();
-    if std::fs::hard_link(&clangd, &lone).is_err() {
-        let _copied = std::fs::copy(&clangd, &lone).unwrap();
-    }
+    fake_program(&lone, &version, vec![json!([])]);
+    let (clangd, _whole_folder) = clangd_folder("definitions-built-ins-apply-whole", &[BUILT_INS]);
+    fake_program(&clangd, &version, vec![json!([])]);
     let path = Arc::new(Mutex::new(None));
     let mut owner = owner_of(clangd_settable(&fixture, &path));
 
@@ -2570,16 +2639,16 @@ fn apply_of_a_clangd_unpacked_without_its_built_in_headers_says_so_and_shows_its
         at: fixture.checkout.at.clone(),
         changed: vec![EGGS_C.to_owned()],
     };
-    let _goes_on = owner.handle(Message::Opened(repository(), pr.clone()));
+    owner.handle(Message::Opened(cpython(), pr.clone()));
     let started_alone = owner.row(ServerName::Clangd).status;
     let whole = set_clangd(&mut owner, &path, clangd);
     // The PR opens again, as the window opens it anew.
-    let _forgotten = owner.prs.remove(&repository());
-    let _goes_on = owner.handle(Message::Opened(repository(), pr));
+    assert!(owner.prs.remove(&cpython()).is_some());
+    owner.handle(Message::Opened(cpython(), pr));
     let started_whole = owner.row(ServerName::Clangd).status;
     owner.cancel_running();
     let all: Vec<Key> = owner.servers.keys().cloned().collect();
-    wait_all(owner.stop_servers(&all), Instant::now() + PATIENCE);
+    owner.stop_servers_until(&all, Instant::now() + PATIENCE);
 
     let problem = ServerProblem::BuiltInHeadersMissing;
     let missing = ServerStatus::Problem { problem };
@@ -2648,7 +2717,7 @@ fn a_clangd_that_never_reports_its_index_says_it_isn_t_indexing() {
     let soon = Duration::from_millis(300);
     // This fake reports its index before it answers `initialize`, so the report comes first however slow
     // the machine.
-    let indexes_at_once: &dyn Fn(&FakeClangd) = &|fake| begin(fake, 1);
+    let indexes_at_once: Before<'_> = &|fake| begin(fake, 1);
     let (mut indexing, _indexing_fake) =
         clangd_finding_nothing_after(&fixture, program.clone(), soon, indexes_at_once);
     let (mut owner, _fake) = clangd_finding_nothing(&fixture, program, soon);
@@ -2699,7 +2768,7 @@ fn nothing_found_again_once_the_index_is_built_leaves_the_problem_that_says_why(
     let (program, _clangd_folder) = clangd_folder("definitions-problem-again-clangd", &[BUILT_INS]);
     let (mut owner, fake) = clangd_finding_nothing(&fixture, program, PATIENCE);
     let lookup = Lookup {
-        repository: repository(),
+        repository: cpython(),
         at: fixture.checkout.at.clone(),
         path: EGGS_C.to_owned(),
         side: DiffEnd::Head,
@@ -2708,7 +2777,7 @@ fn nothing_found_again_once_the_index_is_built_leaves_the_problem_that_says_why(
     };
 
     fake.diagnose(&eggs_c(&fixture), (0, "'stdlib.h' file not found"));
-    let _troubled = troubled_next(&mut owner);
+    handle_until_troubled(&mut owner);
     let asked = ask(&mut owner, &lookup, Ticket(1));
     let answer = answer_of(&mut owner, &asked);
     begin(&fake, 1);
@@ -2735,11 +2804,11 @@ fn what_one_repository_s_clangd_reports_leaves_another_s_be() {
         RepositoryName::parse("tsugiki/tsugiki").unwrap(),
         ServerName::Clangd,
     );
-    let _none = (owner.lasts).insert(other.clone(), Last::Problem(ServerProblem::NotIndexing));
+    (owner.lasts).extend([(other.clone(), Last::Problem(ServerProblem::NotIndexing))]);
 
     let answer = nothing_found(&mut owner, &fixture);
     fake.diagnose(&eggs_c(&fixture), (0, "'stdlib.h' file not found"));
-    let _troubled = troubled_next(&mut owner);
+    handle_until_troubled(&mut owner);
 
     assert_eq!(answer, Ok(Answer::Found { hits: Vec::new() }));
     assert!(matches!(
@@ -2756,8 +2825,8 @@ fn a_problem_of_a_clangd_stopped_since_is_dropped() {
         PathBuf::from("clangd"),
     ));
 
-    let key = (repository(), ServerName::Clangd);
-    let _goes_on = owner.handle(Message::Troubled(key, ServerProblem::NotIndexing));
+    let key = (cpython(), ServerName::Clangd);
+    owner.handle(Message::Troubled(key, ServerProblem::NotIndexing));
 
     assert_eq!(clangd_status(&owner), ServerStatus::Ready);
 }

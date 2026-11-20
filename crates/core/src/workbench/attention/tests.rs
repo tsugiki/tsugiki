@@ -1,34 +1,37 @@
 //! Each rule of Needs attention as a scenario in the glossary's words, read the way the window reads it.
 
-use std::fs;
+mod archive;
+mod mute;
+mod mute_author;
+
+use std::collections::BTreeMap;
 
 use time::{Duration, OffsetDateTime};
 
 use super::Attention;
 use crate::facts::CommitSha;
-use crate::facts::activity::{Activity, ActivityKind, ItemActivity};
+use crate::facts::activity::{Activity, ActivityKind, ItemKey, PutAway};
+use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
-use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{
     CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit,
 };
 use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
+use crate::fetching::Marked;
+use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
-use crate::repository::RepositoryName;
-use crate::repository_settings::RepositorySettings;
+use crate::session::{keep_checks, keep_mark};
 use crate::settings::ListOrder;
-use crate::store::{ChangeCheck, OpenReader, Store, StoreReader, SyncState, reader};
-use crate::testing::TempPath;
+use crate::store::Flagging;
+use crate::store::testing::{World, seeing};
+use crate::testing::{cpython, cpython_settings, hours_ago, issue_facts, me, pr_facts, sha_of};
 use crate::work::{SeenMark, Why, YourReview};
 use crate::workbench::{
     ListedItem, Seen, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
 };
-
-fn me() -> Login {
-    Login::new("octocat")
-}
 
 fn colleague() -> Login {
     Login::new("some-author")
@@ -38,35 +41,13 @@ fn reviewer() -> Login {
     Login::new("some-reviewer")
 }
 
-fn cpython() -> RepositoryName {
-    RepositoryName::parse("python/cpython").unwrap()
-}
-
-fn hours_ago(hours: i64) -> OffsetDateTime {
-    let at = OffsetDateTime::now_utc() - Duration::hours(hours);
-    OffsetDateTime::from_unix_timestamp(at.unix_timestamp()).unwrap()
-}
-
 /// A colleague's open PR that fixes no Issue, and has nothing to do with the user.
 fn pull_request(number: u32) -> PullRequestFacts {
     PullRequestFacts {
-        number,
         title: format!("Fix it {number}"),
-        state: PrState::Open,
-        is_draft: false,
         author: Some(colleague()),
-        target_branch: "main".to_owned(),
-        ci: None,
         updated_at: hours_ago(100),
-        review_requests: vec![],
-        latest_reviews: vec![],
-        assignees: vec![],
-        labels: vec![],
-        closing_issues: vec![],
-        merge_commit: None,
-        base: None,
-        head: None,
-        off_default: None,
+        ..pr_facts(number)
     }
 }
 
@@ -84,6 +65,14 @@ fn reviewed_by_me(number: u32) -> PullRequestFacts {
             state: ReviewState::Commented,
         }],
         ..pull_request(number)
+    }
+}
+
+/// Own PR `number`, its CI still running.
+fn own_ci_pending(number: u32) -> PullRequestFacts {
+    PullRequestFacts {
+        ci: Some(CiState::Pending),
+        ..own(number)
     }
 }
 
@@ -109,13 +98,9 @@ fn fixing_too(pull_request: PullRequestFacts, issue: u32) -> PullRequestFacts {
 
 fn issue(number: u32) -> IssueFacts {
     IssueFacts {
-        number,
-        title: format!("Issue {number}"),
         author: Some(Login::new("issue-author")),
-        assignees: vec![],
-        labels: vec![],
         updated_at: hours_ago(100),
-        state: Some(IssueState::Open),
+        ..issue_facts(number)
     }
 }
 
@@ -127,87 +112,76 @@ fn comment(who: &Login, at: OffsetDateTime) -> Activity {
     }
 }
 
-/// A Repository whose first sync began three days ago and whose user signed in as `me()`.
-struct World {
-    store: Store,
-    reader: StoreReader,
-    open_reader: OpenReader,
-    settings: RepositorySettings,
-    /// Dropped last, once `finish` has closed the database in it.
-    _folder: TempPath,
-}
-
+/// What the scenarios of Needs attention add to the shared world, and read from it the way the window does.
 impl World {
-    fn new(name: &str) -> Self {
-        let folder = crate::testing::temp_path(&format!("attention-{name}"));
-        fs::create_dir_all(&folder).unwrap();
-        let path = folder.join("tsugiki.db");
-        let store = Store::open(&path).unwrap();
-        store.remember_login(&me()).unwrap();
-        let started_at = hours_ago(72);
-        let state = SyncState {
-            started_at,
-            finished_at: started_at,
-            check: ChangeCheck::Skipped,
-            refresh_under_way: false,
-        };
-        store.save_sync_state(&cpython(), state).unwrap();
-        let (to_open, reader) = reader();
-        let open_reader = to_open.open(&path).unwrap();
-        Self {
-            store,
-            reader,
-            open_reader,
-            settings: RepositorySettings::new(cpython()),
-            _folder: folder,
-        }
-    }
-
-    fn has(&self, pull_requests: Vec<PullRequestFacts>) {
-        self.store
-            .save_pull_requests(&cpython(), pull_requests)
-            .unwrap();
-    }
-
     fn has_issues(&self, issues: Vec<IssueFacts>) {
-        self.store.save_issues(&cpython(), issues).unwrap();
+        self.db.store.save_issues(&cpython(), issues).unwrap();
     }
 
-    fn happened(&self, number: u32, events: Vec<Activity>) {
-        let activity = vec![ItemActivity { number, events }];
-        self.store
-            .save_fetched_pull_requests(&cpython(), vec![], activity)
-            .unwrap();
-    }
-
-    fn marked_seen(&self, number: u32, up_to: OffsetDateTime) {
-        self.store
-            .mark_seen(&cpython(), vec![number], Some(up_to))
-            .unwrap();
+    /// A sync that finds `pull_request`'s CI failed.
+    fn ci_fails(&self, pull_request: PullRequestFacts) {
+        self.has(vec![PullRequestFacts {
+            ci: Some(CiState::Failure),
+            ..pull_request
+        }]);
     }
 
     fn marked_unseen(&self, number: u32, at: OffsetDateTime) {
-        self.store.mark_unseen(&cpython(), number, at).unwrap();
+        let flagging = Flagging::on(number);
+        self.db.store.mark_unseen(&cpython(), flagging, at).unwrap();
     }
 
     /// The mark that Mark Seen on item `number`'s line of the Workbench sends, as the window drew it.
     fn seen(&self, number: u32) -> Seen {
-        let workbench = self.workbench();
-        match &listed_at(&workbench, number).item {
-            WorkbenchItem::Issue(issue) => issue.seen.clone(),
-            WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
-            WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
-        }
+        seen_of(&listed_at(&self.workbench(), number).item)
     }
 
-    /// Mark Seen with what the window drew in `seen`.
+    /// The key of item `number`'s line of `view`, and the mark Mark Seen on it sends, as the window drew it.
+    fn drawn_in(&self, view: &WorkbenchView, number: u32) -> (ItemKey, SeenMark) {
+        let listed = self.listed_in(view, number);
+        (listed.key, seen_of(&listed.item).mark)
+    }
+
+    /// The Filter that searches `query` found `numbers`.
+    fn found(&self, query: &FilterQuery, numbers: &[u32]) {
+        let results = FilterResults {
+            numbers: numbers.iter().copied().collect(),
+            problem: None,
+        };
+        (self.db.store)
+            .save_filter_results(&cpython(), query, results)
+            .unwrap();
+    }
+
+    /// Item `number` as `view` lists it.
+    fn listed_in(&self, view: &WorkbenchView, number: u32) -> ListedItem {
+        listed_at(&self.view(view), number)
+    }
+
+    /// The Sidebar's count beside the Filter that searches `query`.
+    fn count_of(&self, query: &FilterQuery) -> u32 {
+        let lines = self.workbench().filters;
+        let line = lines.iter().find(|line| line.query == *query).unwrap();
+        line.count
+    }
+
+    /// Mark Seen with what the window drew in `seen`, as the session keeps it.
     fn mark_seen(&self, seen: Seen) {
-        let SeenMark { numbers, up_to } = seen.mark;
-        self.store.mark_seen(&cpython(), numbers, up_to).unwrap();
+        self.marks(Marked::Seen {
+            repository: cpython(),
+            mark: seen.mark,
+        });
+    }
+
+    /// The session keeps `marked`.
+    fn marks(&self, marked: Marked) {
+        let (saved, _) = keep_mark(&self.db.store, &cpython_settings(), marked);
+        saved.unwrap();
     }
 
     fn view(&self, view: &WorkbenchView) -> Workbench {
-        Workbench::read(&self.reader, &self.settings, view, ListOrder::Attention).unwrap()
+        let settings = cpython_settings();
+        Workbench::read(&self.db.reader, &settings, view, ListOrder::Attention).unwrap()
     }
 
     fn workbench(&self) -> Workbench {
@@ -223,16 +197,98 @@ impl World {
             .map_or_else(Vec::new, |attention| attention.why)
     }
 
+    /// True when `view` lists item `number`.
+    fn lists(&self, view: &WorkbenchView, number: u32) -> bool {
+        let items = self.view(view).items;
+        items.iter().any(|listed| number_of(listed) == number)
+    }
+
+    fn on_workbench(&self, number: u32) -> bool {
+        self.lists(&WorkbenchView::Whole, number)
+    }
+
+    /// The items `view` folds at its end behind "Show N muted" (#824), in its order.
+    fn folded_in(&self, view: &WorkbenchView) -> Vec<u32> {
+        numbers(&self.view(view).muted)
+    }
+
+    /// The reasons item `number` Needs attention, as `view` lists it.
+    fn why_in(&self, view: &WorkbenchView, number: u32) -> Vec<Why> {
+        let listed = listed_at(&self.view(view), number);
+        listed
+            .attention
+            .map_or_else(Vec::new, |attention| attention.why)
+    }
+
     fn since(&self, number: u32) -> OffsetDateTime {
         let workbench = self.workbench();
         let attention: Attention = listed_at(&workbench, number).attention.unwrap();
         attention.since
     }
 
-    fn finish(self) {
-        self.open_reader.close();
-        self.store.close();
+    /// Own PR 1 with a colleague's comment, as [`World::has_a_flagged_comment_at`] makes it, two hours ago.
+    /// Gives when the comment came.
+    fn has_a_flagged_comment(&self) -> OffsetDateTime {
+        let commented = hours_ago(2);
+        self.has_a_flagged_comment_at(commented);
+        commented
     }
+
+    /// Own PR 1 with a colleague's comment at `commented`, which the user Marked unseen an hour ago.
+    fn has_a_flagged_comment_at(&self, commented: OffsetDateTime) {
+        self.has(vec![own(1)]);
+        self.happened(1, vec![comment(&colleague(), commented)]);
+        self.marked_unseen(1, hours_ago(1));
+    }
+
+    /// Fails unless the user saw PR 1 up to `at`, and nothing is Marked unseen.
+    fn assert_seen_up_to(&self, at: OffsetDateTime) {
+        let facts = self.db.reader.work_facts(&cpython()).unwrap().activity;
+        assert_eq!(facts.marked_unseen, BTreeMap::new());
+        assert_eq!(facts.last_seen.get(&1), Some(&at));
+    }
+
+    /// PR 1, which asks the user for a review from five hours ago, and the "Involved" Filter finds. Gives the
+    /// PR, for `request_ends`.
+    fn has_a_requested_pr_involved_finds(&self) -> PullRequestFacts {
+        let pull_request = requested(1);
+        self.has(vec![pull_request.clone()]);
+        self.happened(1, vec![review_requested(hours_ago(5))]);
+        self.found(&involved(), &[1]);
+        pull_request
+    }
+
+    /// The Review request on `pull_request` ends, and fails unless Review requests drop it.
+    fn request_ends(&self, pull_request: PullRequestFacts) {
+        self.has(vec![PullRequestFacts {
+            review_requests: vec![],
+            updated_at: hours_ago(4),
+            ..pull_request
+        }]);
+        assert!(!self.lists(&WorkbenchView::ReviewRequests, 1));
+    }
+}
+
+/// The part in Mark Seen of `item`'s own line.
+fn seen_of(item: &WorkbenchItem) -> Seen {
+    match item {
+        WorkbenchItem::Issue(issue) => issue.seen.clone(),
+        WorkbenchItem::StandalonePr(tree) => tree.row.seen.clone(),
+        WorkbenchItem::StandaloneBackport(backport) => backport.row.seen.clone(),
+    }
+}
+
+/// The starter Filters: "Mine", on the Workbench, and "Involved", off it.
+fn mine() -> FilterQuery {
+    cpython_settings().filters[0].query.clone()
+}
+
+fn involved() -> FilterQuery {
+    cpython_settings().filters[1].query.clone()
+}
+
+fn filter(query: FilterQuery) -> WorkbenchView {
+    WorkbenchView::Filter { query }
 }
 
 fn number_of(listed: &ListedItem) -> u32 {
@@ -253,7 +309,7 @@ fn numbers(list: &[ListedItem]) -> Vec<u32> {
 
 #[test]
 fn a_review_request_needs_attention_from_when_it_was_asked() {
-    let world = World::new("review-request");
+    let world = World::new("attention-review-request");
     world.has(vec![requested(1)]);
     let asked = hours_ago(5);
     world.happened(
@@ -272,7 +328,7 @@ fn a_review_request_needs_attention_from_when_it_was_asked() {
 
 #[test]
 fn a_review_request_on_a_colleagues_draft_needs_attention() {
-    let world = World::new("draft-request");
+    let world = World::new("attention-draft-request");
     world.has(vec![PullRequestFacts {
         is_draft: true,
         ..requested(1)
@@ -282,19 +338,53 @@ fn a_review_request_on_a_colleagues_draft_needs_attention() {
     world.finish();
 }
 
-#[test]
-fn marking_a_pr_with_a_review_request_seen_leaves_it_waiting() {
-    let world = World::new("request-stays");
-    world.has(vec![requested(1)]);
-    world.marked_seen(1, hours_ago(1));
+fn review_requested(at: OffsetDateTime) -> Activity {
+    Activity {
+        kind: ActivityKind::ReviewRequested,
+        who: me(),
+        at,
+    }
+}
 
+#[test]
+fn mark_seen_takes_a_review_request_out_of_needs_attention_and_a_new_request_brings_it_back() {
+    let world = World::new("attention-request-seen");
+    world.has(vec![requested(1)]);
+    world.happened(1, vec![review_requested(hours_ago(5))]);
+
+    world.mark_seen(world.seen(1));
+    // It was on the Workbench only because it Needed attention.
+    assert!(!world.on_workbench(1));
+    let requests = WorkbenchView::ReviewRequests;
+    assert_eq!(world.why_in(&requests, 1), []);
+    assert_eq!(world.view(&requests).review_requests, 1);
+
+    let asked_again = hours_ago(1);
+    world.happened(1, vec![review_requested(asked_again)]);
     assert_eq!(world.why(1), [Why::ReviewRequested]);
+    assert_eq!(world.since(1), asked_again);
+    world.finish();
+}
+
+#[test]
+fn a_write_that_moves_only_last_seen_leaves_a_review_request_waiting() {
+    let world = World::new("attention-request-write");
+    world.has(vec![requested(1)]);
+    world.happened(1, vec![review_requested(hours_ago(5))]);
+    let mut facts = world.db.reader.work_facts(&cpython()).unwrap();
+    // A write to GitHub moves Last seen alone (#395).
+    facts.activity.last_seen.extend([(1, hours_ago(1))]);
+
+    let workbench = Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole);
+
+    let attention = listed_at(&workbench, 1).attention.unwrap();
+    assert_eq!(attention.why, [Why::ReviewRequested]);
     world.finish();
 }
 
 #[test]
 fn a_review_request_with_no_event_left_on_the_timeline_counts_from_the_last_update() {
-    let world = World::new("request-no-event");
+    let world = World::new("attention-request-no-event");
     let updated_at = hours_ago(9);
     world.has(vec![PullRequestFacts {
         updated_at,
@@ -306,8 +396,28 @@ fn a_review_request_with_no_event_left_on_the_timeline_counts_from_the_last_upda
 }
 
 #[test]
+fn mark_seen_acknowledges_a_review_request_with_no_event_whatever_updates_the_pr_later() {
+    let world = World::new("attention-request-no-event-seen");
+    let pull_request = PullRequestFacts {
+        updated_at: hours_ago(9),
+        ..requested(1)
+    };
+    world.has(vec![pull_request.clone()]);
+    world.mark_seen(world.seen(1));
+
+    // A colleague's label or comment moves the last update, and asks nothing new of the user.
+    world.has(vec![PullRequestFacts {
+        updated_at: hours_ago(1),
+        ..pull_request
+    }]);
+
+    assert_eq!(world.why_in(&WorkbenchView::ReviewRequests, 1), []);
+    world.finish();
+}
+
+#[test]
 fn someone_elses_review_request_is_no_time_for_the_users() {
-    let world = World::new("request-other");
+    let world = World::new("attention-request-other");
     let updated_at = hours_ago(9);
     world.has(vec![PullRequestFacts {
         updated_at,
@@ -328,7 +438,7 @@ fn someone_elses_review_request_is_no_time_for_the_users() {
 
 #[test]
 fn an_assignee_has_a_review_request_until_they_submit_a_review() {
-    let world = World::new("assignee");
+    let world = World::new("attention-assignee");
     let assigned = PullRequestFacts {
         assignees: vec![me()],
         ..pull_request(1)
@@ -358,7 +468,7 @@ fn an_assignee_has_a_review_request_until_they_submit_a_review() {
 
 #[test]
 fn assigning_yourself_to_your_own_pr_asks_nothing_of_you() {
-    let world = World::new("self-assigned");
+    let world = World::new("attention-self-assigned");
     world.has(vec![PullRequestFacts {
         assignees: vec![me()],
         ..own(1)
@@ -370,27 +480,69 @@ fn assigning_yourself_to_your_own_pr_asks_nothing_of_you() {
 }
 
 #[test]
-fn failed_ci_on_an_own_pr_needs_attention_and_stays_after_mark_seen() {
-    let world = World::new("own-ci");
+fn mark_seen_takes_failed_ci_on_an_own_pr_out_of_needs_attention_and_keeps_the_row() {
+    let world = World::new("attention-own-ci");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Failure),
         ..own(1)
     }]);
-    world.marked_seen(1, OffsetDateTime::now_utc() + Duration::hours(1));
+    assert_eq!(world.why(1), [Why::CiFailed { checks: vec![] }]);
+
+    world.mark_seen(world.seen(1));
+
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn ci_that_fails_after_mark_seen_needs_attention() {
+    let world = World::new("attention-own-ci-after");
+    let pending = own_ci_pending(1);
+    world.has(vec![pending.clone()]);
+    world.mark_seen(world.seen(1));
+
+    world.ci_fails(pending);
 
     assert_eq!(world.why(1), [Why::CiFailed { checks: vec![] }]);
     world.finish();
 }
 
 #[test]
+fn ci_that_fails_again_after_a_push_needs_attention_though_no_pending_state_came_between() {
+    let world = World::new("attention-own-ci-again");
+    world.has(vec![PullRequestFacts {
+        ci: Some(CiState::Failure),
+        ..own(1)
+    }]);
+    let mut facts = world.db.reader.work_facts(&cpython()).unwrap();
+    // The store keeps whole seconds, so the moments are set apart by hand.
+    let activity = &mut facts.activity;
+    activity.ci_finished.extend([(1, hours_ago(5))]);
+    activity.acknowledged.extend([(1, hours_ago(4))]);
+    let push = Activity {
+        kind: ActivityKind::Commit,
+        who: me(),
+        at: hours_ago(1),
+    };
+    activity.events.extend([(1, vec![push])]);
+
+    let workbench = Workbench::from_facts(facts, &cpython_settings(), &WorkbenchView::Whole);
+
+    let attention = listed_at(&workbench, 1).attention.unwrap();
+    assert_eq!(attention.why, [Why::CiFailed { checks: vec![] }]);
+    world.finish();
+}
+
+#[test]
 fn failed_ci_names_the_checks_once_tsugiki_has_asked() {
-    let world = World::new("own-ci-names");
+    let world = World::new("attention-own-ci-names");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Failure),
         ..own(1)
     }]);
     let names = vec!["Tests / Ubuntu".to_owned()];
     world
+        .db
         .store
         .save_failed_checks(&cpython(), vec![(1, names.clone())])
         .unwrap();
@@ -401,7 +553,7 @@ fn failed_ci_names_the_checks_once_tsugiki_has_asked() {
 
 #[test]
 fn failed_ci_on_a_merged_own_pr_waits_on_nobody() {
-    let world = World::new("merged-ci");
+    let world = World::new("attention-merged-ci");
     world.has(vec![
         own(2),
         PullRequestFacts {
@@ -420,7 +572,7 @@ fn failed_ci_on_a_merged_own_pr_waits_on_nobody() {
 
 #[test]
 fn failed_ci_on_a_colleagues_pr_doesnt_list_it() {
-    let world = World::new("colleague-ci");
+    let world = World::new("attention-colleague-ci");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Failure),
         ..pull_request(1)
@@ -432,7 +584,7 @@ fn failed_ci_on_a_colleagues_pr_doesnt_list_it() {
 
 #[test]
 fn a_passing_run_on_an_own_pr_is_new_activity_until_it_is_marked_seen() {
-    let world = World::new("own-ci-pass");
+    let world = World::new("attention-own-ci-pass");
     world.has(vec![PullRequestFacts {
         ci: Some(CiState::Success),
         ..own(1)
@@ -447,7 +599,7 @@ fn a_passing_run_on_an_own_pr_is_new_activity_until_it_is_marked_seen() {
 
 #[test]
 fn new_activity_on_a_pr_the_user_wrote_or_reviewed_needs_attention() {
-    let world = World::new("wrote-or-reviewed");
+    let world = World::new("attention-wrote-or-reviewed");
     world.has(vec![own(1), reviewed_by_me(2)]);
     let by_colleague = |kind| Activity {
         kind,
@@ -464,7 +616,7 @@ fn new_activity_on_a_pr_the_user_wrote_or_reviewed_needs_attention() {
 
 #[test]
 fn a_review_on_an_own_pr_says_what_the_reviewer_decided() {
-    let world = World::new("review-words");
+    let world = World::new("attention-review-words");
     let review = |author: Login, state| LatestReview { author, state };
     let approver = Login::new("another-account");
     let commenter = Login::new("some-assignee");
@@ -503,7 +655,7 @@ fn a_review_on_an_own_pr_says_what_the_reviewer_decided() {
 
 #[test]
 fn a_failed_bot_backport_needs_attention_on_a_merged_origin_pr() {
-    let world = World::new("backport-conflict");
+    let world = World::new("attention-backport-conflict");
     world.has(vec![PullRequestFacts {
         state: PrState::Merged,
         ..own(1)
@@ -530,7 +682,7 @@ fn a_failed_bot_backport_needs_attention_on_a_merged_origin_pr() {
 
 #[test]
 fn an_unreviewed_colleagues_pr_is_not_listed_as_waiting() {
-    let world = World::new("unreviewed");
+    let world = World::new("attention-unreviewed");
     world.has(vec![pull_request(1)]);
     world.happened(1, vec![comment(&reviewer(), hours_ago(1))]);
 
@@ -540,7 +692,7 @@ fn an_unreviewed_colleagues_pr_is_not_listed_as_waiting() {
 
 #[test]
 fn a_colleagues_draft_with_new_activity_waits_for_a_review_request() {
-    let world = World::new("draft");
+    let world = World::new("attention-draft");
     world.has(vec![
         PullRequestFacts {
             is_draft: true,
@@ -556,7 +708,7 @@ fn a_colleagues_draft_with_new_activity_waits_for_a_review_request() {
 
 #[test]
 fn someone_posting_on_a_pr_the_user_commented_on_needs_attention() {
-    let world = World::new("pr-conversation");
+    let world = World::new("attention-pr-conversation");
     world.has(vec![pull_request(1)]);
     world.happened(
         1,
@@ -572,7 +724,7 @@ fn someone_posting_on_a_pr_the_user_commented_on_needs_attention() {
 
 #[test]
 fn a_mention_of_the_user_on_a_pr_needs_attention() {
-    let world = World::new("pr-mention");
+    let world = World::new("attention-pr-mention");
     world.has(vec![pull_request(1)]);
     world.happened(
         1,
@@ -589,7 +741,7 @@ fn a_mention_of_the_user_on_a_pr_needs_attention() {
 
 #[test]
 fn someone_posting_on_an_issue_the_user_opened_is_assigned_or_commented_on_needs_attention() {
-    let world = World::new("issue-conversation");
+    let world = World::new("attention-issue-conversation");
     world.has_issues(vec![
         IssueFacts {
             author: Some(me()),
@@ -617,8 +769,33 @@ fn someone_posting_on_an_issue_the_user_opened_is_assigned_or_commented_on_needs
 }
 
 #[test]
+fn an_issue_the_user_was_unassigned_from_is_no_longer_their_conversation() {
+    let world = World::new("attention-issue-unassigned");
+    world.has_issues(vec![issue(1), issue(2)]);
+    world.found(&involved(), &[1, 2]);
+    let assigned = Activity {
+        kind: ActivityKind::Assigned,
+        who: me(),
+        at: hours_ago(5),
+    };
+    let post = comment(&colleague(), hours_ago(1));
+    world.happened(1, vec![assigned, post.clone()]);
+    world.happened(2, vec![post]);
+
+    let view = filter(involved());
+    assert_eq!(world.why_in(&view, 1), []);
+    let state = |number| seen_of(&world.listed_in(&view, number).item).state;
+    assert_eq!(
+        state(1),
+        state(2),
+        "the old assignment reads as no involvement"
+    );
+    world.finish();
+}
+
+#[test]
 fn a_mention_in_a_new_post_on_an_issue_needs_attention() {
-    let world = World::new("issue-mention");
+    let world = World::new("attention-issue-mention");
     world.has_issues(vec![issue(1)]);
     world.happened(
         1,
@@ -639,7 +816,7 @@ fn a_mention_in_a_new_post_on_an_issue_needs_attention() {
 
 #[test]
 fn a_mention_of_someone_else_leaves_an_issue_the_user_only_follows_alone() {
-    let world = World::new("issue-only-follows");
+    let world = World::new("attention-issue-only-follows");
     world.has_issues(vec![issue(1)]);
     world.happened(
         1,
@@ -659,7 +836,7 @@ fn a_mention_of_someone_else_leaves_an_issue_the_user_only_follows_alone() {
 
 #[test]
 fn an_issue_needs_attention_when_a_pr_in_its_tree_does_and_says_why_with_the_newest_first() {
-    let world = World::new("tree");
+    let world = World::new("attention-tree");
     world.has_issues(vec![issue(5)]);
     world.has(vec![
         PullRequestFacts {
@@ -694,7 +871,7 @@ fn an_issue_needs_attention_when_a_pr_in_its_tree_does_and_says_why_with_the_new
 
 #[test]
 fn the_same_reason_on_two_prs_of_a_tree_is_said_once() {
-    let world = World::new("said-once");
+    let world = World::new("attention-said-once");
     world.has_issues(vec![issue(5)]);
     let asked = |pr: PullRequestFacts| PullRequestFacts {
         review_requests: vec![me()],
@@ -708,7 +885,7 @@ fn the_same_reason_on_two_prs_of_a_tree_is_said_once() {
 
 #[test]
 fn what_needs_attention_comes_first_newest_first_then_the_rest_in_one_list() {
-    let world = World::new("order");
+    let world = World::new("attention-order");
     world.has_issues(vec![
         IssueFacts {
             updated_at: hours_ago(1),
@@ -754,8 +931,8 @@ fn what_needs_attention_comes_first_newest_first_then_the_rest_in_one_list() {
 
     let workbench = world.workbench();
     let by_update = Workbench::read(
-        &world.reader,
-        &world.settings,
+        &world.db.reader,
+        &cpython_settings(),
         &WorkbenchView::Whole,
         ListOrder::LastUpdate,
     )
@@ -768,7 +945,7 @@ fn what_needs_attention_comes_first_newest_first_then_the_rest_in_one_list() {
 
 #[test]
 fn the_sidebar_counts_what_needs_attention_and_review_requests_lists_those_prs() {
-    let world = World::new("counts");
+    let world = World::new("attention-counts");
     world.has_issues(vec![issue(5)]);
     world.has(vec![
         requested(1),
@@ -796,7 +973,7 @@ fn the_sidebar_counts_what_needs_attention_and_review_requests_lists_those_prs()
 
 #[test]
 fn an_item_marked_unseen_needs_attention_from_the_moment_of_the_flag() {
-    let world = World::new("marked-unseen");
+    let world = World::new("attention-marked-unseen");
     // An Issue the user only follows, a colleague's PR and a colleague's Draft PR need nothing of the user
     // until they flag them.
     world.has_issues(vec![issue(1)]);
@@ -821,7 +998,7 @@ fn an_item_marked_unseen_needs_attention_from_the_moment_of_the_flag() {
 
 #[test]
 fn a_pr_marked_unseen_brings_its_issue_back_with_it() {
-    let world = World::new("marked-unseen-tree");
+    let world = World::new("attention-marked-unseen-tree");
     world.has_issues(vec![issue(5)]);
     world.has(vec![fixing(1, 5)]);
 
@@ -834,7 +1011,7 @@ fn a_pr_marked_unseen_brings_its_issue_back_with_it() {
 
 #[test]
 fn by_attention_sorts_a_fresh_flag_first() {
-    let world = World::new("marked-unseen-order");
+    let world = World::new("attention-marked-unseen-order");
     world.has_issues(vec![issue(2)]);
     world.has(vec![requested(1)]);
     world.happened(
@@ -853,8 +1030,8 @@ fn by_attention_sorts_a_fresh_flag_first() {
 }
 
 #[test]
-fn mark_seen_clears_the_flag_and_only_what_last_seen_measures() {
-    let world = World::new("mark-seen-clears");
+fn mark_seen_clears_the_flag_and_what_stood_before_it() {
+    let world = World::new("attention-mark-seen-clears");
     world.has(vec![
         requested(1),
         PullRequestFacts {
@@ -868,14 +1045,14 @@ fn mark_seen_clears_the_flag_and_only_what_last_seen_measures() {
     world.mark_seen(world.seen(1));
     world.mark_seen(world.seen(2));
 
-    assert_eq!(world.why(1), [Why::ReviewRequested]);
+    assert_eq!(world.why_in(&WorkbenchView::ReviewRequests, 1), []);
     assert_eq!(world.why(2), []);
     world.finish();
 }
 
 #[test]
 fn mark_seen_with_nothing_new_clears_the_flag_and_moves_last_seen_to_the_last_update() {
-    let world = World::new("mark-seen-flag-only");
+    let world = World::new("attention-mark-seen-flag-only");
     let updated = hours_ago(100);
     world.has(vec![PullRequestFacts {
         updated_at: updated,
@@ -904,7 +1081,7 @@ fn mark_seen_with_nothing_new_clears_the_flag_and_moves_last_seen_to_the_last_up
 
 #[test]
 fn a_comment_a_sync_brings_after_the_window_drew_the_item_stays_new_after_mark_seen() {
-    let world = World::new("mark-seen-drawn");
+    let world = World::new("attention-mark-seen-drawn");
     world.has(vec![own(1)]);
     let read = hours_ago(3);
     world.happened(1, vec![comment(&colleague(), read)]);
@@ -923,7 +1100,7 @@ fn a_comment_a_sync_brings_after_the_window_drew_the_item_stays_new_after_mark_s
 
 #[test]
 fn mark_seen_covers_what_wasnt_news_yet_when_the_window_drew_it() {
-    let world = World::new("mark-seen-not-news-yet");
+    let world = World::new("attention-mark-seen-not-news-yet");
     let passed = |pr: PullRequestFacts| PullRequestFacts {
         ci: Some(CiState::Success),
         ..pr
@@ -947,7 +1124,7 @@ fn mark_seen_covers_what_wasnt_news_yet_when_the_window_drew_it() {
 
 #[test]
 fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
-    let world = World::new("mark-seen-tree");
+    let world = World::new("attention-mark-seen-tree");
     world.has_issues(vec![issue(5)]);
     world.has(vec![
         PullRequestFacts {
@@ -977,13 +1154,15 @@ fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
         pr_1,
         &SeenMark {
             numbers: vec![1],
-            up_to: Some(older)
+            up_to: Some(older),
+            findings: vec![],
         }
     );
 
     world
+        .db
         .store
-        .mark_seen(&cpython(), pr_1.numbers.clone(), pr_1.up_to)
+        .mark_seen(&cpython(), seeing(pr_1.numbers.clone(), pr_1.up_to))
         .unwrap();
     assert_eq!(world.why(5), [Why::Comment { by: colleague() }]);
     assert_eq!(world.since(5), newer);
@@ -994,8 +1173,24 @@ fn mark_seen_on_an_issue_marks_every_pr_in_its_tree_and_on_a_pr_only_that_pr() {
     world.finish();
 }
 
-fn sha(digit: char) -> CommitSha {
-    CommitSha::parse(&digit.to_string().repeat(40)).unwrap()
+#[test]
+fn mark_seen_on_an_issue_acknowledges_what_stands_across_its_tree() {
+    let world = World::new("attention-mark-seen-tree-standing");
+    world.has_issues(vec![issue(5)]);
+    world.has(vec![
+        fixing_too(requested(1), 5),
+        PullRequestFacts {
+            ci: Some(CiState::Failure),
+            ..fixing_too(own(2), 5)
+        },
+    ]);
+    let standing = [Why::CiFailed { checks: vec![] }, Why::ReviewRequested];
+    assert_eq!(world.why(5), standing);
+
+    world.mark_seen(world.seen(5));
+
+    assert_eq!(world.why(5), []);
+    world.finish();
 }
 
 /// `Lib/ast.py` changed in the way `digit` names.
@@ -1014,22 +1209,53 @@ impl World {
     /// the change at commit 1 as `reviewed` and at commit 2 as `head`.
     fn reviewed_and_moved(&self, pull_request: PullRequestFacts, reviewed: char, head: char) {
         self.reviewed_and_moved_unread(pull_request);
-        let patches =
-            [(sha('1'), reviewed), (sha('2'), head)].map(|(commit, digit)| CommitPatches {
-                of: on_main(commit),
-                files: ast_changed(digit),
-            });
-        self.store
+        self.check_read([(sha_of('1'), reviewed), (sha_of('2'), head)]);
+    }
+
+    /// The check read the change at each commit of `read` in the way its digit names.
+    fn check_read<const N: usize>(&self, read: [(CommitSha, char); N]) {
+        let patches = read.map(|(commit, digit)| CommitPatches {
+            of: on_main(commit),
+            files: ast_changed(digit),
+        });
+        self.db
+            .store
             .save_patch_ids(&cpython(), patches.to_vec())
             .unwrap();
     }
 
+    /// The session keeps what the checks found, as it does after each read and sync, at `now`.
+    fn checks_kept(&self, now: OffsetDateTime) {
+        let store = &self.db.store;
+        let facts = store.work_facts(&cpython()).unwrap();
+        keep_checks(store, &cpython(), &facts, now).unwrap();
+    }
+
+    /// A colleague pushed a commit made three hours ago to PR `number`. Tsugiki counts the push from when
+    /// it noticed it, which is now.
+    fn pushed(&self, number: u32) {
+        let pushed = Activity {
+            kind: ActivityKind::Commit,
+            who: colleague(),
+            at: hours_ago(3),
+        };
+        self.happened(number, vec![pushed]);
+    }
+}
+
+/// A minute after anything a test has made happen so far, as when a check finds a Review stale after Mark
+/// Seen.
+fn a_minute_on() -> OffsetDateTime {
+    hours_ago(0) + Duration::minutes(1)
+}
+
+impl World {
     /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check has
     /// read neither.
     fn reviewed_and_moved_unread(&self, pull_request: PullRequestFacts) {
         let number = pull_request.number;
         self.has(vec![PullRequestFacts {
-            head: Some(sha('2')),
+            head: Some(sha_of('2')),
             ..pull_request
         }]);
         let content = PullRequestContent {
@@ -1043,18 +1269,19 @@ impl World {
                 id: None,
                 author: Some(me()),
                 state: ReviewState::Commented,
-                commit: Some(sha('1')),
+                commit: Some(sha_of('1')),
                 submitted_at: hours_ago(50),
                 body_html: String::new(),
                 hidden: None,
                 threads: vec![],
             }],
             earlier_reviews: 0,
-            head: Some(sha('2')),
+            head: Some(sha_of('2')),
             pending: vec![],
         };
-        self.store
-            .save_pull_request_content(&cpython(), number, content)
+        self.db
+            .store
+            .save_pull_request_content(&cpython(), number, (content, OffsetDateTime::UNIX_EPOCH))
             .unwrap();
     }
 }
@@ -1068,13 +1295,14 @@ fn on_main(commit: CommitSha) -> PatchesOf {
 
 #[test]
 fn a_review_whose_check_cant_run_needs_attention_as_a_stale_review() {
-    let world = World::new("stale-unchecked");
+    let world = World::new("attention-stale-unchecked");
     world.reviewed_and_moved_unread(reviewed_by_me(1));
     let cloning = UncheckedCommit {
-        of: on_main(sha('2')),
+        of: on_main(sha_of('2')),
         reason: CantCheck::Cloning,
     };
     world
+        .db
         .store
         .save_unchecked(&cpython(), vec![cloning])
         .unwrap();
@@ -1084,8 +1312,8 @@ fn a_review_whose_check_cant_run_needs_attention_as_a_stale_review() {
 }
 
 #[test]
-fn a_stale_review_needs_attention_counts_and_stays_after_mark_seen() {
-    let world = World::new("stale");
+fn a_stale_review_needs_attention_and_counts() {
+    let world = World::new("attention-stale");
     let reviewed = reviewed_by_me(1);
     let updated_at = reviewed.updated_at;
     world.reviewed_and_moved(reviewed, 'a', 'b');
@@ -1093,14 +1321,345 @@ fn a_stale_review_needs_attention_counts_and_stays_after_mark_seen() {
     assert_eq!(world.why(1), [Why::StaleReview]);
     assert_eq!(world.since(1), updated_at);
     assert_eq!(world.workbench().count, 1);
+    world.finish();
+}
+
+#[test]
+fn mark_seen_takes_a_stale_review_out_of_needs_attention_until_a_later_push() {
+    let world = World::new("attention-stale-seen");
+    world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
+    // The check's finding is later than anything GitHub said of the PR.
+    world.checks_kept(a_minute_on());
+
     world.mark_seen(world.seen(1));
+    // The user's Review holds it on the Workbench, as a plain row.
+    assert_eq!(world.why(1), []);
+    let stale = WorkbenchView::StaleReviews;
+    assert!(world.lists(&stale, 1));
+    assert_eq!(world.view(&stale).stale_reviews, 1);
+
+    world.pushed(1);
+    assert!(world.why(1).contains(&Why::StaleReview));
+    world.finish();
+}
+
+#[test]
+fn mark_seen_on_a_stale_review_leaves_a_comment_github_hadnt_sent_new() {
+    let world = World::new("attention-stale-seen-comment");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(a_minute_on());
+    world.mark_seen(world.seen(1));
+
+    // A colleague commented an hour ago, before the check found the Review stale, and the comment syncs
+    // after the mark.
+    let commented = hours_ago(1);
+    world.has(vec![PullRequestFacts {
+        head: Some(sha_of('2')),
+        updated_at: commented,
+        ..pull_request
+    }]);
+    world.happened(1, vec![comment(&colleague(), commented)]);
+
+    assert_eq!(world.why(1), [Why::Comment { by: colleague() }]);
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_the_check_finds_after_mark_seen_needs_attention() {
+    let world = World::new("attention-stale-found-after-seen");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    world.pushed(1);
+    // The row says Reviewed while the check waits, and the push is all the window shows.
+    assert_eq!(world.why(1), [Why::Commits { by: colleague() }]);
+    world.mark_seen(world.seen(1));
+
+    world.check_read([(sha_of('1'), 'a'), (sha_of('2'), 'b')]);
+    let found = a_minute_on();
+    world.checks_kept(found);
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    assert_eq!(world.since(1), found);
+    world.finish();
+}
+
+#[test]
+fn a_review_whose_check_cant_run_after_mark_seen_needs_attention_until_marked_seen() {
+    let world = World::new("attention-unchecked-after-seen");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    world.pushed(1);
+    world.mark_seen(world.seen(1));
+
+    let cloning = UncheckedCommit {
+        of: on_main(sha_of('2')),
+        reason: CantCheck::Cloning,
+    };
+    world
+        .db
+        .store
+        .save_unchecked(&cpython(), vec![cloning])
+        .unwrap();
+    world.checks_kept(a_minute_on());
+    let found = world.why(1);
+    world.mark_seen(world.seen(1));
+
+    assert_eq!(found, [Why::StaleReview]);
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+impl World {
+    /// A colleague pushed commit `head` to PR `pull_request`, which GitHub updated `updated_at`.
+    fn moved_to(&self, pull_request: &PullRequestFacts, head: char, updated_at: OffsetDateTime) {
+        self.has(vec![PullRequestFacts {
+            head: Some(sha_of(head)),
+            updated_at,
+            ..pull_request.clone()
+        }]);
+        self.pushed(pull_request.number);
+    }
+
+    /// The check of the head of each PR couldn't read commit `commit`, as `reason` says.
+    fn cant_read(&self, commit: char, reason: CantCheck) {
+        let unchecked = UncheckedCommit {
+            of: on_main(sha_of(commit)),
+            reason,
+        };
+        let store = &self.db.store;
+        store.save_unchecked(&cpython(), vec![unchecked]).unwrap();
+    }
+}
+
+#[test]
+fn a_stale_review_the_check_finds_against_a_newer_head_after_mark_seen_needs_attention() {
+    let world = World::new("attention-stale-newer-head");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(hours_ago(5));
+    // A push to commit 3, whose check waits: the row keeps the last check's Stale review.
+    world.moved_to(&pull_request, '3', hours_ago(4));
+    world.mark_seen(world.seen(1));
+
+    world.check_read([(sha_of('3'), 'c')]);
+    let found = a_minute_on();
+    world.checks_kept(found);
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    assert_eq!(world.since(1), found);
+    world.finish();
+}
+
+#[test]
+fn an_acknowledgement_of_a_review_that_cant_be_checked_doesnt_carry_over_to_a_later_push() {
+    let world = World::new("attention-unchecked-later-push");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved_unread(pull_request.clone());
+    world.check_read([(sha_of('1'), 'a')]);
+    world.cant_read('2', CantCheck::Cloning);
+    world.checks_kept(hours_ago(5));
+    world.mark_seen(world.seen(1));
+    assert_eq!(world.why(1), []);
+
+    // A push to commit 3, whose check waits with no reason: the row says Reviewed, and the user marks it.
+    world.moved_to(&pull_request, '3', hours_ago(4));
+    world.db.store.save_unchecked(&cpython(), vec![]).unwrap();
+    world.checks_kept(hours_ago(0));
+    assert!(!world.lists(&WorkbenchView::StaleReviews, 1));
+    world.mark_seen(world.seen(1));
+
+    world.check_read([(sha_of('3'), 'c')]);
+    world.checks_kept(a_minute_on());
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.finish();
+}
+
+impl World {
+    /// The user reviewed PR 1, whose head moved on, and the window drew the page while the check waited.
+    /// The check then found the Review stale, after Mark Seen moved past the push. Returns the PR's line as
+    /// the window drew it, before the finding.
+    fn found_after_drawn(&self) -> (ItemKey, SeenMark) {
+        self.reviewed_and_moved_unread(reviewed_by_me(1));
+        self.pushed(1);
+        let drawn = self.drawn_in(&WorkbenchView::Whole, 1);
+        self.check_read([(sha_of('1'), 'a'), (sha_of('2'), 'b')]);
+        self.checks_kept(a_minute_on());
+        drawn
+    }
+}
+
+#[test]
+fn mark_seen_drawn_before_the_check_found_a_stale_review_leaves_it_in_needs_attention() {
+    let world = World::new("attention-stale-found-after-drawn");
+    let (_, drawn) = world.found_after_drawn();
+
+    world.marks(Marked::Seen {
+        repository: cpython(),
+        mark: drawn,
+    });
+
     assert_eq!(world.why(1), [Why::StaleReview]);
     world.finish();
 }
 
 #[test]
+fn archive_drawn_before_the_check_found_a_stale_review_leaves_it_in_needs_attention() {
+    let world = World::new("attention-stale-found-after-drawn-archive");
+    let (key, mark) = world.found_after_drawn();
+
+    world.marks(Marked::Archived {
+        repository: cpython(),
+        key,
+        mark,
+        put_away: PutAway::Now,
+        at: hours_ago(0),
+    });
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    assert!(world.on_workbench(1));
+    world.finish();
+}
+
+#[test]
+fn mute_drawn_before_the_check_found_a_stale_review_leaves_it_found_for_after_the_unmute() {
+    let world = World::new("attention-stale-found-after-drawn-mute");
+    let (key, mark) = world.found_after_drawn();
+    world.marks(Marked::Muted {
+        repository: cpython(),
+        key,
+        mark,
+        at: hours_ago(0),
+    });
+
+    world.db.store.unmute(&cpython(), key).unwrap();
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.finish();
+}
+
+#[test]
+fn mute_author_acknowledges_no_stale_review() {
+    let world = World::new("attention-stale-mute-author");
+    world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
+    world.checks_kept(a_minute_on());
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.marks(Marked::AuthorMuted {
+        repository: cpython(),
+        author: colleague(),
+        at: hours_ago(0),
+    });
+
+    world
+        .db
+        .store
+        .unmute_author(&cpython(), &colleague())
+        .unwrap();
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_whose_finding_the_store_couldnt_keep_goes_by_the_push_alone() {
+    let world = World::new("attention-stale-unkept");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    world.pushed(1);
+    world.mark_seen(world.seen(1));
+
+    // The check finds the Review stale, and the store fails to keep the finding: the push came before the
+    // mark, so the Stale review waits in its view alone, until a later save keeps the finding.
+    world.check_read([(sha_of('1'), 'a'), (sha_of('2'), 'b')]);
+    let unkept = world.why(1);
+    let listed = world.lists(&WorkbenchView::StaleReviews, 1);
+    world.checks_kept(a_minute_on());
+
+    assert_eq!(unkept, []);
+    assert!(listed);
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_acknowledged_before_its_pr_closed_stays_acknowledged_once_it_reopens() {
+    let world = World::new("attention-stale-reopened");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(a_minute_on());
+    world.mark_seen(world.seen(1));
+    let with_state = |state| PullRequestFacts {
+        head: Some(sha_of('2')),
+        state,
+        ..pull_request.clone()
+    };
+
+    world.has(vec![with_state(PrState::Closed)]);
+    world.checks_kept(a_minute_on());
+    world.has(vec![with_state(PrState::Open)]);
+    world.checks_kept(a_minute_on());
+
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn a_restart_leaves_a_stale_review_whose_check_cant_run_acknowledged() {
+    let world = World::new("attention-unchecked-restart");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(hours_ago(6));
+    // A push to commit 3, which the worker can't read, and the user marks the Stale review it shows.
+    world.moved_to(&pull_request, '3', hours_ago(5));
+    world.cant_read('3', CantCheck::Cloning);
+    world.checks_kept(hours_ago(4));
+    world.mark_seen(world.seen(1));
+    let kept = || {
+        world
+            .db
+            .store
+            .work_facts(&cpython())
+            .unwrap()
+            .reviews
+            .stale_found
+    };
+    let marked = kept();
+
+    // A restart forgets why the worker couldn't read commit 3, and the row falls back on the last check.
+    world.db.store.forget_unchecked().unwrap();
+    world.checks_kept(a_minute_on());
+    let restarted = world.why(1);
+    world.cant_read('3', CantCheck::Cloning);
+    world.checks_kept(a_minute_on());
+
+    assert_eq!(restarted, []);
+    assert_eq!(world.why(1), []);
+    assert_eq!(kept(), marked);
+    assert_eq!(marked[&1].head, sha_of('3'));
+    assert!(marked[&1].acknowledged);
+    world.finish();
+}
+
+#[test]
+fn a_comment_after_mark_seen_leaves_a_stale_review_acknowledged() {
+    let world = World::new("attention-stale-comment");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.mark_seen(world.seen(1));
+
+    let later = hours_ago(1);
+    world.has(vec![PullRequestFacts {
+        head: Some(sha_of('2')),
+        updated_at: later,
+        ..pull_request
+    }]);
+    world.happened(1, vec![comment(&colleague(), later)]);
+
+    assert_eq!(world.why(1), [Why::Comment { by: colleague() }]);
+    world.finish();
+}
+
+#[test]
 fn a_review_whose_diff_is_the_same_at_the_new_head_waits_on_nobody() {
-    let world = World::new("not-stale");
+    let world = World::new("attention-not-stale");
     world.reviewed_and_moved(reviewed_by_me(1), 'a', 'a');
 
     assert_eq!(world.why(1), []);
@@ -1110,7 +1669,7 @@ fn a_review_whose_diff_is_the_same_at_the_new_head_waits_on_nobody() {
 
 #[test]
 fn a_stale_review_of_a_colleagues_draft_waits_for_a_review_request() {
-    let world = World::new("stale-draft");
+    let world = World::new("attention-stale-draft");
     let draft = PullRequestFacts {
         is_draft: true,
         ..reviewed_by_me(1)
@@ -1123,7 +1682,7 @@ fn a_stale_review_of_a_colleagues_draft_waits_for_a_review_request() {
 
 #[test]
 fn a_stale_review_of_a_merged_pr_waits_on_nobody() {
-    let world = World::new("stale-merged");
+    let world = World::new("attention-stale-merged");
     let merged = PullRequestFacts {
         state: PrState::Merged,
         ..reviewed_by_me(1)
@@ -1150,7 +1709,7 @@ impl World {
 
 #[test]
 fn a_merged_prs_stale_review_keeps_its_files_and_adds_nothing_to_needs_attention() {
-    let world = World::new("stale-merged-row");
+    let world = World::new("attention-stale-merged-row");
     world.has_issues(vec![issue(10)]);
     let merged = PullRequestFacts {
         state: PrState::Merged,
@@ -1162,8 +1721,8 @@ fn a_merged_prs_stale_review_keeps_its_files_and_adds_nothing_to_needs_attention
     assert_eq!(
         world.review_in_issue(1),
         YourReview::StaleReview {
-            reviewed: sha('1'),
-            head: sha('2'),
+            reviewed: sha_of('1'),
+            head: sha_of('2'),
             files: vec![ChangedFile {
                 path: "Lib/ast.py".to_owned(),
                 whitespace_only: false,
@@ -1176,7 +1735,7 @@ fn a_merged_prs_stale_review_keeps_its_files_and_adds_nothing_to_needs_attention
 
 #[test]
 fn a_closed_pr_whose_check_cant_run_shows_why_and_waits_on_nobody() {
-    let world = World::new("unchecked-closed");
+    let world = World::new("attention-unchecked-closed");
     world.has_issues(vec![issue(10)]);
     let closed = PullRequestFacts {
         state: PrState::Closed,
@@ -1185,10 +1744,11 @@ fn a_closed_pr_whose_check_cant_run_shows_why_and_waits_on_nobody() {
     world.reviewed_and_moved_unread(fixing_too(closed, 10));
     world.has(vec![fixing_too(requested(2), 10)]);
     let refused = UncheckedCommit {
-        of: on_main(sha('1')),
+        of: on_main(sha_of('1')),
         reason: CantCheck::Refused,
     };
     world
+        .db
         .store
         .save_unchecked(&cpython(), vec![refused])
         .unwrap();
@@ -1196,7 +1756,7 @@ fn a_closed_pr_whose_check_cant_run_shows_why_and_waits_on_nobody() {
     assert_eq!(
         world.review_in_issue(1),
         YourReview::CantCheck {
-            reviewed: sha('1'),
+            reviewed: sha_of('1'),
             reason: CantCheck::Refused
         }
     );

@@ -3,17 +3,22 @@ use std::collections::BTreeSet;
 use time::OffsetDateTime;
 
 use super::*;
+use crate::facts::activity::{ItemKey, PutAway};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::{Comment, CommentId, IssueComment};
 use crate::facts::issues::IssueFacts;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{LatestReview, PullRequestFacts, ReviewState};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
-use crate::work::YourReview;
-use crate::workbench::WorkbenchRow;
+use crate::store::testing::seeing;
+use crate::store::{Archiving, AuthorMuting};
+use crate::testing::cpython;
+use crate::work::{SeenMark, YourReview};
 use crate::workbench::testing::{
-    ViewWorld, backport, bots_backport, first_issue, fixing, issue, workbench,
+    ViewWorld, backport, bots_backport, first_issue, fixing, grouped_whole, issue, me, under_each,
+    workbench,
 };
+use crate::workbench::{MuteAuthor, WorkbenchRow};
 
 fn merged(facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {
@@ -92,11 +97,12 @@ fn a_merged_backport_a_filter_matched_keeps_its_origin_pr_listed() {
         problem: None,
     };
     world
+        .db
         .store
         .save_filter_results(&settings.name, &query, found)
         .unwrap();
 
-    let shown = IssueView::read(&world.reader, &settings, 1)
+    let shown = IssueView::read(&world.db.reader, &settings, 1)
         .unwrap()
         .unwrap();
 
@@ -148,11 +154,115 @@ fn a_merged_pr_that_needs_attention_or_matched_a_filter_keeps_its_origin_pr_out_
 }
 
 fn view(world: &ViewWorld, number: u32) -> Option<IssueView> {
-    IssueView::read(&world.reader, &world.settings(), number).unwrap()
+    IssueView::read(&world.db.reader, &world.settings(), number).unwrap()
 }
 
 fn pr_row(view: &IssueView) -> &WorkbenchRow {
     view.issue.pull_requests[0].rows()[0]
+}
+
+#[test]
+fn the_view_says_whether_the_issue_is_archived() {
+    let world = ViewWorld::new("issue-view-archived");
+    world.has(vec![fixing(10, 1)], vec![issue(1)]);
+    let before = view(&world, 1).unwrap();
+    let key = ItemKey::Issue { number: 1 };
+    let numbers = before.issue.seen.mark.numbers.clone();
+    let archiving = Archiving {
+        key,
+        numbers,
+        up_to: None,
+        put_away: PutAway::Now,
+        findings: vec![],
+    };
+    let now = OffsetDateTime::now_utc();
+    world.db.store.archive(&cpython(), archiving, now).unwrap();
+
+    let archived = view(&world, 1).unwrap();
+    world.db.store.unarchive(&cpython(), key).unwrap();
+    let after = view(&world, 1).unwrap();
+    world.finish();
+
+    assert_eq!(before.issue.seen.mark.numbers, [1, 10]);
+    assert_eq!(
+        (before.hidden, archived.hidden, after.hidden),
+        (None, Some(Hidden::Archived), None)
+    );
+}
+
+#[test]
+fn the_view_says_whether_the_issue_is_muted() {
+    let world = ViewWorld::new("issue-view-muted");
+    world.has(vec![fixing(10, 1)], vec![issue(1)]);
+
+    mute(&world, 1);
+    let muted = view(&world, 1).unwrap();
+    let key = ItemKey::Issue { number: 1 };
+    world.db.store.unmute(&cpython(), key).unwrap();
+    let after = view(&world, 1).unwrap();
+    world.finish();
+
+    assert_eq!((muted.hidden, after.hidden), (Some(Hidden::Muted), None));
+}
+
+#[test]
+fn the_view_offers_mute_author_for_its_issues_author_and_says_once_they_are_muted() {
+    let world = ViewWorld::new("issue-view-muted-author");
+    let author = Login::new("issue-author");
+    world.has(vec![fixing(10, 1)], vec![issue(1)]);
+    let before = view(&world, 1).unwrap();
+
+    let SeenMark { numbers, up_to, .. } = before.issue.seen.mark.clone();
+    let muting = AuthorMuting {
+        author: author.clone(),
+        marks: vec![seeing(numbers, up_to)],
+    };
+    let now = OffsetDateTime::now_utc();
+    world.db.store.mute_author(&cpython(), muting, now).unwrap();
+    let muted = view(&world, 1).unwrap();
+    let own = IssueFacts {
+        author: Some(me()),
+        ..issue(2)
+    };
+    world.has(vec![], vec![own]);
+    let mine = view(&world, 2).unwrap();
+    world.finish();
+
+    let login = author.clone();
+    assert_eq!(before.issue.mute_author, MuteAuthor::Mute { login });
+    assert_eq!(before.hidden, None);
+    assert_eq!(
+        muted.issue.mute_author,
+        MuteAuthor::Unmute { login: author }
+    );
+    assert_eq!(muted.hidden, Some(Hidden::MutedAuthor));
+    assert_eq!(mine.issue.mute_author, MuteAuthor::Off);
+}
+
+#[test]
+fn a_muted_issue_names_no_pr_for_a_review_request_that_stood_at_the_mute() {
+    let world = ViewWorld::new("issue-view-muted-attention");
+    let requested = PullRequestFacts {
+        author: Some(Login::new("some-author")),
+        review_requests: vec![Login::new("octocat")],
+        ..fixing(5, 1)
+    };
+    world.has(vec![requested], vec![issue(1)]);
+    assert_eq!(
+        view(&world, 1).unwrap().needs_attention,
+        BTreeSet::from([5])
+    );
+
+    mute(&world, 1);
+
+    assert_eq!(view(&world, 1).unwrap().needs_attention, BTreeSet::new());
+    world.finish();
+}
+
+/// Mute on Issue `number` as its view draws it now.
+fn mute(world: &ViewWorld, number: u32) {
+    let numbers = view(world, number).unwrap().issue.seen.mark.numbers;
+    world.mute_issue(number, numbers)
 }
 
 #[test]
@@ -227,6 +337,7 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
         opened_at: Some(OffsetDateTime::UNIX_EPOCH),
     };
     world
+        .db
         .store
         .save_issue_content(&world.settings().name, 1, content.clone())
         .unwrap();
@@ -326,5 +437,62 @@ fn a_pr_row_says_whether_the_user_has_reviewed_it() {
         YourReview::Unreviewed,
         "the user's comments on their own PR"
     );
+    world.finish();
+}
+
+#[test]
+fn an_issue_shows_the_tree_the_grouping_of_every_pr_gives_it_under_each_conventions() {
+    let world = ViewWorld::new("issue-view-whole");
+    world.has_crossed_links();
+    let by_first = |mut entries: Vec<TreeEntry>| {
+        entries.sort_by_key(|entry| entry.rows()[0].number);
+        entries
+    };
+    let trees = |items: Vec<WorkbenchItem>| -> Vec<(u32, Vec<Vec<u32>>)> {
+        let issues = items.into_iter().filter_map(|item| match item {
+            WorkbenchItem::Issue(issue) => Some((issue.number, issue.pull_requests)),
+            WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+        });
+        issues
+            .map(|(number, entries)| (number, numbers(&by_first(entries))))
+            .collect()
+    };
+    let (cpython, _) = grouped_whole(&world, &world.settings());
+    assert_eq!(
+        trees(cpython),
+        [
+            (1, vec![vec![10, 13, 11], vec![14], vec![30], vec![50]]),
+            (2, vec![vec![10, 13, 12], vec![20], vec![52]]),
+            (3, vec![vec![30], vec![40, 41]]),
+        ],
+        "the links cross as the fixture means them to"
+    );
+
+    for settings in under_each(&world.settings()) {
+        let (items, causes) = grouped_whole(&world, &settings);
+        for item in items {
+            let WorkbenchItem::Issue(whole) = item else {
+                continue;
+            };
+            let (number, conventions) = (whole.number, settings.conventions);
+            let shown = IssueView::read(&world.db.reader, &settings, number)
+                .unwrap()
+                .unwrap();
+            let key = ItemKey::Issue { number };
+            let prs: Vec<u32> = whole.rows().iter().map(|row| row.number).collect();
+
+            let listed_and_folded = [shown.issue.pull_requests.clone(), shown.merged].concat();
+            assert_eq!(
+                by_first(listed_and_folded),
+                by_first(whole.pull_requests.clone()),
+                "Issue {number} under {conventions:?}"
+            );
+            assert_eq!(
+                shown.needs_attention,
+                causes.needing_attention_in(key, &prs)
+            );
+            assert_eq!(shown.hidden, Hidden::of(&causes, key, &prs));
+        }
+    }
     world.finish();
 }

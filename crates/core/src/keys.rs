@@ -550,8 +550,9 @@ table! {
     OpenOnGithub: "Open on GitHub", (CtrlShift 'g'), Anywhere;
     SwitchRepository: "Switch Repository", (Ctrl 'r'), Anywhere;
     ResetLayout: "Reset Layout", (), Anywhere;
-    Archive: "Archive", (Plain 'e'), IssueList;
-    Mute: "Mute", (Plain 'm'), IssueList;
+    Archive: "Archive", (Plain 'e'), Anywhere;
+    Mute: "Mute", (Plain 'm'), Anywhere;
+    MuteAuthor: "Mute Author", (), Anywhere;
     MarkSeen: "Mark Seen", (Plain 'q'), Anywhere;
     MarkUnseen: "Mark Unseen", (Shift 'q'), Anywhere;
     OpenSettings: "Open Settings", (Ctrl ','), Anywhere;

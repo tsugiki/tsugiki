@@ -279,9 +279,9 @@ struct Messages(Sender<Message>);
 
 impl Drop for Messages {
     fn drop(&mut self) {
-        let (reply, _unheard) = mpsc::channel();
-        // The thread may have stopped already.
-        let _unheard = self.0.send(Message::Stop(PATIENCE, reply));
+        // Nobody waits for the thread to stop.
+        let (reply, _) = mpsc::channel();
+        tell(&self.0, Message::Stop(PATIENCE, reply));
     }
 }
 
@@ -292,7 +292,11 @@ impl Definitions {
         let (owner, rows) = Owner::new(sources);
         let messages = Arc::new(Messages(owner.own.clone()));
         let files = Arc::clone(&owner.files);
-        let _owner = thread::spawn(move || owner.run());
+        #[expect(
+            unused_results,
+            reason = "it ends on `Message::Stop`, which `stop` waits for with a patience a join can't take"
+        )]
+        thread::spawn(move || owner.run());
         Self {
             messages,
             files,
@@ -380,8 +384,11 @@ impl Definitions {
     pub fn remove(&self, repository: RepositoryName) {
         let (reply, removed) = mpsc::channel();
         self.send(Message::Remove(repository, reply));
-        // The thread may have stopped, and its servers with it.
-        let _stopped = removed.recv();
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the thread has stopped, and its servers with it"
+        )]
+        let _ = removed.recv();
     }
 
     /// Asks each server to stop, and waits up to `patience` for them to end. On Windows one still running
@@ -389,12 +396,17 @@ impl Definitions {
     pub fn stop(&self, patience: Duration) {
         let (reply, stopped) = mpsc::channel();
         self.send(Message::Stop(patience, reply));
-        let _waited = stopped.recv_timeout(patience);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a server still running past `patience` ends with Tsugiki's process, and a thread that \
+                      has gone has stopped its servers"
+        )]
+        let _ = stopped.recv_timeout(patience);
     }
 
+    /// Sends the thread `message`. A thread that has stopped can't answer, and the next lookup says so.
     fn send(&self, message: Message) {
-        // The thread ends once it has stopped, and the next lookup says so.
-        let _unheard = self.messages.0.send(message);
+        tell(&self.messages.0, message);
     }
 }
 
@@ -441,8 +453,11 @@ struct Asker {
 
 impl Asker {
     fn answer(&self, answer: Result<Answer, Error>) {
-        // The window may have stopped waiting.
-        let _unheard = self.reply.send(answer);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only if the window has stopped waiting, and then nobody wants the answer"
+        )]
+        let _ = self.reply.send(answer);
     }
 }
 
@@ -668,7 +683,11 @@ impl Owner {
     /// Notes that the server `key` names started from `program`, naming `version`, if it did, and looks at
     /// the program's folder for what it lacks (#684).
     fn started(&mut self, key: &Key, program: &Path, version: Option<String>) {
-        let _cleared = self.lasts.remove(key);
+        #[expect(
+            unused_results,
+            reason = "a server that has started has no last problem, whichever it had"
+        )]
+        self.lasts.remove(key);
         let flaw = health::flaw(key.1, program);
         self.health.entry(key.1).or_default().started(version, flaw);
     }
@@ -678,12 +697,14 @@ impl Owner {
         let (repository, name) = key;
         let named = name.as_str();
         log::warn!("{named} for {repository} has a problem: {problem:?}");
-        let _old = self.lasts.insert(key.clone(), Last::Problem(problem));
+        self.lasts.extend([(key.clone(), Last::Problem(problem))]);
     }
 
     fn run(mut self) {
         while let Some(message) = self.next() {
-            if !self.handle(message) {
+            let stops = matches!(message, Message::Stop(..));
+            self.handle(message);
+            if stops {
                 return;
             }
         }
@@ -709,8 +730,8 @@ impl Owner {
         }
     }
 
-    /// Handles `message`, writes the servers' rows if they changed, and says whether the thread goes on.
-    fn handle(&mut self, message: Message) -> bool {
+    /// Handles `message`, and writes the servers' rows if they changed. After a `Stop` the thread ends.
+    fn handle(&mut self, message: Message) {
         match message {
             Message::Opened(repository, pr) => self.opened(&repository, pr),
             Message::LookUp(lookup, asker) => self.look_up(lookup, asker),
@@ -723,18 +744,26 @@ impl Owner {
             Message::Checked(name, path, outcome) => self.checked(name, &path, outcome),
             Message::Remove(repository, reply) => {
                 self.remove(&repository);
-                let _unheard = reply.send(());
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "`remove` waits for this, and fails only once its caller has gone"
+                )]
+                let _ = reply.send(());
             }
             Message::Stop(patience, reply) => {
                 self.cancel_running();
                 let all: Vec<Key> = self.servers.keys().cloned().collect();
-                wait_all(self.stop_servers(&all), Instant::now() + patience);
-                let _unheard = reply.send(());
-                return false;
+                self.stop_servers_until(&all, Instant::now() + patience);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller ran out of patience, or let go of the thread \
+                              without waiting"
+                )]
+                let _ = reply.send(());
+                return;
             }
         }
         self.publish();
-        true
     }
 
     /// Forgets the server `key` names if it is the one that exited, as it ended on its own, and notes how:
@@ -746,8 +775,12 @@ impl Owner {
         if !ended {
             return;
         }
-        // The watch on its index ends with the news that its index ended, which comes next.
-        let _ended = self.servers.remove(key);
+        #[expect(
+            unused_results,
+            reason = "the server has ended, and the watch on its index ends with the news that its index \
+                      ended, which comes next"
+        )]
+        self.servers.remove(key);
         self.trouble(key, ServerProblem::stopped(exit));
     }
 
@@ -782,23 +815,31 @@ impl Owner {
             if self.known.get(&name) == Some(&path) {
                 continue;
             }
-            let _old = self.known.insert(name, path.clone());
+            self.known.extend([(name, path.clone())]);
             let theirs: Vec<Key> = (self.servers.keys())
                 .filter(|(_, running)| *running == name)
                 .cloned()
                 .collect();
-            let _stopping = self.stop_servers(&theirs);
+            self.stop_servers(&theirs);
             self.lasts.retain(|(_, server), _| *server != name);
-            let _forgotten = self.health.remove(&name);
-            if let Some(path) = path {
-                let _new = self.health.insert(name, Health::checking());
-                let own = self.own.clone();
-                let _checks = thread::spawn(move || {
-                    let found = health::check(name, &path);
-                    // The thread ends once it has stopped.
-                    let _unheard = own.send(Message::Checked(name, path, found));
-                });
-            }
+            let Some(path) = path else {
+                #[expect(
+                    unused_results,
+                    reason = "a server that isn't set up has no health to show"
+                )]
+                self.health.remove(&name);
+                continue;
+            };
+            self.health.extend([(name, Health::checking())]);
+            let own = self.own.clone();
+            #[expect(
+                unused_results,
+                reason = "the check ends by itself, and an owner that has gone doesn't need its word"
+            )]
+            thread::spawn(move || {
+                let found = health::check(name, &path);
+                tell(&own, Message::Checked(name, path, found));
+            });
         }
     }
 
@@ -816,19 +857,39 @@ impl Owner {
     /// Stops `repository`'s servers and forgets its PR and what happened to its servers, cancels the lookup
     /// running on one of them, and waits until the servers' own processes have ended.
     fn remove(&mut self, repository: &RepositoryName) {
-        let _pr = self.prs.remove(repository);
+        #[expect(unused_results, reason = "a Repository that has gone has no PR open")]
+        self.prs.remove(repository);
         self.lasts.retain(|(owner, _), _| owner != repository);
-        let _hidden = (self.shown).take_if(|shown| shown == repository);
+        if self.shown.as_ref() == Some(repository) {
+            self.shown = None;
+        }
         let theirs: Vec<Key> = (self.servers.keys())
             .filter(|(owner, _)| owner == repository)
             .cloned()
             .collect();
-        wait_all(self.stop_servers(&theirs), Instant::now() + ENDED_WITHIN);
+        self.stop_servers_until(&theirs, Instant::now() + ENDED_WITHIN);
     }
 
-    /// Asks the servers `keys` name to stop and forgets them, and cancels the lookup running on one of them.
-    /// A lookup that hears how the index of one goes hears nothing more.
-    fn stop_servers(&mut self, keys: &[Key]) -> Vec<Stopping> {
+    /// Asks the servers `keys` name to stop, as `forget_servers` says, and returns at once.
+    fn stop_servers(&mut self, keys: &[Key]) {
+        self.forget_servers(keys)
+            .into_iter()
+            .for_each(LanguageServer::stop);
+    }
+
+    /// Asks the servers `keys` name to stop, as `forget_servers` says, and waits until each has ended, or
+    /// until `until`.
+    fn stop_servers_until(&mut self, keys: &[Key], until: Instant) {
+        let servers = self.forget_servers(keys).into_iter();
+        let stopping: Vec<Stopping> = servers.map(LanguageServer::stopping).collect();
+        for server in stopping {
+            server.wait(until);
+        }
+    }
+
+    /// Takes out the servers `keys` name, and cancels the lookup running on one of them. A lookup that hears
+    /// how the index of one goes hears nothing more.
+    fn forget_servers(&mut self, keys: &[Key]) -> Vec<LanguageServer> {
         let asked = self
             .running
             .take_if(|running| keys.contains(&running.server));
@@ -838,7 +899,6 @@ impl Owner {
         }
         (keys.iter())
             .filter_map(|key| self.servers.remove(key))
-            .map(LanguageServer::stop)
             .collect()
     }
 
@@ -856,9 +916,9 @@ impl Owner {
             log::info!(
                 "Tsugiki stops {named} for {repository}, which no lookup has reached for {minutes} minutes"
             );
-            let _old = self.lasts.insert(key.clone(), Last::Idle);
+            self.lasts.extend([(key.clone(), Last::Idle)]);
         }
-        let _stopping = self.stop_servers(&stale);
+        self.stop_servers(&stale);
     }
 
     /// The wait from `now` until the next server has gone `idle` without a lookup, if a server can.
@@ -884,7 +944,7 @@ impl Owner {
         {
             return;
         }
-        let _old = self.prs.insert(repository.clone(), pr.clone());
+        self.prs.extend([(repository.clone(), pr.clone())]);
         self.stop_stale(repository, &pr.at);
         for name in STARTED_BY_PR {
             if !pr.changed_for(name).is_empty() {
@@ -903,7 +963,7 @@ impl Owner {
             })
             .map(|(key, _)| key.clone())
             .collect();
-        let _stopping = self.stop_servers(&stale);
+        self.stop_servers(&stale);
     }
 
     /// Starts the server `key` names for `pr`, if the user has set it up.
@@ -952,7 +1012,8 @@ impl Owner {
             .iter()
             .position(|ticket| *ticket == asker.ticket)
         {
-            let _taken = self.cancelled.remove(at);
+            #[expect(unused_results, reason = "it is `asker`'s ticket, which `asker` holds")]
+            self.cancelled.remove(at);
             asker.answer(Ok(Answer::Cancelled));
             return;
         }
@@ -1012,7 +1073,11 @@ impl Owner {
         };
         if starts {
             // As `started` does, field by field, as `server` borrows `servers`.
-            let _cleared = self.lasts.remove(key);
+            #[expect(
+                unused_results,
+                reason = "a server that has started has no last problem, whichever it had"
+            )]
+            self.lasts.remove(key);
             let flaw = health::flaw(*name, &program);
             (self.health.entry(*name).or_default()).started(server.version(), flaw);
             // The user may have asked again, or cancelled, while the server started.
@@ -1053,10 +1118,13 @@ impl Owner {
         let id = self.asked;
         let canceller = pending.canceller();
         let own = self.own.clone();
-        let _waits = thread::spawn(move || {
+        #[expect(
+            unused_results,
+            reason = "it ends once the server answers, the request is cancelled or the server ends"
+        )]
+        thread::spawn(move || {
             let answer = pending.wait().map(|definitions| hits.of(definitions));
-            // The thread ends once it has stopped.
-            let _unheard = own.send(Message::Answered(id, answer));
+            tell(&own, Message::Answered(id, answer));
         });
         (id, canceller)
     }
@@ -1076,8 +1144,11 @@ impl Owner {
                 return;
             }
             (Err(cause), Asked::First { asker, .. }) => {
-                // A server that failed starts afresh on the next lookup.
-                let _failed = self.servers.remove(&server);
+                #[expect(
+                    unused_results,
+                    reason = "dropping a server that failed stops it, and the next lookup starts it afresh"
+                )]
+                self.servers.remove(&server);
                 asker.answer(Err(failed(&format!("{name} couldn't answer: {cause}"))));
                 return;
             }
@@ -1287,7 +1358,7 @@ fn ready<'a>(
             let Some(checkout) = checkout(repository).filter(|checkout| checkout.at == pr.at)
             else {
                 if let Some(old) = old {
-                    let _none = servers.insert(key.clone(), old);
+                    servers.extend([(key.clone(), old)]);
                 }
                 let elsewhere = format!(
                     "Tsugiki has no copy of this PR's files for {} to read yet.",
@@ -1297,7 +1368,9 @@ fn ready<'a>(
             };
             waiting(Waiting::Starting { server: *name });
             // Asked first, the old server can end while the new one starts.
-            let _stopping = old.map(LanguageServer::stop);
+            if let Some(old) = old {
+                old.stop();
+            }
             let changed = pr.changed_for(*name);
             LanguageServer::start(*name, program, (checkout, &changed), news(own, key))?
         }
@@ -1315,16 +1388,17 @@ fn news(own: &Sender<Message>, key: &Key) -> OnNews {
             News::Exited(exit) => Message::Exited(key.clone(), exit),
             News::Troubled(problem) => Message::Troubled(key.clone(), problem),
         };
-        // The thread ends once it has stopped.
-        let _unheard = own.send(message);
+        tell(&own, message);
     })
 }
 
-/// Waits until each of the `stopping` servers has ended, or until `until`.
-fn wait_all(stopping: Vec<Stopping>, until: Instant) {
-    for server in stopping {
-        server.wait(until);
-    }
+/// Sends the servers' thread `message`.
+fn tell(own: &Sender<Message>, message: Message) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the thread ends once it has stopped, and then nothing is left to do with a message"
+    )]
+    let _ = own.send(message);
 }
 
 /// `path` without its `.` and `..` parts, as a server names the files it read.
@@ -1332,7 +1406,11 @@ fn plain(path: &Path) -> PathBuf {
     let mut plain = PathBuf::new();
     for part in path.components() {
         if part == Component::ParentDir {
-            let _parent = plain.pop();
+            #[expect(
+                unused_results,
+                reason = "a `..` above the first part has nothing to take away, and is left out"
+            )]
+            plain.pop();
         } else if part != Component::CurDir {
             plain.push(part);
         }

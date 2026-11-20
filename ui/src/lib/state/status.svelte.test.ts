@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
+import { HOUR_POINTS } from "$lib/testing/fixtures";
 import { StatusState, type RepositoryMirror, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -115,14 +116,7 @@ describe("StatusState's last sync", () => {
   });
 
   describe("the hour's points", () => {
-    const points = {
-      limit: 5000,
-      used: 3760,
-      remaining: 1240,
-      resets_at: "2026-11-17T14:32:00Z",
-      spent: 3610,
-      since: null,
-    };
+    const points = HOUR_POINTS;
     const catchPoints = () => {
       const listener = vi.fn<(payload: typeof points | null) => void>();
       vi.mocked(events.hourPointsChanged.listen).mockImplementation(async (callback) => {

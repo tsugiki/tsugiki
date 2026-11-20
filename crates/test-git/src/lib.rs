@@ -408,6 +408,27 @@ pub fn files_in(folder: &Path) -> Vec<OsString> {
     names
 }
 
+/// Windows' `FILE_SHARE_READ`, for [`held_open`].
+#[cfg(windows)]
+pub const SHARE_READ: u32 = 0x1;
+/// Windows' `FILE_SHARE_WRITE`, for [`held_open`].
+#[cfg(windows)]
+pub const SHARE_WRITE: u32 = 0x2;
+
+/// `file` opened to read, as another program that shares it only as `share` says holds it: without
+/// `FILE_SHARE_DELETE`, nothing can rename over it, and without [`SHARE_WRITE`] nothing can open it to write.
+/// It lets go once dropped.
+#[cfg(windows)]
+pub fn held_open(file: &Path, share: u32) -> fs::File {
+    use std::os::windows::fs::OpenOptionsExt as _;
+
+    fs::OpenOptions::new()
+        .read(true)
+        .share_mode(share)
+        .open(file)
+        .unwrap()
+}
+
 /// A path for this test run under the repo's ignored `.temp` folder: `.temp/<name>-<pid>`. `.temp` exists
 /// by the time this returns; the path itself doesn't. Windows reuses process IDs, so a later run can get
 /// the path a failed run left: this removes what it finds there.

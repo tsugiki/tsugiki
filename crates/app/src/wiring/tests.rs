@@ -2501,3 +2501,43 @@ fn stopping_waits_for_the_settings_change_under_way() {
     let file = std::fs::read_to_string(folders.settings_file()).unwrap();
     assert!(file.contains(CPYTHON), "{file}");
 }
+
+/// A save under way when the window closes reaches the session before it stops (#939): a pane layout whose
+/// reload takes in Conventions edited by hand, held up while another program reads `machine.toml`.
+/// Windows alone lets a program hold a file so.
+#[cfg(windows)]
+#[test]
+fn stopping_hands_the_session_a_settings_change_that_ends_during_the_stop() {
+    use tsugiki_core::settings::PaneLayout;
+    use tsugiki_test_git::{SHARE_READ, SHARE_WRITE, held_open};
+
+    let (folders, _root) = temp_folders("wired-stop-hands-over");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    drop(wired.ask("add_repository", add_cpython()).unwrap());
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    let edited = file.replace("conventions = \"cpython\"", "conventions = \"github\"");
+    std::fs::write(folders.settings_file(), &edited).unwrap();
+    let machine = folders.machine_file();
+    let held = held_open(&machine, SHARE_READ | SHARE_WRITE);
+    let settings = wired.webview.state::<SettingsOwner>().inner().clone();
+    let saving = std::thread::spawn(move || {
+        settings.save_panes(PaneLayout {
+            sidebar: Some(240),
+            ..PaneLayout::default()
+        })
+    });
+    let new = machine.with_file_name(format!(".machine.toml.{}.tmp", std::process::id()));
+    wait_until(PLENTY, || new.exists());
+    let letting_go = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        drop(held);
+    });
+
+    let wired = wired.stop();
+
+    let heard: Vec<Value> = wired.workbenches.try_iter().collect();
+    letting_go.join().unwrap();
+    assert!(saving.join().unwrap().is_ok());
+    assert_ne!(edited, file, "{file}");
+    assert_eq!(heard, [json!({ "repository": CPYTHON, "items": [] })]);
+}

@@ -1,5 +1,7 @@
 use super::*;
 use crate::testing::{TempPath, files_in, temp_path};
+#[cfg(windows)]
+use tsugiki_test_git::{SHARE_READ, SHARE_WRITE, held_open};
 
 const BEFORE: &str = "[status_bar]\nvisible = true\n";
 const AFTER: &str = "[status_bar]\nvisible = false\n";
@@ -67,7 +69,8 @@ fn a_save_replaces_what_a_save_that_ended_part_way_left() {
     let (file, folder) = saved_before("left");
     let elsewhere = folder.join("elsewhere.toml");
     fs::write(&elsewhere, BEFORE).unwrap();
-    fs::hard_link(&elsewhere, folder.join(".settings.toml.tmp")).unwrap();
+    let left = format!(".settings.toml.{}.tmp", std::process::id());
+    fs::hard_link(&elsewhere, folder.join(left)).unwrap();
 
     save(&file, AFTER).unwrap();
 
@@ -132,6 +135,11 @@ fn a_save_through_a_symbolic_link_to_no_file_is_refused_and_keeps_the_link() {
     let refused = save(&link, AFTER).unwrap_err();
 
     assert_eq!(refused.kind(), io::ErrorKind::NotFound);
+    let message = refused.to_string();
+    assert!(
+        message.starts_with(&format!("it links to {}: ", shared.display())),
+        "{message}"
+    );
     assert_eq!(fs::read_link(&link).unwrap(), shared);
     assert_eq!(files_in(&folder.join("settings")), ["settings.toml"]);
     assert_eq!(files_in(&folder.join("dotfiles")), [""; 0]);
@@ -151,25 +159,12 @@ fn a_save_keeps_the_files_mode() {
     assert_eq!(mode & 0o777, 0o640);
 }
 
-/// `settings.toml` opened as a program that reads it and won't let it be deleted meanwhile opens it.
+/// What a save of a file that a program shares as `share` says writes, once the program lets go after a
+/// moment, and what the folder holds then.
 #[cfg(windows)]
-fn held_open(file: &Path) -> File {
-    use std::os::windows::fs::OpenOptionsExt as _;
-
-    /// `FILE_SHARE_READ | FILE_SHARE_WRITE`, without `FILE_SHARE_DELETE`.
-    const READ_AND_WRITE: u32 = 0x1 | 0x2;
-    OpenOptions::new()
-        .read(true)
-        .share_mode(READ_AND_WRITE)
-        .open(file)
-        .unwrap()
-}
-
-#[cfg(windows)]
-#[test]
-fn a_save_waits_for_a_program_that_holds_the_file_for_a_moment() {
-    let (file, folder) = saved_before("held");
-    let held = held_open(&file);
+fn saved_once_let_go(name: &str, share: u32) -> (String, Vec<OsString>) {
+    let (file, folder) = saved_before(name);
+    let held = held_open(&file, share);
     let letting_go = thread::spawn(move || {
         thread::sleep(TRY_AGAIN * 2);
         drop(held);
@@ -179,15 +174,32 @@ fn a_save_waits_for_a_program_that_holds_the_file_for_a_moment() {
 
     letting_go.join().unwrap();
     saved.unwrap();
-    assert_eq!(fs::read_to_string(&file).unwrap(), AFTER);
-    assert_eq!(files_in(&folder), ["settings.toml"]);
+    (fs::read_to_string(&file).unwrap(), files_in(&folder))
+}
+
+/// The rename waits for it, as the program doesn't share deletion.
+#[cfg(windows)]
+#[test]
+fn a_save_waits_for_a_program_that_reads_the_file_for_a_moment() {
+    let saved = saved_once_let_go("held", SHARE_READ | SHARE_WRITE);
+
+    assert_eq!(saved, (AFTER.to_owned(), vec!["settings.toml".into()]));
+}
+
+/// Opening the file to write waits for it, as the program shares neither writing nor deletion.
+#[cfg(windows)]
+#[test]
+fn a_save_waits_for_a_program_that_holds_the_file_from_writers_for_a_moment() {
+    let saved = saved_once_let_go("held-from-writers", SHARE_READ);
+
+    assert_eq!(saved, (AFTER.to_owned(), vec!["settings.toml".into()]));
 }
 
 #[cfg(windows)]
 #[test]
 fn a_save_gives_up_on_a_program_that_holds_the_file_and_leaves_no_new_file() {
     let (file, folder) = saved_before("held-long");
-    let held = held_open(&file);
+    let held = held_open(&file, SHARE_READ | SHARE_WRITE);
 
     let failed = save(&file, AFTER);
 

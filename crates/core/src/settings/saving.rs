@@ -10,18 +10,21 @@ use std::thread;
 #[cfg(windows)]
 use std::time::{Duration, Instant};
 
-/// How long the rename tries again while another program holds the settings file open on Windows, as an
-/// antivirus, a sync client or the search indexer does for a moment. It stays under `QUIT_PATIENCE` in
-/// `startup.rs`, so a save at a quit can still finish.
+/// How long a save tries the file again while another program holds it open on Windows, as an antivirus, a
+/// sync client or the search indexer does for a moment. One save's tries fit in `QUIT_PATIENCE` in
+/// `startup.rs`, but each save queued at a quit tries in turn, so of several queued on a file held that long,
+/// the later ones go unwritten.
 #[cfg(windows)]
 const HELD_FOR: Duration = Duration::from_millis(500);
-/// How long the rename waits between tries.
+/// How long a save waits between tries.
 #[cfg(windows)]
 const TRY_AGAIN: Duration = Duration::from_millis(50);
-/// The errors Windows gives for a rename over a file another program holds open without letting it go,
-/// `ERROR_ACCESS_DENIED` and `ERROR_SHARING_VIOLATION`.
+/// The errors Windows gives for a file another program holds open without sharing it,
+/// `ERROR_SHARING_VIOLATION`, and for one an antivirus holds or a deletion still pending holds,
+/// `ERROR_ACCESS_DENIED`. A read-only file or one the user's permissions don't cover gives that too, and
+/// fails only once [`HELD_FOR`] has passed.
 #[cfg(windows)]
-const HELD: [i32; 2] = [5, 32];
+const HELD: [i32; 2] = [32, 5];
 
 /// Writes `text` to a new file beside the one at `path`, then renames it over that one. A symbolic link, such
 /// as one into a dotfiles repository, is followed first, so the link stays and the file it points to changes.
@@ -29,17 +32,18 @@ const HELD: [i32; 2] = [5, 32];
 ///
 /// A file Tsugiki can't write to stays as it is, as a write over it would. A failure takes the new file away
 /// again. Only a process that ends between the write and the rename leaves it, beside a settings file still
-/// whole, and the next save replaces it.
+/// whole, and the next save by a process with the same ID replaces it.
 pub(super) fn save(path: &Path, text: &str) -> io::Result<()> {
     let target = followed(path)?;
     fs::create_dir_all(target.with_file_name(""))?;
     // Opened to learn that Tsugiki may write there, as a rename needs only the folder's permission.
-    let old = match OpenOptions::new().write(true).open(&target) {
+    let old = match while_held(|| OpenOptions::new().write(true).open(&target)) {
         Err(cause) if cause.kind() == io::ErrorKind::NotFound => None,
         opened => Some(opened?.metadata()?),
     };
     let new = beside(&target);
-    let saved = write_new(&new, old.as_ref(), text).and_then(|()| rename(&new, &target));
+    let saved =
+        write_new(&new, old.as_ref(), text).and_then(|()| while_held(|| fs::rename(&new, &target)));
     if saved.is_err() {
         let _gone = fs::remove_file(&new);
     }
@@ -55,16 +59,29 @@ fn followed(path: &Path) -> io::Result<PathBuf> {
             .ok()
             .as_ref()
             .is_some_and(Metadata::is_symlink);
-        (!link).then(|| path.to_owned()).ok_or(cause)
+        // Made for any path here, so that no line runs only for a link, which Windows can't make in tests.
+        let unreached = links_to(path, &cause);
+        (!link).then(|| path.to_owned()).ok_or(unreached)
     })
 }
 
+/// The refusal of a save through the link at `path`, which names the file it points to, since the link
+/// itself is there.
+fn links_to(path: &Path, cause: &io::Error) -> io::Error {
+    let file = fs::read_link(path).unwrap_or_default();
+    io::Error::new(
+        cause.kind(),
+        format!("it links to {}: {cause}", file.display()),
+    )
+}
+
 /// The path the new text goes to before the rename: in the same folder as `file`, since a rename can't cross
-/// from one drive to another, and hidden on macOS.
+/// from one drive to another, and hidden on macOS. The process ID keeps apart two Tsugikis that save the same
+/// file at once, a development build beside an installed one.
 fn beside(file: &Path) -> PathBuf {
     let mut name = OsString::from(".");
     name.push(file.file_name().unwrap_or_default());
-    name.push(".tmp");
+    name.push(format!(".{}.tmp", std::process::id()));
     file.with_file_name(name)
 }
 
@@ -100,26 +117,27 @@ const fn keep_mode(_file: &File, _old: &Metadata) -> io::Result<()> {
     Ok(())
 }
 
-/// Renames `from` over `to`, trying again for [`HELD_FOR`] while another program holds `to` open. A write
-/// over the file worked while that program read it, and a rename replaces the file only once it lets go.
+/// Does `action` on the settings file, and does it again for [`HELD_FOR`] while another program holds the
+/// file. A write over the file worked while that program read it, but opening it to write waits for one that
+/// doesn't share writing, and a rename over it for one that doesn't share deletion.
 #[cfg(windows)]
-fn rename(from: &Path, to: &Path) -> io::Result<()> {
+fn while_held<T>(mut action: impl FnMut() -> io::Result<T>) -> io::Result<T> {
     let give_up = Instant::now() + HELD_FOR;
     loop {
-        let renamed = fs::rename(from, to);
-        let code = renamed.as_ref().err().and_then(io::Error::raw_os_error);
+        let done = action();
+        let code = done.as_ref().err().and_then(io::Error::raw_os_error);
         let held = code.is_some_and(|code| HELD.contains(&code));
         if !held || Instant::now() >= give_up {
-            return renamed;
+            return done;
         }
         thread::sleep(TRY_AGAIN);
     }
 }
 
-/// Unix renames over a file that another program has open.
+/// Unix opens and renames over a file that another program has open.
 #[cfg(not(windows))]
-fn rename(from: &Path, to: &Path) -> io::Result<()> {
-    fs::rename(from, to)
+fn while_held<T>(mut action: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    action()
 }
 
 #[cfg(test)]

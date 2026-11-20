@@ -61,14 +61,15 @@ pub(crate) struct Core {
 
 impl Core {
     /// Stops the session, the settings files' owner, the mirrors and the language servers, and gives them
-    /// `patience` between them to finish. The settings owner and the mirrors begin first, so a save under way
-    /// has all of `patience` while the session closes.
+    /// `patience` between them to finish. The settings owner ends before the session is told to: it hands the
+    /// session a save under way once the save ends, and the session's queue has to hold that ahead of the
+    /// stop, or the reads a Filter switched on owes are lost.
     pub(crate) fn stop(&self, patience: Duration) {
         let deadline = Instant::now() + patience;
         self.mirrors.begin_stopping();
-        let settings = self.settings.begin_stopping();
-        self.session.stop(patience);
-        settings.wait_for_end(deadline.saturating_duration_since(Instant::now()));
+        self.settings.begin_stopping().wait_for_end(patience);
+        self.session
+            .stop(deadline.saturating_duration_since(Instant::now()));
         self.mirrors
             .wait_for_end(deadline.saturating_duration_since(Instant::now()));
         self.definitions

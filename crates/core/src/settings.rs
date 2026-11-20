@@ -1352,8 +1352,9 @@ enum Request {
         command: CommandId,
         reply: Sender<Result<Vec<CommandId>, Error>>,
     },
-    /// End, having answered what was asked before. `stop` waits for `finishing` to go, which it does as the
-    /// thread ends, and also if the thread has gone before it takes this.
+    /// End, having answered what was asked before, as `begin_stopping` asks. `SettingsEnding::wait_for_end`
+    /// waits for `finishing` to go, which it does as the thread ends, and also if the thread has gone before
+    /// it takes this.
     Stop {
         finishing: Sender<()>,
     },
@@ -1417,8 +1418,8 @@ impl SettingsOwner {
         let (requests, incoming) = mpsc::channel::<Request>();
         #[expect(
             unused_results,
-            reason = "it ends when `stop` asks or once the last sender goes, and `stop` waits for it with a \
-                      patience a join can't take"
+            reason = "it ends when `begin_stopping` asks or once the last sender goes, and `wait_for_end` \
+                      waits for it with a patience a join can't take"
         )]
         thread::spawn(move || {
             // Sends readers the palette's recent commands, unless they hold this list already.

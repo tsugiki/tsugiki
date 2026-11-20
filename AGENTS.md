@@ -53,6 +53,11 @@ count every file, so a change can fail them in a file it never touched. Run it b
 where a CI round trip costs more. It takes less time than `just check`, and catches nothing that only macOS
 fails on.
 
+When the Rust coverage gate finds a file short of its lines, and the lines it lists as never ran don't make up
+the gap, look there for a closure whose `})?;` sits on a line of its own. The gate can count such a line as
+unrun although the closure ran, and its list of gaps skips a `?`. Put the `?` on the line of the call it ends:
+pass a named function, as `statement.query_map(asked, event_in)?` does in `store/activity.rs`.
+
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
 log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the
 `justfile`, `scripts/` or `.github/workflows/`. `just next` lists the open tickets of the release being built.

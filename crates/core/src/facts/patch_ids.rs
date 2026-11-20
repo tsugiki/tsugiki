@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use specta::Type;
+use time::OffsetDateTime;
 
 use crate::facts::CommitSha;
 
@@ -88,6 +89,18 @@ pub struct ReviewFacts {
     pub unchecked: BTreeMap<PatchesOf, CantCheck>,
     /// The commits each PR's last finished check compared, whose verdict stands while a newer check waits.
     pub last_checks: BTreeMap<u32, LastCheck>,
+    /// The moment a check first found the user's Review of each PR stale, as the store kept it.
+    pub stale_found: BTreeMap<u32, StaleFound>,
+}
+
+impl ReviewFacts {
+    /// The moment a check first found the user's Review of PR `number` stale, or first couldn't run, if the
+    /// store kept one of the Review the PR has now.
+    pub fn stale_found_at(&self, number: u32) -> Option<OffsetDateTime> {
+        let reviewed = self.reviewed.get(&number)?;
+        let found = self.stale_found.get(&number)?;
+        (found.reviewed == *reviewed).then_some(found.at)
+    }
 }
 
 /// The two commits a PR's check compared once the patch-ids of both were read.
@@ -95,6 +108,31 @@ pub struct ReviewFacts {
 pub struct LastCheck {
     pub reviewed: CommitSha,
     pub head: CommitSha,
+}
+
+/// The moment a check first found the user's Review of commit `reviewed` stale, or first couldn't run, with
+/// no check finding the diff the same since (#908). The window can't show a Stale review before then.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StaleFound {
+    pub reviewed: CommitSha,
+    pub at: OffsetDateTime,
+}
+
+/// The changes to what the store keeps of `StaleFound`, after what the checks say now.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Findings {
+    /// Each PR whose Review of the commit given a check finds stale, or can't check, and of which the store
+    /// keeps no moment. The store dates each from now.
+    pub found: Vec<(u32, CommitSha)>,
+    /// Each PR whose kept moment no longer stands: a check finds the diff the same, the head went back to
+    /// the reviewed commit, or the user reviewed it again.
+    pub ended: Vec<u32>,
+}
+
+impl Findings {
+    pub fn is_empty(&self) -> bool {
+        self.found.is_empty() && self.ended.is_empty()
+    }
 }
 
 #[cfg(test)]

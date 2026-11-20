@@ -74,6 +74,7 @@ const TABLES: &[(&str, Diagram)] = &[
     ("file_patch_ids", Diagram::PullRequests),
     ("unchecked_commits", Diagram::PullRequests),
     ("last_checks", Diagram::PullRequests),
+    ("stale_reviews", Diagram::PullRequests),
     ("viewer", Diagram::Issues),
     ("issues", Diagram::Issues),
     ("issue_assignees", Diagram::Issues),

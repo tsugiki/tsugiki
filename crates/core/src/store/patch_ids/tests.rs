@@ -7,7 +7,7 @@ use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::ReviewState;
 use crate::login::Login;
 use crate::store::Store;
-use crate::store::testing::migrated_database;
+use crate::store::testing::{database_before, migrated_database};
 use crate::testing::{TempPath, cpython, me, pr_facts, sha_of};
 
 fn file(path: &str, digit: char) -> FilePatch {
@@ -191,9 +191,11 @@ fn a_save_of_unchecked_commits_or_last_checks_that_fails_says_so() {
 
     let unchecked = store.save_unchecked(&cpython(), vec![]);
     let checks = store.save_last_checks(&cpython(), vec![(1, last)]);
+    let findings = store.save_findings(&cpython(), Findings::default(), OffsetDateTime::UNIX_EPOCH);
 
     assert!(unchecked.is_err(), "{unchecked:?}");
     assert!(checks.is_err(), "{checks:?}");
+    assert!(findings.is_err(), "{findings:?}");
 }
 
 fn unchecked(commit: char, reason: CantCheck) -> UncheckedCommit {
@@ -346,4 +348,63 @@ fn the_last_check_of_another_review_brings_no_patch_ids() {
     store.close();
 
     assert_eq!(read, BTreeMap::new());
+}
+
+fn seconds(seconds: i64) -> OffsetDateTime {
+    OffsetDateTime::from_unix_timestamp(seconds).unwrap()
+}
+
+#[test]
+fn a_finding_keeps_its_moment_until_it_ends_and_a_new_review_replaces_it() {
+    let (_folder, store) = seeded("patch-ids-findings");
+    let found = |numbers: &[u32], commit: char| Findings {
+        found: numbers
+            .iter()
+            .map(|number| (*number, sha_of(commit)))
+            .collect(),
+        ended: vec![],
+    };
+    let stale_found = || store.work_facts(&cpython()).unwrap().reviews.stale_found;
+
+    store
+        .save_findings(&cpython(), found(&[1, 2], '1'), seconds(10))
+        .unwrap();
+    let first = stale_found();
+    store
+        .save_findings(&cpython(), found(&[2], '3'), seconds(20))
+        .unwrap();
+    let ended = Findings {
+        found: vec![],
+        ended: vec![1],
+    };
+    store.save_findings(&cpython(), ended, seconds(30)).unwrap();
+    let after = stale_found();
+    store.close();
+
+    let at = |commit: char, at: i64| StaleFound {
+        reviewed: sha_of(commit),
+        at: seconds(at),
+    };
+    assert_eq!(first, BTreeMap::from([(1, at('1', 10)), (2, at('1', 10))]));
+    assert_eq!(after, BTreeMap::from([(2, at('3', 20))]));
+}
+
+#[test]
+fn a_last_check_kept_before_the_migration_counts_as_found_long_ago() {
+    let (path, _folder) = database_before(
+        "patch-ids-before-findings",
+        super::STALE_REVIEWS,
+        "INSERT INTO last_checks (repository, number, reviewed_commit, head_commit)
+         VALUES ('python/cpython', 1, '11111111', '22222222')",
+    );
+
+    let store = Store::open(&path).unwrap();
+    let read = store.work_facts(&cpython()).unwrap().reviews.stale_found;
+    store.close();
+
+    let found = StaleFound {
+        reviewed: CommitSha::parse("11111111").unwrap(),
+        at: OffsetDateTime::UNIX_EPOCH,
+    };
+    assert_eq!(read, BTreeMap::from([(1, found)]));
 }

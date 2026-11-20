@@ -9,7 +9,7 @@ use specta::Type;
 
 use super::origins;
 use crate::conventions::Conventions;
-use crate::facts::patch_ids::{CantCheck, LastCheck, PatchesOf, ReviewFacts};
+use crate::facts::patch_ids::{CantCheck, Findings, LastCheck, PatchesOf, ReviewFacts};
 use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::links::{BackportKind, BackportLink, MergeCommits, backport_of};
@@ -115,27 +115,31 @@ fn your_review(
     if own || (reviewed.is_none() && !pull_request.is_reviewed_by(viewer)) {
         return YourReview::Unreviewed;
     }
-    let Some((reviewed, head)) = compared(pull_request, reviews) else {
-        return YourReview::Reviewed;
-    };
+    checked(pull_request, reviews).unwrap_or(YourReview::Reviewed)
+}
+
+/// The review state the checks give the user's Review of `pull_request`, once its head moved on from the
+/// reviewed commit: the verdict of the check of both, why that check can't run, or the verdict of its last
+/// check of the same Review. None while it waits with none of these.
+fn checked(pull_request: &PullRequestFacts, reviews: &ReviewFacts) -> Option<YourReview> {
+    let (reviewed, head) = compared(pull_request, reviews)?;
     let of = |commit: &CommitSha| patches_of(pull_request, commit);
     let (reviewed_of, head_of) = (of(reviewed), of(head));
     if let Some(verdict) = verdict(reviews, &reviewed_of, &head_of) {
-        return verdict;
+        return Some(verdict);
     }
     let unread = [&reviewed_of, &head_of]
         .into_iter()
         .filter(|of| !reviews.patches.contains_key(of));
     if let Some(reason) = unread.into_iter().find_map(|of| reviews.unchecked.get(of)) {
-        return YourReview::CantCheck {
+        return Some(YourReview::CantCheck {
             reviewed: reviewed.clone(),
             reason: reason.clone(),
-        };
+        });
     }
     let last =
         (reviews.last_checks.get(&pull_request.number)).filter(|last| last.reviewed == *reviewed);
     last.and_then(|last| verdict(reviews, &reviewed_of, &of(&last.head)))
-        .unwrap_or(YourReview::Reviewed)
 }
 
 /// What the patch-ids of `reviewed` and `head` say, once the store holds both.
@@ -188,6 +192,37 @@ pub fn checks_to_keep(facts: &WorkFacts) -> Vec<(u32, LastCheck)> {
         (read(reviewed) && read(head) && new).then_some((pr.number, check))
     });
     checked.collect()
+}
+
+/// The changes to the moments the store keeps of when a check first found each PR's Review stale (#908):
+/// a moment for each Review a check finds stale, or can't check, that has none, and an end to each moment
+/// whose Review a check finds the same, whose head went back to the reviewed commit, or that the user
+/// reviewed again since. A check that waits leaves the moment as it is, so a Review stays dated from its
+/// first finding across new heads, restarts and the reasons a check can't run.
+pub fn findings_to_keep(facts: &WorkFacts) -> Findings {
+    let reviews = &facts.reviews;
+    let mut findings = Findings::default();
+    for pr in &facts.pull_requests {
+        let number = pr.number;
+        let Some(reviewed) = reviews.reviewed.get(&number) else {
+            continue;
+        };
+        // None while the check waits.
+        let stale = if pr.head.as_ref() == Some(reviewed) {
+            Some(false)
+        } else {
+            checked(pr, reviews).map(|review| review.is_stale())
+        };
+        let dated = reviews.stale_found_at(number).is_some();
+        let kept = reviews.stale_found.contains_key(&number);
+        match stale {
+            Some(true) if !dated => findings.found.push((number, reviewed.clone())),
+            Some(false) if kept => findings.ended.push(number),
+            None if kept && !dated => findings.ended.push(number),
+            Some(_) | None => {}
+        }
+    }
+    findings
 }
 
 /// A commit whose patch-ids a check still needs, as the reviewed commit or the head of PR `number`.

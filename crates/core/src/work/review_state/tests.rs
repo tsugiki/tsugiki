@@ -6,12 +6,12 @@ use crate::facts::WorkFacts;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{CantCheck, FilePatch, PatchId, PatchesOf};
-use crate::facts::patch_ids::{LastCheck, ReviewFacts};
+use crate::facts::patch_ids::{Findings, LastCheck, ReviewFacts, StaleFound};
 use crate::facts::pull_requests::{LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
 use crate::testing::{cpython_settings, sha_of};
-use crate::work::{Causes, MirrorWork, Why, YourReview, checks_to_keep};
+use crate::work::{Causes, MirrorWork, Why, YourReview, checks_to_keep, findings_to_keep};
 use crate::workbench::testing::{
     BOT, at, backport, bots_backport, issue, me, outline, own, reviewed_workbench, rows_of,
     someone, stranger, view_of,
@@ -393,6 +393,85 @@ fn a_check_keeps_the_commits_it_compared_once_both_sides_are_read() {
     let pull_requests = vec![reviewed_pr(), kept, pending];
 
     assert_eq!(checks_to_keep(&facts(pull_requests, reviews)), [(1, last)]);
+}
+
+/// A colleague's PR `number` at commit `head`, which the user reviewed.
+fn reviewed_pr_at(number: u32, head: char) -> PullRequestFacts {
+    PullRequestFacts {
+        number,
+        head: Some(sha_of(head)),
+        ..reviewed_pr()
+    }
+}
+
+/// The moment the store kept of a check's first finding that the Review of commit `reviewed` was stale.
+fn found(reviewed: char) -> StaleFound {
+    StaleFound {
+        reviewed: sha_of(reviewed),
+        at: at(0),
+    }
+}
+
+#[test]
+fn a_check_dates_each_review_it_first_finds_stale_or_cant_check() {
+    let mut reviews = stale_at_2();
+    reviews
+        .reviewed
+        .extend([3, 5, 7].map(|number| (number, sha_of('1'))));
+    reviews
+        .unchecked
+        .extend([(of('4', "main"), CantCheck::NoGit)]);
+    // PR 5's Stale review is dated already, and PR 7's moment is of an earlier Review.
+    reviews
+        .stale_found
+        .extend([(5, found('1')), (7, found('9'))]);
+    let pull_requests = vec![
+        reviewed_pr(),
+        reviewed_pr_at(3, '4'),
+        reviewed_pr_at(5, '2'),
+        reviewed_pr_at(7, '2'),
+    ];
+
+    let findings = findings_to_keep(&facts(pull_requests, reviews));
+
+    let found = [1, 3, 7].map(|number| (number, sha_of('1')));
+    assert_eq!(
+        findings,
+        Findings {
+            found: found.to_vec(),
+            ended: vec![],
+        }
+    );
+}
+
+#[test]
+fn a_finding_ends_with_the_same_diff_a_head_back_at_the_review_or_a_new_review() {
+    let same = || Some(vec![file("Lib/ast.py", '1', 'a')]);
+    let mut reviews = reviewed_at_1(same(), same());
+    reviews
+        .reviewed
+        .extend([3, 5, 7].map(|number| (number, sha_of('1'))));
+    // PR 5's check of commit 4 waits, which leaves its moment, and PR 7's moment is of an earlier Review.
+    let kept = [1, 3, 5].map(|number| (number, found('1')));
+    reviews
+        .stale_found
+        .extend(kept.into_iter().chain([(7, found('9'))]));
+    let pull_requests = vec![
+        reviewed_pr(),
+        reviewed_pr_at(3, '1'),
+        reviewed_pr_at(5, '4'),
+        reviewed_pr_at(7, '4'),
+    ];
+
+    let findings = findings_to_keep(&facts(pull_requests, reviews));
+
+    assert_eq!(
+        findings,
+        Findings {
+            found: vec![],
+            ended: vec![1, 3, 7],
+        }
+    );
 }
 
 #[test]

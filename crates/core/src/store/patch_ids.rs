@@ -5,12 +5,15 @@
 use std::collections::BTreeMap;
 
 use rusqlite::{OptionalExtension, Row, Transaction, named_params};
+use time::OffsetDateTime;
 
 use super::Connection;
+use super::columns::UnixTime;
 use super::pull_request_content::reviewed_commits;
 use crate::facts::CommitSha;
 use crate::facts::patch_ids::{
-    CantCheck, CommitPatches, FilePatch, LastCheck, PatchesOf, ReviewFacts, UncheckedCommit,
+    CantCheck, CommitPatches, FilePatch, Findings, LastCheck, PatchesOf, ReviewFacts, StaleFound,
+    UncheckedCommit,
 };
 use crate::facts::pull_requests::PullRequestFacts;
 use crate::repository::RepositoryName;
@@ -59,6 +62,21 @@ pub(super) const CHECKS: &str = "
         head_commit TEXT NOT NULL,
         PRIMARY KEY (repository, number)
     ) WITHOUT ROWID;
+";
+
+/// The moment a check first found the user's Review of `reviewed_commit` on each PR stale, or first couldn't
+/// run, with no check finding the diff the same since (#908). A last check kept before these moments were
+/// counts as found in 1970, so its Stale review still starts at the push, as it did then.
+pub(super) const STALE_REVIEWS: &str = "
+    CREATE TABLE stale_reviews (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        reviewed_commit TEXT NOT NULL,
+        found_at INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+    INSERT INTO stale_reviews (repository, number, reviewed_commit, found_at)
+        SELECT repository, number, reviewed_commit, 0 FROM last_checks;
 ";
 
 /// Keeps each of `patches`, in place of what was kept of the same commit before.
@@ -185,9 +203,43 @@ pub(super) fn save_last_checks(
     transaction.commit()
 }
 
+/// Keeps `findings`: each found Review dated `now`, in place of what was kept of its PR, and each ended one
+/// forgotten.
+pub(super) fn save_findings(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    findings: &Findings,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let mut found = transaction.prepare(
+        "INSERT OR REPLACE INTO stale_reviews (repository, number, reviewed_commit, found_at)
+         VALUES (:repository, :number, :reviewed, :now)",
+    )?;
+    for (number, reviewed) in &findings.found {
+        let row = named_params! {
+            ":repository": repository,
+            ":number": number,
+            ":reviewed": reviewed,
+            ":now": now.unix_timestamp(),
+        };
+        found.execute(row).map(drop)?;
+    }
+    drop(found);
+    let mut ended = transaction
+        .prepare("DELETE FROM stale_reviews WHERE repository = :repository AND number = :number")?;
+    for number in &findings.ended {
+        let row = named_params! { ":repository": repository, ":number": number };
+        ended.execute(row).map(drop)?;
+    }
+    drop(ended);
+    transaction.commit()
+}
+
 /// The review facts of `pull_requests`: the reviewed commit of each, and, where the head moved on from it,
 /// the patch-ids held of both commits against its Target branch, why the worker can't read those it can't,
-/// and the PR's last check of the same Review with the patch-ids of the head it compared.
+/// the PR's last check of the same Review with the patch-ids of the head it compared, and the moment a check
+/// first found its Review stale.
 pub(super) fn read_facts(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
@@ -223,7 +275,27 @@ pub(super) fn read_facts(
         patches,
         unchecked: read_unchecked(transaction, repository)?,
         last_checks,
+        stale_found: read_stale_found(transaction, repository)?,
     })
+}
+
+fn read_stale_found(
+    transaction: &Transaction<'_>,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, StaleFound>> {
+    let mut statement = transaction.prepare(
+        "SELECT number, reviewed_commit, found_at FROM stale_reviews WHERE repository = :repository",
+    )?;
+    let asked = named_params! { ":repository": repository };
+    let found = statement.query_map(asked, |row| {
+        let UnixTime(at) = row.get("found_at")?;
+        let found = StaleFound {
+            reviewed: row.get("reviewed_commit")?,
+            at,
+        };
+        Ok((row.get("number")?, found))
+    })?;
+    found.collect()
 }
 
 fn read_last_checks(

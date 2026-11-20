@@ -22,6 +22,7 @@ use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFac
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
+use crate::session::keep_checks;
 use crate::settings::ListOrder;
 use crate::store::Flagging;
 use crate::store::testing::World;
@@ -1198,17 +1199,47 @@ impl World {
     /// the change at commit 1 as `reviewed` and at commit 2 as `head`.
     fn reviewed_and_moved(&self, pull_request: PullRequestFacts, reviewed: char, head: char) {
         self.reviewed_and_moved_unread(pull_request);
-        let patches =
-            [(sha_of('1'), reviewed), (sha_of('2'), head)].map(|(commit, digit)| CommitPatches {
-                of: on_main(commit),
-                files: ast_changed(digit),
-            });
+        self.check_read([(sha_of('1'), reviewed), (sha_of('2'), head)]);
+    }
+
+    /// The check read the change at each commit of `read` in the way its digit names.
+    fn check_read<const N: usize>(&self, read: [(CommitSha, char); N]) {
+        let patches = read.map(|(commit, digit)| CommitPatches {
+            of: on_main(commit),
+            files: ast_changed(digit),
+        });
         self.db
             .store
             .save_patch_ids(&cpython(), patches.to_vec())
             .unwrap();
     }
 
+    /// The session keeps what the checks found, as it does after each read and sync, at `now`.
+    fn checks_kept(&self, now: OffsetDateTime) {
+        let store = &self.db.store;
+        let facts = store.work_facts(&cpython()).unwrap();
+        keep_checks(store, &cpython(), &facts, now).unwrap();
+    }
+
+    /// A colleague pushed a commit made three hours ago to PR `number`. Tsugiki counts the push from when
+    /// it noticed it, which is now.
+    fn pushed(&self, number: u32) {
+        let pushed = Activity {
+            kind: ActivityKind::Commit,
+            who: colleague(),
+            at: hours_ago(3),
+        };
+        self.happened(number, vec![pushed]);
+    }
+}
+
+/// A minute after anything a test has made happen so far, as when a check finds a Review stale after Mark
+/// Seen.
+fn a_minute_on() -> OffsetDateTime {
+    hours_ago(0) + Duration::minutes(1)
+}
+
+impl World {
     /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check has
     /// read neither.
     fn reviewed_and_moved_unread(&self, pull_request: PullRequestFacts) {
@@ -1287,6 +1318,8 @@ fn a_stale_review_needs_attention_and_counts() {
 fn mark_seen_takes_a_stale_review_out_of_needs_attention_until_a_later_push() {
     let world = World::new("attention-stale-seen");
     world.reviewed_and_moved(reviewed_by_me(1), 'a', 'b');
+    // The check's finding is the newest moment the window drew, later than the PR's last update.
+    world.checks_kept(hours_ago(2));
 
     world.mark_seen(world.seen(1));
     // The user's Review holds it on the Workbench, as a plain row.
@@ -1295,13 +1328,74 @@ fn mark_seen_takes_a_stale_review_out_of_needs_attention_until_a_later_push() {
     assert!(world.lists(&stale, 1));
     assert_eq!(world.view(&stale).stale_reviews, 1);
 
-    let pushed = Activity {
-        kind: ActivityKind::Commit,
-        who: colleague(),
-        at: hours_ago(1),
-    };
-    world.happened(1, vec![pushed]);
+    world.pushed(1);
     assert!(world.why(1).contains(&Why::StaleReview));
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_the_check_finds_after_mark_seen_needs_attention() {
+    let world = World::new("attention-stale-found-after-seen");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    world.pushed(1);
+    // The row says Reviewed while the check waits, and the push is all the window shows.
+    assert_eq!(world.why(1), [Why::Commits { by: colleague() }]);
+    world.mark_seen(world.seen(1));
+
+    world.check_read([(sha_of('1'), 'a'), (sha_of('2'), 'b')]);
+    let found = a_minute_on();
+    world.checks_kept(found);
+
+    assert_eq!(world.why(1), [Why::StaleReview]);
+    assert_eq!(world.since(1), found);
+    world.finish();
+}
+
+#[test]
+fn a_review_whose_check_cant_run_after_mark_seen_needs_attention_until_marked_seen() {
+    let world = World::new("attention-unchecked-after-seen");
+    world.reviewed_and_moved_unread(reviewed_by_me(1));
+    world.pushed(1);
+    world.mark_seen(world.seen(1));
+
+    let cloning = UncheckedCommit {
+        of: on_main(sha_of('2')),
+        reason: CantCheck::Cloning,
+    };
+    world
+        .db
+        .store
+        .save_unchecked(&cpython(), vec![cloning])
+        .unwrap();
+    world.checks_kept(a_minute_on());
+    let found = world.why(1);
+    world.mark_seen(world.seen(1));
+
+    assert_eq!(found, [Why::StaleReview]);
+    assert_eq!(world.why(1), []);
+    world.finish();
+}
+
+#[test]
+fn a_stale_review_the_window_showed_stays_acknowledged_once_the_check_reads_a_newer_head() {
+    let world = World::new("attention-stale-newer-head");
+    let pull_request = reviewed_by_me(1);
+    world.reviewed_and_moved(pull_request.clone(), 'a', 'b');
+    world.checks_kept(hours_ago(5));
+    // A push to commit 3, whose check waits: the row keeps the last check's Stale review.
+    world.has(vec![PullRequestFacts {
+        head: Some(sha_of('3')),
+        updated_at: hours_ago(4),
+        ..pull_request
+    }]);
+    world.pushed(1);
+    world.mark_seen(world.seen(1));
+
+    world.check_read([(sha_of('3'), 'c')]);
+    world.checks_kept(a_minute_on());
+
+    assert_eq!(world.why(1), []);
+    assert!(world.lists(&WorkbenchView::StaleReviews, 1));
     world.finish();
 }
 

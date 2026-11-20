@@ -2678,6 +2678,22 @@ fn once_both_sides_are_read_the_session_keeps_them_as_the_prs_last_check() {
 }
 
 #[test]
+fn the_session_dates_the_first_stale_finding_of_a_review_before_the_window_hears_of_it() {
+    let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'c')];
+    let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+
+    let (_, held) = keeping_patches(
+        "dates-stale-finding",
+        replying(vec![signed_in()]),
+        vec![PatchReads::Read(both)],
+    );
+
+    let found = &held.stale_found[&8];
+    assert_eq!(found.reviewed, CommitSha::parse("0123abc").unwrap());
+    assert!(before <= found.at && found.at <= OffsetDateTime::now_utc());
+}
+
+#[test]
 fn the_session_keeps_the_commits_the_mirror_cant_read_and_tells_the_window_of_each_change() {
     let refused = UncheckedCommit {
         of: on_main("0123abc"),
@@ -2697,6 +2713,8 @@ fn the_session_keeps_the_commits_the_mirror_cant_read_and_tells_the_window_of_ea
         held.unchecked,
         BTreeMap::from([(on_main("0123abc"), CantCheck::Refused)])
     );
+    // A check that can't run finds the Review stale, and the session dates it.
+    assert_eq!(held.stale_found.keys().collect::<Vec<_>>(), [&8]);
 }
 
 #[test]

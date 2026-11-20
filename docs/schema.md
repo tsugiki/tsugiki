@@ -160,6 +160,12 @@ erDiagram
         TEXT reviewed_commit
         TEXT head_commit
     }
+    stale_reviews {
+        TEXT repository PK
+        INTEGER number PK
+        TEXT reviewed_commit
+        INTEGER found_at
+    }
     review_requests }o--|| pull_requests : "repository, number"
     latest_reviews }o--|| pull_requests : "repository, number"
     assignees }o--|| pull_requests : "repository, number"

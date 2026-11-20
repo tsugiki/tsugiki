@@ -15,6 +15,7 @@ use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
 use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, Archive, ItemKey};
 use crate::facts::issues::{IssueFacts, IssueState};
+use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::login::Login;
 
@@ -138,6 +139,7 @@ impl Causes {
         let judge = Judge {
             news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
             facts: &facts.activity,
+            reviews: &facts.reviews,
             viewer,
             stale_reviews: &stale_reviews,
         };
@@ -178,9 +180,9 @@ impl Causes {
             by_number,
             asks,
             review_requests: requested,
+            known_until: known_until(facts, &stale_reviews),
             stale_reviews,
             with_news,
-            known_until: known_until(facts),
             marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
             reviews,
             archived: facts.activity.archived.clone(),
@@ -374,8 +376,10 @@ fn closed(facts: &WorkFacts) -> BTreeSet<u32> {
 }
 
 /// The newest moment `facts` hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
-/// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be.
-fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
+/// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be,
+/// and the moment a check found each of `stale_reviews` stale, so Mark Seen acknowledges the Stale review
+/// the window shows.
+fn known_until(facts: &WorkFacts, stale_reviews: &BTreeSet<u32>) -> BTreeMap<u32, OffsetDateTime> {
     let updated = facts
         .pull_requests
         .iter()
@@ -395,8 +399,10 @@ fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
         .ci_finished
         .iter()
         .map(|(number, at)| (*number, *at));
+    let found = (stale_reviews.iter())
+        .filter_map(|number| Some((*number, facts.reviews.stale_found_at(*number)?)));
     let mut newest = BTreeMap::new();
-    for (number, at) in updated.chain(events).chain(ci) {
+    for (number, at) in updated.chain(events).chain(ci).chain(found) {
         let known = newest.entry(number).or_insert(at);
         *known = (*known).max(at);
     }
@@ -444,6 +450,7 @@ pub(crate) fn muted_items(facts: &WorkFacts) -> BTreeSet<ItemKey> {
 struct Judge<'a> {
     news: News<'a>,
     facts: &'a ActivityFacts,
+    reviews: &'a ReviewFacts,
     viewer: &'a Login,
     stale_reviews: &'a BTreeSet<u32>,
 }
@@ -550,8 +557,11 @@ impl Judge<'_> {
             return causes;
         }
         if self.stale_reviews.contains(&number) {
-            let pushed = self.pushed_at(number);
-            causes.extend(self.standing_from(pull_request, pushed, Why::StaleReview));
+            // The window shows no Stale review before the check finds it, however long after the push that
+            // comes (#908). A finding the store hasn't dated yet counts from the push.
+            let found = self.reviews.stale_found_at(number);
+            let started = self.pushed_at(number).max(found);
+            causes.extend(self.standing_from(pull_request, started, Why::StaleReview));
         }
         let involvement = if pull_request.is_written_or_reviewed_by(self.viewer) {
             Involvement::WroteOrReviewed

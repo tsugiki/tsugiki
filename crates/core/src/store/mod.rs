@@ -44,7 +44,7 @@ use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
-use crate::facts::patch_ids::{CommitPatches, LastCheck, ReviewFacts, UncheckedCommit};
+use crate::facts::patch_ids::{CommitPatches, Findings, LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCommit};
 use crate::facts::{CommitSha, WorkFacts};
@@ -510,6 +510,20 @@ impl Store {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
             patch_ids::save_last_checks(connection, &repository, &checks)
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Keeps `findings` of when checks first found Reviews stale, each found one dated `now`.
+    pub fn save_findings(
+        &self,
+        repository: &RepositoryName,
+        findings: Findings,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            patch_ids::save_findings(connection, &repository, &findings, now)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }

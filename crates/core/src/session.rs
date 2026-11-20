@@ -34,7 +34,7 @@ use crate::store::{
 };
 use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
-use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, moved};
+use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, findings_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
 use on_screen::OnScreen;
 
@@ -711,9 +711,9 @@ fn hand_over_wants(fetching: &Fetching, store: &Store, stated: Stated<'_>) {
     let reviewed = store.reviewed_commits(repository).ok();
     // A head can move to a commit the store has read, which makes no new read to keep a check with. A store
     // that can't keep it says so in the log, and in the status bar at the next step that saves.
-    if let Err(problem) = keep_last_checks(store, repository, facts) {
+    if let Err(problem) = keep_checks(store, repository, facts, OffsetDateTime::now_utc()) {
         log::warn!(
-            "Tsugiki couldn't keep the last Stale review checks in {repository}: {}",
+            "Tsugiki couldn't keep the Stale review checks in {repository}: {}",
             problem.message
         );
     }
@@ -879,7 +879,7 @@ fn keep_patches(
     };
     let facts = saved.and_then(|()| store.work_facts(repository));
     let kept = facts.and_then(|facts| {
-        keep_last_checks(store, repository, &facts)?;
+        keep_checks(store, repository, &facts, OffsetDateTime::now_utc())?;
         Ok(facts)
     });
     match kept {
@@ -899,17 +899,23 @@ fn keep_patches(
 }
 
 /// Keeps as its last check the two commits of each PR whose patch-ids `facts` hold of both, where the store
-/// kept others, so their verdict stands while a newer check waits.
-fn keep_last_checks(
+/// kept others, so their verdict stands while a newer check waits. Then dates from `now` each Review a check
+/// finds stale, or can't check, for the first time, before the window hears of it (#908).
+pub(crate) fn keep_checks(
     store: &Store,
     repository: &RepositoryName,
     facts: &WorkFacts,
+    now: OffsetDateTime,
 ) -> Result<(), Error> {
     let checks = checks_to_keep(facts);
-    if checks.is_empty() {
+    if !checks.is_empty() {
+        store.save_last_checks(repository, checks)?;
+    }
+    let findings = findings_to_keep(facts);
+    if findings.is_empty() {
         return Ok(());
     }
-    store.save_last_checks(repository, checks)
+    store.save_findings(repository, findings, now)
 }
 
 /// Tells the window of `change`, which a mark made, or the status bar why the store couldn't keep it.

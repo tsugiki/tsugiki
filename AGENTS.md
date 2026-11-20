@@ -38,12 +38,11 @@ force push needs the user's say. The PR squash-merges anyway.
 Build each change that becomes a PR in a worktree of its own, and leave the main checkout on a clean main,
 for reading, the tracker and research. Other sessions work on this computer at the same time, and when you
 switch branches or commit in a checkout you share, you take their work along half-done.
-`just worktree <n>` makes the worktree for ticket n under `.temp/`. For a change with no ticket, run
-`git worktree add --no-track -b <branch> .temp/wt-<slug> origin/main`, then `npm ci` inside it. Each worktree
-builds Rust from scratch into a `target/` of its own, so delete it once its PR has merged.
-`just worktree-remove <n>` deletes the worktree, its builds and its branch, and `git worktree remove` with
-`git branch -D` does the same for one with no ticket. Use them in place of `just merged`, which switches to
-main, as git refuses that while the main checkout holds main.
+Each PR starts from a ticket, so file one first for a change that has none. `just worktree <n>` makes the
+worktree for ticket n under `.temp/`. Each worktree builds Rust from scratch into a `target/` of its own, so
+delete it once its PR has merged: `just worktree-remove <n>` deletes the worktree, its builds and its branch.
+Use it in place of `just merged`, which switches to main, as git refuses that while the main checkout holds
+main.
 
 To build several tickets of a milestone at once, one background agent per ticket, use the `wave` skill in
 `.claude/skills/wave/`.

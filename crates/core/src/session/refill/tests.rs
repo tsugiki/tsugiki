@@ -1,9 +1,10 @@
 use std::sync::mpsc::{self, Receiver};
 
 use super::*;
+use crate::facts::pull_requests::PullRequestFacts;
 use crate::status::testing::quiet_board;
 use crate::store::testing::{kept_fixes, refuse_new_links, store_with_old_links};
-use crate::testing::{cpython, gcmon};
+use crate::testing::{cpython, gcmon, pr_facts};
 
 /// A board that passes on the Repository of each Change, with whether it named no item.
 fn repositories_board() -> (StatusBoard, Receiver<(RepositoryName, bool)>) {
@@ -56,12 +57,11 @@ fn each_step_refills_a_repository_the_one_the_window_opened_first_and_the_last_s
 }
 
 #[test]
-fn a_repository_tells_the_window_once_its_last_batch_saves_and_keeps_its_place_when_another_goes_first()
- {
+fn each_batch_is_a_step_and_a_repository_keeps_its_place_when_another_goes_first() {
     let store = store_with_old_links(&[cpython(), gcmon()]);
     let (mut board, changes) = repositories_board();
     let mut refill = LinkRefill {
-        batch: 1,
+        batch: NonZeroU32::MIN,
         ..LinkRefill::owed_by(&store)
     };
     refill.put_first(&cpython());
@@ -83,6 +83,36 @@ fn a_repository_tells_the_window_once_its_last_batch_saves_and_keeps_its_place_w
     assert!(!refill.is_due());
     let fixed = |repository: RepositoryName| (repository.to_string(), 10, 5);
     assert_eq!(kept_fixes(&store), [fixed(cpython()), fixed(gcmon())]);
+}
+
+#[test]
+fn a_batch_that_fails_after_its_repositorys_first_tells_the_window_of_what_the_first_saved() {
+    let store = store_with_old_links(&[cpython()]);
+    let fixing_7 = PullRequestFacts {
+        title: "gh-7: Fix it".to_owned(),
+        ..pr_facts(11)
+    };
+    store
+        .save_pull_requests(&cpython(), vec![fixing_7])
+        .unwrap();
+    let (mut board, changes) = repositories_board();
+    let mut refill = LinkRefill {
+        batch: NonZeroU32::MIN,
+        ..LinkRefill::owed_by(&store)
+    };
+    refill.step(&mut board, &store);
+    refuse_new_links(&store);
+
+    refill.step(&mut board, &store);
+
+    assert_eq!(changes.try_iter().collect::<Vec<_>>(), [(cpython(), true)]);
+    assert!(!refill.is_due());
+    let python = cpython().to_string();
+    assert_eq!(
+        kept_fixes(&store),
+        [(python.clone(), 10, 5), (python, 11, 7)]
+    );
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
 }
 
 #[test]

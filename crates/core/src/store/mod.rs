@@ -515,7 +515,7 @@ impl Store {
         &self,
         repository: &RepositoryName,
         from: u32,
-        most: u32,
+        most: std::num::NonZeroU32,
     ) -> Result<Option<u32>, Error> {
         let repository = repository.clone();
         let refilled =

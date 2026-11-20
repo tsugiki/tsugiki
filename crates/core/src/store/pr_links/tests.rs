@@ -300,7 +300,10 @@ fn store_with_a_backport(name: &str) -> (std::path::PathBuf, TempPath) {
 
 /// Works out the links of every PR of `repository` that `store` holds again, in one batch.
 fn refill_whole(store: &Store, repository: &RepositoryName) {
-    assert_eq!(store.refill_links(repository, 0, u32::MAX).unwrap(), None);
+    assert_eq!(
+        store.refill_links(repository, 0, NonZeroU32::MAX).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -308,7 +311,11 @@ fn a_refill_takes_a_repositorys_prs_a_batch_at_a_time_in_number_order() {
     let (path, _folder) = store_with_a_backport("links-batches");
     let store = open_with_old_links(&path, RULES_VERSION - 1);
     let connection = Connection::open(&path).unwrap();
-    let refill = |from| store.refill_links(&cpython(), from, 1).unwrap();
+    let refill = |from| {
+        store
+            .refill_links(&cpython(), from, NonZeroU32::MIN)
+            .unwrap()
+    };
 
     assert_eq!(refill(0), Some(11));
     assert_eq!(
@@ -391,17 +398,21 @@ fn a_refill_works_out_only_its_own_repositorys_links() {
 }
 
 #[test]
-fn the_end_of_a_refill_forgets_the_links_of_a_repository_whose_name_no_longer_parses() {
+fn the_end_of_a_refill_forgets_the_links_of_names_that_spell_no_repository() {
     let (path, _folder) = store_with_a_backport("links-unparsed");
     let store = open_with_old_links(&path, RULES_VERSION - 1);
     store.close();
     let old = Connection::open(&path).unwrap();
-    old.execute_batch(
-        "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch, updated_at)
-             VALUES ('no-slash', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
-         INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('no-slash', 10, 6, 'every');",
-    )
-    .unwrap();
+    // One name that doesn't parse, and one that parses to python/cpython but isn't spelled so.
+    for name in ["no-slash", "python/cpython.git"] {
+        old.execute_batch(&format!(
+            "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch,
+                                        updated_at)
+                 VALUES ('{name}', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
+             INSERT INTO pr_fixes (repository, number, issue, under) VALUES ('{name}', 10, 6, 'every');"
+        ))
+        .unwrap();
+    }
     drop(old);
     let store = Store::open(&path).unwrap();
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
@@ -419,7 +430,7 @@ fn a_refill_that_fails_keeps_the_links_it_found_and_their_version() {
     let store = open_with_old_links(&path, RULES_VERSION - 1);
     refuse_new_links(&store);
 
-    assert!(store.refill_links(&cpython(), 0, u32::MAX).is_err());
+    assert!(store.refill_links(&cpython(), 0, NonZeroU32::MAX).is_err());
 
     assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 6)]);
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));

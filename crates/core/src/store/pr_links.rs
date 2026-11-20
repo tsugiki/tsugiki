@@ -9,6 +9,7 @@
 //! them until the session has worked each Repository's links out again, a job at a time (#950).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use rusqlite::{OptionalExtension, Statement, ToSql, named_params};
 use time::OffsetDateTime;
@@ -257,9 +258,19 @@ fn keep_version(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute(query, version).map(drop)
 }
 
+/// The Repository a name the store holds spells, as a refill reads its rows by: nothing for a name that no
+/// longer parses, or that parses to another spelling than its own, as one with a URL's prefix or `.git`
+/// would. A name parsed once, so these come only from a store an older Tsugiki or a hand edit wrote.
+fn spelled(name: &str) -> Option<RepositoryName> {
+    let repository = RepositoryName::parse(name).ok()?;
+    (repository.to_string())
+        .eq_ignore_ascii_case(name)
+        .then_some(repository)
+}
+
 /// Saves this version of the rules as the one that worked out the kept links, once the session has refilled
 /// each Repository `stale` named: a PR saved meanwhile kept links under this version's rules. The links of a
-/// Repository whose stored name no longer parses go, as no refill reaches them.
+/// name that spells no Repository go, as no refill reaches them.
 pub(super) fn refilled(connection: &mut Connection) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
     let query = "SELECT repository FROM pr_fixes UNION SELECT repository FROM pr_origins";
@@ -268,9 +279,7 @@ pub(super) fn refilled(connection: &mut Connection) -> rusqlite::Result<()> {
         let names = statement.query_map([], |row| row.get("repository"))?;
         names.collect::<rusqlite::Result<_>>()?
     };
-    let unread = names
-        .iter()
-        .filter(|name| RepositoryName::parse(name).is_err());
+    let unread = names.iter().filter(|name| spelled(name).is_none());
     for name in unread {
         for table in ["pr_fixes", "pr_origins"] {
             let forget = format!("DELETE FROM {table} WHERE repository = :repository");
@@ -310,12 +319,10 @@ pub(super) fn stale(connection: &Connection) -> rusqlite::Result<Option<Vec<Repo
     let mut statement = connection.prepare("SELECT DISTINCT repository FROM pull_requests")?;
     let names = statement.query_map([], |row| row.get::<_, String>("repository"))?;
     let names: Vec<String> = names.collect::<rusqlite::Result<_>>()?;
-    // A name the store holds parsed once. One that no longer parses names no Repository to link, and
-    // `refilled` forgets its links.
-    let repositories = names
-        .iter()
-        .filter_map(|name| RepositoryName::parse(name).ok());
-    Ok(Some(repositories.collect()))
+    // A name that spells no Repository has nothing a refill reads by, and `refilled` forgets its links.
+    Ok(Some(
+        names.iter().filter_map(|name| spelled(name)).collect(),
+    ))
 }
 
 /// What a PR's links are worked out from, as the store holds it.
@@ -333,12 +340,12 @@ pub(super) fn refill(
     connection: &mut Connection,
     repository: &RepositoryName,
     from: u32,
-    most: u32,
+    most: NonZeroU32,
 ) -> rusqlite::Result<Option<u32>> {
     let transaction = connection.transaction()?;
     let query = "SELECT number, title, off_default_description FROM pull_requests
                  WHERE repository = :repository AND number >= :from ORDER BY number LIMIT :most";
-    let asked = named_params! { ":repository": repository, ":from": from, ":most": most };
+    let asked = named_params! { ":repository": repository, ":from": from, ":most": most.get() };
     let held: Vec<HeldSignals> = {
         let mut statement = transaction.prepare(query)?;
         let rows = statement.query_map(asked, |row| {
@@ -382,7 +389,7 @@ pub(super) fn refill(
         }
     }
     transaction.commit()?;
-    let full = held.len() == usize::try_from(most).unwrap_or(usize::MAX);
+    let full = held.len() == usize::try_from(most.get()).unwrap_or(usize::MAX);
     Ok(if full { last.checked_add(1) } else { None })
 }
 

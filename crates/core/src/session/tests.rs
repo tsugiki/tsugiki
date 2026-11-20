@@ -635,70 +635,191 @@ fn unseen_7() -> Marked {
     }
 }
 
-/// The session's queue, reading a view that counts `saves` handed to the session, and where the session's
-/// messages go.
-fn refreshes_told(saves: u64) -> (Refreshes, Sender<SessionMessage>) {
-    let (messages, incoming) = mpsc::channel();
+/// Where a test's session tells the window, as one with no syncs does.
+fn telling(board: &mut StatusBoard) -> Telling<'_> {
+    Telling { board, syncs: None }
+}
+
+/// The session's queue, reading a view that lists gcmon as `listed` says and counts `saves` handed to the
+/// session, which `messages` wait in.
+fn refreshes_told(
+    saves: usize,
+    listed: RepositorySettings,
+    messages: Vec<SessionMessage>,
+) -> Refreshes {
+    let (sent, incoming) = mpsc::channel();
+    for message in messages {
+        sent.send(message).unwrap();
+    }
     let view = SettingsView {
         saves_told: saves,
-        ..listing(vec![plain_gcmon()])
+        ..listing(vec![listed])
     };
-    let refreshes = Refreshes::new(HOURLY, incoming, unheard(), crate::latest::channel(view).1);
-    (refreshes, messages)
+    Refreshes::new(HOURLY, incoming, unheard(), crate::latest::channel(view).1)
 }
 
-#[test]
-fn a_mark_waits_behind_the_saves_the_owner_published_before_it() {
-    let (refreshes, messages) = refreshes_told(2);
-    let save = || SessionMessage::SettingsChanged(bugs_saved(OnWorkbench::On, SavedBy::HandEdit));
-    for message in [
-        SessionMessage::Refresh,
-        save(),
-        SessionMessage::Refresh,
-        save(),
-    ] {
-        messages.send(message).unwrap();
-    }
-    messages.send(SessionMessage::Refresh).unwrap();
-
-    refreshes.mark(&mut quiet_board(), &Store::stopped(), unseen_7());
-
-    let mut queued = Vec::new();
+/// The messages left in `refreshes`' queue, as the test names them.
+fn left_in(refreshes: &Refreshes) -> Vec<String> {
+    let mut left = Vec::new();
     while let Ok(message) = refreshes.next_message(Duration::ZERO) {
-        queued.push(crate::fetching::testing::named(message));
+        left.push(crate::fetching::testing::named(message));
     }
-    let saved = format!("settings of {}", gcmon());
-    assert_eq!(
-        queued,
-        ["refresh", &saved, "refresh", &saved, "unseen #7", "refresh"]
-    );
+    left
+}
+
+fn mute_5() -> Marked {
+    Marked::Muted {
+        repository: gcmon(),
+        key: ItemKey::Issue { number: 5 },
+        mark: issue_5_seen(),
+        at: OffsetDateTime::now_utc(),
+    }
+}
+
+fn unmute_5() -> Marked {
+    Marked::Unmuted {
+        repository: gcmon(),
+        key: ItemKey::Issue { number: 5 },
+    }
+}
+
+/// The hand edit that gave gcmon CPython's Conventions, under which PRs 8 and 9 fix Issue 5.
+fn cpython_saved() -> SessionMessage {
+    let save = SettingsSave::new(cpython_gcmon(), &[plain_gcmon()], SavedBy::HandEdit);
+    SessionMessage::SettingsChanged(save)
+}
+
+/// Whether the store holds Issue 5 muted.
+fn issue_5_muted(store: &Store) -> bool {
+    let activity = store.work_facts(&gcmon()).unwrap().activity;
+    activity.muted.contains_key(&ItemKey::Issue { number: 5 })
 }
 
 #[test]
-fn a_mark_after_the_session_followed_each_save_waits_for_none() {
-    let (refreshes, _messages) = refreshes_told(1);
-    let (mut board, seen) = watched_board();
-    refreshes.take_save(
+fn a_mute_and_an_unmute_while_a_save_is_owed_keep_their_order() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let messages = vec![
+        SessionMessage::Mark(mute_5()),
+        SessionMessage::Mark(unmute_5()),
+        cpython_saved(),
+    ];
+    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+
+    refreshes.wait_for_stop(&mut quiet_board(), &store);
+
+    assert!(!issue_5_muted(&store));
+}
+
+#[test]
+fn a_mark_before_a_stop_is_kept_while_a_save_is_owed() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let messages = vec![
+        SessionMessage::Mark(mute_5()),
+        SessionMessage::Stop,
+        cpython_saved(),
+    ];
+    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+
+    refreshes.wait_for_stop(&mut quiet_board(), &store);
+
+    assert!(issue_5_muted(&store));
+}
+
+/// gcmon under CPython's Conventions, with the Bugs Filter switched `on` the Workbench.
+fn cpython_bugs(on: OnWorkbench) -> RepositorySettings {
+    RepositorySettings {
+        conventions: Conventions::Cpython,
+        ..bugs_switched(on)
+    }
+}
+
+#[test]
+fn an_unmute_before_a_save_it_hasnt_followed_moves_reach_from_where_the_save_ends() {
+    // Issue 5 is muted. PR 9 fixes it and Issue 6, which the Bugs Filter finds, and a hand edit switches the
+    // Filter on.
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    store.save_issues(&gcmon(), vec![issue_facts(6)]).unwrap();
+    let fixing_both = PullRequestFacts {
+        title: "gh-5, gh-6: Fix both".to_owned(),
+        ..stored_pr(9, "some-author", "89abcde")
+    };
+    store
+        .save_pull_requests(&gcmon(), vec![fixing_both])
+        .unwrap();
+    let muting = Muting {
+        key: ItemKey::Issue { number: 5 },
+        numbers: vec![5, 8, 9],
+        up_to: None,
+    };
+    store
+        .mute(&gcmon(), muting, OffsetDateTime::now_utc())
+        .unwrap();
+    let found = FilterResults {
+        numbers: [6].into(),
+        problem: None,
+    };
+    store
+        .save_filter_results(&gcmon(), &bugs_query(), found)
+        .unwrap();
+    let switched = SettingsSave::new(
+        cpython_bugs(OnWorkbench::On),
+        &[cpython_bugs(OnWorkbench::Off)],
+        SavedBy::HandEdit,
+    );
+    let messages = vec![
+        SessionMessage::Mark(unmute_5()),
+        SessionMessage::SettingsChanged(switched),
+    ];
+    let refreshes = refreshes_told(1, cpython_bugs(OnWorkbench::On), messages);
+
+    refreshes.wait_for_stop(&mut quiet_board(), &store);
+
+    // The save puts PR 9 in Reach through Issue 6, and the Unmute PR 8 through Issue 5. Taken the other way,
+    // PR 9 is in Reach before and after each move: through Issue 6 for the Unmute's, and Issue 5 for the
+    // save's.
+    assert_eq!(store.read_ahead_owed(&gcmon()).unwrap(), [8, 9].into());
+}
+
+#[test]
+fn a_mark_follows_only_the_saves_its_settings_hold() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    // The second save came after the view the mark read its settings from.
+    let switch = SettingsSave::new(cpython_gcmon(), &[cpython_gcmon()], SavedBy::Window);
+    let messages = vec![cpython_saved(), SessionMessage::SettingsChanged(switch)];
+    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+
+    refreshes.mark(&mut telling(&mut quiet_board()), &store, unmute_5());
+
+    assert_eq!(left_in(&refreshes), ["switch"]);
+}
+
+#[test]
+fn a_mark_the_queue_holds_no_owed_save_for_is_kept_at_once() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let refreshes = refreshes_told(1, cpython_gcmon(), vec![SessionMessage::Refresh]);
+
+    refreshes.mark(&mut telling(&mut quiet_board()), &store, mute_5());
+
+    assert!(issue_5_muted(&store));
+    assert_eq!(left_in(&refreshes), ["refresh"]);
+}
+
+#[test]
+fn a_mark_that_moves_no_reach_follows_no_save() {
+    let refreshes = refreshes_told(1, cpython_gcmon(), vec![cpython_saved()]);
+
+    refreshes.mark(
+        &mut telling(&mut quiet_board()),
         &Store::stopped(),
-        &bugs_saved(OnWorkbench::On, SavedBy::HandEdit),
+        unseen_7(),
     );
 
-    let started = Instant::now();
-    refreshes.mark(&mut board, &Store::stopped(), unseen_7());
-
-    assert!(started.elapsed() < SAVE_ON_ITS_WAY);
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
-}
-
-#[test]
-fn a_mark_whose_save_never_comes_is_kept_once_the_wait_ends() {
-    let (refreshes, _messages) = refreshes_told(1);
-    let (mut board, seen) = watched_board();
-
-    refreshes.mark(&mut board, &Store::stopped(), unseen_7());
-
-    // The stopped store couldn't keep it, which shows it was tried.
-    assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+    assert_eq!(left_in(&refreshes), [format!("settings of {}", gcmon())]);
 }
 
 #[test]
@@ -719,7 +840,7 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
     for marked in [seen_mark, unseen] {
         let (mut board, seen) = watched_board();
 
-        unheard_refreshes().mark(&mut board, &Store::stopped(), marked);
+        unheard_refreshes().mark(&mut telling(&mut board), &Store::stopped(), marked);
 
         assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
     }
@@ -2281,7 +2402,7 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
         at: OffsetDateTime::now_utc(),
     };
 
-    refreshes.mark(&mut quiet_board(), &lossy, muted);
+    refreshes.mark(&mut telling(&mut quiet_board()), &lossy, muted);
 
     // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The
     // next step that saves hands the Mirror its heads.

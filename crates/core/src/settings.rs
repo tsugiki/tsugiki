@@ -534,9 +534,9 @@ pub struct SettingsView {
     pub theme_place: String,
     pub language_servers: LanguageServers,
     /// How many saves of a Repository's settings the owner has handed the session, those this view shows
-    /// among them. The owner publishes a view before it hands its saves over, so a session that has taken
-    /// fewer knows the rest are on their way.
-    pub saves_told: u64,
+    /// among them. The owner publishes a view and hands its saves over in one step, under the view's lock,
+    /// so a session that has taken fewer finds the rest in its queue.
+    pub saves_told: usize,
 }
 
 impl SettingsView {
@@ -1349,7 +1349,8 @@ impl SettingsEnding {
 }
 
 /// Where the owner's thread hands each Repository's settings a change saves otherwise, with those they
-/// replaced: the session's queue, which `fetching`, above this module, owns.
+/// replaced: the session's queue, which `fetching`, above this module, owns. It runs under the lock of the
+/// owner's view, so it mustn't read the view, and nobody reads the view while it waits.
 pub type SettingsSink = Box<dyn FnMut(SettingsSave) + Send>;
 
 /// What the owner's thread is asked.
@@ -1553,14 +1554,17 @@ impl SettingsOwner {
                 // one at a time, so an older one can't replace a newer one.
                 if let (Ok(saved), Ok(files)) = (&mut saved, &files) {
                     let saves = (session.as_mut()).map(|told| told.saves(saved, by));
-                    writer.set(saved);
+                    // The saves go to the session before the answer too, so it hears of the change before
+                    // whatever the one who asked sends it next, and from this thread alone, in the order the
+                    // changes saved. They go in one step with the view, so a session that finds a save
+                    // counted in the view finds it in its queue.
+                    writer.set_then(saved, || {
+                        if let (Some(told), Some(saves)) = (&mut session, saves) {
+                            told.hand_over(saves);
+                        }
+                    });
                     // Each change reads `machine.toml` again, which may hold a hand edit to the list.
                     publish_if_changed(&files.recent_commands());
-                    // Before the answer too, so the session hears of the change before whatever the one who
-                    // asked sends it next, and from this thread alone, in the order the changes saved.
-                    if let (Some(told), Some(saves)) = (&mut session, saves) {
-                        told.hand_over(saves);
-                    }
                 }
                 answer(&reply, saved);
             }
@@ -1746,7 +1750,7 @@ impl SettingsOwner {
 struct ToldSession {
     sink: SettingsSink,
     told: Vec<RepositorySettings>,
-    saves: u64,
+    saves: usize,
 }
 
 impl ToldSession {

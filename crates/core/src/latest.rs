@@ -11,8 +11,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 /// Each function takes the lock, does its one action and lets go, and no guard leaves these types. So nobody
 /// can hold two of these at once, in any order, or hold one while waiting on something else.
 ///
-/// A panic while holding the lock can only come from `T`'s `clone`, and `set` only ever replaces the value,
-/// so both sides read through a poisoned lock.
+/// A panic while holding the lock can only come from `T`'s `clone` or a `set_then`'s `then`, which runs
+/// once the value is whole, and a set only ever replaces the value, so both sides read through a poisoned
+/// lock.
 pub fn channel<T>(first: T) -> (LatestWriter<T>, LatestReader<T>) {
     let shared = Arc::new(Mutex::new(first));
     (LatestWriter(Arc::clone(&shared)), LatestReader(shared))
@@ -27,6 +28,15 @@ impl<T: Clone> LatestWriter<T> {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone_from(value);
+    }
+
+    /// Sets `value` and runs `then` in one step, under the lock, so a reader that finds `value` finds what
+    /// `then` did done. It suits a send on an unbounded channel, which waits on nothing; `then` mustn't read
+    /// this value, as the lock is held.
+    pub fn set_then(&mut self, value: &T, then: impl FnOnce()) {
+        let mut held = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        held.clone_from(value);
+        then();
     }
 }
 

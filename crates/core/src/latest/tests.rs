@@ -26,6 +26,15 @@ fn a_read_takes_a_part_of_what_the_writer_set_last() {
 }
 
 #[test]
+fn what_runs_after_a_set_runs_before_any_reader_finds_the_value() {
+    let (mut writer, reader) = channel(1);
+
+    writer.set_then(&2, || assert!(reader.0.try_lock().is_err()));
+
+    assert_eq!(reader.get(), 2);
+}
+
+#[test]
 fn a_reader_keeps_the_last_value_after_the_writer_has_gone() {
     let (mut writer, reader) = channel(1);
     writer.set(&2);

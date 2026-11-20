@@ -129,6 +129,20 @@ impl Marked {
         }
     }
 
+    /// Whether the mark moves Reach: Mute and Unmute, on an item or an author (#918).
+    pub(crate) fn moves_reach(&self) -> bool {
+        match self {
+            Self::Muted { .. }
+            | Self::Unmuted { .. }
+            | Self::AuthorMuted { .. }
+            | Self::AuthorUnmuted { .. } => true,
+            Self::Seen { .. }
+            | Self::Unseen { .. }
+            | Self::Archived { .. }
+            | Self::Unarchived { .. } => false,
+        }
+    }
+
     /// The Repository whose item or author the mark is on.
     pub(crate) fn repository(&self) -> &RepositoryName {
         match self {

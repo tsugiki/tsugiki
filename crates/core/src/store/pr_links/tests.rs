@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use super::super::testing::{
-    at_second, keep_old_links, kept_fixes, migrated, refuse_new_links, store_with_old_links,
-    temp_database,
+    OLDER_RULES, at_second, database_before, keep_old_links, kept_fixes, migrated,
+    name_a_newer_rule, refuse_new_links, store_with_old_links, stored_texts, temp_database,
 };
 use super::super::{Connection, MIGRATIONS, Store, issues, open_with, pull_requests};
 use super::*;
@@ -290,11 +290,11 @@ fn a_store_whose_links_no_rules_worked_out_leaves_them_to_the_refill_of_its_repo
     );
 }
 
-/// The store at `path`, opened again once its links say version `version` of the rules worked them out,
-/// with only a number among them that the rules never gave: PR 10 fixes Issue 6.
-fn open_with_old_links(path: &std::path::Path, version: u32) -> Store {
+/// The store at `path`, opened again once its links say the rules `rules` name worked them out, with only
+/// a number among them that the rules never gave: PR 10 fixes Issue 6.
+fn open_with_old_links(path: &std::path::Path, rules: &[LinkRule]) -> Store {
     let store = Store::open(path).unwrap();
-    keep_old_links(&store, version, &[(cpython(), 10, 6)]);
+    keep_old_links(&store, rules, &[(cpython(), 10, 6)]);
     store.close();
     Store::open(path).unwrap()
 }
@@ -327,7 +327,7 @@ fn refill_whole(store: &Store, repository: &RepositoryName) {
 #[test]
 fn a_refill_takes_a_repositorys_prs_a_batch_at_a_time_in_number_order() {
     let (path, _folder) = store_with_a_backport("links-batches");
-    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    let store = open_with_old_links(&path, OLDER_RULES);
     let connection = Connection::open(&path).unwrap();
     let refill = |from| {
         store
@@ -353,7 +353,7 @@ fn a_refill_takes_a_repositorys_prs_a_batch_at_a_time_in_number_order() {
 fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_refill() {
     let (path, _folder) = store_with_a_backport("links-stale");
 
-    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    let store = open_with_old_links(&path, OLDER_RULES);
 
     let connection = Connection::open(&path).unwrap();
     assert_eq!(
@@ -370,14 +370,15 @@ fn a_store_opened_after_the_rules_change_answers_from_its_kept_links_until_they_
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
     store.keep_link_rules().unwrap();
     assert_eq!(store.stale_links().unwrap(), None);
+    assert_eq!(kept_rule_names(&connection), set_names());
     store.close();
 }
 
 #[test]
-fn a_store_whose_links_this_version_worked_out_keeps_them_as_it_opens() {
+fn a_store_whose_links_the_set_worked_out_keeps_them_as_it_opens() {
     let (path, _folder) = store_with_a_backport("links-current");
 
-    let store = open_with_old_links(&path, RULES_VERSION);
+    let store = open_with_old_links(&path, &LinkRule::SET);
 
     assert_eq!(store.stale_links().unwrap(), None);
     store.close();
@@ -389,11 +390,11 @@ fn a_store_whose_links_this_version_worked_out_keeps_them_as_it_opens() {
 }
 
 #[test]
-fn a_store_that_holds_no_pr_keeps_this_versions_rules_as_it_opens() {
+fn a_store_that_holds_no_pr_keeps_the_sets_rules_as_it_opens() {
     let (path, _folder) = temp_database("links-empty");
     let store = Store::open(&path).unwrap();
     assert_eq!(store.stale_links().unwrap(), None);
-    keep_old_links(&store, RULES_VERSION - 1, &[]);
+    keep_old_links(&store, OLDER_RULES, &[]);
     store.close();
 
     let store = Store::open(&path).unwrap();
@@ -418,7 +419,7 @@ fn a_refill_works_out_only_its_own_repositorys_links() {
 #[test]
 fn the_end_of_a_refill_forgets_the_links_of_names_that_spell_no_repository() {
     let (path, _folder) = store_with_a_backport("links-unparsed");
-    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    let store = open_with_old_links(&path, OLDER_RULES);
     store.close();
     let old = Connection::open(&path).unwrap();
     // One name that doesn't parse, and one that parses to python/cpython but isn't spelled so.
@@ -443,9 +444,9 @@ fn the_end_of_a_refill_forgets_the_links_of_names_that_spell_no_repository() {
 }
 
 #[test]
-fn a_refill_that_fails_keeps_the_links_it_found_and_their_version() {
+fn a_refill_that_fails_keeps_the_links_it_found_and_their_rules() {
     let (path, _folder) = store_with_a_backport("links-refused");
-    let store = open_with_old_links(&path, RULES_VERSION - 1);
+    let store = open_with_old_links(&path, OLDER_RULES);
     refuse_new_links(&store);
 
     assert!(store.refill_links(&cpython(), 0, NonZeroU32::MAX).is_err());
@@ -453,25 +454,6 @@ fn a_refill_that_fails_keeps_the_links_it_found_and_their_version() {
     assert_eq!(kept_fixes(&store), [(cpython().to_string(), 10, 6)]);
     assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
     store.close();
-}
-
-/// The text each of `all` leaves in a column, once it has read back as itself.
-fn stored_texts<T: ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialEq>(
-    all: &[T],
-) -> Vec<String> {
-    let connection = Connection::open_in_memory().unwrap();
-    let through = |value: &T| {
-        let (text, read): (String, T) = connection
-            .query_row(
-                "SELECT :value AS value",
-                named_params! { ":value": value },
-                |row| Ok((row.get("value")?, row.get("value")?)),
-            )
-            .unwrap();
-        assert_eq!(&read, value);
-        text
-    };
-    all.iter().map(through).collect()
 }
 
 /// The PRs that try `rule`, in the batches the store saves them in, and the rows `rule` alone keeps for
@@ -642,27 +624,127 @@ fn the_set_keeps_the_rows_each_of_its_rules_keeps_alone() {
 }
 
 #[test]
-fn the_version_of_the_rules_names_their_set() {
+fn each_link_keeps_the_text_earlier_versions_stored() {
+    assert_eq!(stored_texts(Under::ALL), ["every", "cpython", "github"]);
+    assert_eq!(stored_texts(FoundIn::ALL), ["cpython", "cherry_pick"]);
+}
+
+/// The names of the first set of rules, which the step that names the rules gives a store at version 1.
+const FIRST_SET: [&str; 5] = [
+    "closing_references",
+    "description_keywords",
+    "cpython_title_issues",
+    "cpython_title_origin",
+    "cherry_pick_line",
+];
+
+#[test]
+fn each_rule_keeps_the_name_earlier_versions_stored() {
+    assert_eq!(stored_texts(LinkRule::ALL), FIRST_SET);
+}
+
+/// The names the store keeps for `LinkRule::SET`.
+fn set_names() -> BTreeSet<String> {
+    stored_texts(&LinkRule::SET).into_iter().collect()
+}
+
+/// The names of `names`, as `kept_rule_names` answers them.
+fn names_of(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
+}
+
+/// The names `link_rules` holds in the database `connection` reads.
+fn kept_rule_names(connection: &Connection) -> BTreeSet<String> {
+    let mut statement = connection.prepare("SELECT name FROM link_rules").unwrap();
+    let names = statement.query_map([], |row| row.get("name")).unwrap();
+    names.collect::<rusqlite::Result<_>>().unwrap()
+}
+
+#[test]
+fn a_store_that_names_a_rule_this_build_doesnt_know_fails_to_open_and_stays_as_it_was() {
+    let (path, _folder) = store_with_a_backport("links-newer");
+    let store = Store::open(&path).unwrap();
+    keep_old_links(
+        &store,
+        &[LinkRule::ClosingReferences],
+        &[(cpython(), 10, 6)],
+    );
+    name_a_newer_rule(&store, "a_rule_of_a_newer_tsugiki");
+    store.close();
+
+    let Err(problem) = Store::open(&path) else {
+        panic!("a store with a newer rule's links opened");
+    };
+
+    assert!(problem.message.contains("newer"), "{}", problem.message);
+    let connection = Connection::open(&path).unwrap();
     assert_eq!(
-        (RULES_VERSION, LinkRule::SET),
-        (
-            1,
-            [
-                LinkRule::ClosingReferences,
-                LinkRule::DescriptionKeywords,
-                LinkRule::CpythonTitleIssues,
-                LinkRule::CpythonTitleOrigin,
-                LinkRule::CherryPickLine,
-            ]
-        ),
-        "raise RULES_VERSION with a change to LinkRule::SET, so the store works out every PR's links again"
+        kept_rule_names(&connection),
+        names_of(&["closing_references", "a_rule_of_a_newer_tsugiki"])
+    );
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10, 11]),
+        [(10, vec![6], None), (11, vec![], None)]
     );
 }
 
 #[test]
-fn each_link_keeps_the_text_earlier_versions_stored() {
-    assert_eq!(stored_texts(Under::ALL), ["every", "cpython", "github"]);
-    assert_eq!(stored_texts(FoundIn::ALL), ["cpython", "cherry_pick"]);
+fn links_that_name_a_rule_this_build_doesnt_know_once_the_store_is_open_owe_no_refill() {
+    let store = store_with_old_links(&[cpython()]);
+
+    name_a_newer_rule(&store, "a_rule_of_a_newer_tsugiki");
+
+    assert_eq!(store.stale_links().unwrap(), None);
+}
+
+/// A database at `path` before the step that names the link rules, which holds PR 10, whose links an older
+/// Tsugiki kept as version `version` of the rules: it fixes Issue 6.
+fn database_at_rules_version(name: &str, version: u32) -> (std::path::PathBuf, TempPath) {
+    database_before(
+        name,
+        RULE_NAMES,
+        &format!(
+            "INSERT INTO pull_requests (repository, number, title, state, is_draft, target_branch,
+                                        updated_at)
+                 VALUES ('python/cpython', 10, 'gh-5: Fix it', 'OPEN', 0, 'main', 0);
+             INSERT INTO pr_fixes (repository, number, issue, under)
+                 VALUES ('python/cpython', 10, 6, 'every');
+             INSERT INTO issues (repository, number, title, updated_at, state)
+                 VALUES ('python/cpython', 6, 'It broke on 3.13', 0, 'OPEN');
+             INSERT INTO link_rules (id, version) VALUES (1, {version});"
+        ),
+    )
+}
+
+#[test]
+fn a_store_whose_links_version_1_of_the_rules_kept_names_the_first_set_and_owes_no_refill_under_it()
+{
+    let (path, _folder) = database_at_rules_version("links-version-1", 1);
+
+    let store = Store::open(&path).unwrap();
+
+    // Once a later set takes the first one's place, the store owes a refill.
+    let owed = set_names() != names_of(&FIRST_SET);
+    assert_eq!(store.stale_links().unwrap().is_some(), owed);
+    store.close();
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(kept_rule_names(&connection), names_of(&FIRST_SET));
+    assert_eq!(
+        links(&connection, Conventions::Cpython, &[10]),
+        [(10, vec![6], None)]
+    );
+}
+
+#[test]
+fn a_store_whose_links_another_version_of_the_rules_kept_names_none_and_owes_a_refill() {
+    let (path, _folder) = database_at_rules_version("links-version-0", 0);
+
+    let store = Store::open(&path).unwrap();
+
+    assert_eq!(store.stale_links().unwrap(), Some(vec![cpython()]));
+    store.close();
+    let connection = Connection::open(&path).unwrap();
+    assert!(kept_rule_names(&connection).is_empty());
 }
 
 #[test]

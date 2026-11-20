@@ -129,13 +129,6 @@ pub fn possible_numbers(facts: &PullRequestFacts, repository: &RepositoryName) -
     named.into_iter().map(|(number, _)| number).collect()
 }
 
-/// The version of the rules behind the links the store keeps, which it keeps beside them. Raise it with any
-/// change to `LinkRule::SET`, which a change to what a released rule gives makes, the way `MergeCommits` or
-/// the store's `Keeper` finds a cherry-pick line's PR included. Once the store opens, the session then works
-/// out the links of every PR it holds again (`session/refill.rs`), since a PR that never syncs again would
-/// keep the old ones. A store test pins this number to the set.
-pub const RULES_VERSION: u32 = 1;
-
 /// What the links that the store keeps are worked out from (#833): the title, GitHub's closing references,
 /// and the description of a PR that doesn't target the default branch, where GitHub ignores closing
 /// keywords.

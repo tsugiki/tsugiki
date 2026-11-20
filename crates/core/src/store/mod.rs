@@ -501,15 +501,15 @@ impl Store {
         forgot.map_err(saying(CANT_WRITE))
     }
 
-    /// The Repositories whose kept links another version of the link rules worked out, which the session
-    /// refills, or nothing while this version's rules worked them out (#950).
+    /// The Repositories whose kept links rules other than `LinkRule::SET` worked out, which the session
+    /// refills, or nothing while the set worked them out (#950).
     pub fn stale_links(&self) -> Result<Option<Vec<RepositoryName>>, Error> {
         let found = self.call(|connection| pr_links::stale(connection))?;
         found.map_err(saying(CANT_READ))
     }
 
-    /// Works out the links of the first `most` PRs of `repository` from number `from` up again, under this
-    /// version's rules, in place of those kept. Answers with the number the next batch starts from, or
+    /// Works out the links of the first `most` PRs of `repository` from number `from` up again, under
+    /// `LinkRule::SET`, in place of those kept. Answers with the number the next batch starts from, or
     /// nothing once the Repository has no PR left. A batch that fails keeps the links it would replace.
     pub fn refill_links(
         &self,
@@ -523,7 +523,7 @@ impl Store {
         refilled.map_err(saying(CANT_WRITE))
     }
 
-    /// Saves this version of the link rules as the one that worked out the kept links, once the session has
+    /// Saves the names of `LinkRule::SET` as the rules that worked out the kept links, once the session has
     /// refilled those of each Repository `stale_links` named. The links of a Repository whose stored name no
     /// longer parses go with it.
     pub fn keep_link_rules(&self) -> Result<(), Error> {
@@ -1129,9 +1129,13 @@ fn open_with(path: &Path, migrations: &[Migration]) -> Result<Store, Error> {
         .map_err(saying(CANT_OPEN))?;
     migrate::run(&mut connection, path, migrations)?;
     // Only a file at the newest schema has the tables this version's code reads. Stale links stay as they
-    // are: the session refills them, and a refill that fails leaves the store open (#950).
+    // are: the session refills them, and a refill that fails leaves the store open (#950). Links a newer
+    // Tsugiki worked out stay as they are too, and the store with them (#971).
     if migrate::latest(migrations) == migrate::latest(MIGRATIONS) {
-        pr_links::keep_version_if_empty(&mut connection).map_err(saying(CANT_UPDATE))?;
+        if pr_links::written_by_newer(&connection).map_err(saying(CANT_OPEN))? {
+            return Err(Error::new(ErrorKind::Internal, NEWER));
+        }
+        pr_links::keep_set_if_empty(&mut connection).map_err(saying(CANT_UPDATE))?;
     }
     // A crash, a force-kill or a quit during a slow request skips closing the store, which would leave a new
     // version in the `-wal` file, where `file::check` can't see it. If another connection blocks this, SQLite

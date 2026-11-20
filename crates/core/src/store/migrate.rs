@@ -175,6 +175,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
         version: 37,
         sql: super::patch_ids::STALE_REVIEWS,
     },
+    Migration {
+        version: 38,
+        sql: super::pr_links::RULE_NAMES,
+    },
 ];
 
 /// The version a file has after all of `migrations`.

@@ -3637,7 +3637,7 @@ const OPENING_GCMON: [fn(&Fetching); 2] = [
     |fetching| fetching.fetch_pull_request(gcmon(), 10),
 ];
 
-/// Watches GitHub through `access` with a store whose links an older version of the rules kept, in CPython
+/// Watches GitHub through `access` with a store whose links an older set of rules kept, in CPython
 /// and gcmon, once the window has opened something of gcmon through `open`. Answers with the Repository of
 /// each Change, which names no item, and the store. The session stops once it has heard of both.
 fn refilled_watching(access: GitHubAccess, open: fn(&Fetching)) -> (Vec<RepositoryName>, Store) {
@@ -3664,8 +3664,8 @@ fn refilled_watching(access: GitHubAccess, open: fn(&Fetching)) -> (Vec<Reposito
     (changes.try_iter().collect(), store)
 }
 
-/// The fixes a store holds once the refill of CPython and gcmon worked out their links under this version's
-/// rules.
+/// The fixes a store holds once the refill of CPython and gcmon worked out their links under
+/// `LinkRule::SET`.
 fn refilled_fixes() -> Vec<(String, u32, u32)> {
     let fixed = |repository: RepositoryName| (repository.to_string(), 10, 5);
     vec![fixed(cpython()), fixed(gcmon())]

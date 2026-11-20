@@ -1,5 +1,6 @@
 use super::*;
 use crate::facts::activity::{Activity, ItemActivity};
+use crate::links::LinkRule;
 use crate::testing::{TempPath, cpython};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -64,11 +65,56 @@ pub(crate) fn seeing(numbers: Vec<u32>, up_to: Option<OffsetDateTime>) -> Seeing
     }
 }
 
-/// Leaves `store` with the links version `version` of the link rules worked out, as an older Tsugiki kept
-/// them: only `fixes`, each a Repository, a PR and the Issue it fixed under every Conventions, which a test
-/// tells from what this version's rules give.
-pub(crate) fn keep_old_links(store: &Store, version: u32, fixes: &[(RepositoryName, u32, u32)]) {
+/// The text each of `all` leaves in a column, once it has read back as itself.
+pub(super) fn stored_texts<T>(all: &[T]) -> Vec<String>
+where
+    T: rusqlite::ToSql + rusqlite::types::FromSql + std::fmt::Debug + PartialEq,
+{
+    let connection = Connection::open_in_memory().unwrap();
+    let through = |value: &T| {
+        let (text, read): (String, T) = connection
+            .query_row(
+                "SELECT :value AS value",
+                named_params! { ":value": value },
+                |row| Ok((row.get("value")?, row.get("value")?)),
+            )
+            .unwrap();
+        assert_eq!(&read, value);
+        text
+    };
+    all.iter().map(through).collect()
+}
+
+/// The rules an older Tsugiki's links name in `store_with_old_links`: the first set, less its last rule.
+pub(super) const OLDER_RULES: &[LinkRule] = &[
+    LinkRule::ClosingReferences,
+    LinkRule::DescriptionKeywords,
+    LinkRule::CpythonTitleIssues,
+    LinkRule::CpythonTitleOrigin,
+];
+
+/// Adds `name` to the rules `store` says worked out its links, as a newer Tsugiki would keep a rule this
+/// build doesn't know.
+pub(super) fn name_a_newer_rule(store: &Store, name: &'static str) {
+    let named = store.call(move |connection| {
+        let keep = "INSERT INTO link_rules (name) VALUES (:name)";
+        connection
+            .execute(keep, named_params! { ":name": name })
+            .map(drop)
+    });
+    named.unwrap().unwrap();
+}
+
+/// Leaves `store` with the links `rules` worked out, as another Tsugiki kept them: only `fixes`, each a
+/// Repository, a PR and the Issue it fixed under every Conventions, which a test tells from what
+/// `LinkRule::SET` gives.
+pub(crate) fn keep_old_links(
+    store: &Store,
+    rules: &[LinkRule],
+    fixes: &[(RepositoryName, u32, u32)],
+) {
     let fixes = fixes.to_vec();
+    let rules = rules.to_vec();
     let kept = store.call(move |connection| -> rusqlite::Result<()> {
         let transaction = connection.transaction()?;
         transaction.execute_batch("DELETE FROM pr_fixes; DELETE FROM pr_origins;")?;
@@ -80,18 +126,22 @@ pub(crate) fn keep_old_links(store: &Store, version: u32, fixes: &[(RepositoryNa
             };
             transaction.execute(insert, values).map(drop)?;
         }
-        let rules = "INSERT INTO link_rules (id, version) VALUES (1, :version)
-                     ON CONFLICT (id) DO UPDATE SET version = excluded.version";
         transaction
-            .execute(rules, named_params! { ":version": version })
+            .execute("DELETE FROM link_rules", [])
             .map(drop)?;
+        for rule in &rules {
+            let keep = "INSERT INTO link_rules (name) VALUES (:name)";
+            transaction
+                .execute(keep, named_params! { ":name": rule })
+                .map(drop)?;
+        }
         transaction.commit()
     });
     kept.unwrap().unwrap();
 }
 
 /// A store in memory that holds PR 10 of each of `repositories`, titled to fix Issue 5, with the links an
-/// older version of the rules kept: each PR fixes Issue 6.
+/// older set of rules kept, which lacks a rule of `LinkRule::SET`: each PR fixes Issue 6.
 pub(crate) fn store_with_old_links(repositories: &[RepositoryName]) -> Store {
     let store = Store::open(Path::new(":memory:")).unwrap();
     let fixing = PullRequestFacts {
@@ -105,7 +155,7 @@ pub(crate) fn store_with_old_links(repositories: &[RepositoryName]) -> Store {
         .iter()
         .map(|name| (name.clone(), 10, 6))
         .collect();
-    keep_old_links(&store, crate::links::RULES_VERSION - 1, &old);
+    keep_old_links(&store, OLDER_RULES, &old);
     store
 }
 

@@ -16,11 +16,13 @@ const GITHUB_URL: &str = "https://github.com/";
 /// The store keeps the rows the rules of `SET` give (#833), and a PR that never syncs again keeps them past
 /// a release, as the schema keeps what its migrations wrote. So a released rule never changes what it gives,
 /// as a released migration never changes. A change to one is a new variant that takes its place in `SET`,
-/// and the old variant stays as a retired name outside `SET`, which runs nowhere. Every change to the rows
+/// and the old variant stays as a retired name outside `SET`, which runs nowhere. The store keeps the name
+/// of each rule that wrote its rows (`store/pr_links.rs`), refills them when those aren't `SET`, and
+/// refuses to open on a name no variant spells, which a newer Tsugiki wrote. Every change to the rows
 /// counts: a new keyword, a new Conventions, how a row spells its Conventions, or how a cherry-pick line
 /// finds its PR. The pinned test in `store/pr_links/tests.rs` holds each rule's sample PRs and the rows it
 /// keeps for them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LinkRule {
     /// The Issues GitHub says the PR closes, under every Conventions.
     ClosingReferences,

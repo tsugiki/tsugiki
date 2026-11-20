@@ -67,7 +67,10 @@ fn a_killed_parent_leaves_no_server_behind() {
     }
 
     parent.kill().unwrap();
-    let _killed = parent.wait().unwrap();
+    assert!(
+        !parent.wait().unwrap().success(),
+        "the parent wasn't killed"
+    );
     for role in ["server", "worker"] {
         let lock = File::open(folder.join(format!("{role}.lock"))).unwrap();
         assert!(
@@ -105,7 +108,11 @@ fn parent() -> ! {
 /// A server that never reads what the client writes, so it doesn't notice its input close, and that
 /// starts a worker.
 fn server() -> ! {
-    let _worker = Command::new(env::current_exe().unwrap())
+    #[expect(
+        unused_results,
+        reason = "the worker runs on after the server stops looking at it, until the test kills both"
+    )]
+    Command::new(env::current_exe().unwrap())
         .args(rerun())
         .env(ROLE, "worker")
         .stdin(Stdio::null())

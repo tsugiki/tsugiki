@@ -130,7 +130,11 @@ impl Process for FakeProcess {
     }
 
     fn kill(&mut self) {
-        let _unheard = self.killed.send(());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a test that dropped its end of `killed` doesn't check the kill"
+        )]
+        let _ = self.killed.send(());
         #[expect(
             clippy::let_underscore_must_use,
             reason = "only `wait` gives how the process ended, and a test that dropped its end has ended it"

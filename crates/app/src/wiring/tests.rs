@@ -26,7 +26,7 @@ use tsugiki_core::settings::{Home, SettingsFiles};
 use tsugiki_core::testing::pr_facts;
 use tsugiki_core::token::Token;
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_test_git::{TempPath, mirror_with_branch, run_git, ty, wait_until};
+use tsugiki_test_git::{TempPath, mirror_with_branch, run_git, ty, wait_for_message, wait_until};
 
 /// Longer than any of these tests should wait on a working app.
 const PLENTY: Duration = Duration::from_secs(60);
@@ -202,7 +202,11 @@ impl Wired {
 /// Each payload of `event`, as the webview would get it.
 fn hear(app: &App<MockRuntime>, event: &str) -> Receiver<Value> {
     let (heard, payloads) = channel();
-    let _ = app.listen(event, move |event| {
+    #[expect(
+        unused_results,
+        reason = "the listener lasts as long as the app, which the test drops at its end"
+    )]
+    app.listen(event, move |event| {
         drop(heard.send(serde_json::from_str(event.payload()).unwrap()));
     });
     payloads
@@ -1002,7 +1006,7 @@ fn started_with_no_network_on_a_synced_database_tsugiki_shows_what_it_holds_and_
     // Reading a PR's Conversation keeps it, as a read ahead does.
     drop(wired.ask("open_pull_request", pr.clone()).unwrap());
     while wired.ask("pull_request", pr.clone()).unwrap()["content"].is_null() {
-        let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        wait_for_message(&wired.workbenches, PLENTY);
     }
     drop(wired.stop());
 
@@ -1067,7 +1071,7 @@ fn opening_a_pr_shows_its_row_at_once_and_its_conversation_once_github_answers()
     drop(wired.ask("open_pull_request", pr.clone()).unwrap());
     let mut after = Value::Null;
     while after["content"].is_null() {
-        let _changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+        wait_for_message(&wired.workbenches, PLENTY);
         after = wired.ask("pull_request", pr.clone()).unwrap();
     }
     drop(wired.stop());
@@ -1704,7 +1708,7 @@ fn an_answer_machine_toml_cant_keep_still_starts_the_clone() {
         remotes(&root, &[CPYTHON]),
     );
 
-    let _ = wired.questions.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.questions, PLENTY);
     // Broken after the launch read it, as a user's edit in another window would leave it.
     std::fs::write(folders.machine_file(), "last_repository = \n").unwrap();
     let chose = wired.ask(
@@ -2038,7 +2042,7 @@ fn offline_with_ty(
     let machine = format!("[language_servers.ty]\npath = '{}'\n", ty().display());
     std::fs::write(folders.machine_file(), machine).unwrap();
     let wired = Wired::start(Ok(folders), no_network());
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.held, PLENTY);
     let pr = json!({ "repository": CPYTHON, "number": 1 });
     let files = wired.ask("pull_request_files", pr).unwrap();
     let base = files["base"].as_str().unwrap_or_default().to_owned();
@@ -2143,7 +2147,7 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
     let wired = Wired::start(Ok(folders), no_network());
     let changes = hear(&wired._app, "text-search-changed");
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.held, PLENTY);
     let before = wired.ask("text_search_state", json!({}));
     // The query names the ends of the diff the Files tab shows.
     let pr = json!({ "repository": CPYTHON, "number": 1 });
@@ -2164,7 +2168,7 @@ fn offline_a_text_search_reads_the_code_of_the_diff_on_show_and_tells_the_window
     });
     // A query that has ended has nothing to cancel, and its results stay.
     let cancelled = wired.ask("text_search_cancel", json!({ "id": asked["id"] }));
-    let _changed = changes.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&changes, PLENTY);
     let after = wired.ask("text_search_state", json!({})).unwrap();
     drop(wired.stop());
 
@@ -2223,7 +2227,7 @@ fn a_server_set_up_in_settings_shows_its_version_answers_lookups_and_opens_its_l
     let remotes = Remotes::under("no-remotes/".to_owned());
     let wired = Wired::start_picking(Ok(folders.clone()), no_network(), remotes, pick);
 
-    let _held = wired.held.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&wired.held, PLENTY);
     let pr = json!({ "repository": CPYTHON, "number": 1 });
     let files = wired.ask("pull_request_files", pr).unwrap();
     let base = files["base"].as_str().unwrap_or_default().to_owned();

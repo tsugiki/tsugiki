@@ -154,7 +154,7 @@ pub(crate) fn notification(method: &str, params: Value) -> Vec<u8> {
 
 fn with_params(mut message: Value, params: Value) -> Vec<u8> {
     if let (Value::Object(fields), false) = (&mut message, params.is_null()) {
-        let _replaced = fields.insert("params".to_owned(), params);
+        fields.extend([("params".to_owned(), params)]);
     }
     message.to_string().into_bytes()
 }

@@ -363,8 +363,11 @@ impl Worker {
                 .zip(at)
                 .map(|(folder, at)| LookupCheckout { folder, at });
             for reader in lookup.readers.drain(..) {
-                // A reader that has stopped waiting needs no answer.
-                let _unheard = reader.send(checkout.clone());
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "a reader that has stopped waiting needs no answer"
+                )]
+                let _ = reader.send(checkout.clone());
             }
         });
     }

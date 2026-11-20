@@ -80,7 +80,7 @@ libc = "0.2.191"
 # https://github.com/skatromb/easy-peasy-rust).
 [workspace.lints.rust]
 unsafe_code = "deny" # A leaked token can reach python/cpython. Core, app and token forbid it; see webview-keys.
-unused_results = "deny" # A dropped value is often a dropped failure, so say `let _ =` when it is meant.
+unused_results = "deny" # A dropped value is often a dropped failure. Change the code to leave none, or say why in an `#[expect]`.
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 } # Clippy's default set, which CI turns into errors.

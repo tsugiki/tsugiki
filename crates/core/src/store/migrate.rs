@@ -266,8 +266,9 @@ fn back_up(connection: &Connection, path: &Path, version: u32) -> Result<(), Err
         fs::remove_file(&partial).map_err(saying(CANT_UPDATE))?;
     }
     let target = partial.to_string_lossy();
-    let _copied = connection
+    connection
         .execute("VACUUM INTO :target", named_params! { ":target": target })
+        .map(drop)
         .map_err(saying(CANT_UPDATE))?;
     fs::rename(&partial, &backup).map_err(saying(CANT_UPDATE))?;
     remove_old_backups(path, &backup);

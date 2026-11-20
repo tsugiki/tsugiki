@@ -513,7 +513,7 @@ pub(super) fn read_ahead(
         }
         Err(problem) => return Err(problem),
     };
-    let _tried = ahead.tried.insert(number);
+    ahead.tried.extend([number]);
     Ok((step, None))
 }
 

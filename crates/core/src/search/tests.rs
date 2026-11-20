@@ -216,6 +216,7 @@ fn a_cancel_of_an_older_query_leaves_the_newer_one_running() {
     let fixture = pr("search-owner-cancel-older");
     let (search, heard, _) = started();
     let older = search_in(&search, &fixture, "spam");
+    // Held, so the older query still waits for its checkout when the cancel comes.
     let _older_reply = asked(&heard);
     let newer = search_in(&search, &fixture, "eggs");
     let reply = asked(&heard);

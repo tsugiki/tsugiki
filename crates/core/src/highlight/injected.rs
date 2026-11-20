@@ -231,7 +231,9 @@ impl Parsed {
     fn parse_inside(&self, parser: &mut Parser, mut found: Found, depth: usize) -> Option<Layer> {
         let grammar = found.language.grammar()?;
         // No ranges would parse the whole file.
-        let _first = found.ranges.first()?;
+        if found.ranges.is_empty() {
+            return None;
+        }
         // A combined piece's nodes come as the query matched them, which isn't always in order.
         found.ranges.sort_unstable_by_key(|range| range.start);
         let ranges: Vec<tree_sitter::Range> = found

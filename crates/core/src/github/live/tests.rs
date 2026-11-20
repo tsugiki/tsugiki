@@ -93,7 +93,8 @@ fn stopping_git_ends_what_it_started_though_it_left_gits_tree() {
     // worker waits for it to.
     let mut output = io::BufReader::new(output);
     let mut line = String::new();
-    let _ = io::BufRead::read_line(&mut output, &mut line).unwrap();
+    #[expect(unused_results, reason = "the test checks the line itself at the end")]
+    io::BufRead::read_line(&mut output, &mut line).unwrap();
     git.stop();
     let (closing, closed) = std::sync::mpsc::channel();
     #[expect(

@@ -99,11 +99,13 @@ pub(super) fn merge(
     for number in &left {
         let params =
             named_params! { ":repository": repository, ":query": query, ":number": number };
-        let _removed = transaction.execute(
-            "DELETE FROM filter_matches
-             WHERE repository = :repository AND query = :query AND number = :number",
-            params,
-        )?;
+        transaction
+            .execute(
+                "DELETE FROM filter_matches
+                 WHERE repository = :repository AND query = :query AND number = :number",
+                params,
+            )
+            .map(drop)?;
     }
     if narrowed.cut_off {
         mark_cut_off(&transaction, repository, query)?;
@@ -181,7 +183,7 @@ fn forget(
         "DELETE FROM filter_searches WHERE repository = :repository AND query = :query",
     ] {
         let params = named_params! { ":repository": repository, ":query": query };
-        let _removed = connection.execute(sql, params)?;
+        connection.execute(sql, params).map(drop)?;
     }
     Ok(())
 }
@@ -218,7 +220,7 @@ pub(super) fn read_all(
     let rows = matches.query_map(named_params! { ":repository": repository }, match_in)?;
     for row in rows {
         let (query, number) = row?;
-        let _new = found.entry(query).or_default().numbers.insert(number);
+        found.entry(query).or_default().numbers.extend([number]);
     }
     let mut problems = connection
         .prepare("SELECT query, problem FROM filter_problems WHERE repository = :repository")?;

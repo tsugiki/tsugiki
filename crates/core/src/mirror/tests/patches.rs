@@ -182,7 +182,7 @@ fn a_commit_asked_for_again_after_its_hand_over_is_read_again_as_its_save_may_ha
     let commit = head(1).commit;
     requests.read_patch_ids(cpython.clone(), vec![on_main(&commit)]);
     faked.next_read().give(&["NEWS"]);
-    let _first = faked.patched.recv_timeout(PLENTY).unwrap();
+    wait_for_message(&faked.patched, PLENTY);
 
     // The store holds what it saved, and the session asks only for what it lacks.
     requests.read_patch_ids(cpython.clone(), vec![on_main(&commit)]);

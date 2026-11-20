@@ -50,7 +50,7 @@ impl Patches {
                 log::info!(
                     "Tsugiki can't read the patch-ids of {commit} in {repository}'s mirror yet: {cause}"
                 );
-                let _ = self.missing.insert(of);
+                self.missing.extend([of]);
             }
         }
         (self.waiting.is_empty() && !self.handing.is_empty()).then(|| mem::take(&mut self.handing))

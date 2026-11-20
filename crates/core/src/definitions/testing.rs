@@ -34,7 +34,11 @@ pub(crate) fn fake_program(program: &Path, version: &str, answers: Vec<Value>) {
         assert_eq!(error.kind(), ErrorKind::NotFound, "{error}");
     }
     // A copy, not a link: the program is small, and the build may be on another drive.
-    let _copied = fs::copy(tsugiki_test_git::fake_server(), program).unwrap();
+    #[expect(
+        unused_results,
+        reason = "the copy fails unless it copies the whole program, so its size says nothing more"
+    )]
+    fs::copy(tsugiki_test_git::fake_server(), program).unwrap();
     let script = fake_server_script(version, answers).to_string();
     fs::write(folder.join(FAKE_SERVER_SCRIPT), script).unwrap();
 }
@@ -183,7 +187,11 @@ struct Ended(Sender<Option<i32>>, Arc<AtomicI32>);
 
 impl Ended {
     fn end(&self) {
-        let _gone = self.0.send(Some(self.1.load(Ordering::SeqCst)));
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a client that has stopped waiting for the end doesn't need its exit code"
+        )]
+        let _ = self.0.send(Some(self.1.load(Ordering::SeqCst)));
     }
 }
 
@@ -209,11 +217,11 @@ fn serve(
             // A real server's output ends with its process. The test still holds a sender of the fake's, so
             // the client would wait out `EXIT_PATIENCE` for the end, then kill the fake.
             "exit" => {
-                let _gone = replies.send(None);
+                say(replies, None);
                 return;
             }
             "initialized" if initialize == Initialize::AnswerThenLeave => {
-                let _gone = replies.send(None);
+                say(replies, None);
                 return;
             }
             "initialize" if initialize == Initialize::Refuse => {
@@ -222,13 +230,17 @@ fn serve(
             "initialize" => json!({"capabilities": {}}),
             "textDocument/didOpen" => {
                 let document = document.unwrap();
-                let _new = open.insert(document.clone());
+                open.extend([document.clone()]);
                 documents.lock().unwrap().push(Notified::Opened(document));
                 Value::Null
             }
             "textDocument/didClose" => {
                 let document = document.unwrap();
-                let _was = open.remove(&document);
+                #[expect(
+                    unused_results,
+                    reason = "`documents` logs each close, and the tests read it there"
+                )]
+                open.remove(&document);
                 documents.lock().unwrap().push(Notified::Closed(document));
                 Value::Null
             }
@@ -241,9 +253,18 @@ fn serve(
         };
         // A notification gets no answer.
         if let Some(reply) = id.and_then(|id| reply_to(id, result)) {
-            let _gone = replies.send(Some(reply));
+            say(replies, Some(reply));
         }
     }
+}
+
+/// Hands `said` to the fake's writer: a message, or `None` to end its output.
+fn say(replies: &Sender<Option<Value>>, said: Option<Value>) {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the writer ends only once the client stops reading, and then nothing hears the fake"
+    )]
+    let _ = replies.send(said);
 }
 
 /// Writes each message `said` gives to `output`, framed, until the client stops reading.

@@ -51,7 +51,7 @@ fn snapshot(folder: &Path) -> BTreeMap<PathBuf, (u64, SystemTime)> {
             if metadata.is_dir() {
                 folders.push(entry.path());
             } else {
-                let _ = files.insert(entry.path(), (metadata.len(), metadata.modified().unwrap()));
+                files.extend([(entry.path(), (metadata.len(), metadata.modified().unwrap()))]);
             }
         }
     }

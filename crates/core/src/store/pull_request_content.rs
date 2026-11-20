@@ -122,28 +122,34 @@ pub(super) fn save(
     let reviewed_before = reviewed_commit(&transaction, repository, number)?;
     issue_content::save_in(&transaction, repository, number, &content.conversation)?;
     let asked = named_params! { ":repository": repository, ":number": number };
-    let _ = transaction.execute(
+    transaction.execute(
         "DELETE FROM review_thread_comments WHERE repository = :repository AND number = :number",
         asked,
-    )?;
-    let _ = transaction.execute(
-        "DELETE FROM review_threads WHERE repository = :repository AND number = :number",
-        asked,
-    )?;
-    let _ = transaction.execute(
-        "DELETE FROM pr_reviews WHERE repository = :repository AND number = :number",
-        asked,
-    )?;
-    let _ = transaction.execute(
-        "UPDATE issue_content SET earlier_reviews = :earlier, head_sha = :head
-         WHERE repository = :repository AND number = :number",
-        named_params! {
-            ":repository": repository,
-            ":number": number,
-            ":earlier": content.earlier_reviews,
-            ":head": content.head,
-        },
-    )?;
+    ).map(drop)?;
+    transaction
+        .execute(
+            "DELETE FROM review_threads WHERE repository = :repository AND number = :number",
+            asked,
+        )
+        .map(drop)?;
+    transaction
+        .execute(
+            "DELETE FROM pr_reviews WHERE repository = :repository AND number = :number",
+            asked,
+        )
+        .map(drop)?;
+    transaction
+        .execute(
+            "UPDATE issue_content SET earlier_reviews = :earlier, head_sha = :head
+             WHERE repository = :repository AND number = :number",
+            named_params! {
+                ":repository": repository,
+                ":number": number,
+                ":earlier": content.earlier_reviews,
+                ":head": content.head,
+            },
+        )
+        .map(drop)?;
     let kept = match &content.head {
         Some(commit) => head_kept(&transaction, repository, number, (commit, updated_at))?,
         None => HeadKept::Unnamed,
@@ -154,7 +160,7 @@ pub(super) fn save(
         position += 1;
     }
     if !content.pending.is_empty() {
-        let _ = transaction.execute(
+        transaction.execute(
             "INSERT INTO pr_reviews (repository, number, position, state, submitted_at, body_html)
              VALUES (:repository, :number, :position, :state, 0, '')",
             named_params! {
@@ -163,7 +169,7 @@ pub(super) fn save(
                 ":position": position,
                 ":state": ReviewState::Pending,
             },
-        )?;
+        ).map(drop)?;
         let pending = (number, position);
         save_threads(&transaction, repository, pending, &content.pending)?;
     }
@@ -262,7 +268,7 @@ fn save_review(
     (number, position): (u32, u32),
     review: &Review,
 ) -> rusqlite::Result<()> {
-    let _ = transaction.execute(
+    transaction.execute(
         "INSERT INTO pr_reviews (repository, number, position, database_id, author, state, commit_sha,
                                  submitted_at, body_html, hidden)
          VALUES (:repository, :number, :position, :database_id, :author, :state, :commit, :submitted_at,
@@ -279,7 +285,7 @@ fn save_review(
             ":body_html": review.body_html,
             ":hidden": review.hidden,
         },
-    )?;
+    ).map(drop)?;
     save_threads(transaction, repository, (number, position), &review.threads)
 }
 
@@ -314,7 +320,7 @@ fn save_thread(
             original,
         } => (Some(side), line, original),
     };
-    let _ = transaction.execute(
+    transaction.execute(
         "INSERT INTO review_threads (repository, number, review, position, node_id, path, side, line,
                                      original_line, words, hidden, replies, resolution, anchor, diff_hunk)
          VALUES (:repository, :number, :review, :position, :node_id, :path, :side, :line, :original,
@@ -336,7 +342,7 @@ fn save_thread(
             ":anchor": thread.anchor,
             ":diff_hunk": thread.hunk.as_ref().map(DiffHunk::as_str),
         },
-    )?;
+    ).map(drop)?;
     for (
         at,
         ThreadComment {
@@ -346,7 +352,7 @@ fn save_thread(
         },
     ) in (0_u32..).zip(&thread.comments)
     {
-        let _ = transaction.execute(
+        transaction.execute(
             "INSERT INTO review_thread_comments (repository, number, review, thread, position, database_id,
                                                  author, created_at, body_html, hidden, submission)
              VALUES (:repository, :number, :review, :thread, :position, :database_id, :author, :created_at,
@@ -364,7 +370,7 @@ fn save_thread(
                 ":hidden": comment.hidden,
                 ":submission": submission,
             },
-        )?;
+        ).map(drop)?;
     }
     Ok(())
 }

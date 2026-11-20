@@ -283,7 +283,7 @@ fn a_refusal_before_the_answer_to_initialize_is_pushed_once_the_answer_says_the_
     let capabilities = json!({"workspace": {"workspaceFolders": {"changeNotifications": true}}});
     fake.reply(&asked, json!({"capabilities": capabilities}));
 
-    let _initialized = initializing.join().unwrap().unwrap();
+    let (_server, _) = initializing.join().unwrap().unwrap();
     fake.assert_next("initialized");
     let removed = fake.expect("workspace/didChangeWorkspaceFolders");
     assert_eq!(removed["params"]["event"]["added"], json!([]));
@@ -313,7 +313,7 @@ fn a_refusal_before_the_answer_to_initialize_isn_t_pushed_when_the_answer_says_t
     );
     fake.reply(&asked, json!({"capabilities": {}}));
 
-    let _initialized = initializing.join().unwrap().unwrap();
+    let (_server, _) = initializing.join().unwrap().unwrap();
     fake.assert_next("initialized");
     // The next message the client writes is its answer, with nothing pushed before it.
     assert_eq!(ty_settings(&mut fake), json!({"root": ["Lib"]}));

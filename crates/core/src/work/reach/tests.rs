@@ -64,7 +64,7 @@ fn a_review_request_the_user_marked_seen_leaves_the_workbench_and_stays_in_reach
     };
     let mut facts = facts(vec![asked], vec![]);
     let later = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
-    let _acknowledged = facts.activity.acknowledged.insert(5, later);
+    facts.activity.acknowledged.extend([(5, later)]);
     let settings = cpython_settings();
 
     let causes = Causes::of(&facts, settings.conventions);

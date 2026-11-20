@@ -58,8 +58,8 @@ pub(super) fn search(
         for _ in 0..DISK_THREADS {
             let send = send.clone();
             let (run, disk, next) = (&run, &disk, &next);
-            // The scope joins each thread as it ends.
-            let _reader = scope.spawn(move || {
+            #[expect(unused_results, reason = "the scope joins each thread as it ends")]
+            scope.spawn(move || {
                 let mut hand = Hand::new(send);
                 let next_file = || disk.get(next.fetch_add(1, Ordering::Relaxed));
                 while let Some(file) = next_file().filter(|_| !run.over()) {
@@ -80,7 +80,8 @@ pub(super) fn search(
             .collect();
         let blobs = live::read_blobs(folder, &ids)?;
         let (run, changed) = (&run, &changed);
-        let _blob_reader = scope.spawn(move || {
+        #[expect(unused_results, reason = "the scope joins the thread as it ends")]
+        scope.spawn(move || {
             let mut hand = Hand::new(send);
             // A blob git has no text for holds nothing to search.
             let read = (changed.iter().zip(blobs))
@@ -152,8 +153,11 @@ impl Run<'_> {
             generated: false,
             lines,
         };
-        // The thread that hears them stops listening only once every thread has ended.
-        let _heard = hand.send.send(hits);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the thread that hears them stops listening only once every thread has ended"
+        )]
+        let _ = hand.send.send(hits);
     }
 }
 

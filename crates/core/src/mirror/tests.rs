@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tsugiki_test_git::{git, run_git};
+use tsugiki_test_git::{git, run_git, wait_for_message};
 
 use super::*;
 use crate::error::ErrorKind;
@@ -622,8 +622,11 @@ impl Run for FakeRun {
 
     /// Says git succeeded if the test said so before the stop.
     fn stop_finished(&mut self) -> bool {
-        // A test that has stopped listening doesn't hear the stop.
-        let _unheard = self.stopping.send(());
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a test that has stopped listening doesn't hear the stop"
+        )]
+        let _ = self.stopping.send(());
         self.output.close();
         self.outcome.try_recv().unwrap_or(false)
     }

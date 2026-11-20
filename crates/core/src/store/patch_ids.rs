@@ -74,16 +74,20 @@ pub(super) fn save(
             ":commit": of.commit,
             ":target": of.target_branch,
         };
-        let _ = transaction.execute(
-            "INSERT OR IGNORE INTO patched_commits (repository, commit_sha, target_branch)
-             VALUES (:repository, :commit, :target)",
-            commit,
-        )?;
-        let _ = transaction.execute(
-            "DELETE FROM file_patch_ids
-             WHERE repository = :repository AND commit_sha = :commit AND target_branch = :target",
-            commit,
-        )?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO patched_commits (repository, commit_sha, target_branch)
+                 VALUES (:repository, :commit, :target)",
+                commit,
+            )
+            .map(drop)?;
+        transaction
+            .execute(
+                "DELETE FROM file_patch_ids
+                 WHERE repository = :repository AND commit_sha = :commit AND target_branch = :target",
+                commit,
+            )
+            .map(drop)?;
         let mut statement = transaction.prepare(
             "INSERT INTO file_patch_ids
                  (repository, commit_sha, target_branch, position, path, verbatim, loose, generated)
@@ -100,7 +104,7 @@ pub(super) fn save(
                 ":loose": file.loose,
                 ":generated": file.generated,
             };
-            let _ = statement.execute(row)?;
+            statement.execute(row).map(drop)?;
         }
     }
     transaction.commit()
@@ -114,10 +118,12 @@ pub(super) fn save_unchecked(
     unchecked: &[UncheckedCommit],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    let _ = transaction.execute(
-        "DELETE FROM unchecked_commits WHERE repository = :repository",
-        named_params! { ":repository": repository },
-    )?;
+    transaction
+        .execute(
+            "DELETE FROM unchecked_commits WHERE repository = :repository",
+            named_params! { ":repository": repository },
+        )
+        .map(drop)?;
     let mut statement = transaction.prepare(
         "INSERT OR REPLACE INTO unchecked_commits
              (repository, commit_sha, target_branch, reason, git_version, git_needed)
@@ -139,7 +145,7 @@ pub(super) fn save_unchecked(
             ":version": version,
             ":needed": needed,
         };
-        let _ = statement.execute(row)?;
+        statement.execute(row).map(drop)?;
     }
     drop(statement);
     transaction.commit()
@@ -173,7 +179,7 @@ pub(super) fn save_last_checks(
             ":reviewed": check.reviewed,
             ":head": check.head,
         };
-        let _ = statement.execute(row)?;
+        statement.execute(row).map(drop)?;
     }
     drop(statement);
     transaction.commit()

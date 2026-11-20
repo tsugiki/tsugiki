@@ -90,6 +90,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).
+  A quit or a crash during a save leaves the file with its old text or its new, never cut short, and quitting
+  waits for a save under way. A save through a symbolic link changes the file it points to and keeps the link.
   `settings.toml` travels: settings, remapped keybindings, and each Repository with its Conventions and
   Filters; the user syncs it by pointing `settings_path` at a dotfiles repository or a synced folder.
   `machine.toml` stays: the token source, the editor command, paths, the clone each Repository borrows objects

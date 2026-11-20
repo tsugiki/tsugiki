@@ -2450,3 +2450,54 @@ fn offline_a_pr_whose_head_the_mirror_holds_shows_its_diff_highlighting_and_thre
     assert_eq!(lines[1]["text"], "x2 = 2");
     assert_ne!(lines[0]["spans"], json!([]));
 }
+
+/// The settings owner is held up in the middle of adding a Repository when the window closes (#939).
+#[test]
+fn stopping_waits_for_the_settings_change_under_way() {
+    let (folders, _root) = temp_folders("wired-settings-stop");
+    let wired = Wired::start(Ok(folders.clone()), no_network());
+    let settings = wired.webview.state::<SettingsOwner>().inner().clone();
+    let (arrived, arrival) = channel();
+    let (release, released) = channel::<()>();
+    let (finished, finishing) = channel();
+    let mut held = false;
+    // In place of the session's, which takes each change without waiting.
+    settings.tell_session(Box::new(move |_| {
+        if !held {
+            held = true;
+            arrived.send(()).unwrap();
+            released.recv_timeout(PLENTY).unwrap();
+            finished.send(()).unwrap();
+        }
+    }));
+    let adding = std::thread::spawn(move || {
+        settings.add_repository(
+            RepositoryName::parse(CPYTHON).unwrap(),
+            MirrorSource::Download,
+        )
+    });
+    arrival.recv_timeout(PLENTY).unwrap();
+    // Late enough that a stop that didn't wait would have returned before it.
+    let releasing = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        release.send(()).unwrap();
+    });
+
+    let wired = wired.stop();
+
+    let finished_first = finishing.try_recv();
+    let after_stop = wired.ask("save_pane_layout", json!({ "layout": { "sidebar": 240 } }));
+    releasing.join().unwrap();
+    assert!(adding.join().unwrap().is_ok());
+    assert_eq!(finished_first, Ok(()));
+    let after_stop = after_stop.unwrap_err();
+    assert!(
+        after_stop["message"]
+            .as_str()
+            .unwrap()
+            .contains("stopped saving"),
+        "{after_stop}"
+    );
+    let file = std::fs::read_to_string(folders.settings_file()).unwrap();
+    assert!(file.contains(CPYTHON), "{file}");
+}

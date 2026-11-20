@@ -2054,6 +2054,55 @@ fn an_owner_whose_thread_has_gone_says_so() {
     assert_eq!(refused.message, STOPPED_SAVING);
 }
 
+/// Longer than a working owner takes to save.
+const PLENTY: Duration = Duration::from_secs(60);
+
+/// The owner is held up in the middle of adding a Repository, with a pane layout to save asked after it, as
+/// when the user drags a split and closes the window at once (#939).
+#[test]
+fn stop_waits_for_the_save_under_way_and_the_saves_asked_before_it() {
+    let (folders, _root) = temp_folders("owner-stop");
+    let owner = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (arrived, arrival) = mpsc::channel();
+    let (release, released) = mpsc::channel::<()>();
+    let (reply, panes_answer) = mpsc::channel();
+    let mut panes = Some(Request::from(Change::Panes {
+        layout: WIDE,
+        reply,
+    }));
+    let requests = owner.requests.clone();
+    owner.tell_session(Box::new(move |_| {
+        // From the owner's own thread, so the pane layout waits behind the addition this holds up.
+        if let Some(panes) = panes.take() {
+            requests.send(panes).unwrap();
+            arrived.send(()).unwrap();
+            released.recv_timeout(PLENTY).unwrap();
+        }
+    }));
+    let adding = {
+        let owner = owner.clone();
+        thread::spawn(move || owner.add_repository(repository("a/b"), MirrorSource::Download))
+    };
+    arrival.recv_timeout(PLENTY).unwrap();
+    // Late enough that a `stop` that didn't wait would have returned before it.
+    let releasing = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(200));
+        release.send(()).unwrap();
+    });
+
+    owner.stop(PLENTY);
+
+    let after_stop = owner.save_panes(PaneLayout {
+        sidebar: Some(300),
+        ..WIDE
+    });
+    releasing.join().unwrap();
+    assert!(adding.join().unwrap().is_ok());
+    assert!(panes_answer.try_recv().unwrap().is_ok());
+    assert_eq!(SettingsFiles::load(folders).view().panes, WIDE);
+    assert_eq!(after_stop.unwrap_err().message, STOPPED_SAVING);
+}
+
 const WIDE: PaneLayout = PaneLayout {
     sidebar: Some(240),
     list: Some(500),

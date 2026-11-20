@@ -45,7 +45,11 @@ pub(super) fn save(path: &Path, text: &str) -> io::Result<()> {
     let saved =
         write_new(&new, old.as_ref(), text).and_then(|()| while_held(|| fs::rename(&new, &target)));
     if saved.is_err() {
-        let _gone = fs::remove_file(&new);
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the save's own error is the one to report, and the next save removes what is left"
+        )]
+        let _ = fs::remove_file(&new);
     }
     saved
 }
@@ -90,7 +94,11 @@ fn beside(file: &Path) -> PathBuf {
 /// What a save that ended part way left at `new` goes first. `create_new` then makes sure the file is new,
 /// and so not a link someone put at the name.
 fn write_new(new: &Path, old: Option<&Metadata>, text: &str) -> io::Result<()> {
-    let _gone = fs::remove_file(new);
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "most saves find nothing there, and `create_new` fails on whatever the remove left"
+    )]
+    let _ = fs::remove_file(new);
     let mut file = OpenOptions::new().write(true).create_new(true).open(new)?;
     if let Some(old) = old {
         keep_mode(&file, old)?;

@@ -1,5 +1,6 @@
 use super::*;
 use crate::conventions::Conventions;
+use crate::deadline::received_until;
 use crate::facts::CommitSha;
 use crate::facts::activity::{ActivityFacts, ItemKey};
 use crate::facts::filters::FilterResults;
@@ -41,7 +42,6 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io;
-use std::iter;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -2926,13 +2926,7 @@ fn reading_on_screen_often(folders: &Folders) -> (Session, Receiver<String>) {
 
 /// What `asked` hears within `wait`.
 fn asked_within(asked: &Receiver<String>, wait: Duration) -> Vec<String> {
-    let until = Instant::now() + wait;
-    iter::from_fn(|| {
-        asked
-            .recv_timeout(until.saturating_duration_since(Instant::now()))
-            .ok()
-    })
-    .collect()
+    received_until(asked, Instant::now() + wait).collect()
 }
 
 #[test]

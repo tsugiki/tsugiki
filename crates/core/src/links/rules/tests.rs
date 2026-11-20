@@ -1,4 +1,5 @@
 use super::*;
+use crate::links::{fixed_under_each, origins_in_title, reads_cherry_picks};
 
 fn cpython() -> RepositoryName {
     RepositoryName::parse("python/cpython").unwrap()
@@ -12,11 +13,6 @@ fn off_default(title: &str) -> LinkSignals<'_> {
         closing_issues: &[],
         off_default_description: Some(""),
     }
-}
-
-/// The numbers `rule` names as fixed in a title, with the Conventions each counts under.
-fn fixed_in_title(rule: LinkRule, title: &str) -> Vec<(u32, Option<Conventions>)> {
-    rule.fixed(&off_default(title), &cpython())
 }
 
 #[test]
@@ -42,11 +38,12 @@ fn a_cpython_title_names_its_issues_with_its_prefix() {
             .into_iter()
             .map(|number| (number, Some(Conventions::Cpython)))
             .collect();
-        assert_eq!(
-            fixed_in_title(LinkRule::CpythonTitleIssues, title),
-            under_cpython,
-            "{title}"
+        let named = fixed_under_each(
+            &[LinkRule::CpythonTitleIssues],
+            &off_default(title),
+            &cpython(),
         );
+        assert_eq!(named, under_cpython, "{title}");
     }
 }
 
@@ -65,8 +62,11 @@ fn a_cpython_title_names_its_origin_pr_with_its_marker() {
         ("[3.14] gh-1: Fix it (GH-9", None),
         ("Fix it", None),
     ] {
-        let named = LinkRule::CpythonTitleOrigin.origin_in_title(&off_default(title));
-        let under_cpython = expected.map(|origin| (Conventions::Cpython, origin));
+        let named = origins_in_title(&[LinkRule::CpythonTitleOrigin], &off_default(title));
+        let under_cpython: Vec<_> = expected
+            .map(|origin| (Conventions::Cpython, origin))
+            .into_iter()
+            .collect();
         assert_eq!(named, under_cpython, "{title}");
     }
 }
@@ -77,7 +77,10 @@ fn a_title_s_marker_names_no_origin_on_the_default_branch() {
         off_default_description: None,
         ..off_default("[3.14] gh-1: Fix it (GH-9)")
     };
-    assert_eq!(LinkRule::CpythonTitleOrigin.origin_in_title(&signals), None);
+    assert_eq!(
+        origins_in_title(&[LinkRule::CpythonTitleOrigin], &signals),
+        []
+    );
 }
 
 #[test]
@@ -87,8 +90,9 @@ fn each_rule_names_only_what_it_reads() {
         closing_issues: &[2],
         off_default_description: Some("Fixes #3"),
     };
-    let fixed = LinkRule::SET.map(|rule| rule.fixed(&signals, &cpython()));
-    let origins = LinkRule::SET.map(|rule| rule.origin_in_title(&signals));
+    let fixed = LinkRule::SET.map(|rule| fixed_under_each(&[rule], &signals, &cpython()));
+    let origins = LinkRule::SET.map(|rule| origins_in_title(&[rule], &signals));
+    let picks = LinkRule::SET.map(|rule| reads_cherry_picks(&[rule]));
     assert_eq!(
         fixed,
         [
@@ -101,19 +105,13 @@ fn each_rule_names_only_what_it_reads() {
     );
     assert_eq!(
         origins,
-        [None, None, None, Some((Conventions::Cpython, 9)), None]
+        [
+            vec![],
+            vec![],
+            vec![],
+            vec![(Conventions::Cpython, 9)],
+            vec![]
+        ]
     );
-}
-
-#[test]
-fn only_the_cherry_pick_rule_reads_a_cherry_pick_line() {
-    let merge = "0123456789abcdef0123456789abcdef01234567";
-    let merged = crate::facts::pull_requests::PullRequestFacts {
-        merge_commit: Some(crate::testing::sha(merge)),
-        ..crate::testing::pr_facts(9)
-    };
-    let merges = MergeCommits::of(&[merged]);
-    let picked = [crate::testing::sha(merge)];
-    let origins = LinkRule::SET.map(|rule| rule.origin_picked(&picked, &merges));
-    assert_eq!(origins, [None, None, None, None, Some(9)]);
+    assert_eq!(picks, [false, false, false, false, true]);
 }

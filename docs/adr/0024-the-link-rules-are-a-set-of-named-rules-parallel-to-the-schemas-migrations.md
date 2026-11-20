@@ -19,10 +19,11 @@ description, CPython's Issue numbers in the title, CPython's Origin PR in the ti
   change to the rows counts: a new keyword, a new Conventions, or how a row spells its Conventions.
 - Every link rule runs through `SET`: the store's `Keeper`, `fixed_under_each` and `origins_in_title`, and
   the in-memory reads the sync and the Workbench make (`fixed_numbers`, `possible_numbers`, `backport_of`,
-  `possible_origin`). What each rule reads in a PR's text is private to `links/rules.rs`, so no code outside
-  `LinkRule` can run it. The cherry-pick rule matches a commit to the PR that became it, which `MergeCommits`
-  does among the facts and the `Keeper` does in SQL. The `Keeper` runs that SQL only when its rules hold the
-  cherry-pick rule.
+  `possible_origin`). `LinkRule::reading` names, for each rule, the one kind of link it gives and the
+  function that reads it, and those functions are private to `links/rules.rs`, so no code reaches them
+  except through `LinkRule`. The cherry-pick rule matches a commit to the PR that became it, which
+  `MergeCommits` does among the facts and the `Keeper` does in SQL. Both run only when a rule of the set reads
+  cherry-pick lines, and how each finds the PR belongs to that rule: a change to either is a new rule.
 - The pinned test gives each rule its own sample PRs, and checks the rows that rule alone keeps for them,
   through a `Keeper` that runs only that rule. A second test checks that the whole set keeps the rows its
   rules keep alone, so the samples of each rule speak for the set. Its match on `LinkRule` has no default
@@ -37,13 +38,15 @@ description, CPython's Issue numbers in the title, CPython's Origin PR in the ti
   branches that each raise it to 2 would pass on each other's stores.
 - **A version for each rule.** A number per rule is a name that only counts. A variant is a name the
   compiler checks, and #971 can keep it in the store.
-- **Store the rule that wrote each row.** It would tell exactly which rows a retired rule left, but every
+- **Store the rule that wrote each row.** It would tell which rows a retired rule left, but every
   row grows a column, and a refill already rewrites a PR's rows all at once.
 
 ## Consequences
 
 - The CPython title parsers moved from `conventions.rs` to `links/rules.rs`, and `Conventions` lost
   `issues_in_title` and `origin_in_title`. A new Conventions brings rules of its own.
-- A retired rule runs nowhere, so its arms can give nothing, and its samples can leave the pinned test.
+- A retired rule runs nowhere, so its samples can leave the pinned test.
+- Two cherry-pick rules can't both run, since the `Keeper` and `MergeCommits` each hold one way to find the
+  PR. A new one replaces the old in `SET`, and the code of both looks at which rule the set holds.
 - #971 keeps each rule's name in `link_rules`, refuses a store that names a rule this build doesn't know, and
   refills a store that lacks one. `RULES_VERSION` goes with it.

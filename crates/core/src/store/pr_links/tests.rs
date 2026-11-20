@@ -74,7 +74,6 @@ fn links(
 
 #[test]
 fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conventions() {
-    let mut connection = migrated();
     let prs = vec![
         merged_as(10, "gh-1: Fix it", "aaaa111"),
         on_branch(11, "[3.14] gh-1: Fix it (GH-10)", "", &[]),
@@ -90,10 +89,28 @@ fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conven
         },
         on_branch(14, "[3.13] Fix it (GH-99)", "", &["bbbb222"]),
     ];
-    save(&mut connection, &prs);
-    save_issues(&mut connection, &[1, 2, 3]);
-    let known: BTreeSet<u32> = [1, 2, 3].into();
+    assert_kept_as_ruled(&[prs], &[1, 2, 3]);
+}
+
+#[test]
+fn the_store_keeps_the_links_the_rules_read_from_the_facts_of_each_rule_s_sample_prs() {
+    let batches: Vec<Vec<PullRequestFacts>> = (LinkRule::SET.into_iter())
+        .flat_map(|rule| released(rule).0)
+        .collect();
+    let issues: Vec<u32> = (1..=20).collect();
+    assert_kept_as_ruled(&batches, &issues);
+}
+
+/// Checks that, once the store has saved `batches` in turn and holds Issues `issues`, it keeps for each PR
+/// the links that the rules read from its facts, under each Conventions.
+fn assert_kept_as_ruled(batches: &[Vec<PullRequestFacts>], issues: &[u32]) {
+    let mut connection = saved(batches);
+    save_issues(&mut connection, issues);
+    let mut prs = batches.concat();
+    prs.sort_by_key(|facts| facts.number);
+    let known: BTreeSet<u32> = issues.iter().copied().collect();
     let merges = MergeCommits::of(&prs);
+    let numbers: Vec<u32> = prs.iter().map(|facts| facts.number).collect();
 
     for conventions in Conventions::ALL {
         let settings = RepositorySettings {
@@ -111,10 +128,7 @@ fn the_kept_links_are_those_the_link_rules_read_from_the_facts_under_each_conven
                 )
             })
             .collect();
-        assert_eq!(
-            links(&connection, conventions, &[10, 11, 12, 13, 14]),
-            ruled
-        );
+        assert_eq!(links(&connection, conventions, &numbers), ruled, "{conventions:?}");
     }
 }
 

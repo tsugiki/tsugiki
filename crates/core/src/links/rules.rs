@@ -1,9 +1,8 @@
 //! The link rules, each a variant of `LinkRule`, and the set of them that runs (ADR 0024). What each rule
 //! reads in a PR's text is private here, so no rule runs except through `LinkRule`.
 
-use super::{LinkSignals, MergeCommits};
+use super::LinkSignals;
 use crate::conventions::Conventions;
-use crate::facts::CommitSha;
 use crate::repository::{RepositoryName, issue_number};
 
 /// GitHub's closing keywords, in each form it accepts.
@@ -17,9 +16,10 @@ const GITHUB_URL: &str = "https://github.com/";
 /// The store keeps the rows the rules of `SET` give (#833), and a PR that never syncs again keeps them past
 /// a release, as the schema keeps what its migrations wrote. So a released rule never changes what it gives,
 /// as a released migration never changes. A change to one is a new variant that takes its place in `SET`,
-/// and the old variant stays as a retired name outside `SET`, which runs nowhere and can give nothing. Every
-/// change to the rows counts: a new keyword, a new Conventions, or how a row spells its Conventions. The
-/// pinned test in `store/pr_links/tests.rs` holds each rule's sample PRs and the rows it keeps for them.
+/// and the old variant stays as a retired name outside `SET`, which runs nowhere. Every change to the rows
+/// counts: a new keyword, a new Conventions, how a row spells its Conventions, or how a cherry-pick line
+/// finds its PR. The pinned test in `store/pr_links/tests.rs` holds each rule's sample PRs and the rows it
+/// keeps for them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkRule {
     /// The Issues GitHub says the PR closes, under every Conventions.
@@ -32,10 +32,28 @@ pub enum LinkRule {
     /// The Origin PR the last `(GH-N)` in the title of a PR off the default branch names, under CPython's
     /// Conventions.
     CpythonTitleOrigin,
-    /// The Origin PR a cherry-pick line names, as the PR that became its commit, under each Conventions
-    /// with Backports. `MergeCommits` finds that PR among the facts, and the store's `Keeper` among the
-    /// PRs it holds.
+    /// The Origin PR a cherry-pick line names, as the PR that became the first of its commits that a PR
+    /// became, in the order of their SHAs, under each Conventions with Backports. A short SHA names the
+    /// first whole one it starts.
     CherryPickLine,
+}
+
+/// What reads the numbers a PR names as fixed in the Repository named, each with the Conventions it counts
+/// under, or `None` for a number every Conventions counts.
+pub type FixedReader = fn(&LinkSignals<'_>, &RepositoryName) -> Vec<(u32, Option<Conventions>)>;
+
+/// How a link rule reads a PR, by what it gives.
+#[derive(Clone, Copy)]
+pub enum Reading {
+    /// The numbers it names as fixed.
+    Fixed(FixedReader),
+    /// The Origin PR its title names, with the Conventions that read it, if the PR doesn't target the
+    /// default branch.
+    OriginInTitle(fn(&LinkSignals<'_>) -> Option<(Conventions, u32)>),
+    /// The Origin PR its cherry-pick lines name. A line names a commit, and only the PRs Tsugiki has can
+    /// say which became it: `MergeCommits` among the facts, and the store's `Keeper` among the PRs it holds.
+    /// How each finds that PR is this rule's, and a change to either is a new rule.
+    OriginPicked,
 }
 
 impl LinkRule {
@@ -48,62 +66,43 @@ impl LinkRule {
         Self::CherryPickLine,
     ];
 
-    /// The numbers this rule names as fixed in `signals`, each with the Conventions it counts under, or
-    /// `None` for a number every Conventions counts.
-    pub fn fixed(
-        self,
-        signals: &LinkSignals<'_>,
-        repository: &RepositoryName,
-    ) -> Vec<(u32, Option<Conventions>)> {
-        let every = |numbers: Vec<u32>| numbers.into_iter().map(|number| (number, None)).collect();
+    /// How this rule reads a PR. Each rule gives one kind of link, so the match names its reading once.
+    pub fn reading(self) -> Reading {
         match self {
-            Self::ClosingReferences => every(signals.closing_issues.to_vec()),
-            Self::DescriptionKeywords => every(
-                (signals.off_default_description).map_or_else(Vec::new, |description| {
-                    closing_keywords(description, repository)
-                }),
-            ),
-            Self::CpythonTitleIssues => cpython_title_issues(signals.title)
-                .into_iter()
-                .map(|number| (number, Some(Conventions::Cpython)))
-                .collect(),
-            Self::CpythonTitleOrigin | Self::CherryPickLine => Vec::new(),
-        }
-    }
-
-    /// The Origin PR this rule names in the title in `signals`, with the Conventions that read it, if the PR
-    /// doesn't target the default branch.
-    pub fn origin_in_title(self, signals: &LinkSignals<'_>) -> Option<(Conventions, u32)> {
-        let off_default = signals.off_default_description.is_some();
-        match self {
-            Self::CpythonTitleOrigin if off_default => {
-                Some((Conventions::Cpython, cpython_title_origin(signals.title)?))
-            }
-            Self::CpythonTitleOrigin
-            | Self::ClosingReferences
-            | Self::DescriptionKeywords
-            | Self::CpythonTitleIssues
-            | Self::CherryPickLine => None,
-        }
-    }
-
-    /// The Origin PR this rule names in the cherry-pick lines `picked`: the PR among `merges` that became
-    /// the first of them that any PR became.
-    pub fn origin_picked(self, picked: &[CommitSha], merges: &MergeCommits) -> Option<u32> {
-        match self {
-            Self::CherryPickLine => picked.iter().find_map(|sha| merges.number_of(sha)),
-            Self::ClosingReferences
-            | Self::DescriptionKeywords
-            | Self::CpythonTitleIssues
-            | Self::CpythonTitleOrigin => None,
+            Self::ClosingReferences => Reading::Fixed(closing_references),
+            Self::DescriptionKeywords => Reading::Fixed(description_keywords),
+            Self::CpythonTitleIssues => Reading::Fixed(cpython_title_issues),
+            Self::CpythonTitleOrigin => Reading::OriginInTitle(cpython_title_origin),
+            Self::CherryPickLine => Reading::OriginPicked,
         }
     }
 }
 
+fn closing_references(
+    signals: &LinkSignals<'_>,
+    _: &RepositoryName,
+) -> Vec<(u32, Option<Conventions>)> {
+    let closing = signals.closing_issues.iter();
+    closing.map(|number| (*number, None)).collect()
+}
+
+fn description_keywords(
+    signals: &LinkSignals<'_>,
+    repository: &RepositoryName,
+) -> Vec<(u32, Option<Conventions>)> {
+    let named = (signals.off_default_description).map_or_else(Vec::new, |description| {
+        closing_keywords(description, repository)
+    });
+    named.into_iter().map(|number| (number, None)).collect()
+}
+
 /// The Issues in a title such as `gh-1: Fix it`, `gh-1, gh-2: Fix both` or `[3.14] gh-1: Fix it (GH-9)`.
 /// Anything else before the colon means the title has no prefix.
-fn cpython_title_issues(title: &str) -> Vec<u32> {
-    let Some((head, _)) = title.split_once(':') else {
+fn cpython_title_issues(
+    signals: &LinkSignals<'_>,
+    _: &RepositoryName,
+) -> Vec<(u32, Option<Conventions>)> {
+    let Some((head, _)) = signals.title.split_once(':') else {
         return Vec::new();
     };
     let head = head.trim_start();
@@ -116,14 +115,18 @@ fn cpython_title_issues(title: &str) -> Vec<u32> {
         .filter(|name| !name.is_empty())
         .map(gh_number)
         .collect();
-    numbers.unwrap_or_default()
+    let numbers = numbers.unwrap_or_default().into_iter();
+    numbers
+        .map(|number| (number, Some(Conventions::Cpython)))
+        .collect()
 }
 
-/// The last `(GH-N)` in a title such as `[3.14] gh-1: Fix it (GH-9)`.
-fn cpython_title_origin(title: &str) -> Option<u32> {
-    title
-        .rsplit('(')
-        .find_map(|piece| gh_number(piece.split_once(')')?.0))
+/// The last `(GH-N)` in a title such as `[3.14] gh-1: Fix it (GH-9)`, on a PR off the default branch.
+fn cpython_title_origin(signals: &LinkSignals<'_>) -> Option<(Conventions, u32)> {
+    let title = signals.off_default_description.and(Some(signals.title))?;
+    let mut pieces = title.rsplit('(');
+    let origin = pieces.find_map(|piece| gh_number(piece.split_once(')')?.0))?;
+    Some((Conventions::Cpython, origin))
 }
 
 /// The number in `gh-N`, whatever its case.

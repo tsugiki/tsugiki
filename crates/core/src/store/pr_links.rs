@@ -20,7 +20,9 @@ use super::pull_requests::values_by_number;
 use crate::conventions::Conventions;
 use crate::facts::CommitSha;
 use crate::facts::pull_requests::{PrLinks, PullRequestFacts};
-use crate::links::{LinkRule, LinkSignals, RULES_VERSION, fixed_under_each, origins_in_title};
+use crate::links::{
+    LinkRule, LinkSignals, RULES_VERSION, fixed_under_each, origins_in_title, reads_cherry_picks,
+};
 use crate::repository::RepositoryName;
 
 /// The tables of the links, with what finds a PR by the number it names, and what walks the PRs by their
@@ -158,10 +160,9 @@ impl<'c> Keeper<'c> {
         self.forget_fixes.execute(this).map(drop)?;
         self.forget_origins.execute(this).map(drop)?;
         self.keep(number, &LinkSignals::of(facts))?;
-        if !self.reads_cherry_picks() {
+        if !reads_cherry_picks(self.rules) {
             return Ok(());
         }
-        self.keep_picked_origin(number)?;
         for picker in self.pickers_of(number, facts.merge_commit.as_ref())? {
             let values = named_params! {
                 ":repository": self.repository,
@@ -199,13 +200,8 @@ impl<'c> Keeper<'c> {
         pickers.collect()
     }
 
-    /// True when the rules read cherry-pick lines, which only the store can match to the PRs it holds.
-    fn reads_cherry_picks(&self) -> bool {
-        self.rules.contains(&LinkRule::CherryPickLine)
-    }
-
-    /// Keeps the numbers `signals` names as fixed and the Origin PRs its title names, for PR `number`,
-    /// which has none kept.
+    /// Keeps the numbers `signals` names as fixed and the Origin PRs its title and its cherry-pick lines
+    /// name, for PR `number`, which has none kept.
     fn keep(&mut self, number: u32, signals: &LinkSignals<'_>) -> rusqlite::Result<()> {
         let repository = self.repository;
         for (issue, conventions) in fixed_under_each(self.rules, signals, repository) {
@@ -221,6 +217,9 @@ impl<'c> Keeper<'c> {
         for (found_in, origin) in markers {
             self.save_origin(number, found_in, origin)?;
         }
+        if reads_cherry_picks(self.rules) {
+            self.keep_picked_origin(number)?;
+        }
         Ok(())
     }
 
@@ -235,14 +234,11 @@ impl<'c> Keeper<'c> {
         self.insert_origin.execute(values).map(drop)
     }
 
-    /// Keeps the Origin PR that PR `number`'s cherry-pick lines name, which has none kept, if the rules read
-    /// them (`LinkRule::CherryPickLine`): the PR that the first of its commits that a PR became, in the
+    /// Keeps the Origin PR that PR `number`'s cherry-pick lines name, which has none kept, as
+    /// `LinkRule::CherryPickLine` finds it: the PR that the first of its commits that a PR became, in the
     /// order of their SHAs, became. A short SHA names the first whole one it starts, as `MergeCommits` reads
-    /// it.
+    /// it. How this finds the PR is the rule's, so a change to it is a new rule.
     fn keep_picked_origin(&mut self, number: u32) -> rusqlite::Result<()> {
-        if !self.reads_cherry_picks() {
-            return Ok(());
-        }
         let this = named_params! { ":repository": self.repository, ":number": number };
         let shas = self
             .picks
@@ -405,7 +401,6 @@ pub(super) fn refill(
                 off_default_description: pr.off_default_description.as_deref(),
             };
             keeper.keep(pr.number, &signals)?;
-            keeper.keep_picked_origin(pr.number)?;
         }
     }
     transaction.commit()?;

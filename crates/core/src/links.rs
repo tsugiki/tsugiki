@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Serialize;
 use specta::Type;
 
-pub use rules::LinkRule;
+pub use rules::{FixedReader, LinkRule, Reading};
 
 use crate::conventions::Conventions;
 use crate::facts::CommitSha;
@@ -35,7 +35,8 @@ pub struct BackportLink<K = BackportKind> {
     pub kind: K,
 }
 
-/// The merged PRs Tsugiki has, by the commit each became, for the cherry-pick lines to find.
+/// The merged PRs Tsugiki has, by the commit each became, for the cherry-pick lines to find. How it finds
+/// one is `LinkRule::CherryPickLine`'s, as the store's `Keeper` finds one, so a change to it is a new rule.
 pub struct MergeCommits(BTreeMap<CommitSha, u32>);
 
 impl MergeCommits {
@@ -70,8 +71,11 @@ pub fn backport_of(
         .map(|(_, origin)| origin)
         .next()
         .or_else(|| {
-            let picked = &off_default.cherry_picked_from;
-            (LinkRule::SET.iter()).find_map(|rule| rule.origin_picked(picked, merges))
+            let mut picked = off_default.cherry_picked_from.iter();
+            let reads = reads_cherry_picks(&LinkRule::SET);
+            reads
+                .then(|| picked.find_map(|sha| merges.number_of(sha)))
+                .flatten()
         })?;
     Some(BackportLink {
         origin,
@@ -126,9 +130,10 @@ pub fn possible_numbers(facts: &PullRequestFacts, repository: &RepositoryName) -
 }
 
 /// The version of the rules behind the links the store keeps, which it keeps beside them. Raise it with any
-/// change to `LinkRule::SET`. Once the store opens, the session then works out the links of every PR it
-/// holds again (`session/refill.rs`), since a PR that never syncs again would keep the old ones. A store
-/// test pins this number to the set.
+/// change to `LinkRule::SET`, which a change to what a released rule gives makes, the way `MergeCommits` or
+/// the store's `Keeper` finds a cherry-pick line's PR included. Once the store opens, the session then works
+/// out the links of every PR it holds again (`session/refill.rs`), since a PR that never syncs again would
+/// keep the old ones. A store test pins this number to the set.
 pub const RULES_VERSION: u32 = 1;
 
 /// What the links that the store keeps are worked out from (#833): the title, GitHub's closing references,
@@ -161,7 +166,10 @@ pub fn fixed_under_each(
     signals: &LinkSignals<'_>,
     repository: &RepositoryName,
 ) -> Vec<(u32, Option<Conventions>)> {
-    let named = rules.iter().flat_map(|rule| rule.fixed(signals, repository));
+    let named = rules.iter().flat_map(|rule| match rule.reading() {
+        Reading::Fixed(read) => read(signals, repository),
+        Reading::OriginInTitle(_) | Reading::OriginPicked => Vec::new(),
+    });
     named.collect()
 }
 
@@ -170,8 +178,17 @@ pub fn fixed_under_each(
 /// which name a commit: under a Conventions with Backports, the title's marker comes first, as `backport_of`
 /// reads them.
 pub fn origins_in_title(rules: &[LinkRule], signals: &LinkSignals<'_>) -> Vec<(Conventions, u32)> {
-    let named = rules.iter().filter_map(|rule| rule.origin_in_title(signals));
+    let named = rules.iter().filter_map(|rule| match rule.reading() {
+        Reading::OriginInTitle(read) => read(signals),
+        Reading::Fixed(_) | Reading::OriginPicked => None,
+    });
     named.collect()
+}
+
+/// True when one of `rules` reads cherry-pick lines, which only the PRs Tsugiki has can answer for.
+pub fn reads_cherry_picks(rules: &[LinkRule]) -> bool {
+    let reads = |rule: &LinkRule| matches!(rule.reading(), Reading::OriginPicked);
+    rules.iter().any(reads)
 }
 
 mod rules;

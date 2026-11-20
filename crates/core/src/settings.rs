@@ -1448,11 +1448,10 @@ impl SettingsOwner {
                         let told = (files.as_ref().ok())
                             .map(|files| files.view().loaded.settings.repositories)
                             .unwrap_or_default();
-                        session = Some(ToldSession {
-                            sink,
-                            told,
-                            saves: 0,
-                        });
+                        // A new sink goes on counting, as the view's count goes on, and the session reading
+                        // it counts the saves it followed since launch.
+                        let saves = session.as_ref().map_or(0, |session| session.saves);
+                        session = Some(ToldSession { sink, told, saves });
                         continue;
                     }
                     Request::Command { command, reply } => {

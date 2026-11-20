@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 /// to being the only one that writes. Clone the reader for everyone else.
 ///
 /// Each function takes the lock, does its one action and lets go, and no guard leaves these types. So nobody
-/// can hold two of these at once, in any order, or hold one while waiting on something else.
+/// can hold two of these at once, in any order, or hold one while waiting on something else. `set_then`
+/// runs a closure of the writer's under the lock, which holds only while that closure does no more than
+/// its doc allows.
 ///
 /// A panic while holding the lock can only come from `T`'s `clone` or a `set_then`'s `then`, which runs
 /// once the value is whole, and a set only ever replaces the value, so both sides read through a poisoned
@@ -31,8 +33,14 @@ impl<T: Clone> LatestWriter<T> {
     }
 
     /// Sets `value` and runs `then` in one step, under the lock, so a reader that finds `value` finds what
-    /// `then` did done. It suits a send on an unbounded channel, which waits on nothing; `then` mustn't read
-    /// this value, as the lock is held.
+    /// `then` did done. The settings owner sends the saves a value counts this way, so the session finds
+    /// each save it counts in its queue.
+    ///
+    /// `then` may only send on an unbounded channel, which waits on nothing. Readers wait while it runs, so
+    /// it mustn't wait, take another lock, which two threads could take in different orders, or read this
+    /// value, whose lock it holds already. It takes a closure, not a channel, as the settings owner can't
+    /// name the session's message, which `fetching`, above it, owns; so the compiler can't hold `then` to a
+    /// send.
     pub fn set_then(&mut self, value: &T, then: impl FnOnce()) {
         let mut held = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         held.clone_from(value);

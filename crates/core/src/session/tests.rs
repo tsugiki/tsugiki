@@ -823,6 +823,58 @@ fn a_mark_that_moves_no_reach_follows_no_save() {
 }
 
 #[test]
+fn a_hand_edit_a_mute_follows_ahead_of_the_open_of_its_repository_tells_the_window() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    // The window opens gcmon, and a hand edit gives it new Conventions, both after the Mute.
+    let messages = vec![
+        SessionMessage::Sync {
+            repository: gcmon(),
+        },
+        cpython_saved(),
+    ];
+    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+    let syncs = Syncs::new(listed(vec![cpython_gcmon()]));
+    let (mut board, changes) = board_hearing_settings();
+
+    let mut opened_only = Telling {
+        board: &mut board,
+        syncs: Some(&syncs),
+    };
+    refreshes.mark(&mut opened_only, &store, mute_5());
+
+    let told: Vec<Change> = changes.try_iter().collect();
+    assert_eq!(
+        told,
+        [Change {
+            repository: gcmon(),
+            items: vec![]
+        }]
+    );
+    assert_eq!(left_in(&refreshes), ["other"]);
+}
+
+#[test]
+fn a_save_missing_from_the_queue_leaves_later_marks_to_the_saves_their_view_counts() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let (sent, incoming) = mpsc::channel();
+    let view = SettingsView {
+        saves_told: 1,
+        ..listing(vec![cpython_gcmon()])
+    };
+    let refreshes = Refreshes::new(HOURLY, incoming, unheard(), crate::latest::channel(view).1);
+    refreshes.mark(&mut telling(&mut quiet_board()), &store, mute_5());
+    // A save that only a view after this one counts.
+    let switch = SettingsSave::new(cpython_gcmon(), &[cpython_gcmon()], SavedBy::Window);
+    sent.send(SessionMessage::SettingsChanged(switch)).unwrap();
+
+    refreshes.mark(&mut telling(&mut quiet_board()), &store, unmute_5());
+
+    assert_eq!(left_in(&refreshes), ["switch"]);
+}
+
+#[test]
 fn a_mark_that_cant_be_stored_is_a_problem() {
     let seen_mark = Marked::Seen {
         repository: gcmon(),

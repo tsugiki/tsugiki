@@ -1305,6 +1305,31 @@ fn telling_session(owner: &SettingsOwner) -> mpsc::Receiver<Told> {
 }
 
 #[test]
+fn a_session_told_again_goes_on_from_the_count_of_saves_told_before() {
+    let bugs = |switch: &str| {
+        format!(
+            "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+             query = \"label:bug\"\n{switch}"
+        )
+    };
+    let (files, folders, _root) = settings_saying("owner-tells-again", &bugs(""));
+    let owner = SettingsOwner::start(Ok(files));
+    let first = telling_session(&owner);
+    fs::write(folders.settings_file(), bugs("on_workbench = true\n")).unwrap();
+    assert!(owner.reread().is_ok());
+
+    let second = telling_session(&owner);
+    fs::write(folders.settings_file(), bugs("")).unwrap();
+    let counted = owner.reread().unwrap().saves_told;
+
+    assert_eq!(counted, 2);
+    assert_eq!(
+        (first.try_iter().count(), second.try_iter().count()),
+        (1, 1)
+    );
+}
+
+#[test]
 fn a_repository_the_files_drop_goes_to_the_defaults_and_comes_back_from_them() {
     let bugs = |switch: &str| {
         format!("\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n{switch}")

@@ -292,7 +292,12 @@ impl Refreshes {
     /// Follows each save among the first `told` the owner handed over that the session hasn't, taking it
     /// from the queue now. The owner counts a save in the view in one step with handing it over, so each
     /// is in the queue. The messages it passes keep their order, in the backlog.
-    fn follow_saves_told(&self, telling: &mut Telling<'_>, store: &Store, told: usize) {
+    ///
+    /// It tells the window of each hand edit it follows, in a Repository opened since launch or not: a Sync
+    /// it passes may open the Repository, whose lists the window read before the edit. A save missing from
+    /// the queue is logged once, and the count goes on from `told`, so a later mark takes no save that only
+    /// a later view counts.
+    fn follow_saves_told(&self, board: &mut StatusBoard, store: &Store, told: usize) {
         let owed = told.saturating_sub(self.saves_taken.get());
         if owed == 0 {
             return;
@@ -313,15 +318,17 @@ impl Refreshes {
             });
             saves
         };
+        let mut every = Telling { board, syncs: None };
+        for save in &saves {
+            self.follow_settings(&mut every, store, save);
+        }
         if saves.len() < owed {
             log::error!(
                 "The settings owner counts {owed} saves the session hasn't followed, and the session's queue \
                  holds {}",
                 saves.len()
             );
-        }
-        for save in &saves {
-            self.follow_settings(telling, store, save);
+            self.saves_taken.set(told);
         }
     }
 
@@ -393,7 +400,7 @@ impl Refreshes {
         let (told, settings) =
             (self.settings).read(|view| (view.saves_told, view.repository(repository)));
         if marked.moves_reach() {
-            self.follow_saves_told(telling, store, told);
+            self.follow_saves_told(telling.board, store, told);
         }
         let moved = ReachMove::of(&marked, store, &settings);
         let (saved, change) = keep_mark(store, &settings, marked);

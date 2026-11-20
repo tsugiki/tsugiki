@@ -53,9 +53,10 @@ count every file, so a change can fail them in a file it never touched. Run it b
 where a CI round trip costs more. It takes less time than `just check`, and catches nothing that only macOS
 fails on.
 
-The Rust coverage gate fails a line that holds only a closure's `})?;`: llvm-cov counts the `?`'s error branch
-there, which no test runs, and its text report doesn't name the line. Pass a named function instead, as
-`statement.query_map(asked, event_in)?` does in `store/activity.rs`.
+When the Rust coverage gate fails on a file and names no line in it, look there for a closure whose `})?;`
+sits on a line of its own. In #965 and #966 the gate counted such a line as unrun although the closure ran,
+and its list of gaps skips a `?`. Give the `?` a line with code that runs, as the gate's message asks: pass a
+named function, as `statement.query_map(asked, event_in)?` does in `store/activity.rs`.
 
 `just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
 log's tail. Use it for a release PR (`docs/releasing.md`) and for a PR that changes the gates themselves: the

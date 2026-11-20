@@ -406,11 +406,20 @@ impl Server {
             params: Value::Null,
             then: Some(Then::Exit),
         };
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         // Nobody waits for the answer: `Then::Exit` acts on it.
-        let answer: Answer = Box::new(|_| {});
-        self.inputs.send(Input::Ask(Ask { id, call, answer }));
+        #[expect(
+            unused_results,
+            reason = "nobody cancels the `shutdown`, so its id has no use"
+        )]
+        self.send_ask(call, Box::new(|_| {}));
         self.inputs.send(Input::Stop(patience));
+    }
+
+    /// Sends a request whose answer goes to `answer`, and gives the id it went with.
+    fn send_ask(&self, call: Call, answer: Answer) -> i64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.inputs.send(Input::Ask(Ask { id, call, answer }));
+        id
     }
 
     /// Sends a request whose answer parses as a `W`, and hands the caller `convert` of it.
@@ -419,7 +428,6 @@ impl Server {
         call: Call,
         convert: fn(W) -> T,
     ) -> Pending<T> {
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (sender, outcome) = mpsc::sync_channel(1);
         let answer: Answer = Box::new(move |result| {
             let parsed = result.and_then(|value| {
@@ -433,9 +441,8 @@ impl Server {
             )]
             let _ = sender.send(parsed);
         });
-        self.inputs.send(Input::Ask(Ask { id, call, answer }));
         Pending {
-            id,
+            id: self.send_ask(call, answer),
             outcome,
             inputs: self.inputs.clone(),
         }

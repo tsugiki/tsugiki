@@ -1237,8 +1237,8 @@ fn checks_dont_put_off_the_next_refresh() {
     thread::scope(|scope| {
         #[expect(
             unused_results,
-            reason = "the scope joins it, and it stops by itself, so a timer that starts over with each check \
-                      fails rather than hangs"
+            reason = "the scope joins it, and it stops by itself, so a timer that starts over with each \
+                      check fails rather than hangs"
         )]
         scope.spawn(|| {
             while !refreshed.load(Ordering::Relaxed) && started.elapsed() < PLENTY {

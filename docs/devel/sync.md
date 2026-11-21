@@ -38,15 +38,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
   loads only the added days; narrowing it deletes nothing.
 - A GraphQL answer says what it cost, and Tsugiki sums those costs since the hour began, whichever job
-  asked: a sync, opening an Issue or a PR, the checks, asking who is signed in. The sum starts again when
+  asked: a sync, opening an Issue or a PR, the checks, asking who is signed in, the size the Mirror worker
+  asks before a clone. The sum starts again when
   GitHub's reset moves to the next hour, and lives in memory only. The status bar shows the points left and
   what Tsugiki spent of those used ([layout.md](layout.md)), until the reset by GitHub's clock. Some requests
   count nothing: those whose answer doesn't say its cost, such as a 502, a timeout or an answer with no data,
-  those whose answer comes from an hour that has already reset, and the size the Mirror worker asks before a
-  clone, on a connection of its own. Whatever they cost, the status bar puts down to other tools.
+  and those whose answer comes from an hour that has already reset. Whatever they cost, the status bar puts
+  down to other tools.
 - Below a floor of 500 points left, or after GitHub refuses a request for its rate limit, Tsugiki sends
   GitHub nothing until the reset, whichever job asks: the sync, the read of an opened Issue or PR and of its
-  tree, quick open's fetch, Add repository's check, and asking who is signed in. Each ask answers at once.
+  tree, quick open's fetch, Add repository's check, the Mirror worker's size check, and asking who is signed
+  in. Each ask answers at once.
   The status bar says "Sync paused until 14:00: GitHub's rate limit is low", or with no sync waiting,
   "GitHub's rate limit is low. Tsugiki can ask it again at 14:00". A secondary rate limit holds about a
   minute, not until the hour's reset. A read on screen fails as one offline does, and the next read after
@@ -54,7 +56,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   ([keyboard.md](keyboard.md)). Add repository's check says when the points come back. Refresh asks
   nothing and leaves the status as it is. A refresh's list check keeps its tag for after the reset, so it
   can still cost nothing then. The first request after the reset goes as before, and its answer says the new
-  hour's points. The size the Mirror worker asks before a clone isn't held back yet (#1002).
+  hour's points. A clone whose size check the gate holds waits for the reset.
 - Older items come on demand: opening one fetches it and keeps it, a search in the **Inbox** also runs on
   GitHub, and the Inbox ends with "Load 30 more days" once it has listed all the cache holds.
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own

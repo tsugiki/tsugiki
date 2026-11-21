@@ -67,6 +67,8 @@ struct Paused {
     session: Session,
     asked: Receiver<(String, Value)>,
     heard: Heard,
+    /// What the session asked of the Mirror worker, which isn't there.
+    mirrors: HeardRequests,
     _folder: TempPath,
 }
 
@@ -96,11 +98,17 @@ impl Paused {
         };
         let (folders, folder) = temp_folders(name);
         let (board, heard) = heard_board();
-        let session = Session::start(board, Ok(folders), reaching(access), intervals);
+        let (requests, mirrors) = HeardRequests::new();
+        let connections = Connections {
+            mirrors: requests,
+            ..reaching(access)
+        };
+        let session = Session::start(board, Ok(folders), connections, intervals);
         let paused = Self {
             session,
             asked,
             heard,
+            mirrors,
             _folder: folder,
         };
         assert_eq!(paused.asked_after_start(), ["Viewer"]);
@@ -201,6 +209,60 @@ fn below_the_floor_a_check_asks_nothing_and_says_when_the_points_come_back() {
         "{problem:?}"
     );
     assert_eq!(asked, Vec::<String>::new());
+}
+
+#[test]
+fn below_the_floor_the_mirrors_size_check_asks_nothing_and_says_when_the_points_come_back() {
+    let reset = later();
+    let paused = Paused::start("gate-size", reset, Vec::new(), HOURLY);
+
+    let mut size_of = paused.mirrors.sizes(PLENTY);
+    let problem = size_of(&gcmon()).unwrap_err();
+    let asked = paused.asked();
+    drop(paused.stop());
+
+    let ErrorKind::RateLimited {
+        resets_at: Some(resets_at),
+    } = problem.kind
+    else {
+        panic!("{problem:?}");
+    };
+    assert!(
+        (i64::from(resets_at) - reset.unix_timestamp()).abs() <= 1,
+        "{problem:?}"
+    );
+    assert_eq!(asked, Vec::<String>::new());
+}
+
+#[test]
+fn offline_the_mirrors_size_check_asks_nothing_and_says_github_cant_be_reached() {
+    let offline = Err(Unreachable::Offline);
+    let paused = Paused::signed_in_with("size-offline", offline, Vec::new(), HOURLY);
+    while paused.heard.statuses.recv_timeout(PLENTY).unwrap() != Status::Offline {}
+
+    let mut size_of = paused.mirrors.sizes(PLENTY);
+    let problem = size_of(&gcmon()).unwrap_err();
+    let asked = paused.asked();
+    drop(paused.stop());
+
+    assert_eq!(problem.kind, ErrorKind::Offline, "{problem:?}");
+    assert_eq!(asked, Vec::<String>::new());
+}
+
+#[test]
+fn the_mirrors_size_check_counts_in_the_hours_points() {
+    let size = answer(json!({ "repository": { "diskUsage": 2 } }), RATE_LIMIT);
+    let paused = Paused::signed_in_with("size-points", signed_in(), vec![size], HOURLY);
+
+    let mut size_of = paused.mirrors.sizes(PLENTY);
+    let bytes = size_of(&gcmon());
+    let asked = paused.asked();
+    let heard = paused.stop();
+
+    assert_eq!(bytes, Ok(2048));
+    assert_eq!(asked, ["RepositorySize"]);
+    let last = heard.hour_points.try_iter().flatten().last().unwrap();
+    assert_eq!(last.remaining, 4000, "{last:?}");
 }
 
 #[test]

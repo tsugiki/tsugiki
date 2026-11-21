@@ -185,9 +185,10 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "status",
-        uses: &["error", "github", "login", "repository"],
+        uses: &["error", "github", "latest", "login", "repository"],
         why: "Announces app-wide status, which names the signed-in `Login` and the Repositories it is about, \
-              and the hour's points that `github` counts.",
+              and the hour's points that `github` counts. Another thread reads a copy of whether GitHub \
+              can be asked through `latest`.",
     },
     Layer {
         module: "links",
@@ -258,12 +259,11 @@ const LAYERS: &[Layer] = &[
             "patch_ids",
             "repository",
             "status",
-            "token",
         ],
-        why: "Clones and fetches PR heads into this build's folders with the token, and says how on the \
-              status board. It reads the patch-ids of the commits it keeps through `diff`, and runs the \
-              jobs in the order `mirror_queue` picks. Its requests read a copy of the clones that wait for \
-              an answer.",
+        why: "Clones and fetches PR heads into this build's folders, and says how on the status board. It \
+              asks a Repository's size before a clone through the session, which holds the token. It reads \
+              the patch-ids of the commits it keeps through `diff`, and runs the jobs in the order \
+              `mirror_queue` picks. Its requests read a copy of the clones that wait for an answer.",
     },
     Layer {
         module: "definitions",

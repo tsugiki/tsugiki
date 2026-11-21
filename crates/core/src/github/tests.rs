@@ -1,4 +1,6 @@
-use super::testing::{Canned, Scripted, answered, dated, github, reply_ok, signed_in_as};
+use super::testing::{
+    Canned, RATE_LIMIT, Scripted, answer, answered, dated, github, reply_ok, signed_in_as,
+};
 use super::*;
 use time::format_description::well_known::Rfc3339;
 
@@ -228,6 +230,28 @@ impl Transport for Asked {
         self.0.send(request.variables.clone()).unwrap();
         Err(Unreachable::Offline)
     }
+}
+
+#[test]
+fn github_gives_a_repositorys_size_in_kilobytes_or_nothing_when_its_empty() {
+    let sized = |disk_usage: Value| {
+        let answered = answer(json!({ "repository": { "diskUsage": disk_usage } }), RATE_LIMIT);
+        github(Canned(answered)).repository_size(&name("octo-org/hello"))
+    };
+
+    assert_eq!(sized(json!(2)), Ok(2048));
+    assert_eq!(sized(Value::Null), Ok(0));
+}
+
+#[test]
+fn a_repositorys_size_counts_in_the_hours_points() {
+    let answered = answer(json!({ "repository": { "diskUsage": 2 } }), RATE_LIMIT);
+    let github = github(Canned(answered));
+
+    let size = github.repository_size(&name("octo-org/hello"));
+
+    assert_eq!(size, Ok(2048));
+    assert!(github.hour_points().is_some());
 }
 
 #[test]

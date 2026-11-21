@@ -1,3 +1,4 @@
+use super::github_thread::*;
 use super::*;
 use crate::conventions::Conventions;
 use crate::deadline::received_until;
@@ -8,11 +9,12 @@ use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf};
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
-use crate::facts::pull_request_content::Review;
+use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
 use crate::fetching::testing::QUEUED;
-use crate::fetching::{NoHead, ScreenMove};
+use crate::fetching::{Fetched, NoHead, ScreenMove};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
+use crate::github::GitHub;
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
@@ -29,9 +31,10 @@ use crate::settings::{ListOrder, SettingsFiles, SettingsOwner};
 use crate::status::testing::{
     announced, changes_board, failed_reads_board, quiet_board, showing, watched_board,
 };
-use crate::status::{Change, FailedRead, ItemUnread, ReadFailure};
+use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure};
 use crate::store::testing::{OpenStore, kept_fixes, store_with_old_links};
 use crate::store::{ChangeCheck, SyncState};
+use crate::sync::Syncs;
 use crate::testing::{
     TempPath, cpython, cpython_settings, gcmon, hours_ago, issue_facts, listed, listing, me,
     one_folder, pr_facts, recordings,
@@ -46,10 +49,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvError, Sender, TryRecvError};
+use std::time::Instant;
 use time::OffsetDateTime;
 use tsugiki_test_git::{pass_on, wait_for_message};
 use tsugiki_token::testing::NO_GH;
 
+mod held;
 mod rate_limit;
 
 /// A real store that keeps nothing once it closes.
@@ -269,17 +274,24 @@ fn database(folders: Result<Folders, Error>) -> Database {
     Database { folders, to_open }
 }
 
-/// Refreshes whose sender is already gone, so they stop before they begin, for a test that shouldn't get as
-/// far as a second request. A session with no token ends on that too.
-fn stopped_refreshes() -> Refreshes {
-    Refreshes {
-        intervals: Intervals {
-            status: Duration::ZERO,
-            ..HOURLY
-        },
-        incoming: mpsc::channel().1,
-        ..unheard_refreshes()
-    }
+/// Runs a session on `database` whose thread has nothing to take, so its GitHub thread connects through
+/// `access` and stops, for a test that shouldn't get as far as a second request. A GitHub thread with no
+/// token ends on that too.
+fn run_stopped(mut board: StatusBoard, database: Database, access: GitHubAccess) {
+    let (to_github, queue) = mpsc::channel();
+    let intervals = Intervals {
+        status: Duration::ZERO,
+        ..HOURLY
+    };
+    let (refreshes, done) = Refreshes::new(intervals, queue, unheard(), listed(vec![plain_gcmon()]));
+    let telling = telling_through(&mut board, to_github, done);
+    let keeper = Keeper::new(mpsc::channel().1, unheard(), listed(vec![plain_gcmon()]), telling);
+    let threads = Threads {
+        board,
+        access,
+        refreshes,
+    };
+    run(database, threads, &keeper);
 }
 
 /// Requests for a Mirror worker that isn't there, which go nowhere.
@@ -307,7 +319,8 @@ fn sending(messages: Sender<SessionMessage>, mirrors: MirrorRequests) -> Fetchin
     Fetching::new(messages, mirrors, Headless::default())
 }
 
-/// Refreshes whose queue is empty and whose handle reaches nothing, for the fields a test doesn't set.
+/// The GitHub thread's refreshes, whose queue is empty and whose handle reaches nothing, for the fields a
+/// test doesn't set.
 fn unheard_refreshes() -> Refreshes {
     Refreshes::new(
         HOURLY,
@@ -315,6 +328,7 @@ fn unheard_refreshes() -> Refreshes {
         unheard(),
         listed(vec![plain_gcmon()]),
     )
+    .0
 }
 
 #[test]
@@ -328,7 +342,7 @@ fn watching_follows_github_until_told_to_stop() {
         passed.send(status.clone()).unwrap();
         shown += 1;
         if shown == 3 {
-            stop.send(SessionMessage::Stop).unwrap();
+            stop.send(GitHubMessage::Stop).unwrap();
         }
     }));
     let refreshes = Refreshes {
@@ -640,18 +654,94 @@ fn unseen_7() -> Marked {
     }
 }
 
-/// Where a test's session tells the window, as one with no syncs does.
-fn telling(board: &mut StatusBoard) -> Telling<'_> {
-    Telling { board, syncs: None }
+/// Where a test's session tells: the window through `board`, and the GitHub thread through what this
+/// returns. The copies say GitHub can be asked, and that the thread has done none of the user's refreshes.
+fn telling(board: &mut StatusBoard) -> (Telling, mpsc::Receiver<GitHubMessage>) {
+    let (github, heard) = mpsc::channel();
+    let telling = telling_through(board, github, crate::latest::channel(0).1);
+    (telling, heard)
+}
+
+/// Where a test's session tells the window through `board`, and the GitHub thread through `github`, whose
+/// copy of how many of the user's refreshes it has done is `refreshes_done`.
+fn telling_through(
+    board: &mut StatusBoard,
+    github: Sender<GitHubMessage>,
+    refreshes_done: LatestReader<u64>,
+) -> Telling {
+    Telling {
+        changes: board.changes(),
+        github,
+        shown: board.shown(),
+        refreshes_done,
+    }
+}
+
+/// A session's two threads as `Session::start` connects them, for a test that runs them itself: the GitHub
+/// thread's refreshes, and the session's own thread, which passes it the demands on GitHub.
+struct TwoThreads {
+    refreshes: Refreshes,
+    keeper: Keeper,
+    /// Stops the session's thread once the GitHub thread has stopped.
+    requests: Fetching,
+}
+
+/// A session's two threads, with the GitHub thread's refreshes at `intervals` and settings that list gcmon,
+/// and the handle that sends the session's thread its messages. Both hand the Mirror worker their asks
+/// through `mirrors`.
+fn two_threads(intervals: Intervals, mirrors: MirrorRequests) -> (TwoThreads, Fetching) {
+    let (messages, incoming) = mpsc::channel();
+    let requests = sending(messages, mirrors);
+    let (to_github, github_queue) = mpsc::channel();
+    let settings = listed(vec![plain_gcmon()]);
+    let (refreshes, done) =
+        Refreshes::new(intervals, github_queue, requests.clone(), settings.clone());
+    let telling = telling_through(&mut quiet_board(), to_github, done);
+    let keeper = Keeper::new(incoming, requests.clone(), settings, telling);
+    let threads = TwoThreads {
+        refreshes,
+        keeper,
+        requests: requests.clone(),
+    };
+    (threads, requests)
+}
+
+impl TwoThreads {
+    /// The GitHub thread's queue, for a stop that has to reach it before its next turn, as a stop the
+    /// session's thread passes on reaches it a moment later.
+    fn github(&self) -> Sender<GitHubMessage> {
+        self.keeper.telling.github.clone()
+    }
+
+    /// Has the GitHub thread watch GitHub through `access` with `board` on this thread, and the session's
+    /// thread take its messages on another, both on `store`, until the session takes a stop or the GitHub
+    /// thread does.
+    fn watch(self, board: &mut StatusBoard, store: &Store, access: GitHubAccess) {
+        let Self {
+            refreshes,
+            keeper,
+            requests,
+        } = self;
+        thread::scope(|scope| {
+            #[expect(unused_results, reason = "the scope joins it, and the stop it takes ends it")]
+            scope.spawn(move || {
+                keeper.run(store);
+                keeper.telling.to_github(GitHubMessage::Stop);
+            });
+            watch(board, store, access, &refreshes);
+            requests.stop_session();
+        });
+    }
 }
 
 /// The session's queue, reading a view that lists gcmon as `listed` says and counts `saves` handed to the
-/// session, which `messages` wait in.
-fn refreshes_told(
+/// session, which `messages` wait in, and telling as `telling` says.
+fn keeper_told(
     saves: usize,
     listed: RepositorySettings,
     messages: Vec<SessionMessage>,
-) -> Refreshes {
+    telling: Telling,
+) -> Keeper {
     let (sent, incoming) = mpsc::channel();
     for message in messages {
         sent.send(message).unwrap();
@@ -660,13 +750,36 @@ fn refreshes_told(
         saves_told: saves,
         ..listing(vec![listed])
     };
-    Refreshes::new(HOURLY, incoming, unheard(), crate::latest::channel(view).1)
+    Keeper::new(incoming, unheard(), crate::latest::channel(view).1, telling)
 }
 
-/// The messages left in `refreshes`' queue, as the test names them.
-fn left_in(refreshes: &Refreshes) -> Vec<String> {
+/// A handle whose demands on GitHub reach `github` as the session's thread passes them on, from a thread of
+/// its own that a stop ends, as it ends a session, and passes on to `github` last.
+fn passed_on(github: Sender<GitHubMessage>) -> Fetching {
+    let (messages, incoming) = mpsc::channel();
+    let told = telling_through(&mut quiet_board(), github, crate::latest::channel(0).1);
+    let keeper = Keeper::new(incoming, unheard(), listed(vec![plain_gcmon()]), told);
+    #[expect(
+        unused_results,
+        reason = "it ends on the stop the handle sends, or once the handle goes"
+    )]
+    thread::spawn(move || {
+        // A store that opens no file, so the demands pass on at once. They need none.
+        keeper.run(&Store::stopped());
+        keeper.telling.to_github(GitHubMessage::Stop);
+    });
+    sending(messages, mirrors())
+}
+
+/// The session's queue as `keeper_told` says, telling a quiet board and a GitHub thread that isn't there.
+fn quiet_keeper(saves: usize, listed: RepositorySettings, messages: Vec<SessionMessage>) -> Keeper {
+    keeper_told(saves, listed, messages, telling(&mut quiet_board()).0)
+}
+
+/// The messages left in `keeper`'s queue, as the test names them.
+fn left_in(keeper: &Keeper) -> Vec<String> {
     let mut left = Vec::new();
-    while let Ok(message) = refreshes.next_message(Duration::ZERO) {
+    while let Ok(message) = keeper.next_message(Duration::ZERO) {
         left.push(crate::fetching::testing::named(message));
     }
     left
@@ -709,9 +822,9 @@ fn a_mute_and_an_unmute_while_a_save_is_owed_keep_their_order() {
         SessionMessage::Mark(unmute_5()),
         cpython_saved(),
     ];
-    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+    let keeper = quiet_keeper(1, cpython_gcmon(), messages);
 
-    refreshes.wait_for_stop(&mut quiet_board(), &store);
+    keeper.run(&store);
 
     assert!(!issue_5_muted(&store));
 }
@@ -725,9 +838,9 @@ fn a_mark_before_a_stop_is_kept_while_a_save_is_owed() {
         SessionMessage::Stop,
         cpython_saved(),
     ];
-    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+    let keeper = quiet_keeper(1, cpython_gcmon(), messages);
 
-    refreshes.wait_for_stop(&mut quiet_board(), &store);
+    keeper.run(&store);
 
     assert!(issue_5_muted(&store));
 }
@@ -779,9 +892,9 @@ fn an_unmute_before_a_save_it_hasnt_followed_moves_reach_from_where_the_save_end
         SessionMessage::Mark(unmute_5()),
         SessionMessage::SettingsChanged(switched),
     ];
-    let refreshes = refreshes_told(1, cpython_bugs(OnWorkbench::On), messages);
+    let keeper = quiet_keeper(1, cpython_bugs(OnWorkbench::On), messages);
 
-    refreshes.wait_for_stop(&mut quiet_board(), &store);
+    keeper.run(&store);
 
     // The save puts PR 9 in Reach through Issue 6, and the Unmute PR 8 through Issue 5. Taken the other way,
     // PR 9 is in Reach before and after each move: through Issue 6 for the Unmute's, and Issue 5 for the
@@ -796,36 +909,68 @@ fn a_mark_follows_only_the_saves_its_settings_hold() {
     // The second save came after the view the mark read its settings from.
     let switch = SettingsSave::new(cpython_gcmon(), &[cpython_gcmon()], SavedBy::Window);
     let messages = vec![cpython_saved(), SessionMessage::SettingsChanged(switch)];
-    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
+    let keeper = quiet_keeper(1, cpython_gcmon(), messages);
 
-    refreshes.mark(&mut telling(&mut quiet_board()), &store, unmute_5());
+    keeper.mark(&store, unmute_5());
 
-    assert_eq!(left_in(&refreshes), ["switch"]);
+    assert_eq!(left_in(&keeper), ["switch"]);
 }
 
 #[test]
 fn a_mark_the_queue_holds_no_owed_save_for_is_kept_at_once() {
     let store = empty_store();
     stores_issue_5_with_its_prs(&store);
-    let refreshes = refreshes_told(1, cpython_gcmon(), vec![SessionMessage::Refresh]);
+    let keeper = quiet_keeper(1, cpython_gcmon(), vec![SessionMessage::Refresh]);
 
-    refreshes.mark(&mut telling(&mut quiet_board()), &store, mute_5());
+    keeper.mark(&store, mute_5());
 
     assert!(issue_5_muted(&store));
-    assert_eq!(left_in(&refreshes), ["refresh"]);
+    assert_eq!(left_in(&keeper), ["refresh"]);
+}
+
+#[test]
+fn what_the_github_thread_saved_has_the_session_hand_over_the_wants_then_the_heads_saved() {
+    let store = empty_store();
+    stores_issue_5_with_its_prs(&store);
+    let (mirrors, heard) = HeardRequests::new();
+    let keeper = Keeper::new(
+        mpsc::channel().1,
+        sending(mpsc::channel().0, mirrors),
+        listed(vec![plain_gcmon()]),
+        telling(&mut quiet_board()).0,
+    );
+    let saved = |repository: RepositoryName| {
+        SessionMessage::Saved(Change {
+            repository,
+            items: vec![8],
+        })
+    };
+
+    // A Repository the window hasn't opened doesn't sync, so it hands over nothing.
+    assert!(keeper.take(&store, saved(gcmon())).is_continue());
+    let unopened = heard.asked();
+    let open = SessionMessage::Sync {
+        repository: gcmon(),
+    };
+    assert!(keeper.take(&store, open).is_continue());
+    assert!(keeper.take(&store, saved(gcmon())).is_continue());
+    let handed = heard.asked();
+
+    assert_eq!(unopened, Vec::<String>::new());
+    assert_eq!(handed.first().map(String::as_str), Some(HEADS_OF_8));
+    assert_eq!(
+        handed.last().map(String::as_str),
+        Some("some-maintainer/gcmon saved heads #8 at 4567def on main")
+    );
 }
 
 #[test]
 fn a_mark_that_moves_no_reach_follows_no_save() {
-    let refreshes = refreshes_told(1, cpython_gcmon(), vec![cpython_saved()]);
+    let keeper = quiet_keeper(1, cpython_gcmon(), vec![cpython_saved()]);
 
-    refreshes.mark(
-        &mut telling(&mut quiet_board()),
-        &Store::stopped(),
-        unseen_7(),
-    );
+    keeper.mark(&Store::stopped(), unseen_7());
 
-    assert_eq!(left_in(&refreshes), [format!("settings of {}", gcmon())]);
+    assert_eq!(left_in(&keeper), [format!("settings of {}", gcmon())]);
 }
 
 #[test]
@@ -839,15 +984,10 @@ fn a_hand_edit_a_mute_follows_ahead_of_the_open_of_its_repository_tells_the_wind
         },
         cpython_saved(),
     ];
-    let refreshes = refreshes_told(1, cpython_gcmon(), messages);
-    let syncs = Syncs::new(listed(vec![cpython_gcmon()]));
     let (mut board, changes) = board_hearing_settings();
+    let keeper = keeper_told(1, cpython_gcmon(), messages, telling(&mut board).0);
 
-    let mut opened_only = Telling {
-        board: &mut board,
-        syncs: Some(&syncs),
-    };
-    refreshes.mark(&mut opened_only, &store, mute_5());
+    keeper.mark(&store, mute_5());
 
     let told: Vec<Change> = changes.try_iter().collect();
     assert_eq!(
@@ -857,7 +997,7 @@ fn a_hand_edit_a_mute_follows_ahead_of_the_open_of_its_repository_tells_the_wind
             items: vec![]
         }]
     );
-    assert_eq!(left_in(&refreshes), ["other"]);
+    assert_eq!(left_in(&keeper), ["other"]);
 }
 
 #[test]
@@ -869,15 +1009,16 @@ fn a_save_missing_from_the_queue_leaves_later_marks_to_the_saves_their_view_coun
         saves_told: 1,
         ..listing(vec![cpython_gcmon()])
     };
-    let refreshes = Refreshes::new(HOURLY, incoming, unheard(), crate::latest::channel(view).1);
-    refreshes.mark(&mut telling(&mut quiet_board()), &store, mute_5());
+    let quiet = telling(&mut quiet_board()).0;
+    let keeper = Keeper::new(incoming, unheard(), crate::latest::channel(view).1, quiet);
+    keeper.mark(&store, mute_5());
     // A save that only a view after this one counts.
     let switch = SettingsSave::new(cpython_gcmon(), &[cpython_gcmon()], SavedBy::Window);
     sent.send(SessionMessage::SettingsChanged(switch)).unwrap();
 
-    refreshes.mark(&mut telling(&mut quiet_board()), &store, unmute_5());
+    keeper.mark(&store, unmute_5());
 
-    assert_eq!(left_in(&refreshes), ["switch"]);
+    assert_eq!(left_in(&keeper), ["switch"]);
 }
 
 #[test]
@@ -897,12 +1038,24 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         at: OffsetDateTime::UNIX_EPOCH,
     };
     for marked in [seen_mark, unseen] {
-        let (mut board, seen) = watched_board();
+        let (told, github) = telling(&mut quiet_board());
+        let keeper = keeper_told(0, plain_gcmon(), vec![], told);
 
-        unheard_refreshes().mark(&mut telling(&mut board), &Store::stopped(), marked);
+        keeper.mark(&Store::stopped(), marked);
 
-        assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
+        assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
     }
+}
+
+/// The kinds of the problems the session asked the GitHub thread to show on the status bar.
+fn problems_for_the_status_bar(github: &mpsc::Receiver<GitHubMessage>) -> Vec<ErrorKind> {
+    let problem = |message| {
+        let GitHubMessage::Problem(problem) = message else {
+            return None;
+        };
+        Some(problem.kind)
+    };
+    github.try_iter().filter_map(problem).collect()
 }
 
 #[test]
@@ -998,9 +1151,28 @@ struct OneRead {
     store: Store,
     github: GitHub,
     demands: Fetching,
+    /// The session's thread, which passes the demands on.
+    passing: Keeper,
     queue: Refreshes,
     syncs: Syncs,
     heard: HeardRequests,
+}
+
+/// `message` as a test names the session's message it passes on, or "other".
+fn named_for_github(message: GitHubMessage) -> String {
+    let passed = match message {
+        GitHubMessage::Stop => SessionMessage::Stop,
+        GitHubMessage::Check { name, reply } => SessionMessage::Check { name, reply },
+        GitHubMessage::Sync { repository } => SessionMessage::Sync { repository },
+        GitHubMessage::Refresh => SessionMessage::Refresh,
+        GitHubMessage::Fetch(fetched) => SessionMessage::Fetch(fetched),
+        GitHubMessage::Screen(moved) => SessionMessage::Screen(moved),
+        GitHubMessage::FetchUnstored { item, reply } => {
+            SessionMessage::FetchUnstored { item, reply }
+        }
+        GitHubMessage::Size { .. } | GitHubMessage::Problem(_) => return "other".to_owned(),
+    };
+    crate::fetching::testing::named(passed)
 }
 
 impl OneRead {
@@ -1022,33 +1194,50 @@ impl OneRead {
         let listing = listed(vec![plain_gcmon()]);
         let mut syncs = Syncs::new(listing.clone());
         syncs.add(gcmon());
-        let queue = Refreshes::new(HOURLY, incoming, demands.clone(), listing);
+        let (to_github, github_queue) = mpsc::channel();
+        let (queue, done) = Refreshes::new(HOURLY, github_queue, demands.clone(), listing.clone());
+        let told = telling_through(&mut quiet_board(), to_github, done);
+        let passing = Keeper::new(incoming, demands.clone(), listing, told);
+        // The session's thread took the Sync the syncs above added gcmon by.
+        passing.opened.borrow_mut().push(gcmon());
         Self {
             _folder: folder,
             store,
             github,
             demands,
+            passing,
             queue,
             syncs,
             heard,
         }
     }
 
-    /// Reads `fetched`, as the session does when its turn comes.
+    /// Has the session's thread pass the demands it took to the GitHub thread's queue.
+    fn pass_on(&self) {
+        while let Ok(message) = self.passing.next_message(Duration::ZERO) {
+            assert!(self.passing.take(&self.store, message).is_continue());
+        }
+    }
+
+    /// Reads `fetched`, as the GitHub thread does when its turn comes.
     fn read(&self, fetched: &Fetched) {
+        self.pass_on();
         let read = Reading {
             github: &self.github,
             queue: &self.queue,
             syncs: &self.syncs,
         };
         read_conversation(&mut quiet_board(), &self.store, &read, fetched).unwrap();
+        // The session's thread hands the Mirror worker what the read changed of the rules' wants.
+        self.pass_on();
     }
 
-    /// The messages left in the session's queue, as the test names them.
+    /// The messages left in the GitHub thread's queue, as the test names them.
     fn queued(&self) -> Vec<String> {
+        self.pass_on();
         let mut queued = Vec::new();
         while let Ok(message) = self.queue.next_message(Duration::ZERO) {
-            queued.push(crate::fetching::testing::named(message));
+            queued.push(named_for_github(message));
         }
         queued
     }
@@ -1478,7 +1667,6 @@ fn a_session_that_has_ended_says_so_to_a_check() {
 #[test]
 fn checks_dont_put_off_the_next_refresh() {
     let (messages, incoming) = mpsc::channel();
-    let checks = sending(messages, mirrors());
     let refreshes = Refreshes {
         intervals: Intervals {
             status: Duration::from_millis(100),
@@ -1501,11 +1689,23 @@ fn checks_dont_put_off_the_next_refresh() {
         )]
         scope.spawn(|| {
             while !refreshed.load(Ordering::Relaxed) && started.elapsed() < PLENTY {
-                drop(checks.check(gcmon()));
+                let (reply, answer) = mpsc::channel();
+                let check = GitHubMessage::Check {
+                    name: gcmon(),
+                    reply,
+                };
+                messages.send(check).unwrap();
+                drop(answer.recv());
             }
-            checks.stop_session();
+            messages.send(GitHubMessage::Stop).unwrap();
         });
-        let turn = refreshes.next_turn(&github, &mut syncs, due);
+        // Each check takes a turn of its own, which leaves the refresh due when it was.
+        let turn = loop {
+            let turn = refreshes.next_turn(&github, &mut syncs, due);
+            if !matches!(turn, Turn::Asked) {
+                break turn;
+            }
+        };
         assert!(matches!(turn, Turn::Refresh), "{turn:?}");
         refreshed.store(true, Ordering::Relaxed);
         // Answers the checks still on their way, until the message that stops it.
@@ -2033,7 +2233,9 @@ fn a_hand_edit_to_the_settings_tells_the_window_with_no_token() {
     };
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
+    // The window opens a Repository with no token as it does with one.
     let asked = session.fetching();
+    asked.sync(gcmon());
     asked.settings_changed(bugs_saved(OnWorkbench::On, SavedBy::Window));
     asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     session.stop(PLENTY);
@@ -2225,14 +2427,8 @@ fn a_session_with_no_token_follows_the_reach_a_hand_edit_moves() {
         "{:?}",
         took.handed
     );
-    // With no syncs to say which Repositories were opened, the window hears of each hand edit.
-    assert_eq!(
-        took.announced,
-        [Change {
-            repository: gcmon(),
-            items: vec![]
-        }]
-    );
+    // The window hasn't opened gcmon, so it hears of no hand edit to it, token or not.
+    assert_eq!(took.announced, []);
 }
 
 /// Has `store` hold Issue 5, which the user's PR 8 and someone else's PR 9 fix, for the user to mute.
@@ -2445,12 +2641,13 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
     stores_issue_5_with_its_prs(&store);
     let (lossy, calls) = store.failing_at_call(Some(2));
     let (mirrors, heard) = HeardRequests::new();
-    let (messages, _incoming) = mpsc::channel();
-    let refreshes = Refreshes {
-        fetching: sending(messages, mirrors),
-        settings: listed(vec![cpython_gcmon()]),
-        ..unheard_refreshes()
-    };
+    let (messages, incoming) = mpsc::channel();
+    let keeper = Keeper::new(
+        incoming,
+        sending(messages, mirrors),
+        listed(vec![cpython_gcmon()]),
+        telling(&mut quiet_board()).0,
+    );
     let issue = ItemKey::Issue { number: 5 };
     let muted = Marked::Muted {
         repository: gcmon(),
@@ -2459,7 +2656,7 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
         at: OffsetDateTime::now_utc(),
     };
 
-    refreshes.mark(&mut telling(&mut quiet_board()), &lossy, muted);
+    keeper.mark(&lossy, muted);
 
     // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The
     // next step that saves hands the Mirror its heads.
@@ -2578,15 +2775,9 @@ fn on_main(commit: &str) -> PatchesOf {
     }
 }
 
-/// Has a session keep each of `handed` from the Mirror worker, where the user reviewed PR 8 at commit
-/// 0123abc and its head moved on to 4567def, and the last run left a reason it couldn't read commit
-/// fedcba9. Gives the change the window heard after each, and the review facts the store then holds.
-fn keeping_patches(
-    name: &str,
-    access: GitHubAccess,
-    handed: Vec<PatchReads>,
-) -> (Vec<Change>, ReviewFacts) {
-    let (folders, _folder) = temp_folders(name);
+/// Stores in `folders` that the user reviewed PR 8 at commit 0123abc and its head moved on to 4567def, and
+/// that the last run left a reason it couldn't read commit fedcba9.
+fn store_pr_8_reviewed(folders: &Folders) {
     let store = Store::open(&folders.database()).unwrap();
     store.remember_login(&me()).unwrap();
     let stored = vec![
@@ -2611,6 +2802,17 @@ fn keeping_patches(
     };
     store.save_unchecked(&gcmon(), vec![left]).unwrap();
     store.close();
+}
+
+/// Has a session keep each of `handed` from the Mirror worker, where `store_pr_8_reviewed` says. Gives the
+/// change the window heard after each, and the review facts the store then holds.
+fn keeping_patches(
+    name: &str,
+    access: GitHubAccess,
+    handed: Vec<PatchReads>,
+) -> (Vec<Change>, ReviewFacts) {
+    let (folders, _folder) = temp_folders(name);
+    store_pr_8_reviewed(&folders);
     let (board, changes) = changes_board();
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
@@ -2724,13 +2926,12 @@ fn the_session_keeps_the_commits_the_mirror_cant_read_and_tells_the_window_of_ea
 #[test]
 fn patch_ids_the_store_cant_keep_show_its_problem() {
     for reads in [PatchReads::Read(vec![]), PatchReads::Unchecked(vec![])] {
-        let (board, seen) = watched_board();
-        let mut board = board;
+        let (told, github) = telling(&mut quiet_board());
         let store = Store::stopped();
 
-        keep_patches(&mut board, &store, &gcmon(), reads);
+        keep_patches(&told, &store, &gcmon(), reads);
 
-        assert!(matches!(showing(&seen), Status::Problem { .. }));
+        assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
     }
 }
 
@@ -2748,18 +2949,18 @@ fn reads_the_store_kept_reach_the_window_though_it_cant_keep_the_finding() {
     store
         .save_pull_request_content(&gcmon(), 8, content)
         .unwrap();
-    let (board, seen) = watched_board();
     let (passed, changes) = mpsc::channel();
-    let mut board = board.with_changes(Box::new(move |change: &Change| {
+    let mut board = quiet_board().with_changes(Box::new(move |change: &Change| {
         passed.send(change.clone()).unwrap();
     }));
+    let (told, github) = telling(&mut board);
     // The calls go: the patch-ids, the facts, the last check, then the finding, which goes missing.
     let (lossy, _calls) = store.failing_at_call(Some(3));
     let both = vec![patches_of("0123abc", 'a'), patches_of("4567def", 'c')];
 
-    keep_patches(&mut board, &lossy, &gcmon(), PatchReads::Read(both));
+    keep_patches(&told, &lossy, &gcmon(), PatchReads::Read(both));
 
-    assert!(matches!(showing(&seen), Status::Problem { .. }));
+    assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
     let heard: Vec<Vec<u32>> = changes.try_iter().map(|change| change.items).collect();
     assert_eq!(heard, [[8]]);
     let held = store.work_facts(&gcmon()).unwrap().reviews;
@@ -2795,7 +2996,7 @@ fn reviewed_by(author: &str, commit: &CommitSha) -> PullRequestContent {
 #[test]
 fn a_check_goes_ahead_of_the_next_step_of_a_sync() {
     let (messages, incoming) = mpsc::channel();
-    let checks = sending(messages, mirrors());
+    let checks = passed_on(messages);
     let refreshes = Refreshes {
         intervals: HOURLY,
         incoming,
@@ -2811,7 +3012,7 @@ fn a_check_goes_ahead_of_the_next_step_of_a_sync() {
         // A step can run only after the session answers the check, or this would hang.
         while !asking.is_finished() {
             let turn = refreshes.next_turn(&github, &mut syncs, due);
-            assert!(matches!(turn, Turn::SyncStep), "{turn:?}");
+            assert!(matches!(turn, Turn::SyncStep | Turn::Asked), "{turn:?}");
         }
         asking.join().unwrap()
     });
@@ -2822,7 +3023,7 @@ fn a_check_goes_ahead_of_the_next_step_of_a_sync() {
 #[test]
 fn a_fetch_of_an_unstored_item_goes_ahead_of_the_next_step_of_a_sync() {
     let (messages, incoming) = mpsc::channel();
-    let fetching = sending(messages, mirrors());
+    let fetching = passed_on(messages);
     let refreshes = Refreshes {
         intervals: HOURLY,
         incoming,
@@ -2982,28 +3183,25 @@ fn a_sync_github_cant_answer_shows_offline_and_waits_for_the_next_refresh() {
         Err(Unreachable::Offline),
         signed_in(),
     ]);
-    let (messages, incoming) = mpsc::channel();
-    let requests = sending(messages.clone(), mirrors());
+    let intervals = Intervals {
+        status: Duration::from_millis(50),
+        ..HOURLY
+    };
+    let (threads, requests) = two_threads(intervals, mirrors());
     requests.sync(gcmon());
+    let github = threads.github();
     let (passed, seen) = mpsc::channel();
     let mut shown = 0;
     let mut board = StatusBoard::new(Box::new(move |status: &Status| {
         passed.send(status.clone()).unwrap();
         shown += 1;
+        // Back online, the sync would step at the next turn, so the stop has to be there first.
         if shown == 3 {
-            messages.send(SessionMessage::Stop).unwrap();
+            github.send(GitHubMessage::Stop).unwrap();
         }
     }));
-    let refreshes = Refreshes {
-        intervals: Intervals {
-            status: Duration::from_millis(50),
-            ..HOURLY
-        },
-        incoming,
-        ..unheard_refreshes()
-    };
 
-    watch(&mut board, &empty_store(), access, &refreshes);
+    threads.watch(&mut board, &empty_store(), access);
 
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
@@ -3091,11 +3289,13 @@ enum Heard {
 /// statuses it has shown, and `on_change` with how many changes.
 fn heard_board(
     mut on_status: impl FnMut(usize) + Send + 'static,
-    mut on_change: impl FnMut(usize) + Send + 'static,
+    on_change: impl FnMut(usize) + Send + 'static,
 ) -> (StatusBoard, Receiver<Heard>) {
     let (heard, seen) = mpsc::channel();
     let changes = heard.clone();
-    let (mut shown, mut changed) = (0, 0);
+    let mut shown = 0;
+    // Either thread of a session can tell of a change, so the count is behind a lock.
+    let changed = std::sync::Mutex::new((0, on_change));
     let board = StatusBoard::new(Box::new(move |status: &Status| {
         heard.send(Heard::Status(status.clone())).unwrap();
         shown += 1;
@@ -3103,8 +3303,10 @@ fn heard_board(
     }))
     .with_changes(Box::new(move |change: &Change| {
         changes.send(Heard::Changed(change.items.clone())).unwrap();
-        changed += 1;
-        on_change(changed);
+        let mut held = changed.lock().unwrap();
+        held.0 += 1;
+        let count = held.0;
+        (held.1)(count);
     }));
     (board, seen)
 }
@@ -3112,10 +3314,8 @@ fn heard_board(
 #[test]
 fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
     let (access, up, _asked) = outage();
-    let (messages, incoming) = mpsc::channel();
     let (mirrors, wanted) = HeardRequests::new();
-    let fetching = sending(messages.clone(), mirrors);
-    let requests = fetching.clone();
+    let (threads, requests) = two_threads(HOURLY, mirrors);
     requests.sync(gcmon());
     let clicks = requests.clone();
     // Online, the network goes; offline, it comes back and the user clicks Refresh.
@@ -3131,13 +3331,12 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
     let on_change = move |changed| {
         if changed == 1 {
             requests.fetch_issue(gcmon(), 9);
-            messages.send(SessionMessage::Stop).unwrap();
+            requests.stop_session();
         }
     };
     let (mut board, heard) = heard_board(on_status, on_change);
-    let refreshes = Refreshes::new(HOURLY, incoming, fetching, listed(vec![plain_gcmon()]));
 
-    watch(&mut board, &empty_store(), access, &refreshes);
+    threads.watch(&mut board, &empty_store(), access);
 
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
@@ -3167,22 +3366,16 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
 
 #[test]
 fn a_refresh_offline_from_the_start_says_connecting_until_github_fails_again() {
-    let (messages, incoming) = mpsc::channel();
-    let requests = sending(messages.clone(), mirrors());
+    let (threads, requests) = two_threads(HOURLY, mirrors());
     let on_status = move |shown| {
         if shown == 1 {
             requests.refresh();
-            messages.send(SessionMessage::Stop).unwrap();
+            requests.stop_session();
         }
     };
     let (mut board, heard) = heard_board(on_status, |_| {});
-    let refreshes = Refreshes {
-        intervals: HOURLY,
-        incoming,
-        ..unheard_refreshes()
-    };
 
-    watch(&mut board, &empty_store(), offline(), &refreshes);
+    threads.watch(&mut board, &empty_store(), offline());
 
     assert_eq!(
         heard.try_iter().collect::<Vec<_>>(),
@@ -3197,25 +3390,19 @@ fn a_refresh_offline_from_the_start_says_connecting_until_github_fails_again() {
 #[test]
 fn a_refresh_while_github_is_still_away_says_connecting_then_offline_and_runs_no_step() {
     let (access, up, asked) = outage();
-    let (messages, incoming) = mpsc::channel();
-    let requests = sending(messages.clone(), mirrors());
+    let (threads, requests) = two_threads(HOURLY, mirrors());
     requests.sync(gcmon());
     let on_status = move |shown| match shown {
         1 => up.store(false, Ordering::Relaxed),
         2 => {
             requests.refresh();
-            messages.send(SessionMessage::Stop).unwrap();
+            requests.stop_session();
         }
         _ => {}
     };
     let (mut board, heard) = heard_board(on_status, |_| {});
-    let refreshes = Refreshes {
-        intervals: HOURLY,
-        incoming,
-        ..unheard_refreshes()
-    };
 
-    watch(&mut board, &empty_store(), access, &refreshes);
+    threads.watch(&mut board, &empty_store(), access);
 
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
@@ -3629,10 +3816,12 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
         incoming,
         ..unheard_refreshes()
     };
-    messages.send(SessionMessage::Refresh).unwrap();
-    messages.send(SessionMessage::Stop).unwrap();
+    messages.send(GitHubMessage::Refresh).unwrap();
+    messages.send(GitHubMessage::Stop).unwrap();
 
-    refreshes.wait_for_stop(&mut quiet_board(), &empty_store());
+    refreshes.wait_for_stop(&mut quiet_board());
+
+    assert_eq!(refreshes.refreshes_done.get(), 1, "the session passes the next refresh on");
 }
 
 #[test]
@@ -3743,45 +3932,70 @@ fn stopping_a_session_that_has_already_finished_returns_at_once() {
 }
 
 #[test]
-fn a_panic_anywhere_in_a_run_says_tsugiki_stopped_checking() {
-    // The first announcement panics, on the path that never reaches `watch`.
-    let (passed, seen) = mpsc::channel();
-    let mut announcements = 0;
-    let mut board = StatusBoard::new(Box::new(move |status: &Status| {
-        announcements += 1;
-        assert!(announcements > 1, "a panic while starting");
-        passed.send(status.clone()).unwrap();
-    }));
+fn a_panic_before_the_github_thread_starts_says_tsugiki_stopped_checking() {
+    // The first announcement panics, on the path that never reaches the GitHub thread.
+    let (board, seen) = panicking_once();
     let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
 
-    run(
-        &mut board,
-        database(Err(lost)),
-        octocat_answers(),
-        &stopped_refreshes(),
-    );
+    run_stopped(board, database(Err(lost)), octocat_answers());
 
     assert_eq!(
         problem_of(showing(&seen)).unwrap().message,
-        STOPPED_CHECKING
+        stopped_checking().message
     );
+}
+
+/// A board whose first announcement of a status panics, and where it sends the others.
+fn panicking_once() -> (StatusBoard, mpsc::Receiver<Status>) {
+    let (passed, seen) = mpsc::channel();
+    let mut announcements = 0;
+    let board = StatusBoard::new(Box::new(move |status: &Status| {
+        announcements += 1;
+        assert!(announcements > 1, "a panic in the GitHub thread");
+        passed.send(status.clone()).unwrap();
+    }));
+    (board, seen)
+}
+
+#[test]
+fn a_panic_in_the_github_thread_says_tsugiki_stopped_checking() {
+    let (folders, _folder) = temp_folders("github-panic");
+    // The first announcement is who signed in, on the GitHub thread.
+    let (board, seen) = panicking_once();
+
+    run_stopped(board, database(Ok(folders)), octocat_answers());
+
+    assert_eq!(
+        problem_of(showing(&seen)).unwrap().message,
+        stopped_checking().message
+    );
+}
+
+#[test]
+fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_checking() {
+    let (folders, _folder) = temp_folders("session-panic");
+    let (board, seen) = watched_board();
+    let board = board.with_changes(Box::new(|_: &Change| panic!("a panic in the session's thread")));
+    let session = Session::start(board, Ok(folders), reaching(octocat_answers()), HOURLY);
+    assert_eq!(seen.recv_timeout(PLENTY), Ok(octocat()));
+
+    session.fetching().mark_unseen(gcmon(), 7, None);
+    let stopped = seen.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    assert_eq!(problem_of(stopped).unwrap().message, stopped_checking().message);
 }
 
 #[test]
 fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
     let (folders, _folder) = temp_folders("no-gh");
-    let (mut board, seen) = watched_board();
+    let (board, seen) = watched_board();
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         token_from: NO_GH,
     };
 
-    run(
-        &mut board,
-        database(Ok(folders.clone())),
-        access,
-        &stopped_refreshes(),
-    );
+    run_stopped(board, database(Ok(folders.clone())), access);
 
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
     assert!(folders.database().exists());
@@ -3789,15 +4003,10 @@ fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
 
 #[test]
 fn folders_that_cant_be_found_show_as_a_problem() {
-    let (mut board, seen) = watched_board();
+    let (board, seen) = watched_board();
     let lost = Error::new(ErrorKind::Internal, "HOME isn't a full path.");
 
-    run(
-        &mut board,
-        database(Err(lost)),
-        octocat_answers(),
-        &stopped_refreshes(),
-    );
+    run_stopped(board, database(Err(lost)), octocat_answers());
 
     assert_eq!(
         problem_of(showing(&seen)).unwrap().message,
@@ -3816,14 +4025,9 @@ fn a_newer_database_shows_as_a_problem_and_github_isnt_asked() {
     newer.pragma_update(None, "user_version", 9999).unwrap();
     drop(newer);
     let before = fs::read(folders.database()).unwrap();
-    let (mut board, seen) = watched_board();
+    let (board, seen) = watched_board();
 
-    run(
-        &mut board,
-        database(Ok(folders.clone())),
-        octocat_answers(),
-        &stopped_refreshes(),
-    );
+    run_stopped(board, database(Ok(folders.clone())), octocat_answers());
 
     let [only]: [Status; 1] = announced(&seen).try_into().unwrap();
     assert!(problem_of(only).unwrap().message.contains("newer"));
@@ -3836,29 +4040,27 @@ const OPENING_GCMON: [fn(&Fetching); 2] = [
     |fetching| fetching.fetch_pull_request(gcmon(), 10),
 ];
 
-/// Watches GitHub through `access` with a store whose links an older set of rules kept, in CPython
-/// and gcmon, once the window has opened something of gcmon through `open`. Answers with the Repository of
-/// each Change, which names no item, and the store. The session stops once it has heard of both.
-fn refilled_watching(access: GitHubAccess, open: fn(&Fetching)) -> (Vec<RepositoryName>, Store) {
+/// Runs the session's thread with a store whose links an older set of rules kept, in CPython and gcmon,
+/// once the window has opened something of gcmon through `open`. Answers with the Repository of each Change,
+/// which names no item, and the store. The session stops once it has heard of both. The refill asks GitHub
+/// nothing, so it runs on the session's thread, whether the GitHub thread has a token or waits on a request.
+fn refilled_watching(open: fn(&Fetching)) -> (Vec<RepositoryName>, Store) {
     let store = store_with_old_links(&[cpython(), gcmon()]);
     let (stop, incoming) = mpsc::channel();
     open(&sending(stop.clone(), mirrors()));
     let (heard, changes) = mpsc::channel();
-    let mut count = 0;
+    let count = std::sync::atomic::AtomicUsize::new(0);
     let mut board = quiet_board().with_changes(Box::new(move |change: &Change| {
         assert!(change.items.is_empty(), "{change:?}");
         heard.send(change.repository.clone()).unwrap();
-        count += 1;
-        if count == 2 {
+        if count.fetch_add(1, Ordering::SeqCst) == 1 {
             stop.send(SessionMessage::Stop).unwrap();
         }
     }));
-    let refreshes = Refreshes {
-        incoming,
-        ..unheard_refreshes()
-    };
+    let (told, _github) = telling(&mut board);
+    let keeper = Keeper::new(incoming, unheard(), listed(vec![plain_gcmon()]), told);
 
-    watch(&mut board, &store, access, &refreshes);
+    keeper.run(&store);
 
     (changes.try_iter().collect(), store)
 }
@@ -3873,23 +4075,7 @@ fn refilled_fixes() -> Vec<(String, u32, u32)> {
 #[test]
 fn a_session_refills_stale_links_the_open_repository_first_and_tells_the_window() {
     for open in OPENING_GCMON {
-        let (heard, store) = refilled_watching(offline(), open);
-
-        assert_eq!(heard, [gcmon(), cpython()]);
-        assert_eq!(store.stale_links().unwrap(), None);
-        assert_eq!(kept_fixes(&store), refilled_fixes());
-    }
-}
-
-#[test]
-fn a_session_without_a_token_refills_stale_links_too() {
-    for open in OPENING_GCMON {
-        let access = GitHubAccess {
-            transport: Box::new(Canned(Err(Unreachable::Offline))),
-            token_from: NO_GH,
-        };
-
-        let (heard, store) = refilled_watching(access, open);
+        let (heard, store) = refilled_watching(open);
 
         assert_eq!(heard, [gcmon(), cpython()]);
         assert_eq!(store.stale_links().unwrap(), None);

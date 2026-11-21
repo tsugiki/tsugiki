@@ -43,18 +43,23 @@ a copy through `latest::channel` (see the Rust design rules in [AGENTS.md](../AG
 
 ```mermaid
 flowchart LR
-    gh[GitHub] <-->|GraphQL, one request at a time| session
+    gh[GitHub] <-->|GraphQL, one request at a time| github
     app -->|each screen's call, the user's actions| calls[Calls<br>a handle, no thread]
     calls -->|the user's demands: Repository and PR opened, the diff's ends, refresh, marks| fetching
     session -->|the rules' wants: heads, reviewed commits, patch-ids; heads saved| fetching
-    fetching[fetching<br>a handle, no thread] -->|GitHub's queue| session
+    github -->|facts saved, a Conversation's head| fetching
+    fetching[fetching<br>a handle, no thread] -->|the session's queue| session
     fetching -->|git's queue| mirrors
-    session[Session thread<br>token, client, sync queue] -->|writes| store[Store thread<br>the only writer]
+    session[Session thread<br>marks, patch-ids, settings changes] -->|demands on GitHub, the user's first| github
+    session -->|writes| store[Store thread<br>the only writer]
+    github[GitHub thread<br>token, client, gate, sync queue] -->|writes| store
     store --> db[(tsugiki.db)]
     db --> reader[StoreReader thread<br>read-only]
     mirrors[Mirror worker] -->|patch-ids read, commits it can't read, to keep| session
+    mirrors -->|a Repository's size, before a clone| github
     mirrors -->|git CLI| git[("repos/*/mirror.git<br>and lookup/")]
-    session -->|status, changes| board[StatusBoard and<br>mirror Announce callbacks]
+    github -->|status, activity, points, last syncs, changes| board[StatusBoard and<br>mirror Announce callbacks]
+    session -->|the changes its saves make| board
     mirrors -->|cloning, problems, each Mirror's state, held back| board
     board -->|latest copies + events| app[Commands in crates/app]
     reader --> calls
@@ -77,8 +82,9 @@ flowchart LR
 
 | Thread | Owns | Where |
 |---|---|---|
-| Session | The token, the GitHub client, the sync queue, and the hour's points the client sums from each answer's cost. Takes the user's demands between sync steps, reads the Issue or PR on screen again each minute while the user can see it, and reads ahead the Conversations the rules want. When the store kept its links under rules other than the set the build runs, it works them out again a batch of a Repository's PRs a step, the Repository on screen first, ahead of the sync steps (`session/refill.rs`). | `core/src/session.rs` |
-| Store | The one writing SQLite connection. Only the session sends it jobs. | `core/src/store/mod.rs` |
+| Session | The Repositories the window opened since launch, and what the rules make of the stored facts: the Mirror worker's wants and the kept checks of the Stale review check. Takes each message at once: saves the marks and the patch-ids the Mirror worker read itself, follows each change to the settings, works out the wants again after the GitHub thread saves facts, and passes each demand on GitHub to the GitHub thread's queue. It answers at once a Fetch #N while GitHub can't be reached or the rate limit's gate holds, and a Refresh while one it passed still waits or runs, from `latest` copies of the status board's state and of the refreshes the GitHub thread finished. When the store kept its links under rules other than the set the build runs, it works them out again a batch of a Repository's PRs at a time while no message waits, the Repository on screen first (`session/refill.rs`). | `core/src/session.rs` |
+| GitHub | The token, the GitHub client with its clock and the hour's points it sums from each answer's cost, the rate limit's gate, and the sync queue. Runs the syncs and the demands with blocking calls, one request at a time, takes the user's demands ahead of the next sync step, and answers the Mirror worker's question of a Repository's size. Reads the Issue or PR on screen again each minute while the user can see it, and reads ahead the Conversations the rules want. It writes the status, the sync's activity, the hour's points and the last syncs. | `core/src/session/github_thread.rs` |
+| Store | The one writing SQLite connection. Only the session's two threads send it jobs. | `core/src/store/mod.rs` |
 | StoreReader | A read-only connection that the core's calls share. | `core/src/store/mod.rs` |
 | Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep, and each Repository's Lookup checkout, which it moves to the PR on screen and tells readers where it is once it stops moving. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. It holds its queue as `fetching` says, and asks `mirror_queue` which job runs next: the user's demands first, a move of the Lookup checkout and then the heads of the PRs they opened, in a fetch of their own; then the rules' wants, each the whole set for a Repository, which replaces the last; then clones and upkeep. | `core/src/mirror.rs`, `core/src/mirror_queue.rs` |
 | Highlighter | The parsed trees of the open PR's files, and of the few other files the Definition peek and the file view showed whole last. | `core/src/diff/highlighter.rs` |
@@ -92,9 +98,10 @@ flowchart LR
 Mirrors through it, and the two queues behind it keep their owners
 ([ADR 0022](adr/0022-the-users-demands-and-the-rules-wants-go-through-one-handle-to-two-queues.md)). The user
 asks with demands, urgent, the newer winning; the rules in `work` state wants, the whole set for a Repository
-each time. The session thread does one request to GitHub per step (`sync::Syncs`) and takes each demand
-between two steps, so nothing it's asked waits for longer than one request
-([ADR 0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)).
+each time. The GitHub thread does one request per step (`sync::Syncs`) and takes each demand between two
+steps, so no demand waits for longer than one request
+([ADR 0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). The session thread takes
+the rest at once, so a mark, a change to the settings or the Mirror's patch-ids never wait on GitHub.
 The window never waits on the session to read the database: the StoreReader reads while the Store saves
 ([ADR 0018](adr/0018-the-window-reads-the-database-on-its-own-read-only-connection.md)).
 
@@ -124,11 +131,12 @@ app-wide status.
    Conversation when Tsugiki knows no head, and moves the Lookup checkout to the diff's ends, where text
    search looks for it. Opening a PR reads its Conversation each time. The store keeps one head per PR,
    the one named by the newer of the PR list's read and the Conversation's, by GitHub's `updatedAt`. A
-   demand for a read already waiting in the session's queue, or under way until GitHub answers, shares
+   demand for a read already waiting in the GitHub thread's queue, or under way until GitHub answers, shares
    that read.
-5. The session announces a `Change` on the `StatusBoard` for the items a sync saved. The app sends it to
-   the window as the `changed` event, and each open screen that shows one of those items calls its command
-   again. No event carries a view. While an Issue or a PR is on screen, the session reads it from GitHub
+5. The GitHub thread announces a `Change` on the `StatusBoard` for the items a sync saved, and the session
+   thread one for the items a mark or the Mirror's patch-ids changed. The app sends it to the window as the
+   `changed` event, and each open screen that shows one of those items calls its command again. No event
+   carries a view. While an Issue or a PR is on screen, the GitHub thread reads it from GitHub
    again a minute after its last read (`session/on_screen.rs`), and the window holds no timer: it tells the
    core when the user opens, hides, shows again or closes an item, and when the window loads, hides or
    shows. An item that shows again after its minute came round reads at once. The settings owner's thread
@@ -190,7 +198,7 @@ The big ones, in the order data passes through them:
 | `links.rs`, `conventions.rs` | Which Issues a PR fixes and which **Origin PR** a Backport comes from, read through the Repository's Conventions ([ADR 0011](adr/0011-pr-links-from-github-signals-by-repository-conventions.md)). Each link rule is a variant of `LinkRule` in `links/rules.rs`, and only the rules of `LinkRule::SET` run ([ADR 0024](adr/0024-the-link-rules-are-a-set-of-named-rules-parallel-to-the-schemas-migrations.md)). |
 | `work.rs`, `work/` | The functional core: it takes `facts` and returns values. By Issue or PR number it judges what's on the **Workbench** in its own right (`reach.rs`), why it **Needs attention** (`causes.rs`) and each PR's review state (`review_state.rs`). By Repository it works out **Reach** from those and the links, and from Reach the heads the Mirror fetches, the commits it reads patch-ids of, the Conversations worth reading ahead, and the checks the store keeps. `sync` and `session` use it, never `workbench`. |
 | `workbench/` | Groups what `work` judges into the Workbench's items, Issue trees with their PRs and **Backports**, and sums each item's Needs attention and its part in Mark Seen over its tree (`attention.rs`). Builds the view models: the Issue list, the Issue view, the PR view and its Files tab, quick open's search (`quick_open.rs`), and the **Inbox** a page at a time (`inbox.rs`), which walks the updates down from where the page starts and reads the trees of what it meets, so a page costs the same on a cache of any age. Those pages, the Issue view and the PR view read only the trees they show, through the links the store keeps and the store's `Snapshot` (`trees.rs`). The Workbench reads every Issue and PR, as it judges each one for Needs attention and the Sidebar's counts (#842). A read sends nothing, and `layers.rs` keeps it from `mirror` and `fetching`. |
-| `fetching.rs` | The one entry point for requests for data: the user's demands and the rules' wants, handed to the session's GitHub queue or the Mirror worker's git queue ([ADR 0022](adr/0022-the-users-demands-and-the-rules-wants-go-through-one-handle-to-two-queues.md)). |
+| `fetching.rs` | The one entry point for requests for data: the user's demands and the rules' wants, handed to the session's queue, which passes those for GitHub to the GitHub thread, or to the Mirror worker's git queue ([ADR 0022](adr/0022-the-users-demands-and-the-rules-wants-go-through-one-handle-to-two-queues.md)). |
 | `calls.rs` | The handle `crates/app` reads and fetches through, `Calls`, made from the session, with a call for each screen and a method for each of the user's actions. A screen's call reads through a view model. One whose read can find data missing, as the Files tab's can, queues through `fetching` the job for what the read lacks, and answers. An answer that waits for data holds the job's `Queued`, which only `fetching` makes ([ADR 0023](adr/0023-the-core-works-out-what-a-screens-read-lacks-and-a-pending-answer-holds-its-job.md)). Each action goes through `fetching` or the settings owner. |
 | `patch_ids.rs` | Per-file patch-ids, and which files changed between the reviewed commit and the head, for the Stale review check. |
 | `mirror.rs`, `mirror/` | The Mirror worker's thread and queue, and the git it runs: cloning, fetching PR heads, keeping the commits the user's Reviews covered, reading patch-ids, upkeep, moving the Lookup checkout (`mirror/lookup.rs`). It keeps apart, for each PR, where the mirror's ref stands, the head the rules want and the head the user opened (`mirror/heads.rs`). It runs each job in the order `mirror_queue` picks. |
@@ -200,7 +208,7 @@ The big ones, in the order data passes through them:
 | `definitions.rs`, `definitions/` | Where a name is defined, which it asks a language server through `tsugiki-lsp`, in the Lookup checkout ([ADR 0020](adr/0020-go-to-definition-asks-a-language-server-which-reads-a-lookup-checkout.md)). `definitions/server.rs` runs one server on the checkout and writes its log, `definitions/health.rs` holds each server's state, last problem and version, and checks a path the user sets, and each server has a module of its own for how it starts: `definitions/ty.rs` for Python, `definitions/rust_analyzer.rs` for Rust and `definitions/clangd.rs` for C, which writes clangd's compile database in a Repository with CPython's layout. |
 | `highlight.rs`, `highlight/` | tree-sitter highlighting, one table row per language ([docs/highlighting.md](highlighting.md)). |
 | `search.rs`, `search/` | Text search over the open PR's code at its head, on ripgrep's crates, in the Lookup checkout and the Mirror (ADR 0020). |
-| `session.rs` | The session thread, which takes the messages `fetching` sends it, and after each sync step that saves, each change to the settings, each Mute and each Unmute hands `fetching` the rules' wants of the Mirror. When the settings or an Unmute put PRs in Reach, it has the store owe a read of each Conversation the rules say they owe. |
+| `session.rs`, `session/` | The session thread, which takes the messages `fetching` sends it and passes those for GitHub to the GitHub thread (`session/github_thread.rs`). After each change to the settings, each Mute and each Unmute, and each save of the GitHub thread's that can change them, it hands `fetching` the rules' wants of the Mirror. When the settings or an Unmute put PRs in Reach, it has the store owe a read of each Conversation the rules say they owe. |
 | `status.rs` | App-wide status and the `StatusBoard` that announces it. |
 
 The smaller ones say what they do in their first `//!` line.

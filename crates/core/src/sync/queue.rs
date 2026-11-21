@@ -289,13 +289,6 @@ impl Syncs {
         (self.settings).read(|view| view.repository(repository.clone()))
     }
 
-    /// The settings of `repository` in the settings owner's view now, if it was opened since launch: the
-    /// Repositories whose syncs hand the Mirror worker their wants.
-    pub fn opened_settings(&self, repository: &RepositoryName) -> Option<RepositorySettings> {
-        self.was_opened(repository)
-            .then(|| self.settings_of(repository))
-    }
-
     fn open_settings(&self) -> Option<RepositorySettings> {
         Some(self.settings_of(self.open.as_ref()?))
     }

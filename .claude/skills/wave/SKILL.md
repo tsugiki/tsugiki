@@ -88,7 +88,7 @@ When a ticket only moves code, and a round finds bugs that main has too, ask the
 behaviour there and file a ticket for the bugs: in 0.3.4 each of #896's fixes to such a bug opened a new case.
 
 When a round's findings come from code that works around an answer it didn't read in full, ask the builder
-to read the answer where it enters the core, as AGENTS.md's "Parse at the boundary" says, and send no fix
+to read the answer where it enters the core, as AGENTS.md's "Parse at the boundary" says, instead of a fix
 for each case: in 0.3.5 a stack that halved #980's refused batches drew five of a round's eight findings,
 and reading GraphQL's error for each alias replaced it with no new state.
 

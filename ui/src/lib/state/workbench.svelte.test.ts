@@ -14,7 +14,6 @@ import {
   type InboxCursor,
   type ListedItem,
   type Seen,
-  type Stop,
   type WorkbenchRow,
 } from "./workbench.svelte";
 
@@ -1119,129 +1118,8 @@ describe("WorkbenchState", () => {
     await vi.waitFor(() => {
       expect(state.cursor?.number).toBe(2);
     });
-    expect(landed, "a sync's").toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: undefined });
-    state.stop();
-  });
-
-  /** The line of Standalone PR `number`. */
-  const alone = (number: number): Stop => ({ number, kind: "pull_request", issue: undefined });
-
-  it("says the user finished with the item under the cursor when their Mark Seen lands the cursor (#982)", async () => {
-    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-    vi.mocked(commands.markSeen).mockResolvedValue(done);
-
-    await state.markSeen(waiting(3).seen.mark);
-    answering([4, 2, 1], [3]);
-    send("python/cpython", [3]);
-
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: [alone(3)] });
-    });
-    state.stop();
-  });
-
-  it("says the user finished with the item when their Mark Seen's answer lands the cursor before the mark is done", async () => {
-    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-    const answer = Promise.withResolvers<typeof done>();
-    vi.mocked(commands.markSeen).mockReturnValue(answer.promise);
-
-    const marking = state.markSeen(waiting(3).seen.mark);
-    answering([4, 2, 1], [3]);
-    send("python/cpython", [3]);
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: [alone(3)] });
-    });
-    answer.resolve(done);
-
-    expect(await marking).toBeUndefined();
-    state.stop();
-  });
-
-  it("says a sync took the item out of place once an answer asked after the user's Mark Seen kept it waiting", async () => {
-    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-    vi.mocked(commands.markSeen).mockResolvedValue(done);
-
-    await state.markSeen(waiting(3).seen.mark);
-    // A Stale review that a check found after the window drew the page still waits (#908).
-    send("python/cpython", [3]);
-    await vi.waitFor(() => {
-      expect(commands.workbench).toHaveBeenCalledTimes(2);
-    });
-    // The answer goes on show before a timer fires.
-    await nextTask();
-    answering([4, 2, 1], [3]);
-    send("python/cpython", [3]);
-
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: undefined });
-    });
-    state.stop();
-  });
-
-  it("says a sync took the item out of place when the user's Mark Seen on it failed", async () => {
-    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-    vi.mocked(commands.markSeen).mockResolvedValue(refused("no database"));
-
-    expect(await state.markSeen(waiting(3).seen.mark)).toBe("no database");
-    answering([4, 2, 1], [3]);
-    send("python/cpython", [3]);
-
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: undefined });
-    });
-    state.stop();
-  });
-
-  it("says a sync took the item out of place when the user's Mark Seen named another", async () => {
-    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-    vi.mocked(commands.markSeen).mockResolvedValue(done);
-
-    await state.markSeen(waiting(4).seen.mark);
-    answering([2, 1], [4, 3]);
-    send("python/cpython", [3, 4]);
-
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: undefined });
-    });
-    state.stop();
-  });
-
-  it("says the user finished with the Issue whose PR's line holds the cursor when they archive it, with nothing after it", async () => {
-    const { send } = catchChanged();
-    const issue = { ...issueWith(7, 8), attention: waiting(7).attention };
-    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([waiting(3), issue], { count: 0 }));
-    vi.mocked(commands.archive).mockResolvedValue(done);
-    const landed = vi.fn();
-    const state = new WorkbenchState("python/cpython", { landed });
-    await state.load();
-    state.moveTo({ number: 8, kind: "pull_request", issue: 7 });
-
-    await state.archive({ key: issue.key, mark: { ...issue.seen.mark, numbers: [7, 8] } });
-    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([waiting(3)], { count: 0 }));
-    send("python/cpython", [7]);
-
-    const lines = [
-      { number: 7, kind: "issue", issue: undefined },
-      { number: 8, kind: "pull_request", issue: 7 },
-    ];
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: undefined, finished: lines });
-    });
-    expect(state.cursor).toEqual(alone(3));
-    state.stop();
-  });
-
-  it("says the user finished with the item under the cursor when they mute it", async () => {
-    const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
-    vi.mocked(commands.mute).mockResolvedValue(done);
-
-    await state.mute({ key: waiting(3).key, mark: waiting(3).seen.mark });
-    answering([4, 2, 1]);
-    send("python/cpython", [3]);
-
-    await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ next: alone(2), finished: [alone(3)] });
-    });
+    const next = { number: 2, kind: "pull_request", issue: undefined };
+    expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 3, to: { kind: "next", stop: next } });
     state.stop();
   });
 
@@ -1289,7 +1167,7 @@ describe("WorkbenchState", () => {
     send("python/cpython", [3]);
 
     await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledOnce();
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 3, to: { kind: "last" } });
     });
     expect(state.cursor).toEqual({ number: 8, kind: "pull_request", issue: 7 });
     state.stop();
@@ -1323,7 +1201,7 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("leaves the cursor where it was when the item under it leaves the list, and nothing else is on it", async () => {
+  it("leaves the cursor where it was, and says so, when the item under it leaves the list, and nothing else is on it", async () => {
     const { state, send, landed } = await listingWithCursor([3], 0);
 
     answering([]);
@@ -1332,9 +1210,45 @@ describe("WorkbenchState", () => {
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([]);
     });
-    expect(landed).toHaveBeenCalledExactlyOnceWith({ next: undefined, finished: undefined });
+    expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 3, to: { kind: "stayed" } });
     expect(state.cursor?.number).toBe(3);
     expect(state.underCursor).toBeUndefined();
+    state.stop();
+  });
+
+  it("names the Issue the cursor left when it was on a PR in the Issue's tree", async () => {
+    const { send } = catchChanged();
+    const issue = issueWith(7, 8);
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)], { count: 0 }));
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    const landed = vi.fn();
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    state.moveTo({ number: 8, kind: "pull_request", issue: 7 });
+
+    await state.archive({ key: issue.key, mark: issue.seen.mark });
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([item(3)], { count: 0 }));
+    send("python/cpython", [7]);
+
+    const next = { number: 3, kind: "pull_request", issue: undefined };
+    await vi.waitFor(() => {
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 7, to: { kind: "next", stop: next } });
+    });
+    state.stop();
+  });
+
+  it("says which lines are an item's own that Needs attention", async () => {
+    catchChanged();
+    const issue = { ...issueWith(7, 8), attention: waiting(7).attention };
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)], { count: 0 }));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+
+    expect([
+      state.waits({ number: 7, kind: "issue", issue: undefined }),
+      state.waits({ number: 8, kind: "pull_request", issue: 7 }),
+      state.waits({ number: 3, kind: "pull_request", issue: undefined }),
+    ]).toEqual([true, false, false]);
     state.stop();
   });
 

@@ -148,6 +148,14 @@
   /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
    * the list hidden: the view of the item after the one the user finished with (#982). */
   let focusedView = $state<IssueViewState | PrViewState>();
+  /**
+   * The user's own Mark Seen, Archive or Mute on the Detail pane's item, made with the cursor on a line of
+   * the list's item that the mark takes out of place (#982): the view on show then, and that item's number.
+   * Once the cursor moves on from that item, whether for the mark or for a sync that took the same item out
+   * of place first, the Detail pane opens the item the cursor lands on. It goes once the mark fails or the
+   * pane opens anything else.
+   */
+  let finishing: { view: IssueViewState | PrViewState; item: number } | undefined;
   const links = new LinkOpener();
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
@@ -334,6 +342,7 @@
     kept = keep;
     detail = next;
     if (focusedView !== next) focusedView = undefined;
+    if (finishing?.view !== next) finishing = undefined;
   }
 
   /** Leaves the PR view for the Issue the user opened it from, with the focus on the Issue's row. */
@@ -429,54 +438,88 @@
   }
 
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
-   * was made in by the time it's done. */
+   * was made in by the time it's done, and gives it back. */
   async function sayMarkProblem(marking: (opened: WorkbenchState) => Promise<string | undefined>) {
     const opened = workbench;
     const problem = await marking(opened);
     if (workbench === opened) markProblem = problem;
+    return problem;
   }
 
   /** Mark Seen on `marked`, as the window drew it. Once the item no longer Needs attention, a cursor on its
    * row lands on the row that came after it, whether the item moved or kept its place, and `cursorLanded`
-   * runs. */
+   * runs. On the Detail pane's item, with the cursor on its row while it Needs attention, the pane waits for
+   * the cursor to move on from it (#982). */
   async function markSeen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark, marked.archived));
+    if (!marked) return;
+    const cursor = workbench.underCursor;
+    const waits =
+      detailLine()?.number === marked.number && cursor?.number === marked.number && workbench.waits(cursor);
+    await finish(waits ? marked.number : undefined, (opened) =>
+      opened.markSeen(marked.seen.mark, marked.archived),
+    );
+  }
+
+  /** Says what went wrong with the user's own mark that `marking` makes, as `sayMarkProblem` does. With the
+   * number of the list's item it takes out of place, while it acts on the Detail pane's item with the
+   * cursor on a line of that item, the pane waits for the cursor to move on from it. */
+  async function finish(
+    item: number | undefined,
+    marking: (opened: WorkbenchState) => Promise<string | undefined>,
+  ) {
+    const wait = item !== undefined && detail ? { view: detail, item } : undefined;
+    if (wait) finishing = wait;
+    const problem = await sayMarkProblem(marking);
+    if (problem !== undefined && finishing === wait) finishing = undefined;
   }
 
   /**
    * Follows the cursor once it has moved on from a line that lost its place, as `landing` says. When the
-   * user's own Mark Seen, Archive or Mute on the Detail pane's item took it out of place, the Detail pane
-   * opens the item the cursor moved on to, as `Enter` would, or shows nothing open when no item came after
-   * it (#982). Focus in the Detail pane then stays there, in the item it opens, or goes to the cursor's row
-   * when the pane goes with nothing open.
+   * Detail pane waits for the cursor to leave that item, as `finishing` says, the pane opens the item the
+   * cursor moved on to, as `Enter` would, or shows nothing open when no item came after it (#982). Focus in
+   * the Detail pane then stays there, in the item it opens, or goes to the cursor's row when the pane goes
+   * with nothing open.
    *
-   * Otherwise the focus goes to the row the cursor landed on when a row of the list holds it, or the page
-   * does, as it does once nothing else holds it. Focus anywhere else, such as in a text box or on the
-   * list's header, stays put.
+   * Otherwise, once the cursor moved, the focus goes to the row it landed on when a row of the list holds
+   * the focus, or the page does, as it does once nothing else holds it. Focus anywhere else, such as in a
+   * text box or on the list's header, stays put.
    */
-  function cursorLanded({ next, finished }: Landing) {
+  function cursorLanded({ left, to }: Landing) {
     const focused = document.activeElement;
-    if (finished?.some(onDetail)) {
+    if (finishing?.item === left) {
+      finishing = undefined;
       const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
-      if (next) open(next);
+      if (to.kind === "next") open(to.stop);
       else swap(undefined);
       if (inDetail) {
         focusDetail();
         return;
       }
     }
+    if (to.kind === "stayed") return;
     const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
     if (onRow || focused === document.body) focusCursor();
   }
 
   /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when
-   * it shows nothing. */
+   * it shows nothing. While the list shows, the pane takes it as it does with the list hidden, until the
+   * focus leaves the pane. */
   function focusDetail() {
-    focusedView = detail;
+    const view = detail;
+    focusedView = view;
     void tick().then(() => {
       const pane = detailPane();
-      if (pane) pane.focus();
-      else focusCursor();
+      if (!pane) {
+        focusCursor();
+        return;
+      }
+      const leave = (e: FocusEvent) => {
+        if (e.relatedTarget instanceof Node && pane.contains(e.relatedTarget)) return;
+        pane.removeEventListener("focusout", leave);
+        if (focusedView === view) focusedView = undefined;
+      };
+      pane.addEventListener("focusout", leave);
+      pane.focus();
     });
   }
 
@@ -607,12 +650,22 @@
 
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
   async function archive(archived: Hiding) {
-    await sayMarkProblem((opened) => opened.archive(archived));
+    await finish(hidingOnDetail(archived), (opened) => opened.archive(archived));
   }
 
   /** Mute on `muted`. Once the item leaves the list, a cursor on it lands on the row after it. */
   async function mute(muted: Hiding) {
-    await sayMarkProblem((opened) => opened.mute(muted));
+    await finish(hidingOnDetail(muted), (opened) => opened.mute(muted));
+  }
+
+  /** The number of the item that Archive or Mute on `hiding` takes off the list, while that is the Detail
+   * pane's item, or the item the PR on show belongs to, and the cursor is on one of its lines (#982). */
+  function hidingOnDetail({ key }: Hiding): number | undefined {
+    const shown = detailHiding()?.key;
+    const cursor = workbench.underCursor;
+    const held = cursor && workbench.hidingBy(cursor)?.key;
+    const same = (other: ItemKey | undefined) => other?.kind === key.kind && other.number === key.number;
+    return same(shown) && same(held) ? key.number : undefined;
   }
 
   /** Unmutes the item `key` names. */

@@ -1307,7 +1307,6 @@
         count={workbench.count}
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
-        archived={workbench.archived}
         filters={workbench.filters}
         selected={workbench.selected}
         onselect={showViewInFull}
@@ -1323,7 +1322,6 @@
         count={workbench.count}
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
-        archived={workbench.archived}
         filters={workbench.filters}
         selected={workbench.selected}
         onselect={showView}

@@ -3730,8 +3730,6 @@ export type Workbench_Deserialize = {
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
-	/**  The count of Archived items. */
-	archived: number,
 	filters: FilterLine_Deserialize[],
 };
 
@@ -3753,8 +3751,6 @@ export type Workbench_Serialize = {
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
-	/**  The count of Archived items. */
-	archived: number,
 	filters: FilterLine_Serialize[],
 };
 

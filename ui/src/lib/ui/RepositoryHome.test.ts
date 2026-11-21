@@ -2750,13 +2750,13 @@ it("offers no Mark Seen in the view of a PR whose item is Muted, as the view say
 const archivedView = async () => {
   const changed = catchEveryListener();
   const items = [issue, standalone].map((item) => ({ ...item, attention: null, hidden: "archived" }));
-  core.workbench.mockResolvedValue(workbenchPage(items, { archived: 2 }));
+  core.workbench.mockResolvedValue(workbenchPage(items));
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
     onsettings: () => {},
   });
-  await fireEvent.click(await screen.findByRole("button", { name: "Archived 2" }));
+  await fireEvent.click(await screen.findByRole("button", { name: "Archived" }));
   await screen.findByRole("heading", { name: "Archived" });
   await unfoldAll();
   const issueRow = screen.getByRole("button", { name: "#112564 GIL drop during collection" });
@@ -2787,9 +2787,7 @@ it("unarchives on E in the Archived view the item that holds the line under the 
   await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
 
   await fireEvent.keyDown(issueRow, { key: "e" });
-  core.workbench.mockResolvedValue(
-    workbenchPage([{ ...standalone, attention: null, hidden: "archived" }], { archived: 1 }),
-  );
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
   changed("python/cpython", [112564]);
 
   expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
@@ -2798,7 +2796,6 @@ it("unarchives on E in the Archived view the item that holds the line under the 
   await vi.waitFor(() => {
     expect(landed.getAttribute("aria-current")).toBe("true");
   });
-  expect(await screen.findByRole("button", { name: "Archived 1" })).toBeTruthy();
 });
 
 it("marks a line of the Archived view unseen on Shift+Q, which unarchives the item, and the cursor moves on", async () => {
@@ -2806,9 +2803,7 @@ it("marks a line of the Archived view unseen on Shift+Q, which unarchives the it
   await fireEvent.keyDown(issueRow, { key: "ArrowDown" });
 
   await fireEvent.keyDown(issueRow, { key: "Q", shiftKey: true });
-  core.workbench.mockResolvedValue(
-    workbenchPage([{ ...standalone, attention: null, hidden: "archived" }], { archived: 1 }),
-  );
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
   changed("python/cpython", [160662, 112564]);
 
   expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, issue.key);

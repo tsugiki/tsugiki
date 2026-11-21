@@ -313,7 +313,7 @@ fn archived_in_order(world: &World) -> Vec<u32> {
 }
 
 #[test]
-fn the_archived_view_lists_the_archived_items_the_last_archived_first_and_counts_items() {
+fn the_archived_view_lists_the_archived_items_the_last_archived_first() {
     let world = World::new("archived-view");
     world.has(vec![own(1), own(2), fixing_too(own(6), 5), own(7)]);
     world.has_issues(vec![issue(5)]);
@@ -327,8 +327,6 @@ fn the_archived_view_lists_the_archived_items_the_last_archived_first_and_counts
     assert_eq!(order, [1, 5, 2]);
     let read = world.view(&WorkbenchView::Archived);
     assert!(read.items.iter().all(ListedItem::is_archived));
-    assert_eq!(read.archived, 3, "an Issue with its PR counts once");
-    assert_eq!(world.workbench().archived, 3);
     world.finish();
 }
 
@@ -354,7 +352,6 @@ fn an_item_that_comes_back_leaves_the_archived_view() {
     world.happened(1, vec![comment(&colleague(), hours_ago(1))]);
 
     assert_eq!(archived_in_order(&world), [2]);
-    assert_eq!(world.workbench().archived, 1);
     world.finish();
 }
 

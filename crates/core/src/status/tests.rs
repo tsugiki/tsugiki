@@ -22,6 +22,34 @@ fn a_change_a_last_sync_or_the_points_coming_back_with_nobody_listening_isnt_a_n
 }
 
 #[test]
+fn the_board_hands_over_what_hears_of_the_request_in_flight_once() {
+    let (announce, _) = crate::github::testing::in_flight_heard();
+    let mut board = super::testing::quiet_board().with_in_flight(announce);
+
+    assert!(board.in_flight().is_some());
+    assert!(board.in_flight().is_none());
+}
+
+#[test]
+fn a_request_in_flight_reaches_the_ui_with_what_it_asks_and_when_it_went() {
+    let in_flight = crate::github::in_flight::InFlight {
+        asked: crate::github::in_flight::Asking::Read {
+            repository: cpython(),
+            number: 7,
+        },
+        since: OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap(),
+    };
+
+    assert_eq!(
+        serde_json::to_value(&in_flight).unwrap(),
+        serde_json::json!({
+            "asked": { "kind": "read", "repository": "python/cpython", "number": 7 },
+            "since": "2001-09-09T01:46:40Z",
+        })
+    );
+}
+
+#[test]
 fn a_last_sync_reaches_the_ui_as_a_time_or_as_nothing() {
     let repository = cpython();
     let at = OffsetDateTime::from_unix_timestamp(1_000_000_000).unwrap();

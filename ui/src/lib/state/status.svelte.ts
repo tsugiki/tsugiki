@@ -4,6 +4,7 @@ import {
   events,
   type Cloning,
   type HourPoints_Serialize as HourPoints,
+  type InFlight_Serialize as InFlight,
   type LastSync,
   type MirrorProblem,
   type MirrorState_Serialize as MirrorState,
@@ -17,6 +18,7 @@ import {
 export type {
   Cloning,
   HourPoints,
+  InFlight,
   LastSync,
   MirrorProblem,
   MirrorState,
@@ -64,6 +66,9 @@ export class StatusState {
    * while it lets them through. */
   pointsBack = $state<PointsBack | null>(null);
   #heardBack = false;
+  /** The request to GitHub in flight. Nothing, between requests. */
+  inFlight = $state<InFlight | null>(null);
+  #heardInFlight = false;
   /** A mirror's clone under way. Nothing, between clones. */
   cloning = $state<Cloning | null>(null);
   #heardCloning = false;
@@ -102,6 +107,10 @@ export class StatusState {
         this.pointsBack = payload;
         this.#heardBack = true;
       });
+      await events.inFlightChanged.listen(({ payload }) => {
+        this.inFlight = payload;
+        this.#heardInFlight = true;
+      });
       await events.cloningChanged.listen(({ payload }) => {
         this.cloning = payload;
         this.#heardCloning = true;
@@ -126,6 +135,7 @@ export class StatusState {
       const syncActivity = await commands.syncActivity();
       const hourPoints = await commands.hourPoints();
       const pointsBack = await commands.pointsBack();
+      const inFlight = await commands.inFlight();
       const cloning = await commands.cloning();
       const mirrorProblem = await commands.mirrorProblem();
       const mirrorQuestion = await commands.mirrorQuestion();
@@ -137,6 +147,7 @@ export class StatusState {
       if (!this.#heardActivity) this.syncActivity = syncActivity;
       if (!this.#heardPoints) this.hourPoints = hourPoints;
       if (!this.#heardBack) this.pointsBack = pointsBack;
+      if (!this.#heardInFlight) this.inFlight = inFlight;
       if (!this.#heardCloning) this.cloning = cloning;
       if (!this.#heardProblem) this.mirrorProblem = mirrorProblem;
       if (!this.#heardQuestion) this.mirrorQuestion = mirrorQuestion;

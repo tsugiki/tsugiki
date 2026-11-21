@@ -10,6 +10,7 @@ vi.mock("$lib/data/bindings", () => ({
     syncActivity: vi.fn(),
     hourPoints: vi.fn(),
     pointsBack: vi.fn(),
+    inFlight: vi.fn(),
     cloning: vi.fn(),
     mirrorProblem: vi.fn(),
     mirrorQuestion: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("$lib/data/bindings", () => ({
     syncActivityChanged: { listen: vi.fn() },
     hourPointsChanged: { listen: vi.fn() },
     pointsBackChanged: { listen: vi.fn() },
+    inFlightChanged: { listen: vi.fn() },
     cloningChanged: { listen: vi.fn() },
     mirrorProblemChanged: { listen: vi.fn() },
     mirrorQuestionChanged: { listen: vi.fn() },
@@ -215,6 +217,46 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.pointsBack).toBeNull();
+    });
+  });
+
+  describe("the request to GitHub in flight", () => {
+    const inFlight = {
+      asked: { kind: "refresh" as const, repository: "python/cpython" },
+      since: "2026-11-22T10:00:00Z",
+    };
+    const catchInFlight = () => {
+      const listener = vi.fn<(payload: typeof inFlight | null) => void>();
+      vi.mocked(events.inFlightChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "in-flight-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds the request out when the window loads, then follows each one", async () => {
+      catchLastSync();
+      const inFlightChanged = catchInFlight();
+      vi.mocked(commands.inFlight).mockResolvedValue(inFlight);
+      const state = new StatusState();
+      await state.load();
+      expect(state.inFlight).toEqual(inFlight);
+      inFlightChanged(null);
+      expect(state.inFlight).toBeNull();
+    });
+
+    it("lets a request that ends while asking win", async () => {
+      catchLastSync();
+      const inFlightChanged = catchInFlight();
+      vi.mocked(commands.inFlight).mockImplementation(async () => {
+        inFlightChanged(null);
+        return inFlight;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.inFlight).toBeNull();
     });
   });
 

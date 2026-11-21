@@ -3,6 +3,7 @@
   import type {
     Cloning,
     HourPoints,
+    InFlight,
     LastSync,
     MirrorProblem,
     NewVersion,
@@ -24,7 +25,8 @@
     syncedWords,
     syncingWords,
   } from "./synced";
-  import { minuteClock } from "./clock.svelte";
+  import { minuteClock, secondClock } from "./clock.svelte";
+  import { inFlightWords, SLOW_MS } from "./in-flight";
 
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
@@ -37,6 +39,7 @@
     syncActivity = null,
     hourPoints = null,
     pointsBack = null,
+    inFlight = null,
     cloning = null,
     mirrorStates = [],
     mirrorProblem = null,
@@ -57,6 +60,8 @@
     hourPoints?: HourPoints | null;
     /** The time GitHub's points come back, while the rate limit holds every request to GitHub. */
     pointsBack?: PointsBack | null;
+    /** The request to GitHub in flight, which the bar shows once GitHub is slow to answer it. */
+    inFlight?: InFlight | null;
     cloning?: Cloning | null;
     /** The state of each Repository's mirror, which says when a clone waits for the network. */
     mirrorStates?: RepositoryMirror[];
@@ -79,6 +84,10 @@
 
   // "Synced 2 min ago" has to move on by itself between syncs.
   const now = minuteClock();
+  // The core says only when a request goes and ends, as its thread waits meanwhile, so the bar counts.
+  // It ticks only once the part can show: on a bar the settings show, from the request's third second.
+  const seconds = secondClock(() => (visible ? (inFlight?.since ?? null) : null), SLOW_MS);
+  const waiting = $derived(visible ? inFlightWords(inFlight, seconds.now) : null);
 
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
   const points = $derived(visible ? hourPoints : null);
@@ -173,6 +182,13 @@
       >{`Tsugiki ${release.version} is out`}</button
     >
   {/if}
+  <!-- Outside the live region, or a screen reader would read it out each second. The tooltip holds what
+       a long subject's ellipsis cuts. -->
+  {#if waiting !== null}
+    <span class="in-flight" class:offline title={`${waiting.asking}${waiting.waited}`}
+      ><span class="asking">{waiting.asking}</span><span class="waited">{waiting.waited}</span></span
+    >
+  {/if}
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
   {#if lastSync !== null && showStatus}
@@ -212,6 +228,7 @@
   }
 
   button,
+  .in-flight,
   .points,
   kbd {
     flex: none;
@@ -223,6 +240,25 @@
     background: var(--bg-chrome);
     color: var(--fg-chrome);
     border-top: 1px solid var(--border);
+  }
+
+  /* One width whatever it asks, so the bar doesn't jump as the subject changes, and in a narrow window no
+     more of the bar than leaves the status room. */
+  .in-flight {
+    display: flex;
+    width: 30em;
+    max-width: 30%;
+  }
+
+  /* A long subject ends in an ellipsis, and the seconds stay. */
+  .asking {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .waited {
+    flex: none;
   }
 
   /* A part of the bar, so square, unlike the window's other buttons. */

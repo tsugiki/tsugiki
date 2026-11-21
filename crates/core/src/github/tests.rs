@@ -533,3 +533,170 @@ fn points_that_dont_parse_make_the_answer_unreadable() {
     assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::Internal);
     assert_eq!(github.hour_points(), None);
 }
+
+/// What a test heard, in the order it happened: the client's news of the request in flight, and the
+/// request reaching GitHub.
+#[derive(Debug, PartialEq, Eq)]
+enum Heard {
+    InFlight(Option<InFlight>),
+    Sent,
+}
+
+/// Answers each request with `reply`, and tells the test it went.
+struct Telling {
+    reply: Result<Reply, Unreachable>,
+    heard: std::sync::mpsc::Sender<Heard>,
+}
+
+impl Transport for Telling {
+    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
+        tsugiki_test_git::pass_on(&self.heard, Heard::Sent);
+        self.reply.clone()
+    }
+}
+
+/// A client whose every answer is `reply`, and what it told of its requests, in order.
+fn telling(reply: Result<Reply, Unreachable>) -> (GitHub, std::sync::mpsc::Receiver<Heard>) {
+    let (heard, seen) = std::sync::mpsc::channel();
+    let mut github = github(Telling {
+        reply,
+        heard: heard.clone(),
+    });
+    github.announce_in_flight(Box::new(move |now: Option<&InFlight>| {
+        tsugiki_test_git::pass_on(&heard, Heard::InFlight(now.cloned()));
+    }));
+    (github, seen)
+}
+
+#[test]
+fn a_request_tells_what_it_asks_before_it_goes_and_nothing_once_github_answers() {
+    let (github, heard) = telling(signed_in_as("octocat"));
+    let before = OffsetDateTime::now_utc();
+
+    drop(github.asking(Asking::Status, || github.viewer()).unwrap());
+
+    let heard: Vec<_> = heard.try_iter().collect();
+    let [
+        Heard::InFlight(Some(in_flight)),
+        Heard::Sent,
+        Heard::InFlight(None),
+    ] = heard.as_slice()
+    else {
+        panic!("{heard:?}");
+    };
+    assert_eq!(in_flight.asked, Asking::Status);
+    assert!(
+        before <= in_flight.since && in_flight.since <= OffsetDateTime::now_utc(),
+        "{in_flight:?}"
+    );
+}
+
+#[test]
+fn a_request_github_never_answers_ends_too() {
+    let (github, heard) = telling(Err(Unreachable::Offline));
+    let asked = Asking::Size {
+        repository: crate::testing::gcmon(),
+    };
+
+    drop(
+        github
+            .asking(asked.clone(), || github.viewer())
+            .unwrap_err(),
+    );
+
+    let heard: Vec<_> = heard.try_iter().collect();
+    let [
+        Heard::InFlight(Some(in_flight)),
+        Heard::Sent,
+        Heard::InFlight(None),
+    ] = heard.as_slice()
+    else {
+        panic!("{heard:?}");
+    };
+    assert_eq!(in_flight.asked, asked);
+}
+
+#[test]
+fn a_request_outside_any_asking_goes_unannounced() {
+    let (github, heard) = telling(signed_in_as("octocat"));
+
+    drop(github.viewer().unwrap());
+
+    assert_eq!(heard.try_iter().collect::<Vec<_>>(), [Heard::Sent]);
+}
+
+/// Panics on each request, as a bug in the network code would.
+struct Panicking;
+
+impl Transport for Panicking {
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "the test is about a request that panics"
+    )]
+    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
+        panic!("the network code broke");
+    }
+}
+
+#[test]
+fn a_request_that_panics_ends_and_gives_back_what_was_asked_before() {
+    let mut github = github(Panicking);
+    let (announce, heard) = super::testing::in_flight_heard();
+    github.announce_in_flight(announce);
+
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        github.asking(Asking::Status, || github.viewer())
+    }));
+    let after = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| github.viewer()));
+
+    assert!(ran.is_err());
+    assert!(after.is_err());
+    // The second request asked nothing, so it went unannounced.
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [Some(Asking::Status), None]
+    );
+}
+
+#[test]
+fn an_asking_that_panics_inside_another_gives_the_outer_one_back() {
+    let (script, _) = Scripted::new(vec![signed_in_as("octocat")]);
+    let mut github = github(script);
+    let (announce, heard) = super::testing::in_flight_heard();
+    github.announce_in_flight(announce);
+    let refresh = Asking::Refresh {
+        repository: crate::testing::gcmon(),
+    };
+
+    github.asking(Asking::Status, || {
+        let inner = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            github.asking(refresh, || panic!("the step broke"));
+        }));
+        assert!(inner.is_err());
+        drop(github.viewer().unwrap());
+    });
+
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [Some(Asking::Status), None]
+    );
+}
+
+#[test]
+fn an_asking_inside_another_names_its_own_requests_and_gives_the_outer_one_back() {
+    let (script, _) = Scripted::new(vec![signed_in_as("octocat"), signed_in_as("octocat")]);
+    let mut github = github(script);
+    let (announce, heard) = super::testing::in_flight_heard();
+    github.announce_in_flight(announce);
+    let outer = Asking::Sync {
+        repository: crate::testing::gcmon(),
+    };
+
+    github.asking(outer.clone(), || {
+        drop(github.asking(Asking::Status, || github.viewer()).unwrap());
+        drop(github.viewer().unwrap());
+    });
+
+    let heard: Vec<_> = heard.try_iter().collect();
+    assert_eq!(heard, [Some(Asking::Status), None, Some(outer), None]);
+}

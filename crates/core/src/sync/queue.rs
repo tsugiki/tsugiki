@@ -9,6 +9,7 @@ use super::issues::fetch_issue_batch;
 use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
+use crate::github::in_flight::Asking;
 use crate::latest::LatestReader;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
@@ -611,7 +612,10 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         filters: &[],
         window_since: None,
     };
-    let saved = fetch_issue_batch(&link, numbers)?;
+    let asked = Asking::Sync {
+        repository: fill.repository.clone(),
+    };
+    let saved = github.asking(asked, || fetch_issue_batch(&link, numbers))?;
     Ok(Stepped {
         touched: (!saved.touched.is_empty()).then_some(saved.touched),
     })

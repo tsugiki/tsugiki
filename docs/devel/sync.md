@@ -41,10 +41,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   asked: a sync, opening an Issue or a PR, the checks, asking who is signed in, the size the Mirror worker
   asks before a clone. The sum starts again when
   GitHub's reset moves to the next hour, and lives in memory only. The status bar shows the points left and
-  what Tsugiki spent of those used ([layout.md](layout.md)), until the reset by GitHub's clock. Some requests
-  count nothing: those whose answer doesn't say its cost, such as a 502, a timeout or an answer with no data,
-  and those whose answer comes from an hour that has already reset. Whatever they cost, the status bar puts
-  down to other tools.
+  what Tsugiki spent of those used ([status-bar.md](status-bar.md)), until the reset by GitHub's clock.
+  Some requests count nothing: those whose answer doesn't say its cost, such as a 502, a timeout or an
+  answer with no data, and those whose answer comes from an hour that has already reset. Whatever they cost,
+  the status bar puts down to other tools.
 - Below a floor of 500 points left, or after GitHub refuses a request for its rate limit, Tsugiki sends
   GitHub nothing until the reset, whichever job asks: the sync, the read of an opened Issue or PR and of its
   tree, quick open's fetch, Add repository's check, the Mirror worker's size check, and asking who is signed
@@ -81,3 +81,6 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   fails. If GitHub answers, the sync, the mirror's fetches and the open item's reads carry on. If it still
   doesn't, Tsugiki goes back to offline and the sync waits for the next minute's ask. A click while the ask
   is still out adds no ask, and a click once the status bar says offline again asks again.
+- Tsugiki sends GitHub one request at a time, whichever job asks, so what the user asks for waits behind
+  the request in flight, which can take up to 15 s to fail. Once a request has gone 3 s without an answer,
+  the status bar shows what it asks and for how long ([status-bar.md](status-bar.md)).

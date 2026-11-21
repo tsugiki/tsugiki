@@ -77,6 +77,7 @@ struct Wired {
     activities: Receiver<Value>,
     points: Receiver<Value>,
     points_back: Receiver<Value>,
+    in_flight: Receiver<Value>,
     clonings: Receiver<Value>,
     problems: Receiver<Value>,
     questions: Receiver<Value>,
@@ -133,6 +134,7 @@ impl Wired {
         let activities = hear(&app, "sync-activity-changed");
         let points = hear(&app, "hour-points-changed");
         let points_back = hear(&app, "points-back-changed");
+        let in_flight = hear(&app, "in-flight-changed");
         let clonings = hear(&app, "cloning-changed");
         let problems = hear(&app, "mirror-problem-changed");
         let questions = hear(&app, "mirror-question-changed");
@@ -157,6 +159,7 @@ impl Wired {
             activities,
             points,
             points_back,
+            in_flight,
             clonings,
             problems,
             questions,
@@ -648,6 +651,28 @@ fn the_add_dialogs_check_of_a_repository_tsugiki_has_answers_without_github() {
 
     assert_eq!(added.unwrap()["screen"], "repository");
     assert_eq!(answer.unwrap(), json!({ "kind": "held", "name": CPYTHON }));
+}
+
+#[test]
+fn the_request_in_flight_reaches_the_window_until_it_ends() {
+    let (folders, _root) = temp_folders("wired-in-flight");
+    let (arrived, request_arrived) = channel();
+    let (release, released) = channel();
+    let wired = Wired::start(Ok(folders), access(StuckGitHub { arrived, released }));
+    request_arrived.recv_timeout(PLENTY).unwrap();
+
+    let heard = wired.in_flight.recv_timeout(PLENTY).unwrap();
+    let asked = wired.ask("in_flight", json!({})).unwrap();
+    drop(release);
+    let ended = wired.in_flight.recv_timeout(PLENTY).unwrap();
+    let after = wired.ask("in_flight", json!({})).unwrap();
+    drop(wired.stop());
+
+    assert_eq!(heard["asked"], json!({ "kind": "status" }));
+    assert!(heard["since"].is_string(), "{heard}");
+    assert_eq!(asked, heard);
+    assert_eq!(ended, Value::Null);
+    assert_eq!(after, Value::Null);
 }
 
 #[test]

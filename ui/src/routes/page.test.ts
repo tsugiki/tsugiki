@@ -96,6 +96,7 @@ vi.mock("$lib/data/bindings", async () => {
       syncActivity: async () => null,
       hourPoints: async () => null,
       pointsBack: async () => null,
+      inFlight: async () => null,
       cloning: async () => null,
       newVersion: async () => null,
       refresh: async () => null,
@@ -123,6 +124,7 @@ vi.mock("$lib/data/bindings", async () => {
           return () => {};
         },
       },
+      inFlightChanged: { listen: async () => () => {} },
       mirrorProblemChanged: { listen: async () => () => {} },
       mirrorQuestionChanged: { listen: async () => () => {} },
       newVersionFound: { listen: async () => () => {} },

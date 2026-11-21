@@ -3,11 +3,11 @@ import type { commands } from "../src/lib/data/bindings.ts";
 
 /** What each command answers. A command left out rejects, as it would if the core failed, except for those
  * every page asks: the build is release 1.2.3, a Repository isn't open yet, GitHub hasn't said the hour's
- * points, a refresh has nothing to say, a mirror can be made, asking to check again has nothing to say, no
- * mirror waits for an answer or has a state, no newer version is out, the panes take their default layout,
- * the palette has no recent commands and puts each run first, the themes set no token, so the system's
- * colours stand in, the window turns without saying a side, so the page goes on with its media query, and
- * the core takes what the user did with an item or the window. */
+ * points, no request to GitHub is in flight, a refresh has nothing to say, a mirror can be made, asking to
+ * check again has nothing to say, no mirror waits for an answer or has a state, no newer version is out, the
+ * panes take their default layout, the palette has no recent commands and puts each run first, the themes
+ * set no token, so the system's colours stand in, the window turns without saying a side, so the page goes
+ * on with its media query, and the core takes what the user did with an item or the window. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
@@ -39,6 +39,7 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       syncActivity: null,
       hourPoints: null,
       pointsBack: null,
+      inFlight: null,
       cloning: null,
       mirrorProblem: null,
       checkMirrorsAgain: null,

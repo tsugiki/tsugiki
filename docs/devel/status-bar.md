@@ -1,0 +1,48 @@
+# Status bar
+
+Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
+
+- A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
+  no other place. It stays when the Sidebar is hidden.
+- Left, where the eye spends its time, the status, which a screen reader announces as it changes:
+  - Who is signed in, once GitHub has said. Before it answers, the login of the last run with
+    "Connecting…", or "Connecting…" alone. A Refresh while offline says "Connecting…" too, until GitHub
+    answers or the ask fails.
+  - **Offline: read-only**, after the login of the last run, if any, while GitHub can't be reached. It tints
+    the whole bar.
+  - A problem that stops Tsugiki reading, such as a refused token, in the core's words, each opening the
+    Settings page that fixes it.
+  - After the status, each problem with a file Tsugiki reads, such as a line of `settings.toml` it can't
+    parse, with the file and the line; the wait for GitHub's points ("Sync paused until 14:00: GitHub's rate
+    limit is low", or with no sync waiting, "GitHub's rate limit is low. Tsugiki can ask it again at
+    14:00"); and why no mirror can be made, such as a missing git or a disk without room for a clone, with
+    Get git and Check again beside it.
+  - The first Repository whose mirror waits to hear where it gets its objects ("python/cpython's mirror
+    waits for your answer"), which a click asks.
+- Right:
+  - A newer version ("Tsugiki 0.4.0 is out"), which a click opens on its release page.
+  - The request to GitHub in flight, once it has gone 3 s without an answer: what Tsugiki asked and the
+    seconds since, counting up ("Waiting for GitHub: refresh of python/cpython, 4 s"). Tsugiki sends one
+    request at a time, and a request can take up to 15 s to fail, so the user's own asks wait behind it. A
+    sync sends about one request a second, so the part leaves out those that answer sooner. It names the
+    status check, a refresh or a first sync of a Repository, a read of an Issue or a PR on screen, quick
+    open's fetch of a number, Add repository's check, or the size the Mirror worker asks before a clone. The
+    part keeps one width whatever it names, narrower in a narrow window so the status keeps its room. A long
+    subject ends in an ellipsis before the seconds, and the tooltip holds the whole text. It goes once GitHub
+    answers or the request fails, and the status shows a failure, such as Offline.
+  - Sync status, which a click refreshes: "Synced 2 min ago" or "Not synced yet" for the open Repository,
+    and a first sync's part and progress in its place ([sync.md](sync.md)). The background work follows
+    ("· python/peps syncing", "· Cloning python/cpython 42%", "· Cloning python/cpython starts once GitHub
+    answers"). It shows once a Repository is open.
+  - Unsent **Pending reviews** in any Repository, which a click opens on the PR.
+  - The hour's GitHub points ("1,240 points left · resets 14:32"). The part shows from GitHub's first answer
+    of the run, since until then Tsugiki doesn't know them, and goes at the reset, by GitHub's clock, until
+    the next answer. Its tooltip, which a screen reader reads with the part, says what Tsugiki spent: "This
+    hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of them; other tools using your token spent the
+    rest." Tsugiki counts in memory only, so after a restart in the middle of the hour it says "Tsugiki
+    spent 410 since 14:05".
+  - The first key of a chord while Tsugiki waits for the second.
+- Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can
+  be hidden ("View: Toggle Status Bar"). Being offline, a problem, a file Tsugiki can't read, the wait for
+  GitHub's points, why no mirror can be made and a mirror's question still show, since nothing else would
+  tell the user: the bar comes back with only those, and with sync status beside being offline or a problem.

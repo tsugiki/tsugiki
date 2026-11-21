@@ -499,6 +499,7 @@
   syncActivity={status.syncActivity}
   hourPoints={status.hourPoints}
   pointsBack={status.pointsBack}
+  inFlight={status.inFlight}
   cloning={status.cloning}
   mirrorStates={status.mirrorStates}
   mirrorProblem={status.mirrorProblem}

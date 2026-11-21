@@ -151,8 +151,6 @@ export class WorkbenchState {
   count = $state(0);
   reviewRequests = $state(0);
   staleReviews = $state(0);
-  /** How many items the Archived view holds (#491). */
-  archived = $state(0);
   filters = $state<FilterLine[]>([]);
   selected = $state<SidebarView>({ kind: "whole" });
   error = $state<string>();
@@ -760,7 +758,6 @@ export class WorkbenchState {
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.staleReviews = answer.data.stale_reviews;
-      this.archived = answer.data.archived;
       this.filters = answer.data.filters;
     }
     const listed = list ?? answer;

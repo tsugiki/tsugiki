@@ -53,8 +53,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
   many items its search found, as its view lists them, less the Archived and Muted ones. For Stale reviews,
-  it is how many PRs the view holds, and for Review requests and Archived, how many items. The Inbox has no
-  count.
+  it is how many PRs the view holds, and for Review requests, how many items. The Muted view, once built
+  ([#493](https://github.com/tsugiki/tsugiki/issues/493) and
+  [#495](https://github.com/tsugiki/tsugiki/issues/495)), counts its items that Need attention: those
+  with a Review request or an assignment to the user that started after the mute. The Inbox and Archived
+  have no count: an Archived item that comes to Need attention leaves Archived, so nothing there waits on
+  the user.
 - **Built-in views**: Stale reviews, New activity, Review requests, Archived (the Archived items, the last
   archived first, each with Unarchive) and Muted (the Muted items with Unmute, then the Muted authors in this
   Repository and the items they hide, with Unmute author).

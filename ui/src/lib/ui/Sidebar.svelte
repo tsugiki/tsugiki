@@ -11,7 +11,6 @@
     count,
     reviewRequests,
     staleReviews,
-    archived,
     filters,
     selected,
     onselect,
@@ -27,8 +26,6 @@
     count: number;
     reviewRequests: number;
     staleReviews: number;
-    /** How many items the Archived view holds. */
-    archived: number;
     filters: FilterLine[];
     selected: SidebarView;
     onselect: (view: SidebarView) => void;
@@ -73,9 +70,9 @@
     <span>Stale reviews</span>
     <span>{staleReviews}</span>
   </button>
+  <!-- Archived has no count: an item that comes to Need attention leaves it (#992). -->
   <button aria-current={current({ kind: "archived" })} onclick={() => onselect({ kind: "archived" })}>
     <span>Archived</span>
-    <span>{archived}</span>
   </button>
   {#if filters.length > 0}
     <h2 class="small-heading">Filters</h2>

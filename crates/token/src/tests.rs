@@ -8,7 +8,7 @@ use std::time::Duration;
 use rustls::pki_types::UnixTime;
 
 use super::*;
-use crate::testing::{NO_GH, gh_alone, gh_prints, nothing_set};
+use crate::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, nothing_set};
 
 fn example() -> Token {
     Token::find(gh_alone(|_| gh_prints("gho_example\n"))).unwrap()
@@ -72,6 +72,12 @@ fn gh_that_cant_run_gives_no_token_and_says_why() {
     assert!(
         matches!(missing, Err(NoToken::GhMissing(cause)) if cause.kind() == io::ErrorKind::NotFound)
     );
+}
+
+#[test]
+fn gh_that_doesnt_answer_in_time_gives_no_token_and_says_so() {
+    let slow = Token::find(SLOW_GH);
+    assert!(matches!(slow, Err(NoToken::GhTimedOut)), "{slow:?}");
 }
 
 #[test]

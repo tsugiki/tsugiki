@@ -12,7 +12,8 @@ The crate holds:
   carry it, and its `Debug` prints `Token(***)`. It is `Clone` and `Eq`, so the logger can hold one copy of
   each token.
 - `Token::find`, which takes `GH_TOKEN` when it holds a token, runs `gh auth token --hostname github.com`
-  when it doesn't, and returns `NoToken` (gh is missing, failed, or printed nothing) when neither gives one.
+  when it doesn't, and returns `NoToken` (gh is missing, timed out, failed, or printed nothing) when neither
+  gives one.
   `run_gh` and the places it looks for `gh` come with it. The
   personal access token ([ADR 0004](0004-auth-via-gh-cli-token.md)) joins it here, so `keyring` is a
   dependency of this crate only.

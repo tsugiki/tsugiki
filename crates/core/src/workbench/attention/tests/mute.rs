@@ -269,7 +269,6 @@ fn a_muted_item_that_is_archived_too_leaves_the_archived_view() {
     let read = world.view(&WorkbenchView::Archived);
 
     assert!(read.items.is_empty());
-    assert_eq!(read.archived, 0);
     world.finish();
 }
 

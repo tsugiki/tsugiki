@@ -260,13 +260,12 @@ fn a_muted_authors_archived_item_leaves_the_archived_view() {
     };
     let now = OffsetDateTime::now_utc();
     world.db.store.archive(&cpython(), archiving, now).unwrap();
-    assert_eq!(world.view(&WorkbenchView::Archived).archived, 1);
+    assert_eq!(world.view(&WorkbenchView::Archived).items.len(), 1);
 
     world.mute_author(&colleague());
 
     let read = world.view(&WorkbenchView::Archived);
     assert!(read.items.is_empty());
-    assert_eq!(read.archived, 0);
     world.finish();
 }
 

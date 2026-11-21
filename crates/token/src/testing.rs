@@ -35,6 +35,14 @@ fn gh_not_found(_: &[&str]) -> io::Result<GhOutput> {
 /// A machine with no `GH_TOKEN` and no `gh`.
 pub const NO_GH: TokenFrom = gh_alone(gh_not_found);
 
+/// The error a `gh` that didn't answer in time gives.
+fn gh_timed_out(_: &[&str]) -> io::Result<GhOutput> {
+    Err(io::Error::from(io::ErrorKind::TimedOut))
+}
+
+/// A machine with no `GH_TOKEN` and a `gh` that doesn't answer in time.
+pub const SLOW_GH: TokenFrom = gh_alone(gh_timed_out);
+
 /// A machine whose `GH_TOKEN` is what `env` gives, and with no `gh`.
 pub const fn gh_token(env: ReadEnv) -> TokenFrom {
     TokenFrom {

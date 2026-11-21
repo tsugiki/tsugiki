@@ -86,28 +86,6 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - run: npm ci
-      # Since the windows-2025-vs2026 image of 2026-11-16, Tsugiki's page and `gh` took 19 to 37 s to answer
-      # where they took 3 s, and `gh auth token` ran past Tsugiki's 30 s (#976). The first step shows whether
-      # Defender scans files as they open, and how long `gh` takes to start cold. The second leaves out of the
-      # scan what the smoke test runs.
-      - name: Show Defender's state and how long gh takes to start
-        shell: pwsh
-        run: |
-          Get-MpComputerStatus |
-            Format-List RealTimeProtectionEnabled, OnAccessProtectionEnabled, BehaviorMonitorEnabled, AMRunningMode
-          $cold = Measure-Command { gh --version | Out-Null }
-          $warm = Measure-Command { gh --version | Out-Null }
-          "gh --version took $([int]$cold.TotalMilliseconds) ms cold and $([int]$warm.TotalMilliseconds) ms warm"
-      - name: Leave the smoke test's programs and files out of Defender's scan
-        shell: pwsh
-        run: |
-          if ((Get-MpComputerStatus).RealTimeProtectionEnabled) {
-            Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE
-            Add-MpPreference -ExclusionProcess tsg.exe, msedgewebview2.exe, gh.exe, git.exe
-            "Defender scans files as they open: left out $env:GITHUB_WORKSPACE and the smoke test's programs."
-          } else {
-            "Defender doesn't scan files as they open, so it can't be what slows the smoke test."
-          }
       - run: npm run smoke
 
   # Beside the smoke test, not after it, which halves the run. The attest job needs both, so a failed smoke

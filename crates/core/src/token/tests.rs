@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::ErrorKind;
-use tsugiki_token::testing::{NO_GH, gh_alone, gh_prints};
+use tsugiki_token::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints};
 
 #[test]
 fn the_token_is_what_gh_printed() {
@@ -12,7 +12,18 @@ fn the_token_is_what_gh_printed() {
 fn without_gh_tsugiki_says_how_to_sign_in() {
     let error = read_token(NO_GH).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unauthorized);
-    assert!(error.message.contains("gh auth login"), "{}", error.message);
+    assert_eq!(error.message, SIGN_IN);
+}
+
+#[test]
+fn when_gh_doesnt_answer_in_time_tsugiki_says_so_and_to_restart() {
+    let error = read_token(SLOW_GH).unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unauthorized);
+    assert_eq!(
+        error.message,
+        "Tsugiki reads your token from the GitHub CLI, and `gh` didn't answer within 30 s. Restart \
+         Tsugiki to ask it again."
+    );
 }
 
 #[test]

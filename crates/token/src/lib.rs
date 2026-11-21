@@ -10,6 +10,7 @@ mod live;
 
 use std::fmt;
 use std::io;
+use std::time::Duration;
 
 use rustls::CertificateError;
 use url::Url;
@@ -69,8 +70,10 @@ pub struct Token(String);
 /// Why `gh` gave no token.
 #[derive(Debug)]
 pub enum NoToken {
-    /// `gh` couldn't be run: it isn't installed where Tsugiki looks, or it didn't answer in time.
+    /// `gh` couldn't be run: it isn't installed where Tsugiki looks, or the system refused to run it.
     GhMissing(io::Error),
+    /// `gh` started and didn't answer within `limit`, so Tsugiki stopped it.
+    GhTimedOut { limit: Duration },
     /// `gh` ran and failed, as it does when nobody has signed in.
     GhFailed,
     /// `gh` succeeded and printed no token.
@@ -89,8 +92,7 @@ impl Token {
 
     /// Asks `gh` for its token for github.com.
     fn from_gh(run: RunGh) -> Result<Self, NoToken> {
-        let output =
-            run(&["auth", "token", "--hostname", "github.com"]).map_err(NoToken::GhMissing)?;
+        let output = run(&["auth", "token", "--hostname", "github.com"]).map_err(gh_unrun)?;
         let token = output.stdout.trim();
         if !output.success {
             Err(NoToken::GhFailed)
@@ -116,6 +118,17 @@ impl Token {
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Token(***)")
+    }
+}
+
+/// The [`NoToken`] for a `gh` that gave no answer: it timed out, or it couldn't be run.
+fn gh_unrun(cause: io::Error) -> NoToken {
+    if cause.kind() == io::ErrorKind::TimedOut {
+        NoToken::GhTimedOut {
+            limit: live::GH_TIMEOUT,
+        }
+    } else {
+        NoToken::GhMissing(cause)
     }
 }
 

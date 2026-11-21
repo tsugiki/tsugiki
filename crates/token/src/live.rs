@@ -29,7 +29,7 @@ use crate::{
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long `gh` gets. It's longer than a request's limit because without a token the session ends, and
 /// nothing asks `gh` again until Tsugiki restarts.
-const GH_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const GH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;

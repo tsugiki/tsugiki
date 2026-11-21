@@ -16,7 +16,7 @@ use tsugiki_core::store::Store;
 use tsugiki_core::token::{GhOutput, Token, read_token};
 use tsugiki_core::version::Version;
 use tsugiki_core::{latest, logfile};
-use tsugiki_token::testing::{NO_GH, gh_alone, gh_prints, gh_token};
+use tsugiki_token::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, gh_token};
 
 /// A token no shape gives away, so only hiding it by its value keeps it out of the log.
 const NO_KNOWN_SHAPE: &str = "0123456789abcdef";
@@ -76,6 +76,26 @@ fn a_token_from_gh_token_is_hidden_too(path: &Path) {
     assert!(file.contains("GitHub refused [token] too"), "{file}");
 }
 
+/// The log says a `gh` that didn't answer in time timed out, while the status bar keeps its plain words.
+#[expect(
+    clippy::unwrap_used,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn a_gh_that_doesnt_answer_in_time_is_logged_as_timed_out(path: &Path) {
+    let problem = read_token(SLOW_GH).unwrap_err();
+    assert!(
+        problem.message.contains("didn't answer"),
+        "{}",
+        problem.message
+    );
+    log::logger().flush();
+    let file = fs::read_to_string(path).unwrap();
+    assert!(
+        file.contains("Tsugiki can't run gh: timed out after 30 s"),
+        "{file}"
+    );
+}
+
 #[test]
 fn the_log_keeps_causes_and_hides_the_token_in_use() {
     let folder = tsugiki_test_git::temp_path("logfile");
@@ -107,6 +127,8 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     );
     let file = read_after_flush();
     assert!(file.contains("Tsugiki can't run gh: "), "{file}");
+
+    a_gh_that_doesnt_answer_in_time_is_logged_as_timed_out(&path);
 
     // A folder where the database should be: SQLite says why, and the user sees plain words.
     let in_the_way = folder.join("database");

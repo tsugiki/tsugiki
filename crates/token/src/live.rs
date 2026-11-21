@@ -27,8 +27,9 @@ use crate::{
 /// refresh tries again. `npm run smoke` needs a request to wait at its proxy until the page is ready, so a
 /// much shorter limit would fail its first check.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-/// How long `gh` gets. It's longer than a request's limit because without a token the session ends, and
-/// nothing asks `gh` again until Tsugiki restarts.
+/// How long `gh` gets. It's longer than a request's limit because the session's connection asks `gh` once,
+/// and without a token nothing connects until Tsugiki restarts. A clone asks again on its next try, and each
+/// try can hold the mirror worker for up to this long.
 pub const GH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
 #[cfg(windows)]
@@ -188,30 +189,36 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
     })
 }
 
-/// Waits up to `limit` for `child` to end, and gives what it printed. Past `limit` the child is stopped and
-/// the answer is `TimedOut` whatever the kill does, so the user reads that `gh` didn't answer, not that it's
+/// Waits up to `limit` for `child` to end, and gives what it printed. A child that ended keeps its answer
+/// however late the check comes, as after a sleeping laptop wakes. Past `limit` the child is stopped and the
+/// answer is `TimedOut` whatever the kill does, so the user reads that `gh` didn't answer, not that it's
 /// missing.
 fn wait_for(mut child: Child, limit: Duration) -> io::Result<Output> {
     let deadline = Instant::now() + limit;
     loop {
-        if Instant::now() >= deadline {
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the run times out either way: a kill fails when the child ended just before it"
-            )]
-            let _ = child.kill();
-            #[expect(
-                clippy::let_underscore_must_use,
-                reason = "the run times out either way, and this only reaps the stopped child"
-            )]
-            let _ = child.wait();
-            return Err(io::Error::from(io::ErrorKind::TimedOut));
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output(),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+            Ok(None) => return Err(stop(child, io::Error::from(io::ErrorKind::TimedOut))),
+            Err(cause) => return Err(stop(child, cause)),
         }
-        if child.try_wait()?.is_some() {
-            return child.wait_with_output();
-        }
-        thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// Stops and reaps `child`, which the run gave up on for `why`, and gives back `why`, which a failed kill
+/// doesn't replace.
+fn stop(mut child: Child, why: io::Error) -> io::Error {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the run fails for `why` either way, and a kill fails when the child has just ended"
+    )]
+    let _ = child.kill();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the run fails for `why` either way, and this only reaps the stopped child"
+    )]
+    let _ = child.wait();
+    why
 }
 
 #[cfg(test)]

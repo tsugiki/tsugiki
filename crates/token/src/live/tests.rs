@@ -33,6 +33,14 @@ fn a_program_that_ends_in_time_gives_what_it_printed() {
 }
 
 #[test]
+fn a_program_that_ended_keeps_its_answer_however_late_the_check() {
+    let mut child = copy_of_this_binary(&[]);
+    assert!(child.wait().unwrap().success());
+    let output = wait_for(child, Duration::ZERO).unwrap();
+    assert!(!output.stdout.is_empty());
+}
+
+#[test]
 fn a_program_past_its_limit_is_stopped_and_times_out() {
     let started = Instant::now();
     let outcome = wait_for(

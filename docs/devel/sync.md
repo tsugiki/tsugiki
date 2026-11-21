@@ -79,7 +79,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Tsugiki asks GitHub who is signed in about once a minute, and only that answer brings it back online.
   Refresh while offline asks at once, and the status bar says Connecting… until GitHub answers or the ask
   fails. If GitHub answers, the sync, the mirror's fetches and the open item's reads carry on. If it still
-  doesn't, Tsugiki goes back to offline and the sync waits for the next minute's ask.
+  doesn't, Tsugiki goes back to offline and the sync waits for the next minute's ask. A click while the ask
+  is still out adds no ask, and a click once the status bar says offline again asks again.
 - Tsugiki sends GitHub one request at a time, whichever job asks, so what the user asks for waits behind
   the request in flight, which can take up to 15 s to fail. Once a request has gone 3 s without an answer,
   the status bar shows what it asks and for how long ([status-bar.md](status-bar.md)).

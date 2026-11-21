@@ -99,6 +99,69 @@ fn while_a_refresh_waits_on_github_the_session_answers_a_fetch_and_drops_another
     asked.refresh();
     let refreshing = held.asked.recv_timeout(PLENTY).unwrap();
 
+    asked.refresh();
+    asked.refresh();
+    let fetched = fetch_beside(&asked);
+    drop(held.let_go);
+    session.stop(PLENTY);
+
+    assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
+    assert_eq!(refreshing, "Viewer");
+    // The refresh still waiting covers the clicks after it.
+    assert_eq!(
+        held.asked.try_iter().collect::<Vec<_>>(),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offline_asks_again() {
+    let (folders, _folder) = temp_folders("held-clicks");
+    let (board, heard) = heard_board(|_| {}, |_| {});
+    // GitHub can't be reached at the start, and hangs once the user clicks Refresh.
+    let held = hanging(vec![Err(Unreachable::Offline)]);
+    let session = Session::start(board, Ok(folders.clone()), reaching(held.access), HOURLY);
+    let asked = session.fetching();
+    let mut statuses = vec![next_status(&heard)];
+
+    asked.refresh();
+    let first = held.asked.recv_timeout(PLENTY).unwrap();
+    statuses.push(next_status(&heard));
+    // The status bar says "Connecting…" while the user clicks twice more.
+    asked.refresh();
+    asked.refresh();
+    // The session answers in order, so it has taken both clicks once it answers this.
+    let fetched = fetch_beside(&asked);
+    // GitHub fails the request, and fails at once from now on.
+    drop(held.let_go);
+    statuses.push(next_status(&heard));
+
+    asked.refresh();
+    let again = held.asked.recv_timeout(PLENTY).unwrap();
+    statuses.push(next_status(&heard));
+    statuses.push(next_status(&heard));
+    session.stop(PLENTY);
+
+    assert_eq!((first, again), ("Viewer".to_owned(), "Viewer".to_owned()));
+    assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
+    assert_eq!(
+        statuses,
+        [
+            Status::Offline,
+            Status::Reconnecting,
+            Status::Offline,
+            Status::Reconnecting,
+            Status::Offline,
+        ]
+    );
+    let left: Vec<Heard> = heard.try_iter().collect();
+    let asked_after: Vec<String> = held.asked.try_iter().collect();
+    assert_eq!((left, asked_after), (vec![], vec![]));
+}
+
+/// Asks the session for #7 of gcmon from a thread of its own, and waits for the answer. A session that
+/// passed the fetch to the GitHub thread, which holds its request, fails the test at the wait.
+fn fetch_beside(asked: &Fetching) -> Result<ItemFetch, RecvTimeoutError> {
     let fetching = asked.clone();
     let (answer, answered) = mpsc::channel();
     #[expect(
@@ -106,20 +169,14 @@ fn while_a_refresh_waits_on_github_the_session_answers_a_fetch_and_drops_another
         reason = "it ends with the answer, or once the test lets the request go"
     )]
     thread::spawn(move || answer.send(fetching.fetch_unstored(gcmon(), 7)));
-    let fetched = answered.recv_timeout(PLENTY);
-    asked.refresh();
-    asked.refresh();
-    drop(held.let_go);
-    session.stop(PLENTY);
+    answered.recv_timeout(PLENTY)
+}
 
-    let offline = ItemFetch::Unfetched {
-        why: ItemUnfetched::Offline,
-    };
-    assert_eq!(fetched, Ok(offline));
-    assert_eq!(refreshing, "Viewer");
-    // The refresh still waiting covers the clicks after it.
-    assert_eq!(
-        held.asked.try_iter().collect::<Vec<_>>(),
-        Vec::<String>::new()
-    );
+/// The next status the board passed on, skipping the changes.
+fn next_status(heard: &Receiver<Heard>) -> Status {
+    loop {
+        if let Heard::Status(status) = heard.recv_timeout(PLENTY).unwrap() {
+            return status;
+        }
+    }
 }

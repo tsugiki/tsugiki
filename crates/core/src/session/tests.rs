@@ -1618,6 +1618,11 @@ const HOURLY: Intervals = Intervals {
 };
 const PLENTY: Duration = Duration::from_secs(10);
 
+/// The answer to a fetch of an item the database lacks while the status says GitHub can't be reached.
+const UNFETCHED_OFFLINE: ItemFetch = ItemFetch::Unfetched {
+    why: ItemUnfetched::Offline,
+};
+
 const GCMON: &str = r#"{"data":{"repository":{"nameWithOwner":"some-maintainer/gcmon",
         "issues":{"totalCount":10},"pullRequests":{"totalCount":3}},
         "updated":{"issueCount":43},"closed":{"issueCount":35}}}"#;
@@ -3118,10 +3123,7 @@ fn an_unstored_item_offline_is_unfetched_shows_offline_and_asks_nothing_after() 
     let again = session.fetching().fetch_unstored(gcmon(), 8);
     session.stop(PLENTY);
 
-    let offline = ItemFetch::Unfetched {
-        why: ItemUnfetched::Offline,
-    };
-    assert_eq!([fetched, again], [offline, offline]);
+    assert_eq!([fetched, again], [UNFETCHED_OFFLINE; 2]);
     // Once the status says offline, a fetch keeps nobody waiting on a request bound to fail.
     let fetches = asked
         .try_iter()
@@ -3184,10 +3186,7 @@ fn a_session_with_no_token_answers_a_fetch_of_an_unstored_item_offline() {
     let fetched = session.fetching().fetch_unstored(gcmon(), 7);
     session.stop(PLENTY);
 
-    let offline = ItemFetch::Unfetched {
-        why: ItemUnfetched::Offline,
-    };
-    assert_eq!(fetched, offline);
+    assert_eq!(fetched, UNFETCHED_OFFLINE);
 }
 
 #[test]

@@ -68,11 +68,11 @@
   };
 </script>
 
-<!-- One entry: its icon, with its count as a badge, and its name for the tooltip and a screen reader. A
-     Filter whose last search failed says why there too, as the full Sidebar does under its line, and marks
-     its icon with ! in the danger colour in place of the count, which may be short, so neither the tooltip
-     nor the label gives the count. -->
-{#snippet entry(icon: string, name: string, entryCount: number, view: SidebarView, problem?: string | null)}
+<!-- One entry: its icon, with its count as a badge if it has one, and its name for the tooltip and a screen
+     reader. A Filter whose last search failed says why there too, as the full Sidebar does under its line,
+     and marks its icon with ! in the danger colour in place of the count, which may be short, so neither the
+     tooltip nor the label gives the count. -->
+{#snippet entry(icon: string, name: string, view: SidebarView, entryCount = 0, problem?: string | null)}
   {@const words = badge(entryCount)}
   {@const counted = words === undefined ? name : `${name} (${String(entryCount)})`}
   <button
@@ -97,12 +97,13 @@
   <button class="initials mono" aria-label="Full Sidebar" title={repository} onclick={onfull}
     >{initials(repository)}</button
   >
-  {@render entry(ICONS.workbench, "Workbench", count, { kind: "whole" })}
-  {@render entry(ICONS.inbox, "Inbox", 0, { kind: "inbox" })}
+  {@render entry(ICONS.workbench, "Workbench", { kind: "whole" }, count)}
+  <!-- The Inbox and Archived have no count: an item that comes to Need attention leaves Archived (#992). -->
+  {@render entry(ICONS.inbox, "Inbox", { kind: "inbox" })}
   <span class="rule"></span>
-  {@render entry(ICONS.review_requests, "Review requests", reviewRequests, { kind: "review_requests" })}
-  {@render entry(ICONS.stale_reviews, "Stale reviews", staleReviews, { kind: "stale_reviews" })}
-  {@render entry(ICONS.archived, "Archived", 0, { kind: "archived" })}
+  {@render entry(ICONS.review_requests, "Review requests", { kind: "review_requests" }, reviewRequests)}
+  {@render entry(ICONS.stale_reviews, "Stale reviews", { kind: "stale_reviews" }, staleReviews)}
+  {@render entry(ICONS.archived, "Archived", { kind: "archived" })}
   {#if filters.length > 0}
     <span class="rule"></span>
   {/if}
@@ -111,8 +112,8 @@
     {@render entry(
       ICONS.filter,
       filter.name,
-      filter.count,
       { kind: "filter", query: filter.query },
+      filter.count,
       filter.problem,
     )}
   {/each}

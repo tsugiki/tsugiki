@@ -385,9 +385,6 @@ impl Workbench {
         );
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
         let stale_reviews = prs_of(&unhidden, &causes.stale_reviews);
-        let put_away: Vec<&ListedItem> = (listed.iter())
-            .filter(|listed| listed.is_archived())
-            .collect();
         let shown_of = |from: &[&ListedItem]| {
             let shown = from.iter().filter(|listed| match selected {
                 Some(numbers) => listed.item.is_reached_by(numbers),
@@ -402,7 +399,7 @@ impl Workbench {
             WorkbenchView::ReviewRequests => (shown_of(&in_review_requests), Vec::new()),
             WorkbenchView::Whole => (shown_of(&on_workbench), Vec::new()),
             WorkbenchView::StaleReviews => (shown_of(&unhidden), Vec::new()),
-            WorkbenchView::Archived => (last_archived_first(&put_away, &causes), Vec::new()),
+            WorkbenchView::Archived => (last_archived_first(&listed, &causes), Vec::new()),
         };
         Self {
             items,
@@ -415,10 +412,13 @@ impl Workbench {
     }
 }
 
-/// `put_away`, the Archived items, the last archived first as `causes` say, and the higher number first of
+/// The Archived items of `listed`, the last archived first as `causes` say, and the higher number first of
 /// two archived at once.
-fn last_archived_first(put_away: &[&ListedItem], causes: &Causes) -> Vec<ListedItem> {
-    let mut items: Vec<ListedItem> = put_away.iter().map(|listed| (*listed).clone()).collect();
+fn last_archived_first(listed: &[ListedItem], causes: &Causes) -> Vec<ListedItem> {
+    let mut items: Vec<ListedItem> = (listed.iter())
+        .filter(|listed| listed.is_archived())
+        .cloned()
+        .collect();
     items.sort_by_key(|listed| Reverse((causes.archived_at(listed.key), listed.key.number())));
     items
 }

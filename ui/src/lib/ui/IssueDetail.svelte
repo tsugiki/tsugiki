@@ -48,8 +48,7 @@
   /** The words in place of what the Issue says before a read lands, and why it hasn't once a read failed. */
   const UNREAD: Record<ReadFailure | "reading", string> = {
     reading: "Tsugiki hasn't read what this Issue says yet.",
-    no_token:
-      "Tsugiki can't ask GitHub what this Issue says without a token. The status bar says how to sign in.",
+    no_token: "Tsugiki can't ask GitHub what this Issue says without a token. The status bar says why.",
     waits_on_github: "What this Issue says comes once GitHub answers.",
     not_on_github: "GitHub doesn't have this Issue, or your token can't see it.",
     other: "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why.",
@@ -66,7 +65,7 @@
     const issue = `Issue #${String(number)}`;
     const words: Record<ReadFailure | "reading", string> = {
       reading: `Tsugiki doesn't hold ${issue}.`,
-      no_token: `Tsugiki doesn't hold ${issue}, and can't ask GitHub for it without a token. The status bar says how to sign in.`,
+      no_token: `Tsugiki doesn't hold ${issue}, and can't ask GitHub for it without a token. The status bar says why.`,
       waits_on_github: `Tsugiki doesn't hold ${issue}. It comes once GitHub answers.`,
       not_on_github: `GitHub doesn't have ${issue}, or your token can't see it.`,
       other: `Tsugiki doesn't hold ${issue}, and couldn't read it from GitHub. tsugiki.log says why.`,

@@ -523,10 +523,7 @@ it("says so for an Issue Tsugiki doesn't hold", async () => {
 });
 
 it.each([
-  [
-    "no_token",
-    "Tsugiki can't ask GitHub what this Issue says without a token. The status bar says how to sign in.",
-  ],
+  ["no_token", "Tsugiki can't ask GitHub what this Issue says without a token. The status bar says why."],
   ["waits_on_github", "What this Issue says comes once GitHub answers."],
   ["not_on_github", "GitHub doesn't have this Issue, or your token can't see it."],
   ["other", "Tsugiki couldn't read what this Issue says from GitHub. tsugiki.log says why."],
@@ -543,7 +540,7 @@ it.each([
 it.each([
   [
     "no_token",
-    "Tsugiki doesn't hold Issue #7, and can't ask GitHub for it without a token. The status bar says how to sign in.",
+    "Tsugiki doesn't hold Issue #7, and can't ask GitHub for it without a token. The status bar says why.",
   ],
   ["waits_on_github", "Tsugiki doesn't hold Issue #7. It comes once GitHub answers."],
   ["not_on_github", "GitHub doesn't have Issue #7, or your token can't see it."],

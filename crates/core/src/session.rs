@@ -33,7 +33,7 @@ use crate::store::{
     ReaderToOpen, Seeing, Store, StoreReader,
 };
 use crate::sync::{Progress, Syncs};
-use crate::token::read_token;
+use crate::token::{AskAgain, read_token};
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, findings_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
 use on_screen::OnScreen;
@@ -59,7 +59,7 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     if let Ok(Some(last_login)) = store.last_login() {
         board.set(Status::ConnectingAs { last_login });
     }
-    let token = match read_token(access.token_from) {
+    let token = match read_token(access.token_from, AskAgain::AtRestart) {
         Ok(token) => token,
         Err(problem) => {
             board.set(Status::Problem { problem });

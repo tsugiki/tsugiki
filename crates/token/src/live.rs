@@ -9,7 +9,7 @@
 )]
 
 use std::io;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -27,9 +27,10 @@ use crate::{
 /// refresh tries again. `npm run smoke` needs a request to wait at its proxy until the page is ready, so a
 /// much shorter limit would fail its first check.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-/// How long `gh` gets. It's longer than a request's limit because without a token the session ends, and
-/// nothing asks `gh` again until Tsugiki restarts.
-const GH_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long `gh` gets. It's longer than a request's limit because the session's connection asks `gh` once,
+/// and without a token nothing connects until Tsugiki restarts. A clone asks again on its next try, and each
+/// try can hold the mirror worker for up to this long.
+pub const GH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -181,20 +182,43 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(CREATE_NO_WINDOW)
     };
-    let mut child = command.spawn()?;
-    let deadline = Instant::now() + GH_TIMEOUT;
-    while child.try_wait()?.is_none() {
-        if Instant::now() >= deadline {
-            child.kill()?;
-            return Err(io::Error::from(io::ErrorKind::TimedOut));
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    let output = child.wait_with_output()?;
+    let output = wait_for(command.spawn()?, GH_TIMEOUT)?;
     Ok(GhOutput {
         success: output.status.success(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
     })
+}
+
+/// Waits up to `limit` for `child` to end, and gives what it printed. A child that ended keeps its answer
+/// however late the check comes, as after a sleeping laptop wakes. Past `limit` the child is stopped and the
+/// answer is `TimedOut` whatever the kill does, so the user reads that `gh` didn't answer, not that it's
+/// missing.
+fn wait_for(mut child: Child, limit: Duration) -> io::Result<Output> {
+    let deadline = Instant::now() + limit;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output(),
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(20)),
+            Ok(None) => return Err(stop(child, io::Error::from(io::ErrorKind::TimedOut))),
+            Err(cause) => return Err(stop(child, cause)),
+        }
+    }
+}
+
+/// Stops and reaps `child`, which the run gave up on for `why`, and gives back `why`, which a failed kill
+/// doesn't replace.
+fn stop(mut child: Child, why: io::Error) -> io::Error {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the run fails for `why` either way, and a kill fails when the child has just ended"
+    )]
+    let _ = child.kill();
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "the run fails for `why` either way, and this only reaps the stopped child"
+    )]
+    let _ = child.wait();
+    why
 }
 
 #[cfg(test)]

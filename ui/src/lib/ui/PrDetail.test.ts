@@ -158,10 +158,7 @@ it("says it's reading from GitHub until the first read lands", async () => {
 });
 
 it.each([
-  [
-    "no_token",
-    "Tsugiki can't ask GitHub for the Conversation without a token. The status bar says how to sign in.",
-  ],
+  ["no_token", "Tsugiki can't ask GitHub for the Conversation without a token. The status bar says why."],
   ["waits_on_github", "The Conversation comes once GitHub answers."],
   ["not_on_github", "GitHub doesn't have this PR, or your token can't see it."],
   ["other", "Tsugiki couldn't read this PR's Conversation from GitHub. tsugiki.log says why."],

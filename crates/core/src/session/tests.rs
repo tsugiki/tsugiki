@@ -35,20 +35,19 @@ use crate::testing::{
     TempPath, cpython, cpython_settings, gcmon, hours_ago, issue_facts, listed, listing, me,
     one_folder, pr_facts, recordings,
 };
-use crate::token::{Token, TokenFrom};
+use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvError, Sender, TryRecvError};
 use time::OffsetDateTime;
 use tsugiki_test_git::{pass_on, wait_for_message};
-use tsugiki_token::testing::nothing_set;
+use tsugiki_token::testing::NO_GH;
 
 /// A real store that keeps nothing once it closes.
 fn empty_store() -> Store {
@@ -78,16 +77,6 @@ fn answering(status: u16, body: &str) -> GitHubAccess {
 fn octocat_answers() -> GitHubAccess {
     answering(200, r#"{"data":{"viewer":{"login":"octocat"}}}"#)
 }
-
-fn without_gh(_: &[&str]) -> io::Result<crate::token::GhOutput> {
-    Err(io::Error::from(io::ErrorKind::NotFound))
-}
-
-/// A machine with no `GH_TOKEN` and no gh.
-const NO_GH: TokenFrom = TokenFrom {
-    env: nothing_set,
-    gh: without_gh,
-};
 
 fn replying(replies: Vec<Result<Reply, Unreachable>>) -> GitHubAccess {
     GitHubAccess {

@@ -8,7 +8,7 @@ use std::time::Duration;
 use rustls::pki_types::UnixTime;
 
 use super::*;
-use crate::testing::{gh_alone, gh_prints, nothing_set};
+use crate::testing::{NO_GH, gh_alone, gh_prints, nothing_set};
 
 fn example() -> Token {
     Token::find(gh_alone(|_| gh_prints("gho_example\n"))).unwrap()
@@ -68,7 +68,7 @@ fn a_token_from_gh_token_is_hidden_wherever_it_appears() {
 
 #[test]
 fn gh_that_cant_run_gives_no_token_and_says_why() {
-    let missing = Token::find(gh_alone(|_| Err(io::Error::from(io::ErrorKind::NotFound))));
+    let missing = Token::find(NO_GH);
     assert!(
         matches!(missing, Err(NoToken::GhMissing(cause)) if cause.kind() == io::ErrorKind::NotFound)
     );

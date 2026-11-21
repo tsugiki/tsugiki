@@ -31,9 +31,10 @@ const APP_ADDRESS = "http://tauri.localhost/";
 const SETTLE_MS = 2000;
 const CLOSE_MS = 10_000;
 // The test sets `GH_TOKEN`, so Tsugiki runs no `gh` and sends its first request once its session has read
-// the database. This wait starts once the page is ready, which may be after the request came. A request
-// waits at the proxy for 15 s at most (`REQUEST_TIMEOUT` in the token crate's live.rs), so one that arrives
-// more than 15 s before the page is ready fails the check, and the wait gives a slow start as long after.
+// the database. This wait counts from the page, not from Tsugiki's start: it begins once the page has
+// loaded and settled (`SETTLE_MS`), which may be after the request came. A request waits at the proxy for
+// 15 s at most (`REQUEST_TIMEOUT` in the token crate's live.rs), so one that arrives more than 15 s before
+// the page is ready fails the check, and the wait gives a request as long after it.
 const FIRST_REQUEST_MS = 15_000;
 const BUILD_CONFIG = ".temp/smoke-config.json";
 const TAURI_BROWSER_ARGS = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";

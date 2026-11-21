@@ -16,7 +16,7 @@ use tsugiki_core::store::Store;
 use tsugiki_core::token::{GhOutput, Token, TokenFrom, read_token};
 use tsugiki_core::version::Version;
 use tsugiki_core::{latest, logfile};
-use tsugiki_token::testing::{gh_alone, gh_prints, nothing_set};
+use tsugiki_token::testing::{NO_GH, gh_alone, gh_prints};
 
 /// A token no shape gives away, so only hiding it by its value keeps it out of the log.
 const NO_KNOWN_SHAPE: &str = "0123456789abcdef";
@@ -27,18 +27,9 @@ fn gh_prints_a_token_of_no_known_shape(_: &[&str]) -> io::Result<GhOutput> {
     gh_prints(&format!("{NO_KNOWN_SHAPE}\n"))
 }
 
-fn gh_is_missing(_: &[&str]) -> io::Result<GhOutput> {
-    Err(io::Error::from(io::ErrorKind::NotFound))
-}
-
 fn gh_token_holds_a_token_of_no_known_shape(name: &str) -> Option<String> {
     (name == "GH_TOKEN").then(|| IN_GH_TOKEN.to_owned())
 }
-
-const GH_MISSING: TokenFrom = TokenFrom {
-    env: nothing_set,
-    gh: gh_is_missing,
-};
 
 /// Answers the way a corporate proxy might.
 struct Proxy;
@@ -79,7 +70,7 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
 fn a_token_from_gh_token_is_hidden_too(path: &Path) {
     let _token = read_token(TokenFrom {
         env: gh_token_holds_a_token_of_no_known_shape,
-        gh: gh_is_missing,
+        ..NO_GH
     })
     .unwrap();
     log::warn!("GitHub refused {IN_GH_TOKEN} too");
@@ -112,7 +103,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     a_token_from_gh_token_is_hidden_too(&path);
 
     // A failure's cause goes to the log while the status bar keeps its plain words.
-    let problem = read_token(GH_MISSING).unwrap_err();
+    let problem = read_token(NO_GH).unwrap_err();
     assert!(
         problem.message.contains("gh auth login"),
         "{}",
@@ -150,7 +141,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
         Connections {
             github: GitHubAccess {
                 transport: Box::new(Proxy),
-                token_from: GH_MISSING,
+                token_from: NO_GH,
             },
             mirrors: mirrors.requests(),
             settings: latest::channel(SettingsView::default()).1,

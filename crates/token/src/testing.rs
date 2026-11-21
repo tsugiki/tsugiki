@@ -25,3 +25,14 @@ pub fn gh_alone(gh: RunGh) -> TokenFrom {
         gh,
     }
 }
+
+/// What running a `gh` that isn't installed gives.
+fn gh_not_found(_: &[&str]) -> io::Result<GhOutput> {
+    Err(io::Error::from(io::ErrorKind::NotFound))
+}
+
+/// A machine with no `GH_TOKEN` and no `gh`.
+pub const NO_GH: TokenFrom = TokenFrom {
+    env: nothing_set,
+    gh: gh_not_found,
+};

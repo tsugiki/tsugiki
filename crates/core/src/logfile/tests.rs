@@ -67,6 +67,19 @@ fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
 }
 
 #[test]
+fn a_token_read_again_is_kept_once() {
+    let token = || read_token(gh_alone(|_| gh_prints("0123456789abcdef"))).unwrap();
+    let other = read_token(gh_alone(|_| gh_prints("fedcba9876543210"))).unwrap();
+    let mut hidden = Vec::new();
+
+    remember(&mut hidden, token());
+    remember(&mut hidden, token());
+    remember(&mut hidden, other);
+
+    assert_eq!(hidden.len(), 2);
+}
+
+#[test]
 fn text_shaped_like_a_token_never_reaches_the_file() {
     let (folder, logger) = temp_logger("shaped");
     for token in [

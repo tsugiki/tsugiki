@@ -1,7 +1,6 @@
 use super::*;
 use crate::error::ErrorKind;
-use std::io;
-use tsugiki_token::testing::{gh_alone, gh_prints};
+use tsugiki_token::testing::{NO_GH, gh_alone, gh_prints};
 
 #[test]
 fn the_token_is_what_gh_printed() {
@@ -11,8 +10,7 @@ fn the_token_is_what_gh_printed() {
 
 #[test]
 fn without_gh_tsugiki_says_how_to_sign_in() {
-    let error =
-        read_token(gh_alone(|_| Err(io::Error::from(io::ErrorKind::NotFound)))).unwrap_err();
+    let error = read_token(NO_GH).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unauthorized);
     assert!(error.message.contains("gh auth login"), "{}", error.message);
 }

@@ -61,8 +61,8 @@ impl TokenFrom {
 
 /// A GitHub token, held in memory. Nothing outside this crate can read its string. It has no `Serialize`,
 /// so no command or event can carry it, and printing it shows `Token(***)`. A copy goes to the logger, which
-/// hides it in each line.
-#[derive(Clone)]
+/// hides it in each line, and the logger compares tokens to keep one copy of each.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Token(String);
 
 /// Why `gh` gave no token.

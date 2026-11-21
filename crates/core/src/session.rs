@@ -49,8 +49,9 @@ compile_error!("`session::run` catches panics, so Tsugiki can't build with `pani
 
 const STOPPED_CHECKING: &str = "Tsugiki stopped checking GitHub. Restart Tsugiki to check again.";
 
-/// Shows who was signed in last time, reads gh's token, asks GitHub who it belongs to, and shows the result
-/// on `board`. Returns the client when there is a token, even offline, since GitHub may come back.
+/// Shows who was signed in last time, reads the token (from gh only when `GH_TOKEN` is unset), asks GitHub
+/// who it belongs to, and shows the result on `board`. Returns the client when there is a token, even
+/// offline, since GitHub may come back.
 #[must_use = "without the client, nothing asks GitHub again"]
 fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
     // The last login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki
@@ -70,8 +71,8 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     Some(github)
 }
 
-/// A run of Tsugiki on its own thread, so the window opens without waiting on the disk, gh or the network
-/// (ADR 0017). It shows its own failures on the board.
+/// A run of Tsugiki on its own thread, so the window opens without waiting on the disk, the token or the
+/// network (ADR 0017). It shows its own failures on the board.
 #[must_use = "dropping the session stops it"]
 pub struct Session {
     /// The handle the app asks through, which also tells this session to stop.

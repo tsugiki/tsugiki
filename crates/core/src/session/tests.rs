@@ -104,8 +104,7 @@ fn octocat() -> Status {
 /// Connects through `access` at the GitHub thread's start, with nothing else asking it, and gives the client
 /// if it found a token.
 fn connect_alone(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
-    let (refreshes, _done) =
-        Refreshes::new(HOURLY, mpsc::channel().1, unheard(), listed(vec![]));
+    let (refreshes, _done) = Refreshes::new(HOURLY, mpsc::channel().1, unheard(), listed(vec![]));
     connect(board, store, access, &refreshes).ok()
 }
 

@@ -227,7 +227,9 @@ fn a_read_of_the_token_is_in_flight_until_gh_answers_and_github_hears_the_rest()
     drop(let_go);
     let ended = heard.recv_timeout(PLENTY).unwrap();
     session.fetching().refresh();
-    let rest: Vec<_> = (0..4).map(|_| heard.recv_timeout(PLENTY).unwrap()).collect();
+    let rest: Vec<_> = (0..4)
+        .map(|_| heard.recv_timeout(PLENTY).unwrap())
+        .collect();
     session.stop(PLENTY);
 
     assert_eq!(out, Some(Asking::Token));
@@ -262,7 +264,9 @@ fn an_item_opened_without_a_token_is_read_as_soon_as_a_read_finds_one() {
     window.screen_moved(ScreenMove::Opened(Fetched::Issue(issue)));
     window.fetch_issue(gcmon(), 7);
     window.refresh();
-    let heard: Vec<_> = (0..8).map(|_| heard.recv_timeout(PLENTY).unwrap()).collect();
+    let heard: Vec<_> = (0..8)
+        .map(|_| heard.recv_timeout(PLENTY).unwrap())
+        .collect();
     session.stop(PLENTY);
 
     let read = Asking::Read {

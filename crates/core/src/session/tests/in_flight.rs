@@ -42,7 +42,9 @@ fn a_request_is_in_flight_from_when_it_goes_until_github_answers() {
     let (session, _mirrors, _folder) = in_flight_session("in-flight-held", held, announce);
 
     request.recv_timeout(PLENTY).unwrap();
-    let token: Vec<_> = (0..2).map(|_| in_flight.recv_timeout(PLENTY).unwrap()).collect();
+    let token: Vec<_> = (0..2)
+        .map(|_| in_flight.recv_timeout(PLENTY).unwrap())
+        .collect();
     let out = in_flight.recv_timeout(PLENTY).unwrap();
     let still_out = in_flight.try_recv();
     answer.send(()).unwrap();

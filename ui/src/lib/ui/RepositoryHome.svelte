@@ -30,6 +30,7 @@
     WorkbenchState,
     type Hiding,
     type ItemKey,
+    type Landing,
     type BackportRow,
     type ListedItem,
     type MuteAuthor,
@@ -144,6 +145,10 @@
   let detail = $state<IssueViewState | PrViewState>();
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
+  /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
+   * the list hidden: the view of the item after the one the user finished with (#982). It keeps that until
+   * the focus goes elsewhere in the page, so the palette or another app in front hands it back. */
+  let focusedView = $state<IssueViewState | PrViewState>();
   const links = new LinkOpener();
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
@@ -191,9 +196,11 @@
   /** How many items back the history's lists go, newest first. */
   const RECENT = 12;
 
-  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. */
+  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. With
+   * nothing open once the user finished with the last item of the list, the history is still at that item,
+   * so a step back opens it again (#982). */
   function goThrough(steps: number) {
-    const place = visits.go(steps);
+    const place = visits.go(detail === undefined && steps < 0 ? steps + 1 : steps);
     if (place) open(place, "through");
   }
 
@@ -326,7 +333,10 @@
     }
     keep?.hide();
     kept = keep;
+    // The item a mark on the view on show waits to finish mustn't replace what opens instead (#982).
+    if (next !== detail) workbench.forgetFinish();
     detail = next;
+    if (focusedView !== next) focusedView = undefined;
   }
 
   /** Leaves the PR view for the Issue the user opened it from, with the focus on the Issue's row. */
@@ -422,27 +432,97 @@
   }
 
   /** Says what went wrong with a mark that `marking` makes, unless the window has left the Repository it
-   * was made in by the time it's done. */
+   * was made in by the time it's done, and gives it back. */
   async function sayMarkProblem(marking: (opened: WorkbenchState) => Promise<string | undefined>) {
     const opened = workbench;
     const problem = await marking(opened);
     if (workbench === opened) markProblem = problem;
+    return problem;
   }
 
   /** Mark Seen on `marked`, as the window drew it. Once the item no longer Needs attention, a cursor on its
    * row lands on the row that came after it, whether the item moved or kept its place, and `cursorLanded`
-   * runs. */
+   * runs. On the Detail pane's item, with the cursor on its row while it Needs attention, the pane waits for
+   * the cursor to move on from it (#982). */
   async function markSeen(marked: Marked | undefined) {
-    if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark, marked.archived));
+    if (!marked) return;
+    const cursor = workbench.underCursor;
+    const waits =
+      detailLine()?.number === marked.number && cursor?.number === marked.number && workbench.waits(cursor);
+    await finish(waits ? marked.number : undefined, (opened) =>
+      opened.markSeen(marked.seen.mark, marked.archived),
+    );
   }
 
-  /** Takes the focus to the row the cursor landed on when a row of the list holds the focus, or the page
-   * does, as it does once nothing else holds it. Focus anywhere else, such as in a text box or on the list's
-   * header, stays put. */
-  function cursorLanded() {
+  /** Says what went wrong with the user's own mark that `marking` makes, as `sayMarkProblem` does. With the
+   * number of the list's item it takes out of place, while it acts on the Detail pane's item, the Workbench
+   * waits for the cursor to leave that item, as `WorkbenchState.finish` says (#982). */
+  async function finish(
+    item: number | undefined,
+    marking: (opened: WorkbenchState) => Promise<string | undefined>,
+  ) {
+    await sayMarkProblem((opened) =>
+      item === undefined ? marking(opened) : opened.finish(item, marking(opened)),
+    );
+  }
+
+  /**
+   * Follows the cursor once it has moved on from a line that lost its place, as `landing` says. When that
+   * finished the Detail pane's item for the user's own mark, the pane opens the item the cursor moved on
+   * to, as `Enter` would, or shows nothing open when no item came after it, and keeps the item that stayed
+   * last (#982). Focus in the Detail pane then stays there, in the item it opens, or goes to the cursor's
+   * row when the pane goes with nothing open.
+   *
+   * Otherwise, once the cursor moved, the focus goes to the row it landed on when a row of the list holds
+   * the focus, or the page does, as it does once nothing else holds it. Focus anywhere else, such as in a
+   * text box or on the list's header, stays put.
+   */
+  function cursorLanded({ finished, to }: Landing) {
     const focused = document.activeElement;
+    if (finished && to.kind !== "kept") {
+      const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
+      if (to.kind === "next") open(to.stop);
+      else swap(undefined);
+      if (inDetail) {
+        focusDetail();
+        return;
+      }
+    }
+    if (to.kind === "empty") return;
     const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
     if (onRow || focused === document.body) focusCursor();
+  }
+
+  /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when
+   * it shows nothing. While the list shows, the pane takes it as it does with the list hidden, until the
+   * focus goes elsewhere in the page. */
+  function focusDetail() {
+    void tick().then(async () => {
+      const pane = detailPane();
+      if (!pane) {
+        focusCursor();
+        return;
+      }
+      // Only once the view the pane left has gone, as the control that goes with it drops the focus.
+      focusedView = detail;
+      await tick();
+      pane.focus();
+    });
+  }
+
+  /** Focus that goes to the page outside the Detail pane, as to a row or the Sidebar, ends the focus the
+   * pane took for the item it opened. Focus that leaves the page, for the palette, a dialog or another app,
+   * comes back to the pane. */
+  function focusMoved(e: FocusEvent) {
+    if (focusedView && !(e.target instanceof Node && detailPane()?.contains(e.target))) {
+      focusedView = undefined;
+    }
+  }
+
+  /** Focus that falls to the page's body while the window keeps the system's focus, as on a click in blank
+   * space or when the focused control goes, ends it too. Another app in front takes the window's focus. */
+  function focusDropped(e: FocusEvent) {
+    if (focusedView && e.relatedTarget === null && document.hasFocus()) focusedView = undefined;
   }
 
   /**
@@ -572,12 +652,20 @@
 
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
   async function archive(archived: Hiding) {
-    await sayMarkProblem((opened) => opened.archive(archived));
+    await finish(hidingOnDetail(archived), (opened) => opened.archive(archived));
   }
 
   /** Mute on `muted`. Once the item leaves the list, a cursor on it lands on the row after it. */
   async function mute(muted: Hiding) {
-    await sayMarkProblem((opened) => opened.mute(muted));
+    await finish(hidingOnDetail(muted), (opened) => opened.mute(muted));
+  }
+
+  /** The number of the item that Archive or Mute on `hiding` takes off the list, while the list holds the
+   * Detail pane's line in that item, which needs no view to have arrived (#982). */
+  function hidingOnDetail({ key }: Hiding): number | undefined {
+    const line = detailLine();
+    const shown = line && workbench.hidingBy(line)?.key;
+    return shown?.kind === key.kind && shown.number === key.number ? key.number : undefined;
   }
 
   /** Unmutes the item `key` names. */
@@ -1295,6 +1383,8 @@
   style:--sidebar-width={`${String(panes.sidebar ?? SIDEBAR_WIDTH)}px`}
   style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
   bind:this={home}
+  onfocusin={focusMoved}
+  onfocusout={focusDropped}
 >
   {#if !panes.hidden("sidebar")}
     {#if panes.sidebarIcons}
@@ -1431,7 +1521,7 @@
         repository={name}
         {issue}
         {now}
-        focusable={panes.hidden("list")}
+        focusable={panes.hidden("list") || focusedView === issue}
         onmark={markByButton}
         onarchive={archiveByButton}
         onmute={muteByButton}
@@ -1454,7 +1544,7 @@
         onback={back}
         onmark={markByButton}
         marks={!detailMuted()}
-        focusable={panes.hidden("list")}
+        focusable={panes.hidden("list") || focusedView === pr}
       >
         {#snippet header()}{@render history(pr.number)}{/snippet}
       </PrDetail>

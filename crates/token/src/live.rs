@@ -9,7 +9,7 @@
 )]
 
 use std::io;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -29,7 +29,7 @@ use crate::{
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long `gh` gets. It's longer than a request's limit because without a token the session ends, and
 /// nothing asks `gh` again until Tsugiki restarts.
-pub(crate) const GH_TIMEOUT: Duration = Duration::from_secs(30);
+pub const GH_TIMEOUT: Duration = Duration::from_secs(30);
 /// Keeps a console program from opening a window on Windows, where Tsugiki itself has no console.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -181,20 +181,37 @@ fn run_program(program: &str, args: &[&str]) -> io::Result<GhOutput> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(CREATE_NO_WINDOW)
     };
-    let mut child = command.spawn()?;
-    let deadline = Instant::now() + GH_TIMEOUT;
-    while child.try_wait()?.is_none() {
-        if Instant::now() >= deadline {
-            child.kill()?;
-            return Err(io::Error::from(io::ErrorKind::TimedOut));
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    let output = child.wait_with_output()?;
+    let output = wait_for(command.spawn()?, GH_TIMEOUT)?;
     Ok(GhOutput {
         success: output.status.success(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
     })
+}
+
+/// Waits up to `limit` for `child` to end, and gives what it printed. Past `limit` the child is stopped and
+/// the answer is `TimedOut` whatever the kill does, so the user reads that `gh` didn't answer, not that it's
+/// missing.
+fn wait_for(mut child: Child, limit: Duration) -> io::Result<Output> {
+    let deadline = Instant::now() + limit;
+    loop {
+        if Instant::now() >= deadline {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the run times out either way: a kill fails when the child ended just before it"
+            )]
+            let _ = child.kill();
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the run times out either way, and this only reaps the stopped child"
+            )]
+            let _ = child.wait();
+            return Err(io::Error::from(io::ErrorKind::TimedOut));
+        }
+        if child.try_wait()?.is_some() {
+            return child.wait_with_output();
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[cfg(test)]

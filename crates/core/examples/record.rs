@@ -24,7 +24,7 @@ use tsugiki_core::github::refresh::{ListCheck, ListPlace, PollRequest};
 use tsugiki_core::links::{possible_numbers, possible_origin};
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::sync::{FETCH_BATCH, SEARCH_PAGE, WORK_SEARCHES};
-use tsugiki_core::token::{TokenFrom, read_token};
+use tsugiki_core::token::{AskAgain, TokenFrom, read_token};
 use tsugiki_token::Https;
 
 // `WindowIssues.json` and `WindowPullRequests.json` aren't recorded here. A replay answers each page with the
@@ -48,10 +48,10 @@ const ONLY_PAGE: PageRequest<'static> = PageRequest {
 
 fn main() {
     let fixtures = tsugiki_core::testing::recordings();
-    let token = read_token(TokenFrom::LIVE).expect("read the token");
+    let token = read_token(TokenFrom::LIVE, AskAgain::AtRestart).expect("read the token");
     let scout = GitHub::new(
         Box::new(Https::new()),
-        read_token(TokenFrom::LIVE).expect("read the token"),
+        read_token(TokenFrom::LIVE, AskAgain::AtRestart).expect("read the token"),
     );
     let recorder = Recorder::new(Box::new(Https::new()), fixtures.clone());
     let github = GitHub::new(Box::new(recorder), token);

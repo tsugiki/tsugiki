@@ -8,8 +8,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   review rights on one owner's repositories, or classic `public_repo`
   ([ADR 0004](../adr/0004-auth-via-gh-cli-token.md)).
 - Without a token, the status bar says to install `gh`, run `gh auth login` and restart Tsugiki. A `gh` that
-  doesn't answer within 30 s is installed and may be signed in, so the status bar says it didn't answer and
-  to restart Tsugiki.
+  doesn't answer within 30 s is installed and may be signed in, so Tsugiki stops it, and the status bar says
+  it didn't answer and to restart Tsugiki. A clone that needs the token says the same, and that its next
+  try asks again.
 - Only the Rust core holds the token and talks to GitHub; the webview never sees it ([ADR
   0005](../adr/0005-token-stays-in-the-rust-core.md)).
 - The **Account** page shows who is signed in, where the token comes from, and what it lets Tsugiki do in

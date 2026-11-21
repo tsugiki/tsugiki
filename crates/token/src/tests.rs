@@ -75,12 +75,9 @@ fn gh_that_cant_run_gives_no_token_and_says_why() {
 }
 
 #[test]
-fn gh_that_doesnt_answer_in_time_gives_no_token_and_names_the_limit() {
+fn gh_that_doesnt_answer_in_time_gives_no_token_and_says_so() {
     let slow = Token::find(SLOW_GH);
-    assert!(
-        matches!(slow, Err(NoToken::GhTimedOut { limit }) if limit == live::GH_TIMEOUT),
-        "{slow:?}"
-    );
+    assert!(matches!(slow, Err(NoToken::GhTimedOut)), "{slow:?}");
 }
 
 #[test]

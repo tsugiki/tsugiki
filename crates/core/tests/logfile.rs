@@ -13,7 +13,7 @@ use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::SettingsView;
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
-use tsugiki_core::token::{GhOutput, Token, read_token};
+use tsugiki_core::token::{AskAgain, GhOutput, Token, read_token};
 use tsugiki_core::version::Version;
 use tsugiki_core::{latest, logfile};
 use tsugiki_token::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, gh_token};
@@ -68,7 +68,11 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
 fn a_token_from_gh_token_is_hidden_too(path: &Path) {
-    let _token = read_token(gh_token(gh_token_holds_a_token_of_no_known_shape)).unwrap();
+    let _token = read_token(
+        gh_token(gh_token_holds_a_token_of_no_known_shape),
+        AskAgain::AtRestart,
+    )
+    .unwrap();
     log::warn!("GitHub refused {IN_GH_TOKEN} too");
     log::logger().flush();
     let file = fs::read_to_string(path).unwrap();
@@ -76,13 +80,14 @@ fn a_token_from_gh_token_is_hidden_too(path: &Path) {
     assert!(file.contains("GitHub refused [token] too"), "{file}");
 }
 
-/// The log says a `gh` that didn't answer in time timed out, while the status bar keeps its plain words.
+/// The log says Tsugiki stopped a `gh` that didn't answer in time, while the status bar keeps its plain
+/// words.
 #[expect(
     clippy::unwrap_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
-fn a_gh_that_doesnt_answer_in_time_is_logged_as_timed_out(path: &Path) {
-    let problem = read_token(SLOW_GH).unwrap_err();
+fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
+    let problem = read_token(SLOW_GH, AskAgain::AtRestart).unwrap_err();
     assert!(
         problem.message.contains("didn't answer"),
         "{}",
@@ -91,7 +96,7 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_timed_out(path: &Path) {
     log::logger().flush();
     let file = fs::read_to_string(path).unwrap();
     assert!(
-        file.contains("Tsugiki can't run gh: timed out after 30 s"),
+        file.contains("gh didn't answer within 30 s, so Tsugiki stopped it"),
         "{file}"
     );
 }
@@ -110,7 +115,11 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     a_run_says_it_started_only_when_told_to(&path);
 
     // The real token's words reach the log with the token hidden.
-    let token = read_token(gh_alone(gh_prints_a_token_of_no_known_shape)).unwrap();
+    let token = read_token(
+        gh_alone(gh_prints_a_token_of_no_known_shape),
+        AskAgain::AtRestart,
+    )
+    .unwrap();
     log::warn!("GitHub refused Bearer {NO_KNOWN_SHAPE}");
     let file = read_after_flush();
     assert!(!file.contains(NO_KNOWN_SHAPE), "{file}");
@@ -119,7 +128,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     a_token_from_gh_token_is_hidden_too(&path);
 
     // A failure's cause goes to the log while the status bar keeps its plain words.
-    let problem = read_token(NO_GH).unwrap_err();
+    let problem = read_token(NO_GH, AskAgain::AtRestart).unwrap_err();
     assert!(
         problem.message.contains("gh auth login"),
         "{}",
@@ -128,7 +137,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     let file = read_after_flush();
     assert!(file.contains("Tsugiki can't run gh: "), "{file}");
 
-    a_gh_that_doesnt_answer_in_time_is_logged_as_timed_out(&path);
+    a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(&path);
 
     // A folder where the database should be: SQLite says why, and the user sees plain words.
     let in_the_way = folder.join("database");

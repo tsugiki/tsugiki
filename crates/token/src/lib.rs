@@ -10,13 +10,12 @@ mod live;
 
 use std::fmt;
 use std::io;
-use std::time::Duration;
 
 use rustls::CertificateError;
 use url::Url;
 use url::form_urlencoded;
 
-pub use live::Https;
+pub use live::{GH_TIMEOUT, Https};
 
 /// The variable `gh auth token` reads before its own sign-in, which Tsugiki reads first, and the only one it
 /// reads.
@@ -72,8 +71,8 @@ pub struct Token(String);
 pub enum NoToken {
     /// `gh` couldn't be run: it isn't installed where Tsugiki looks, or the system refused to run it.
     GhMissing(io::Error),
-    /// `gh` started and didn't answer within `limit`, so Tsugiki stopped it.
-    GhTimedOut { limit: Duration },
+    /// `gh` didn't answer within [`GH_TIMEOUT`], so Tsugiki stopped it.
+    GhTimedOut,
     /// `gh` ran and failed, as it does when nobody has signed in.
     GhFailed,
     /// `gh` succeeded and printed no token.
@@ -124,9 +123,7 @@ impl fmt::Debug for Token {
 /// The [`NoToken`] for a `gh` that gave no answer: it timed out, or it couldn't be run.
 fn gh_unrun(cause: io::Error) -> NoToken {
     if cause.kind() == io::ErrorKind::TimedOut {
-        NoToken::GhTimedOut {
-            limit: live::GH_TIMEOUT,
-        }
+        NoToken::GhTimedOut
     } else {
         NoToken::GhMissing(cause)
     }

@@ -26,7 +26,7 @@ use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::status::Status;
-use crate::token::{TokenFrom, read_token};
+use crate::token::{AskAgain, TokenFrom, read_token};
 
 mod heads;
 mod lookup;
@@ -156,7 +156,7 @@ pub type FreeSpace = Box<dyn Fn(&Path) -> io::Result<u64> + Send>;
 /// a clone is rare and the session owns the other one.
 pub fn sizes_on_github(new_transport: fn() -> Box<dyn Transport>, token_from: TokenFrom) -> SizeOf {
     Box::new(move |repository| {
-        let token = read_token(token_from)?;
+        let token = read_token(token_from, AskAgain::OnRetry)?;
         GitHub::new(new_transport(), token).repository_size(repository)
     })
 }

@@ -15,7 +15,7 @@ use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{PrHead, PrState, PullRequestFacts};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
-use crate::links::{MergeCommits, backport_of, fixed_numbers, possible_numbers};
+use crate::links::{MergeCommits, backport_of, fixed_numbers};
 use crate::repository_settings::RepositorySettings;
 
 /// The Issues and PRs the searches of the `filters` on the Workbench found. A search the user has edited away
@@ -195,7 +195,7 @@ impl Reach {
 /// The numbers of the Issues and PRs Tsugiki reaches in `facts`, the two sets of `Reach` joined. That holds
 /// every PR the whole Workbench shows, those in Issues' trees too. An Archived item stays in it, since its
 /// Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
-fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
+pub(crate) fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let Reach {
         mut without_muted,
         muted_asking,
@@ -338,17 +338,6 @@ pub(crate) fn conversations_to_read(
 ) -> BTreeSet<u32> {
     owed.intersection(&reach(facts, repository))
         .copied()
-        .collect()
-}
-
-/// The numbers the PRs in Reach in the Repository of `repository` could name as Issues, under any
-/// Conventions, as a sync fetches them (ADR 0011). The links count only an Issue Tsugiki holds, so a PR
-/// whose Issue it lacks shows as a Standalone PR until a sync fetches that Issue (#980).
-pub(crate) fn named_in_reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
-    let reached = reach(facts, repository);
-    (facts.pull_requests.iter())
-        .filter(|pr| reached.contains(&pr.number))
-        .flat_map(|pr| possible_numbers(pr, &repository.name))
         .collect()
 }
 

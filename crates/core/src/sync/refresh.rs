@@ -14,6 +14,7 @@ use super::{
 };
 use crate::conventions::Conventions;
 use crate::error::Error;
+use crate::facts::WorkFacts;
 use crate::facts::activity::ItemActivity;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{NodeId, PrState, PullRequestFacts};
@@ -25,8 +26,8 @@ use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
 use crate::repository::RepositorySize;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ChangeCheck, NarrowedResults, SyncState};
-use crate::work::{conversations_to_read, named_in_reach, reasons};
+use crate::store::{ChangeCheck, NarrowedResults, Snapshot, SyncState};
+use crate::work::{conversations_to_read, reach, reasons};
 
 /// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
 /// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
@@ -469,20 +470,73 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
+/// `prs` with the families they go by: the Origin PR each names under `conventions`, and each PR that names
+/// one of those or one of `prs` as its Origin PR.
+fn families(
+    snapshot: &Snapshot<'_>,
+    prs: &BTreeSet<u32>,
+    conventions: Conventions,
+) -> Result<BTreeSet<u32>, Error> {
+    let links = snapshot.pr_links(prs, conventions)?;
+    let mut heads = prs.clone();
+    heads.extend(links.iter().filter_map(|links| links.origin));
+    let named = snapshot.prs_naming_origins(&heads, conventions)?;
+    heads.extend(named);
+    Ok(heads)
+}
+
+/// The facts that say whether each of `prs` is in Reach under `conventions`: those of what the walk of Reach
+/// can pass on its way from where it starts to one of them. That is each one's family, the Issues the family
+/// fixes, the PRs that fix those Issues, and their families, with the Filters' results. The read costs what
+/// those trees hold and not what the store holds. A Muted tree that reaches them from further away can't cut
+/// them here, so it can count a PR in Reach that a Mute takes out, which costs a fetch.
+fn facts_around(
+    snapshot: &Snapshot<'_>,
+    prs: &BTreeSet<u32>,
+    conventions: Conventions,
+) -> Result<WorkFacts, Error> {
+    let family = families(snapshot, prs, conventions)?;
+    let links = snapshot.pr_links(&family, conventions)?;
+    let issues: BTreeSet<u32> = (links.iter())
+        .flat_map(|links| links.fixes.iter().copied())
+        .collect();
+    let fixing = snapshot.prs_fixing(&issues, conventions)?;
+    let mut numbers = families(snapshot, &fixing, conventions)?;
+    numbers.extend(family);
+    let pull_requests = snapshot.pull_requests_numbered(&numbers)?;
+    let viewer = snapshot.viewer()?;
+    let items: BTreeSet<u32> = issues.union(&numbers).copied().collect();
+    Ok(WorkFacts {
+        activity: snapshot.activity_of(viewer.as_ref(), &items)?,
+        reviews: snapshot.reviews_of(&pull_requests)?,
+        viewer,
+        issues: snapshot.issues_numbered(&issues)?,
+        pull_requests,
+        filters: snapshot.filter_results()?,
+    })
+}
+
 /// The Issues that the PRs in Reach under `repository`'s settings name and Tsugiki lacks, from what the store
-/// holds now. With no number that a PR names and the store lacks, reading the facts would cost a read of the
-/// whole Repository for nothing.
+/// holds now. Reach is worked out only around the PRs that name a number the store lacks, so a stranger's PR
+/// whose Issue Tsugiki doesn't hold costs a read of its tree at each refresh, and not one of the Repository.
 fn issues_reach_lacks(
     link: &Link<'_>,
     repository: &RepositorySettings,
 ) -> Result<BTreeSet<u32>, Error> {
-    let lacking = link.store.named_issues_lacking(link.repository)?;
-    if lacking.is_empty() {
-        return Ok(lacking);
+    let naming = link.store.prs_naming_lacking_issues(link.repository)?;
+    if naming.is_empty() {
+        return Ok(BTreeSet::new());
     }
-    let facts = link.store.work_facts(link.repository)?;
-    let named = named_in_reach(&facts, repository);
-    Ok(named.intersection(&lacking).copied().collect())
+    let prs: BTreeSet<u32> = naming.keys().copied().collect();
+    let conventions = repository.conventions;
+    let facts = (link.store).read_snapshot(link.repository, move |snapshot| {
+        facts_around(snapshot, &prs, conventions)
+    })?;
+    let reached = reach(&facts, repository);
+    let lacking = (naming.into_iter())
+        .filter(|(pr, _)| reached.contains(pr))
+        .flat_map(|(_, numbers)| numbers);
+    Ok(lacking.collect())
 }
 
 /// Fetches the next batch of the Issues that the PRs in Reach name and Tsugiki lacks, whatever the state of
@@ -491,7 +545,8 @@ fn issues_reach_lacks(
 /// Issue comes from Reach, as the Mirror's heads and the reads ahead do. Going by what the store holds, it
 /// mends a store that lacks the Issue from before. It asks again before each batch, since an Issue it saves
 /// can put more PRs in Reach, and finishes once none are left. The store keeps each number GitHub answered
-/// with no Issue, so the next refresh doesn't ask for it again.
+/// with no Issue, so the next refresh doesn't ask for it again. A batch GitHub refuses waits for the next
+/// refresh, and only trouble that speaks for all of GitHub stops this one, as in `read_ahead`.
 pub(super) fn fetch_reached_issues(
     link: &Link<'_>,
     asked: &mut Asked,
@@ -502,17 +557,30 @@ pub(super) fn fetch_reached_issues(
     if numbers.is_empty() {
         return Ok((Step::Finished, None));
     }
-    let batch = link
+    let batch = match link
         .github
-        .fetch_issues(link.repository, &numbers, FETCH_BATCH)?;
+        .fetch_issues(link.repository, &numbers, FETCH_BATCH)
+    {
+        Ok(batch) => batch,
+        Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+            log::warn!(
+                "GitHub wouldn't give the Issues {numbers:?}: {}",
+                problem.message
+            );
+            asked.numbers.extend(numbers.into_iter().take(FETCH_BATCH));
+            return Ok((Step::Searched { pause_until: None }, None));
+        }
+        Err(problem) => return Err(problem),
+    };
     let touched: Vec<u32> = batch.issues.iter().map(|issue| issue.number).collect();
-    let took: Vec<u32> = numbers.into_iter().take(batch.asked_for).collect();
-    link.store.save_asked_issues(
+    link.store.save_issues_and_issueless(
         link.repository,
         (batch.issues, batch.activity),
-        took.clone(),
+        batch.issueless,
     )?;
-    asked.numbers.extend(took);
+    asked
+        .numbers
+        .extend(numbers.into_iter().take(batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
 }

@@ -122,7 +122,7 @@ impl GitHub {
         let references = read
             .issues
             .into_iter()
-            .map(|wire| {
+            .map(|(_, wire)| {
                 let (listed, next) = wire.timeline_items.read(repository);
                 IssueReferences {
                     number: wire.number,

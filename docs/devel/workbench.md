@@ -175,8 +175,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Tsugiki ([ADR 0011](../adr/0011-pr-links-from-github-signals-by-repository-conventions.md)).
 - Each PR in **Reach** gets the Issues it names, open, merged or closed: a refresh fetches each one Tsugiki
   lacks, so a PR that merged before it became the user's work shows under its Issue and not as a Standalone
-  PR (#980). A number GitHub answers with no Issue, such as a PR's or a deleted Issue's, isn't asked for
-  again. A PR outside Reach waits for a tree that lists it.
+  PR (#980). A first sync leaves this to the first refresh after it. A number GitHub answers with no Issue,
+  such as a PR's, a deleted Issue's or a transferred Issue's, isn't asked for again. A PR outside Reach waits
+  for a tree that lists it.
 - **Draft PRs** get a badge.
 - A PR that fixes several Issues shows under each of them, with "also fixes #N" on its row.
 - **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on

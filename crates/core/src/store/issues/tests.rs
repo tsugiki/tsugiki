@@ -227,19 +227,19 @@ fn a_named_number_lacks_until_the_store_holds_it_as_an_issue_a_pr_or_one_with_no
         .save_pull_requests(&cpython(), vec![naming, pr_facts(2)])
         .unwrap();
     db.store.save_issues(&cpython(), vec![issue(1)]).unwrap();
-    let before = db.store.named_issues_lacking(&cpython()).unwrap();
+    let before = db.store.prs_naming_lacking_issues(&cpython()).unwrap();
 
     let found = (vec![issue(3)], Vec::new());
     db.store
-        .save_asked_issues(&cpython(), found, vec![3, 4])
+        .save_issues_and_issueless(&cpython(), found, vec![4])
         .unwrap();
 
-    let after = db.store.named_issues_lacking(&cpython()).unwrap();
+    let after = db.store.prs_naming_lacking_issues(&cpython()).unwrap();
     let issues: Vec<u32> = (db.reader.work_facts(&cpython()).unwrap().issues.iter())
         .map(|issue| issue.number)
         .collect();
     db.close();
-    assert_eq!(before, BTreeSet::from([3, 4, 5]));
-    assert_eq!(after, BTreeSet::from([5]));
+    assert_eq!(before, BTreeMap::from([(9, BTreeSet::from([3, 4, 5]))]));
+    assert_eq!(after, BTreeMap::from([(9, BTreeSet::from([5]))]));
     assert_eq!(issues, [1, 3]);
 }

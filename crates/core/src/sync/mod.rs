@@ -90,10 +90,10 @@ enum Phase {
     ReadingAhead(Ahead),
 }
 
-/// The Issues a refresh has asked GitHub for because PRs in Reach name them. The store keeps each number
-/// asked as an Issue or as one with no Issue, so Reach shouldn't name it again. This is the queue's
-/// bookkeeping, as `Ahead` is: it keeps a number the store didn't settle from being asked for again and
-/// again.
+/// The Issues a refresh has asked GitHub for because PRs in Reach name them, answered or refused. The store
+/// keeps most numbers asked as an Issue or as one with no Issue, so Reach doesn't name them again. This is
+/// the queue's bookkeeping, as `Ahead` is: it keeps a number GitHub refused, or left out of its answer, from
+/// being asked for again and again in one refresh. The next refresh asks again.
 #[derive(Default)]
 struct Asked {
     numbers: BTreeSet<u32>,

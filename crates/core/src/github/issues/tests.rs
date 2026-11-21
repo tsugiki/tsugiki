@@ -250,7 +250,28 @@ fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
 
     let numbers: Vec<u32> = fetched.issues.iter().map(|issue| issue.number).collect();
     assert_eq!(numbers, [1]);
+    assert_eq!(fetched.issueless, [2, 3]);
     assert_eq!(fetched.asked_for, 3);
+}
+
+#[test]
+fn an_issue_answered_under_another_number_is_left_out_as_issueless() {
+    // GitHub follows Issue 4, transferred to another repository, to the Issue it became there.
+    let repository = json!({ "i4": issue_node(9), "i5": issue_node(5) });
+    let (script, _asked) = Scripted::new(vec![in_repository(&repository)]);
+
+    let fetched = github(script)
+        .fetch_issues(&cpython(), &[4, 5, 6], 25)
+        .unwrap();
+
+    let numbers: Vec<u32> = fetched.issues.iter().map(|issue| issue.number).collect();
+    assert_eq!(numbers, [5]);
+    assert_eq!(fetched.activity.len(), 1);
+    assert_eq!(
+        fetched.issueless,
+        [4],
+        "a number the answer leaves out isn't issueless"
+    );
 }
 
 #[test]

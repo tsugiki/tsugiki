@@ -2230,6 +2230,81 @@ fn a_number_github_answers_with_no_issue_isnt_asked_for_at_the_next_refresh() {
 }
 
 #[test]
+fn a_batch_of_issues_github_refuses_waits_for_the_next_refresh_and_this_one_finishes() {
+    let refused = reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No"}]}"#);
+    let replies = vec![
+        quiet_poll(),
+        refused,
+        quiet_poll(),
+        issues(&[40], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("reach-refused", replies);
+    let node = strangers_merged_pr("gh-40: Fix it", &reviewed_by_the_user());
+    holding_pr_and_its_events(&harness, &node);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
+    let held_after_the_first = harness.issue_numbers();
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert!(!state.refresh_under_way, "the refresh finished");
+    assert!(state.finished_at > moment(LAST_SYNC));
+    assert!(held_after_the_first.is_empty());
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchIssues",
+            "RefreshRepository",
+            "FetchIssues"
+        ]
+    );
+    assert_eq!(harness.issue_numbers(), [40]);
+    harness.finish();
+}
+
+/// The numbers of the PRs and of the Issues in `facts`.
+fn numbers_in(facts: &WorkFacts) -> (Vec<u32>, Vec<u32>) {
+    let prs = facts.pull_requests.iter().map(|pr| pr.number);
+    let issues = facts.issues.iter().map(|issue| issue.number);
+    (prs.collect(), issues.collect())
+}
+
+#[test]
+fn reach_is_judged_from_the_trees_of_the_prs_that_name_a_lacking_issue_alone() {
+    let harness = after_a_sync("reach-around", Vec::new());
+    let fixing_8 = json!({ "closingIssuesReferences": { "nodes": [
+        { "number": 8, "repository": { "nameWithOwner": "python/cpython" } },
+    ] } });
+    holding_pr_and_its_events(&harness, &strangers_merged_pr("gh-40: Fix it", &fixing_8));
+    let mut sharing = strangers_pr(7, LONG_BEFORE);
+    sharing["closingIssuesReferences"] = fixing_8["closingIssuesReferences"].clone();
+    holding_pr(&harness, &sharing);
+    holding_pr(&harness, &own_open_pr(5, &json!({ "title": "A change" })));
+    holding_issue(&harness, 8, LONG_BEFORE);
+    holding_issue(&harness, 6, LONG_BEFORE);
+    let naming = harness
+        .db
+        .store
+        .prs_naming_lacking_issues(&cpython())
+        .unwrap();
+
+    let around = harness
+        .db
+        .store
+        .read_snapshot(&cpython(), |snapshot| {
+            facts_around(snapshot, &BTreeSet::from([3]), Conventions::Cpython)
+        })
+        .unwrap();
+
+    assert_eq!(naming, BTreeMap::from([(3, BTreeSet::from([40]))]));
+    assert_eq!(numbers_in(&around), (vec![3, 7], vec![8]));
+    assert_eq!(around.viewer, Some(me()));
+    assert_eq!(numbers_in(&facts(&harness)), (vec![3, 5, 7], vec![6, 8]));
+    harness.finish();
+}
+
+#[test]
 fn a_refresh_that_fetches_the_issues_reach_names_recovers_from_a_failure_at_each_point() {
     let scenario = Scenario {
         name: "recovery-reach-issues",

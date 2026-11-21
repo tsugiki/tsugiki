@@ -53,6 +53,9 @@ pub struct FetchedIssues {
     /// One for each number that names an Issue.
     pub issues: Vec<IssueFacts>,
     pub activity: Vec<ItemActivity>,
+    /// The numbers asked for that name no Issue here: GitHub answered a PR, nothing with its NOT_FOUND, or
+    /// an Issue under another number, as it does for one transferred to another repository.
+    pub issueless: Vec<u32>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -139,8 +142,10 @@ pub(super) struct ByNumber<'a> {
 
 /// An answer to a read of Issues by number.
 pub(super) struct ReadByNumber<T> {
-    /// One for each number that names an Issue.
-    pub issues: Vec<T>,
+    /// One for each number that names an Issue, after the number asked.
+    pub issues: Vec<(u32, T)>,
+    /// The numbers GitHub answered as a PR, or as nothing with its NOT_FOUND.
+    pub issueless: Vec<u32>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -232,21 +237,31 @@ impl GitHub {
                 size,
             },
         )?;
-        let (issues, activity) = read
-            .issues
+        let mut issueless = read.issueless;
+        let mut found = Vec::new();
+        for (asked, wire) in read.issues {
+            // GitHub follows an Issue transferred to another repository, which this number then lacks.
+            if wire.number == asked {
+                found.push(wire);
+            } else {
+                issueless.push(asked);
+            }
+        }
+        let (issues, activity) = found
             .into_iter()
             .map(<(IssueFacts, ItemActivity)>::from)
             .unzip();
         Ok(FetchedIssues {
             issues,
             activity,
+            issueless,
             asked_for: read.asked_for,
             rate_limit: read.rate_limit,
         })
     }
 
     /// Asks for the first `read.size` of `read.numbers`, or half that after a 502 or no answer. A number can
-    /// turn out to be a PR or to name nothing, and then the answer holds nothing for it.
+    /// turn out to be a PR or to name nothing, and then the answer counts it as issueless.
     pub(super) fn read_by_number<T: DeserializeOwned>(
         &self,
         repository: &RepositoryName,
@@ -279,17 +294,20 @@ impl GitHub {
                     variables: json!({ "owner": repository.owner(), "name": repository.name() }),
                 }
             })?;
-        let issues = data
-            .repository
-            .into_values()
-            .flatten()
-            .filter_map(|numbered| match numbered {
-                Numbered::Issue(issue) => Some(issue),
-                Numbered::PullRequest => None,
-            })
-            .collect();
+        let mut answers = data.repository;
+        let mut issues = Vec::new();
+        let mut issueless = Vec::new();
+        for number in numbers.iter().take(asked_for) {
+            // `read` lets a null through only with GitHub's NOT_FOUND for it.
+            match answers.remove(&format!("i{number}")) {
+                Some(Some(Numbered::Issue(issue))) => issues.push((*number, issue)),
+                Some(Some(Numbered::PullRequest) | None) => issueless.push(*number),
+                None => {}
+            }
+        }
         Ok(ReadByNumber {
             issues,
+            issueless,
             asked_for,
             rate_limit: data.rate_limit,
         })

@@ -387,32 +387,41 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Stores the `issues` a fetch of the Issues numbered `asked` found, with what GitHub says happened on
-    /// them, and keeps each other number of `asked` as one GitHub answered with no Issue, which
-    /// `named_issues_lacking` leaves out from then on (#980). One transaction holds it all.
-    pub fn save_asked_issues(
+    /// Stores `issues` of `repository` and what GitHub says happened on them, and keeps each of `issueless`
+    /// as a number GitHub answered with no Issue, which `prs_naming_lacking_issues` leaves out from then on
+    /// (#980). One transaction holds it all.
+    pub fn save_issues_and_issueless(
         &self,
         repository: &RepositoryName,
         (issues, events): (Vec<IssueFacts>, Vec<ItemActivity>),
-        asked: Vec<u32>,
+        issueless: Vec<u32>,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| {
-            issues::save_asked(connection, &repository, (&issues, &events), &asked)
+            issues::save_with_issueless(connection, &repository, (&issues, &events), &issueless)
         })?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The numbers the PRs of `repository` name as fixed, under any Conventions, that Tsugiki holds as
-    /// neither an Issue nor a PR, and that GitHub hasn't answered with no Issue (#980).
-    pub fn named_issues_lacking(
+    /// Each PR of `repository` that names as fixed, under any Conventions, a number Tsugiki holds as neither
+    /// an Issue nor a PR, and that GitHub hasn't answered with no Issue, with those numbers (#980).
+    pub fn prs_naming_lacking_issues(
         &self,
         repository: &RepositoryName,
-    ) -> Result<BTreeSet<u32>, Error> {
+    ) -> Result<BTreeMap<u32, BTreeSet<u32>>, Error> {
         let repository = repository.clone();
-        let read =
-            self.call(move |connection| issues::named_and_lacking(connection, &repository))?;
+        let read = self.call(move |connection| issues::naming_lacking(connection, &repository))?;
         read.map_err(saying(CANT_READ))
+    }
+
+    /// What `read` answers from a snapshot of `repository`, read in one transaction as this writer last
+    /// saved it.
+    pub fn read_snapshot<T: Send + 'static>(
+        &self,
+        repository: &RepositoryName,
+        read: impl FnOnce(&Snapshot<'_>) -> Result<T, Error> + Send + 'static,
+    ) -> Result<T, Error> {
+        self.call(snapshot_job(repository.clone(), read))?
     }
 
     /// The numbers of `viewer`'s open PRs whose CI failed after Tsugiki last asked which checks failed.
@@ -866,6 +875,20 @@ fn read_titled(
     Ok(titled)
 }
 
+/// The job that answers what `read` answers from a snapshot of `repository`, on either connection.
+fn snapshot_job<T>(
+    repository: RepositoryName,
+    read: impl FnOnce(&Snapshot<'_>) -> Result<T, Error>,
+) -> impl FnOnce(&mut Connection) -> Result<T, Error> {
+    move |connection: &mut Connection| {
+        let transaction = connection.transaction().map_err(saying(CANT_READ))?;
+        read(&Snapshot {
+            transaction,
+            repository,
+        })
+    }
+}
+
 /// One Repository's facts as one read transaction sees them, for a view that works out what to read next
 /// from what it has read, as the Inbox does (ADR 0018). Each read takes only the rows it names, so its cost
 /// follows what it asks for and not what the store holds. `StoreReader::read_snapshot` hands one out.
@@ -1047,15 +1070,7 @@ impl StoreReader {
         repository: &RepositoryName,
         read: impl FnOnce(&Snapshot<'_>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
-        let repository = repository.clone();
-        let job = move |connection: &mut Connection| {
-            let transaction = connection.transaction().map_err(saying(CANT_READ))?;
-            read(&Snapshot {
-                transaction,
-                repository,
-            })
-        };
-        self.call(job)?
+        self.call(snapshot_job(repository.clone(), read))?
     }
 
     fn call<T: Send + 'static>(

@@ -44,6 +44,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   count nothing: those whose answer doesn't say its cost, such as a 502, a timeout or an answer with no data,
   those whose answer comes from an hour that has already reset, and the size the Mirror worker asks before a
   clone, on a connection of its own. Whatever they cost, the status bar puts down to other tools.
+- Below a floor of 500 points left, or after GitHub refuses a request for its rate limit, Tsugiki sends
+  GitHub nothing until the reset, whichever job asks: the sync, the read of an opened Issue or PR and of its
+  tree, quick open's fetch, Add repository's check, and asking who is signed in. Each ask answers at once.
+  The status bar says "Sync paused until 14:00: GitHub's rate limit is low", or with no sync waiting,
+  "GitHub's rate limit is low. Tsugiki can ask it again at 14:00". A secondary rate limit holds about a
+  minute, not until the hour's reset. A read on screen fails as one offline does, and the next read after
+  the reset tries again. Quick open offers the number in the browser in place of a fetch
+  ([keyboard.md](keyboard.md)). Add repository's check says when the points come back. Refresh asks
+  nothing and leaves the status as it is. A refresh's list check keeps its tag for after the reset, so it
+  can still cost nothing then. The first request after the reset goes as before, and its answer says the new
+  hour's points. The size the Mirror worker asks before a clone isn't held back yet (#1002).
 - Older items come on demand: opening one fetches it and keeps it, a search in the **Inbox** also runs on
   GitHub, and the Inbox ends with "Load 30 more days" once it has listed all the cache holds.
 - The local database is one file for all Repositories, holding both the cached GitHub data and the user's own

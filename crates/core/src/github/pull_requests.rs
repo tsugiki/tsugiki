@@ -10,9 +10,9 @@ use time::OffsetDateTime;
 use super::activity::{TimelineWire, pull_request_activity};
 use super::labels::{LabelWire, label_names};
 use super::refresh::PageInfo;
-use super::{BAD_GATEWAY, GitHub, RATE_LIMIT_FIELDS, Reply, Request, Unreachable};
+use super::{BAD_GATEWAY, GitHub, RATE_LIMIT_FIELDS, Reply, Request};
 use crate::conventions::Conventions;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::activity::ItemActivity;
 use crate::facts::pull_requests::{
@@ -562,8 +562,8 @@ impl GitHub {
     ) -> Result<(T, usize), Error> {
         match self.post(&request(size)) {
             Ok(reply) if reply.status != BAD_GATEWAY => Ok((read(&reply)?, size)),
-            Err(cause @ Unreachable::CertificateDates) => Err(cause.into()),
-            Ok(_) | Err(Unreachable::Offline) => {
+            Err(problem) if problem.kind != ErrorKind::Offline => Err(problem),
+            Ok(_) | Err(_) => {
                 let smaller = size.div_ceil(2);
                 log::warn!("GitHub didn't answer for {size} items, so asking for {smaller}");
                 let reply = self.post(&request(smaller))?;

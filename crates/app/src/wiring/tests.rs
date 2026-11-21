@@ -76,6 +76,7 @@ struct Wired {
     last_syncs: Receiver<Value>,
     activities: Receiver<Value>,
     points: Receiver<Value>,
+    points_back: Receiver<Value>,
     clonings: Receiver<Value>,
     problems: Receiver<Value>,
     questions: Receiver<Value>,
@@ -131,6 +132,7 @@ impl Wired {
         let last_syncs = hear(&app, "last-sync-changed");
         let activities = hear(&app, "sync-activity-changed");
         let points = hear(&app, "hour-points-changed");
+        let points_back = hear(&app, "points-back-changed");
         let clonings = hear(&app, "cloning-changed");
         let problems = hear(&app, "mirror-problem-changed");
         let questions = hear(&app, "mirror-question-changed");
@@ -154,6 +156,7 @@ impl Wired {
             last_syncs,
             activities,
             points,
+            points_back,
             clonings,
             problems,
             questions,
@@ -1566,6 +1569,33 @@ fn the_hour_points_reach_the_window_once_github_has_answered() {
         (Some(1), Some(10))
     );
     assert!(heard["since"].is_string(), "{heard}");
+    assert_eq!(asked, heard);
+}
+
+/// Answers who is signed in, with 10 points left this hour, below the rate limit's floor.
+struct SignedInBelowTheFloor;
+
+impl Transport for SignedInBelowTheFloor {
+    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
+        let rate = r#""rateLimit":{"cost":1,"limit":5000,"used":4990,"remaining":10,"resetAt":"2999-01-01T00:00:00Z"}"#;
+        answer(json!({ "viewer": { "login": "octocat" } }), rate)
+    }
+}
+
+#[test]
+fn the_time_githubs_points_come_back_reaches_the_window_below_the_floor() {
+    let (folders, _root) = temp_folders("wired-points-back");
+    let unanswered = Wired::start(Ok(folders.clone()), no_network());
+    let before = unanswered.ask("points_back", json!({})).unwrap();
+    drop(unanswered.stop());
+
+    let wired = Wired::start(Ok(folders), access(SignedInBelowTheFloor));
+    let heard = wired.points_back.recv_timeout(PLENTY).unwrap();
+    let asked = wired.ask("points_back", json!({})).unwrap();
+    drop(wired.stop());
+
+    assert_eq!(before, Value::Null);
+    assert!(heard["at"].is_string(), "{heard}");
     assert_eq!(asked, heard);
 }
 

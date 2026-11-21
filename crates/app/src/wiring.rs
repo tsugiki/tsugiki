@@ -24,7 +24,7 @@ use crate::{
     Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
     LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
     MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
-    ReadFailed, StatusChanged, SyncActivityChanged, TextSearchChanged,
+    PointsBackChanged, ReadFailed, StatusChanged, SyncActivityChanged, TextSearchChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -111,6 +111,7 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     let mut sync_state = WindowState::manage(app, None, "the last sync");
     let mut activity_state = WindowState::manage(app, None, "the sync activity");
     let mut points_state = WindowState::manage(app, None, "the hour's points");
+    let mut back_state = WindowState::manage(app, None, "the time the points come back");
     let changes_handle = app.clone();
     let failed_reads_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
@@ -134,6 +135,9 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     }))
     .with_hour_points(Box::new(move |points| {
         points_state.set(points.copied(), HourPointsChanged);
+    }))
+    .with_points_back(Box::new(move |back| {
+        back_state.set(back.copied(), PointsBackChanged);
     }))
 }
 

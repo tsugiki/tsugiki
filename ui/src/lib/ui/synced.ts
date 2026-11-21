@@ -107,6 +107,11 @@ export function clockTime(at: string): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** The words for the rate limit's gate, which holds every request to GitHub until `back`. */
+export function pointsBackWords(back: string): string {
+  return `GitHub's rate limit is low. Tsugiki can ask it again at ${clockTime(back)}`;
+}
+
 /** The wait for GitHub's points, while there is one. */
 export function pausedWords(activity: SyncActivity | null): string | null {
   if (activity?.paused_until === null || activity === null) return null;

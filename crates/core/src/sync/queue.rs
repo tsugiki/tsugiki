@@ -9,16 +9,12 @@ use super::issues::fetch_issue_batch;
 use super::{Link, Step, UserWorkSync};
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
-use crate::github::clock::GitHubClock;
 use crate::latest::LatestReader;
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::SettingsView;
 use crate::status::{Change, LastSync, OpenSync, SyncActivity, SyncPart};
 use crate::store::Store;
-
-/// The rate limit resets every hour, so a longer pause can only come from a clock that's wrong.
-const LONGEST_PAUSE: Duration = Duration::from_secs(3600);
 
 /// A sync's step can fail this many times in a row for any reason but the network or the rate limit, with
 /// one try at each refresh. GitHub's own outages give the same errors as a Repository that has gone, so this
@@ -114,25 +110,16 @@ enum Turn {
 struct Stepped {
     /// The Issues and PRs it saved, if it saved any.
     touched: Option<Vec<u32>>,
-    /// The time GitHub's points come back, when they ran low.
-    pause_until: Option<OffsetDateTime>,
 }
 
 /// The step as [`Stepped`], or nothing for one that finished its sync.
 fn unfinished(step: Step) -> Option<Stepped> {
-    let (touched, pause_until) = match step {
+    let touched = match step {
         Step::Finished => return None,
-        Step::Moved => (None, None),
-        Step::Searched { pause_until } => (None, pause_until),
-        Step::Saved {
-            touched,
-            pause_until,
-        } => (Some(touched), pause_until),
+        Step::Moved | Step::Searched => None,
+        Step::Saved { touched } => Some(touched),
     };
-    Some(Stepped {
-        touched,
-        pause_until,
-    })
+    Some(Stepped { touched })
 }
 
 /// The syncs still to run, one step at a time. Repositories take turns, so a big first sync doesn't keep
@@ -372,17 +359,12 @@ impl Syncs {
         self.not_before = Some(Hold::Retry(at));
     }
 
-    /// Holds back the work whose step failed, at least until `next_refresh`: all of it if the problem speaks
-    /// for all of GitHub, or else that sync alone, so the other Repositories carry on. It also takes a sync
-    /// that keeps failing out of the queue. GitHub's `clock` turns a rate limit's reset into a wait.
-    pub fn after_failure(
-        &mut self,
-        failure: &StepFailure,
-        next_refresh: Instant,
-        clock: GitHubClock,
-    ) {
+    /// Holds back the work whose step failed: all of it if the problem speaks for all of GitHub, or else that
+    /// sync alone, so the other Repositories carry on. It waits until `next_refresh`, or for the rate limit
+    /// until GitHub's points come back. It also takes a sync that keeps failing out of the queue.
+    pub fn after_failure(&mut self, failure: &StepFailure, next_refresh: Instant) {
         let problem = &failure.problem;
-        let hold = hold_after(problem, next_refresh, clock);
+        let hold = hold_after(problem, next_refresh);
         if counts_toward_tries(problem.kind) {
             self.count_failure(&failure.turn, problem);
         }
@@ -399,14 +381,9 @@ impl Syncs {
 
     /// Holds every step back after fetching an opened Issue failed, if `problem` speaks for all of GitHub. An
     /// Issue's own trouble holds back no sync.
-    pub fn after_fetch_failure(
-        &mut self,
-        problem: &Error,
-        next_refresh: Instant,
-        clock: GitHubClock,
-    ) {
+    pub fn after_fetch_failure(&mut self, problem: &Error, next_refresh: Instant) {
         if problem.kind.speaks_for_all_of_github() {
-            self.not_before = Some(hold_after(problem, next_refresh, clock));
+            self.not_before = Some(hold_after(problem, next_refresh));
         }
     }
 
@@ -613,17 +590,15 @@ impl Syncs {
         Ok(self.after_step(repository, stepped, github))
     }
 
-    /// Passes on what a step saved, and any wait for GitHub's points it asked for.
+    /// Passes on what a step saved, and holds every step back while the rate limit's gate holds, until
+    /// GitHub's points come back.
     fn after_step(
         &mut self,
         repository: RepositoryName,
         stepped: Stepped,
         github: &GitHub,
     ) -> Option<Progress> {
-        self.not_before = stepped
-            .pause_until
-            .map(|at| until_instant(github.clock(), at))
-            .map(points_hold);
+        self.not_before = github.points_back().map(instant_of).map(points_hold);
         stepped
             .touched
             .map(|items| Progress::Changed(Change { repository, items }))
@@ -634,10 +609,7 @@ impl Syncs {
 fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Stepped, Error> {
     let Some(numbers) = &mut fill.numbers else {
         fill.numbers = Some(store.issues_without_state(&fill.repository)?);
-        return Ok(Stepped {
-            touched: None,
-            pause_until: None,
-        });
+        return Ok(Stepped { touched: None });
     };
     let link = Link {
         github,
@@ -649,21 +621,19 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
     let saved = fetch_issue_batch(&link, numbers)?;
     Ok(Stepped {
         touched: (!saved.touched.is_empty()).then_some(saved.touched),
-        pause_until: saved.pause_until,
     })
 }
 
-/// The wait after `problem`, at least until `next_refresh`.
-fn hold_after(problem: &Error, next_refresh: Instant, clock: GitHubClock) -> Hold {
+/// The wait after `problem`: for the rate limit, until GitHub's points come back, as its gate says, and
+/// else, or for a reset that has passed, until `next_refresh`.
+fn hold_after(problem: &Error, next_refresh: Instant) -> Hold {
     match problem.kind {
-        ErrorKind::RateLimited {
-            resets_at: Some(resets_at),
-        } => points_hold(
-            OffsetDateTime::from_unix_timestamp(i64::from(resets_at)).map_or(next_refresh, |at| {
-                until_instant(clock, at).max(next_refresh)
-            }),
-        ),
-        ErrorKind::RateLimited { resets_at: None } => points_hold(next_refresh),
+        ErrorKind::RateLimited { resets_at } => {
+            let back = resets_at
+                .and_then(|at| OffsetDateTime::from_unix_timestamp(i64::from(at)).ok())
+                .filter(|at| *at > OffsetDateTime::now_utc());
+            points_hold(back.map_or(next_refresh, instant_of))
+        }
         ErrorKind::Offline
         | ErrorKind::CertificateDates
         | ErrorKind::Unauthorized
@@ -695,16 +665,9 @@ fn points_hold(at: Instant) -> Hold {
     Hold::Points(at, OffsetDateTime::now_utc() + wait)
 }
 
-/// The local instant GitHub's `clock` reaches `until`.
-fn until_instant(clock: GitHubClock, until: OffsetDateTime) -> Instant {
-    Instant::now() + pause_for(until, clock.now())
-}
-
-/// The wait from `now` to `until`, which comes from GitHub's clock.
-fn pause_for(until: OffsetDateTime, now: OffsetDateTime) -> Duration {
-    Duration::try_from(until - now)
-        .unwrap_or(Duration::ZERO)
-        .min(LONGEST_PAUSE)
+/// The instant this computer's clock reaches `at`, which the gate holds no more than an hour away.
+fn instant_of(at: OffsetDateTime) -> Instant {
+    Instant::now() + Duration::try_from(at - OffsetDateTime::now_utc()).unwrap_or(Duration::ZERO)
 }
 
 #[cfg(test)]

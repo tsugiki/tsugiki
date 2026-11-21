@@ -552,9 +552,7 @@ fn an_outage_or_no_network_blames_no_filter_and_its_search_runs_again() {
 #[test]
 fn a_filter_search_below_the_floor_holds_the_next_step_back() {
     let mut replies = searches_finding(&[]);
-    let page = |next: Option<&str>| filter_page(0, &[], next, FEW);
-    replies.push(page(Some("more")));
-    replies.push(page(None));
+    replies.push(filter_page(0, &[], Some("more"), FEW));
     let harness = Harness::new("filter-floor", replies);
     let mut syncs = Syncs::default();
     syncs.add_listed(filtering(&["a"]));
@@ -565,8 +563,11 @@ fn a_filter_search_below_the_floor_holds_the_next_step_back() {
         drop(syncs.step(&harness.github, &harness.db.store).unwrap());
     }
     assert!(syncs.ready_at().unwrap() > now + Duration::from_secs(60));
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    assert!(syncs.ready_at().unwrap() > now + Duration::from_secs(60));
+    drop(harness.operations());
+    // A step taken anyway asks GitHub nothing until the reset.
+    let held = syncs.step(&harness.github, &harness.db.store).unwrap_err();
+    assert!(matches!(held.problem.kind, ErrorKind::RateLimited { .. }));
+    assert_eq!(harness.operations(), Vec::<String>::new());
     harness.finish();
 }
 

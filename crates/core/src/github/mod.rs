@@ -4,6 +4,7 @@ pub mod activity;
 pub mod checks;
 pub mod clock;
 pub mod filters;
+mod gate;
 mod https;
 pub mod issue_content;
 pub mod issues;
@@ -29,6 +30,7 @@ use time::{Date, Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
+use crate::github::gate::{Gate, Hold};
 use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
@@ -161,6 +163,9 @@ pub struct GitHub {
     /// The hour's points, summed from every answer that reported them, whichever job asked. Nothing until
     /// the first such answer.
     points: Cell<Option<HourPoints>>,
+    /// The rate limit's gate, which each request passes. It holds while `points` are below the floor, and
+    /// after GitHub refused a request for its rate limit.
+    gate: Cell<Gate>,
 }
 
 impl GitHub {
@@ -170,12 +175,51 @@ impl GitHub {
             token,
             clock: Cell::new(GitHubClock::default()),
             points: Cell::new(None),
+            gate: Cell::new(Gate::default()),
         }
     }
 
     /// GitHub's clock, as its replies so far tell it.
     pub fn clock(&self) -> GitHubClock {
         self.clock.get()
+    }
+
+    /// The time by this computer's clock that GitHub's points come back, while the gate holds every
+    /// request: below the floor of points, or after GitHub refused a request for its rate limit.
+    pub fn points_back(&self) -> Option<OffsetDateTime> {
+        self.gate_holds().map(|(back, _)| back)
+    }
+
+    /// The time by this computer's clock the gate opens, and why it holds, while it does.
+    fn gate_holds(&self) -> Option<(OffsetDateTime, Hold)> {
+        let clock = self.clock.get();
+        let (until, why) = self
+            .gate
+            .get()
+            .holds_until(self.points.get(), clock.now())?;
+        Some((clock.local(until), why))
+    }
+
+    /// Lets a request through the gate, or answers at once, with the time the points come back, while the
+    /// gate holds. The words say whether the floor holds it or GitHub's refusal.
+    fn pass_gate(&self) -> Result<(), Error> {
+        match self.gate_holds() {
+            Some((back, Hold::Floor)) => Err(rate_limited(Some(back), HELD)),
+            Some((back, Hold::Refused)) => Err(rate_limited(Some(back), RATE_LIMITED)),
+            None => Ok(()),
+        }
+    }
+
+    /// Notes in the gate a refusal for GitHub's rate limit, and gives `problem` the time by this computer's
+    /// clock the gate opens. GitHub's reset is a time on its own clock. Any other problem passes as it is.
+    fn note_refusal(&self, problem: Error) -> Error {
+        let ErrorKind::RateLimited { resets_at } = problem.kind else {
+            return problem;
+        };
+        let reset = resets_at.and_then(|at| OffsetDateTime::from_unix_timestamp(at.into()).ok());
+        let gate = self.gate.get().refused(reset, self.clock.get().now());
+        self.gate.set(gate);
+        rate_limited(self.points_back(), &problem.message)
     }
 
     /// The hour's points as this run's answers count them. Nothing before the first answer that said, and
@@ -206,9 +250,10 @@ impl GitHub {
         }
     }
 
-    /// Turns `reply` into its data, and counts the points it cost.
+    /// Turns `reply` into its data, and counts the points it cost. A refusal for the rate limit holds the
+    /// gate.
     fn answer<D: DeserializeOwned>(&self, reply: &Reply) -> Result<D, Error> {
-        read(reply, |answer| self.count(answer))
+        read(reply, |answer| self.count(answer)).map_err(|problem| self.note_refusal(problem))
     }
 
     /// Reads `reply` as `answer` does, leaving out each field under `repository` that `refusable` names and
@@ -219,10 +264,12 @@ impl GitHub {
         refusable: impl Fn(&str) -> bool,
     ) -> Result<(D, Vec<Refused>), Error> {
         read_with_refused(reply, |answer| self.count(answer), refusable)
+            .map_err(|problem| self.note_refusal(problem))
     }
 
-    /// Sends `request`, and sets GitHub's clock by the reply's `Date`.
-    fn post(&self, request: &Request<'_>) -> Result<Reply, Unreachable> {
+    /// Sends `request` if the gate lets it through, and sets GitHub's clock by the reply's `Date`.
+    fn post(&self, request: &Request<'_>) -> Result<Reply, Error> {
+        self.pass_gate()?;
         let reply = self.transport.post(&self.token, request)?;
         if reply.status == 200 {
             self.set_clock(reply.date);
@@ -371,6 +418,15 @@ const BAD_GATEWAY: u16 = 502;
 const RATE_LIMITED: &str =
     "GitHub's rate limit has been reached. Tsugiki can read again after it resets.";
 
+const HELD: &str = "GitHub's rate limit is low, so Tsugiki leaves the hour's last points to your other \
+                    tools until it resets.";
+
+/// The error for a request GitHub's rate limit holds back, which can go at `back`, if known.
+fn rate_limited(back: Option<OffsetDateTime>, message: &str) -> Error {
+    let resets_at = back.and_then(|at| u32::try_from(at.unix_timestamp()).ok());
+    Error::new(ErrorKind::RateLimited { resets_at }, message)
+}
+
 /// Turns an answer into its data, or into the error the UI can act on (ADR 0008). An answer whose data
 /// reports its points hands them to `count` first, even when the query failed, since GitHub charged for it.
 fn read<D: DeserializeOwned>(reply: &Reply, count: impl FnOnce(RateLimit)) -> Result<D, Error> {
@@ -418,8 +474,12 @@ fn read_with_refused<D: DeserializeOwned>(
     }
 
     let internal = |message: &str| Error::new(ErrorKind::Internal, message);
-    let rate_limited = || {
-        let resets_at = reply.reset;
+    // The reset is GitHub's here, which the client turns into this computer's as it holds its gate.
+    // `x-ratelimit-reset` is the hour's reset, which a secondary limit doesn't wait for: GitHub asks for
+    // about a minute then, which the gate holds when the refusal names no reset.
+    let refused = || {
+        let secondary = reply.body.contains("secondary rate limit");
+        let resets_at = reply.reset.filter(|_| !secondary);
         Error::new(ErrorKind::RateLimited { resets_at }, RATE_LIMITED)
     };
     if reply.status != 200 {
@@ -437,8 +497,8 @@ fn read_with_refused<D: DeserializeOwned>(
                 "GitHub refused the token. Run `gh auth login`, and restart Tsugiki.",
             ));
         }
-        429 => return Err(rate_limited()),
-        403 if reply.body.contains("rate limit") => return Err(rate_limited()),
+        429 => return Err(refused()),
+        403 if reply.body.contains("rate limit") => return Err(refused()),
         status => return Err(internal(&format!("GitHub answered with status {status}."))),
     }
 
@@ -488,7 +548,7 @@ fn read_with_refused<D: DeserializeOwned>(
     };
     if let Some(error) = envelope.errors.iter().find(failed) {
         return Err(match error.kind {
-            Some(GraphqlErrorKind::RateLimited) => rate_limited(),
+            Some(GraphqlErrorKind::RateLimited) => refused(),
             Some(GraphqlErrorKind::NotFound) => Error::new(
                 ErrorKind::NotFound,
                 &format!("GitHub said: {}", error.message),

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Leads, Link, Moved, Phase, Resumable, Step, pause_until};
+use super::{Leads, Link, Moved, Phase, Resumable, Step};
 use crate::error::Error;
 use crate::github::pull_requests::PrFetch;
 use crate::links::possible_numbers;
@@ -60,7 +60,6 @@ pub(super) fn save_origin(link: &Link<'_>, leads: &mut Leads, number: u32) -> Re
     let answer = link
         .github
         .fetch_origin_pull_request(link.repository, number)?;
-    let pause_until = pause_until(answer.rate_limit);
     let step = if let Some((pull_request, activity)) = answer.pull_request {
         let named = possible_numbers(&pull_request, link.repository);
         link.store.save_fetched_pull_requests(
@@ -71,10 +70,9 @@ pub(super) fn save_origin(link: &Link<'_>, leads: &mut Leads, number: u32) -> Re
         leads.named.extend(named);
         Step::Saved {
             touched: vec![number],
-            pause_until,
         }
     } else {
-        Step::Searched { pause_until }
+        Step::Searched
     };
     leads.origins.retain(|other| *other != number);
     Ok(step)

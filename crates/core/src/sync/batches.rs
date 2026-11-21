@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Batches, FETCH_BATCH, Link, Moved, Resumable, Step, pause_until};
+use super::{Batches, FETCH_BATCH, Link, Moved, Resumable, Step};
 use crate::error::Error;
 
 pub(super) fn fetch(
@@ -32,12 +32,7 @@ pub(super) fn fetch(
     }
     let touched = batch.pull_requests.iter().map(|pr| pr.number).collect();
     drop(ids.drain(..batch.asked_for));
-    let pause_until = pause_until(batch.rate_limit);
-    let step = Step::Saved {
-        touched,
-        pause_until,
-    };
-    Ok((step, None))
+    Ok((Step::Saved { touched }, None))
 }
 
 #[cfg(test)]

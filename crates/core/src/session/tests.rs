@@ -50,6 +50,8 @@ use time::OffsetDateTime;
 use tsugiki_test_git::{pass_on, wait_for_message};
 use tsugiki_token::testing::NO_GH;
 
+mod rate_limit;
+
 /// A real store that keeps nothing once it closes.
 fn empty_store() -> Store {
     Store::open(Path::new(":memory:")).unwrap()

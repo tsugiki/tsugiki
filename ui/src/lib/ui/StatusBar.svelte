@@ -6,6 +6,7 @@
     LastSync,
     MirrorProblem,
     NewVersion,
+    PointsBack,
     RepositoryMirror,
     Status,
     SyncActivity,
@@ -18,6 +19,7 @@
     mirrorWords,
     offlineCloneWords,
     pausedWords,
+    pointsBackWords,
     questionWords,
     syncedWords,
     syncingWords,
@@ -34,6 +36,7 @@
     lastSync = null,
     syncActivity = null,
     hourPoints = null,
+    pointsBack = null,
     cloning = null,
     mirrorStates = [],
     mirrorProblem = null,
@@ -52,6 +55,8 @@
     syncActivity?: SyncActivity | null;
     /** The hour's GitHub points, which the bar shows once GitHub's first answer has said. */
     hourPoints?: HourPoints | null;
+    /** The time GitHub's points come back, while the rate limit holds every request to GitHub. */
+    pointsBack?: PointsBack | null;
     cloning?: Cloning | null;
     /** The state of each Repository's mirror, which says when a clone waits for the network. */
     mirrorStates?: RepositoryMirror[];
@@ -84,7 +89,10 @@
   const showStatus = $derived(
     visible || offline || reconnecting || status?.state === "problem" || Boolean(error),
   );
-  const paused = $derived(pausedWords(syncActivity));
+  // With no sync to pause, the bar still says why nothing asks GitHub, as a read or a fetch points here.
+  const paused = $derived(
+    pausedWords(syncActivity) ?? (pointsBack === null ? null : pointsBackWords(pointsBack.at)),
+  );
   // Hiding the bar can't hide why the Files tab has no diff either.
   const mirror = $derived(mirrorWords(mirrorProblem));
   const needsGit = $derived(mirrorProblem?.kind === "no_git" || mirrorProblem?.kind === "old_git");

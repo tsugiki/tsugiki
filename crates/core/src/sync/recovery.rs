@@ -176,7 +176,7 @@ fn run(
             Ok(Some(Progress::Changed(change))) => told_the_window.push(change.items),
             Ok(_) => {}
             Err(failure) => {
-                syncs.after_failure(&failure, Instant::now(), harness.github.clock());
+                syncs.after_failure(&failure, Instant::now());
                 problems.push(failure.problem.message);
             }
         }

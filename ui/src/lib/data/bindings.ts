@@ -26,6 +26,11 @@ export const commands = {
 	 *  run says, and from the hour's reset until an answer of the next hour says.
 	 */
 	hourPoints: () => __TAURI_INVOKE<HourPoints_Serialize | null>("hour_points"),
+	/**
+	 *  The time GitHub's points come back, while the rate limit's gate holds every request to GitHub, for a
+	 *  window that has just loaded.
+	 */
+	pointsBack: () => __TAURI_INVOKE<PointsBack_Serialize | null>("points_back"),
 	/**  The clone of a mirror under way, for a window that has just loaded. */
 	cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
 	/**  The latest reason no mirror can be made, for a window as it loads. */
@@ -358,6 +363,7 @@ export const events = {
 	mirrorStatesChanged: makeEvent<MirrorStatesChanged_Serialize, MirrorStatesChanged_Deserialize>("mirror-states-changed"),
 	mirrorsHeldChanged: makeEvent<MirrorsHeldChanged, MirrorsHeldChanged>("mirrors-held-changed"),
 	newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
+	pointsBackChanged: makeEvent<PointsBackChanged_Serialize, PointsBackChanged_Deserialize>("points-back-changed"),
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
@@ -935,7 +941,10 @@ export type ErrorKind = ErrorKind_Serialize | ErrorKind_Deserialize;
 export type ErrorKind_Deserialize = { kind: "offline" } | 
 /**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
 { kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
-/**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
+/**
+ *  The time Tsugiki can ask GitHub again, by this computer's clock, in seconds since the Unix epoch,
+ *  if known.
+ */
 resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
 /**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
 { kind: "query_refused" } | { kind: "internal" };
@@ -944,7 +953,10 @@ resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } |
 export type ErrorKind_Serialize = { kind: "offline" } | 
 /**  GitHub's certificate isn't valid at this computer's date and time, so no request reaches GitHub. */
 { kind: "certificate_dates" } | { kind: "unauthorized" } | { kind: "write_refused" } | { kind: "rate_limited"; 
-/**  When the limit resets, in seconds since the Unix epoch, if GitHub said. */
+/**
+ *  The time Tsugiki can ask GitHub again, by this computer's clock, in seconds since the Unix epoch,
+ *  if known.
+ */
 resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
 /**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
 { kind: "query_refused" } | { kind: "internal" };
@@ -2392,6 +2404,46 @@ export type Placement_Serialize =
  *  against.
  */
 { kind: "gone"; path: string; code: ThreadCode | null };
+
+/**
+ *  The time GitHub's points come back, by this computer's clock, while the rate limit's gate holds every
+ *  request to GitHub (ADR 0015). Quick open offers the browser in place of a fetch until then.
+ */
+export type PointsBack = PointsBack_Serialize | PointsBack_Deserialize;
+
+/**
+ *  Sent when the rate limit's gate starts holding every request to GitHub, with the time the points come
+ *  back, and with nothing when it opens, so quick open offers the browser in place of a fetch.
+ */
+export type PointsBackChanged = PointsBackChanged_Serialize | PointsBackChanged_Deserialize;
+
+/**
+ *  Sent when the rate limit's gate starts holding every request to GitHub, with the time the points come
+ *  back, and with nothing when it opens, so quick open offers the browser in place of a fetch.
+ */
+export type PointsBackChanged_Deserialize = PointsBack_Deserialize | null;
+
+/**
+ *  Sent when the rate limit's gate starts holding every request to GitHub, with the time the points come
+ *  back, and with nothing when it opens, so quick open offers the browser in place of a fetch.
+ */
+export type PointsBackChanged_Serialize = PointsBack_Serialize | null;
+
+/**
+ *  The time GitHub's points come back, by this computer's clock, while the rate limit's gate holds every
+ *  request to GitHub (ADR 0015). Quick open offers the browser in place of a fetch until then.
+ */
+export type PointsBack_Deserialize = {
+	at: string,
+};
+
+/**
+ *  The time GitHub's points come back, by this computer's clock, while the rate limit's gate holds every
+ *  request to GitHub (ADR 0015). Quick open offers the browser in place of a fetch until then.
+ */
+export type PointsBack_Serialize = {
+	at: string,
+};
 
 /**  What the Files tab shows. */
 export type PrFiles = PrFiles_Serialize | PrFiles_Deserialize;

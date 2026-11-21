@@ -4,7 +4,7 @@ use crate::error::ErrorKind;
 use crate::testing::cpython;
 
 #[test]
-fn a_change_or_a_last_sync_with_nobody_listening_isnt_a_new_status() {
+fn a_change_a_last_sync_or_the_points_coming_back_with_nobody_listening_isnt_a_new_status() {
     let (mut board, seen) = watched_board();
     let repository = cpython();
 
@@ -16,6 +16,7 @@ fn a_change_or_a_last_sync_with_nobody_listening_isnt_a_new_status() {
         repository,
         at: None,
     });
+    board.points_back(Some(OffsetDateTime::UNIX_EPOCH));
 
     assert!(announced(&seen).is_empty());
 }
@@ -107,6 +108,28 @@ fn the_status_reaches_the_ui_tagged_by_its_state() {
     for (status, expected) in cases {
         assert_eq!(serde_json::to_value(status).unwrap(), expected);
     }
+}
+
+#[test]
+fn the_time_the_points_come_back_reaches_the_ui_only_when_it_changes() {
+    let (passed, seen) = std::sync::mpsc::channel();
+    let mut board = super::testing::quiet_board().with_points_back(Box::new(
+        move |back: Option<&PointsBack>| {
+            passed.send(back.map(|back| back.at)).unwrap();
+        },
+    ));
+    let at = OffsetDateTime::from_unix_timestamp(1_800_000_000).unwrap();
+
+    board.points_back(None);
+    board.points_back(Some(at));
+    board.points_back(Some(at));
+    board.points_back(None);
+
+    assert_eq!(seen.try_iter().collect::<Vec<_>>(), [Some(at), None]);
+    assert_eq!(
+        serde_json::to_value(PointsBack { at }).unwrap(),
+        serde_json::json!({ "at": "2027-01-15T08:00:00Z" })
+    );
 }
 
 #[test]

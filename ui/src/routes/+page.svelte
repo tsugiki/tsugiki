@@ -387,8 +387,8 @@
       repositoryHome?.fetchUnstored(number);
     },
   });
-  /** The row for `number` in place of the fetch while GitHub can't be reached, which a fetch would wait on
-   * for nothing: Enter on it opens the number on GitHub in the browser. */
+  /** The row for `number` in place of the fetch while GitHub can't be reached or the rate limit's gate holds,
+   * when a fetch would wait for nothing: Enter on it opens the number on GitHub in the browser. */
   const browserRow = (number: number): PaletteCommand => ({
     title: `Open #${String(number)} in browser`,
     key: `browser ${String(number)}`,
@@ -416,9 +416,9 @@
   };
   /** Quick open's latest answer, as the palette's rows: the Issue or PR the text names by its number, or the
    * row that fetches it when the database holds no item of that number, or opens it in the browser while
-   * offline, the files of the PR on show that the text finds, then the other Issues and PRs (#558). Files
-   * need no search of the core's, so they show when it fails too. The row for the number heads the rows
-   * whatever files come, so an Enter waits for no diff to open it. */
+   * offline or below the rate limit's floor, the files of the PR on show that the text finds, then the
+   * other Issues and PRs (#558). Files need no search of the core's, so they show when it fails too. The
+   * row for the number heads the rows whatever files come, so an Enter waits for no diff to open it. */
   const foundRows = $derived.by((): QuickOpenRows | undefined => {
     const search = quickOpen;
     const answer = search?.answer;
@@ -426,7 +426,7 @@
     const files = fileRows(search.files, answer.typed);
     if ("problem" in answer) return { typed: answer.typed, ...files, problem: answer.problem };
     const { named, others, unstored } = answer.found;
-    const unstoredRow = isOffline(status.status) ? browserRow : fetchRow;
+    const unstoredRow = isOffline(status.status) || status.pointsBack !== null ? browserRow : fetchRow;
     const numbered = named ? [foundRow(named)] : unstored ? [unstoredRow(unstored)] : [];
     return {
       typed: answer.typed,
@@ -498,6 +498,7 @@
   {lastSync}
   syncActivity={status.syncActivity}
   hourPoints={status.hourPoints}
+  pointsBack={status.pointsBack}
   cloning={status.cloning}
   mirrorStates={status.mirrorStates}
   mirrorProblem={status.mirrorProblem}

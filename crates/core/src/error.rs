@@ -13,7 +13,8 @@ pub enum ErrorKind {
     Unauthorized,
     WriteRefused,
     RateLimited {
-        /// When the limit resets, in seconds since the Unix epoch, if GitHub said.
+        /// The time Tsugiki can ask GitHub again, by this computer's clock, in seconds since the Unix epoch,
+        /// if known.
         resets_at: Option<u32>,
     },
     NotFound,

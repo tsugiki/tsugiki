@@ -2,6 +2,7 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::facts::pull_requests::{PrState, ReviewState};
 use crate::github::Unreachable;
+use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, page_info, replied, reply_ok};
 use crate::github::{ConditionalReply, Reply, Transport};
@@ -243,7 +244,7 @@ fn listing(answer: Result<ConditionalReply, Unreachable>, tag: Option<&Etag>) ->
         answer,
         asked: mpsc::channel().0,
     };
-    github(lists).check_list(&cpython(), tag)
+    github(lists).check_list(&cpython(), tag).unwrap()
 }
 
 fn checked(status: u16, etag: Option<&str>) -> Result<ConditionalReply, Unreachable> {
@@ -265,7 +266,7 @@ fn a_list_check_sends_the_tag_it_was_given() {
 
     let check = github(lists).check_list(&cpython(), Some(&tag));
 
-    assert_eq!(check, ListCheck::Same);
+    assert_eq!(check, Ok(ListCheck::Same));
     assert_eq!(
         asked.recv().unwrap(),
         (
@@ -283,7 +284,7 @@ fn a_list_check_says_nothing_about_graphql() {
     };
     let github = github(lists);
 
-    assert_eq!(github.check_list(&cpython(), None), ListCheck::Same);
+    assert_eq!(github.check_list(&cpython(), None), Ok(ListCheck::Same));
     assert_eq!(github.viewer().unwrap_err().kind, ErrorKind::Offline);
 }
 
@@ -308,8 +309,34 @@ fn a_transport_with_no_rest_counts_as_unreachable() {
     let (script, _asked) = Scripted::new(Vec::new());
     assert_eq!(
         github(script).check_list(&cpython(), None),
-        ListCheck::Moved(None)
+        Ok(ListCheck::Moved(None))
     );
+}
+
+#[test]
+fn a_list_check_while_the_rate_limit_holds_asks_nothing_and_fails() {
+    let (sent, asked) = mpsc::channel();
+    let lists = Lists {
+        answer: checked(304, None),
+        asked: sent,
+    };
+    let github = github(lists);
+    github.points.set(Some(HourPoints {
+        limit: 5000,
+        used: 4990,
+        remaining: 10,
+        resets_at: OffsetDateTime::now_utc() + time::Duration::minutes(20),
+        spent: 0,
+        since: None,
+    }));
+
+    let check = github.check_list(&cpython(), Some(&Etag::new("W/\"abc\"")));
+
+    assert!(
+        matches!(check, Err(ref e) if matches!(e.kind, ErrorKind::RateLimited { .. })),
+        "{check:?}"
+    );
+    assert!(asked.try_recv().is_err(), "the check asked GitHub");
 }
 
 fn probe_answer(fields: &Value) -> Result<Reply, Unreachable> {

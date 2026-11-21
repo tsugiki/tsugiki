@@ -6,7 +6,7 @@ import {
   type RepositoryCheck_Serialize,
   type RepositorySize,
 } from "$lib/data/bindings";
-import { ask } from "./answer";
+import { ask, pointsBackIn } from "./answer";
 import type { Home } from "./home.svelte";
 import { MirrorChoosing } from "./mirror-choice.svelte";
 
@@ -20,7 +20,9 @@ export type AddStep =
   /** Tsugiki has the Repository already, by `name`, so the dialog offers to switch to it. */
   | { step: "held"; name: string }
   | { step: "adding"; check: RepositoryCheck }
-  | { step: "failed"; problem: string };
+  /** The check or the add failed, and why. `back` is the time GitHub's points come back, when the rate
+   * limit held the check. */
+  | { step: "failed"; problem: string; back?: string };
 
 export class AddRepositoryState {
   #input = $state("");
@@ -47,7 +49,8 @@ export class AddRepositoryState {
       return;
     }
     if (answer.status === "error") {
-      this.step = { step: "failed", problem: answer.error.message };
+      const back = pointsBackIn(answer.error);
+      this.step = { step: "failed", problem: answer.error.message, ...(back === null ? {} : { back }) };
       return;
     }
     const found = answer.data;

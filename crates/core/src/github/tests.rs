@@ -6,6 +6,22 @@ fn limited_until(resets_at: Option<u32>) -> ErrorKind {
     ErrorKind::RateLimited { resets_at }
 }
 
+/// The time `seconds` from now, as `x-ratelimit-reset` gives it, in whole seconds.
+fn seconds_from_now(seconds: i64) -> u32 {
+    u32::try_from(OffsetDateTime::now_utc().unix_timestamp() + seconds).unwrap()
+}
+
+/// The seconds from now an error of the rate limit says Tsugiki can ask again.
+fn seconds_left(error: &crate::error::Error) -> i64 {
+    let ErrorKind::RateLimited {
+        resets_at: Some(resets_at),
+    } = error.kind
+    else {
+        panic!("{error:?} names no time");
+    };
+    i64::from(resets_at) - OffsetDateTime::now_utc().unix_timestamp()
+}
+
 fn error_of(transport: Canned) -> crate::error::Error {
     github(transport).viewer().unwrap_err()
 }
@@ -34,30 +50,103 @@ fn a_refused_token_is_unauthorized_and_says_how_to_fix_it() {
 
 #[test]
 fn the_primary_rate_limit_says_when_it_resets() {
+    let reset = seconds_from_now(1200);
     let error = error_of(Canned(Ok(Reply {
         status: 403,
-        reset: Some(1_800_000_000),
+        reset: Some(reset),
         date: None,
         body: r#"{"message":"API rate limit exceeded for user"}"#.to_owned(),
     })));
-    assert_eq!(error.kind, limited_until(Some(1_800_000_000)));
+    assert_eq!(error.kind, limited_until(Some(reset)));
 }
 
 #[test]
-fn a_429_is_a_rate_limit() {
-    assert_eq!(error_of(answered(429, "")).kind, limited_until(None));
+fn a_secondary_rate_limit_holds_a_minute_not_until_the_hours_reset() {
+    let error = error_of(Canned(Ok(Reply {
+        status: 403,
+        reset: Some(seconds_from_now(3000)),
+        date: None,
+        body: r#"{"message":"You have exceeded a secondary rate limit."}"#.to_owned(),
+    })));
+    assert!((59..=61).contains(&seconds_left(&error)), "{error:?}");
+}
+
+#[test]
+fn a_request_after_a_refusal_says_github_refused_it_not_that_points_are_low() {
+    let github = github(answered(429, ""));
+    drop(github.viewer().unwrap_err());
+
+    let held = github.viewer().unwrap_err();
+
+    assert_eq!(held.message, RATE_LIMITED);
+}
+
+#[test]
+fn a_rate_limit_that_names_no_reset_holds_a_minute() {
+    let error = error_of(answered(429, ""));
+    assert!((59..=61).contains(&seconds_left(&error)), "{error:?}");
 }
 
 #[test]
 fn a_graphql_rate_limit_is_a_rate_limit() {
+    let reset = seconds_from_now(1200);
     let body = r#"{"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}"#;
     let error = error_of(Canned(Ok(Reply {
         status: 200,
-        reset: Some(1_800_000_000),
+        reset: Some(reset),
         date: None,
         body: body.to_owned(),
     })));
-    assert_eq!(error.kind, limited_until(Some(1_800_000_000)));
+    assert_eq!(error.kind, limited_until(Some(reset)));
+}
+
+#[test]
+fn a_rate_limit_says_its_reset_by_this_computers_clock() {
+    for local_is_off_by in [300, -300] {
+        let github_now = OffsetDateTime::now_utc() - time::Duration::seconds(local_is_off_by);
+        let reset = u32::try_from(github_now.unix_timestamp() + 1200).unwrap();
+        let body = r#"{"errors":[{"type":"RATE_LIMITED","message":"API rate limit exceeded"}]}"#;
+        let refused = Reply {
+            status: 200,
+            reset: Some(reset),
+            date: None,
+            body: body.to_owned(),
+        };
+        let (transport, _asked) = Scripted::new(vec![
+            dated(signed_in_as("someone"), github_now),
+            Ok(refused),
+        ]);
+        let github = github(transport);
+        drop(github.viewer());
+
+        let error = github.viewer().unwrap_err();
+
+        assert!((1199..=1201).contains(&seconds_left(&error)), "{error:?}");
+    }
+}
+
+#[test]
+fn a_request_while_the_rate_limit_holds_asks_nothing_and_says_when_it_can() {
+    let reset = seconds_from_now(1200);
+    let refused = Reply {
+        status: 429,
+        reset: Some(reset),
+        date: None,
+        body: String::new(),
+    };
+    let (transport, asked) = Scripted::new(vec![Ok(refused)]);
+    let github = github(transport);
+    drop(github.viewer());
+    assert_eq!(asked.try_iter().count(), 1);
+
+    let error = github.viewer().unwrap_err();
+
+    assert_eq!(error.kind, limited_until(Some(reset)));
+    assert_eq!(asked.try_iter().count(), 0);
+    assert_eq!(
+        github.points_back().map(|at| at.unix_timestamp()),
+        Some(reset.into())
+    );
 }
 
 #[test]
@@ -267,7 +356,11 @@ fn a_check_that_fails_for_another_reason_says_that_reason() {
 #[test]
 fn a_null_field_doesnt_hide_the_rate_limit_that_explains_it() {
     let body = r#"{"data":{"viewer":null},"errors":[{"type":"RATE_LIMITED","message":"x"}]}"#;
-    assert_eq!(error_of(answered(200, body)).kind, limited_until(None));
+    let error = error_of(answered(200, body));
+    assert!(
+        matches!(error.kind, ErrorKind::RateLimited { .. }),
+        "{error:?}"
+    );
 }
 
 #[test]

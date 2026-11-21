@@ -9,7 +9,8 @@ use crate::logfile;
 
 /// What Tsugiki does next, and the way past `gh`, which a restart takes, since Tsugiki reads its own
 /// environment, which a later change in the user's shell doesn't reach.
-const ASKS_AGAIN: &str = "Tsugiki asks again each minute, and at once when you click the sync status.";
+const ASKS_AGAIN: &str =
+    "Tsugiki asks again each minute, and at once when you click an open Repository's sync status.";
 const GH_TOKEN_INSTEAD: &str = "To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki.";
 
 /// Takes the token from `GH_TOKEN` or asks `gh` for it, and hands the logger a copy to hide. Without one,

@@ -73,6 +73,13 @@ impl OnScreen {
         self.of(item).for_each(|shown| shown.due = due);
     }
 
+    /// Each item is due at `now`: Tsugiki has a token now, and every read since the item opened found none.
+    pub(super) fn all_due(&mut self, now: Instant) {
+        for shown in &mut self.items {
+            shown.due = now;
+        }
+    }
+
     /// When the next minute comes round of an item the user can see, or nothing while there's none.
     pub(super) fn wake(&self) -> Option<Instant> {
         self.seen().map(|shown| shown.due).min()

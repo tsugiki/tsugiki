@@ -42,7 +42,9 @@ export function inFlightWords(inFlight: InFlight | null, now: number): InFlightW
   const asked = inFlight.asked;
   return {
     asking:
-      asked.kind === "token" ? "Waiting for gh to give the token" : `Waiting for GitHub: ${askingWords(asked)}`,
+      asked.kind === "token"
+        ? "Waiting for gh to give the token"
+        : `Waiting for GitHub: ${askingWords(asked)}`,
     waited: `, ${String(Math.floor(waited / SECOND_MS))} s`,
   };
 }

@@ -239,6 +239,41 @@ fn a_read_of_the_token_is_in_flight_until_gh_answers_and_github_hears_the_rest()
     );
 }
 
+static ON_SCREEN: ScriptedGh = ScriptedGh::new();
+
+fn gh_on_screen(_: &[&str]) -> io::Result<GhOutput> {
+    ON_SCREEN.answer()
+}
+
+#[test]
+fn an_item_opened_without_a_token_is_read_as_soon_as_a_read_finds_one() {
+    let (folders, _folder) = temp_folders("no-token-on-screen");
+    let asked = ON_SCREEN.script(vec![GhAnswer::Missing, GhAnswer::Token]);
+    let (announce, heard) = in_flight_heard();
+    let board = quiet_board().with_in_flight(announce);
+    let session = Session::start(board, Ok(folders), reaching(through(gh_on_screen)), HOURLY);
+    let window = session.fetching();
+    asked.recv_timeout(PLENTY).unwrap();
+
+    let issue = Item {
+        repository: gcmon(),
+        number: 7,
+    };
+    window.screen_moved(ScreenMove::Opened(Fetched::Issue(issue)));
+    window.fetch_issue(gcmon(), 7);
+    window.refresh();
+    let heard: Vec<_> = (0..8).map(|_| heard.recv_timeout(PLENTY).unwrap()).collect();
+    session.stop(PLENTY);
+
+    let read = Asking::Read {
+        repository: gcmon(),
+        number: 7,
+    };
+    let reads = [Some(Asking::Token), None];
+    let connects = [Some(Asking::Status), None, Some(read), None];
+    assert_eq!(heard, [&reads[..], &reads, &connects].concat());
+}
+
 static OPENED: ScriptedGh = ScriptedGh::new();
 
 fn gh_opened(_: &[&str]) -> io::Result<GhOutput> {

@@ -463,27 +463,43 @@ pub(super) fn run_thread(
     }
 }
 
+/// Connects, and while a read of the token finds none, answers what the thread is asked that GitHub can't
+/// be asked, and reads the token again at the status check's interval and on the user's click. Gives the
+/// client and the syncs of the Repositories the window opened meanwhile, or nothing once the session stops
+/// the thread.
+fn until_connected(
+    board: &mut StatusBoard,
+    store: &Store,
+    access: GitHubAccess,
+    refreshes: &Refreshes,
+) -> Option<(GitHub, Syncs)> {
+    let mut syncs = Syncs::new(refreshes.settings.clone());
+    let mut connected = connect(board, store, access, refreshes);
+    loop {
+        match connected {
+            Ok(github) => return Some((github, syncs)),
+            Err(unconnected) => {
+                let read = refreshes.wait_for_token(board, store, &mut syncs)?;
+                connected = unconnected.connect(board, store, read);
+                // The window still says each item on screen needs a token, so it reads them now.
+                if connected.is_ok() {
+                    refreshes.on_screen.borrow_mut().all_due(Instant::now());
+                }
+            }
+        }
+    }
+}
+
 /// Connects, then refreshes and runs the syncs the app asks for, until the session stops it. With no token
-/// `board` shows why, and the thread answers what it's asked that GitHub can't be asked, and reads the
-/// token again at the status check's interval and on the user's click.
+/// `board` shows why, and the thread reads it again as `until_connected` says.
 pub(super) fn watch(
     board: &mut StatusBoard,
     store: &Store,
     access: GitHubAccess,
     refreshes: &Refreshes,
 ) {
-    let mut syncs = Syncs::new(refreshes.settings.clone());
-    let mut connected = connect(board, store, access, refreshes);
-    let github = loop {
-        match connected {
-            Ok(github) => break github,
-            Err(unconnected) => {
-                let Some(read) = refreshes.wait_for_token(board, store, &mut syncs) else {
-                    return;
-                };
-                connected = unconnected.connect(board, store, read);
-            }
-        }
+    let Some((github, mut syncs)) = until_connected(board, store, access, refreshes) else {
+        return;
     };
     board.hour_points(github.hour_points());
     board.points_back(github.points_back());

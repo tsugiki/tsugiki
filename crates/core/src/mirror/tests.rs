@@ -1951,7 +1951,7 @@ mod problems {
 
     #[test]
     fn github_gives_a_repositorys_size_in_kilobytes_or_nothing_when_its_empty() {
-        let signed_in = crate::github::testing::signed_in_gh;
+        let signed_in = crate::github::testing::SIGNED_IN;
         let mut sized = sizes_on_github(two_kilobytes, signed_in);
         let mut empty = sizes_on_github(empty, signed_in);
 

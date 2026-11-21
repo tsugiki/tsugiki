@@ -15,7 +15,7 @@ use tsugiki_core::facts::pull_request_content::{
 };
 use tsugiki_core::facts::pull_requests::{PullRequestFacts, ReviewState};
 use tsugiki_core::github::replay::Replayer;
-use tsugiki_core::github::testing::{Canned, RATE_LIMIT, answer, page_info, signed_in_gh};
+use tsugiki_core::github::testing::{Canned, RATE_LIMIT, SIGNED_IN, answer, page_info};
 use tsugiki_core::github::{Reply, Request, Transport, Unreachable};
 use tsugiki_core::login::Login;
 use tsugiki_core::mirror_source::MirrorSource;
@@ -37,7 +37,7 @@ const PLENTY: Duration = Duration::from_secs(60);
 fn access(transport: impl Transport + 'static) -> GitHubAccess {
     GitHubAccess {
         transport: Box::new(transport),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     }
 }
 

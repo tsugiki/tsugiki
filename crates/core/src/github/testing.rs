@@ -7,7 +7,7 @@
     reason = "setting a field of a JSON object never panics"
 )]
 
-use tsugiki_token::testing::gh_prints;
+use tsugiki_token::testing::{gh_prints, nothing_set};
 
 use super::*;
 use crate::token::GhOutput;
@@ -234,10 +234,16 @@ pub fn signed_in_as(login: &str) -> Result<Reply, Unreachable> {
 }
 
 /// gh, signed in.
-pub fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
+fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
     gh_prints("gho_example")
 }
 
+/// A machine with no `GH_TOKEN` and gh signed in.
+pub const SIGNED_IN: TokenFrom = TokenFrom {
+    env: nothing_set,
+    gh: signed_in_gh,
+};
+
 pub fn token() -> Token {
-    crate::token::read_token(signed_in_gh).unwrap()
+    crate::token::read_token(SIGNED_IN).unwrap()
 }

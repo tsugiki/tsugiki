@@ -13,7 +13,7 @@ use tsugiki_core::github::GitHubAccess;
 use tsugiki_core::launch;
 use tsugiki_core::logfile;
 use tsugiki_core::mirror::Remotes;
-use tsugiki_token::{Https, run_gh};
+use tsugiki_token::{Https, TokenFrom};
 
 use crate::first_frame;
 use crate::navigation;
@@ -77,7 +77,7 @@ pub fn run() {
     let outside = Outside {
         github: GitHubAccess {
             transport: Box::new(Https::new()),
-            run_gh,
+            token_from: TokenFrom::LIVE,
         },
         releases: {
             let https = Https::new();

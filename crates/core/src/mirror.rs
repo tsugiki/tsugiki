@@ -26,7 +26,7 @@ use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::status::Status;
-use crate::token::{RunGh, read_token};
+use crate::token::{TokenFrom, read_token};
 
 mod heads;
 mod lookup;
@@ -152,11 +152,11 @@ pub type SizeOf = Box<dyn FnMut(&RepositoryName) -> Result<u64, Error> + Send>;
 /// The bytes free on the disk that holds a folder.
 pub type FreeSpace = Box<dyn Fn(&Path) -> io::Result<u64> + Send>;
 
-/// Asks GitHub for a Repository's size, through a new connection signed in with gh's token each time, as a
-/// clone is rare and the session owns the other one.
-pub fn sizes_on_github(new_transport: fn() -> Box<dyn Transport>, run_gh: RunGh) -> SizeOf {
+/// Asks GitHub for a Repository's size, through a new connection signed in with a token read each time, as
+/// a clone is rare and the session owns the other one.
+pub fn sizes_on_github(new_transport: fn() -> Box<dyn Transport>, token_from: TokenFrom) -> SizeOf {
     Box::new(move |repository| {
-        let token = read_token(run_gh)?;
+        let token = read_token(token_from)?;
         GitHub::new(new_transport(), token).repository_size(repository)
     })
 }
@@ -262,10 +262,10 @@ pub struct Remotes {
 }
 
 impl Remotes {
-    /// GitHub's remotes, whose sizes its API gives, signed in with gh's token.
+    /// GitHub's remotes, whose sizes its API gives, signed in with the token Tsugiki reads.
     pub fn github() -> Self {
         Self {
-            size_of: sizes_on_github(https, tsugiki_token::run_gh),
+            size_of: sizes_on_github(https, TokenFrom::LIVE),
             free_space: Box::new(|folder| fs4::available_space(folder)),
             prefixes: GITHUB_PREFIXES.map(str::to_owned).to_vec(),
             upkeep: Some(Schedule::DAILY_AND_WEEKLY),

@@ -1,6 +1,6 @@
 #![expect(
     clippy::disallowed_methods,
-    reason = "these are the tests of `Token::from_gh` itself"
+    reason = "these are the tests of `Token::find` itself"
 )]
 
 use std::time::Duration;
@@ -8,25 +8,67 @@ use std::time::Duration;
 use rustls::pki_types::UnixTime;
 
 use super::*;
-use crate::testing::gh_prints;
+use crate::testing::{gh_alone, gh_prints, nothing_set};
 
 fn example() -> Token {
-    Token::from_gh(|_| gh_prints("gho_example\n")).unwrap()
+    Token::find(gh_alone(|_| gh_prints("gho_example\n"))).unwrap()
 }
+
+const GH_NEVER_RUNS: RunGh = |_| panic!("gh ran although GH_TOKEN holds a token");
 
 #[test]
 fn the_token_comes_from_gh_auth_token_for_github_com() {
-    let token = Token::from_gh(|args| {
+    let token = Token::find(gh_alone(|args| {
         assert_eq!(args, ["auth", "token", "--hostname", "github.com"]);
         gh_prints("gho_example\n")
-    })
+    }))
     .unwrap();
     assert_eq!(token.bearer(), "Bearer gho_example");
 }
 
 #[test]
+fn gh_token_set_gives_its_token_and_runs_no_gh() {
+    let token = Token::find(TokenFrom {
+        env: |name| (name == "GH_TOKEN").then(|| "ghp_from_env\n".to_owned()),
+        gh: GH_NEVER_RUNS,
+    })
+    .unwrap();
+    assert_eq!(token.bearer(), "Bearer ghp_from_env");
+}
+
+#[test]
+fn without_gh_token_or_with_it_empty_the_token_comes_from_gh() {
+    let unset_or_empty: [ReadEnv; 3] = [
+        nothing_set,
+        |_| Some(String::new()),
+        |_| Some(" \n".to_owned()),
+    ];
+    for env in unset_or_empty {
+        let token = Token::find(TokenFrom {
+            env,
+            gh: |_| gh_prints("gho_example\n"),
+        })
+        .unwrap();
+        assert_eq!(token.bearer(), "Bearer gho_example");
+    }
+}
+
+#[test]
+fn a_token_from_gh_token_is_hidden_wherever_it_appears() {
+    let token = Token::find(TokenFrom {
+        env: |_| Some("0123456789abcdef".to_owned()),
+        gh: GH_NEVER_RUNS,
+    })
+    .unwrap();
+    assert_eq!(
+        token.hide_in("Bearer 0123456789abcdef refused", "[token]"),
+        "Bearer [token] refused"
+    );
+}
+
+#[test]
 fn gh_that_cant_run_gives_no_token_and_says_why() {
-    let missing = Token::from_gh(|_| Err(io::Error::from(io::ErrorKind::NotFound)));
+    let missing = Token::find(gh_alone(|_| Err(io::Error::from(io::ErrorKind::NotFound))));
     assert!(
         matches!(missing, Err(NoToken::GhMissing(cause)) if cause.kind() == io::ErrorKind::NotFound)
     );
@@ -34,18 +76,18 @@ fn gh_that_cant_run_gives_no_token_and_says_why() {
 
 #[test]
 fn gh_that_fails_gives_no_token() {
-    let failed = Token::from_gh(|_| {
+    let failed = Token::find(gh_alone(|_| {
         Ok(GhOutput {
             success: false,
             stdout: "gho_example".to_owned(),
         })
-    });
+    }));
     assert!(matches!(failed, Err(NoToken::GhFailed)));
 }
 
 #[test]
 fn an_empty_answer_from_gh_is_not_a_token() {
-    let empty = Token::from_gh(|_| gh_prints(" \n"));
+    let empty = Token::find(gh_alone(|_| gh_prints(" \n")));
     assert!(matches!(empty, Err(NoToken::GhPrintedNothing)));
 }
 
@@ -58,7 +100,7 @@ fn printing_a_token_doesnt_show_it() {
 
 #[test]
 fn a_token_is_hidden_wherever_it_appears() {
-    let token = Token::from_gh(|_| gh_prints("0123456789abcdef")).unwrap();
+    let token = Token::find(gh_alone(|_| gh_prints("0123456789abcdef"))).unwrap();
     assert_eq!(
         token.hide_in("Bearer 0123456789abcdef, again 0123456789abcdef", "[token]"),
         "Bearer [token], again [token]"

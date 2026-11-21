@@ -16,8 +16,8 @@ use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
-    Canned, RATE_LIMIT, Scripted, answer, answered, dated, fetched_nodes, github, page_info,
-    pr_content, pr_node, pull_request_answer, reply_ok, search_page, signed_in_as, signed_in_gh,
+    Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, github,
+    page_info, pr_content, pr_node, pull_request_answer, reply_ok, search_page, signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -35,7 +35,7 @@ use crate::testing::{
     TempPath, cpython, cpython_settings, gcmon, hours_ago, issue_facts, listed, listing, me,
     one_folder, pr_facts, recordings,
 };
-use crate::token::Token;
+use crate::token::{Token, TokenFrom};
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
@@ -48,6 +48,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvError, Sender, TryRecvError};
 use time::OffsetDateTime;
 use tsugiki_test_git::{pass_on, wait_for_message};
+use tsugiki_token::testing::nothing_set;
 
 /// A real store that keeps nothing once it closes.
 fn empty_store() -> Store {
@@ -63,14 +64,14 @@ fn store_remembering(login: &str) -> Store {
 fn offline() -> GitHubAccess {
     GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     }
 }
 
 fn answering(status: u16, body: &str) -> GitHubAccess {
     GitHubAccess {
         transport: Box::new(answered(status, body)),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     }
 }
 
@@ -82,10 +83,16 @@ fn without_gh(_: &[&str]) -> io::Result<crate::token::GhOutput> {
     Err(io::Error::from(io::ErrorKind::NotFound))
 }
 
+/// A machine with no `GH_TOKEN` and no gh.
+const NO_GH: TokenFrom = TokenFrom {
+    env: nothing_set,
+    gh: without_gh,
+};
+
 fn replying(replies: Vec<Result<Reply, Unreachable>>) -> GitHubAccess {
     GitHubAccess {
         transport: Box::new(Replies(RefCell::new(replies.into()))),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     }
 }
 
@@ -203,7 +210,7 @@ fn without_gh_nothing_is_asked_and_the_problem_shows() {
     let (mut board, seen) = watched_board();
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     assert!(connect(&mut board, &empty_store(), access).is_none());
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
@@ -488,7 +495,7 @@ fn mark_unseen_flags_the_item_from_now() {
 fn opening_a_pr_keeps_its_recorded_conversation_and_leaves_last_seen_alone() {
     let access = GitHubAccess {
         transport: Box::new(Replayer::new(recordings())),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders("open-pr");
     let (board, changes) = changes_board();
@@ -548,7 +555,7 @@ fn reading_a_pr_on_screen_leaves_last_seen_alone() {
 fn mark_seen_and_mark_unseen_work_with_no_token() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let drawn = hours_ago(1);
 
@@ -934,7 +941,7 @@ fn two_demands_for_a_conversation_before_its_read_finishes_ask_github_once() {
     let (script, asked) = Scripted::new(vec![signed_in(), pr_content_reply()]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders("one-read");
     let (board, changes) = changes_board();
@@ -958,7 +965,7 @@ fn a_failed_read_answers_the_demands_that_came_while_it_ran_with_its_failure() {
     let (script, asked) = Scripted::new(vec![signed_in(), Err(Unreachable::Offline)]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
 
     let failed = failed_reads("one-failed-read", access, |demands| {
@@ -976,7 +983,7 @@ fn a_demand_after_a_read_ended_reads_again() {
     let (script, asked) = Scripted::new(replies);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders("read-again");
     let (board, changes) = changes_board();
@@ -1351,7 +1358,7 @@ fn a_pr_read_without_the_network_waits_on_github() {
 fn a_pr_read_with_no_token_says_why_the_pr_has_no_head_before_the_window_hears() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let (folders, _folder) = temp_folders("no-token-head");
     let (board, failed) = failed_reads_board();
@@ -1370,7 +1377,7 @@ fn a_pr_read_with_no_token_says_why_the_pr_has_no_head_before_the_window_hears()
 fn a_pr_read_with_no_token_says_so() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
 
     let failed = failed_reads_of_pr_7("no-token-pr", access);
@@ -1464,7 +1471,7 @@ fn a_check_github_cant_answer_says_why() {
 fn a_session_that_has_ended_says_so_to_a_check() {
     let access = GitHubAccess {
         transport: Box::new(answered(200, GCMON)),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let (folders, _folder) = temp_folders("check-ended");
     let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
@@ -1555,7 +1562,7 @@ fn inbox_of(workbench: &Workbench) -> String {
 fn the_recorded_cpython_work_reads_as_an_inbox() {
     let access = GitHubAccess {
         transport: Box::new(Replayer::new(recordings())),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders("recorded-inbox");
     let (board, changes) = changes_board();
@@ -1593,7 +1600,7 @@ fn a_sync_fills_the_workbench_and_says_so() {
     ]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders("sync");
     let (board, changes) = changes_board();
@@ -1642,7 +1649,7 @@ fn a_read_of_a_pr_on_screen_and_a_sync_both_add_to_the_hours_points() {
     ]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (passed, seen) = mpsc::channel();
     let board = quiet_board().with_hour_points(Box::new(move |points: Option<&HourPoints>| {
@@ -1682,7 +1689,7 @@ fn the_window_stops_showing_the_hours_points_at_its_reset_by_githubs_clock() {
     let (script, _asked) = Scripted::new(vec![dated(viewer, github_now)]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (passed, seen) = mpsc::channel();
     let board = quiet_board().with_hour_points(Box::new(move |points: Option<&HourPoints>| {
@@ -1735,7 +1742,7 @@ fn a_sync_hands_the_mirror_the_heads_it_saved_of_the_prs_the_users_work_reaches_
     ]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders("reached-heads");
     let store = Store::open(&folders.database()).unwrap();
@@ -2029,7 +2036,7 @@ fn a_hand_edit_to_the_settings_tells_the_window_with_no_token() {
     let (board, changes) = board_hearing_settings();
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
@@ -2209,7 +2216,7 @@ fn a_save_that_leaves_reach_as_it_was_hands_the_mirror_nothing() {
 fn a_session_with_no_token_follows_the_reach_a_hand_edit_moves() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
 
     let took = session_taking(
@@ -2319,7 +2326,7 @@ fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_
     let (mirrors, heard) = HeardRequests::new();
     let github = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let connections = Connections {
         github,
@@ -2516,7 +2523,7 @@ fn synced_with_both_sides_read(name: &str, prepared: &str) -> (Vec<String>, Revi
     ]);
     let access = GitHubAccess {
         transport: Box::new(script),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let (folders, _folder) = temp_folders(name);
     let store = Store::open(&folders.database()).unwrap();
@@ -2645,7 +2652,7 @@ fn the_session_keeps_the_patch_ids_the_mirror_read_and_tells_the_window_whose_th
 fn a_session_with_no_token_keeps_patch_ids_too() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let head = PatchReads::Read(vec![patches_of("4567def", 'a')]);
 
@@ -2921,7 +2928,7 @@ fn outage() -> (GitHubAccess, Arc<AtomicBool>, Receiver<String>) {
             up: Arc::clone(&up),
             asked,
         }),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     (access, up, seen)
 }
@@ -3054,7 +3061,7 @@ fn a_refresh_while_github_is_still_away_stays_offline_and_runs_no_step() {
 fn with_no_token_what_is_stored_stays_readable() {
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
     let (folders, _folder) = temp_folders("no-token-readable");
     let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
@@ -3128,7 +3135,7 @@ fn quiet_repository() -> (GitHubAccess, Receiver<String>) {
     let (asked, seen) = mpsc::channel();
     let access = GitHubAccess {
         transport: Box::new(QuietRepository { asked }),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     (access, seen)
 }
@@ -3255,7 +3262,7 @@ fn reading_ahead_once_saved(name: &str, held: &'static str, save: fn(&SettingsOw
             go: gone,
             held: Cell::new(false),
         }),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let connections = Connections {
         github: access,
@@ -3517,7 +3524,7 @@ fn stopping_doesnt_wait_out_a_request_in_progress() {
             asked,
             answer: answering,
         }),
-        run_gh: signed_in_gh,
+        token_from: SIGNED_IN,
     };
     let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(access), HOURLY);
     request.recv().unwrap();
@@ -3574,7 +3581,7 @@ fn starting_without_gh_keeps_the_problem_that_says_how_to_sign_in() {
     let (mut board, seen) = watched_board();
     let access = GitHubAccess {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
-        run_gh: without_gh,
+        token_from: NO_GH,
     };
 
     run(
@@ -3687,7 +3694,7 @@ fn a_session_without_a_token_refills_stale_links_too() {
     for open in OPENING_GCMON {
         let access = GitHubAccess {
             transport: Box::new(Canned(Err(Unreachable::Offline))),
-            run_gh: without_gh,
+            token_from: NO_GH,
         };
 
         let (heard, store) = refilled_watching(access, open);

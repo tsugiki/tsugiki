@@ -9,8 +9,9 @@
 // It reads the page over the Chrome DevTools Protocol, on a port only this test's build opens. We don't use
 // WebDriver because an msedgedriver session opens a second window on the primary display (#76).
 //
-// It needs `gh`, but not your sign-in: it gives Tsugiki a made-up token, and a proxy that decides when
-// "GitHub" stops answering, so the status changes when the test says and nothing reaches GitHub.
+// It needs neither `gh` nor your sign-in: it gives Tsugiki a made-up token in `GH_TOKEN`, and a proxy that
+// decides when "GitHub" stops answering, so the status changes when the test says and nothing reaches
+// GitHub.
 //
 //   npm run smoke
 //
@@ -29,11 +30,11 @@ const DEBUG_PORT = 9333;
 const APP_ADDRESS = "http://tauri.localhost/";
 const SETTLE_MS = 2000;
 const CLOSE_MS = 10_000;
-// Tsugiki runs `gh auth token` before its first request and gives `gh` 30 s (`GH_TIMEOUT` in the token
-// crate's live.rs). The first request has arrived late before, cause unknown (#86). This wait starts once the
-// page is ready, so a `gh` that times out still fails the check. A request waits at the proxy for 15 s at
-// most (`REQUEST_TIMEOUT`), so one that arrives more than 15 s before the page is ready fails it too.
-const FIRST_REQUEST_MS = 35_000;
+// The test sets `GH_TOKEN`, so Tsugiki runs no `gh` and sends its first request once its session has read
+// the database. This wait starts once the page is ready, which may be after the request came. A request
+// waits at the proxy for 15 s at most (`REQUEST_TIMEOUT` in the token crate's live.rs), so one that arrives
+// more than 15 s before the page is ready fails the check, and the wait gives a slow start as long after.
+const FIRST_REQUEST_MS = 15_000;
 const BUILD_CONFIG = ".temp/smoke-config.json";
 const TAURI_BROWSER_ARGS = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
@@ -541,7 +542,7 @@ const app = spawn(application, [], {
   stdio: "ignore",
   env: {
     ...process.env,
-    // `gh auth token` prints this instead of reading your sign-in.
+    // Tsugiki takes this in place of your sign-in, and runs no `gh`.
     GH_TOKEN: "smoke-test-not-a-token",
     // The first variable the HTTP client looks at, so a proxy of your own can't take the request.
     ALL_PROXY: `http://127.0.0.1:${String(github.port)}`,

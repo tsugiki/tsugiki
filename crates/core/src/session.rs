@@ -58,7 +58,7 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     if let Ok(Some(last_login)) = store.last_login() {
         board.set(Status::ConnectingAs { last_login });
     }
-    let token = match read_token(access.run_gh) {
+    let token = match read_token(access.token_from) {
         Ok(token) => token,
         Err(problem) => {
             board.set(Status::Problem { problem });

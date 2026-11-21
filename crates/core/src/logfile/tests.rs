@@ -1,7 +1,7 @@
 use super::*;
 use crate::testing::TempPath;
 use crate::token::read_token;
-use tsugiki_token::testing::gh_prints;
+use tsugiki_token::testing::{gh_alone, gh_prints};
 
 /// A folder, and a logger that writes in it, so tests don't share the process's one logger. The folder comes
 /// first, so a pattern that binds both drops it last.
@@ -51,7 +51,7 @@ fn a_line_says_when_how_bad_where_and_what() {
 #[test]
 fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
     let (folder, logger) = temp_logger("in-use");
-    let token = read_token(|_| gh_prints("0123456789abcdef"));
+    let token = read_token(gh_alone(|_| gh_prints("0123456789abcdef")));
     logger.send(Message::Hide(token.unwrap()));
     say(
         &logger,

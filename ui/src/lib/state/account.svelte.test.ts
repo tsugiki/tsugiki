@@ -18,11 +18,16 @@ describe("signedIn", () => {
       login: "octocat",
       note: "Signed in last time. GitHub can't be reached now.",
     });
+    expect(signedIn({ state: "reconnecting_as", last_login: "octocat" })).toEqual({
+      login: "octocat",
+      note: "Signed in last time. GitHub hasn't answered yet.",
+    });
   });
 
   it("says why it names nobody", () => {
     expect(signedIn(undefined)).toEqual({ note: "Not known yet: GitHub hasn't answered." });
     expect(signedIn({ state: "connecting" })).toEqual({ note: "Not known yet: GitHub hasn't answered." });
+    expect(signedIn({ state: "reconnecting" })).toEqual({ note: "Not known yet: GitHub hasn't answered." });
     expect(signedIn({ state: "offline" })).toEqual({ note: "Not known: GitHub can't be reached." });
   });
 

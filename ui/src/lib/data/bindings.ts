@@ -3250,6 +3250,13 @@ export type Status_Deserialize =
 { state: "offline" } | 
 /**  GitHub can't be reached, and this is who was signed in last time. */
 { state: "offline_as"; last_login: Login } | 
+/**
+ *  Nobody is known, and GitHub, which couldn't be reached, is being asked again. A status bar the
+ *  settings hide still shows it, as it showed being offline.
+ */
+{ state: "reconnecting" } | 
+/**  GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time. */
+{ state: "reconnecting_as"; last_login: Login } | 
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Deserialize };
 
@@ -3265,6 +3272,13 @@ export type Status_Serialize =
 { state: "offline" } | 
 /**  GitHub can't be reached, and this is who was signed in last time. */
 { state: "offline_as"; last_login: Login } | 
+/**
+ *  Nobody is known, and GitHub, which couldn't be reached, is being asked again. A status bar the
+ *  settings hide still shows it, as it showed being offline.
+ */
+{ state: "reconnecting" } | 
+/**  GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time. */
+{ state: "reconnecting_as"; last_login: Login } | 
 /**  Something stops Tsugiki reading, such as a refused token. */
 { state: "problem"; problem: Error_Serialize };
 

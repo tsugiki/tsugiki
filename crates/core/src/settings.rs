@@ -616,7 +616,7 @@ pub enum TokenSource {
 
 impl TokenSource {
     /// Where this run's token comes from: gh, the only source until Tsugiki reads a personal access token
-    /// from the keychain (#430).
+    /// from the keychain (#430). A token from `GH_TOKEN` counts as gh's, since `gh auth token` gives it too.
     pub const IN_USE: Self = Self::Gh;
 }
 

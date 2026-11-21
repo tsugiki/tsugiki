@@ -2,9 +2,11 @@
 
 Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.md](../../CONTEXT.md).
 
-- The GitHub token comes from `gh auth token` by default. A personal access token is a supported choice:
-  fine-grained read-only to try Tsugiki, fine-grained with review rights on one owner's repositories, or
-  classic `public_repo` ([ADR 0004](../adr/0004-auth-via-gh-cli-token.md)).
+- The GitHub token comes from `GH_TOKEN` when it is set and not empty, and from `gh auth token` otherwise.
+  `gh auth token` gives `GH_TOKEN` first too, so the token is the same, but Tsugiki then runs no `gh`. A
+  personal access token is a supported choice: fine-grained read-only to try Tsugiki, fine-grained with
+  review rights on one owner's repositories, or classic `public_repo`
+  ([ADR 0004](../adr/0004-auth-via-gh-cli-token.md)).
 - Only the Rust core holds the token and talks to GitHub; the webview never sees it ([ADR
   0005](../adr/0005-token-stays-in-the-rust-core.md)).
 - The **Account** page shows who is signed in, where the token comes from, and what it lets Tsugiki do in

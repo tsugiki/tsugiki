@@ -87,6 +87,16 @@ fn the_status_reaches_the_ui_tagged_by_its_state() {
             serde_json::json!({ "state": "offline_as", "last_login": "hubot" }),
         ),
         (
+            Status::Reconnecting,
+            serde_json::json!({ "state": "reconnecting" }),
+        ),
+        (
+            Status::ReconnectingAs {
+                last_login: hubot(),
+            },
+            serde_json::json!({ "state": "reconnecting_as", "last_login": "hubot" }),
+        ),
+        (
             Status::Problem { problem },
             serde_json::json!({
                 "state": "problem",

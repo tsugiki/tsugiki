@@ -63,7 +63,7 @@ impl Logger {
                             last = text;
                         }
                     }
-                    Message::Hide(token) => hidden.push(token),
+                    Message::Hide(token) => remember(&mut hidden, token),
                     Message::Flush(done) => drop(done),
                 }
             }
@@ -110,6 +110,14 @@ impl Log for Logger {
             reason = "running out of patience only loses lines, as a crash would, and `done` going is the answer"
         )]
         let _ = written.recv_timeout(FLUSH_PATIENCE);
+    }
+}
+
+/// Adds `token` to `hidden` unless it is there already. Each clone reads the token again, and each copy would
+/// make every line slower to scrub.
+fn remember(hidden: &mut Vec<Token>, token: Token) {
+    if !hidden.contains(&token) {
+        hidden.push(token);
     }
 }
 

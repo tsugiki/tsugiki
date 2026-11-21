@@ -15,8 +15,11 @@ use rustls::CertificateError;
 use url::Url;
 use url::form_urlencoded;
 
-pub use live::{Https, run_gh};
+pub use live::Https;
 
+/// The variable `gh auth token` reads before its own sign-in, which Tsugiki reads first, and the only one it
+/// reads.
+const GH_TOKEN: &str = "GH_TOKEN";
 /// The one host [`Https`] sends requests to (ADR 0005).
 const API_HOST: &str = "api.github.com";
 /// Where GraphQL requests go.
@@ -35,13 +38,32 @@ pub struct GhOutput {
     pub stdout: String,
 }
 
-/// Runs `gh` with the given arguments: [`run_gh`] in the app, a stand-in in tests.
-pub type RunGh = fn(&[&str]) -> io::Result<GhOutput>;
+/// Runs `gh` with the given arguments: `gh` itself in the app, a stand-in in tests.
+pub(crate) type RunGh = fn(&[&str]) -> io::Result<GhOutput>;
+
+/// The value of `GH_TOKEN`, if it is set and is Unicode: the process's own in the app, a stand-in in tests.
+pub(crate) type ReadEnv = fn() -> Option<String>;
+
+/// Where [`Token::find`] looks for a token. Its fields are private, so nothing outside this crate can run
+/// the real `gh` through [`TokenFrom::LIVE`]. Tests build one through the `testing` module.
+#[derive(Clone, Copy)]
+pub struct TokenFrom {
+    env: ReadEnv,
+    gh: RunGh,
+}
+
+impl TokenFrom {
+    /// The process's environment and the real `gh`.
+    pub const LIVE: Self = Self {
+        env: live::read_env,
+        gh: live::run_gh,
+    };
+}
 
 /// A GitHub token, held in memory. Nothing outside this crate can read its string. It has no `Serialize`,
 /// so no command or event can carry it, and printing it shows `Token(***)`. A copy goes to the logger, which
-/// hides it in each line.
-#[derive(Clone)]
+/// hides it in each line, and the logger compares tokens to keep one copy of each.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Token(String);
 
 /// Why `gh` gave no token.
@@ -56,8 +78,17 @@ pub enum NoToken {
 }
 
 impl Token {
+    /// The token in `GH_TOKEN` when it holds one, and otherwise gh's token for github.com. `gh auth token`
+    /// gives `GH_TOKEN` first too, so the token is the same either way, but taking it here runs no `gh`.
+    pub fn find(from: TokenFrom) -> Result<Self, NoToken> {
+        match (from.env)() {
+            Some(set) if !set.trim().is_empty() => Ok(Self(set.trim().to_owned())),
+            _ => Self::from_gh(from.gh),
+        }
+    }
+
     /// Asks `gh` for its token for github.com.
-    pub fn from_gh(run: RunGh) -> Result<Self, NoToken> {
+    fn from_gh(run: RunGh) -> Result<Self, NoToken> {
         let output =
             run(&["auth", "token", "--hostname", "github.com"]).map_err(NoToken::GhMissing)?;
         let token = output.stdout.trim();

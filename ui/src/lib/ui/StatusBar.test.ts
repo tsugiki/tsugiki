@@ -149,6 +149,18 @@ describe("StatusBar", () => {
       expect(bar().textContent?.trim()).toBe("octocat · Offline: read-only");
     });
 
+    // A Refresh while offline would otherwise empty the bar until GitHub answers or the ask fails.
+    it("stays while it asks GitHub again after being offline", () => {
+      render(StatusBar, { status: { state: "reconnecting" }, visible: false });
+      expect(bar().textContent?.trim()).toBe("Connecting…");
+    });
+
+    it("stays with who it was last time while it asks again after being offline", () => {
+      render(StatusBar, { status: { state: "reconnecting_as", last_login: "octocat" }, visible: false });
+      expect(bar().textContent?.trim()).toBe("octocat · Connecting…");
+      expect(bar().classList.contains("offline")).toBe(false);
+    });
+
     it("comes back for a problem", () => {
       const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
       render(StatusBar, { status: { state: "problem", problem }, visible: false });

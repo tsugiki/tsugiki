@@ -1,4 +1,5 @@
-// The status bar's words for the request to GitHub in flight, which it shows once GitHub is slow to answer.
+// The status bar's words for what the core waits on, a request to GitHub or `gh` with the token, which it
+// shows once the answer is slow.
 import type { InFlight } from "$lib/state/status.svelte";
 import { SECOND_MS } from "./time";
 
@@ -6,8 +7,11 @@ import { SECOND_MS } from "./time";
  * second, and showing each would flicker. */
 export const SLOW_MS = 3 * SECOND_MS;
 
+/** What the core asks GitHub. */
+type AskingGitHub = Exclude<InFlight["asked"], { kind: "token" }>;
+
 /** What a request asks, as the status bar names it. */
-function askingWords(asked: InFlight["asked"]): string {
+function askingWords(asked: AskingGitHub): string {
   switch (asked.kind) {
     case "status":
       return "status check";
@@ -35,8 +39,10 @@ export function inFlightWords(inFlight: InFlight | null, now: number): InFlightW
   if (inFlight === null) return null;
   const waited = now - Date.parse(inFlight.since);
   if (waited < SLOW_MS) return null;
+  const asked = inFlight.asked;
   return {
-    asking: `Waiting for GitHub: ${askingWords(inFlight.asked)}`,
+    asking:
+      asked.kind === "token" ? "Waiting for gh to give the token" : `Waiting for GitHub: ${askingWords(asked)}`,
     waited: `, ${String(Math.floor(waited / SECOND_MS))} s`,
   };
 }

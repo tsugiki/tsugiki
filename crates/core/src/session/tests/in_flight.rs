@@ -42,6 +42,7 @@ fn a_request_is_in_flight_from_when_it_goes_until_github_answers() {
     let (session, _mirrors, _folder) = in_flight_session("in-flight-held", held, announce);
 
     request.recv_timeout(PLENTY).unwrap();
+    let token: Vec<_> = (0..2).map(|_| in_flight.recv_timeout(PLENTY).unwrap()).collect();
     let out = in_flight.recv_timeout(PLENTY).unwrap();
     let still_out = in_flight.try_recv();
     answer.send(()).unwrap();
@@ -50,6 +51,8 @@ fn a_request_is_in_flight_from_when_it_goes_until_github_answers() {
     drop(answer);
     session.stop(PLENTY);
 
+    let token_read = token.into_iter().map(|now| now.map(|read| read.asked));
+    assert_eq!(token_read.collect::<Vec<_>>(), [Some(Asking::Token), None]);
     let out = out.unwrap();
     assert_eq!(out.asked, Asking::Status);
     assert!(
@@ -93,6 +96,8 @@ fn each_request_the_github_thread_sends_names_what_it_asks() {
     assert_eq!(
         heard,
         [
+            Some(Asking::Token),
+            None,
             Some(Asking::Status),
             None,
             Some(read),

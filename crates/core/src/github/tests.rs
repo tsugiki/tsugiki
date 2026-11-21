@@ -2,6 +2,7 @@ use super::testing::{
     Canned, RATE_LIMIT, Scripted, answer, answered, dated, github, reply_ok, signed_in_as,
 };
 use super::*;
+use crate::github::in_flight::InFlight;
 use time::format_description::well_known::Rfc3339;
 
 fn limited_until(resets_at: Option<u32>) -> ErrorKind {

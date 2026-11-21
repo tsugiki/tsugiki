@@ -1,4 +1,7 @@
-//! The request to GitHub in flight, which the status bar shows once GitHub is slow to answer it (#998).
+//! What the GitHub thread waits on, a request to GitHub or `gh` with the token, which the status bar shows
+//! once it is slow to answer (#998, #1004).
+
+use std::cell::RefCell;
 
 use serde::Serialize;
 use specta::Type;
@@ -6,11 +9,14 @@ use time::OffsetDateTime;
 
 use crate::repository::RepositoryName;
 
-/// What a request asks GitHub, as the status bar names it. Whoever asks says so through `GitHub::asking`,
-/// as the GraphQL operation's name means nothing to a user.
+/// What a request asks GitHub, as the status bar names it, or the token Tsugiki asks `gh` for. Whoever asks
+/// says so through `GitHub::asking`, as the GraphQL operation's name means nothing to a user.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Asking {
+    /// The token, which Tsugiki asks `gh auth token` for when `GH_TOKEN` is unset. No request to GitHub goes
+    /// out until it answers.
+    Token,
     /// Who is signed in, which Tsugiki asks about once a minute.
     Status,
     /// A step of a Repository's refresh.
@@ -34,7 +40,7 @@ pub enum Asking {
     Size { repository: RepositoryName },
 }
 
-/// The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+/// What the GitHub thread waits on: what it asks, and when it asked, by this computer's clock, from which
 /// the window counts the seconds itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct InFlight {
@@ -44,6 +50,35 @@ pub struct InFlight {
     pub since: OffsetDateTime,
 }
 
-/// Hears each request to GitHub as it goes, and nothing once it ends, answered or failed. It must not panic:
-/// the end can come while a panic in the request unwinds, and a second panic then aborts the app.
+/// Hears each wait as it starts, and nothing once it ends, answered or failed. It must not panic: the end
+/// can come while a panic in the wait unwinds, and a second panic then aborts the app.
 pub type AnnounceInFlight = Box<dyn FnMut(Option<&InFlight>) + Send>;
+
+/// Runs `wait`, which asks what `asked` says, and gives what it gave. `announce` hears of it as it starts,
+/// and nothing once it ends, a panic included.
+pub(crate) fn announced<T>(
+    announce: &RefCell<AnnounceInFlight>,
+    asked: Asking,
+    wait: impl FnOnce() -> T,
+) -> T {
+    let in_flight = InFlight {
+        asked,
+        since: OffsetDateTime::now_utc(),
+    };
+    (announce.borrow_mut())(Some(&in_flight));
+    let _ended = Ended(announce);
+    wait()
+}
+
+/// Announces that the wait ended, as it ends, a panic included, so the window doesn't count the seconds of
+/// a wait the GitHub thread no longer waits on.
+struct Ended<'a>(&'a RefCell<AnnounceInFlight>);
+
+impl Drop for Ended<'_> {
+    fn drop(&mut self) {
+        // A panic while unwinding would abort, so a borrow already out goes unannounced.
+        if let Ok(mut announce) = self.0.try_borrow_mut() {
+            announce(None);
+        }
+    }
+}

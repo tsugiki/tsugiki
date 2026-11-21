@@ -7,23 +7,14 @@ pub use tsugiki_token::{GhOutput, Token, TokenFrom};
 use crate::error::{Error, ErrorKind};
 use crate::logfile;
 
-const SIGN_IN: &str = "Tsugiki reads your token from the GitHub CLI. Install `gh`, run \
-                       `gh auth login`, and restart Tsugiki.";
-
-/// The moment Tsugiki next asks for the token after a read finds none. The words for a `gh` that didn't
-/// answer in time name it, since waiting for it is all the user can do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AskAgain {
-    /// Only once Tsugiki restarts, as for the session's connection.
-    AtRestart,
-    /// On the next try of what asked, as for a clone, which goes back in line after a wait.
-    OnRetry,
-}
+/// What Tsugiki does next, and the way past `gh`, which a restart takes, since Tsugiki reads its own
+/// environment, which a later change in the user's shell doesn't reach.
+const ASKS_AGAIN: &str = "Tsugiki asks again each minute, and at once when you click the sync status.";
+const GH_TOKEN_INSTEAD: &str = "To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki.";
 
 /// Takes the token from `GH_TOKEN` or asks `gh` for it, and hands the logger a copy to hide. Without one,
-/// the log says why and the user reads what to do: sign in, or, when `gh` didn't answer in time, wait for
-/// `again`.
-pub fn read_token(from: TokenFrom, again: AskAgain) -> Result<Token, Error> {
+/// the log says why, and the user reads what happened, what Tsugiki does next and what they can do.
+pub fn read_token(from: TokenFrom) -> Result<Token, Error> {
     #[expect(
         clippy::disallowed_methods,
         reason = "the one caller clippy.toml allows, so every token is hidden in the log"
@@ -38,32 +29,37 @@ pub fn read_token(from: TokenFrom, again: AskAgain) -> Result<Token, Error> {
             let message = match no_token {
                 NoToken::GhMissing(cause) => {
                     log::warn!("Tsugiki can't run gh: {cause}");
-                    SIGN_IN.to_owned()
+                    sign_in()
                 }
                 NoToken::GhTimedOut => {
                     let seconds = GH_TIMEOUT.as_secs();
                     log::warn!("gh didn't answer within {seconds} s, so Tsugiki stopped it");
-                    let next = match again {
-                        AskAgain::AtRestart => "Restart Tsugiki to ask it again.",
-                        AskAgain::OnRetry => "Tsugiki asks it again on the next try.",
-                    };
                     format!(
-                        "Tsugiki reads your token from the GitHub CLI, and `gh` didn't answer within \
-                         {seconds} s. {next}"
+                        "Tsugiki asked `gh auth token` for your token, and `gh` didn't answer within \
+                         {seconds} s. A keychain or credential manager waiting on a prompt is a common \
+                         cause. {ASKS_AGAIN} {GH_TOKEN_INSTEAD}"
                     )
                 }
                 NoToken::GhFailed => {
                     log::warn!("gh failed when asked for its token");
-                    SIGN_IN.to_owned()
+                    sign_in()
                 }
                 NoToken::GhPrintedNothing => {
                     log::warn!("gh printed no token when asked for its token");
-                    SIGN_IN.to_owned()
+                    sign_in()
                 }
             };
             Err(Error::new(ErrorKind::Unauthorized, &message))
         }
     }
+}
+
+/// The words for a `gh` that isn't installed or isn't signed in.
+fn sign_in() -> String {
+    format!(
+        "Tsugiki reads your token from the GitHub CLI, and found none. Install `gh` or run `gh auth \
+         login`. {ASKS_AGAIN} {GH_TOKEN_INSTEAD}"
+    )
 }
 
 #[cfg(test)]

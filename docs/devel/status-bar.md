@@ -7,7 +7,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Left, where the eye spends its time, the status, which a screen reader announces as it changes:
   - Who is signed in, once GitHub has said. Before it answers, the login of the last run with
     "Connecting…", or "Connecting…" alone. A Refresh while offline says "Connecting…" too, until GitHub
-    answers or the ask fails.
+    answers or the ask fails, and so does a Refresh without a token, until `gh` answers.
   - **Offline: read-only**, after the login of the last run, if any, while GitHub can't be reached. It tints
     the whole bar.
   - A problem that stops Tsugiki reading, such as a refused token, in the core's words, each opening the
@@ -29,7 +29,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     open's fetch of a number, Add repository's check, or the size the Mirror worker asks before a clone. The
     part keeps one width whatever it names, narrower in a narrow window so the status keeps its room. A long
     subject ends in an ellipsis before the seconds, and the tooltip holds the whole text. It goes once GitHub
-    answers or the request fails, and the status shows a failure, such as Offline.
+    answers or the request fails, and the status shows a failure, such as Offline. While Tsugiki asks `gh`
+    for the token, which no request can go without, it says "Waiting for gh to give the token, 4 s" in
+    the same place ([token.md](token.md)).
   - Sync status, which a click refreshes: "Synced 2 min ago" or "Not synced yet" for the open Repository,
     and a first sync's part and progress in its place ([sync.md](sync.md)). The background work follows
     ("· python/peps syncing", "· Cloning python/cpython 42%", "· Cloning python/cpython starts once GitHub

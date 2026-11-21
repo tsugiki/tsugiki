@@ -3,10 +3,10 @@ use serde_json::json;
 use super::*;
 use crate::error::ErrorKind;
 use crate::github::testing::{
-    Scripted, erring, github, issue_node, item_answer, not_found, pr_node,
+    Scripted, github, issue_item, item_answer, item_missing, item_refused, not_found, pr_item,
 };
 use crate::github::{Reply, Unreachable};
-use crate::testing::cpython;
+use crate::testing::{cpython, gcmon};
 
 fn fetched(reply: Result<Reply, Unreachable>) -> Numbered {
     let (script, _asked) = Scripted::new(vec![reply]);
@@ -15,7 +15,7 @@ fn fetched(reply: Result<Reply, Unreachable>) -> Numbered {
 
 #[test]
 fn a_number_that_names_an_issue_comes_back_as_the_issue() {
-    let (script, asked) = Scripted::new(vec![item_answer(issue_node(12))]);
+    let (script, asked) = Scripted::new(vec![item_answer(issue_item(12, &cpython()))]);
 
     let fetched = github(script).fetch_item(&cpython(), 12).unwrap();
 
@@ -34,10 +34,7 @@ fn a_number_that_names_an_issue_comes_back_as_the_issue() {
 
 #[test]
 fn a_number_that_names_a_pr_comes_back_as_the_pr() {
-    let mut pr = pr_node(12, &json!({}));
-    pr["__typename"] = json!("PullRequest");
-
-    let Numbered::PullRequest(facts, _) = fetched(item_answer(pr)) else {
+    let Numbered::PullRequest(facts, _) = fetched(item_answer(pr_item(12))) else {
         panic!("not a PR");
     };
     assert_eq!(facts.number, 12);
@@ -45,29 +42,27 @@ fn a_number_that_names_a_pr_comes_back_as_the_pr() {
 
 #[test]
 fn a_number_that_names_nothing_comes_back_missing() {
-    let gone = not_found(
-        json!({ "repository": { "issueOrPullRequest": null } }),
-        json!(["repository", "issueOrPullRequest"]),
-    );
-    assert_eq!(fetched(gone), Numbered::Missing);
+    assert_eq!(fetched(item_missing()), Numbered::Missing);
 }
 
 #[test]
-fn an_issue_transferred_away_comes_back_missing() {
-    assert_eq!(fetched(item_answer(issue_node(99))), Numbered::Missing);
+fn an_issue_transferred_away_comes_back_missing_under_any_number() {
+    let moved = [issue_item(99, &gcmon()), issue_item(12, &gcmon())];
+
+    let fetched = moved.map(|issue| fetched(item_answer(issue)));
+
+    assert_eq!(fetched, [Numbered::Missing, Numbered::Missing]);
+}
+
+#[test]
+fn a_repository_named_in_another_case_holds_its_issue() {
+    let issue = issue_item(12, &RepositoryName::parse("Python/CPython").unwrap());
+    assert!(matches!(fetched(item_answer(issue)), Numbered::Issue(..)));
 }
 
 #[test]
 fn an_item_github_refuses_alone_comes_back_hidden() {
-    let refused = erring(
-        json!({ "repository": { "issueOrPullRequest": null } }),
-        (
-            "FORBIDDEN",
-            "Resource not accessible by personal access token",
-        ),
-        json!(["repository", "issueOrPullRequest"]),
-    );
-    assert_eq!(fetched(refused), Numbered::Hidden);
+    assert_eq!(fetched(item_refused()), Numbered::Hidden);
 }
 
 #[test]
@@ -88,6 +83,9 @@ fn the_query_asks_for_either_kind_under_one_field() {
         query.contains("issueOrPullRequest(number: $number)"),
         "{query}"
     );
-    assert!(query.contains("... on Issue {"), "{query}");
+    assert!(
+        query.contains("... on Issue { repository { nameWithOwner } "),
+        "{query}"
+    );
     assert!(query.contains("... on PullRequest {"), "{query}");
 }

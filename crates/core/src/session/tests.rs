@@ -17,7 +17,7 @@ use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
     Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, github,
-    issue_node, item_answer, page_info, pr_content, pr_node, pull_request_answer, reply_ok,
+    issue_item, item_answer, page_info, pr_content, pr_node, pull_request_answer, reply_ok,
     search_page, signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
@@ -2860,7 +2860,7 @@ fn turn_reply(turn: &Turn) -> &Sender<ItemFetch> {
 fn a_fetched_unstored_item_tells_the_window_and_stays_in_the_database() {
     let (folders, folder) = temp_folders("fetch-unstored");
     let (board, changes) = changes_board();
-    let access = replying(vec![signed_in(), item_answer(issue_node(7))]);
+    let access = replying(vec![signed_in(), item_answer(issue_item(7, &gcmon()))]);
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
     let fetched = session.fetching().fetch_unstored(gcmon(), 7);

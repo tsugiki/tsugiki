@@ -219,11 +219,46 @@ pub fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unr
     )
 }
 
-/// GitHub's answer to `FetchItem`, which found `item` under the number asked, Issue or PR or null.
+/// GitHub's answer to `FetchItem`, which found `item` under the number asked, Issue or PR.
 pub fn item_answer(item: Value) -> Result<Reply, Unreachable> {
     answer(
         json!({ "repository": { "issueOrPullRequest": item } }),
         RATE_LIMIT,
+    )
+}
+
+/// Issue `number` as `FetchItem` answers with it, which `repository` holds now.
+pub fn issue_item(number: u32, repository: &RepositoryName) -> Value {
+    let mut issue = issue_node(number);
+    issue["repository"] = json!({ "nameWithOwner": repository.to_string() });
+    issue
+}
+
+/// PR `number` of `python/cpython` as `FetchItem` answers with it.
+pub fn pr_item(number: u32) -> Value {
+    let mut pull_request = pr_node(number, &json!({}));
+    pull_request["__typename"] = json!("PullRequest");
+    pull_request
+}
+
+/// GitHub's answer to `FetchItem` for a number that names nothing.
+pub fn item_missing() -> Result<Reply, Unreachable> {
+    not_found(
+        json!({ "repository": { "issueOrPullRequest": null } }),
+        json!(["repository", "issueOrPullRequest"]),
+    )
+}
+
+/// GitHub's answer to `FetchItem` when it refuses the item alone, as for a token that may see the
+/// Repository and not the item.
+pub fn item_refused() -> Result<Reply, Unreachable> {
+    erring(
+        json!({ "repository": { "issueOrPullRequest": null } }),
+        (
+            "FORBIDDEN",
+            "Resource not accessible by personal access token",
+        ),
+        json!(["repository", "issueOrPullRequest"]),
     )
 }
 

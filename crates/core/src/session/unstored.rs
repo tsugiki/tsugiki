@@ -1,5 +1,6 @@
 //! Fetching an Issue or a PR the database lacks, which the user asked to open by its number (#981). The
-//! store saves it as it saves an Origin PR outside the window, and it stays.
+//! store saves it as it saves an Origin PR outside the window, and it stays. A PR that changed since the
+//! last sync started may have opened since, as the next refresh would have judged it.
 
 use crate::error::{Error, ErrorKind};
 use crate::fetching::{Item, ItemFetch, ItemUnfetched};
@@ -46,7 +47,7 @@ pub(super) fn fetch(
             ItemFetch::Issue,
         ),
         Numbered::PullRequest(facts, activity) => (
-            store.save_fetched_pull_requests(repository, vec![*facts], vec![activity]),
+            store.save_unstored_pull_request(repository, (*facts, activity)),
             ItemFetch::PullRequest,
         ),
         Numbered::Missing => return Ok(Err(ItemUnfetched::Missing)),

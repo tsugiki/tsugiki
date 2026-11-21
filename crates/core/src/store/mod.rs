@@ -128,6 +128,31 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Stores a PR the user fetched by its number, which the store lacked (#981), as
+    /// `save_fetched_pull_requests` does. A PR updated since the last sync of `repository` started is one
+    /// the next refresh would find changed, so it may have opened since, as the refresh would judge it
+    /// (#823). An older one, or one in a Repository that has finished no sync, was loaded from before.
+    pub fn save_unstored_pull_request(
+        &self,
+        repository: &RepositoryName,
+        (facts, activity): (PullRequestFacts, ItemActivity),
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            let synced = sync_state::read(&transaction, &repository)?;
+            let first = if synced.is_some_and(|state| facts.updated_at >= state.started_at) {
+                FirstSave::MayHaveOpened
+            } else {
+                FirstSave::Loaded
+            };
+            let saving = (std::slice::from_ref(&facts), first);
+            pull_requests::save_in(&transaction, &repository, saving, &[activity])?;
+            transaction.commit()
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Stores PRs a refresh fetched or probed, as `save_fetched_pull_requests` does, and in the same
     /// transaction owes a read of the Conversation of each of `changed`. A refresh that stops after this has
     /// saved them can't tell they changed, so the next one reads them ahead from here (#205). A PR the store

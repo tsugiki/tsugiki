@@ -756,6 +756,47 @@ describe("quick open", () => {
       expect(core.openOnGithub).toHaveBeenCalledWith("some-maintainer/gcmon", { kind: "issue", number: 12 });
     });
 
+    it("opens the number it fetches on Open on GitHub, and not the item under the cursor", async () => {
+      await fetchTwelve();
+
+      await fireEvent.keyDown(document.body, { key: "G", code: "KeyG", ctrlKey: true, shiftKey: true });
+
+      await vi.waitFor(() => {
+        expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("some-maintainer/gcmon", {
+          kind: "issue",
+          number: 12,
+        });
+      });
+    });
+
+    it("takes the focus with the list hidden, and leaves it in a text box the user went to meanwhile", async () => {
+      render(Page);
+      await screen.findByRole("button", { name: "#7 It crashes" });
+      await fireEvent.keyDown(document.body, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("button", { name: "#7 It crashes" })).toBeNull();
+      });
+      await ctrlP();
+      await fireEvent.input(box(), { target: { value: "#12" } });
+      await screen.findByRole("option", { name: "Fetch #12 from GitHub" });
+      await fireEvent.keyDown(box(), { key: "Enter" });
+      await vi.waitFor(() => {
+        expect(document.activeElement).toBe(detailPane());
+      });
+      const typing = document.body.appendChild(document.createElement("input"));
+      typing.focus();
+
+      answerFetch({ kind: "issue" });
+      await vi.waitFor(() => {
+        expect(core.openIssue).toHaveBeenCalledWith("some-maintainer/gcmon", 12);
+      });
+      await nextTask();
+      await tick();
+
+      expect(document.activeElement).toBe(typing);
+      typing.remove();
+    });
+
     it("opens nothing it found once the user opened another item meanwhile", async () => {
       await fetchTwelve();
       await fireEvent.click(screen.getByRole("button", { name: "#7 It crashes" }));

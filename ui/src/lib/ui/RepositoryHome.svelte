@@ -315,8 +315,15 @@
     swap(undefined);
     const view = new UnstoredViewState(name, number);
     unstored = view;
+    // As a pick does: the pane takes the focus while the list is hidden, and the cursor's row otherwise.
+    focusCursor();
     void view.load((kind) => {
-      openFound(kind, number);
+      // The answer can come long after the pick, as it waits for the sync's step under way. It takes the
+      // focus as a pick does only from a row, the Detail pane or nowhere, and leaves it in a text box.
+      const focused = document.activeElement;
+      const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
+      const onRow = focused instanceof HTMLElement && focused.matches("[data-item]");
+      open(workbench.stopFor(number, kind), inDetail || onRow || focused === document.body ? "pick" : "open");
     });
   }
 
@@ -363,8 +370,11 @@
     open({ number: issue, kind: "issue", issue: undefined }, "back");
   }
 
-  /** The Issue or PR in the Detail pane, or else the line under the cursor while the list shows it. */
+  /** The Issue or PR in the Detail pane, the number it fetches, or else the line under the cursor while the
+   * list shows it. */
   function currentOnGitHub(): GitHubItem | undefined {
+    // GitHub sends an Issue's address on to the PR that has the number.
+    if (unstored) return { kind: "issue", number: unstored.number };
     const stop = detailLine() ?? (panes.hidden("list") ? undefined : workbench.underCursor);
     return stop && { kind: stop.kind, number: stop.number };
   }

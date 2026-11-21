@@ -91,14 +91,36 @@ fn a_number_the_cache_holds_no_item_of_is_offered_for_a_fetch() {
         vec![titled_issue(13, "Other", 99)],
     );
 
-    let unstored = ["12", "#12", "gh-12", "13", "100", "crash 12", "", "0"]
-        .map(|typed| find(&world.db.reader, &cpython(), typed).unwrap().unstored);
+    let typed = [
+        "12",
+        "#12",
+        "gh-12",
+        "2147483647",
+        "13",
+        "100",
+        "crash 12",
+        "",
+        "0",
+        "2147483648",
+    ];
+    let unstored = typed.map(|typed| find(&world.db.reader, &cpython(), typed).unwrap().unstored);
     world.finish();
 
     // An item the cache holds, words, nothing typed and a number no item can have offer no fetch.
     assert_eq!(
         unstored,
-        [Some(12), Some(12), Some(12), None, None, None, None, None]
+        [
+            Some(12),
+            Some(12),
+            Some(12),
+            Some(2_147_483_647),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None
+        ]
     );
 }
 

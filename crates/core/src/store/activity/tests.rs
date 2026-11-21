@@ -3,9 +3,9 @@ use time::Duration;
 use super::*;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::store::Store;
 use crate::store::migrate::MIGRATIONS;
 use crate::store::testing::{archived_on_closing, database_before, seeing, temp_database};
+use crate::store::{ChangeCheck, Store, SyncState};
 use crate::testing::{cpython, issue_facts, pr_facts};
 
 #[test]
@@ -688,6 +688,44 @@ fn a_changed_pr_saved_for_the_first_time_is_an_opening_when_it_names_an_archived
     // Issue 2 isn't Archived, and the store held PR 12 before. PR 13 came with an Issue's tree, or with
     // an older batch.
     assert_eq!(openings, BTreeSet::from([11]));
+}
+
+#[test]
+fn a_fetched_pr_is_an_opening_only_when_it_changed_since_the_last_sync_started() {
+    let (path, _folder) = temp_database("activity-unstored-openings");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    archived_closed(&store, &[1], now);
+    let fetch = |pr: PullRequestFacts| {
+        let quiet = ItemActivity {
+            number: pr.number,
+            events: Vec::new(),
+        };
+        store
+            .save_unstored_pull_request(&repository, (pr, quiet))
+            .unwrap();
+    };
+    fetch(titled(10, "gh-1: Fix it before any sync", now));
+    let synced = SyncState {
+        started_at: now - Duration::hours(1),
+        finished_at: now - Duration::hours(1),
+        check: ChangeCheck::Skipped,
+        refresh_under_way: false,
+    };
+    store.save_sync_state(&repository, synced).unwrap();
+
+    fetch(titled(
+        11,
+        "gh-1: Fix it long ago",
+        now - Duration::days(900),
+    ));
+    fetch(titled(12, "gh-1: Follow up", now));
+    let openings = store.openings(&repository).unwrap();
+
+    store.close();
+    // PR 11 is older than the last sync, and PR 10 came before any.
+    assert_eq!(openings, BTreeSet::from([12]));
 }
 
 #[test]

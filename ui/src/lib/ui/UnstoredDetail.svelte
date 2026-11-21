@@ -27,7 +27,7 @@
       case "hidden":
         return `Your token can't see ${number} in ${view.repository}.`;
       case "offline":
-        return `Tsugiki doesn't hold ${number}, and can't reach GitHub for it. The status bar says why.`;
+        return `Tsugiki doesn't hold ${number}, and can't ask GitHub for it now. The status bar says why.`;
       case "other":
         return `Tsugiki couldn't fetch ${number} from GitHub. tsugiki.log says why.`;
     }
@@ -43,7 +43,7 @@
   <div class="page">
     <h2>{name}</h2>
     {#if view.failure === undefined}
-      <p role="status" aria-busy="true">Fetching {name} from GitHub…</p>
+      <p role="status" aria-busy="true">{`Fetching ${name} from GitHub…`}</p>
     {:else}
       <p role="alert">{words(view.failure)}</p>
       {#if links.problem}

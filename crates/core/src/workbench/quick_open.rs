@@ -51,8 +51,11 @@ pub(crate) fn find(
         .and_then(|number| found.iter().position(|item| item.number == number))
         .map(|at| found.swap_remove(at));
     let others = best(found, LISTED - usize::from(named.is_some()));
-    // GitHub numbers its Issues and PRs from 1.
-    let unstored = typed.number.filter(|number| named.is_none() && *number > 0);
+    // GitHub numbers its Issues and PRs from 1, and its numbers are signed 32-bit integers.
+    let on_github = |number: &u32| *number > 0 && i32::try_from(*number).is_ok();
+    let unstored = typed
+        .number
+        .filter(|number| named.is_none() && on_github(number));
     Ok(QuickOpenFound {
         named,
         others,

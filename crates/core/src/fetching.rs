@@ -253,8 +253,8 @@ pub enum ItemUnfetched {
     Missing,
     /// The token can't see the item, or its Repository.
     Hidden,
-    /// GitHub can't be asked now, as when the computer is offline or Tsugiki has no token, and the status bar
-    /// says why.
+    /// GitHub can't be asked now, as when the computer is offline, Tsugiki has no token or the hour's points
+    /// ran out, and the status bar says why.
     Offline,
     /// Anything else, such as an answer Tsugiki couldn't read or a database it couldn't write. The log says.
     Other,

@@ -4,7 +4,8 @@ use serde_json::json;
 
 use super::*;
 use crate::github::testing::{
-    Scripted, erring, github, issue_node, item_answer, not_found, pr_node, reply_ok,
+    Scripted, github, issue_item, item_answer, item_missing, item_refused, not_found, pr_item,
+    reply_ok,
 };
 use crate::github::{Reply, Unreachable};
 use crate::status::testing::quiet_board;
@@ -27,23 +28,20 @@ fn fetched(
     (fetched, store)
 }
 
-fn change_7() -> Change {
-    Change {
-        repository: gcmon(),
-        items: vec![7],
-    }
-}
-
 #[test]
 fn an_issue_is_saved_and_said_to_be_one() {
-    let (fetched, store) = fetched(item_answer(issue_node(7)));
+    let (fetched, store) = fetched(item_answer(issue_item(7, &gcmon())));
 
     let saved = fetched.unwrap().unwrap();
+    let change = Change {
+        repository: gcmon(),
+        items: vec![7],
+    };
     assert_eq!(
         saved,
         Saved {
             kind: ItemFetch::Issue,
-            change: change_7()
+            change
         }
     );
     let issues = store.issues(&gcmon()).unwrap();
@@ -55,10 +53,7 @@ fn an_issue_is_saved_and_said_to_be_one() {
 
 #[test]
 fn a_pr_is_saved_and_said_to_be_one() {
-    let mut pr = pr_node(7, &json!({}));
-    pr["__typename"] = json!("PullRequest");
-
-    let (fetched, store) = fetched(item_answer(pr));
+    let (fetched, store) = fetched(item_answer(pr_item(7)));
 
     assert_eq!(fetched.unwrap().unwrap().kind, ItemFetch::PullRequest);
     let facts = store.work_facts(&gcmon()).unwrap();
@@ -68,11 +63,7 @@ fn a_pr_is_saved_and_said_to_be_one() {
 
 #[test]
 fn a_number_that_names_nothing_is_missing() {
-    let gone = not_found(
-        json!({ "repository": { "issueOrPullRequest": null } }),
-        json!(["repository", "issueOrPullRequest"]),
-    );
-    let (fetched, store) = fetched(gone);
+    let (fetched, store) = fetched(item_missing());
 
     assert_eq!(fetched.unwrap(), Err(ItemUnfetched::Missing));
     assert_eq!(store.issues(&gcmon()).unwrap(), []);
@@ -80,15 +71,10 @@ fn a_number_that_names_nothing_is_missing() {
 
 #[test]
 fn an_item_github_refuses_is_hidden() {
-    let refused = erring(
-        json!({ "repository": { "issueOrPullRequest": null } }),
-        (
-            "FORBIDDEN",
-            "Resource not accessible by personal access token",
-        ),
-        json!(["repository", "issueOrPullRequest"]),
+    assert_eq!(
+        fetched(item_refused()).0.unwrap(),
+        Err(ItemUnfetched::Hidden)
     );
-    assert_eq!(fetched(refused).0.unwrap(), Err(ItemUnfetched::Hidden));
 }
 
 #[test]

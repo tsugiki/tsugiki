@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use super::issues::{AnsweredIssue as _, ISSUE_FIELDS, IssueWire};
+use super::issues::{ISSUE_FIELDS, IssueWire};
 use super::pull_requests::{PULL_REQUEST_FIELDS, PullRequestWire, RateLimit};
 use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::Error;
@@ -23,7 +23,8 @@ fn fetch_item_query() -> String {
     format!(
         "query {OPERATION}($owner: String!, $name: String!, $number: Int!) {{ \
          repository(owner: $owner, name: $name) {{ {FIELD}(number: $number) {{ __typename \
-         ... on Issue {{ {ISSUE_FIELDS} }} ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} }} \
+         ... on Issue {{ repository {{ nameWithOwner }} {ISSUE_FIELDS} }} \
+         ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} }} \
          {RATE_LIMIT_FIELDS} }}"
     )
 }
@@ -34,8 +35,8 @@ pub enum Numbered {
     Issue(IssueFacts, ItemActivity),
     /// Boxed, as a PR's facts are many times the size of the other answers.
     PullRequest(Box<PullRequestFacts>, ItemActivity),
-    /// GitHub has nothing under that number here. An Issue transferred to another Repository answers under
-    /// its number there, and counts as nothing here too.
+    /// GitHub has nothing under that number here. An Issue transferred to another Repository answers from
+    /// there, under the number it has there, which can be the same, and counts as nothing here too.
     Missing,
     /// GitHub refused that one field, as it does when the token may see the Repository but not the item.
     Hidden,
@@ -57,9 +58,21 @@ impl GitHub {
         number: u32,
     ) -> Result<FetchedItem, Error> {
         #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Holding {
+            name_with_owner: RepositoryName,
+        }
+        /// An Issue, with the Repository that holds it now.
+        #[derive(Deserialize)]
+        struct HeldIssue {
+            repository: Holding,
+            #[serde(flatten)]
+            issue: IssueWire,
+        }
+        #[derive(Deserialize)]
         #[serde(tag = "__typename")]
         enum Wire {
-            Issue(IssueWire),
+            Issue(HeldIssue),
             PullRequest(Box<PullRequestWire>),
         }
         #[derive(Deserialize)]
@@ -91,8 +104,8 @@ impl GitHub {
                 }
                 Numbered::Hidden
             }
-            Some(Wire::Issue(issue)) if issue.number() == number => {
-                let (facts, activity) = issue.into();
+            Some(Wire::Issue(held)) if held.repository.name_with_owner.is_same(repository) => {
+                let (facts, activity) = held.issue.into();
                 Numbered::Issue(facts, activity)
             }
             Some(Wire::PullRequest(pull_request)) => {

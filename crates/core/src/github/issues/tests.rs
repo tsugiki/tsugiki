@@ -235,7 +235,7 @@ fn an_issue_whose_author_has_gone_has_no_author() {
 }
 
 #[test]
-fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
+fn a_number_that_is_a_pr_is_issueless_and_one_github_doesnt_find_is_not() {
     let repository =
         json!({ "i1": issue_node(1), "i2": { "__typename": "PullRequest" }, "i3": null });
     let gone = not_found(
@@ -250,7 +250,11 @@ fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
 
     let numbers: Vec<u32> = fetched.issues.iter().map(|issue| issue.number).collect();
     assert_eq!(numbers, [1]);
-    assert_eq!(fetched.issueless, [2, 3]);
+    assert_eq!(
+        fetched.issueless,
+        [2],
+        "the Issue GitHub doesn't find can be opened later"
+    );
     assert_eq!(fetched.asked_for, 3);
 }
 

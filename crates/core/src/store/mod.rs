@@ -388,7 +388,7 @@ impl Store {
     }
 
     /// Stores `issues` of `repository` and what GitHub says happened on them, and keeps each of `issueless`
-    /// as a number GitHub answered with no Issue, which `named_issues_lacking` leaves out from then on
+    /// as a number that will never name an Issue, which `named_issues_lacking` leaves out from then on
     /// (#980). One transaction holds it all.
     pub fn save_issues_and_issueless(
         &self,
@@ -404,15 +404,18 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The numbers the PRs of `repository` name as fixed, under any Conventions, that Tsugiki holds as
-    /// neither an Issue nor a PR, and that GitHub hasn't answered with no Issue (#980).
+    /// The numbers the PRs of `repository` name as fixed under `conventions`, that Tsugiki holds as neither
+    /// an Issue nor a PR, and that can still name an Issue (#980).
     pub fn named_issues_lacking(
         &self,
         repository: &RepositoryName,
+        conventions: Conventions,
     ) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
-        let read =
-            self.call(move |connection| issues::named_and_lacking(connection, &repository))?;
+        let read = move |connection: &mut Connection| {
+            issues::named_and_lacking(connection, &repository, conventions)
+        };
+        let read = self.call(read)?;
         read.map_err(saying(CANT_READ))
     }
 

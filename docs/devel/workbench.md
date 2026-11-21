@@ -173,12 +173,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Backport's Origin PR, are fetched even when they fall outside the synced window. Another Issue's row can
   lack those older PRs until it's opened. Links follow GitHub alone; a wrong one is fixed on GitHub, not in
   Tsugiki ([ADR 0011](../adr/0011-pr-links-from-github-signals-by-repository-conventions.md)).
-- Each PR Tsugiki holds gets the Issues it names, open, merged or closed, whoever wrote it: a refresh
-  fetches each one Tsugiki lacks, so a PR that merged before it became the user's work shows under its
-  Issue and not as a Standalone PR (#980). A saved Issue is an ordinary item: the **Inbox** lists it, and
-  the usual rules say whether it **Needs attention**. A first sync leaves this to the first refresh after
-  it. A number GitHub answers with no Issue, such as a PR's, a deleted Issue's or a transferred Issue's,
-  isn't asked for again.
+- Each PR Tsugiki holds gets the Issues it links to under the Repository's **Conventions**, open, merged
+  or closed, whoever wrote it: a refresh fetches each one Tsugiki lacks, so a PR that merged before it
+  became the user's work shows under its Issue and not as a Standalone PR (#980). A saved Issue is an
+  ordinary item: the **Inbox** lists it, and the usual rules say whether it **Needs attention**. A first
+  sync leaves this to the first refresh after it. A PR's number, or a transferred Issue's, isn't asked for
+  again. A number GitHub doesn't find is asked at each refresh, since its Issue may be opened or restored
+  later.
 - **Draft PRs** get a badge.
 - A PR that fixes several Issues shows under each of them, with "also fixes #N" on its row.
 - **Stacked PRs**: a PR that targets another PR's branch is stacked on it. Its row and PR view say "stacked on

@@ -90,13 +90,17 @@ enum Phase {
     ReadingAhead(Ahead),
 }
 
-/// The Issues a refresh has asked GitHub for because the PRs Tsugiki holds name them, answered or refused.
-/// The store keeps most numbers asked as an Issue or as one with no Issue, so it doesn't lack them again.
-/// This is the queue's bookkeeping, as `Ahead` is: it keeps a number GitHub refused, or left out of its
-/// answer, from being asked for again and again in one refresh. The next refresh asks again.
+/// The Issues a refresh has asked GitHub for because the PRs Tsugiki holds name them. This is the queue's
+/// bookkeeping, as `Ahead` is, and the next refresh starts it again.
 #[derive(Default)]
 struct Asked {
+    /// The numbers GitHub answered, or refused alone. The store keeps most of them as an Issue or as one
+    /// that will never name an Issue, so it doesn't lack them again, and this keeps the rest, such as one
+    /// GitHub doesn't find, from being asked for again and again in one refresh.
     numbers: BTreeSet<u32>,
+    /// The parts of a batch GitHub refused still to ask, the next one last. A refused part of more than one
+    /// number comes back as its two halves, so a number GitHub won't give holds back only itself.
+    refused: Vec<Vec<u32>>,
 }
 
 /// The reading ahead a refresh has done.
@@ -525,7 +529,9 @@ impl UserWorkSync {
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::FetchingLackingIssues(asked) => refresh::fetch_lacking_issues(&link, asked)?,
+            Phase::FetchingLackingIssues(asked) => {
+                refresh::fetch_lacking_issues(&link, asked, settings.conventions)?
+            }
             Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,

@@ -10,8 +10,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - A merged or closed PR is fetched once, and then only when a refresh's poll sees its `updatedAt` move,
     so a comment on it, such as a Bot's that a backport failed, still arrives. The poll saves each changed
     Issue the database holds, whatever its state.
-  - Before it finishes, a refresh fetches each Issue that a PR the database holds names and the database
-    lacks, and saves it as any other Issue ([workbench.md](workbench.md), #980).
+  - Before it finishes, a refresh fetches each Issue that a PR the database holds links to and the
+    database lacks, and saves it as any other Issue ([workbench.md](workbench.md), #980). A batch GitHub
+    refuses is asked again in halves, so a number GitHub won't give waits alone for the next refresh.
   - A sync that sees an Issue or a Standalone PR close or merge, open in the database and closed in
     GitHub's answer, archives it if **Reach** held it while it was open
     ([workbench.md](workbench.md)). The database keeps each closing it saves until the sync judges it,

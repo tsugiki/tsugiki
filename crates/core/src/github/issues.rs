@@ -53,8 +53,9 @@ pub struct FetchedIssues {
     /// One for each number that names an Issue.
     pub issues: Vec<IssueFacts>,
     pub activity: Vec<ItemActivity>,
-    /// The numbers asked for that name no Issue here: GitHub answered a PR, nothing with its NOT_FOUND, or
-    /// an Issue under another number, as it does for one transferred to another repository.
+    /// The numbers asked for that will never name an Issue here: GitHub answered a PR, or an Issue under
+    /// another number, as it does for one transferred to another repository. A number GitHub doesn't find
+    /// isn't among them, since its Issue can still be opened or restored.
     pub issueless: Vec<u32>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
@@ -155,8 +156,9 @@ impl AnsweredIssue for IssueWire {
 pub(super) struct ReadByNumber<T> {
     /// One for each number that names an Issue.
     pub issues: Vec<T>,
-    /// The numbers asked for that name no Issue here: GitHub answered a PR, nothing with its NOT_FOUND, or
-    /// an Issue under another number, as it does for one transferred to another repository.
+    /// The numbers asked for that will never name an Issue here: GitHub answered a PR, or an Issue under
+    /// another number, as it does for one transferred to another repository. A number GitHub doesn't find
+    /// isn't among them, since its Issue can still be opened or restored.
     pub issueless: Vec<u32>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
@@ -264,7 +266,7 @@ impl GitHub {
     }
 
     /// Asks for the first `read.size` of `read.numbers`, or half that after a 502 or no answer. A number can
-    /// turn out to be a PR or to name nothing, and then the answer counts it as issueless.
+    /// turn out to be a PR or a transferred Issue, and then the answer counts it as issueless.
     pub(super) fn read_by_number<T: DeserializeOwned + AnsweredIssue>(
         &self,
         repository: &RepositoryName,
@@ -301,16 +303,15 @@ impl GitHub {
         let mut issues = Vec::new();
         let mut issueless = Vec::new();
         for number in numbers.iter().take(asked_for) {
-            // `read` lets a null through only with GitHub's NOT_FOUND for it. GitHub follows an Issue
-            // transferred to another repository, and answers with the number it has there.
+            // GitHub follows an Issue transferred to another repository, and answers with the number it has
+            // there. `read` lets a null through only with GitHub's NOT_FOUND for it, which can change: the
+            // Issue a PR names can be opened later, or one GitHub hid be restored.
             match answers.remove(&format!("i{number}")) {
                 Some(Some(Numbered::Issue(issue))) if issue.number() == *number => {
                     issues.push(issue)
                 }
-                Some(Some(Numbered::Issue(_) | Numbered::PullRequest) | None) => {
-                    issueless.push(*number);
-                }
-                None => {}
+                Some(Some(Numbered::Issue(_) | Numbered::PullRequest)) => issueless.push(*number),
+                Some(None) | None => {}
             }
         }
         Ok(ReadByNumber {

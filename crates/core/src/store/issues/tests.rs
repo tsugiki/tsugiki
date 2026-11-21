@@ -1,5 +1,6 @@
 use super::super::testing::{OpenStore, database_before, temp_database};
 use super::super::*;
+use crate::conventions::Conventions;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::login::Login;
@@ -227,14 +228,20 @@ fn a_named_number_lacks_until_the_store_holds_it_as_an_issue_a_pr_or_one_with_no
         .save_pull_requests(&cpython(), vec![naming, pr_facts(2)])
         .unwrap();
     db.store.save_issues(&cpython(), vec![issue(1)]).unwrap();
-    let before = db.store.named_issues_lacking(&cpython()).unwrap();
+    let before = db
+        .store
+        .named_issues_lacking(&cpython(), Conventions::Cpython)
+        .unwrap();
 
     let found = (vec![issue(3)], Vec::new());
     db.store
         .save_issues_and_issueless(&cpython(), found, vec![4])
         .unwrap();
 
-    let after = db.store.named_issues_lacking(&cpython()).unwrap();
+    let after = db
+        .store
+        .named_issues_lacking(&cpython(), Conventions::Cpython)
+        .unwrap();
     let issues: Vec<u32> = (db.reader.work_facts(&cpython()).unwrap().issues.iter())
         .map(|issue| issue.number)
         .collect();
@@ -242,4 +249,29 @@ fn a_named_number_lacks_until_the_store_holds_it_as_an_issue_a_pr_or_one_with_no
     assert_eq!(before, BTreeSet::from([3, 4, 5]));
     assert_eq!(after, BTreeSet::from([5]));
     assert_eq!(issues, [1, 3]);
+}
+
+#[test]
+fn a_number_only_another_conventions_reads_in_a_title_isnt_lacking() {
+    let db = OpenStore::new("issues-lacking-conventions");
+    let titled = PullRequestFacts {
+        title: "gh-12: Fix it".to_owned(),
+        closing_issues: vec![7],
+        ..pr_facts(9)
+    };
+    db.store
+        .save_pull_requests(&cpython(), vec![titled])
+        .unwrap();
+
+    let under_github = db
+        .store
+        .named_issues_lacking(&cpython(), Conventions::Github)
+        .unwrap();
+    let under_cpython = db
+        .store
+        .named_issues_lacking(&cpython(), Conventions::Cpython)
+        .unwrap();
+    db.close();
+    assert_eq!(under_github, BTreeSet::from([7]));
+    assert_eq!(under_cpython, BTreeSet::from([7, 12]));
 }

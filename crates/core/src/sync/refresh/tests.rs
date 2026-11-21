@@ -2162,17 +2162,6 @@ fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
     harness.finish();
 }
 
-/// PR 3 by a stranger, merged, titled `title`, with `changes` on top, whose Bot backport failed after a sync
-/// saw the merge: a new event that makes it Need attention when the user reviewed it.
-fn strangers_merged_pr(title: &str, changes: &Value) -> Value {
-    let mut node = merged_pr("some-author", AFTER_IT, &[backport_conflict()]);
-    node["title"] = json!(title);
-    for (field, value) in changes.as_object().into_iter().flatten() {
-        node[field] = value.clone();
-    }
-    node
-}
-
 /// Saves the PR a fetch would read from `node`, with the events of its timeline, as a sync saves it.
 fn holding_pr_and_its_events(harness: &Harness, node: &Value) {
     let (pull_requests, events) = read_pr_and_events(node);
@@ -2181,18 +2170,27 @@ fn holding_pr_and_its_events(harness: &Harness, node: &Value) {
         .unwrap();
 }
 
-/// The `latestReviews` of a PR the user approved.
-fn reviewed_by_the_user() -> Value {
-    json!({ "latestReviews": { "nodes": [{ "author": { "login": "octocat" }, "state": "APPROVED" }] } })
+/// Has the store hold PR 3, a stranger's from long before, titled with `issue`'s number under CPython's
+/// Conventions.
+fn holding_a_strangers_pr_naming(harness: &Harness, issue: u32) {
+    let mut theirs = strangers_pr(3, LONG_BEFORE);
+    theirs["title"] = json!(format!("gh-{issue}: Fix it"));
+    holding_pr(harness, &theirs);
 }
 
 #[test]
-fn a_refresh_fetches_the_issue_a_merged_pr_in_reach_names_and_tsugiki_lacks() {
-    let harness = after_a_sync("reach-issue", vec![quiet_poll(), issues(&[40], RATE_LIMIT)]);
-    holding_pr_and_its_events(
-        &harness,
-        &strangers_merged_pr("gh-40: Fix it", &reviewed_by_the_user()),
+fn a_refresh_fetches_the_issue_a_merged_pr_on_the_workbench_names_and_tsugiki_lacks() {
+    let harness = after_a_sync(
+        "lacking-issue",
+        vec![quiet_poll(), issues(&[40], RATE_LIMIT)],
     );
+    // A stranger's PR the user reviewed, whose Bot backport failed after a sync saw the merge: a new event
+    // that makes it Need attention.
+    let mut node = merged_pr("some-author", AFTER_IT, &[backport_conflict()]);
+    node["title"] = json!("gh-40: Fix it");
+    node["latestReviews"] =
+        json!({ "nodes": [{ "author": { "login": "octocat" }, "state": "APPROVED" }] });
+    holding_pr_and_its_events(&harness, &node);
     let settings = filtering(&[]);
     let pr = ItemKey::PullRequest { number: 3 };
     let standalone = listed(&harness, &settings, &WorkbenchView::Whole, pr).is_some();
@@ -2212,52 +2210,26 @@ fn a_refresh_fetches_the_issue_a_merged_pr_in_reach_names_and_tsugiki_lacks() {
 }
 
 #[test]
-fn a_number_github_answers_with_no_issue_isnt_asked_for_at_the_next_refresh() {
-    let repository = json!({ "i40": null, "i41": { "__typename": "PullRequest" } });
-    let gone = not_found(
-        json!({ "repository": repository }),
-        json!(["repository", "i40"]),
-    );
-    let harness = after_a_sync("reach-issueless", vec![quiet_poll(), gone, quiet_poll()]);
-    let closing = json!({ "nodes": [
+fn a_pr_number_isnt_asked_for_again_and_one_github_doesnt_find_is_at_the_next_refresh() {
+    let answer = |repository: Value| {
+        let path = json!(["repository", "i40"]);
+        not_found(json!({ "repository": repository }), path)
+    };
+    let first = answer(json!({ "i40": null, "i41": { "__typename": "PullRequest" } }));
+    let second = answer(json!({ "i40": null }));
+    let replies = vec![quiet_poll(), first, quiet_poll(), second];
+    let harness = after_a_sync("lacking-issueless", replies);
+    let mut theirs = strangers_pr(3, LONG_BEFORE);
+    theirs["title"] = json!("gh-40: Fix it");
+    // A closing reference counts under every Conventions.
+    theirs["closingIssuesReferences"] = json!({ "nodes": [
         { "number": 41, "repository": { "nameWithOwner": "python/cpython" } },
     ] });
-    let mut changes = reviewed_by_the_user();
-    changes["closingIssuesReferences"] = closing;
-    holding_pr_and_its_events(&harness, &strangers_merged_pr("gh-40: Fix it", &changes));
+    holding_pr(&harness, &theirs);
 
     drop(run(&mut refreshing(filtering(&[])), &harness));
     drop(run(&mut refreshing(filtering(&[])), &harness));
 
-    assert_eq!(
-        harness.operations(),
-        ["RefreshRepository", "FetchIssues", "RefreshRepository"]
-    );
-    assert!(harness.issue_numbers().is_empty());
-    harness.finish();
-}
-
-#[test]
-fn a_batch_of_issues_github_refuses_waits_for_the_next_refresh_and_this_one_finishes() {
-    let refused = reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No"}]}"#);
-    let replies = vec![
-        quiet_poll(),
-        refused,
-        quiet_poll(),
-        issues(&[40], RATE_LIMIT),
-    ];
-    let harness = after_a_sync("reach-refused", replies);
-    let node = strangers_merged_pr("gh-40: Fix it", &reviewed_by_the_user());
-    holding_pr_and_its_events(&harness, &node);
-
-    drop(run(&mut refreshing(filtering(&[])), &harness));
-    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
-    let held_after_the_first = harness.issue_numbers();
-    drop(run(&mut refreshing(filtering(&[])), &harness));
-
-    assert!(!state.refresh_under_way, "the refresh finished");
-    assert!(state.finished_at > moment(LAST_SYNC));
-    assert!(held_after_the_first.is_empty());
     assert_eq!(
         harness.operations(),
         [
@@ -2267,20 +2239,66 @@ fn a_batch_of_issues_github_refuses_waits_for_the_next_refresh_and_this_one_fini
             "FetchIssues"
         ]
     );
-    assert_eq!(harness.issue_numbers(), [40]);
+    let lacking = harness
+        .db
+        .store
+        .named_issues_lacking(&cpython(), Conventions::Cpython);
+    assert_eq!(
+        lacking.unwrap(),
+        BTreeSet::from([40]),
+        "41 is a PR's number"
+    );
+    assert!(harness.issue_numbers().is_empty());
+    harness.finish();
+}
+
+#[test]
+fn a_refused_batch_is_asked_in_halves_and_only_the_number_github_refuses_waits_for_the_next_refresh()
+ {
+    let refused = || reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No"}]}"#);
+    let replies = vec![
+        quiet_poll(),
+        refused(),                 // 40, 41 and 42
+        issues(&[40], RATE_LIMIT), // the first half
+        refused(),                 // the second, 41 and 42
+        refused(),                 // 41 alone
+        issues(&[42], RATE_LIMIT), // 42 alone
+        quiet_poll(),
+        issues(&[41], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("lacking-refused", replies);
+    let mut theirs = strangers_pr(3, LONG_BEFORE);
+    theirs["title"] = json!("gh-40: Fix it");
+    theirs["closingIssuesReferences"] = json!({ "nodes": [
+        { "number": 41, "repository": { "nameWithOwner": "python/cpython" } },
+        { "number": 42, "repository": { "nameWithOwner": "python/cpython" } },
+    ] });
+    holding_pr(&harness, &theirs);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
+    let held_after_the_first = harness.issue_numbers();
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert!(!state.refresh_under_way, "the refresh finished");
+    assert!(state.finished_at > moment(LAST_SYNC));
+    assert_eq!(held_after_the_first, [40, 42]);
+    let mut first = vec!["RefreshRepository"];
+    first.extend(["FetchIssues"; 5]);
+    let operations = [first, vec!["RefreshRepository", "FetchIssues"]].concat();
+    assert_eq!(harness.operations(), operations);
+    assert_eq!(harness.issue_numbers(), [40, 41, 42]);
     harness.finish();
 }
 
 #[test]
 fn a_refresh_that_fetches_the_issues_its_prs_name_recovers_from_a_failure_at_each_point() {
     let scenario = Scenario {
-        name: "recovery-reach-issues",
+        name: "recovery-lacking-issues",
         settings: filtering(&[]),
         prepare: |harness| {
             synced(harness, ChangeCheck::Skipped);
-            harness.db.store.remember_login(&me()).unwrap();
-            let node = strangers_merged_pr("gh-40: Fix it", &reviewed_by_the_user());
-            holding_pr_and_its_events(harness, &node);
+            holding_a_strangers_pr_naming(harness, 40);
         },
         posts: vec![quiet_poll(), issues(&[40], RATE_LIMIT)],
         checks: Vec::new(),
@@ -2292,14 +2310,25 @@ fn a_refresh_that_fetches_the_issues_its_prs_name_recovers_from_a_failure_at_eac
 }
 
 #[test]
-fn a_refresh_fetches_the_issue_a_strangers_pr_outside_reach_names_and_the_inbox_lists_it() {
+fn a_refresh_leaves_unfetched_a_number_only_another_conventions_reads_in_a_title() {
+    let harness = after_a_sync("lacking-conventions", vec![quiet_poll()]);
+    holding_a_strangers_pr_naming(&harness, 12);
+    let mut settings = filtering(&[]);
+    settings.conventions = Conventions::Github;
+
+    drop(run(&mut refreshing(settings), &harness));
+
+    assert_eq!(harness.operations(), ["RefreshRepository"]);
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_fetches_the_issue_a_strangers_pr_names_and_the_inbox_lists_it() {
     let harness = after_a_sync(
         "lacking-outside",
         vec![quiet_poll(), issues(&[40], RATE_LIMIT)],
     );
-    let mut theirs = strangers_pr(3, LONG_BEFORE);
-    theirs["title"] = json!("gh-40: Fix it");
-    holding_pr(&harness, &theirs);
+    holding_a_strangers_pr_naming(&harness, 40);
     let settings = filtering(&[]);
     let before = inbox(&harness, &settings);
 

@@ -7,9 +7,10 @@ use rusqlite::{OptionalExtension, ToSql, named_params};
 
 use super::activity::StateMove;
 use super::columns::{Items, Numbers, UnixTime};
-use super::pr_links::{Updates, bound};
+use super::pr_links::{Under, Updates, bound};
 use super::{Connection, TitledItem, TitledKind};
 use super::{activity, pull_requests};
+use crate::conventions::Conventions;
 use crate::facts::activity::{ItemActivity, ItemKey};
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::labels::Label;
@@ -53,9 +54,10 @@ pub(super) const LABELS: &str = "
 pub(super) const BY_UPDATE: &str =
     "CREATE INDEX issues_by_update ON issues (repository, state, updated_at);";
 
-/// The numbers a fetch of Issues asked for and GitHub answered with no Issue: a PR's number, or one that
-/// names nothing, such as a deleted Issue's (#980). A sync that fetches the Issues Reach names skips them,
-/// so it doesn't ask again at each refresh.
+/// The numbers a fetch of Issues asked for that will never name an Issue: GitHub answered a PR, or an Issue
+/// under another number, as for one transferred to another repository (#980). A refresh that fetches the
+/// Issues stored PRs name skips them, so it doesn't ask again each time. A number GitHub doesn't find isn't
+/// kept, since the Issue can still be opened or restored.
 pub(super) const ISSUELESS: &str = "
     CREATE TABLE issueless_numbers (
         repository TEXT NOT NULL COLLATE NOCASE,
@@ -118,14 +120,16 @@ pub(super) fn save_with_issueless(
     transaction.commit()
 }
 
-/// The numbers the PRs of `repository` name as fixed, under any Conventions, that the store holds as neither
-/// an Issue nor a PR, leaving out those GitHub answered with no Issue.
+/// The numbers the PRs of `repository` name as fixed under `conventions`, as their links count them, that
+/// the store holds as neither an Issue nor a PR, leaving out those that will never name an Issue.
 pub(super) fn named_and_lacking(
     connection: &Connection,
     repository: &RepositoryName,
+    conventions: Conventions,
 ) -> rusqlite::Result<BTreeSet<u32>> {
     let query = "SELECT DISTINCT fixes.issue AS number FROM pr_fixes AS fixes
                  WHERE fixes.repository = :repository
+                     AND fixes.under IN (:every, :own)
                      AND NOT EXISTS (SELECT 1 FROM issues
                          WHERE issues.repository = fixes.repository AND issues.number = fixes.issue)
                      AND NOT EXISTS (SELECT 1 FROM pull_requests AS prs
@@ -133,7 +137,11 @@ pub(super) fn named_and_lacking(
                      AND NOT EXISTS (SELECT 1 FROM issueless_numbers AS issueless
                          WHERE issueless.repository = fixes.repository AND issueless.number = fixes.issue)";
     let mut statement = connection.prepare(query)?;
-    let asked = named_params! { ":repository": repository };
+    let asked = named_params! {
+        ":repository": repository,
+        ":every": Under::Every,
+        ":own": Under::Only(conventions),
+    };
     let numbers = statement.query_map(asked, |row| row.get("number"))?;
     numbers.collect()
 }

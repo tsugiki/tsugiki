@@ -109,7 +109,7 @@ pub(super) fn written_by_newer(connection: &Connection) -> rusqlite::Result<bool
 
 /// The Conventions a kept number counts under, as the `under` column spells it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Under {
+pub(super) enum Under {
     /// A closing reference or a description's closing keyword, which every Conventions reads.
     Every,
     /// A title's prefix, which only these Conventions read.

@@ -67,6 +67,24 @@ fn a_read_by_number_answers_each_issue_and_passes_over_a_pr() {
 }
 
 #[test]
+fn an_issue_answered_under_another_number_leaves_no_references() {
+    // GitHub follows Issue 4, transferred to another repository, to the Issue it became there.
+    let transferred = json!({
+        "__typename": "Issue",
+        "number": 12,
+        "timelineItems": timeline(&[pr_event(1, "python/cpython")], None),
+    });
+    let reply = answer(json!({ "repository": { "i4": transferred } }), RATE_LIMIT);
+    let (script, _asked) = Scripted::new(vec![reply]);
+
+    let found = github(script)
+        .fetch_issue_references(&cpython(), &[4], 25)
+        .unwrap();
+
+    assert_eq!(found.references, []);
+}
+
+#[test]
 fn a_source_github_wont_show_costs_only_its_own_event() {
     for kind in ["FORBIDDEN", "NOT_FOUND"] {
         let body = json!({

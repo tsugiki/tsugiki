@@ -99,8 +99,18 @@ pub fn answer(data: Value, rate: &str) -> Result<Reply, Unreachable> {
 /// GitHub's answer whose data holds the fields of `data` and [`RATE_LIMIT`], and that says the thing at
 /// `path` in it doesn't exist, as GitHub says of a number that names nothing.
 pub fn not_found(data: Value, path: Value) -> Result<Reply, Unreachable> {
+    erring(data, ("NOT_FOUND", "gone"), path)
+}
+
+/// GitHub's answer whose data holds the fields of `data` and [`RATE_LIMIT`], with an error of `kind` and
+/// `message` for the thing at `path` in it.
+pub fn erring(
+    data: Value,
+    (kind, message): (&str, &str),
+    path: Value,
+) -> Result<Reply, Unreachable> {
     let mut body = with_points(data, RATE_LIMIT);
-    body["errors"] = json!([{ "type": "NOT_FOUND", "message": "gone", "path": path }]);
+    body["errors"] = json!([{ "type": kind, "message": message, "path": path }]);
     reply_ok(&body.to_string())
 }
 

@@ -1,14 +1,17 @@
 //! A sync after the first (ADR 0015). It asks what changed since the last one, fetches that, and probes the
 //! user's open PRs for what changes without moving `updatedAt`. It then joins a first sync's later phases, so
-//! each Issue it found changed or newly reached gets its tree read. Before it finishes, it reads the
-//! Conversation of each changed PR in Reach, so the PR view opens on its Reviews (#157).
+//! each Issue it found changed or newly reached gets its tree read. Before it finishes, it fetches the
+//! Issues that the PRs it holds name and it lacks (#980), then reads the Conversation of each changed
+//! PR in Reach, so the PR view opens on its Reviews (#157).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use time::{Duration, OffsetDateTime};
 
 use super::filters::{FilterWalk, RefreshWalk, blames_the_search, can_narrow};
-use super::{Ahead, FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
+use super::{
+    Ahead, Asked, FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until,
+};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
@@ -335,8 +338,9 @@ fn stored_pull_requests(link: &Link<'_>) -> Result<BTreeMap<u32, PullRequestFact
     Ok(stored.into_iter().map(|pr| (pr.number, pr)).collect())
 }
 
-/// Fetches the next batch of what changed. A stranger's PR only needs saving, since a screen links it to an
-/// Issue when it asks. The user's own work also needs what it points at, as a first sync fetches it.
+/// Fetches the next batch of what changed. A stranger's PR only needs saving here: the refresh fetches the
+/// Issue it names before it finishes. The user's own work also needs what it points at, as a first sync
+/// fetches it.
 pub(super) fn fetch_changed(
     link: &Link<'_>,
     changed: &mut Changed,
@@ -461,6 +465,62 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
         touched.clone(),
     )?;
     drop(probing.numbers.drain(..batch.asked_for));
+    let pause_until = pause_until(batch.rate_limit);
+    Ok((Step::saved_if_any(touched, pause_until), None))
+}
+
+/// Fetches the next batch of the Issues that the PRs Tsugiki holds name under the Repository's
+/// `conventions`, as their links count them, and it lacks, whatever the state of each PR, so a merged PR
+/// shows under its Issue and not as a Standalone PR (#980). A refresh saves a stranger's PR alone, and a PR
+/// that merged before it became the user's work doesn't change again, so this goes by what the store holds,
+/// which also mends a store that lacked the Issue from before. A saved Issue is an ordinary item: the Inbox
+/// lists it, and the usual rules say if it Needs attention. It asks the store again before each batch and
+/// finishes once none are left. The store keeps each number that will never name an Issue, so the next
+/// refresh doesn't ask for it again; one GitHub doesn't find is asked again at the next refresh.
+///
+/// A number GitHub refuses alone, while it answers the others, waits for the next refresh, and the rest of
+/// the batch is saved. A batch GitHub refuses as a whole is logged and waits for the next refresh too, and
+/// only trouble that speaks for all of GitHub stops this one, as in `read_ahead`.
+pub(super) fn fetch_lacking_issues(
+    link: &Link<'_>,
+    asked: &mut Asked,
+    conventions: Conventions,
+) -> Result<Moved, Error> {
+    let lacking = link
+        .store
+        .named_issues_lacking(link.repository, conventions)?;
+    let numbers: Vec<u32> = lacking.difference(&asked.numbers).copied().collect();
+    if numbers.is_empty() {
+        return Ok((Step::Finished, None));
+    }
+    let batch = match link
+        .github
+        .fetch_issues(link.repository, &numbers, FETCH_BATCH)
+    {
+        Ok(batch) => batch,
+        Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+            // The failure doesn't say how far a retry after a 502 shrank the request, so the whole batch
+            // waits for the next refresh.
+            let batch: Vec<u32> = numbers.into_iter().take(FETCH_BATCH).collect();
+            log::warn!(
+                "GitHub wouldn't give the Issues {batch:?}: {}",
+                problem.message
+            );
+            asked.numbers.extend(batch);
+            return Ok((Step::Searched { pause_until: None }, None));
+        }
+        Err(problem) => return Err(problem),
+    };
+    let touched: Vec<u32> = batch.issues.iter().map(|issue| issue.number).collect();
+    link.store.save_issues_and_issueless(
+        link.repository,
+        (batch.issues, batch.activity),
+        batch.issueless,
+    )?;
+    // Each number the answer covers is asked, the refused ones too, which `fetch_issues` has logged.
+    asked
+        .numbers
+        .extend(numbers.into_iter().take(batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
 }

@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use super::GitHub;
-use super::issues::{ByNumber, ReadByNumber, query_by_number};
+use super::issues::{AnsweredIssue, ByNumber, ReadByNumber, query_by_number};
 use super::pull_requests::RateLimit;
 use crate::error::Error;
 use crate::facts::issues::ListedPr;
@@ -92,6 +92,12 @@ impl ReferenceTimeline {
 struct IssueWire {
     number: u32,
     timeline_items: ReferenceTimeline,
+}
+
+impl AnsweredIssue for IssueWire {
+    fn number(&self) -> u32 {
+        self.number
+    }
 }
 
 fn fetch_references_query(numbers: &[u32]) -> String {

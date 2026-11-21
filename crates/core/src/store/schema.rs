@@ -79,6 +79,7 @@ const TABLES: &[(&str, Diagram)] = &[
     ("issues", Diagram::Issues),
     ("issue_assignees", Diagram::Issues),
     ("issue_labels", Diagram::Issues),
+    ("issueless_numbers", Diagram::Issues),
     ("issue_content", Diagram::Issues),
     ("issue_comments", Diagram::Issues),
     ("activity", Diagram::Issues),

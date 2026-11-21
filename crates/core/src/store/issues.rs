@@ -1,15 +1,16 @@
 //! The Issues that PRs name, as facts (ADR 0010). The numbers each PR names are kept beside the PR, and a
 //! read joins them with these (#833).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{OptionalExtension, ToSql, named_params};
 
 use super::activity::StateMove;
 use super::columns::{Items, Numbers, UnixTime};
-use super::pr_links::{Updates, bound};
+use super::pr_links::{Under, Updates, bound};
 use super::{Connection, TitledItem, TitledKind};
 use super::{activity, pull_requests};
+use crate::conventions::Conventions;
 use crate::facts::activity::{ItemActivity, ItemKey};
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
 use crate::facts::labels::Label;
@@ -53,6 +54,18 @@ pub(super) const LABELS: &str = "
 pub(super) const BY_UPDATE: &str =
     "CREATE INDEX issues_by_update ON issues (repository, state, updated_at);";
 
+/// The numbers a fetch of Issues asked for that will never name an Issue: GitHub answered a PR, or an Issue
+/// under another number, as for one transferred to another repository (#980). A refresh that fetches the
+/// Issues stored PRs name skips them, so it doesn't ask again each time. A number GitHub doesn't find isn't
+/// kept, since the Issue can still be opened or restored.
+pub(super) const ISSUELESS: &str = "
+    CREATE TABLE issueless_numbers (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+";
+
 /// Stores `issues` in one transaction, each replacing what Tsugiki knew about it (ADR 0010).
 pub(super) fn save(
     connection: &mut Connection,
@@ -61,19 +74,76 @@ pub(super) fn save(
     events: &[ItemActivity],
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
+    save_in(&transaction, repository, issues, events)?;
+    transaction.commit()
+}
+
+/// Stores `issues` as `save` does, inside the caller's transaction.
+fn save_in(
+    connection: &Connection,
+    repository: &RepositoryName,
+    issues: &[IssueFacts],
+    events: &[ItemActivity],
+) -> rusqlite::Result<()> {
     for issue in issues {
-        save_issue(&transaction, repository, issue)?;
-        forget_assignees(&transaction, repository, issue.number)?;
+        save_issue(connection, repository, issue)?;
+        forget_assignees(connection, repository, issue.number)?;
         for login in &issue.assignees {
-            save_assignee(&transaction, repository, issue.number, login)?;
+            save_assignee(connection, repository, issue.number, login)?;
         }
-        forget_labels(&transaction, repository, issue.number)?;
+        forget_labels(connection, repository, issue.number)?;
         for label in &issue.labels {
-            save_label(&transaction, repository, issue.number, label)?;
+            save_label(connection, repository, issue.number, label)?;
         }
     }
-    activity::save(&transaction, repository, events)?;
+    activity::save(connection, repository, events)
+}
+
+/// Stores `issues` as `save` does, and keeps each of `issueless` as a number that will never name an Issue,
+/// a PR's or a transferred Issue's, in one transaction.
+pub(super) fn save_with_issueless(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    (issues, events): (&[IssueFacts], &[ItemActivity]),
+    issueless: &[u32],
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    save_in(&transaction, repository, issues, events)?;
+    let sql = "INSERT INTO issueless_numbers (repository, number) VALUES (:repository, :number)
+               ON CONFLICT DO NOTHING";
+    let mut insert = transaction.prepare(sql)?;
+    for number in issueless {
+        let values = named_params! { ":repository": repository, ":number": number };
+        insert.execute(values).map(drop)?;
+    }
+    drop(insert);
     transaction.commit()
+}
+
+/// The numbers the PRs of `repository` name as fixed under `conventions`, as their links count them, that
+/// the store holds as neither an Issue nor a PR, leaving out those that will never name an Issue.
+pub(super) fn named_and_lacking(
+    connection: &Connection,
+    repository: &RepositoryName,
+    conventions: Conventions,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let query = "SELECT DISTINCT fixes.issue AS number FROM pr_fixes AS fixes
+                 WHERE fixes.repository = :repository
+                     AND fixes.under IN (:every, :own)
+                     AND NOT EXISTS (SELECT 1 FROM issues
+                         WHERE issues.repository = fixes.repository AND issues.number = fixes.issue)
+                     AND NOT EXISTS (SELECT 1 FROM pull_requests AS prs
+                         WHERE prs.repository = fixes.repository AND prs.number = fixes.issue)
+                     AND NOT EXISTS (SELECT 1 FROM issueless_numbers AS issueless
+                         WHERE issueless.repository = fixes.repository AND issueless.number = fixes.issue)";
+    let mut statement = connection.prepare(query)?;
+    let asked = named_params! {
+        ":repository": repository,
+        ":every": Under::Every,
+        ":own": Under::Only(conventions),
+    };
+    let numbers = statement.query_map(asked, |row| row.get("number"))?;
+    numbers.collect()
 }
 
 /// Writes `issue`'s row, and has Archive follow a closing or a reopening (#820).

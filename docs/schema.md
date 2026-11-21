@@ -208,6 +208,10 @@ erDiagram
         INTEGER number PK, FK
         TEXT name PK
     }
+    issueless_numbers {
+        TEXT repository PK
+        INTEGER number PK
+    }
     issue_content {
         TEXT repository PK
         INTEGER number PK

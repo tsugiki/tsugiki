@@ -73,7 +73,7 @@ fn a_fetch_of_issues_goes_batch_by_batch_and_pauses_below_the_floor() {
     let mut replies = searches_finding(&["a"]);
     replies.push(fetched_naming_issues(&ids, RATE_LIMIT));
     replies.push(issues(&[1], FEW));
-    replies.push(issues(&[2], RATE_LIMIT));
+    replies.push(issues(&[26], RATE_LIMIT));
     replies.push(no_issue_references(RATE_LIMIT));
     let harness = Harness::new("issue-batches", replies);
     let mut syncs = Syncs::default();

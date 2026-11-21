@@ -387,6 +387,38 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Stores `issues` of `repository` and what GitHub says happened on them, and keeps each of `issueless`
+    /// as a number that will never name an Issue, which `named_issues_lacking` leaves out from then on
+    /// (#980). One transaction holds it all.
+    pub fn save_issues_and_issueless(
+        &self,
+        repository: &RepositoryName,
+        (issues, events): (Vec<IssueFacts>, Vec<ItemActivity>),
+        issueless: Vec<u32>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let save = move |connection: &mut Connection| {
+            issues::save_with_issueless(connection, &repository, (&issues, &events), &issueless)
+        };
+        let saved = self.call(save)?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The numbers the PRs of `repository` name as fixed under `conventions`, that Tsugiki holds as neither
+    /// an Issue nor a PR, and that can still name an Issue (#980).
+    pub fn named_issues_lacking(
+        &self,
+        repository: &RepositoryName,
+        conventions: Conventions,
+    ) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read = move |connection: &mut Connection| {
+            issues::named_and_lacking(connection, &repository, conventions)
+        };
+        let read = self.call(read)?;
+        read.map_err(saying(CANT_READ))
+    }
+
     /// The numbers of `viewer`'s open PRs whose CI failed after Tsugiki last asked which checks failed.
     pub fn pull_requests_with_unread_checks(
         &self,

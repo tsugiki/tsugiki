@@ -2,7 +2,7 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::facts::labels::Label;
 use crate::github::testing::{
-    RATE_LIMIT, Scripted, answer, github, issue_node, not_found, replied, reply_ok,
+    RATE_LIMIT, Scripted, answer, erring, github, issue_node, not_found, replied, reply_ok,
 };
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
@@ -235,7 +235,7 @@ fn an_issue_whose_author_has_gone_has_no_author() {
 }
 
 #[test]
-fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
+fn a_number_that_is_a_pr_is_issueless_and_one_github_doesnt_find_is_not() {
     let repository =
         json!({ "i1": issue_node(1), "i2": { "__typename": "PullRequest" }, "i3": null });
     let gone = not_found(
@@ -250,7 +250,70 @@ fn a_number_that_is_a_pr_or_names_nothing_leaves_no_issue() {
 
     let numbers: Vec<u32> = fetched.issues.iter().map(|issue| issue.number).collect();
     assert_eq!(numbers, [1]);
+    assert_eq!(
+        fetched.issueless,
+        [2],
+        "the Issue GitHub doesn't find can be opened later"
+    );
     assert_eq!(fetched.asked_for, 3);
+}
+
+#[test]
+fn an_issue_answered_under_another_number_is_left_out_as_issueless() {
+    // GitHub follows Issue 4, transferred to another repository, to the Issue it became there.
+    let repository = json!({ "i4": issue_node(9), "i5": issue_node(5) });
+    let (script, _asked) = Scripted::new(vec![in_repository(&repository)]);
+
+    let fetched = github(script)
+        .fetch_issues(&cpython(), &[4, 5, 6], 25)
+        .unwrap();
+
+    let numbers: Vec<u32> = fetched.issues.iter().map(|issue| issue.number).collect();
+    assert_eq!(numbers, [5]);
+    assert_eq!(fetched.activity.len(), 1);
+    assert_eq!(
+        fetched.issueless,
+        [4],
+        "a number the answer leaves out isn't issueless"
+    );
+}
+
+#[test]
+fn a_number_github_refuses_alone_is_given_back_as_refused_and_the_others_stand() {
+    let repository = json!({ "i1": issue_node(1), "i2": null, "i3": issue_node(3) });
+    let refusing = erring(
+        json!({ "repository": repository }),
+        ("FORBIDDEN", "Resource not accessible"),
+        json!(["repository", "i2"]),
+    );
+    let (script, _asked) = Scripted::new(vec![refusing]);
+
+    let fetched = github(script)
+        .fetch_issues(&cpython(), &[1, 2, 3], 25)
+        .unwrap();
+
+    let numbers: Vec<u32> = fetched.issues.iter().map(|issue| issue.number).collect();
+    assert_eq!(numbers, [1, 3]);
+    assert_eq!(fetched.refused, [2]);
+    assert!(fetched.issueless.is_empty());
+    assert_eq!(fetched.asked_for, 3);
+}
+
+#[test]
+fn a_refusal_of_a_field_nobody_asked_for_still_fails_the_read() {
+    let repository = json!({ "i1": issue_node(1), "other": null });
+    let refusing = erring(
+        json!({ "repository": repository }),
+        ("FORBIDDEN", "No"),
+        json!(["repository", "other"]),
+    );
+    let (script, _asked) = Scripted::new(vec![refusing]);
+
+    let refused = github(script)
+        .fetch_issues(&cpython(), &[1], 25)
+        .unwrap_err();
+
+    assert_eq!(refused.kind, ErrorKind::QueryRefused);
 }
 
 #[test]

@@ -139,7 +139,7 @@ pub(super) fn check_list(
         ChangeCheck::Tagged(tag) => Some(tag),
         ChangeCheck::Skipped | ChangeCheck::Untagged => None,
     };
-    let next = match link.github.check_list(link.repository, stored_tag) {
+    let next = match link.github.check_list(link.repository, stored_tag)? {
         ListCheck::Same => {
             let walk = FilterWalk::of_refresh(RefreshWalk {
                 whole: std::mem::take(&mut poll.whole),

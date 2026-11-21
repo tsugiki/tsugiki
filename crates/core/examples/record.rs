@@ -86,10 +86,13 @@ fn record_a_conversation(github: &GitHub) {
 /// Asks for the list's tag and asks again with it, which real GitHub answers with a 304.
 fn check_a_list(scout: &GitHub) {
     let repository = RepositoryName::parse(CHECKED_REPOSITORY).expect("a Repository's name");
-    let ListCheck::Moved(Some(tag)) = scout.check_list(&repository, None) else {
+    let Ok(ListCheck::Moved(Some(tag))) = scout.check_list(&repository, None) else {
         panic!("GitHub gave {CHECKED_REPOSITORY}'s list no tag");
     };
-    assert_eq!(scout.check_list(&repository, Some(&tag)), ListCheck::Same);
+    assert_eq!(
+        scout.check_list(&repository, Some(&tag)),
+        Ok(ListCheck::Same)
+    );
     println!("A list check with its tag answered 304");
 }
 

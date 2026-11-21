@@ -61,6 +61,27 @@ fn the_primary_rate_limit_says_when_it_resets() {
 }
 
 #[test]
+fn a_secondary_rate_limit_holds_a_minute_not_until_the_hours_reset() {
+    let error = error_of(Canned(Ok(Reply {
+        status: 403,
+        reset: Some(seconds_from_now(3000)),
+        date: None,
+        body: r#"{"message":"You have exceeded a secondary rate limit."}"#.to_owned(),
+    })));
+    assert!((59..=61).contains(&seconds_left(&error)), "{error:?}");
+}
+
+#[test]
+fn a_request_after_a_refusal_says_github_refused_it_not_that_points_are_low() {
+    let github = github(answered(429, ""));
+    drop(github.viewer().unwrap_err());
+
+    let held = github.viewer().unwrap_err();
+
+    assert_eq!(held.message, RATE_LIMITED);
+}
+
+#[test]
 fn a_rate_limit_that_names_no_reset_holds_a_minute() {
     let error = error_of(answered(429, ""));
     assert!((59..=61).contains(&seconds_left(&error)), "{error:?}");

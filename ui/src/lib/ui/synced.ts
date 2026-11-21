@@ -107,7 +107,7 @@ export function clockTime(at: string): string {
   return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** The words for a check the rate limit's gate held back, which can ask GitHub again at `back`. */
+/** The words for the rate limit's gate, which holds every request to GitHub until `back`. */
 export function pointsBackWords(back: string): string {
   return `GitHub's rate limit is low. Tsugiki can ask it again at ${clockTime(back)}`;
 }

@@ -30,7 +30,7 @@ use time::{Date, Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
-use crate::github::gate::Gate;
+use crate::github::gate::{Gate, Hold};
 use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
@@ -187,19 +187,25 @@ impl GitHub {
     /// The time by this computer's clock that GitHub's points come back, while the gate holds every
     /// request: below the floor of points, or after GitHub refused a request for its rate limit.
     pub fn points_back(&self) -> Option<OffsetDateTime> {
+        self.gate_holds().map(|(back, _)| back)
+    }
+
+    /// The time by this computer's clock the gate opens, and why it holds, while it does.
+    fn gate_holds(&self) -> Option<(OffsetDateTime, Hold)> {
         let clock = self.clock.get();
-        let until = self
+        let (until, why) = self
             .gate
             .get()
             .holds_until(self.points.get(), clock.now())?;
-        Some(clock.local(until))
+        Some((clock.local(until), why))
     }
 
     /// Lets a request through the gate, or answers at once, with the time the points come back, while the
-    /// gate holds.
+    /// gate holds. The words say whether the floor holds it or GitHub's refusal.
     fn pass_gate(&self) -> Result<(), Error> {
-        match self.points_back() {
-            Some(back) => Err(rate_limited(Some(back), HELD)),
+        match self.gate_holds() {
+            Some((back, Hold::Floor)) => Err(rate_limited(Some(back), HELD)),
+            Some((back, Hold::Refused)) => Err(rate_limited(Some(back), RATE_LIMITED)),
             None => Ok(()),
         }
     }
@@ -469,8 +475,11 @@ fn read_with_refused<D: DeserializeOwned>(
 
     let internal = |message: &str| Error::new(ErrorKind::Internal, message);
     // The reset is GitHub's here, which the client turns into this computer's as it holds its gate.
+    // `x-ratelimit-reset` is the hour's reset, which a secondary limit doesn't wait for: GitHub asks for
+    // about a minute then, which the gate holds when the refusal names no reset.
     let refused = || {
-        let resets_at = reply.reset;
+        let secondary = reply.body.contains("secondary rate limit");
+        let resets_at = reply.reset.filter(|_| !secondary);
         Error::new(ErrorKind::RateLimited { resets_at }, RATE_LIMITED)
     };
     if reply.status != 200 {

@@ -258,6 +258,9 @@ enum Turn {
     Patched(RepositoryName, PatchReads),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
     CheckHour,
+    /// Add repository's check met the rate limit, which may have closed the gate, so the window hears the
+    /// time GitHub's points come back. Other checks take no turn, so they put off nothing.
+    RateLimited,
     /// The links the store kept under rules other than `LinkRule::SET` have a Repository left to work out.
     RefillLinks,
     SyncStep,
@@ -471,15 +474,21 @@ impl Refreshes {
                 }
                 Ok(SessionMessage::Check { name, reply }) => {
                     let today = github.clock().now().date();
+                    let checked = github
+                        .check_repository(&name, today)
+                        .map(RepositoryCheck::new);
+                    let limited = matches!(
+                        &checked,
+                        Err(problem) if matches!(problem.kind, ErrorKind::RateLimited { .. })
+                    );
                     #[expect(
                         clippy::let_underscore_must_use,
                         reason = "this fails only if the caller has gone, and it waits for this answer"
                     )]
-                    let _ = reply.send(
-                        github
-                            .check_repository(&name, today)
-                            .map(RepositoryCheck::new),
-                    );
+                    let _ = reply.send(checked);
+                    if limited {
+                        return Turn::RateLimited;
+                    }
                 }
                 Ok(SessionMessage::Stop) | Err(RecvTimeoutError::Disconnected) => {
                     return Turn::Stop;
@@ -636,7 +645,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::Patched(repository, patches) => keep_patches(board, store, &repository, patches),
             // The board hears of it below, as after each turn.
-            Turn::CheckHour => {}
+            Turn::CheckHour | Turn::RateLimited => {}
             Turn::RefillLinks => refreshes.links.borrow_mut().step(board, store),
             Turn::Fetch(fetched) => {
                 // An item of another Repository, as quick open opens one, reads its links on screen too.

@@ -77,7 +77,17 @@ impl Paused {
         replies: Vec<Result<Reply, Unreachable>>,
         intervals: Intervals,
     ) -> Self {
-        let mut all = vec![signed_in_below_the_floor(reset)];
+        Self::signed_in_with(name, signed_in_below_the_floor(reset), replies, intervals)
+    }
+
+    /// A session that answers who is signed in with `signed_in`, then with `replies`.
+    fn signed_in_with(
+        name: &str,
+        signed_in: Result<Reply, Unreachable>,
+        replies: Vec<Result<Reply, Unreachable>>,
+        intervals: Intervals,
+    ) -> Self {
+        let mut all = vec![signed_in];
         all.extend(replies);
         let (script, asked) = Scripted::new(all);
         let access = GitHubAccess {
@@ -191,6 +201,28 @@ fn below_the_floor_a_check_asks_nothing_and_says_when_the_points_come_back() {
         "{problem:?}"
     );
     assert_eq!(asked, Vec::<String>::new());
+}
+
+#[test]
+fn a_check_that_github_refuses_for_its_rate_limit_tells_the_window_when_the_points_come_back() {
+    let reset = github_time(later());
+    let signed_in = reply_ok(&format!(
+        r#"{{"data":{{"viewer":{{"login":"octocat"}},"rateLimit":{{"cost":1,"limit":5000,
+            "used":1000,"remaining":4000,"resetAt":"{reset}"}}}}}}"#
+    ));
+    let refused = crate::github::testing::replied(429, "");
+    let paused = Paused::signed_in_with("gate-refused-check", signed_in, vec![refused], HOURLY);
+
+    drop(paused.session.fetching().check(gcmon()).unwrap_err());
+    let back = paused.heard.points_back.recv_timeout(PLENTY).unwrap();
+    drop(paused.stop());
+
+    let back = back.unwrap();
+    let wait = back - OffsetDateTime::now_utc();
+    assert!(
+        wait > time::Duration::seconds(50) && wait <= time::Duration::seconds(61),
+        "{back}"
+    );
 }
 
 #[test]

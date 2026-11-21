@@ -429,6 +429,17 @@ describe("StatusBar's sync under way", () => {
     expect(bar().textContent).toContain(`Sync paused until ${time}: GitHub's rate limit is low`);
   });
 
+  it("says when GitHub's points come back with no sync to pause, and the sync's words over it", async () => {
+    const back = "2026-11-05T14:30:00Z";
+    const time = new Date(back).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const { rerender } = render(StatusBar, { status: online, lastSync, pointsBack: { at: back } });
+    expect(bar().textContent).toContain(`GitHub's rate limit is low. Tsugiki can ask it again at ${time}`);
+
+    await rerender({ syncActivity: { ...activity("refresh"), paused_until: back } });
+    expect(bar().textContent).toContain(`Sync paused until ${time}`);
+    expect(bar().textContent).not.toContain("Tsugiki can ask it again");
+  });
+
   it("shows the wait beside the file's problems, and when the bar is hidden", () => {
     render(StatusBar, {
       status: online,

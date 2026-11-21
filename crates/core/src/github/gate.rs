@@ -37,22 +37,32 @@ impl Gate {
         }
     }
 
-    /// The time by GitHub's clock the gate opens, while it holds at `now`, GitHub's time. It holds while the
-    /// hour's `points` are below the floor, until they reset, and after a refusal, until the time GitHub
-    /// named.
+    /// The time by GitHub's clock the gate opens, and why it holds till then, while it holds at `now`,
+    /// GitHub's time. It holds while the hour's `points` are below the floor, until they reset, and after a
+    /// refusal, until the time GitHub named.
     pub(crate) fn holds_until(
         self,
         points: Option<HourPoints>,
         now: OffsetDateTime,
-    ) -> Option<OffsetDateTime> {
+    ) -> Option<(OffsetDateTime, Hold)> {
         let low = points
             .filter(|points| points.remaining < RATE_LIMIT_FLOOR)
-            .map(|points| points.resets_at);
-        let until = (low.into_iter().chain(self.refused_until))
-            .filter(|at| *at > now)
-            .max()?;
-        Some(until.min(now + LONGEST_HOLD))
+            .map(|points| (points.resets_at, Hold::Floor));
+        let refused = self.refused_until.map(|at| (at, Hold::Refused));
+        let (until, why) = (low.into_iter().chain(refused))
+            .filter(|(at, _)| *at > now)
+            .max_by_key(|(at, _)| *at)?;
+        Some((until.min(now + LONGEST_HOLD), why))
     }
+}
+
+/// Why the gate holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Hold {
+    /// The hour's points are below the floor.
+    Floor,
+    /// GitHub refused a request for its rate limit.
+    Refused,
 }
 
 #[cfg(test)]

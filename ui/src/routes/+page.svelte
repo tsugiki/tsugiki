@@ -498,6 +498,7 @@
   {lastSync}
   syncActivity={status.syncActivity}
   hourPoints={status.hourPoints}
+  pointsBack={status.pointsBack}
   cloning={status.cloning}
   mirrorStates={status.mirrorStates}
   mirrorProblem={status.mirrorProblem}

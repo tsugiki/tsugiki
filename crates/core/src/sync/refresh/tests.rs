@@ -8,8 +8,8 @@ use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
 use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{
-    answer, dated, filter_page, github, page_info, pr_content, pull_request_answer, replied,
-    reply_ok, signed_in_as,
+    answer, dated, filter_page, github, not_found, page_info, pr_content, pull_request_answer,
+    replied, reply_ok, signed_in_as,
 };
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
@@ -90,6 +90,11 @@ fn holding_issue(harness: &Harness, number: u32, updated_at: &str) {
 
 /// PR `number` as a fetch would read it from `node`.
 fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
+    read_pr_and_events(node).0
+}
+
+/// PR `number` as a fetch would read it from `node`, with the events of its timeline.
+fn read_pr_and_events(node: &Value) -> (Vec<PullRequestFacts>, Vec<ItemActivity>) {
     let script = fetched_nodes(std::slice::from_ref(node), RATE_LIMIT);
     let (script, _asked) = crate::github::testing::Scripted::new(vec![script]);
     let github = github(script);
@@ -97,7 +102,7 @@ fn read_pr(node: &Value) -> Vec<PullRequestFacts> {
     let batch = github
         .fetch_pull_requests(PrFetch::Work, &[id], 25)
         .unwrap();
-    batch.pull_requests
+    (batch.pull_requests, batch.activity)
 }
 
 /// Saves the PR a fetch would read from `node`.
@@ -849,21 +854,26 @@ fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
             ],
             RATE_LIMIT,
         ),
-        probed(&[]),
         issues(&[40], RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
+        quiet_conversation(),
     ];
     let harness = after_a_sync("whose", replies);
     let mut syncs = refreshing(filtering(&[]));
 
     drop(run(&mut syncs, &harness));
 
-    let asked: Vec<(String, Value)> = harness.asked.try_iter().collect();
-    let issue_fetches: Vec<&(String, Value)> = asked
-        .iter()
-        .filter(|(name, _)| name == "FetchIssues")
-        .collect();
-    assert_eq!(issue_fetches.len(), 1);
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchIssues",
+            "FetchCrossReferences",
+            "FetchPullRequestContent"
+        ]
+    );
+    assert_eq!(harness.issue_numbers(), [40]);
     harness.finish();
 }
 
@@ -2083,9 +2093,11 @@ fn comment_after_it(who: &str) -> Activity {
     }
 }
 
-/// PR 3 by `author`, merged, as GitHub answers with it at `updated_at`, its timeline holding `timeline`.
+/// PR 3 by `author`, merged, as GitHub answers with it at `updated_at`, its timeline holding `timeline`. It
+/// names no Issue, so it stays a Standalone PR.
 fn merged_pr(author: &str, updated_at: &str, timeline: &[Value]) -> Value {
     let changes = json!({
+        "title": "A change",
         "author": { "login": author },
         "state": "MERGED",
         "mergeCommit": { "oid": "0".repeat(40) },
@@ -2139,6 +2151,113 @@ fn the_bots_comment_after_a_sync_saw_the_merge_still_reaches_the_store() {
             at: moment(AFTER_IT),
         }]
     );
+    harness.finish();
+}
+
+/// PR 3 by a stranger, merged, titled `title`, with `changes` on top, whose Bot backport failed after a sync
+/// saw the merge: a new event that makes it Need attention when the user reviewed it.
+fn strangers_merged_pr(title: &str, changes: &Value) -> Value {
+    let mut node = merged_pr("some-author", AFTER_IT, &[backport_conflict()]);
+    node["title"] = json!(title);
+    for (field, value) in changes.as_object().into_iter().flatten() {
+        node[field] = value.clone();
+    }
+    node
+}
+
+/// Saves the PR a fetch would read from `node`, with the events of its timeline, as a sync saves it.
+fn holding_pr_and_its_events(harness: &Harness, node: &Value) {
+    let (pull_requests, events) = read_pr_and_events(node);
+    (harness.db.store)
+        .save_fetched_pull_requests(&cpython(), pull_requests, events)
+        .unwrap();
+}
+
+/// The `latestReviews` of a PR the user approved.
+fn reviewed_by_the_user() -> Value {
+    json!({ "latestReviews": { "nodes": [{ "author": { "login": "octocat" }, "state": "APPROVED" }] } })
+}
+
+#[test]
+fn a_refresh_fetches_the_issue_a_merged_pr_in_reach_names_and_tsugiki_lacks() {
+    let harness = after_a_sync("reach-issue", vec![quiet_poll(), issues(&[40], RATE_LIMIT)]);
+    holding_pr_and_its_events(
+        &harness,
+        &strangers_merged_pr("gh-40: Fix it", &reviewed_by_the_user()),
+    );
+    let settings = filtering(&[]);
+    let pr = ItemKey::PullRequest { number: 3 };
+    let standalone = listed(&harness, &settings, &WorkbenchView::Whole, pr).is_some();
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    assert!(standalone, "it Needs attention, with no Issue to sit under");
+    assert_eq!(harness.operations(), ["RefreshRepository", "FetchIssues"]);
+    assert_eq!(harness.issue_numbers(), [40]);
+    let issue = ItemKey::Issue { number: 40 };
+    assert!(listed(&harness, &settings, &WorkbenchView::Whole, issue).is_some());
+    assert!(
+        listed(&harness, &settings, &WorkbenchView::Whole, pr).is_none(),
+        "it shows under its Issue"
+    );
+    harness.finish();
+}
+
+#[test]
+fn a_number_github_answers_with_no_issue_isnt_asked_for_at_the_next_refresh() {
+    let repository = json!({ "i40": null, "i41": { "__typename": "PullRequest" } });
+    let gone = not_found(
+        json!({ "repository": repository }),
+        json!(["repository", "i40"]),
+    );
+    let harness = after_a_sync("reach-issueless", vec![quiet_poll(), gone, quiet_poll()]);
+    let closing = json!({ "nodes": [
+        { "number": 41, "repository": { "nameWithOwner": "python/cpython" } },
+    ] });
+    let mut changes = reviewed_by_the_user();
+    changes["closingIssuesReferences"] = closing;
+    holding_pr_and_its_events(&harness, &strangers_merged_pr("gh-40: Fix it", &changes));
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchIssues", "RefreshRepository"]
+    );
+    assert!(harness.issue_numbers().is_empty());
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_that_fetches_the_issues_reach_names_recovers_from_a_failure_at_each_point() {
+    let scenario = Scenario {
+        name: "recovery-reach-issues",
+        settings: filtering(&[]),
+        prepare: |harness| {
+            synced(harness, ChangeCheck::Skipped);
+            harness.db.store.remember_login(&me()).unwrap();
+            let node = strangers_merged_pr("gh-40: Fix it", &reviewed_by_the_user());
+            holding_pr_and_its_events(harness, &node);
+        },
+        posts: vec![quiet_poll(), issues(&[40], RATE_LIMIT)],
+        checks: Vec::new(),
+    };
+
+    let operations = recovers_from_each_failure(&scenario);
+
+    assert_eq!(operations, ["RefreshRepository", "FetchIssues"]);
+}
+
+#[test]
+fn a_refresh_leaves_the_issue_a_pr_outside_reach_names_unfetched() {
+    let harness = after_a_sync("reach-outside", vec![quiet_poll()]);
+    holding_pr_and_its_events(&harness, &strangers_merged_pr("gh-40: Fix it", &json!({})));
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert_eq!(harness.operations(), ["RefreshRepository"]);
+    assert!(harness.issue_numbers().is_empty());
     harness.finish();
 }
 

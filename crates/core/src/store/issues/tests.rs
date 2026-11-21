@@ -3,7 +3,7 @@ use super::super::*;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::login::Login;
-use crate::testing::{cpython, issue_facts};
+use crate::testing::{cpython, issue_facts, pr_facts};
 use time::OffsetDateTime;
 
 fn issue(number: u32) -> IssueFacts {
@@ -214,4 +214,32 @@ fn a_time_tsugiki_cant_understand_is_a_read_error() {
     store.close();
 
     assert_eq!(refused, Error::new(ErrorKind::Internal, CANT_READ));
+}
+
+#[test]
+fn a_named_number_lacks_until_the_store_holds_it_as_an_issue_a_pr_or_one_with_no_issue() {
+    let db = OpenStore::new("issues-lacking");
+    let naming = PullRequestFacts {
+        closing_issues: vec![1, 2, 3, 4, 5],
+        ..pr_facts(9)
+    };
+    db.store
+        .save_pull_requests(&cpython(), vec![naming, pr_facts(2)])
+        .unwrap();
+    db.store.save_issues(&cpython(), vec![issue(1)]).unwrap();
+    let before = db.store.named_issues_lacking(&cpython()).unwrap();
+
+    let found = (vec![issue(3)], Vec::new());
+    db.store
+        .save_asked_issues(&cpython(), found, vec![3, 4])
+        .unwrap();
+
+    let after = db.store.named_issues_lacking(&cpython()).unwrap();
+    let issues: Vec<u32> = (db.reader.work_facts(&cpython()).unwrap().issues.iter())
+        .map(|issue| issue.number)
+        .collect();
+    db.close();
+    assert_eq!(before, BTreeSet::from([3, 4, 5]));
+    assert_eq!(after, BTreeSet::from([5]));
+    assert_eq!(issues, [1, 3]);
 }

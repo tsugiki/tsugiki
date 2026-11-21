@@ -387,6 +387,34 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Stores the `issues` a fetch of the Issues numbered `asked` found, with what GitHub says happened on
+    /// them, and keeps each other number of `asked` as one GitHub answered with no Issue, which
+    /// `named_issues_lacking` leaves out from then on (#980). One transaction holds it all.
+    pub fn save_asked_issues(
+        &self,
+        repository: &RepositoryName,
+        (issues, events): (Vec<IssueFacts>, Vec<ItemActivity>),
+        asked: Vec<u32>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| {
+            issues::save_asked(connection, &repository, (&issues, &events), &asked)
+        })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The numbers the PRs of `repository` name as fixed, under any Conventions, that Tsugiki holds as
+    /// neither an Issue nor a PR, and that GitHub hasn't answered with no Issue (#980).
+    pub fn named_issues_lacking(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<BTreeSet<u32>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| issues::named_and_lacking(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
     /// The numbers of `viewer`'s open PRs whose CI failed after Tsugiki last asked which checks failed.
     pub fn pull_requests_with_unread_checks(
         &self,

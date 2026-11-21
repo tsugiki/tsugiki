@@ -83,9 +83,20 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
+    /// A refresh that would finish fetches the Issues that the PRs in Reach name and Tsugiki lacks (#980).
+    FetchingReachedIssues(Asked),
     /// A refresh that would finish reads the Conversations the rules want read ahead, lowest number first
     /// (#157).
     ReadingAhead(Ahead),
+}
+
+/// The Issues a refresh has asked GitHub for because PRs in Reach name them. The store keeps each number
+/// asked as an Issue or as one with no Issue, so Reach shouldn't name it again. This is the queue's
+/// bookkeeping, as `Ahead` is: it keeps a number the store didn't settle from being asked for again and
+/// again.
+#[derive(Default)]
+struct Asked {
+    numbers: BTreeSet<u32>,
 }
 
 /// The reading ahead a refresh has done.
@@ -467,6 +478,7 @@ impl UserWorkSync {
             | Phase::FetchingChanged(_)
             | Phase::Probing(_)
             | Phase::Resumable(_)
+            | Phase::FetchingReachedIssues(_)
             | Phase::ReadingAhead(_) => None,
         }
     }
@@ -513,6 +525,9 @@ impl UserWorkSync {
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
+            Phase::FetchingReachedIssues(asked) => {
+                refresh::fetch_reached_issues(&link, asked, settings)?
+            }
             Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
@@ -538,11 +553,23 @@ impl UserWorkSync {
         if let Some(next) = next {
             self.phase = next;
         }
-        let reads_ahead = matches!(self.phase, Phase::ReadingAhead(_));
-        if matches!((&step, &self.kind), (Step::Finished, Kind::Refresh)) && !reads_ahead {
-            // Asking the rules is no request to GitHub, so this goes straight on to the first read.
-            self.phase = Phase::ReadingAhead(Ahead::default());
-            return self.advance(github, store, settings);
+        if let (Step::Finished, Kind::Refresh) = (&step, &self.kind) {
+            // A refresh's last two phases follow its others, each once. Asking the store and the rules is no
+            // request to GitHub, so this goes straight on to the first request of the next.
+            let next = match self.phase {
+                Phase::ReadingAhead(_) => None,
+                Phase::FetchingReachedIssues(_) => Some(Phase::ReadingAhead(Ahead::default())),
+                Phase::Starting
+                | Phase::CheckingList(_)
+                | Phase::Polling(_)
+                | Phase::FetchingChanged(_)
+                | Phase::Probing(_)
+                | Phase::Resumable(_) => Some(Phase::FetchingReachedIssues(Asked::default())),
+            };
+            if let Some(next) = next {
+                self.phase = next;
+                return self.advance(github, store, settings);
+            }
         }
         if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
             (&mut self.kind, &step)

@@ -210,6 +210,16 @@ impl GitHub {
         read(reply, |answer| self.count(answer))
     }
 
+    /// Reads `reply` as `answer` does, leaving out each field under `repository` that `refusable` names and
+    /// GitHub refused, as `read_with_refused` says.
+    fn answer_with_refused<D: DeserializeOwned>(
+        &self,
+        reply: &Reply,
+        refusable: impl Fn(&str) -> bool,
+    ) -> Result<(D, Vec<Refused>), Error> {
+        read_with_refused(reply, |answer| self.count(answer), refusable)
+    }
+
     /// Sends `request`, and sets GitHub's clock by the reply's `Date`.
     fn post(&self, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.transport.post(&self.token, request)?;
@@ -363,6 +373,23 @@ const RATE_LIMITED: &str =
 /// Turns an answer into its data, or into the error the UI can act on (ADR 0008). An answer whose data
 /// reports its points hands them to `count` first, even when the query failed, since GitHub charged for it.
 fn read<D: DeserializeOwned>(reply: &Reply, count: impl FnOnce(RateLimit)) -> Result<D, Error> {
+    let (data, _refused) = read_with_refused(reply, count, |_| false)?;
+    Ok(data)
+}
+
+/// A field under `repository` that GitHub refused while it answered the others, with what it said.
+struct Refused {
+    field: String,
+    message: String,
+}
+
+/// Reads an answer as `read` does, but an error of any type whose path is `repository` and one field that
+/// `refusable` names leaves only that field out: GitHub answers it with null and the rest stays good.
+fn read_with_refused<D: DeserializeOwned>(
+    reply: &Reply,
+    count: impl FnOnce(RateLimit),
+    refusable: impl Fn(&str) -> bool,
+) -> Result<(D, Vec<Refused>), Error> {
     #[derive(Deserialize)]
     struct Envelope {
         data: Option<Value>,
@@ -447,7 +474,17 @@ fn read<D: DeserializeOwned>(reply: &Reply, count: impl FnOnce(RateLimit)) -> Re
             Some(GraphqlErrorKind::NotFound | GraphqlErrorKind::Forbidden)
         ) && error.path.last().and_then(Value::as_str) == Some("source")
     };
-    let failed = |error: &&GraphqlError| !gone_node(error) && !hidden_source(error);
+    let refused_field = |error: &GraphqlError| match error.path.as_slice() {
+        [Value::String(place), Value::String(field)]
+            if place == "repository" && refusable(field) =>
+        {
+            Some(field.clone())
+        }
+        _ => None,
+    };
+    let failed = |error: &&GraphqlError| {
+        !gone_node(error) && !hidden_source(error) && refused_field(error).is_none()
+    };
     if let Some(error) = envelope.errors.iter().find(failed) {
         return Err(match error.kind {
             Some(GraphqlErrorKind::RateLimited) => rate_limited(),
@@ -464,10 +501,18 @@ fn read<D: DeserializeOwned>(reply: &Reply, count: impl FnOnce(RateLimit)) -> Re
     if let Err(cause) = points {
         return Err(unreadable(cause));
     }
+    let refused = (envelope.errors.iter())
+        .filter(|error| !gone_node(error))
+        .filter_map(|error| {
+            let field = refused_field(error)?;
+            let message = error.message.clone();
+            Some(Refused { field, message })
+        })
+        .collect();
     let data = envelope
         .data
         .ok_or_else(|| internal("GitHub sent an answer with no data."))?;
-    serde_json::from_value(data).map_err(unreadable)
+    Ok((serde_json::from_value(data).map_err(unreadable)?, refused))
 }
 
 /// The fake GitHub the core's tests share, and share with other crates' tests.

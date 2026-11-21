@@ -476,38 +476,37 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
 /// which also mends a store that lacked the Issue from before. A saved Issue is an ordinary item: the Inbox
 /// lists it, and the usual rules say if it Needs attention. It asks the store again before each batch and
 /// finishes once none are left. The store keeps each number that will never name an Issue, so the next
-/// refresh doesn't ask for it again; one GitHub doesn't find is asked again, as one name in a batch.
+/// refresh doesn't ask for it again; one GitHub doesn't find is asked again at the next refresh.
 ///
-/// A batch GitHub refuses comes back as its halves, down to single numbers, within this refresh, so one
-/// number GitHub won't give holds back only itself, and that number waits for the next refresh. Only
-/// trouble that speaks for all of GitHub stops this one, as in `read_ahead`.
+/// A number GitHub refuses alone, while it answers the others, waits for the next refresh, and the rest of
+/// the batch is saved. A batch GitHub refuses as a whole is logged and waits for the next refresh too, and
+/// only trouble that speaks for all of GitHub stops this one, as in `read_ahead`.
 pub(super) fn fetch_lacking_issues(
     link: &Link<'_>,
     asked: &mut Asked,
     conventions: Conventions,
 ) -> Result<Moved, Error> {
-    let numbers = match asked.refused.pop() {
-        Some(part) => part,
-        None => {
-            let lacking = link
-                .store
-                .named_issues_lacking(link.repository, conventions)?;
-            let numbers: Vec<u32> = (lacking.difference(&asked.numbers).copied())
-                .take(FETCH_BATCH)
-                .collect();
-            if numbers.is_empty() {
-                return Ok((Step::Finished, None));
-            }
-            numbers
-        }
-    };
+    let lacking = link
+        .store
+        .named_issues_lacking(link.repository, conventions)?;
+    let numbers: Vec<u32> = lacking.difference(&asked.numbers).copied().collect();
+    if numbers.is_empty() {
+        return Ok((Step::Finished, None));
+    }
     let batch = match link
         .github
         .fetch_issues(link.repository, &numbers, FETCH_BATCH)
     {
         Ok(batch) => batch,
         Err(problem) if !problem.kind.speaks_for_all_of_github() => {
-            refused(asked, numbers, &problem);
+            // The failure doesn't say how far a retry after a 502 shrank the request, so the whole batch
+            // waits for the next refresh.
+            let batch: Vec<u32> = numbers.into_iter().take(FETCH_BATCH).collect();
+            log::warn!(
+                "GitHub wouldn't give the Issues {batch:?}: {}",
+                problem.message
+            );
+            asked.numbers.extend(batch);
             return Ok((Step::Searched { pause_until: None }, None));
         }
         Err(problem) => return Err(problem),
@@ -518,24 +517,12 @@ pub(super) fn fetch_lacking_issues(
         (batch.issues, batch.activity),
         batch.issueless,
     )?;
+    // Each number the answer covers is asked, the refused ones too, which `fetch_issues` has logged.
     asked
         .numbers
         .extend(numbers.into_iter().take(batch.asked_for));
     let pause_until = pause_until(batch.rate_limit);
     Ok((Step::saved_if_any(touched, pause_until), None))
-}
-
-/// Keeps the `numbers` GitHub refused to give: one alone waits for the next refresh, and more go back as
-/// their two halves, the first asked next. The failure doesn't say how far a retry after a 502 shrank the
-/// request, so the halves cover all of `numbers`.
-fn refused(asked: &mut Asked, numbers: Vec<u32>, problem: &Error) {
-    if let [number] = numbers.as_slice() {
-        log::warn!("GitHub wouldn't give Issue {number}: {}", problem.message);
-        asked.numbers.extend([*number]);
-    } else {
-        let (first, second) = numbers.split_at(numbers.len() / 2);
-        asked.refused.extend([second.to_vec(), first.to_vec()]);
-    }
 }
 
 /// The Conversations the rules want read ahead under `repository`'s settings, from what the store holds

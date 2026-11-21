@@ -8,8 +8,8 @@ use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
 use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{
-    answer, dated, filter_page, github, not_found, page_info, pr_content, pull_request_answer,
-    replied, reply_ok, signed_in_as,
+    answer, dated, erring, filter_page, github, not_found, page_info, pr_content,
+    pull_request_answer, replied, reply_ok, signed_in_as,
 };
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
@@ -2253,16 +2253,49 @@ fn a_pr_number_isnt_asked_for_again_and_one_github_doesnt_find_is_at_the_next_re
 }
 
 #[test]
-fn a_refused_batch_is_asked_in_halves_and_only_the_number_github_refuses_waits_for_the_next_refresh()
- {
-    let refused = || reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No"}]}"#);
+fn a_batch_of_issues_github_refuses_waits_for_the_next_refresh_and_this_one_finishes() {
+    let refused = reply_ok(r#"{"data":null,"errors":[{"type":"FORBIDDEN","message":"No"}]}"#);
     let replies = vec![
         quiet_poll(),
-        refused(),                 // 40, 41 and 42
-        issues(&[40], RATE_LIMIT), // the first half
-        refused(),                 // the second, 41 and 42
-        refused(),                 // 41 alone
-        issues(&[42], RATE_LIMIT), // 42 alone
+        refused,
+        quiet_poll(),
+        issues(&[40], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("lacking-batch-refused", replies);
+    holding_a_strangers_pr_naming(&harness, 40);
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    let state = harness.db.store.sync_state(&cpython()).unwrap().unwrap();
+    let held_after_the_first = harness.issue_numbers();
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    assert!(!state.refresh_under_way, "the refresh finished");
+    assert!(held_after_the_first.is_empty());
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchIssues",
+            "RefreshRepository",
+            "FetchIssues"
+        ]
+    );
+    assert_eq!(harness.issue_numbers(), [40]);
+    harness.finish();
+}
+
+#[test]
+fn a_number_github_refuses_alone_waits_for_the_next_refresh_and_the_rest_of_its_batch_is_saved() {
+    let fetched = crate::github::testing::issue_node;
+    let repository = json!({ "i40": fetched(40), "i41": null, "i42": fetched(42) });
+    let refused_41 = erring(
+        json!({ "repository": repository }),
+        ("FORBIDDEN", "No"),
+        json!(["repository", "i41"]),
+    );
+    let replies = vec![
+        quiet_poll(),
+        refused_41,
         quiet_poll(),
         issues(&[41], RATE_LIMIT),
     ];
@@ -2283,10 +2316,15 @@ fn a_refused_batch_is_asked_in_halves_and_only_the_number_github_refuses_waits_f
     assert!(!state.refresh_under_way, "the refresh finished");
     assert!(state.finished_at > moment(LAST_SYNC));
     assert_eq!(held_after_the_first, [40, 42]);
-    let mut first = vec!["RefreshRepository"];
-    first.extend(["FetchIssues"; 5]);
-    let operations = [first, vec!["RefreshRepository", "FetchIssues"]].concat();
-    assert_eq!(harness.operations(), operations);
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchIssues",
+            "RefreshRepository",
+            "FetchIssues"
+        ]
+    );
     assert_eq!(harness.issue_numbers(), [40, 41, 42]);
     harness.finish();
 }

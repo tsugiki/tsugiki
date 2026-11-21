@@ -11,8 +11,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     so a comment on it, such as a Bot's that a backport failed, still arrives. The poll saves each changed
     Issue the database holds, whatever its state.
   - Before it finishes, a refresh fetches each Issue that a PR the database holds links to and the
-    database lacks, and saves it as any other Issue ([workbench.md](workbench.md), #980). A batch GitHub
-    refuses is asked again in halves, so a number GitHub won't give waits alone for the next refresh.
+    database lacks, and saves it as any other Issue ([workbench.md](workbench.md), #980). A number
+    GitHub refuses alone waits for the next refresh while the rest of its batch is saved, and a batch
+    GitHub refuses as a whole waits too.
   - A sync that sees an Issue or a Standalone PR close or merge, open in the database and closed in
     GitHub's answer, archives it if **Reach** held it while it was open
     ([workbench.md](workbench.md)). The database keeps each closing it saves until the sync judges it,

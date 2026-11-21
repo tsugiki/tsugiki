@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 use super::activity::{TimelineWire, pull_request_activity};
 use super::labels::{LabelWire, label_names};
 use super::refresh::PageInfo;
-use super::{BAD_GATEWAY, GitHub, RATE_LIMIT_FIELDS, Request, Unreachable};
+use super::{BAD_GATEWAY, GitHub, RATE_LIMIT_FIELDS, Reply, Request, Unreachable};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::CommitSha;
@@ -550,13 +550,24 @@ impl GitHub {
         size: usize,
         request: impl Fn(usize) -> Request<'a>,
     ) -> Result<(D, usize), Error> {
+        self.read_at_size(size, request, |reply| self.answer(reply))
+    }
+
+    /// Asks as `query_at_size` does, and reads the reply that counts with `read`.
+    pub(super) fn read_at_size<'a, T>(
+        &self,
+        size: usize,
+        request: impl Fn(usize) -> Request<'a>,
+        read: impl Fn(&Reply) -> Result<T, Error>,
+    ) -> Result<(T, usize), Error> {
         match self.post(&request(size)) {
-            Ok(reply) if reply.status != BAD_GATEWAY => Ok((self.answer(&reply)?, size)),
+            Ok(reply) if reply.status != BAD_GATEWAY => Ok((read(&reply)?, size)),
             Err(cause @ Unreachable::CertificateDates) => Err(cause.into()),
             Ok(_) | Err(Unreachable::Offline) => {
                 let smaller = size.div_ceil(2);
                 log::warn!("GitHub didn't answer for {size} items, so asking for {smaller}");
-                Ok((self.query(&request(smaller))?, smaller))
+                let reply = self.post(&request(smaller))?;
+                Ok((read(&reply)?, smaller))
             }
         }
     }

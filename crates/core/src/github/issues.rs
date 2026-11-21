@@ -13,7 +13,7 @@ use super::activity::{IssueTimelineWire, issue_activity};
 use super::labels::{LabelWire, label_names};
 use super::pull_requests::{Nodes, PageRequest, Person, RateLimit};
 use super::references::{REFERENCE_FIELDS, ReferenceTimeline};
-use super::{GitHub, RATE_LIMIT_FIELDS, Request};
+use super::{GitHub, RATE_LIMIT_FIELDS, Refused, Request};
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
 use crate::facts::issues::{IssueFacts, IssueState, ListedPr};
@@ -57,6 +57,9 @@ pub struct FetchedIssues {
     /// another number, as it does for one transferred to another repository. A number GitHub doesn't find
     /// isn't among them, since its Issue can still be opened or restored.
     pub issueless: Vec<u32>,
+    /// The numbers GitHub refused alone while it answered the others, each logged with what GitHub said:
+    /// neither an Issue nor issueless, so a later fetch can ask again.
+    pub refused: Vec<u32>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -160,6 +163,8 @@ pub(super) struct ReadByNumber<T> {
     /// another number, as it does for one transferred to another repository. A number GitHub doesn't find
     /// isn't among them, since its Issue can still be opened or restored.
     pub issueless: Vec<u32>,
+    /// The numbers GitHub refused alone while it answered the others: neither an Issue nor issueless.
+    pub refused: Vec<u32>,
     /// The count of numbers it asked for, which a retry can make smaller than the batch.
     pub asked_for: usize,
     pub rate_limit: RateLimit,
@@ -260,13 +265,16 @@ impl GitHub {
             issues,
             activity,
             issueless: read.issueless,
+            refused: read.refused,
             asked_for: read.asked_for,
             rate_limit: read.rate_limit,
         })
     }
 
     /// Asks for the first `read.size` of `read.numbers`, or half that after a 502 or no answer. A number can
-    /// turn out to be a PR or a transferred Issue, and then the answer counts it as issueless.
+    /// turn out to be a PR or a transferred Issue, and then the answer counts it as issueless. GitHub can
+    /// refuse one number, as with a FORBIDDEN for its alias alone, and answer the others: that number is
+    /// logged and given back as refused, and the rest of the answer stands.
     pub(super) fn read_by_number<T: DeserializeOwned + AnsweredIssue>(
         &self,
         repository: &RepositoryName,
@@ -290,23 +298,36 @@ impl GitHub {
             numbers,
             size,
         } = read;
-        let (data, asked_for): (Data<T>, usize) =
-            self.query_at_size(size.min(numbers.len()), |size| {
+        let alias = |number: &u32| format!("i{number}");
+        let aliases: Vec<String> = numbers.iter().map(alias).collect();
+        let refusable = |field: &str| aliases.iter().any(|asked| asked == field);
+        let ((data, refused), asked_for): ((Data<T>, Vec<Refused>), usize) = self.read_at_size(
+            size.min(numbers.len()),
+            |size| {
                 let asked: Vec<u32> = numbers.iter().take(size).copied().collect();
                 Request {
                     operation,
                     query: query(&asked).into(),
                     variables: json!({ "owner": repository.owner(), "name": repository.name() }),
                 }
-            })?;
+            },
+            |reply| self.answer_with_refused(reply, refusable),
+        )?;
         let mut answers = data.repository;
         let mut issues = Vec::new();
         let mut issueless = Vec::new();
+        let mut refused_numbers = Vec::new();
         for number in numbers.iter().take(asked_for) {
+            let alias = alias(number);
+            if let Some(refusal) = refused.iter().find(|refusal| refusal.field == alias) {
+                log::warn!("GitHub wouldn't give Issue {number}: {}", refusal.message);
+                refused_numbers.push(*number);
+                continue;
+            }
             // GitHub follows an Issue transferred to another repository, and answers with the number it has
             // there. `read` lets a null through only with GitHub's NOT_FOUND for it, which can change: the
             // Issue a PR names can be opened later, or one GitHub hid be restored.
-            match answers.remove(&format!("i{number}")) {
+            match answers.remove(&alias) {
                 Some(Some(Numbered::Issue(issue))) if issue.number() == *number => {
                     issues.push(issue)
                 }
@@ -317,6 +338,7 @@ impl GitHub {
         Ok(ReadByNumber {
             issues,
             issueless,
+            refused: refused_numbers,
             asked_for,
             rate_limit: data.rate_limit,
         })

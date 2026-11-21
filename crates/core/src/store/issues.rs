@@ -99,8 +99,8 @@ fn save_in(
     activity::save(connection, repository, events)
 }
 
-/// Stores `issues` as `save` does, and keeps each of `issueless` as a number GitHub answered with no Issue,
-/// in one transaction.
+/// Stores `issues` as `save` does, and keeps each of `issueless` as a number that will never name an Issue,
+/// a PR's or a transferred Issue's, in one transaction.
 pub(super) fn save_with_issueless(
     connection: &mut Connection,
     repository: &RepositoryName,

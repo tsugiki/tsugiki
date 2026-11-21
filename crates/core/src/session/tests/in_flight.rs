@@ -46,8 +46,9 @@ fn a_request_is_in_flight_from_when_it_goes_until_github_answers() {
     let still_out = in_flight.try_recv();
     answer.send(()).unwrap();
     let ended = in_flight.recv_timeout(PLENTY).unwrap();
-    session.stop(PLENTY);
+    // Let go first, so a later request can't hold up the stop.
     drop(answer);
+    session.stop(PLENTY);
 
     let out = out.unwrap();
     assert_eq!(out.asked, Asking::Status);

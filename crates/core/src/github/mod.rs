@@ -476,7 +476,10 @@ struct Ended<'a>(&'a RefCell<AnnounceInFlight>);
 
 impl Drop for Ended<'_> {
     fn drop(&mut self) {
-        (self.0.borrow_mut())(None);
+        // A panic while unwinding would abort, so a borrow already out goes unannounced.
+        if let Ok(mut announce) = self.0.try_borrow_mut() {
+            announce(None);
+        }
     }
 }
 

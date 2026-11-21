@@ -666,7 +666,7 @@ describe("StatusBar's request in flight", () => {
     expect(waited?.textContent).toBe(", 4 s");
   });
 
-  it("sets no timer on a hidden bar, and none before the request's third second", async () => {
+  it("sets no timer on a hidden bar, and ticks first at the request's third second", async () => {
     vi.useFakeTimers({ now: new Date(went) });
     const { rerender } = render(StatusBar, { status: online, visible: false });
     const idle = vi.getTimerCount();

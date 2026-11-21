@@ -44,5 +44,6 @@ pub struct InFlight {
     pub since: OffsetDateTime,
 }
 
-/// Hears each request to GitHub as it goes, and nothing once it ends, answered or failed.
+/// Hears each request to GitHub as it goes, and nothing once it ends, answered or failed. It must not panic:
+/// the end can come while a panic in the request unwinds, and a second panic then aborts the app.
 pub type AnnounceInFlight = Box<dyn FnMut(Option<&InFlight>) + Send>;

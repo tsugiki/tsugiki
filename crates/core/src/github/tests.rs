@@ -659,6 +659,30 @@ fn a_request_that_panics_ends_and_gives_back_what_was_asked_before() {
 }
 
 #[test]
+fn an_asking_that_panics_inside_another_gives_the_outer_one_back() {
+    let (script, _) = Scripted::new(vec![signed_in_as("octocat")]);
+    let mut github = github(script);
+    let (announce, heard) = super::testing::in_flight_heard();
+    github.announce_in_flight(announce);
+    let refresh = Asking::Refresh {
+        repository: crate::testing::gcmon(),
+    };
+
+    github.asking(Asking::Status, || {
+        let inner = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            github.asking(refresh, || panic!("the step broke"));
+        }));
+        assert!(inner.is_err());
+        drop(github.viewer().unwrap());
+    });
+
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [Some(Asking::Status), None]
+    );
+}
+
+#[test]
 fn an_asking_inside_another_names_its_own_requests_and_gives_the_outer_one_back() {
     let (script, _) = Scripted::new(vec![signed_in_as("octocat"), signed_in_as("octocat")]);
     let mut github = github(script);

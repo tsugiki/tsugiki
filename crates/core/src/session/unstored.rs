@@ -5,6 +5,7 @@
 use crate::error::{Error, ErrorKind};
 use crate::fetching::{Item, ItemFetch, ItemUnfetched};
 use crate::github::GitHub;
+use crate::github::in_flight::Asking;
 use crate::github::item::Numbered;
 use crate::status::{Change, Status, StatusBoard};
 use crate::store::Store;
@@ -26,7 +27,11 @@ pub(super) fn fetch(
     item: &Item,
 ) -> Result<Result<Saved, ItemUnfetched>, Error> {
     let Item { repository, number } = item;
-    let fetched = match github.fetch_item(repository, *number) {
+    let asked = Asking::Fetch {
+        repository: repository.clone(),
+        number: *number,
+    };
+    let fetched = match github.asking(asked, || github.fetch_item(repository, *number)) {
         Ok(fetched) => fetched,
         Err(problem) if problem.kind.speaks_for_all_of_github() => return Err(problem),
         Err(problem) => {

@@ -58,7 +58,7 @@ flowchart LR
     mirrors[Mirror worker] -->|patch-ids read, commits it can't read, to keep| session
     mirrors -->|a Repository's size, before a clone| github
     mirrors -->|git CLI| git[("repos/*/mirror.git<br>and lookup/")]
-    github -->|status, activity, points, last syncs, changes| board[StatusBoard and<br>mirror Announce callbacks]
+    github -->|status, activity, points, request in flight, last syncs, changes| board[StatusBoard and<br>mirror Announce callbacks]
     session -->|the changes its saves make| board
     mirrors -->|cloning, problems, each Mirror's state, held back| board
     board -->|latest copies + events| app[Commands in crates/app]
@@ -83,7 +83,7 @@ flowchart LR
 | Thread | Owns | Where |
 |---|---|---|
 | Session | The Repositories the window opened since launch, and what the rules make of the stored facts: the Mirror worker's wants and the kept checks of the Stale review check. Takes each message at once: saves the marks and the patch-ids the Mirror worker read itself, follows each change to the settings, works out the wants again after the GitHub thread saves facts, and passes each demand on GitHub to the GitHub thread's queue. It answers at once a Fetch #N while GitHub can't be reached or the rate limit's gate holds, and a Refresh while one it passed still waits or runs, from `latest` copies of the status board's state and of the refreshes the GitHub thread finished. When the store kept its links under rules other than the set the build runs, it works them out again a batch of a Repository's PRs at a time while no message waits, the Repository on screen first (`session/refill.rs`). | `core/src/session.rs` |
-| GitHub | The token, the GitHub client with its clock and the hour's points it sums from each answer's cost, the rate limit's gate, and the sync queue. Runs the syncs and the demands with blocking calls, one request at a time, takes the user's demands ahead of the next sync step, and answers the Mirror worker's question of a Repository's size. Reads the Issue or PR on screen again each minute while the user can see it, and reads ahead the Conversations the rules want. It writes the status, the sync's activity, the hour's points and the last syncs. | `core/src/session/github_thread.rs` |
+| GitHub | The token, the GitHub client with its clock and the hour's points it sums from each answer's cost, the rate limit's gate, and the sync queue. Runs the syncs and the demands with blocking calls, one request at a time, takes the user's demands ahead of the next sync step, and answers the Mirror worker's question of a Repository's size. Reads the Issue or PR on screen again each minute while the user can see it, and reads ahead the Conversations the rules want. It writes the status, the sync's activity, the hour's points, the request in flight and the last syncs. The client announces the request in flight itself, as the thread waits while it is out. | `core/src/session/github_thread.rs` |
 | Store | The one writing SQLite connection. Only the session's two threads send it jobs. | `core/src/store/mod.rs` |
 | StoreReader | A read-only connection that the core's calls share. | `core/src/store/mod.rs` |
 | Mirror worker | Every write to the Mirrors: clones, fetches of PR heads, the commits the user's Reviews covered, upkeep, and each Repository's Lookup checkout, which it moves to the PR on screen and tells readers where it is once it stops moving. Between git jobs it reads the per-file patch-ids the Stale review check compares, and hands them to the session to save, with the commits it can't read and why. It holds its queue as `fetching` says, and asks `mirror_queue` which job runs next: the user's demands first, a move of the Lookup checkout and then the heads of the PRs they opened, in a fetch of their own; then the rules' wants, each the whole set for a Repository, which replaces the last; then clones and upkeep. | `core/src/mirror.rs`, `core/src/mirror_queue.rs` |
@@ -153,10 +153,10 @@ app-wide status.
    opened or not, as a Sync it passed may open the Repository. A Repository the settings stop listing goes
    to the defaults, in the view and in a save.
 
-App-wide status (the connection, the last sync, the hour's GitHub points, cloning progress, a Mirror's
-problem, each Mirror's state, whether the Mirror worker holds back git, a newer version) takes a shorter
-path. The app keeps the newest value in a `latest` copy for its command, then emits an event. A window that
-starts listening late asks the command and still gets the newest value.
+App-wide status (the connection, the last sync, the hour's GitHub points, the request to GitHub in flight,
+cloning progress, a Mirror's problem, each Mirror's state, whether the Mirror worker holds back git, a newer
+version) takes a shorter path. The app keeps the newest value in a `latest` copy for its command, then emits
+an event. A window that starts listening late asks the command and still gets the newest value.
 
 A diff takes a third path, because it is too big to send whole
 ([ADR 0001](adr/0001-standalone-tauri-gui-with-in-app-review.md)). The core runs `git diff` in the Mirror
@@ -191,7 +191,7 @@ The big ones, in the order data passes through them:
 
 | Module | What it does |
 |---|---|
-| `github/` | The GitHub client: the GraphQL queries and their answers, parsed into the types of `facts`. It talks through a `Transport`, so tests replay recorded answers. It sums the points each answer cost this hour (`points.rs`), and keeps the rate limit's gate, which each request passes: below the floor of points, or after GitHub refused a request for its rate limit, it sends nothing until the reset and answers at once with the time the points come back (`gate.rs`). |
+| `github/` | The GitHub client: the GraphQL queries and their answers, parsed into the types of `facts`. It talks through a `Transport`, so tests replay recorded answers. It sums the points each answer cost this hour (`points.rs`), and keeps the rate limit's gate, which each request passes: below the floor of points, or after GitHub refused a request for its rate limit, it sends nothing until the reset and answers at once with the time the points come back (`gate.rs`). It tells the status board what each request asks as it goes, and when it ends, from what the caller says it asks (`in_flight.rs`). |
 | `facts.rs`, `facts/` | The facts `work` judges: what GitHub says of each Issue and PR, the patch-ids the Mirror worker reads, and `WorkFacts`, the bundle a screen reads from the store. Neither the client nor the store owns them. |
 | `sync/` | Decides what to ask GitHub for and how much at a time, and pauses while the client's gate holds: the first sync in tiers, then `refresh`, which ends by fetching the Issues the PRs it holds link to and the store lacks, asking the store again before each batch (#980), then reading ahead the Conversations `work` names, asking it again before each read. After each step that saves, it archives what `work` says closed (#820), from the closings the store kept as it saved, brings back to the Inbox each Archived Issue `work` says a new PR opened on (#823), from the openings the store kept, and saves its place. |
 | `store/` | Saves and reads the facts, a file for each kind: Issues, PRs, activity, Filters, sync state. [schema.md](schema.md) draws its tables. It keeps the links each PR names under each Conventions, which `links` works out as the PR is saved, and the names of the rules that worked them out (`pr_links.rs`). It opens with links an older set of rules kept, and answers from them until the session refills them. It refuses to open on a rule's name the build doesn't know, as on a schema past its last migration. A `Snapshot` is one read transaction for a view that works out what to read next from what it read, as the Inbox, the Issue view and the PR view do. |

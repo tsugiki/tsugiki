@@ -288,7 +288,7 @@ impl GitHub {
                     path: &path,
                     etag: tag.map(Etag::as_str),
                 };
-                self.transport.get(&self.token, &request)
+                self.in_flight(|| self.transport.get(&self.token, &request))
             });
         if let Ok(reply) = &reply
             && (reply.status == NOT_MODIFIED || reply.status == OK)

@@ -6,6 +6,7 @@ pub mod clock;
 pub mod filters;
 mod gate;
 mod https;
+pub mod in_flight;
 pub mod issue_content;
 pub mod issues;
 pub mod item;
@@ -21,7 +22,7 @@ pub mod replay;
 pub mod window;
 
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -31,6 +32,7 @@ use time::{Date, Duration, OffsetDateTime};
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
 use crate::github::gate::{Gate, Hold};
+use crate::github::in_flight::{AnnounceInFlight, Asking, InFlight};
 use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
@@ -172,6 +174,11 @@ pub struct GitHub {
     /// The rate limit's gate, which each request passes. It holds while `points` are below the floor, and
     /// after GitHub refused a request for its rate limit.
     gate: Cell<Gate>,
+    /// What the requests sent now ask, which the caller says through [`Self::asking`].
+    asking: RefCell<Option<Asking>>,
+    /// Hears each request as it goes and once it ends, so the status bar can show one GitHub is slow to
+    /// answer while the thread waits for it.
+    announce_in_flight: RefCell<AnnounceInFlight>,
 }
 
 impl GitHub {
@@ -182,7 +189,39 @@ impl GitHub {
             clock: Cell::new(GitHubClock::default()),
             points: Cell::new(None),
             gate: Cell::new(Gate::default()),
+            asking: RefCell::new(None),
+            announce_in_flight: RefCell::new(Box::new(|_| {})),
         }
+    }
+
+    /// Tells `announce` of each request from now on as it goes, and nothing once it ends.
+    pub fn announce_in_flight(&mut self, announce: AnnounceInFlight) {
+        self.announce_in_flight = RefCell::new(announce);
+    }
+
+    /// Runs `ask`, whose requests ask what `asked` says, and gives what it gave. A request sent outside any
+    /// `asking` goes unannounced.
+    pub fn asking<T>(&self, asked: Asking, ask: impl FnOnce() -> T) -> T {
+        let before = self.asking.replace(Some(asked));
+        let answered = ask();
+        *self.asking.borrow_mut() = before;
+        answered
+    }
+
+    /// Sends a request through `send`, announcing it while it is out, and gives what it gave.
+    fn in_flight<T>(&self, send: impl FnOnce() -> T) -> T {
+        let asked = self.asking.borrow().clone();
+        let Some(asked) = asked else {
+            return send();
+        };
+        let in_flight = InFlight {
+            asked,
+            since: OffsetDateTime::now_utc(),
+        };
+        (self.announce_in_flight.borrow_mut())(Some(&in_flight));
+        let answered = send();
+        (self.announce_in_flight.borrow_mut())(None);
+        answered
     }
 
     /// GitHub's clock, as its replies so far tell it.
@@ -276,7 +315,7 @@ impl GitHub {
     /// Sends `request` if the gate lets it through, and sets GitHub's clock by the reply's `Date`.
     fn post(&self, request: &Request<'_>) -> Result<Reply, Error> {
         self.pass_gate()?;
-        let reply = self.transport.post(&self.token, request)?;
+        let reply = self.in_flight(|| self.transport.post(&self.token, request))?;
         if reply.status == 200 {
             self.set_clock(reply.date);
         }

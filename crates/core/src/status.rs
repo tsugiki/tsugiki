@@ -1,5 +1,5 @@
 //! App-wide status, owned by the core (ADR 0008). For now: the connection, who is signed in, problems, the
-//! syncs' work and the hour's points.
+//! syncs' work, the hour's points and the request to GitHub in flight.
 
 use std::sync::Arc;
 
@@ -8,6 +8,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
+use crate::github::in_flight::AnnounceInFlight;
 use crate::github::points::HourPoints;
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::login::Login;
@@ -250,6 +251,8 @@ pub struct StatusBoard {
     announce_points_back: AnnouncePointsBack,
     /// The copy of the status and the gate's hold, once someone asked for it.
     shown: Option<LatestWriter<Shown>>,
+    /// Hears of the request to GitHub in flight, until the GitHub client takes it.
+    announce_in_flight: Option<AnnounceInFlight>,
 }
 
 impl StatusBoard {
@@ -267,7 +270,21 @@ impl StatusBoard {
             points_back: None,
             announce_points_back: Box::new(|_| {}),
             shown: None,
+            announce_in_flight: None,
         }
+    }
+
+    /// Also tells `announce` of each request to GitHub as it goes, and nothing once it ends.
+    #[must_use]
+    pub fn with_in_flight(mut self, announce: AnnounceInFlight) -> Self {
+        self.announce_in_flight = Some(announce);
+        self
+    }
+
+    /// Hands the GitHub client what hears of the request in flight, as only the client knows when one
+    /// starts and ends while the GitHub thread waits for it. Nothing, once it has.
+    pub(crate) fn in_flight(&mut self) -> Option<AnnounceInFlight> {
+        self.announce_in_flight.take()
     }
 
     /// Also tells `announce` when a Repository's stored facts change.

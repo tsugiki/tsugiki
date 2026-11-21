@@ -1,6 +1,7 @@
 use super::*;
 use crate::facts::issues::{IssueFacts, IssueState};
-use crate::github::testing::{dated, reply_ok, signed_in_as};
+use crate::github::in_flight::Asking;
+use crate::github::testing::{dated, in_flight_heard, reply_ok, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::repository::RepositoryName;
 use crate::sync::testing::{
@@ -1138,5 +1139,61 @@ fn a_sync_of_a_repository_the_settings_no_longer_list_goes_on_under_the_defaults
     // GitHub, which has no answer scripted, is asked, where a sync that lost its settings would stop.
     assert_eq!(failure.problem.kind, ErrorKind::Offline);
     assert!(!harness.operations().is_empty());
+    harness.finish();
+}
+
+#[test]
+fn requests_are_in_flight_as_a_first_sync_until_it_finishes_and_as_a_refresh_after() {
+    let mut replies = searches_finding(&[]);
+    replies.push(refused());
+    let mut harness = Harness::new("in-flight", replies);
+    let (announce, heard) = in_flight_heard();
+    harness.github.announce_in_flight(announce);
+    let mut syncs = Syncs::default();
+    syncs.add_listed(plain(cpython()));
+
+    drop(run_to_the_end(&mut syncs, &harness));
+    let first: Vec<_> = heard.try_iter().collect();
+    syncs.refresh_open(&harness.db.store);
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap_err());
+    let refresh: Vec<_> = heard.try_iter().collect();
+
+    // The sync asks the store which it is before its first request, which then goes as a first sync's.
+    let sync = Asking::Sync {
+        repository: cpython(),
+    };
+    assert_eq!(first.first(), Some(&Some(sync.clone())));
+    assert!(
+        first.iter().flatten().all(|asked| *asked == sync),
+        "{first:?}"
+    );
+    let refreshing = Asking::Refresh {
+        repository: cpython(),
+    };
+    assert_eq!(refresh.first(), Some(&Some(refreshing.clone())));
+    assert!(
+        refresh.iter().flatten().all(|asked| *asked == refreshing),
+        "{refresh:?}"
+    );
+    assert_eq!(refresh.last(), Some(&None));
+    harness.finish();
+}
+
+#[test]
+fn an_opened_trees_requests_are_in_flight_as_its_repositorys_sync() {
+    let (mut syncs, mut harness) = after_a_first_sync(
+        "tree-in-flight",
+        vec![cross_references(&[], None, RATE_LIMIT)],
+    );
+    let (announce, heard) = in_flight_heard();
+    harness.github.announce_in_flight(announce);
+    syncs.open_issue(&cpython(), 7);
+
+    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+
+    let sync = Asking::Sync {
+        repository: cpython(),
+    };
+    assert_eq!(heard.try_iter().collect::<Vec<_>>(), [Some(sync), None]);
     harness.finish();
 }

@@ -31,6 +31,8 @@ export const commands = {
 	 *  window that has just loaded.
 	 */
 	pointsBack: () => __TAURI_INVOKE<PointsBack_Serialize | null>("points_back"),
+	/**  The request to GitHub in flight, for a window that has just loaded. */
+	inFlight: () => __TAURI_INVOKE<InFlight_Serialize | null>("in_flight"),
 	/**  The clone of a mirror under way, for a window that has just loaded. */
 	cloning: () => __TAURI_INVOKE<Cloning | null>("cloning"),
 	/**  The latest reason no mirror can be made, for a window as it loads. */
@@ -356,6 +358,7 @@ export const events = {
 	headsFetchFailed: makeEvent<HeadsFetchFailed, HeadsFetchFailed>("heads-fetch-failed"),
 	headsFetched: makeEvent<HeadsFetched, HeadsFetched>("heads-fetched"),
 	hourPointsChanged: makeEvent<HourPointsChanged_Serialize, HourPointsChanged_Deserialize>("hour-points-changed"),
+	inFlightChanged: makeEvent<InFlightChanged_Serialize, InFlightChanged_Deserialize>("in-flight-changed"),
 	languageServersChanged: makeEvent<LanguageServersChanged_Serialize, LanguageServersChanged_Deserialize>("language-servers-changed"),
 	lastSyncChanged: makeEvent<LastSyncChanged_Serialize, LastSyncChanged_Deserialize>("last-sync-changed"),
 	mirrorProblemChanged: makeEvent<MirrorProblemChanged_Serialize, MirrorProblemChanged_Deserialize>("mirror-problem-changed"),
@@ -491,6 +494,29 @@ export type AppearanceSettings = {
 	light_theme: ThemeName,
 	dark_theme: ThemeName,
 };
+
+/**
+ *  What a request asks GitHub, as the status bar names it. Whoever asks says so through `GitHub::asking`,
+ *  as the GraphQL operation's name means nothing to a user.
+ */
+export type Asking = 
+/**  Who is signed in, which Tsugiki asks about once a minute. */
+{ kind: "status" } | 
+/**  A step of a Repository's refresh. */
+{ kind: "refresh"; repository: RepositoryName } | 
+/**
+ *  A step of a Repository's first sync, of the tree of an Issue the user opened, or of the fetch of
+ *  Issues with no state.
+ */
+{ kind: "sync"; repository: RepositoryName } | 
+/**  What an Issue or a PR says, read for the screen. */
+{ kind: "read"; repository: RepositoryName; number: number } | 
+/**  An Issue or a PR the database lacks, which quick open fetches by its number. */
+{ kind: "fetch"; repository: RepositoryName; number: number } | 
+/**  Add repository's check of a Repository. */
+{ kind: "check"; repository: RepositoryName } | 
+/**  The size of a Repository, which the Mirror worker asks before a clone. */
+{ kind: "size"; repository: RepositoryName };
 
 /**  The reasons an item Needs attention, and since when. */
 export type Attention = Attention_Serialize | Attention_Deserialize;
@@ -1293,6 +1319,48 @@ export type HourPoints_Serialize = {
 	 *  hour.
 	 */
 	since: string | null,
+};
+
+/**
+ *  The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+ *  the window counts the seconds itself.
+ */
+export type InFlight = InFlight_Serialize | InFlight_Deserialize;
+
+/**
+ *  Sent when a request to GitHub goes, with what it asks, and with nothing when it ends, so the status bar
+ *  can show one GitHub is slow to answer.
+ */
+export type InFlightChanged = InFlightChanged_Serialize | InFlightChanged_Deserialize;
+
+/**
+ *  Sent when a request to GitHub goes, with what it asks, and with nothing when it ends, so the status bar
+ *  can show one GitHub is slow to answer.
+ */
+export type InFlightChanged_Deserialize = InFlight_Deserialize | null;
+
+/**
+ *  Sent when a request to GitHub goes, with what it asks, and with nothing when it ends, so the status bar
+ *  can show one GitHub is slow to answer.
+ */
+export type InFlightChanged_Serialize = InFlight_Serialize | null;
+
+/**
+ *  The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+ *  the window counts the seconds itself.
+ */
+export type InFlight_Deserialize = {
+	asked: Asking,
+	since: string,
+};
+
+/**
+ *  The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+ *  the window counts the seconds itself.
+ */
+export type InFlight_Serialize = {
+	asked: Asking,
+	since: string,
 };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */

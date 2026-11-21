@@ -46,6 +46,38 @@ test("the status bar says when a newer version is out, found before or after the
   await expect(page.getByRole("button", { name: "Tsugiki 0.4.0 is out" })).toBeVisible();
 });
 
+test("a slow request keeps one width whatever it asks, and a long subject ends in an ellipsis", async ({
+  page,
+}) => {
+  const since = new Date(Date.now() - 60_000).toISOString();
+  const short = { asked: { kind: "status" }, since } as const;
+  const long = {
+    asked: { kind: "refresh", repository: `some-maintainer/${"g".repeat(80)}` },
+    since,
+  } as const;
+  await mockCore(page, { settings: defaults, status: online, inFlight: short });
+  await page.goto("/");
+  const part = page.getByText(/^Waiting for GitHub/);
+  await expect(part).toHaveText(/^Waiting for GitHub: status check, \d+ s$/);
+  const shortBox = await part.boundingBox();
+
+  await emitFromCore(page, "in-flight-changed", long);
+  await expect(part).toHaveAttribute(
+    "title",
+    /^Waiting for GitHub: refresh of some-maintainer\/g{80}, \d+ s$/,
+  );
+  const longBox = await part.boundingBox();
+  const cut = await part.evaluate((element) => element.scrollWidth > element.clientWidth);
+  await emitFromCore(page, "in-flight-changed", null);
+
+  expect(shortBox).not.toBeNull();
+  expect(longBox).not.toBeNull();
+  expect(Math.abs((longBox?.width ?? 0) - (shortBox?.width ?? 0))).toBeLessThanOrEqual(0.5);
+  expect(Math.abs((longBox?.x ?? 0) - (shortBox?.x ?? 0))).toBeLessThanOrEqual(0.5);
+  expect(cut).toBe(true);
+  await expect(part).toHaveCount(0);
+});
+
 test("the status bar follows the core's status event", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: { state: "connecting" } });
   await page.goto("/");

@@ -41,7 +41,12 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   or the diff's search, the file view, which goes back to the diff, and last a PR, which goes back to its
   Issue.
 - Showing only the Detail pane, and Reset Layout.
-- The status bar.
+
+### Status bar ([status-bar.md](devel/status-bar.md))
+
+- The status bar, for what is app-wide: who is signed in or being offline, problems, sync status and the
+  background work, unsent Pending reviews, the hour's GitHub points, a newer version, a chord's first key,
+  and the request to GitHub that is slow to answer. Each part has a switch.
 
 ### Links ([links.md](devel/links.md))
 

@@ -22,9 +22,10 @@ use tsugiki_core::status::{Change, Status, StatusBoard};
 use crate::first_frame;
 use crate::{
     Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
-    LanguageServersChanged, LastSyncChanged, MirrorProblemChanged, MirrorQuestionChanged,
-    MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound, PickPath, Picker,
-    PointsBackChanged, ReadFailed, StatusChanged, SyncActivityChanged, TextSearchChanged,
+    InFlightChanged, LanguageServersChanged, LastSyncChanged, MirrorProblemChanged,
+    MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound,
+    PickPath, Picker, PointsBackChanged, ReadFailed, StatusChanged, SyncActivityChanged,
+    TextSearchChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -112,6 +113,7 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     let mut activity_state = WindowState::manage(app, None, "the sync activity");
     let mut points_state = WindowState::manage(app, None, "the hour's points");
     let mut back_state = WindowState::manage(app, None, "the time the points come back");
+    let mut in_flight_state = WindowState::manage(app, None, "the request in flight");
     let changes_handle = app.clone();
     let failed_reads_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
@@ -138,6 +140,9 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     }))
     .with_points_back(Box::new(move |back| {
         back_state.set(back.copied(), PointsBackChanged);
+    }))
+    .with_in_flight(Box::new(move |in_flight| {
+        in_flight_state.set(in_flight.cloned(), InFlightChanged);
     }))
 }
 

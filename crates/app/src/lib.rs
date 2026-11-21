@@ -29,6 +29,7 @@ use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::CommitSha;
 use tsugiki_core::facts::activity::ItemKey;
 use tsugiki_core::filters::{FilterQuery, OnWorkbench};
+use tsugiki_core::github::in_flight::InFlight;
 use tsugiki_core::github::points::HourPoints;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::latest::LatestReader;
@@ -147,6 +148,15 @@ type LatestPointsBack = LatestReader<Option<PointsBack>>;
 #[tauri::command]
 #[specta::specta]
 fn points_back(latest: State<'_, LatestPointsBack>) -> Option<PointsBack> {
+    latest.get()
+}
+
+type LatestInFlight = LatestReader<Option<InFlight>>;
+
+/// The request to GitHub in flight, for a window that has just loaded.
+#[tauri::command]
+#[specta::specta]
+fn in_flight(latest: State<'_, LatestInFlight>) -> Option<InFlight> {
     latest.get()
 }
 
@@ -964,6 +974,11 @@ struct HourPointsChanged(Option<HourPoints>);
 #[derive(Clone, Serialize, Type, Event)]
 struct PointsBackChanged(Option<PointsBack>);
 
+/// Sent when a request to GitHub goes, with what it asks, and with nothing when it ends, so the status bar
+/// can show one GitHub is slow to answer.
+#[derive(Clone, Serialize, Type, Event)]
+struct InFlightChanged(Option<InFlight>);
+
 /// Sent when a mirror's clone moves on, and when it ends, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
 struct CloningChanged(Option<Cloning>);
@@ -1029,6 +1044,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             sync_activity,
             hour_points,
             points_back,
+            in_flight,
             cloning,
             mirror_problem,
             check_mirrors_again,
@@ -1111,6 +1127,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             SyncActivityChanged,
             HourPointsChanged,
             PointsBackChanged,
+            InFlightChanged,
             CloningChanged,
             MirrorProblemChanged,
             MirrorQuestionChanged,

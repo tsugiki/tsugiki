@@ -19,6 +19,7 @@ use crate::facts::pull_request_content::PullRequestContent;
 use crate::fetching::{
     Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, ScreenMove,
 };
+use crate::github::in_flight::Asking;
 use crate::github::{GitHub, GitHubAccess};
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
@@ -87,7 +88,10 @@ pub(super) fn connect(
             return None;
         }
     };
-    let github = GitHub::new(access.transport, token);
+    let mut github = GitHub::new(access.transport, token);
+    if let Some(announce) = board.in_flight() {
+        github.announce_in_flight(announce);
+    }
     refresh(board, store, &github);
     Some(github)
 }
@@ -272,14 +276,21 @@ impl Refreshes {
                 }
                 Ok(GitHubMessage::Check { name, reply }) => {
                     let today = github.clock().now().date();
-                    let checked = github
-                        .check_repository(&name, today)
-                        .map(RepositoryCheck::new);
-                    answer(&reply, checked);
+                    let asked = Asking::Check {
+                        repository: name.clone(),
+                    };
+                    let checked = github.asking(asked, || github.check_repository(&name, today));
+                    answer(&reply, checked.map(RepositoryCheck::new));
                     return Turn::Asked;
                 }
                 Ok(GitHubMessage::Size { repository, reply }) => {
-                    answer(&reply, github.repository_size(&repository));
+                    let asked = Asking::Size {
+                        repository: repository.clone(),
+                    };
+                    answer(
+                        &reply,
+                        github.asking(asked, || github.repository_size(&repository)),
+                    );
                     return Turn::Asked;
                 }
                 Ok(GitHubMessage::Stop) | Err(RecvTimeoutError::Disconnected) => {
@@ -619,7 +630,11 @@ fn ask_github(
     fetched: &Fetched,
 ) -> Result<Result<Content, ItemUnread>, Error> {
     let item = fetched.item();
-    let (noun, read) = match fetched {
+    let asked = Asking::Read {
+        repository: item.repository.clone(),
+        number: item.number,
+    };
+    let (noun, read) = github.asking(asked, || match fetched {
         Fetched::Issue(_) => {
             let read = github.issue_content(&item.repository, item.number);
             ("Issue", read.map(Content::Issue))
@@ -629,7 +644,7 @@ fn ask_github(
             let read = read.map(|read| Content::PullRequest(read.content, read.updated_at));
             ("PR", read)
         }
-    };
+    });
     let content = match read {
         Ok(content) => content,
         Err(problem) if problem.kind.speaks_for_all_of_github() => {
@@ -702,7 +717,7 @@ pub(super) fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
     if github.points_back().is_some() {
         return;
     }
-    board.set(match github.viewer() {
+    board.set(match github.asking(Asking::Status, || github.viewer()) {
         Ok(viewer) => match store.remember_login(&viewer.login) {
             Ok(()) => Status::Online {
                 login: viewer.login,

@@ -228,20 +228,5 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   show it when they cut the title short. Until the core says which build it is, the title reads "Tsugiki"
   after the Repository, and if the core doesn't answer, the status bar says so. Nothing on the screen names
   the build.
-- A **status bar** runs along the bottom of every screen, the Home page included, for what is app-wide and has
-  no other place. It stays when the Sidebar is hidden.
-  - Left, where the eye spends its time: sync status ("Synced 2 min ago", a click refreshes) with the
-    background work beside it ("· python/peps syncing", "· Cloning python/cpython 42%"), **Offline:
-    read-only** (which tints the whole bar), and problems that stop Tsugiki reading, such as an expired token
-    or a low API rate limit, each opening the Settings page that fixes it.
-  - Right: unsent **Pending reviews** in any Repository (a click opens the PR), the hour's GitHub points
-    ("1,240 points left · resets 14:32"), and the first key of a chord while Tsugiki waits for the second.
-    The points part shows from GitHub's first answer of the run, since until then Tsugiki doesn't know them,
-    and goes at the reset, by GitHub's clock, until the next answer. Its tooltip, which a screen reader reads
-    with the part, says what Tsugiki spent: "This hour: 3,760 of 5,000 points used. Tsugiki spent 3,610 of
-    them; other tools using your token spent the rest." Tsugiki counts in memory only, so after a restart in
-    the middle of the hour it says "Tsugiki spent 410 since 14:05".
-  - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can
-    be hidden ("View: Toggle Status Bar"). Being offline or an expired token still shows: the bar comes back
-    with only that problem, since nothing else would tell the user. A Refresh while offline keeps it, saying
-    Connecting… until GitHub answers.
+- A **status bar** runs along the bottom of every screen, below the panes. [status-bar.md](status-bar.md)
+  says what each of its parts shows and when.

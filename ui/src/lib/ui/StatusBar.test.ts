@@ -568,3 +568,93 @@ describe("StatusBar's points", () => {
     expect(screen.queryByText(/points left/)).toBeNull();
   });
 });
+
+describe("StatusBar's request in flight", () => {
+  const online = { state: "online", login: "octocat" } as const;
+  const went = "2026-11-22T10:00:00Z";
+  const refresh = { asked: { kind: "refresh", repository: "some-maintainer/gcmon" }, since: went } as const;
+  const waiting = () => screen.queryByText(/^Waiting for GitHub/);
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stays hidden while GitHub answers within 3 s", async () => {
+    vi.useFakeTimers({ now: new Date(went) });
+    const { rerender } = render(StatusBar, { status: online, inFlight: refresh });
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(waiting()).toBeNull();
+    await rerender({ status: online, inFlight: null });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(waiting()).toBeNull();
+  });
+
+  it("shows what Tsugiki asked once GitHub takes 3 s, outside the live region", async () => {
+    vi.useFakeTimers({ now: new Date(went) });
+    render(StatusBar, { status: online, inFlight: refresh });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(waiting()?.textContent).toBe("Waiting for GitHub: refresh of some-maintainer/gcmon, 3 s");
+    expect(bar().textContent).not.toContain("Waiting");
+  });
+
+  it("counts up each second from when the request went", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04.500Z") });
+    render(StatusBar, { status: online, inFlight: refresh });
+    expect(waiting()?.textContent).toMatch(/, 4 s$/);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(waiting()?.textContent).toMatch(/, 4 s$/);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(waiting()?.textContent).toMatch(/, 5 s$/);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(waiting()?.textContent).toMatch(/, 6 s$/);
+  });
+
+  it("names each kind of request", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    const repository = "python/cpython";
+    const asked = [
+      [{ kind: "status" }, "status check"],
+      [{ kind: "refresh", repository }, "refresh of python/cpython"],
+      [{ kind: "sync", repository }, "sync of python/cpython"],
+      [{ kind: "read", repository, number: 7 }, "read of python/cpython#7"],
+      [{ kind: "fetch", repository, number: 8 }, "fetch of python/cpython#8"],
+      [{ kind: "check", repository }, "check of python/cpython"],
+      [{ kind: "size", repository }, "size of python/cpython"],
+    ] as const;
+    const { rerender } = render(StatusBar, { status: online });
+    for (const [kind, words] of asked) {
+      await rerender({ status: online, inFlight: { asked: kind, since: went } });
+      expect(waiting()?.textContent).toBe(`Waiting for GitHub: ${words}, 4 s`);
+    }
+  });
+
+  it("shows its whole text in its tooltip", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    render(StatusBar, { status: online, inFlight: refresh });
+    expect(waiting()?.title).toBe("Waiting for GitHub: refresh of some-maintainer/gcmon, 4 s");
+  });
+
+  it("goes once the request answers or fails", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    const { rerender } = render(StatusBar, { status: online, inFlight: refresh });
+    await rerender({ status: { state: "offline" }, inFlight: null });
+    expect(waiting()).toBeNull();
+    expect(bar().textContent).toContain("Offline: read-only");
+  });
+
+  it("starts its count again for the next request", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    const { rerender } = render(StatusBar, { status: online, inFlight: refresh });
+    const next = { asked: { kind: "status" }, since: "2026-11-22T10:00:04Z" } as const;
+    await rerender({ status: online, inFlight: next });
+    expect(waiting()).toBeNull();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(waiting()?.textContent).toBe("Waiting for GitHub: status check, 3 s");
+  });
+
+  it("goes with the bar", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    render(StatusBar, { status: online, inFlight: refresh, visible: false });
+    expect(waiting()).toBeNull();
+  });
+});

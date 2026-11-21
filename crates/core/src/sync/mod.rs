@@ -28,6 +28,7 @@ use crate::facts::issues::ListedPr;
 use crate::facts::pull_requests::{NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
 use crate::github::GitHub;
+use crate::github::in_flight;
 use crate::github::pull_requests::PrFetch;
 use crate::links::{possible_numbers, possible_origin};
 use crate::login::Login;
@@ -486,9 +487,30 @@ impl UserWorkSync {
         }
     }
 
+    /// What this sync's requests ask GitHub, as the status bar names them. The kind moves from a refresh to
+    /// a first sync once the store says the Repository has never finished one.
+    fn asked(&self) -> in_flight::Asking {
+        let repository = self.repository.clone();
+        match self.kind {
+            Kind::Refresh => in_flight::Asking::Refresh { repository },
+            Kind::First(_) | Kind::Tree => in_flight::Asking::Sync { repository },
+        }
+    }
+
+    /// Makes one request, or moves on to the next phase, as `advance_phase` says, telling GitHub's client
+    /// what the request asks.
+    fn advance(
+        &mut self,
+        github: &GitHub,
+        store: &Store,
+        settings: &RepositorySettings,
+    ) -> Result<Step, Error> {
+        github.asking(self.asked(), || self.advance_phase(github, store, settings))
+    }
+
     /// Makes one request, or moves on to the next phase. A failure leaves the place it had, so the same step
     /// can run again.
-    fn advance(
+    fn advance_phase(
         &mut self,
         github: &GitHub,
         store: &Store,

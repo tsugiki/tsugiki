@@ -2,9 +2,12 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::facts::pull_requests::{PrState, ReviewState};
 use crate::github::Unreachable;
+use crate::github::in_flight::Asking;
 use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
-use crate::github::testing::{RATE_LIMIT, Scripted, answer, github, page_info, replied, reply_ok};
+use crate::github::testing::{
+    RATE_LIMIT, Scripted, answer, github, in_flight_heard, page_info, replied, reply_ok,
+};
 use crate::github::{ConditionalReply, Reply, Transport};
 use crate::testing::{cpython, moment, recordings};
 use crate::token::Token;
@@ -274,6 +277,25 @@ fn a_list_check_sends_the_tag_it_was_given() {
             Some("W/\"abc\"".to_owned())
         )
     );
+}
+
+#[test]
+fn a_list_check_is_in_flight_until_github_answers() {
+    let lists = Lists {
+        answer: checked(304, None),
+        asked: mpsc::channel().0,
+    };
+    let mut github = github(lists);
+    let (announce, heard) = in_flight_heard();
+    github.announce_in_flight(announce);
+    let refresh = Asking::Refresh {
+        repository: cpython(),
+    };
+
+    let check = github.asking(refresh.clone(), || github.check_list(&cpython(), None));
+
+    assert_eq!(check, Ok(ListCheck::Same));
+    assert_eq!(heard.try_iter().collect::<Vec<_>>(), [Some(refresh), None]);
 }
 
 #[test]

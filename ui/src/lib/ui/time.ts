@@ -1,5 +1,7 @@
 // The time since something happened, in the one unit the window words it in.
 
+/** A second, in milliseconds. */
+export const SECOND_MS = 1000;
 /** A minute, in milliseconds. */
 export const MINUTE_MS = 60_000;
 const MINUTES_IN_HOUR = 60;

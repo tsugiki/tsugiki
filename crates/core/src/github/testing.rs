@@ -300,3 +300,19 @@ pub const SIGNED_IN: TokenFrom = gh_alone(signed_in_gh);
 pub fn token() -> Token {
     crate::token::read_token(SIGNED_IN, crate::token::AskAgain::AtRestart).unwrap()
 }
+
+/// Hears of the requests in flight, and passes on what each asks as it goes, and nothing as it ends.
+pub fn in_flight_heard() -> (
+    in_flight::AnnounceInFlight,
+    std::sync::mpsc::Receiver<Option<in_flight::Asking>>,
+) {
+    let (heard, seen) = std::sync::mpsc::channel();
+    let announce = Box::new(move |now: Option<&in_flight::InFlight>| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "a test that has dropped the receiver doesn't check what was heard"
+        )]
+        let _ = heard.send(now.map(|now| now.asked.clone()));
+    });
+    (announce, seen)
+}

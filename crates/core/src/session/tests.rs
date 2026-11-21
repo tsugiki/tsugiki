@@ -55,6 +55,7 @@ use tsugiki_test_git::{pass_on, wait_for_message};
 use tsugiki_token::testing::NO_GH;
 
 mod held;
+mod in_flight;
 mod rate_limit;
 
 /// A real store that keeps nothing once it closes.

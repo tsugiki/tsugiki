@@ -52,7 +52,7 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tag starts the workflow, which takes 16 minutes or longer if runners are busy. It builds the Windows zip
+The tag starts the workflow, which takes 11 minutes or longer if runners are busy. It builds the Windows zip
 and the macOS dmg, attests them and uploads them to a draft release, then downloads the draft's files and
 checks each attestation. Nothing is public until you publish.
 

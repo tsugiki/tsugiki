@@ -79,6 +79,7 @@ const THEMES = {
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
+const statuses = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
 vi.mock("$lib/data/bindings", async () => {
   const { itemMoves, prFilesEvents } = await import("$lib/testing/fixtures");
@@ -100,7 +101,14 @@ vi.mock("$lib/data/bindings", async () => {
     },
     events: {
       ...prFilesEvents(() => async () => () => {}),
-      statusChanged: { listen: async () => () => {} },
+      statusChanged: {
+        listen: async (callback: (event: { payload: unknown }) => void) => {
+          statuses.changed.mockImplementation((payload) => {
+            callback({ payload });
+          });
+          return () => {};
+        },
+      },
       lastSyncChanged: { listen: async () => () => {} },
       syncActivityChanged: { listen: async () => () => {} },
       hourPointsChanged: { listen: async () => () => {} },
@@ -719,6 +727,27 @@ describe("quick open", () => {
       const pane = within(detailPane());
       expect(pane.getByRole("heading", { name: "some-maintainer/gcmon #12" })).toBeTruthy();
       expect(pane.getByRole("status").textContent).toBe("Fetching some-maintainer/gcmon #12 from GitHub…");
+    });
+
+    it("offers it in the browser in place of a fetch while GitHub can't be reached", async () => {
+      render(Page);
+      await screen.findByRole("button", { name: "#7 It crashes" });
+      statuses.changed({ state: "offline_as", last_login: "octocat" });
+      await ctrlP();
+      await fireEvent.input(box(), { target: { value: "#12" } });
+      await screen.findByRole("option", { name: "Open #12 in browser" });
+      const rows = rowTexts();
+
+      await fireEvent.keyDown(box(), { key: "Enter" });
+
+      expect(rows).toEqual(["Open #12 in browser"]);
+      await vi.waitFor(() => {
+        expect(core.openOnGithub).toHaveBeenCalledWith("some-maintainer/gcmon", {
+          kind: "issue",
+          number: 12,
+        });
+      });
+      expect(core.fetchItem).not.toHaveBeenCalled();
     });
 
     it("opens an Issue the fetch found as an Issue", async () => {

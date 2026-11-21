@@ -73,7 +73,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A number that names nothing the database holds lists one row first, "Fetch #123 from GitHub", in place
   of the item. Enter on it fetches the Issue or PR from GitHub into the Detail pane, whichever kind the
   number turns out to be ([layout.md](layout.md)). The search reads only the database, and only Enter on
-  that row asks GitHub. A number the database holds lists no such row.
+  that row asks GitHub. A number the database holds lists no such row. While the status bar says GitHub
+  can't be reached, the row reads "Open #123 in browser" instead, and Enter on it opens the number on
+  GitHub at once, as a fetch would only wait for its failure.
 - With a PR on show, quick open lists the files it changes before the Issues and PRs, after only the item
   with the number typed: the files whose paths hold every word typed, in any case, in the order the Files tab
   shows them, 20 at most. Nothing typed, or a text that starts with `#`, lists no files, and reads no diff.

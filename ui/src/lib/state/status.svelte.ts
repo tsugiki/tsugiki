@@ -25,6 +25,24 @@ export type {
   SyncActivity,
 };
 
+/** Whether `status` says GitHub can't be reached, while Refresh asks it again too, as the core judges it:
+ * a fetch then fails, so the window offers none (#981). */
+export function isOffline(status: Status | undefined): boolean {
+  switch (status?.state) {
+    case "offline":
+    case "offline_as":
+    case "reconnecting":
+    case "reconnecting_as":
+      return true;
+    case "online":
+    case "connecting":
+    case "connecting_as":
+    case "problem":
+    case undefined:
+      return false;
+  }
+}
+
 export class StatusState {
   status = $state<Status>();
   /** The open Repository's last sync. Nothing, until the core has a Repository open. */

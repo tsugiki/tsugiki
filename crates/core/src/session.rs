@@ -653,23 +653,21 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             Turn::FetchUnstored(item, reply) => {
                 (refreshes.links.borrow_mut()).put_first(&item.repository);
-                let answer = match unstored::fetch(board, store, &github, &item) {
-                    Ok(Ok(saved)) => {
-                        if let Some(synced) = synced_facts(store, &syncs, &item.repository) {
-                            hand_over_heads(&refreshes.fetching, store, &synced, &saved.change);
-                        }
-                        board.changed(&saved.change);
-                        saved.kind
-                    }
-                    Ok(Err(why)) => ItemFetch::Unfetched { why },
-                    Err(problem) => {
-                        syncs.after_fetch_failure(&problem, due.status, github.clock());
-                        board.set(status_after(problem, store));
-                        ItemFetch::Unfetched {
-                            why: ItemUnfetched::Offline,
-                        }
-                    }
+                let read = Reading {
+                    github: &github,
+                    queue: refreshes,
+                    syncs: &syncs,
                 };
+                let answer = fetch_unstored(board, store, &read, &item);
+                if let Err(problem) = &answer {
+                    syncs.after_fetch_failure(problem, due.status, github.clock());
+                }
+                let answer = answer.unwrap_or_else(|problem| {
+                    board.set(status_after(problem, store));
+                    ItemFetch::Unfetched {
+                        why: ItemUnfetched::Offline,
+                    }
+                });
                 #[expect(
                     clippy::let_underscore_must_use,
                     reason = "this fails only if the caller has gone, and nobody then shows the answer"
@@ -1158,6 +1156,33 @@ struct Reading<'a> {
 /// Files tab of a PR, which may wait for the head the Conversation names. An error returned here speaks
 /// for all of GitHub, so the status bar and the syncs need to hear it. Any other trouble is this one item's,
 /// and goes to the log.
+/// Fetches `item`, which the database lacks, as the user asked (#981), and says what came of it: the kind it
+/// saved, which it tells the window and the Mirror worker of, or why nothing came. A failure that speaks for
+/// all of GitHub comes back for the caller to show. The window offers no fetch while offline, and one that
+/// raced the status asks nothing, as a request then would only keep the user waiting for its failure.
+fn fetch_unstored(
+    board: &mut StatusBoard,
+    store: &Store,
+    read: &Reading<'_>,
+    item: &Item,
+) -> Result<ItemFetch, Error> {
+    if board.is_offline() {
+        return Ok(ItemFetch::Unfetched {
+            why: ItemUnfetched::Offline,
+        });
+    }
+    Ok(match unstored::fetch(board, store, read.github, item)? {
+        Ok(saved) => {
+            if let Some(synced) = synced_facts(store, read.syncs, &item.repository) {
+                hand_over_heads(&read.queue.fetching, store, &synced, &saved.change);
+            }
+            board.changed(&saved.change);
+            saved.kind
+        }
+        Err(why) => ItemFetch::Unfetched { why },
+    })
+}
+
 fn read_conversation(
     board: &mut StatusBoard,
     store: &Store,

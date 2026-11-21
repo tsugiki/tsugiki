@@ -8,7 +8,7 @@ use crate::github::testing::{
     reply_ok,
 };
 use crate::github::{Reply, Unreachable};
-use crate::status::testing::quiet_board;
+use crate::status::testing::{announced, quiet_board, watched_board};
 use crate::testing::gcmon;
 
 fn item_7() -> Item {
@@ -89,6 +89,23 @@ fn an_answer_that_cant_be_read_is_another_failure() {
         fetched(reply_ok("not json")).0.unwrap(),
         Err(ItemUnfetched::Other)
     );
+}
+
+#[test]
+fn an_item_the_store_cant_save_is_another_failure_that_the_status_bar_shows() {
+    let store = Store::open(Path::new(":memory:")).unwrap();
+    let (lossy, _calls) = store.failing_at_call(Some(0));
+    let (script, _asked) = Scripted::new(vec![item_answer(&gcmon(), issue_item(7, &gcmon()))]);
+    let (mut board, seen) = watched_board();
+
+    let fetched = fetch(&mut board, &lossy, &github(script), &item_7());
+
+    assert_eq!(fetched.unwrap(), Err(ItemUnfetched::Other));
+    assert!(
+        matches!(announced(&seen).last(), Some(Status::Problem { .. })),
+        "the status bar says why"
+    );
+    assert_eq!(store.issues(&gcmon()).unwrap(), []);
 }
 
 #[test]

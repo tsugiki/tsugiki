@@ -327,6 +327,12 @@
     });
   }
 
+  /** Opens Issue or PR `number` on GitHub in the browser, as quick open offers while offline (#981). GitHub
+   * sends an Issue's address on to the PR that has the number. */
+  export function openNumberOnGitHub(number: number): void {
+    void links.openOnGitHub(name, { kind: "issue", number });
+  }
+
   /** The files the PR on show changes, which quick open finds (#558), or nothing while no PR shows. Once
    * another view takes the Detail pane, that PR has no files to list, read or open. */
   export function changedFiles(): ChangedFiles | undefined {

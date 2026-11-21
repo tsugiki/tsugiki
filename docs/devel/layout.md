@@ -137,7 +137,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       pane or nowhere, and stays anywhere else the user went meanwhile, such as a text box or the Sidebar.
       A fetch that brings nothing says why, with an Open in browser button: GitHub has no Issue or PR #N
       there, the token can't see it, Tsugiki doesn't hold it and can't ask GitHub now, which the status bar
-      explains, or something else went wrong, which `tsugiki.log` says. Opening anything else meanwhile
+      explains, or something else went wrong, which `tsugiki.log` says. A fetch asked as the status turned
+      offline asks GitHub nothing, and says the third at once. Opening anything else meanwhile
       drops the fetch's answer, though the database still keeps what it brought.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
       - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the

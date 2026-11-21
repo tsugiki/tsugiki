@@ -215,6 +215,26 @@ fn the_window_tells_the_session_what_the_user_did_with_an_item_and_with_itself()
 }
 
 #[test]
+fn a_fetch_of_an_unstored_item_asks_the_session_and_is_offline_once_it_drops_the_reply() {
+    let calls = Setup::new("fetch-unstored");
+    let fetching = calls.fetching.clone();
+    let repository = calls.world.repository();
+
+    let asking = std::thread::spawn(move || fetching.fetch_unstored(repository, 12));
+    let heard = named(calls.session.recv_timeout(Duration::from_secs(10)).unwrap());
+    let answer = asking.join().unwrap();
+
+    calls.finish();
+    assert_eq!(heard, "fetch #12");
+    assert_eq!(
+        answer,
+        ItemFetch::Unfetched {
+            why: ItemUnfetched::Offline
+        }
+    );
+}
+
+#[test]
 fn opening_a_pr_puts_it_on_screen_once_its_conversation_is_asked_for() {
     let calls = Setup::new("open-on-screen");
     let missing = Error::new(ErrorKind::NotFound, "No folder for the mirrors.");

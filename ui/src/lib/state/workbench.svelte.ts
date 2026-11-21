@@ -116,10 +116,23 @@ function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[]
   }));
 }
 
+/** The line the cursor moved on to once the line under it lost its attention or left the list, and what took
+ * that line out of place, as `landed` hears them. */
+export type Landing = {
+  /** The first item after the one the cursor left that the list still shows, whose line the cursor is on
+   * now. Nothing when no item came after it: the cursor then went to the last line, or stayed where it was
+   * with the list empty. */
+  next: Stop | undefined;
+  /** The lines of the item the cursor left, when the user's own Mark Seen, Archive or Mute on it took it out
+   * of place, and nothing when a sync did (#982). */
+  finished: Stop[] | undefined;
+};
+
 /** The hooks a Workbench calls on the page that shows it, each with a default that does nothing. */
 export type WorkbenchHooks = {
-  /** Runs each time the cursor lands on the line after one that lost its attention. */
-  landed?: () => void;
+  /** Runs each time the line under the cursor loses its attention or leaves the list, once the cursor has
+   * moved on from it, as `landing` says. */
+  landed?: (landing: Landing) => void;
   /** The list's order as the window holds it when each question is asked. By attention without it. */
   order?: () => ListOrder;
   /** Runs before a change's answer replaces the lines of the view on show, in the same order, while the page
@@ -155,6 +168,13 @@ export class WorkbenchState {
    * Only `#placeCursor` reads it, so it needn't be reactive. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #leaving = new Set<number>();
+  /** The numbers each Mark Seen, Archive and Mute of the user's own names, with the last question asked by
+   * the time it was done, or Infinity while it isn't. A cursor that lands off a line of an item one names
+   * lands for the user's mark, not for a sync (#982). One goes once the cursor lands off such an item, or
+   * once an answer to a question asked after it was done has placed the cursor, as that answer holds what
+   * the mark did. Only `#placeCursor` reads it, so it needn't be reactive. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  #finishing = new Set<{ numbers: number[]; asked: number }>();
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The keys of the views whose fold of Muted items is open. */
@@ -172,7 +192,7 @@ export class WorkbenchState {
   /** The list's order as the window holds it now, and the order the items on show were asked in. */
   #order: () => ListOrder;
   #shownOrder: ListOrder | undefined;
-  #landed: () => void;
+  #landed: (landing: Landing) => void;
   #changing: () => () => void;
   #repository: string;
   #lastQuestion = 0;
@@ -381,7 +401,7 @@ export class WorkbenchState {
     const marking = archived
       ? commands.keepArchived(this.#repository, archived, mark)
       : commands.markSeen(this.#repository, mark);
-    return problemIn(marking);
+    return this.#finish(mark, problemIn(marking));
   }
 
   /** The key of the item that holds line `stop`, while the list draws it `hidden`: Archived (#490) or Muted
@@ -415,13 +435,13 @@ export class WorkbenchState {
   /** Archive on `archived`, as the window drew it (#490). Once the item leaves the list, a cursor on any of
    * its lines lands on the item after it. Says what went wrong, if anything did. */
   async archive({ key, mark }: Hiding) {
-    return this.#leave(key, commands.archive(this.#repository, key, mark));
+    return this.#finish(mark, this.#leave(key, commands.archive(this.#repository, key, mark)));
   }
 
   /** Mute on the item `key` names, with `mark` as the window drew it (#492). Once the item leaves the list, a
    * cursor on any of its lines lands on the item after it. Says what went wrong, if anything did. */
   async mute({ key, mark }: Hiding) {
-    return this.#leave(key, commands.mute(this.#repository, key, mark));
+    return this.#finish(mark, this.#leave(key, commands.mute(this.#repository, key, mark)));
   }
 
   /** Unmutes the item `key` names, which stays in the list. Says what went wrong, if anything did. */
@@ -461,6 +481,18 @@ export class WorkbenchState {
     if (key) this.#leaving.add(key.number);
     const problem = await problemIn(marking);
     if (key && problem !== undefined) this.#leaving.delete(key.number);
+    return problem;
+  }
+
+  /** Waits for `marking`, the user's own Mark Seen, Archive or Mute with `mark`, and keeps what `mark` names
+   * among what the user finished with while the answers that show what the mark did come (#982). Says what
+   * went wrong, if anything did. */
+  async #finish(mark: SeenMark, marking: Promise<string | undefined>) {
+    const finishing = { numbers: mark.numbers, asked: Infinity };
+    this.#finishing.add(finishing);
+    const problem = await marking;
+    if (problem === undefined) finishing.asked = this.#lastQuestion;
+    else this.#finishing.delete(finishing);
     return problem;
   }
 
@@ -533,13 +565,23 @@ export class WorkbenchState {
    * holds the cursor's line, or unarchived it in the Archived view, on any of its lines, and no line of
    * `items` names that line's Issue or PR any more (#490, #491). So it does too when the user muted it and
    * it went into a Filter's Muted items, or a change put it into them while they're folded (#824). With
-   * nothing listed it stays where it was.
+   * nothing listed it stays where it was, and `landed` runs too. `landed` hears whether the user's own Mark
+   * Seen, Archive or Mute on the item took it out of place, or a sync did (#982). The answer is to
+   * `question`, which tells the marks it holds for certain.
    *
    * Otherwise the cursor stays on its line, which may have moved, and follows a PR that a change put under
    * an Issue, or took out from under one, unfolding the Issue over a PR under the cursor, as another view
    * may have it folded.
    */
-  #placeCursor(items: ListedItem[], inPlace: ListedItem[], before: ListedItem[] | undefined) {
+  #placeCursor(
+    question: number,
+    items: ListedItem[],
+    inPlace: ListedItem[],
+    before: ListedItem[] | undefined,
+  ) {
+    // A mark is in each answer to a question asked once it was done, so it needn't wait for any more.
+    const finishing = [...this.#finishing];
+    for (const one of finishing) if (question > one.asked) this.#finishing.delete(one);
     // An archive waits for the answer that takes its item off the list, as one that a sync asked for can
     // land before the archive's own, with the item still listed. An item the list doesn't hold waits no
     // more, and neither does one it holds marked hidden outside the Archived view, as a Filter's view keeps
@@ -561,16 +603,18 @@ export class WorkbenchState {
     const folded = !this.mutedShown && namedIn(this.muted);
     const left = was && !namedIn(inPlace) && (leaving.includes(was.number) || folded);
     if (before && was && (quiet || left)) {
+      const lines = linesOf(was, () => true).map((line) => line.stop);
+      const marks = finishing.filter((one) => lines.some((line) => one.numbers.includes(line.number)));
+      for (const one of marks) this.#finishing.delete(one);
       // The first item after it that the list still shows, folded Muted items left out.
       const stops = this.#stops();
       const owns = (number: number) =>
         stops.find((stop) => stop.number === number && stop.issue === undefined);
       const after = before.slice(before.indexOf(was) + 1);
-      const landing =
-        after.map((item) => owns(item.number)).find((stop) => stop !== undefined) ?? stops.at(-1);
-      if (landing === undefined) return;
-      this.cursor = landing;
-      this.#landed();
+      const next = after.map((item) => owns(item.number)).find((stop) => stop !== undefined);
+      const landing = next ?? stops.at(-1);
+      if (landing !== undefined) this.cursor = landing;
+      this.#landed({ next, finished: marks.length > 0 ? lines : undefined });
       return;
     }
     // The lines of `items`, folded Issues' PRs too, so the cursor never opens the folded Muted items.
@@ -683,6 +727,7 @@ export class WorkbenchState {
     if (listed.status === "ok") {
       const muted = list === undefined && answer.status === "ok" ? answer.data.muted : [];
       this.#show(
+        question,
         view,
         order,
         { items: listed.data.items, muted },
@@ -694,11 +739,12 @@ export class WorkbenchState {
     this.error = failed?.error.message;
   }
 
-  /** Puts `items` on show, with `muted` folded at their end, the answer for `view` in `order`, with the
-   * cursor placed on them. For the Inbox, `reach` says where its pages among them end. The page's hooks run
-   * first and last, so one that throws leaves the items and where they end as they were, or both as
-   * answered. */
+  /** Puts `items` on show, with `muted` folded at their end, the answer to `question` for `view` in `order`,
+   * with the cursor placed on them. For the Inbox, `reach` says where its pages among them end. The page's
+   * hooks run first and last, so one that throws leaves the items and where they end as they were, or both
+   * as answered. */
   #show(
+    question: number,
     view: SidebarView,
     order: ListOrder,
     { items, muted }: { items: ListedItem[]; muted: ListedItem[] },
@@ -714,7 +760,7 @@ export class WorkbenchState {
     this.#shownOrder = order;
     // A fold that empties closes, so the next item muted goes into it folded.
     if (muted.length === 0) this.#mutedOpen.delete(keyOf(view));
-    this.#placeCursor(this.#shownItems, items, before);
+    this.#placeCursor(question, this.#shownItems, items, before);
     changed?.();
   }
 

@@ -41,7 +41,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     waiting that leaves the list leaves the cursor off the list, and the next ↓ starts at the top. When
     nothing came after the item, the cursor goes to the list's last row, and with the list empty it stays
     where it was. The focus goes with the cursor when, at that moment, a row of the list holds it or nothing
-    does, and stays put anywhere else, such as in a text box or on the list's header. A cursor on a PR in a
+    does, and stays put anywhere else, such as in a text box or on the list's header. When the user's own
+    Mark Seen, Archive or Mute on the Detail pane's item moves the cursor on, from a key, the palette or the
+    header's button, and with the list hidden too, the Detail pane opens the item the cursor moved to, as
+    `Enter` does, which leaves its Last seen alone; with no item after it, the pane shows nothing open. On a
+    PR from an Issue's tree, `E` and `M` act on the Issue, so the pane opens the item after the Issue, while
+    `Q` marks the PR alone and leaves the cursor on its row. A mark on a row the pane doesn't show, or a sync
+    that moves the cursor on, leaves the pane as it is. Focus in the Detail pane stays there, in the item it
+    opens, and `Alt+←` goes back to the item the user finished with. A cursor on a PR in a
     tree, Mark Seen on an item with nothing waiting, a change of order or view, and any other change leave
     the cursor on its row, and a row that held the focus keeps it, even off the screen. When that row is the
     Detail pane's and a change takes it off the screen, as an update does By last update, the list scrolls as

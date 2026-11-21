@@ -30,6 +30,7 @@
     WorkbenchState,
     type Hiding,
     type ItemKey,
+    type Landing,
     type BackportRow,
     type ListedItem,
     type MuteAuthor,
@@ -144,6 +145,9 @@
   let detail = $state<IssueViewState | PrViewState>();
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
+  /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
+   * the list hidden: the view of the item after the one the user finished with (#982). */
+  let focusedView = $state<IssueViewState | PrViewState>();
   const links = new LinkOpener();
   /** The reason the last Mark Seen or Mark Unseen didn't reach the core. */
   let markProblem = $state<string>();
@@ -191,9 +195,11 @@
   /** How many items back the history's lists go, newest first. */
   const RECENT = 12;
 
-  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. */
+  /** Goes `steps` places through the history, back for a negative number, as Alt+← and Alt+→ do. With
+   * nothing open once the user finished with the last item of the list, the history is still at that item,
+   * so a step back opens it again (#982). */
   function goThrough(steps: number) {
-    const place = visits.go(steps);
+    const place = visits.go(detail === undefined && steps < 0 ? steps + 1 : steps);
     if (place) open(place, "through");
   }
 
@@ -327,6 +333,7 @@
     keep?.hide();
     kept = keep;
     detail = next;
+    if (focusedView !== next) focusedView = undefined;
   }
 
   /** Leaves the PR view for the Issue the user opened it from, with the focus on the Issue's row. */
@@ -436,13 +443,41 @@
     if (marked) await sayMarkProblem((opened) => opened.markSeen(marked.seen.mark, marked.archived));
   }
 
-  /** Takes the focus to the row the cursor landed on when a row of the list holds the focus, or the page
-   * does, as it does once nothing else holds it. Focus anywhere else, such as in a text box or on the list's
-   * header, stays put. */
-  function cursorLanded() {
+  /**
+   * Follows the cursor once it has moved on from a line that lost its place, as `landing` says. When the
+   * user's own Mark Seen, Archive or Mute on the Detail pane's item took it out of place, the Detail pane
+   * opens the item the cursor moved on to, as `Enter` would, or shows nothing open when no item came after
+   * it (#982). Focus in the Detail pane then stays there, in the item it opens, or goes to the cursor's row
+   * when the pane goes with nothing open.
+   *
+   * Otherwise the focus goes to the row the cursor landed on when a row of the list holds it, or the page
+   * does, as it does once nothing else holds it. Focus anywhere else, such as in a text box or on the
+   * list's header, stays put.
+   */
+  function cursorLanded({ next, finished }: Landing) {
     const focused = document.activeElement;
+    if (finished?.some(onDetail)) {
+      const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
+      if (next) open(next);
+      else swap(undefined);
+      if (inDetail) {
+        focusDetail();
+        return;
+      }
+    }
     const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
     if (onRow || focused === document.body) focusCursor();
+  }
+
+  /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when
+   * it shows nothing. */
+  function focusDetail() {
+    focusedView = detail;
+    void tick().then(() => {
+      const pane = detailPane();
+      if (pane) pane.focus();
+      else focusCursor();
+    });
   }
 
   /**
@@ -1433,7 +1468,7 @@
         repository={name}
         {issue}
         {now}
-        focusable={panes.hidden("list")}
+        focusable={panes.hidden("list") || focusedView === issue}
         onmark={markByButton}
         onarchive={archiveByButton}
         onmute={muteByButton}
@@ -1456,7 +1491,7 @@
         onback={back}
         onmark={markByButton}
         marks={!detailMuted()}
-        focusable={panes.hidden("list")}
+        focusable={panes.hidden("list") || focusedView === pr}
       >
         {#snippet header()}{@render history(pr.number)}{/snippet}
       </PrDetail>

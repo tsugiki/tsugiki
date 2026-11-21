@@ -4,6 +4,7 @@
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { type IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
+  import { UnstoredViewState } from "$lib/state/unstored-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     DETAIL_LEAST,
@@ -61,6 +62,7 @@
   import Sidebar from "./Sidebar.svelte";
   import SidebarIcons from "./SidebarIcons.svelte";
   import StateIcon from "./StateIcon.svelte";
+  import UnstoredDetail from "./UnstoredDetail.svelte";
   import {
     ago,
     detailWords,
@@ -145,6 +147,9 @@
   let detail = $state<IssueViewState | PrViewState>();
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
+  /** The fetch of an Issue or a PR the database lacks, which the Detail pane shows while nothing else is
+   * on show there, until the item it found opens (#981). */
+  let unstored = $state<UnstoredViewState>();
   /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
    * the list hidden: the view of the item after the one the user finished with (#982). It keeps that until
    * the focus goes elsewhere in the page, so the palette or another app in front hands it back. */
@@ -303,6 +308,31 @@
     open(onShow ?? workbench.stopFor(number, kind), "pick");
   }
 
+  /** Fetches Issue or PR `number`, which the database lacks, as quick open's fetch row asks (#981). The
+   * Detail pane shows `owner/repo #N` loading in place of what it showed, then opens the item as quick
+   * open opens a stored one, whichever kind the number turned out to be, or says why nothing came. */
+  export function fetchUnstored(number: number): void {
+    swap(undefined);
+    const view = new UnstoredViewState(name, number);
+    unstored = view;
+    // As a pick does: the pane takes the focus while the list is hidden, and the cursor's row otherwise.
+    focusCursor();
+    void view.load((kind) => {
+      // The answer can come long after the pick, as it waits for the sync's step under way. It takes the
+      // focus as a pick does only from a row, the Detail pane or nowhere, and leaves it anywhere else the
+      // user went meanwhile, such as a text box or the Sidebar.
+      const focused = document.activeElement;
+      const pick = inDetailPane(focused) || followsCursor(focused);
+      open(workbench.stopFor(number, kind), pick ? "pick" : "open");
+    });
+  }
+
+  /** Opens Issue or PR `number` on GitHub in the browser, as quick open offers while offline (#981). GitHub
+   * sends an Issue's address on to the PR that has the number. */
+  export function openNumberOnGitHub(number: number): void {
+    void links.openOnGitHub(name, { kind: "issue", number });
+  }
+
   /** The files the PR on show changes, which quick open finds (#558), or nothing while no PR shows. Once
    * another view takes the Detail pane, that PR has no files to list, read or open. */
   export function changedFiles(): ChangedFiles | undefined {
@@ -323,6 +353,8 @@
    * is on show, and every other view stops. A view that couldn't read its Issue stops too, so going back
    * opens the Issue afresh. */
   function swap(next: IssueViewState | PrViewState | undefined) {
+    unstored?.stop();
+    unstored = undefined;
     const from = next instanceof PrViewState ? next.issue : undefined;
     const keep = [detail, kept].find(
       (view): view is IssueViewState =>
@@ -344,8 +376,11 @@
     open({ number: issue, kind: "issue", issue: undefined }, "back");
   }
 
-  /** The Issue or PR in the Detail pane, or else the line under the cursor while the list shows it. */
+  /** The Issue or PR in the Detail pane, the number it fetches, or else the line under the cursor while the
+   * list shows it. */
   function currentOnGitHub(): GitHubItem | undefined {
+    // GitHub sends an Issue's address on to the PR that has the number.
+    if (unstored) return { kind: "issue", number: unstored.number };
     const stop = detailLine() ?? (panes.hidden("list") ? undefined : workbench.underCursor);
     return stop && { kind: stop.kind, number: stop.number };
   }
@@ -412,7 +447,7 @@
   export function paneOf(target: EventTarget | null): Pane {
     const inList =
       target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null);
-    const inDetail = target instanceof Node && detailPane()?.contains(target) === true;
+    const inDetail = inDetailPane(target);
     return inList ? "list" : inDetail ? "detail" : null;
   }
 
@@ -480,7 +515,7 @@
   function cursorLanded({ finished, to }: Landing) {
     const focused = document.activeElement;
     if (finished && to.kind !== "kept") {
-      const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
+      const inDetail = inDetailPane(focused);
       if (to.kind === "next") open(to.stop);
       else swap(undefined);
       if (inDetail) {
@@ -489,8 +524,7 @@
       }
     }
     if (to.kind === "empty") return;
-    const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
-    if (onRow || focused === document.body) focusCursor();
+    if (followsCursor(focused)) focusCursor();
   }
 
   /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when
@@ -514,7 +548,7 @@
    * pane took for the item it opened. Focus that leaves the page, for the palette, a dialog or another app,
    * comes back to the pane. */
   function focusMoved(e: FocusEvent) {
-    if (focusedView && !(e.target instanceof Node && detailPane()?.contains(e.target))) {
+    if (focusedView && !inDetailPane(e.target)) {
       focusedView = undefined;
     }
   }
@@ -1111,6 +1145,19 @@
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
 
+  /** Whether `target`, such as the focused element, is in the Detail pane. */
+  function inDetailPane(target: EventTarget | null): boolean {
+    return target instanceof Node && detailPane()?.contains(target) === true;
+  }
+
+  /** Whether `focused` is a row of the list, or the page's body, which holds the focus once nothing else
+   * does. The focus then follows the cursor. */
+  function followsCursor(focused: Element | null): boolean {
+    const onRow =
+      focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused) === true;
+    return onRow || focused === document.body;
+  }
+
   /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, or the
    * Conversation beside the rail, each of which scrolls by itself. */
   function scrollDetail(step: 1 | -1) {
@@ -1503,7 +1550,7 @@
         {/if}
       {/if}
     </section>
-    {#if detail}
+    {#if detail || unstored}
       <PaneEdge
         label="Workbench width"
         sizes={{ kind: "pane", value: panes.list ?? undefined, nextLeast: DETAIL_LEAST }}
@@ -1548,6 +1595,10 @@
       >
         {#snippet header()}{@render history(pr.number)}{/snippet}
       </PrDetail>
+    {/key}
+  {:else if unstored}
+    {#key unstored}
+      <UnstoredDetail view={unstored} focusable={panes.hidden("list")} />
     {/key}
   {:else if panes.hidden("list")}
     {@const key = actionLabel("toggle_issue_list", currentOs())}

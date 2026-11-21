@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { About } from "$lib/state/about.svelte";
 import { actionOn, remapKeys } from "$lib/state/keymap.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -14,6 +14,7 @@ import {
   workbenchPage,
   workbenchRow,
 } from "$lib/testing/fixtures";
+import { nextTask } from "$lib/testing/helpers";
 import Page from "./+page.svelte";
 
 const core = vi.hoisted(() => ({
@@ -40,6 +41,8 @@ const core = vi.hoisted(() => ({
   recentCommands: vi.fn(),
   rememberCommand: vi.fn(),
   quickOpen: vi.fn(),
+  fetchItem: vi.fn(),
+  openOnGithub: vi.fn(),
   // The HUD logs a slow opening of an Issue whether or not it shows.
   recordMiss: vi.fn(() => Promise.resolve("a miss")),
   issue: vi.fn(),
@@ -76,6 +79,7 @@ const THEMES = {
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
+const statuses = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
 vi.mock("$lib/data/bindings", async () => {
   const { itemMoves, prFilesEvents } = await import("$lib/testing/fixtures");
@@ -97,7 +101,14 @@ vi.mock("$lib/data/bindings", async () => {
     },
     events: {
       ...prFilesEvents(() => async () => () => {}),
-      statusChanged: { listen: async () => () => {} },
+      statusChanged: {
+        listen: async (callback: (event: { payload: unknown }) => void) => {
+          statuses.changed.mockImplementation((payload) => {
+            callback({ payload });
+          });
+          return () => {};
+        },
+      },
       lastSyncChanged: { listen: async () => () => {} },
       syncActivityChanged: { listen: async () => () => {} },
       hourPointsChanged: { listen: async () => () => {} },
@@ -675,6 +686,158 @@ describe("quick open", () => {
       expect(document.activeElement).toBe(row);
     });
     expect(core.rememberCommand).not.toHaveBeenCalled();
+  });
+
+  describe("for a number the database holds no item of", () => {
+    /** The answer to the fetch of #12, which comes once the test calls the function this gives. */
+    let answerFetch: (answer: object) => void;
+
+    beforeEach(() => {
+      core.quickOpen.mockResolvedValue({ status: "ok", data: { named: null, others: [], unstored: 12 } });
+      core.fetchItem.mockReturnValue(
+        new Promise((resolve) => {
+          answerFetch = (answer) => {
+            resolve({ status: "ok", data: answer });
+          };
+        }),
+      );
+      core.openOnGithub.mockResolvedValue(done);
+    });
+
+    const detailPane = () => screen.getByRole("region", { name: "Detail pane" });
+
+    /** The window with Enter pressed on quick open's row for #12. */
+    const fetchTwelve = async () => {
+      render(Page);
+      await screen.findByRole("button", { name: "#7 It crashes" });
+      await ctrlP();
+      await fireEvent.input(box(), { target: { value: "#12" } });
+      const row = await screen.findByRole("option", { name: "Fetch #12 from GitHub" });
+      const rows = rowTexts();
+      await fireEvent.keyDown(box(), { key: "Enter" });
+      return { row, rows };
+    };
+
+    it("lists the row that fetches it, and shows it loading in the Detail pane", async () => {
+      const { rows } = await fetchTwelve();
+
+      expect(rows).toEqual(["Fetch #12 from GitHub"]);
+      expect(quickOpen()).toBeNull();
+      expect(core.fetchItem).toHaveBeenCalledWith("some-maintainer/gcmon", 12);
+      const pane = within(detailPane());
+      expect(pane.getByRole("heading", { name: "some-maintainer/gcmon #12" })).toBeTruthy();
+      expect(pane.getByRole("status").textContent).toBe("Fetching some-maintainer/gcmon #12 from GitHub…");
+    });
+
+    it("offers it in the browser in place of a fetch while GitHub can't be reached", async () => {
+      render(Page);
+      await screen.findByRole("button", { name: "#7 It crashes" });
+      statuses.changed({ state: "offline_as", last_login: "octocat" });
+      await ctrlP();
+      await fireEvent.input(box(), { target: { value: "#12" } });
+      await screen.findByRole("option", { name: "Open #12 in browser" });
+      const rows = rowTexts();
+
+      await fireEvent.keyDown(box(), { key: "Enter" });
+
+      expect(rows).toEqual(["Open #12 in browser"]);
+      await vi.waitFor(() => {
+        expect(core.openOnGithub).toHaveBeenCalledWith("some-maintainer/gcmon", {
+          kind: "issue",
+          number: 12,
+        });
+      });
+      expect(core.fetchItem).not.toHaveBeenCalled();
+    });
+
+    it("opens an Issue the fetch found as an Issue", async () => {
+      await fetchTwelve();
+
+      answerFetch({ kind: "issue" });
+
+      await vi.waitFor(() => {
+        expect(core.openIssue).toHaveBeenCalledWith("some-maintainer/gcmon", 12);
+      });
+      expect(screen.queryByRole("heading", { name: "some-maintainer/gcmon #12" })).toBeNull();
+    });
+
+    it("opens a PR the fetch found as a PR", async () => {
+      core.openPullRequest.mockResolvedValue(done);
+      core.pullRequest.mockResolvedValue({ status: "ok", data: null });
+      core.mirrorsHeld.mockResolvedValue(false);
+      await fetchTwelve();
+
+      answerFetch({ kind: "pull_request" });
+
+      await vi.waitFor(() => {
+        expect(core.openPullRequest).toHaveBeenCalledWith("some-maintainer/gcmon", 12);
+      });
+    });
+
+    it("says why the fetch brought nothing, and opens the number on GitHub", async () => {
+      await fetchTwelve();
+
+      answerFetch({ kind: "unfetched", why: "missing" });
+      const why = await within(detailPane()).findByRole("alert");
+      await fireEvent.click(within(detailPane()).getByRole("button", { name: "Open in browser" }));
+
+      expect(why.textContent).toBe("GitHub has no Issue or PR #12 in some-maintainer/gcmon.");
+      expect(core.openOnGithub).toHaveBeenCalledWith("some-maintainer/gcmon", { kind: "issue", number: 12 });
+    });
+
+    it("opens the number it fetches on Open on GitHub, and not the item under the cursor", async () => {
+      await fetchTwelve();
+
+      await fireEvent.keyDown(document.body, { key: "G", code: "KeyG", ctrlKey: true, shiftKey: true });
+
+      await vi.waitFor(() => {
+        expect(core.openOnGithub).toHaveBeenCalledExactlyOnceWith("some-maintainer/gcmon", {
+          kind: "issue",
+          number: 12,
+        });
+      });
+    });
+
+    it("takes the focus with the list hidden, and leaves it in a text box the user went to meanwhile", async () => {
+      render(Page);
+      await screen.findByRole("button", { name: "#7 It crashes" });
+      await fireEvent.keyDown(document.body, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("button", { name: "#7 It crashes" })).toBeNull();
+      });
+      await ctrlP();
+      await fireEvent.input(box(), { target: { value: "#12" } });
+      await screen.findByRole("option", { name: "Fetch #12 from GitHub" });
+      await fireEvent.keyDown(box(), { key: "Enter" });
+      await vi.waitFor(() => {
+        expect(document.activeElement).toBe(detailPane());
+      });
+      const typing = document.body.appendChild(document.createElement("input"));
+      onTestFinished(() => {
+        typing.remove();
+      });
+      typing.focus();
+
+      answerFetch({ kind: "issue" });
+      await vi.waitFor(() => {
+        expect(core.openIssue).toHaveBeenCalledWith("some-maintainer/gcmon", 12);
+      });
+      await nextTask();
+      await tick();
+
+      expect(document.activeElement).toBe(typing);
+    });
+
+    it("opens nothing it found once the user opened another item meanwhile", async () => {
+      await fetchTwelve();
+      await fireEvent.click(screen.getByRole("button", { name: "#7 It crashes" }));
+
+      answerFetch({ kind: "issue" });
+      await nextTask();
+
+      expect(core.openIssue).toHaveBeenCalledWith("some-maintainer/gcmon", 7);
+      expect(core.openIssue).not.toHaveBeenCalledWith("some-maintainer/gcmon", 12);
+    });
   });
 
   it("switches to the commands on `>`, and Ctrl+Shift+P opens with `>` typed", async () => {

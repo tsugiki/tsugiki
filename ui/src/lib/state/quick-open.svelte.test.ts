@@ -10,9 +10,10 @@ const core = vi.mocked(commands);
 const item = (number: number): QuickOpenFound_Serialize => ({
   named: { kind: "issue", number, title: `Issue ${String(number)}`, state: "OPEN" },
   others: [],
+  unstored: null,
 });
 /** What the core finds for a text that finds nothing. */
-const nothing: QuickOpenFound_Serialize = { named: null, others: [] };
+const nothing: QuickOpenFound_Serialize = { named: null, others: [], unstored: null };
 
 beforeEach(() => {
   vi.resetAllMocks();

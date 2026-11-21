@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,8 @@ use crate::facts::pull_request_content::PullRequestContent;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
 use crate::fetching::{
-    Fetched, Fetching, Headless, Item, Marked, MirrorWant, NoHead, SessionMessage,
+    Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, Marked, MirrorWant, NoHead,
+    SessionMessage,
 };
 use crate::folders::Folders;
 use crate::github::{GitHub, GitHubAccess};
@@ -41,6 +42,7 @@ use refill::LinkRefill;
 
 mod on_screen;
 mod refill;
+mod unstored;
 
 // `run` catches a panic in its thread, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).
@@ -234,7 +236,7 @@ impl Due {
 }
 
 /// The session thread's next move.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum Turn {
     /// Time to ask who is signed in.
     Refresh,
@@ -250,6 +252,8 @@ enum Turn {
     Mark(Marked),
     /// An Issue or a PR on screen needs its conversation read from GitHub.
     Fetch(Fetched),
+    /// The user asked for an Issue or a PR the database lacks, and waits for what the fetch found.
+    FetchUnstored(Item, Sender<ItemFetch>),
     /// The Mirror worker read patch-ids, or found commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
     /// Time to see whether the hour's points have reset, so the window stops showing the old hour's count.
@@ -402,7 +406,9 @@ impl Refreshes {
                     (self.links.borrow_mut()).put_first(&fetched.item().repository);
                     self.read_failed(telling.board, &fetched, ItemUnread::NoToken);
                 }
+                // Each dropped reply answers its caller that GitHub can't be asked.
                 SessionMessage::Check { .. }
+                | SessionMessage::FetchUnstored { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::Screen(_) => {}
             }
@@ -454,6 +460,9 @@ impl Refreshes {
                 Ok(SessionMessage::SettingsChanged(save)) => return Turn::SettingsChanged(save),
                 Ok(SessionMessage::Mark(marked)) => return Turn::Mark(marked),
                 Ok(SessionMessage::Fetch(fetched)) => return Turn::Fetch(fetched),
+                Ok(SessionMessage::FetchUnstored { item, reply }) => {
+                    return Turn::FetchUnstored(item, reply);
+                }
                 Ok(SessionMessage::Screen(moved)) => {
                     self.on_screen.borrow_mut().moved(moved, Instant::now());
                 }
@@ -641,6 +650,29 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 }
                 // A failed read waits its minute too, or the session would ask GitHub again at once.
                 (refreshes.on_screen.borrow_mut()).read(fetched.item(), Instant::now());
+            }
+            Turn::FetchUnstored(item, reply) => {
+                (refreshes.links.borrow_mut()).put_first(&item.repository);
+                let read = Reading {
+                    github: &github,
+                    queue: refreshes,
+                    syncs: &syncs,
+                };
+                let answer = fetch_unstored(board, store, &read, &item);
+                if let Err(problem) = &answer {
+                    syncs.after_fetch_failure(problem, due.status, github.clock());
+                }
+                let answer = answer.unwrap_or_else(|problem| {
+                    board.set(status_after(problem, store));
+                    ItemFetch::Unfetched {
+                        why: ItemUnfetched::Offline,
+                    }
+                });
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller has gone, and nobody then shows the answer"
+                )]
+                let _ = reply.send(answer);
             }
             // A Workbench lists nothing until Tsugiki knows who the user is, and no event tells the window
             // when it learns that. So a sync waits for it, and its first save then shows the rows.
@@ -1124,6 +1156,33 @@ struct Reading<'a> {
 /// Files tab of a PR, which may wait for the head the Conversation names. An error returned here speaks
 /// for all of GitHub, so the status bar and the syncs need to hear it. Any other trouble is this one item's,
 /// and goes to the log.
+/// Fetches `item`, which the database lacks, as the user asked (#981), and says what came of it: the kind it
+/// saved, which it tells the window and the Mirror worker of, or why nothing came. A failure that speaks for
+/// all of GitHub comes back for the caller to show. The window offers no fetch while offline, and one that
+/// raced the status asks nothing, as a request then would only keep the user waiting for its failure.
+fn fetch_unstored(
+    board: &mut StatusBoard,
+    store: &Store,
+    read: &Reading<'_>,
+    item: &Item,
+) -> Result<ItemFetch, Error> {
+    if board.is_offline() {
+        return Ok(ItemFetch::Unfetched {
+            why: ItemUnfetched::Offline,
+        });
+    }
+    Ok(match unstored::fetch(board, store, read.github, item)? {
+        Ok(saved) => {
+            if let Some(synced) = synced_facts(store, read.syncs, &item.repository) {
+                hand_over_heads(&read.queue.fetching, store, &synced, &saved.change);
+            }
+            board.changed(&saved.change);
+            saved.kind
+        }
+        Err(why) => ItemFetch::Unfetched { why },
+    })
+}
+
 fn read_conversation(
     board: &mut StatusBoard,
     store: &Store,

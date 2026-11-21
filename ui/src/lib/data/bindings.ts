@@ -280,6 +280,11 @@ export const commands = {
 	 */
 	quickOpen: (repository: string, typed: string) => typedError<QuickOpenFound_Serialize, Error_Serialize>(__TAURI_INVOKE("quick_open", { repository, typed })),
 	/**
+	 *  Fetches Issue or PR `number`, which the database lacks, ahead of the sync's queued work, and says
+	 *  whether it was an Issue or a PR, which the database now holds, or why nothing came (#981).
+	 */
+	fetchItem: (repository: string, number: number) => typedError<ItemFetch, Error_Serialize>(__TAURI_INVOKE("fetch_item", { repository, number })),
+	/**
 	 *  Where the picked word is defined, which the Definition peek shows (#438). It waits on ty, which reads the
 	 *  Lookup checkout, and on ty's start if it hasn't started, and never on GitHub, so it works offline at any
 	 *  commit the mirror holds. It cancels the lookup running, if one is. `waiting` hears what it waits for:
@@ -1586,11 +1591,37 @@ export type IssueView_Serialize = {
 } & IssueItem_Serialize;
 
 /**
+ *  What a fetch of an Issue or a PR the database lacks found (#981). GitHub shares one number space between
+ *  Issues and PRs, so the number turns out to be either.
+ */
+export type ItemFetch = 
+/**  An Issue, which the database now holds. */
+{ kind: "issue" } | 
+/**  A PR, which the database now holds. */
+{ kind: "pull_request" } | 
+/**  Nothing the database now holds, for this reason. */
+{ kind: "unfetched"; why: ItemUnfetched };
+
+/**
  *  Names a Workbench item in the user's own state that hides it: Archived, and Muted (#492). Issues and PRs
  *  share their numbers in a Repository, and a Standalone PR and a Standalone Backport are both PRs.
  *  Dependency updates join it as a kind of their own.
  */
 export type ItemKey = { kind: "issue"; number: number } | { kind: "pull_request"; number: number };
+
+/**  Why a fetch of an Issue or a PR the database lacks brought nothing. */
+export type ItemUnfetched = 
+/**  GitHub has no Issue or PR with that number in the Repository. */
+"missing" | 
+/**  The token can't see the item, or its Repository. */
+"hidden" | 
+/**
+ *  GitHub can't be asked now, as when the computer is offline, Tsugiki has no token or the hour's points
+ *  ran out, and the status bar says why.
+ */
+"offline" | 
+/**  Anything else, such as an answer Tsugiki couldn't read or a database it couldn't write. The log says. */
+"other";
 
 /**
  *  The reason a read of what an Issue or a PR says failed for this item, which the session's next read of
@@ -2516,6 +2547,11 @@ export type QuickOpenFound_Deserialize = {
 	named?: TitledItem_Deserialize | null,
 	/**  The items whose titles hold every word typed: the open first, then the newest. */
 	others: TitledItem_Deserialize[],
+	/**
+	 *  The number the whole text names, when the cache holds no item of it, for the window to offer a
+	 *  fetch from GitHub (#981).
+	 */
+	unstored?: number | null,
 };
 
 /**
@@ -2527,6 +2563,11 @@ export type QuickOpenFound_Serialize = {
 	named: TitledItem_Serialize | null,
 	/**  The items whose titles hold every word typed: the open first, then the newest. */
 	others: TitledItem_Serialize[],
+	/**
+	 *  The number the whole text names, when the cache holds no item of it, for the window to offer a
+	 *  fetch from GitHub (#981).
+	 */
+	unstored: number | null,
 };
 
 /**

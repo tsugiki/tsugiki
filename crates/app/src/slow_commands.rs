@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tauri::ipc::Channel;
-use tsugiki_core::calls::{Calls, PrFiles};
+use tsugiki_core::calls::{Calls, ItemFetch, PrFiles};
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -55,6 +55,19 @@ pub(crate) async fn mirror_cost(
 ) -> Result<MirrorCost, Error> {
     let calls = calls.inner().clone();
     check_aside(move || crate::check_mirror_cost(&repository, &calls)).await
+}
+
+/// Fetches Issue or PR `number`, which the database lacks, ahead of the sync's queued work, and says
+/// whether it was an Issue or a PR, which the database now holds, or why nothing came (#981).
+#[tauri::command]
+#[specta::specta]
+pub(crate) async fn fetch_item(
+    repository: String,
+    number: u32,
+    calls: State<'_, Calls>,
+) -> Result<ItemFetch, Error> {
+    let calls = calls.inner().clone();
+    check_aside(move || crate::fetch_unstored(&repository, number, &calls)).await
 }
 
 /// Runs `check`, which asks GitHub, on a thread meant for blocking. A check can wait out a stuck request, and

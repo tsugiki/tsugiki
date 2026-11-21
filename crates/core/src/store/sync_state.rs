@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use rusqlite::{OptionalExtension, Row, named_params};
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use super::Connection;
 use super::columns::UnixTime;
@@ -170,6 +170,18 @@ pub struct SyncState {
     pub check: ChangeCheck,
     /// A later refresh began and hasn't finished. Its saved facts may have lost the work they lead to.
     pub refresh_under_way: bool,
+}
+
+/// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
+/// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
+/// a Filter, and the next refresh still sees it.
+pub const OVERLAP: Duration = Duration::minutes(2);
+
+impl SyncState {
+    /// The moment from which the next refresh asks GitHub what changed: a little before this sync started.
+    pub fn changes_since(&self) -> OffsetDateTime {
+        self.started_at - OVERLAP
+    }
 }
 
 pub(super) fn read(

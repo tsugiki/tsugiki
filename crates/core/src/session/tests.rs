@@ -17,7 +17,8 @@ use crate::github::points::HourPoints;
 use crate::github::replay::Replayer;
 use crate::github::testing::{
     Canned, RATE_LIMIT, SIGNED_IN, Scripted, answer, answered, dated, fetched_nodes, github,
-    page_info, pr_content, pr_node, pull_request_answer, reply_ok, search_page, signed_in_as,
+    issue_item, item_answer, item_missing, page_info, pr_content, pr_item, pr_node,
+    pull_request_answer, reply_ok, search_page, signed_in_as,
 };
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::login::Login;
@@ -1502,10 +1503,11 @@ fn checks_dont_put_off_the_next_refresh() {
             }
             checks.stop_session();
         });
-        assert_eq!(refreshes.next_turn(&github, &mut syncs, due), Turn::Refresh);
+        let turn = refreshes.next_turn(&github, &mut syncs, due);
+        assert!(matches!(turn, Turn::Refresh), "{turn:?}");
         refreshed.store(true, Ordering::Relaxed);
         // Answers the checks still on their way, until the message that stops it.
-        while refreshes.next_turn(&github, &mut syncs, due) != Turn::Stop {}
+        while !matches!(refreshes.next_turn(&github, &mut syncs, due), Turn::Stop) {}
     });
 
     assert!(started.elapsed() < PLENTY);
@@ -2807,12 +2809,166 @@ fn a_check_goes_ahead_of_the_next_step_of_a_sync() {
         // A step can run only after the session answers the check, or this would hang.
         while !asking.is_finished() {
             let turn = refreshes.next_turn(&github, &mut syncs, due);
-            assert_eq!(turn, Turn::SyncStep);
+            assert!(matches!(turn, Turn::SyncStep), "{turn:?}");
         }
         asking.join().unwrap()
     });
 
     assert_eq!(answer.unwrap().open_prs, 3);
+}
+
+#[test]
+fn a_fetch_of_an_unstored_item_goes_ahead_of_the_next_step_of_a_sync() {
+    let (messages, incoming) = mpsc::channel();
+    let fetching = sending(messages, mirrors());
+    let refreshes = Refreshes {
+        intervals: HOURLY,
+        incoming,
+        ..unheard_refreshes()
+    };
+    let github = github(answered(200, GCMON));
+    let mut syncs = Syncs::new(refreshes.settings.clone());
+    syncs.add(gcmon());
+    let due = Due::starting_at(Instant::now(), HOURLY);
+
+    let (turn, answer) = thread::scope(|scope| {
+        let asking = scope.spawn(|| fetching.fetch_unstored(gcmon(), 7));
+        // Steps run until the message comes, and the next turn takes it.
+        let turn = loop {
+            let turn = refreshes.next_turn(&github, &mut syncs, due);
+            if !matches!(turn, Turn::SyncStep) {
+                break turn;
+            }
+        };
+        turn_reply(&turn).send(ItemFetch::Issue).unwrap();
+        (turn, asking.join().unwrap())
+    });
+
+    assert!(matches!(turn, Turn::FetchUnstored(ref item, _) if *item == issue_7()));
+    assert_eq!(answer, ItemFetch::Issue);
+}
+
+/// The reply of a turn that fetches an unstored item.
+fn turn_reply(turn: &Turn) -> &Sender<ItemFetch> {
+    let Turn::FetchUnstored(_, reply) = turn else {
+        panic!("{turn:?}");
+    };
+    reply
+}
+
+#[test]
+fn a_fetched_unstored_item_tells_the_window_and_stays_in_the_database() {
+    let (folders, folder) = temp_folders("fetch-unstored");
+    let (board, changes) = changes_board();
+    let access = replying(vec![
+        signed_in(),
+        item_answer(&gcmon(), issue_item(7, &gcmon())),
+    ]);
+    let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
+
+    let fetched = session.fetching().fetch_unstored(gcmon(), 7);
+    session.stop(PLENTY);
+
+    assert_eq!(fetched, ItemFetch::Issue);
+    let change = Change {
+        repository: gcmon(),
+        items: vec![7],
+    };
+    assert!(changes.try_iter().any(|heard| heard == change));
+    let db = OpenStore::of(folders.database(), folder);
+    let items = db.reader.titled_items(&gcmon()).unwrap();
+    db.close();
+    assert_eq!(
+        items.iter().map(|item| item.number).collect::<Vec<_>>(),
+        [7]
+    );
+}
+
+#[test]
+fn an_unstored_item_offline_is_unfetched_shows_offline_and_asks_nothing_after() {
+    let (folders, _folder) = temp_folders("fetch-unstored-offline");
+    let (board, seen) = watched_board();
+    let (script, asked) = Scripted::new(vec![signed_in(), Err(Unreachable::Offline)]);
+    let access = GitHubAccess {
+        transport: Box::new(script),
+        token_from: SIGNED_IN,
+    };
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+
+    let fetched = session.fetching().fetch_unstored(gcmon(), 7);
+    let again = session.fetching().fetch_unstored(gcmon(), 8);
+    session.stop(PLENTY);
+
+    let offline = ItemFetch::Unfetched {
+        why: ItemUnfetched::Offline,
+    };
+    assert_eq!([fetched, again], [offline, offline]);
+    // Once the status says offline, a fetch keeps nobody waiting on a request bound to fail.
+    let fetches = asked
+        .try_iter()
+        .filter(|(operation, _)| operation == "FetchItem");
+    assert_eq!(fetches.count(), 1);
+    let offline_as = Status::OfflineAs {
+        last_login: Login::new("octocat"),
+    };
+    assert_eq!(announced(&seen).last(), Some(&offline_as));
+}
+
+#[test]
+fn a_fetched_unstored_pr_in_a_syncing_repository_hands_its_head_to_the_mirror() {
+    let (folders, _folder) = temp_folders("fetch-unstored-head");
+    after_a_finished_sync(&folders);
+    let (access, asked) = quiet_repository();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: access,
+        mirrors,
+        settings: listed(vec![plain_gcmon()]),
+    };
+    let session = Session::start(quiet_board(), Ok(folders), connections, HOURLY);
+    session.fetching().sync(gcmon());
+    wait_for(&asked, "RefreshRepository");
+
+    let fetched = session.fetching().fetch_unstored(gcmon(), 7);
+    let handed = heard.asked_through("saved heads #7", PLENTY);
+    session.stop(PLENTY);
+
+    assert_eq!(fetched, ItemFetch::PullRequest);
+    let saved = "some-maintainer/gcmon saved heads #7 at 89abcde on main";
+    assert!(handed.iter().any(|line| line == saved), "{handed:?}");
+}
+
+#[test]
+fn a_number_the_session_fetches_that_names_nothing_is_missing() {
+    let (folders, _folder) = temp_folders("fetch-unstored-missing");
+    let access = replying(vec![signed_in(), item_missing()]);
+    let session = Session::start(quiet_board(), Ok(folders), reaching(access), HOURLY);
+
+    let fetched = session.fetching().fetch_unstored(gcmon(), 7);
+    session.stop(PLENTY);
+
+    let missing = ItemFetch::Unfetched {
+        why: ItemUnfetched::Missing,
+    };
+    assert_eq!(fetched, missing);
+}
+
+#[test]
+fn a_session_with_no_token_answers_a_fetch_of_an_unstored_item_offline() {
+    let (folders, _folder) = temp_folders("fetch-unstored-no-token");
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        token_from: NO_GH,
+    };
+    let session = Session::start(quiet_board(), Ok(folders), reaching(access), HOURLY);
+
+    let fetched = session.fetching().fetch_unstored(gcmon(), 7);
+    session.stop(PLENTY);
+
+    let offline = ItemFetch::Unfetched {
+        why: ItemUnfetched::Offline,
+    };
+    assert_eq!(fetched, offline);
 }
 
 #[test]
@@ -3130,6 +3286,10 @@ impl Transport for QuietRepository {
         // GitHub has nothing new to say of any PR a probe asks about.
         if request.operation == "ProbePullRequests" {
             return answer(json!({ "repository": {} }), RATE_LIMIT);
+        }
+        // A number the user fetches names PR 7.
+        if request.operation == "FetchItem" {
+            return item_answer(&gcmon(), pr_item(7));
         }
         let none = json!({ "pageInfo": page_info(None), "nodes": [] });
         let repository = json!({

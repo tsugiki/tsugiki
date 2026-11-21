@@ -219,6 +219,52 @@ pub fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unr
     )
 }
 
+/// GitHub's answer to `FetchItem`, which found `item` under the number asked, Issue or PR, in the Repository
+/// that GitHub now names `asked`.
+pub fn item_answer(asked: &RepositoryName, item: Value) -> Result<Reply, Unreachable> {
+    answer(item_data(asked, item), RATE_LIMIT)
+}
+
+/// The data of an answer to `FetchItem` in `asked` with `item`.
+fn item_data(asked: &RepositoryName, item: Value) -> Value {
+    json!({ "repository": { "nameWithOwner": asked.to_string(), "issueOrPullRequest": item } })
+}
+
+/// Issue `number` as `FetchItem` answers with it, which `repository` holds now.
+pub fn issue_item(number: u32, repository: &RepositoryName) -> Value {
+    let mut issue = issue_node(number);
+    issue["repository"] = json!({ "nameWithOwner": repository.to_string() });
+    issue
+}
+
+/// PR `number` of `python/cpython` as `FetchItem` answers with it.
+pub fn pr_item(number: u32) -> Value {
+    let mut pull_request = pr_node(number, &json!({}));
+    pull_request["__typename"] = json!("PullRequest");
+    pull_request
+}
+
+/// GitHub's answer to `FetchItem` for a number that names nothing.
+pub fn item_missing() -> Result<Reply, Unreachable> {
+    not_found(
+        item_data(&crate::testing::cpython(), Value::Null),
+        json!(["repository", "issueOrPullRequest"]),
+    )
+}
+
+/// GitHub's answer to `FetchItem` when it refuses the item alone, as for a token that may see the
+/// Repository and not the item.
+pub fn item_refused() -> Result<Reply, Unreachable> {
+    erring(
+        item_data(&crate::testing::cpython(), Value::Null),
+        (
+            "FORBIDDEN",
+            "Resource not accessible by personal access token",
+        ),
+        json!(["repository", "issueOrPullRequest"]),
+    )
+}
+
 /// `node` with each field of `changes` set on it.
 fn changed(mut node: Value, changes: &Value) -> Value {
     for (name, value) in changes.as_object().unwrap() {

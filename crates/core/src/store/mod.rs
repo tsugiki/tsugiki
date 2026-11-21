@@ -57,7 +57,7 @@ pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use pr_links::Updates;
 pub use pull_request_content::{ConversationSaved, HeadKept};
-pub use sync_state::{ChangeCheck, FirstSyncPlace, SyncState};
+pub use sync_state::{ChangeCheck, FirstSyncPlace, OVERLAP, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
 /// Clippy's ban on `rusqlite::Connection` holds everywhere else, and its other bans hold here too.
@@ -125,6 +125,21 @@ impl Store {
         let saved = self.call(move |connection| {
             pull_requests::save(connection, &repository, &pull_requests, &events)
         })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Stores a PR the user fetched by its number, which the store lacked (#981), as
+    /// `save_fetched_pull_requests` does. A PR updated since the next refresh's poll starts, a little before
+    /// the last sync of `repository` started, is one that refresh would find changed, so it may have opened
+    /// since, as the refresh would judge it (#823). An older one, or one in a Repository that has finished
+    /// no sync, was loaded from before.
+    pub fn save_unstored_pull_request(
+        &self,
+        repository: &RepositoryName,
+        (facts, activity): (PullRequestFacts, ItemActivity),
+    ) -> Result<(), Error> {
+        let (repository, pr) = (repository.clone(), (facts, activity));
+        let saved = self.call(move |connection| save_unstored_in(connection, &repository, pr))?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -814,6 +829,24 @@ pub enum TitledKind {
         state: PrState,
         is_draft: bool,
     },
+}
+
+/// Saves PR `facts` the user fetched, as `Store::save_unstored_pull_request` says.
+fn save_unstored_in(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    (facts, activity): (PullRequestFacts, ItemActivity),
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let synced = sync_state::read(&transaction, repository)?;
+    let first = if synced.is_some_and(|state| facts.updated_at >= state.changes_since()) {
+        FirstSave::MayHaveOpened
+    } else {
+        FirstSave::Loaded
+    };
+    let saving = (std::slice::from_ref(&facts), first);
+    pull_requests::save_in(&transaction, repository, saving, &[activity])?;
+    transaction.commit()
 }
 
 fn read_last_login(connection: &Connection) -> rusqlite::Result<Option<Login>> {

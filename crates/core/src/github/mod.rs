@@ -7,6 +7,7 @@ pub mod filters;
 mod https;
 pub mod issue_content;
 pub mod issues;
+pub mod item;
 pub mod labels;
 pub mod live;
 pub mod points;

@@ -20,8 +20,8 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::activity::ItemKey;
 use crate::facts::pull_requests::HeadInMirror;
-pub use crate::fetching::Queued;
 use crate::fetching::{Fetched, Fetching, Item, NoHead, ScreenMove};
+pub use crate::fetching::{ItemFetch, ItemUnfetched, Queued};
 use crate::folders::Folders;
 use crate::highlight::Span;
 use crate::latest::LatestReader;
@@ -344,6 +344,13 @@ impl Calls {
         let item = Item { repository, number };
         self.fetching.fetch_issue(item.repository.clone(), number);
         (self.fetching).screen_moved(ScreenMove::Opened(Fetched::Issue(item)));
+    }
+
+    /// The user asked for Issue or PR `number`, which the database lacks (#981): the session fetches it
+    /// ahead of the sync's queued work and saves it, and this waits for the answer, which says whether it
+    /// was an Issue or a PR, or why nothing came. The window then opens it as it opens any other item.
+    pub fn fetch_item(&self, repository: RepositoryName, number: u32) -> ItemFetch {
+        self.fetching.fetch_unstored(repository, number)
     }
 
     /// Another view hides the Issue or PR `number` the user opened, as a PR from an Issue's tree hides the

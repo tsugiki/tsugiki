@@ -75,6 +75,7 @@ impl Setup {
                 | SessionMessage::Screen(_)
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
+                | SessionMessage::FetchUnstored { .. }
                 | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::SettingsChanged(..)
@@ -118,6 +119,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Screen(_)
             | SessionMessage::Stop
             | SessionMessage::Check { .. }
+            | SessionMessage::FetchUnstored { .. }
             | SessionMessage::Refresh
             | SessionMessage::Mark(_)
             | SessionMessage::Patched(..) => None,
@@ -209,6 +211,26 @@ fn the_window_tells_the_session_what_the_user_did_with_an_item_and_with_itself()
             "showed #7",
             "closed #7",
         ]
+    );
+}
+
+#[test]
+fn a_fetch_of_an_unstored_item_asks_the_session_and_is_offline_once_it_drops_the_reply() {
+    let calls = Setup::new("fetch-unstored");
+    let fetching = calls.fetching.clone();
+    let repository = calls.world.repository();
+
+    let asking = std::thread::spawn(move || fetching.fetch_unstored(repository, 12));
+    let heard = named(calls.session.recv_timeout(Duration::from_secs(10)).unwrap());
+    let answer = asking.join().unwrap();
+
+    calls.finish();
+    assert_eq!(heard, "fetch #12");
+    assert_eq!(
+        answer,
+        ItemFetch::Unfetched {
+            why: ItemUnfetched::Offline
+        }
     );
 }
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
 import { HOUR_POINTS } from "$lib/testing/fixtures";
-import { StatusState, type RepositoryMirror, type Status } from "./status.svelte";
+import { isOffline, StatusState, type RepositoryMirror, type Status } from "./status.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
   commands: {
@@ -539,4 +539,22 @@ describe("StatusState", () => {
     expect(state.status).toBeUndefined();
     expect(state.error).toBe("Error: no IPC outside Tauri");
   });
+});
+
+it("says GitHub can't be reached while the status says offline, and while Refresh asks it again", () => {
+  const login = "octocat";
+  const statuses: Status[] = [
+    { state: "offline" },
+    { state: "offline_as", last_login: login },
+    { state: "reconnecting" },
+    { state: "reconnecting_as", last_login: login },
+    { state: "online", login },
+    { state: "connecting" },
+    { state: "connecting_as", last_login: login },
+    { state: "problem", problem: { kind: "internal", message: "Broken." } },
+  ];
+
+  const offline = [...statuses.map(isOffline), isOffline(undefined)];
+
+  expect(offline).toEqual([true, true, true, true, false, false, false, false, false]);
 });

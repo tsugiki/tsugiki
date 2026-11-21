@@ -235,7 +235,10 @@ impl Transport for Asked {
 #[test]
 fn github_gives_a_repositorys_size_in_kilobytes_or_nothing_when_its_empty() {
     let sized = |disk_usage: Value| {
-        let answered = answer(json!({ "repository": { "diskUsage": disk_usage } }), RATE_LIMIT);
+        let answered = answer(
+            json!({ "repository": { "diskUsage": disk_usage } }),
+            RATE_LIMIT,
+        );
         github(Canned(answered)).repository_size(&name("octo-org/hello"))
     };
 

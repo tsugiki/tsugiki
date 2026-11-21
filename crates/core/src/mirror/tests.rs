@@ -2131,6 +2131,34 @@ mod problems {
     }
 
     #[test]
+    fn a_clone_asks_its_size_the_way_the_session_handed_the_worker() {
+        let place = Place::new("size-handed");
+        let remotes = Remotes {
+            size_of: Sizes::FromSession(None),
+            ..place.clone_source()
+        };
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+        let (asking, asked) = channel();
+
+        mirrors.requests().size_through(Box::new(move |repository| {
+            asking.send(repository.clone()).unwrap();
+            Ok(0)
+        }));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
+        starts.recv_timeout(PLENTY).unwrap().fail();
+        mirrors.stop_cleanly(PLENTY);
+
+        assert_eq!(
+            asked.try_iter().collect::<Vec<_>>(),
+            [named("octo-org/hello")]
+        );
+    }
+
+    #[test]
     fn a_clone_the_rate_limit_holds_back_waits_for_the_reset_and_not_its_doubled_retry() {
         let place = Place::new("size-points-out");
         let reset = OffsetDateTime::now_utc() + time::Duration::seconds(2);
@@ -2154,7 +2182,9 @@ mod problems {
             place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
         let asked_at = Instant::now();
 
-        mirrors.requests().clone_mirror(named("octo-org/hello"), download());
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
         let clone = starts.recv_timeout(PLENTY).unwrap();
         let waited = asked_at.elapsed();
         clone.fail();

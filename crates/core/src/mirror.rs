@@ -168,7 +168,9 @@ impl Sizes {
             Self::Own(size_of) | Self::FromSession(Some(size_of)) => size_of(repository),
             Self::FromSession(None) => Err(Error::new(
                 ErrorKind::Offline,
-                &format!("Tsugiki can't ask GitHub for the size of {repository} before it connects."),
+                &format!(
+                    "Tsugiki can't ask GitHub for the size of {repository} before it connects."
+                ),
             )),
         }
     }
@@ -588,24 +590,16 @@ impl HeardRequests {
         })
     }
 
-    /// The way to ask a Repository's size that the session handed the worker, waiting up to `patience` for
-    /// it.
-    pub(crate) fn sizes(&self, patience: Duration) -> SizeOf {
-        let deadline = Instant::now() + patience;
-        loop {
-            let handed = self.take(|message| {
-                let Message::SizesFrom(size_of) = message else {
-                    return Err(message);
-                };
-                Ok(size_of)
-            });
-            if let Some(size_of) = handed.into_iter().next() {
-                return size_of;
-            }
-            let left = deadline.saturating_duration_since(Instant::now());
-            let message = self.messages.recv_timeout(left).expect("a way to ask sizes");
-            self.unasked.borrow_mut().push(message);
-        }
+    /// The way to ask a Repository's size that the session handed the worker as it started.
+    pub(crate) fn sizes(&self) -> SizeOf {
+        let handed = self.take(|message| {
+            let Message::SizesFrom(size_of) = message else {
+                return Err(message);
+            };
+            Ok(size_of)
+        });
+        (handed.into_iter().next())
+            .expect("the session hands the worker a way to ask sizes as it starts")
     }
 
     /// The heads asked for first since the last call.
@@ -1019,8 +1013,10 @@ enum Unmeasured {
 impl Unmeasured {
     /// Why the size check failed, from its `problem`. A rate limit that names no reset fails like any other.
     fn of(problem: Error) -> Self {
-        let ErrorKind::RateLimited { resets_at } = problem.kind else {
-            return Self::Other(problem.message);
+        let resets_at = if let ErrorKind::RateLimited { resets_at } = problem.kind {
+            resets_at
+        } else {
+            None
         };
         let back = resets_at
             .and_then(|at| OffsetDateTime::from_unix_timestamp(at.into()).ok())

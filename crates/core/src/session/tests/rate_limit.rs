@@ -216,7 +216,7 @@ fn below_the_floor_the_mirrors_size_check_asks_nothing_and_says_when_the_points_
     let reset = later();
     let paused = Paused::start("gate-size", reset, Vec::new(), HOURLY);
 
-    let mut size_of = paused.mirrors.sizes(PLENTY);
+    let mut size_of = paused.mirrors.sizes();
     let problem = size_of(&gcmon()).unwrap_err();
     let asked = paused.asked();
     drop(paused.stop());
@@ -240,7 +240,7 @@ fn offline_the_mirrors_size_check_asks_nothing_and_says_github_cant_be_reached()
     let paused = Paused::signed_in_with("size-offline", offline, Vec::new(), HOURLY);
     while paused.heard.statuses.recv_timeout(PLENTY).unwrap() != Status::Offline {}
 
-    let mut size_of = paused.mirrors.sizes(PLENTY);
+    let mut size_of = paused.mirrors.sizes();
     let problem = size_of(&gcmon()).unwrap_err();
     let asked = paused.asked();
     drop(paused.stop());
@@ -250,11 +250,23 @@ fn offline_the_mirrors_size_check_asks_nothing_and_says_github_cant_be_reached()
 }
 
 #[test]
+fn once_the_session_stops_the_mirrors_size_check_says_it_isnt_connected() {
+    let paused = Paused::signed_in_with("size-stopped", signed_in(), Vec::new(), HOURLY);
+    let mut size_of = paused.mirrors.sizes();
+    drop(paused.stop());
+
+    let problem = size_of(&gcmon()).unwrap_err();
+
+    assert_eq!(problem.kind, ErrorKind::Offline, "{problem:?}");
+    assert_eq!(problem.message, crate::fetching::NOT_CONNECTED);
+}
+
+#[test]
 fn the_mirrors_size_check_counts_in_the_hours_points() {
     let size = answer(json!({ "repository": { "diskUsage": 2 } }), RATE_LIMIT);
     let paused = Paused::signed_in_with("size-points", signed_in(), vec![size], HOURLY);
 
-    let mut size_of = paused.mirrors.sizes(PLENTY);
+    let mut size_of = paused.mirrors.sizes();
     let bytes = size_of(&gcmon());
     let asked = paused.asked();
     let heard = paused.stop();

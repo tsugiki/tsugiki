@@ -16,7 +16,9 @@ use time::OffsetDateTime;
 use crate::error::{Error, ErrorKind};
 use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
-use crate::fetching::{Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, ScreenMove};
+use crate::fetching::{
+    Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, ScreenMove,
+};
 use crate::github::{GitHub, GitHubAccess};
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
@@ -41,7 +43,9 @@ pub(super) enum GitHubMessage {
         reply: Sender<Result<RepositoryCheck, Error>>,
     },
     /// The user opened this Repository, whose settings the syncs read from the settings owner's view.
-    Sync { repository: RepositoryName },
+    Sync {
+        repository: RepositoryName,
+    },
     /// The user asked to refresh the open Repository now.
     Refresh,
     /// A read of what an item says. A demand that comes while the same read waits or runs shares its outcome.
@@ -66,7 +70,11 @@ pub(super) enum GitHubMessage {
 /// who it belongs to, and shows the result on `board`. Returns the client when there is a token, even
 /// offline, since GitHub may come back.
 #[must_use = "without the client, nothing asks GitHub again"]
-pub(super) fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
+pub(super) fn connect(
+    board: &mut StatusBoard,
+    store: &Store,
+    access: GitHubAccess,
+) -> Option<GitHub> {
     // The last login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki
     // connecting. `refresh` uses the store next, and shows the problem if the store is still failing.
     if let Ok(Some(last_login)) = store.last_login() {
@@ -199,7 +207,8 @@ impl Refreshes {
     pub(super) fn merge(&self, fetched: &Fetched) {
         let mut backlog = self.backlog.borrow_mut();
         backlog.extend(self.incoming.try_iter());
-        backlog.retain(|message| !matches!(message, GitHubMessage::Fetch(other) if other.is(fetched)));
+        backlog
+            .retain(|message| !matches!(message, GitHubMessage::Fetch(other) if other.is(fetched)));
     }
 
     /// Tells the window that the read of `fetched` failed for `why`. For a PR, it first tells the Files tab,
@@ -218,10 +227,7 @@ impl Refreshes {
     /// the one asking that GitHub can't be asked, and a read says why. The session saves the marks and the
     /// rest that needs no GitHub, as it does with a token.
     pub(super) fn wait_for_stop(&self, board: &mut StatusBoard) {
-        loop {
-            let Ok(message) = self.next_message(Duration::MAX) else {
-                return;
-            };
+        while let Ok(message) = self.next_message(Duration::MAX) {
             match message {
                 GitHubMessage::Stop => return,
                 GitHubMessage::Fetch(fetched) => {
@@ -344,7 +350,9 @@ pub(super) fn run_thread(
     access: GitHubAccess,
     refreshes: &Refreshes,
 ) {
-    let ran = catch_unwind(AssertUnwindSafe(|| watch(&mut board, store, access, refreshes)));
+    let ran = catch_unwind(AssertUnwindSafe(|| {
+        watch(&mut board, store, access, refreshes)
+    }));
     if ran.is_err() {
         board.set(Status::Problem {
             problem: stopped_checking(),
@@ -567,31 +575,27 @@ fn hand_over_head(read: &Reading<'_>, item: &Item, saved: &ConversationSaved) {
     let repository = &item.repository;
     let wants_again = (matches!(saved.head, HeadKept::Moved(_)) || saved.reviewed_moved)
         && read.syncs.was_opened(repository);
-    // The session hands over the wants again, then the head of each item named, which the facts now keep.
-    let saved_of = |items: Vec<u32>| Change {
-        repository: repository.clone(),
-        items,
-    };
+    let kept_head = matches!(saved.head, HeadKept::Moved(_) | HeadKept::Had(_));
+    if wants_again {
+        // The session hands over the wants again, then the head the facts now keep, if there is one.
+        let items = kept_head.then_some(item.number).into_iter().collect();
+        fetching.facts_saved(Change {
+            repository: repository.clone(),
+            items,
+        });
+    }
     match &saved.head {
         HeadKept::Moved(head) | HeadKept::Had(head) => {
-            if wants_again {
-                fetching.facts_saved(saved_of(vec![item.number]));
-            } else {
+            if !wants_again {
                 fetching.heads_saved(repository, vec![head.clone()]);
             }
             read.queue.headless.forget(item);
         }
         HeadKept::Unnamed => {
-            if wants_again {
-                fetching.facts_saved(saved_of(Vec::new()));
-            }
             fetching.no_head(repository.clone(), item.number);
             read.queue.headless.note(item, NoHead::Unnamed);
         }
         HeadKept::NoFacts => {
-            if wants_again {
-                fetching.facts_saved(saved_of(Vec::new()));
-            }
             fetching.no_head(repository.clone(), item.number);
             read.queue.headless.forget(item);
         }

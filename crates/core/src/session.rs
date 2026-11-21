@@ -188,7 +188,8 @@ impl Drop for Session {
 fn sizes_through(github: Sender<GitHubMessage>, shown: LatestReader<Shown>) -> SizeOf {
     Box::new(move |repository| {
         if shown.read(|shown| shown.status.is_offline()) {
-            let words = format!("GitHub can't be reached, so Tsugiki can't ask how big {repository} is.");
+            let words =
+                format!("GitHub can't be reached, so Tsugiki can't ask how big {repository} is.");
             return Err(Error::new(ErrorKind::Offline, &words));
         }
         let (reply, answer) = mpsc::channel();
@@ -396,10 +397,10 @@ impl Keeper {
     /// and hands them again.
     fn hand_over_saved(&self, store: &Store, saved: &Change) {
         let repository = &saved.repository;
-        if !self.shows(repository) {
-            return;
-        }
-        let Ok(facts) = store.work_facts(repository) else {
+        let shown = self
+            .shows(repository)
+            .then(|| store.work_facts(repository).ok());
+        let Some(facts) = shown.flatten() else {
             return;
         };
         let settings = (self.settings).read(|view| view.repository(repository.clone()));
@@ -409,9 +410,6 @@ impl Keeper {
             work: MirrorWork::of(&facts, &settings),
         };
         hand_over_wants(&self.fetching, store, stated);
-        if saved.items.is_empty() {
-            return;
-        }
         let saved_heads = (facts.pull_requests.iter())
             .filter(|pr| saved.items.contains(&pr.number))
             .filter_map(|pr| {
@@ -420,8 +418,11 @@ impl Keeper {
                     commit: pr.head.clone()?,
                     target_branch: pr.target_branch.clone(),
                 })
-            });
-        self.fetching.heads_saved(repository, saved_heads.collect());
+            })
+            .collect::<Vec<_>>();
+        if !saved_heads.is_empty() {
+            self.fetching.heads_saved(repository, saved_heads);
+        }
     }
 
     /// Has the Mirror worker follow the move of Reach `save` makes, counts it as followed, and tells the

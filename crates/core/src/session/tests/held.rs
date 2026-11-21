@@ -89,7 +89,12 @@ fn while_a_refresh_waits_on_github_the_session_answers_a_fetch_and_drops_another
     let (folders, _folder) = temp_folders("held-refresh");
     // GitHub can't be reached at the start, and hangs once the user clicks Refresh.
     let held = hanging(vec![Err(Unreachable::Offline)]);
-    let session = Session::start(quiet_board(), Ok(folders.clone()), reaching(held.access), HOURLY);
+    let session = Session::start(
+        quiet_board(),
+        Ok(folders.clone()),
+        reaching(held.access),
+        HOURLY,
+    );
     let asked = session.fetching();
     asked.refresh();
     let refreshing = held.asked.recv_timeout(PLENTY).unwrap();
@@ -113,5 +118,8 @@ fn while_a_refresh_waits_on_github_the_session_answers_a_fetch_and_drops_another
     assert_eq!(fetched, Ok(offline));
     assert_eq!(refreshing, "Viewer");
     // The refresh still waiting covers the clicks after it.
-    assert_eq!(held.asked.try_iter().collect::<Vec<_>>(), Vec::<String>::new());
+    assert_eq!(
+        held.asked.try_iter().collect::<Vec<_>>(),
+        Vec::<String>::new()
+    );
 }

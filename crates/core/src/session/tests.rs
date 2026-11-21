@@ -283,9 +283,15 @@ fn run_stopped(mut board: StatusBoard, database: Database, access: GitHubAccess)
         status: Duration::ZERO,
         ..HOURLY
     };
-    let (refreshes, done) = Refreshes::new(intervals, queue, unheard(), listed(vec![plain_gcmon()]));
+    let (refreshes, done) =
+        Refreshes::new(intervals, queue, unheard(), listed(vec![plain_gcmon()]));
     let telling = telling_through(&mut board, to_github, done);
-    let keeper = Keeper::new(mpsc::channel().1, unheard(), listed(vec![plain_gcmon()]), telling);
+    let keeper = Keeper::new(
+        mpsc::channel().1,
+        unheard(),
+        listed(vec![plain_gcmon()]),
+        telling,
+    );
     let threads = Threads {
         board,
         access,
@@ -723,7 +729,10 @@ impl TwoThreads {
             requests,
         } = self;
         thread::scope(|scope| {
-            #[expect(unused_results, reason = "the scope joins it, and the stop it takes ends it")]
+            #[expect(
+                unused_results,
+                reason = "the scope joins it, and the stop it takes ends it"
+            )]
             scope.spawn(move || {
                 keeper.run(store);
                 keeper.telling.to_github(GitHubMessage::Stop);
@@ -939,28 +948,34 @@ fn what_the_github_thread_saved_has_the_session_hand_over_the_wants_then_the_hea
         listed(vec![plain_gcmon()]),
         telling(&mut quiet_board()).0,
     );
-    let saved = |repository: RepositoryName| {
+    let saved = |items: Vec<u32>| {
         SessionMessage::Saved(Change {
-            repository,
-            items: vec![8],
+            repository: gcmon(),
+            items,
         })
     };
 
     // A Repository the window hasn't opened doesn't sync, so it hands over nothing.
-    assert!(keeper.take(&store, saved(gcmon())).is_continue());
+    assert!(keeper.take(&store, saved(vec![8])).is_continue());
     let unopened = heard.asked();
     let open = SessionMessage::Sync {
         repository: gcmon(),
     };
     assert!(keeper.take(&store, open).is_continue());
-    assert!(keeper.take(&store, saved(gcmon())).is_continue());
+    assert!(keeper.take(&store, saved(vec![8])).is_continue());
     let handed = heard.asked();
+    // A save that names no PR with a head hands over the wants alone.
+    assert!(keeper.take(&store, saved(Vec::new())).is_continue());
+    let wants_alone = heard.asked();
 
     assert_eq!(unopened, Vec::<String>::new());
     assert_eq!(handed.first().map(String::as_str), Some(HEADS_OF_8));
-    assert_eq!(
-        handed.last().map(String::as_str),
-        Some("some-maintainer/gcmon saved heads #8 at 4567def on main")
+    let saved_heads = "some-maintainer/gcmon saved heads #8 at 4567def on main";
+    assert_eq!(handed.last().map(String::as_str), Some(saved_heads));
+    assert_eq!(wants_alone.first().map(String::as_str), Some(HEADS_OF_8));
+    assert!(
+        !wants_alone.iter().any(|line| line.contains("saved heads")),
+        "{wants_alone:?}"
     );
 }
 
@@ -3821,7 +3836,11 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
 
     refreshes.wait_for_stop(&mut quiet_board());
 
-    assert_eq!(refreshes.refreshes_done.get(), 1, "the session passes the next refresh on");
+    assert_eq!(
+        refreshes.refreshes_done.get(),
+        1,
+        "the session passes the next refresh on"
+    );
 }
 
 #[test]
@@ -3975,7 +3994,9 @@ fn a_panic_in_the_github_thread_says_tsugiki_stopped_checking() {
 fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_checking() {
     let (folders, _folder) = temp_folders("session-panic");
     let (board, seen) = watched_board();
-    let board = board.with_changes(Box::new(|_: &Change| panic!("a panic in the session's thread")));
+    let board = board.with_changes(Box::new(|_: &Change| {
+        panic!("a panic in the session's thread")
+    }));
     let session = Session::start(board, Ok(folders), reaching(octocat_answers()), HOURLY);
     assert_eq!(seen.recv_timeout(PLENTY), Ok(octocat()));
 
@@ -3983,7 +4004,37 @@ fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_chec
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
-    assert_eq!(problem_of(stopped).unwrap().message, stopped_checking().message);
+    assert_eq!(
+        problem_of(stopped).unwrap().message,
+        stopped_checking().message
+    );
+}
+
+#[test]
+fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_checking() {
+    let (folders, _folder) = temp_folders("session-panic-no-token");
+    let (board, seen) = watched_board();
+    let board = board.with_changes(Box::new(|_: &Change| {
+        panic!("a panic in the session's thread")
+    }));
+    let access = GitHubAccess {
+        transport: Box::new(Canned(Err(Unreachable::Offline))),
+        token_from: NO_GH,
+    };
+    let session = Session::start(board, Ok(folders), reaching(access), HOURLY);
+    assert_eq!(
+        problem_kind(seen.recv_timeout(PLENTY).unwrap()),
+        Some(ErrorKind::Unauthorized)
+    );
+
+    session.fetching().mark_unseen(gcmon(), 7, None);
+    let stopped = seen.recv_timeout(PLENTY).unwrap();
+    session.stop(PLENTY);
+
+    assert_eq!(
+        problem_of(stopped).unwrap().message,
+        stopped_checking().message
+    );
 }
 
 #[test]

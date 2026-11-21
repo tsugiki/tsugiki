@@ -58,6 +58,20 @@ describe("the cap on repeats", () => {
     misses.missed({ kind: "view_query", ms: 61 });
     expect(logged()).toHaveLength(2);
   });
+
+  it("carries on when the core throws on writing the line", () => {
+    const { misses, core, logged } = harness();
+    // A bindings mock without `recordMiss` throws a TypeError where the call would start.
+    core.recordMiss.mockImplementationOnce(() => {
+      throw new TypeError("recordMiss is not a function");
+    });
+    expect(() => misses.missed({ kind: "view_query", ms: 60 })).not.toThrow();
+    misses.missed({ kind: "view_query", ms: 61 });
+    expect(logged()).toEqual([
+      { kind: "view_query", ms: 60 },
+      { kind: "view_query", ms: 61 },
+    ]);
+  });
 });
 
 /** A stand-in for the browser's `PerformanceObserver`, which hands the test each observer it made. */

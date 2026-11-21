@@ -75,6 +75,7 @@ impl Setup {
                 | SessionMessage::Screen(_)
                 | SessionMessage::Stop
                 | SessionMessage::Check { .. }
+                | SessionMessage::FetchUnstored { .. }
                 | SessionMessage::Sync { .. }
                 | SessionMessage::Refresh
                 | SessionMessage::SettingsChanged(..)
@@ -118,6 +119,7 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::Screen(_)
             | SessionMessage::Stop
             | SessionMessage::Check { .. }
+            | SessionMessage::FetchUnstored { .. }
             | SessionMessage::Refresh
             | SessionMessage::Mark(_)
             | SessionMessage::Patched(..) => None,

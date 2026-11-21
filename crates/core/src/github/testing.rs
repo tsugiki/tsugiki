@@ -219,6 +219,14 @@ pub fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unr
     )
 }
 
+/// GitHub's answer to `FetchItem`, which found `item` under the number asked, Issue or PR or null.
+pub fn item_answer(item: Value) -> Result<Reply, Unreachable> {
+    answer(
+        json!({ "repository": { "issueOrPullRequest": item } }),
+        RATE_LIMIT,
+    )
+}
+
 /// `node` with each field of `changes` set on it.
 fn changed(mut node: Value, changes: &Value) -> Value {
     for (name, value) in changes.as_object().unwrap() {

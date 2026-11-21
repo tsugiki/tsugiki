@@ -70,6 +70,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   titles name Issue 123. Nothing typed lists every item in that order. Quick open lists 20 at most. An
   Enter pressed before the answer to the text in the box opens the first item of that answer, unless the
   user types on or moves the pick first.
+- A number that names nothing the database holds lists one row first, "Fetch #123 from GitHub", in place
+  of the item. Enter on it fetches the Issue or PR from GitHub into the Detail pane, whichever kind the
+  number turns out to be ([layout.md](layout.md)). The search reads only the database, and only Enter on
+  that row asks GitHub. A number the database holds lists no such row.
 - With a PR on show, quick open lists the files it changes before the Issues and PRs, after only the item
   with the number typed: the files whose paths hold every word typed, in any case, in the order the Files tab
   shows them, 20 at most. Nothing typed, or a text that starts with `#`, lists no files, and reads no diff.

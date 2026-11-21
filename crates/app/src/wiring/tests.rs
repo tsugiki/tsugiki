@@ -313,6 +313,25 @@ fn the_files_tabs_check_of_a_mirrors_cost_goes_to_the_session_and_back() {
 }
 
 #[test]
+fn a_fetch_of_an_item_the_database_lacks_goes_to_the_session_and_back() {
+    let (folders, _root) = temp_folders("wired-fetch-item");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let answer = wired.ask("fetch_item", json!({ "repository": CPYTHON, "number": 12 }));
+    let nonsense = wired.ask(
+        "fetch_item",
+        json!({ "repository": "nonsense", "number": 12 }),
+    );
+    drop(wired.stop());
+
+    assert_eq!(
+        answer.unwrap(),
+        json!({ "kind": "unfetched", "why": "offline" })
+    );
+    assert_eq!(nonsense.unwrap_err()["kind"], "not_found");
+}
+
+#[test]
 fn the_add_dialogs_check_goes_to_the_session_and_back() {
     let (folders, _root) = temp_folders("wired-check");
     let wired = Wired::start(Ok(folders), no_network());

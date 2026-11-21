@@ -377,6 +377,16 @@
       repositoryHome?.openFound(item.kind, item.number);
     },
   });
+  /** Quick open's row for `number`, which names nothing the database holds: Enter on it fetches the Issue or
+   * PR from GitHub into the Detail pane (#981). */
+  const fetchRow = (number: number): PaletteCommand => ({
+    title: `Fetch #${String(number)} from GitHub`,
+    key: `fetch ${String(number)}`,
+    history: false,
+    run: () => {
+      repositoryHome?.fetchUnstored(number);
+    },
+  });
   /** Quick open's row for the file at `path` in the PR on show, which opens it in the Files tab (#558). */
   const fileRow = (files: ChangedFiles, path: string): PaletteCommand => ({
     title: path,
@@ -394,21 +404,23 @@
     const paths = filesFound(files, typed);
     return { rows: (paths ?? []).map((path) => fileRow(files, path)), pending: paths === undefined };
   };
-  /** Quick open's latest answer, as the palette's rows: the Issue or PR the text names by its number, the
-   * files of the PR on show that the text finds, then the other Issues and PRs (#558). Files need no search
-   * of the core's, so they show when it fails too. The item the number names heads the rows whatever files
-   * come, so an Enter waits for no diff to open it. */
+  /** Quick open's latest answer, as the palette's rows: the Issue or PR the text names by its number, or the
+   * row that fetches it when the database holds no item of that number, the files of the PR on show that
+   * the text finds, then the other Issues and PRs (#558). Files need no search of the core's, so they show
+   * when it fails too. The row for the number heads the rows whatever files come, so an Enter waits for no
+   * diff to open it. */
   const foundRows = $derived.by((): QuickOpenRows | undefined => {
     const search = quickOpen;
     const answer = search?.answer;
     if (search === undefined || answer === undefined) return undefined;
     const files = fileRows(search.files, answer.typed);
     if ("problem" in answer) return { typed: answer.typed, ...files, problem: answer.problem };
-    const { named, others } = answer.found;
+    const { named, others, unstored } = answer.found;
+    const numbered = named ? [foundRow(named)] : unstored ? [fetchRow(unstored)] : [];
     return {
       typed: answer.typed,
-      rows: [...(named ? [foundRow(named)] : []), ...files.rows, ...others.map(foundRow)],
-      pending: !named && files.pending,
+      rows: [...numbered, ...files.rows, ...others.map(foundRow)],
+      pending: numbered.length === 0 && files.pending,
     };
   });
   /** The palette's row for `row`'s action, if it is the page's and can run, named as its `palette` says,

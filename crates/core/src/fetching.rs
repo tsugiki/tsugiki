@@ -12,6 +12,8 @@ use std::path::Path;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use serde::Serialize;
+use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
@@ -223,6 +225,39 @@ pub(crate) enum SessionMessage {
     Screen(ScreenMove),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
+    /// A fetch of an Issue or a PR the database lacks, which answers what it found (#981).
+    FetchUnstored {
+        item: Item,
+        reply: Sender<ItemFetch>,
+    },
+}
+
+/// What a fetch of an Issue or a PR the database lacks found (#981). GitHub shares one number space between
+/// Issues and PRs, so the number turns out to be either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ItemFetch {
+    /// An Issue, which the database now holds.
+    Issue,
+    /// A PR, which the database now holds.
+    PullRequest,
+    /// Nothing the database now holds, for this reason.
+    Unfetched { why: ItemUnfetched },
+}
+
+/// Why a fetch of an Issue or a PR the database lacks brought nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ItemUnfetched {
+    /// GitHub has no Issue or PR with that number in the Repository.
+    Missing,
+    /// The token can't see the item, or its Repository.
+    Hidden,
+    /// GitHub can't be asked now, as when the computer is offline or Tsugiki has no token, and the status bar
+    /// says why.
+    Offline,
+    /// Anything else, such as an answer Tsugiki couldn't read or a database it couldn't write. The log says.
+    Other,
 }
 
 /// A job the core queued, which brings the data an answer waits for. Only `Fetching` makes one, as it queues
@@ -435,6 +470,22 @@ impl Fetching {
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
         let unmuted = Marked::AuthorUnmuted { repository, author };
         self.to_session(SessionMessage::Mark(unmuted));
+    }
+
+    /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.
+    /// The session takes it between two sync steps, ahead of the sync's queued work, saves what it found,
+    /// and says which kind it was. A session with no token or no database answers `ItemUnfetched::Offline`,
+    /// and has already shown why on the status bar.
+    pub fn fetch_unstored(&self, repository: RepositoryName, number: u32) -> ItemFetch {
+        let (reply, answer) = mpsc::channel();
+        let item = Item { repository, number };
+        self.session
+            .send(SessionMessage::FetchUnstored { item, reply })
+            .ok()
+            .and_then(|()| answer.recv().ok())
+            .unwrap_or(ItemFetch::Unfetched {
+                why: ItemUnfetched::Offline,
+            })
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an

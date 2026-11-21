@@ -19,7 +19,7 @@ pub use startup::run;
 use tauri::State;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
-use tsugiki_core::calls::{Calls, PrFiles};
+use tsugiki_core::calls::{Calls, ItemFetch, PrFiles};
 use tsugiki_core::definitions::{
     Answer, Code, DiffEnd, HitFile, HitLines, Lookup, OnIndex, OnWaiting, ServerName, ServerRow,
     Ticket,
@@ -581,6 +581,11 @@ fn find_items(repository: &str, typed: &str, calls: &Calls) -> Result<QuickOpenF
     calls.quick_open(&RepositoryName::parse(repository)?, typed)
 }
 
+/// Fetches Issue or PR `number`, which the database lacks, and says which it was or why nothing came.
+fn fetch_unstored(repository: &str, number: u32, calls: &Calls) -> Result<ItemFetch, Error> {
+    Ok(calls.fetch_item(RepositoryName::parse(repository)?, number))
+}
+
 /// Rows of a PR's diff, as the window asks for them.
 #[derive(Debug, Clone, Deserialize, Type)]
 pub(crate) struct DiffChunk {
@@ -1069,6 +1074,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::pull_request_find,
             slow_commands::pull_request_row,
             slow_commands::quick_open,
+            slow_commands::fetch_item,
             slow_commands::definitions,
             cancel_definitions,
             language_servers,

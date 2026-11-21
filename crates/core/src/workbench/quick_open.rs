@@ -2,7 +2,8 @@
 //!
 //! The user types a number, as `123`, `#123` or `gh-123`, or words from a title. The item with that number
 //! comes first. Then come the items whose titles hold every word, in any case: the open ones first, then the
-//! most recently updated. Nothing typed lists every item in that order.
+//! most recently updated. Nothing typed lists every item in that order. A number the cache holds no item of
+//! is offered for a fetch from GitHub, which only the user's pick of it asks for (#981).
 
 use std::cmp::Reverse;
 
@@ -27,6 +28,9 @@ pub struct QuickOpenFound {
     pub named: Option<TitledItem>,
     /// The items whose titles hold every word typed: the open first, then the newest.
     pub others: Vec<TitledItem>,
+    /// The number the whole text names, when the cache holds no item of it, for the window to offer a
+    /// fetch from GitHub (#981).
+    pub unstored: Option<u32>,
 }
 
 /// The Issues and PRs of `repository` in the cache that `typed` finds, best first, `LISTED` at most in all.
@@ -47,7 +51,13 @@ pub(crate) fn find(
         .and_then(|number| found.iter().position(|item| item.number == number))
         .map(|at| found.swap_remove(at));
     let others = best(found, LISTED - usize::from(named.is_some()));
-    Ok(QuickOpenFound { named, others })
+    // GitHub numbers its Issues and PRs from 1.
+    let unstored = typed.number.filter(|number| named.is_none() && *number > 0);
+    Ok(QuickOpenFound {
+        named,
+        others,
+        unstored,
+    })
 }
 
 /// What the user typed, read for the search.

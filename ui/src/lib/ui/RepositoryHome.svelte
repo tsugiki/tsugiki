@@ -4,6 +4,7 @@
   import { lineOf, samePlace, type FileView, type HistoryPlace } from "$lib/state/file-view.svelte";
   import { hud } from "$lib/state/hud.svelte";
   import { type IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
+  import { UnstoredViewState } from "$lib/state/unstored-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
   import {
     DETAIL_LEAST,
@@ -61,6 +62,7 @@
   import Sidebar from "./Sidebar.svelte";
   import SidebarIcons from "./SidebarIcons.svelte";
   import StateIcon from "./StateIcon.svelte";
+  import UnstoredDetail from "./UnstoredDetail.svelte";
   import {
     ago,
     detailWords,
@@ -145,6 +147,9 @@
   let detail = $state<IssueViewState | PrViewState>();
   /** The view of the Issue the PR on show came from, hidden until the user goes back to it (#191). */
   let kept: IssueViewState | undefined;
+  /** The fetch of an Issue or a PR the database lacks, which the Detail pane shows while nothing else is
+   * on show there, until the item it found opens (#981). */
+  let unstored = $state<UnstoredViewState>();
   /** The view the Detail pane took the focus for while the list shows, which then takes it as it would with
    * the list hidden: the view of the item after the one the user finished with (#982). It keeps that until
    * the focus goes elsewhere in the page, so the palette or another app in front hands it back. */
@@ -303,6 +308,18 @@
     open(onShow ?? workbench.stopFor(number, kind), "pick");
   }
 
+  /** Fetches Issue or PR `number`, which the database lacks, as quick open's fetch row asks (#981). The
+   * Detail pane shows `owner/repo #N` loading in place of what it showed, then opens the item as quick
+   * open opens a stored one, whichever kind the number turned out to be, or says why nothing came. */
+  export function fetchUnstored(number: number): void {
+    swap(undefined);
+    const view = new UnstoredViewState(name, number);
+    unstored = view;
+    void view.load((kind) => {
+      openFound(kind, number);
+    });
+  }
+
   /** The files the PR on show changes, which quick open finds (#558), or nothing while no PR shows. Once
    * another view takes the Detail pane, that PR has no files to list, read or open. */
   export function changedFiles(): ChangedFiles | undefined {
@@ -323,6 +340,8 @@
    * is on show, and every other view stops. A view that couldn't read its Issue stops too, so going back
    * opens the Issue afresh. */
   function swap(next: IssueViewState | PrViewState | undefined) {
+    unstored?.stop();
+    unstored = undefined;
     const from = next instanceof PrViewState ? next.issue : undefined;
     const keep = [detail, kept].find(
       (view): view is IssueViewState =>
@@ -1503,7 +1522,7 @@
         {/if}
       {/if}
     </section>
-    {#if detail}
+    {#if detail || unstored}
       <PaneEdge
         label="Workbench width"
         sizes={{ kind: "pane", value: panes.list ?? undefined, nextLeast: DETAIL_LEAST }}
@@ -1548,6 +1567,10 @@
       >
         {#snippet header()}{@render history(pr.number)}{/snippet}
       </PrDetail>
+    {/key}
+  {:else if unstored}
+    {#key unstored}
+      <UnstoredDetail view={unstored} focusable={panes.hidden("list")} />
     {/key}
   {:else if panes.hidden("list")}
     {@const key = actionLabel("toggle_issue_list", currentOs())}

@@ -84,6 +84,25 @@ fn a_number_names_its_item_apart_in_any_of_its_spellings() {
 }
 
 #[test]
+fn a_number_the_cache_holds_no_item_of_is_offered_for_a_fetch() {
+    let world = ViewWorld::new("quick-open-unstored");
+    world.has(
+        vec![titled_pr(100, "gh-12: Fix the crash", PrState::Open, 50)],
+        vec![titled_issue(13, "Other", 99)],
+    );
+
+    let unstored = ["12", "#12", "gh-12", "13", "100", "crash 12", "", "0"]
+        .map(|typed| find(&world.db.reader, &cpython(), typed).unwrap().unstored);
+    world.finish();
+
+    // An item the cache holds, words, nothing typed and a number no item can have offer no fetch.
+    assert_eq!(
+        unstored,
+        [Some(12), Some(12), Some(12), None, None, None, None, None]
+    );
+}
+
+#[test]
 fn the_item_a_number_names_counts_among_the_listed_count() {
     let pull_requests: Vec<PullRequestFacts> = (21..=50)
         .map(|number| titled_pr(number, "gh-5: Fix it", PrState::Open, i64::from(number)))
@@ -197,6 +216,7 @@ fn it_tells_an_issue_from_a_pr_with_its_state() {
                     is_draft: true,
                 },
             }],
+            unstored: None,
         }
     );
     // The window gets the item the number names apart, and each item's kind beside its number and title,
@@ -212,6 +232,7 @@ fn it_tells_an_issue_from_a_pr_with_its_state() {
                 "state": "OPEN",
                 "is_draft": true
             }],
+            "unstored": null,
         })
     );
     assert_eq!((words.named, words.others.len()), (None, 2));

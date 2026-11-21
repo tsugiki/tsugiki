@@ -357,13 +357,15 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
         return "the status bar says Offline, but no request reached the test's proxy";
       }
       github.hold();
+      const before = github.requests();
       await run("void window.__TAURI_INTERNALS__.invoke('refresh')");
       const connecting = await statusBarShows(run, "Connecting…", REFRESH_MS);
       if (connecting !== undefined) {
         return `after a refresh, ${connecting}, with ${String(github.held())} request(s) waiting at the test's proxy`;
       }
-      // The core says "Connecting…" before it asks, so only the proxy shows the refresh went out.
-      if (!(await until(() => github.held() > 0))) {
+      // The core says "Connecting…" before it asks, so only the proxy shows the refresh went out. The
+      // session asks one thing at a time, so the request after "Connecting…" is the refresh's.
+      if (!(await until(() => github.requests() > before && github.held() > 0))) {
         return `after a refresh, the status bar says "Connecting…", but no request is waiting at the test's proxy`;
       }
       console.log(

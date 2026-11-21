@@ -1815,6 +1815,42 @@ fn back_online_the_worker_fetches_the_heads_it_held_back() {
 }
 
 #[test]
+fn asking_github_again_keeps_the_worker_held_until_it_answers() {
+    let place = Place::new("reconnecting");
+    let cpython = named("python/cpython");
+    place.mirrored(&cpython);
+    let (telling, told) = channel();
+    let announce = Announce {
+        held: Box::new(move |held| telling.send(held).unwrap_or(())),
+        ..Announce::cloning_only(Box::new(|_| {}))
+    };
+    let (mirrors, starts) = place.start_faked_announcing(PLENTY, announce);
+    let requests = mirrors.requests();
+
+    requests.follow(&Status::Offline);
+    requests.fetch_heads(cpython.clone(), vec![head(1)]);
+    requests.follow(&Status::Reconnecting);
+    requests.follow(&Status::ReconnectingAs {
+        last_login: Login::new("octocat"),
+    });
+    // Back to Offline, so a hold let go while asking again would show as a second hold.
+    requests.follow(&Status::Offline);
+    if let Ok(early) = starts.try_recv() {
+        early.succeed();
+        mirrors.stop_cleanly(PLENTY);
+        panic!("a fetch started while Tsugiki asked again");
+    }
+    requests.follow(&Status::Online {
+        login: Login::new("octocat"),
+    });
+    let fetch = starts.recv_timeout(PLENTY).unwrap();
+    fetch.succeed();
+    mirrors.stop_cleanly(PLENTY);
+
+    assert_eq!(told.try_iter().collect::<Vec<_>>(), [true, false]);
+}
+
+#[test]
 fn a_rate_limit_doesnt_hold_the_worker() {
     let place = Place::new("rate-limited");
     let cpython = named("python/cpython");

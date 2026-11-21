@@ -285,7 +285,7 @@ impl StatusBoard {
         (self.announce_last_sync)(last_sync);
     }
 
-    /// Whether the status says GitHub can't be reached.
+    /// Whether the status says GitHub can't be reached, or hasn't answered since it couldn't be.
     pub(crate) fn is_offline(&self) -> bool {
         self.current.is_offline()
     }

@@ -514,8 +514,8 @@ impl MirrorRequests {
         self.send(Message::CheckAgain);
     }
 
-    /// Holds back the next git while `status` says GitHub can't be reached. A rate limit is the API's, and
-    /// git doesn't use the API, so it holds back nothing.
+    /// Holds back the next git while `status` says GitHub can't be reached, or hasn't answered since it
+    /// couldn't be. A rate limit is the API's, and git doesn't use the API, so it holds back nothing.
     pub fn follow(&self, status: &Status) {
         self.send(Message::Hold(status.is_offline()));
     }

@@ -118,13 +118,13 @@ pub(super) fn save_with_issueless(
     transaction.commit()
 }
 
-/// Each PR of `repository` that names as fixed, under any Conventions, a number the store holds as neither
-/// an Issue nor a PR, with those numbers. A number GitHub answered with no Issue doesn't count.
-pub(super) fn naming_lacking(
+/// The numbers the PRs of `repository` name as fixed, under any Conventions, that the store holds as neither
+/// an Issue nor a PR, leaving out those GitHub answered with no Issue.
+pub(super) fn named_and_lacking(
     connection: &Connection,
     repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, BTreeSet<u32>>> {
-    let query = "SELECT fixes.number AS number, fixes.issue AS issue FROM pr_fixes AS fixes
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let query = "SELECT DISTINCT fixes.issue AS number FROM pr_fixes AS fixes
                  WHERE fixes.repository = :repository
                      AND NOT EXISTS (SELECT 1 FROM issues
                          WHERE issues.repository = fixes.repository AND issues.number = fixes.issue)
@@ -134,17 +134,8 @@ pub(super) fn naming_lacking(
                          WHERE issueless.repository = fixes.repository AND issueless.number = fixes.issue)";
     let mut statement = connection.prepare(query)?;
     let asked = named_params! { ":repository": repository };
-    let pairs = statement.query_map(asked, number_and_issue)?;
-    let mut naming: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
-    for pair in pairs {
-        let (number, issue) = pair?;
-        naming.entry(number).or_default().extend([issue]);
-    }
-    Ok(naming)
-}
-
-fn number_and_issue(row: &rusqlite::Row<'_>) -> rusqlite::Result<(u32, u32)> {
-    Ok((row.get("number")?, row.get("issue")?))
+    let numbers = statement.query_map(asked, |row| row.get("number"))?;
+    numbers.collect()
 }
 
 /// Writes `issue`'s row, and has Archive follow a closing or a reopening (#820).

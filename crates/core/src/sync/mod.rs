@@ -83,17 +83,17 @@ enum Phase {
     FetchingChanged(Changed),
     Probing(Probing),
     Resumable(Resumable),
-    /// A refresh that would finish fetches the Issues that the PRs in Reach name and Tsugiki lacks (#980).
-    FetchingReachedIssues(Asked),
+    /// A refresh that would finish fetches the Issues that the PRs Tsugiki holds name and it lacks (#980).
+    FetchingLackingIssues(Asked),
     /// A refresh that would finish reads the Conversations the rules want read ahead, lowest number first
     /// (#157).
     ReadingAhead(Ahead),
 }
 
-/// The Issues a refresh has asked GitHub for because PRs in Reach name them, answered or refused. The store
-/// keeps most numbers asked as an Issue or as one with no Issue, so Reach doesn't name them again. This is
-/// the queue's bookkeeping, as `Ahead` is: it keeps a number GitHub refused, or left out of its answer, from
-/// being asked for again and again in one refresh. The next refresh asks again.
+/// The Issues a refresh has asked GitHub for because the PRs Tsugiki holds name them, answered or refused.
+/// The store keeps most numbers asked as an Issue or as one with no Issue, so it doesn't lack them again.
+/// This is the queue's bookkeeping, as `Ahead` is: it keeps a number GitHub refused, or left out of its
+/// answer, from being asked for again and again in one refresh. The next refresh asks again.
 #[derive(Default)]
 struct Asked {
     numbers: BTreeSet<u32>,
@@ -478,7 +478,7 @@ impl UserWorkSync {
             | Phase::FetchingChanged(_)
             | Phase::Probing(_)
             | Phase::Resumable(_)
-            | Phase::FetchingReachedIssues(_)
+            | Phase::FetchingLackingIssues(_)
             | Phase::ReadingAhead(_) => None,
         }
     }
@@ -525,9 +525,7 @@ impl UserWorkSync {
             Phase::Polling(poll) => refresh::poll(&link, poll, &mut self.check)?,
             Phase::FetchingChanged(changed) => refresh::fetch_changed(&link, changed, fetched)?,
             Phase::Probing(probing) => refresh::probe(&link, probing)?,
-            Phase::FetchingReachedIssues(asked) => {
-                refresh::fetch_reached_issues(&link, asked, settings)?
-            }
+            Phase::FetchingLackingIssues(asked) => refresh::fetch_lacking_issues(&link, asked)?,
             Phase::ReadingAhead(ahead) => refresh::read_ahead(&link, ahead, settings)?,
             Phase::Resumable(Resumable::Searching {
                 next_search,
@@ -558,13 +556,13 @@ impl UserWorkSync {
             // request to GitHub, so this goes straight on to the first request of the next.
             let next = match self.phase {
                 Phase::ReadingAhead(_) => None,
-                Phase::FetchingReachedIssues(_) => Some(Phase::ReadingAhead(Ahead::default())),
+                Phase::FetchingLackingIssues(_) => Some(Phase::ReadingAhead(Ahead::default())),
                 Phase::Starting
                 | Phase::CheckingList(_)
                 | Phase::Polling(_)
                 | Phase::FetchingChanged(_)
                 | Phase::Probing(_)
-                | Phase::Resumable(_) => Some(Phase::FetchingReachedIssues(Asked::default())),
+                | Phase::Resumable(_) => Some(Phase::FetchingLackingIssues(Asked::default())),
             };
             if let Some(next) = next {
                 self.phase = next;

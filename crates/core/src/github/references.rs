@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use super::GitHub;
-use super::issues::{ByNumber, ReadByNumber, query_by_number};
+use super::issues::{AnsweredIssue, ByNumber, ReadByNumber, query_by_number};
 use super::pull_requests::RateLimit;
 use crate::error::Error;
 use crate::facts::issues::ListedPr;
@@ -94,6 +94,12 @@ struct IssueWire {
     timeline_items: ReferenceTimeline,
 }
 
+impl AnsweredIssue for IssueWire {
+    fn number(&self) -> u32 {
+        self.number
+    }
+}
+
 fn fetch_references_query(numbers: &[u32]) -> String {
     let fields = format!(
         "number timelineItems(last: 50, itemTypes: [CROSS_REFERENCED_EVENT]) {{ {REFERENCE_FIELDS} }}"
@@ -122,7 +128,7 @@ impl GitHub {
         let references = read
             .issues
             .into_iter()
-            .map(|(_, wire)| {
+            .map(|wire| {
                 let (listed, next) = wire.timeline_items.read(repository);
                 IssueReferences {
                     number: wire.number,

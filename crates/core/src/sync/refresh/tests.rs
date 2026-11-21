@@ -833,7 +833,7 @@ fn a_fetch_older_than_what_tsugiki_holds_says_nothing_and_owes_no_read() {
 }
 
 #[test]
-fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
+fn the_users_changed_pr_brings_its_issue_and_tree_and_a_strangers_only_its_issue() {
     let replies = vec![
         polled(
             &list(&[], None),
@@ -856,6 +856,7 @@ fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
         ),
         issues(&[40], RATE_LIMIT),
         no_cross_references(RATE_LIMIT),
+        issues(&[50], RATE_LIMIT),
         quiet_conversation(),
     ];
     let harness = after_a_sync("whose", replies);
@@ -870,10 +871,11 @@ fn the_users_changed_pr_brings_its_issue_and_a_strangers_doesnt() {
             "FetchChangedPullRequests",
             "FetchIssues",
             "FetchCrossReferences",
+            "FetchIssues",
             "FetchPullRequestContent"
         ]
     );
-    assert_eq!(harness.issue_numbers(), [40]);
+    assert_eq!(harness.issue_numbers(), [40, 50]);
     harness.finish();
 }
 
@@ -1135,6 +1137,7 @@ fn with_nobody_signed_in_nothing_counts_as_the_users() {
             &[own_open_pr(1, &json!({ "title": "gh-40: A change" }))],
             RATE_LIMIT,
         ),
+        issues(&[40], RATE_LIMIT),
     ];
     let harness = Harness::new("nobody", replies);
     synced(&harness, ChangeCheck::Skipped);
@@ -1142,9 +1145,14 @@ fn with_nobody_signed_in_nothing_counts_as_the_users() {
 
     drop(run(&mut syncs, &harness));
 
+    // The Issue a stored PR names comes whoever is signed in, but with no tree read and nothing read ahead.
     assert_eq!(
         harness.operations(),
-        ["RefreshRepository", "FetchChangedPullRequests"]
+        [
+            "RefreshRepository",
+            "FetchChangedPullRequests",
+            "FetchIssues"
+        ]
     );
     harness.finish();
 }
@@ -2263,49 +2271,8 @@ fn a_batch_of_issues_github_refuses_waits_for_the_next_refresh_and_this_one_fini
     harness.finish();
 }
 
-/// The numbers of the PRs and of the Issues in `facts`.
-fn numbers_in(facts: &WorkFacts) -> (Vec<u32>, Vec<u32>) {
-    let prs = facts.pull_requests.iter().map(|pr| pr.number);
-    let issues = facts.issues.iter().map(|issue| issue.number);
-    (prs.collect(), issues.collect())
-}
-
 #[test]
-fn reach_is_judged_from_the_trees_of_the_prs_that_name_a_lacking_issue_alone() {
-    let harness = after_a_sync("reach-around", Vec::new());
-    let fixing_8 = json!({ "closingIssuesReferences": { "nodes": [
-        { "number": 8, "repository": { "nameWithOwner": "python/cpython" } },
-    ] } });
-    holding_pr_and_its_events(&harness, &strangers_merged_pr("gh-40: Fix it", &fixing_8));
-    let mut sharing = strangers_pr(7, LONG_BEFORE);
-    sharing["closingIssuesReferences"] = fixing_8["closingIssuesReferences"].clone();
-    holding_pr(&harness, &sharing);
-    holding_pr(&harness, &own_open_pr(5, &json!({ "title": "A change" })));
-    holding_issue(&harness, 8, LONG_BEFORE);
-    holding_issue(&harness, 6, LONG_BEFORE);
-    let naming = harness
-        .db
-        .store
-        .prs_naming_lacking_issues(&cpython())
-        .unwrap();
-
-    let around = harness
-        .db
-        .store
-        .read_snapshot(&cpython(), |snapshot| {
-            facts_around(snapshot, &BTreeSet::from([3]), Conventions::Cpython)
-        })
-        .unwrap();
-
-    assert_eq!(naming, BTreeMap::from([(3, BTreeSet::from([40]))]));
-    assert_eq!(numbers_in(&around), (vec![3, 7], vec![8]));
-    assert_eq!(around.viewer, Some(me()));
-    assert_eq!(numbers_in(&facts(&harness)), (vec![3, 5, 7], vec![6, 8]));
-    harness.finish();
-}
-
-#[test]
-fn a_refresh_that_fetches_the_issues_reach_names_recovers_from_a_failure_at_each_point() {
+fn a_refresh_that_fetches_the_issues_its_prs_name_recovers_from_a_failure_at_each_point() {
     let scenario = Scenario {
         name: "recovery-reach-issues",
         settings: filtering(&[]),
@@ -2325,14 +2292,27 @@ fn a_refresh_that_fetches_the_issues_reach_names_recovers_from_a_failure_at_each
 }
 
 #[test]
-fn a_refresh_leaves_the_issue_a_pr_outside_reach_names_unfetched() {
-    let harness = after_a_sync("reach-outside", vec![quiet_poll()]);
-    holding_pr_and_its_events(&harness, &strangers_merged_pr("gh-40: Fix it", &json!({})));
+fn a_refresh_fetches_the_issue_a_strangers_pr_outside_reach_names_and_the_inbox_lists_it() {
+    let harness = after_a_sync(
+        "lacking-outside",
+        vec![quiet_poll(), issues(&[40], RATE_LIMIT)],
+    );
+    let mut theirs = strangers_pr(3, LONG_BEFORE);
+    theirs["title"] = json!("gh-40: Fix it");
+    holding_pr(&harness, &theirs);
+    let settings = filtering(&[]);
+    let before = inbox(&harness, &settings);
 
-    drop(run(&mut refreshing(filtering(&[])), &harness));
+    drop(run(&mut refreshing(settings.clone()), &harness));
 
-    assert_eq!(harness.operations(), ["RefreshRepository"]);
-    assert!(harness.issue_numbers().is_empty());
+    assert_eq!(
+        before,
+        [vec![3]],
+        "a Standalone PR, as Tsugiki lacks its Issue"
+    );
+    assert_eq!(harness.operations(), ["RefreshRepository", "FetchIssues"]);
+    assert_eq!(harness.issue_numbers(), [40]);
+    assert_eq!(inbox(&harness, &settings), [vec![40, 3]]);
     harness.finish();
 }
 

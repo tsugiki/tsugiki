@@ -195,7 +195,7 @@ impl Reach {
 /// The numbers of the Issues and PRs Tsugiki reaches in `facts`, the two sets of `Reach` joined. That holds
 /// every PR the whole Workbench shows, those in Issues' trees too. An Archived item stays in it, since its
 /// Stale review check runs only on PRs in Reach, and a Stale review brings the item back.
-pub(crate) fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
+fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
     let Reach {
         mut without_muted,
         muted_asking,

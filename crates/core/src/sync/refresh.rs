@@ -1,7 +1,7 @@
 //! A sync after the first (ADR 0015). It asks what changed since the last one, fetches that, and probes the
 //! user's open PRs for what changes without moving `updatedAt`. It then joins a first sync's later phases, so
 //! each Issue it found changed or newly reached gets its tree read. Before it finishes, it fetches the
-//! Issues that the PRs in Reach name and Tsugiki lacks (#980), then reads the Conversation of each changed
+//! Issues that the PRs it holds name and it lacks (#980), then reads the Conversation of each changed
 //! PR in Reach, so the PR view opens on its Reviews (#157).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +14,6 @@ use super::{
 };
 use crate::conventions::Conventions;
 use crate::error::Error;
-use crate::facts::WorkFacts;
 use crate::facts::activity::ItemActivity;
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{NodeId, PrState, PullRequestFacts};
@@ -26,8 +25,8 @@ use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
 use crate::repository::RepositorySize;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ChangeCheck, NarrowedResults, Snapshot, SyncState};
-use crate::work::{conversations_to_read, reach, reasons};
+use crate::store::{ChangeCheck, NarrowedResults, SyncState};
+use crate::work::{conversations_to_read, reasons};
 
 /// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
 /// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
@@ -339,9 +338,9 @@ fn stored_pull_requests(link: &Link<'_>) -> Result<BTreeMap<u32, PullRequestFact
     Ok(stored.into_iter().map(|pr| (pr.number, pr)).collect())
 }
 
-/// Fetches the next batch of what changed. A stranger's PR only needs saving here: if it's in Reach, the
-/// refresh fetches its Issue before it finishes. The user's own work also needs what it points at, as a first
-/// sync fetches it.
+/// Fetches the next batch of what changed. A stranger's PR only needs saving here: the refresh fetches the
+/// Issue it names before it finishes. The user's own work also needs what it points at, as a first sync
+/// fetches it.
 pub(super) fn fetch_changed(
     link: &Link<'_>,
     changed: &mut Changed,
@@ -470,89 +469,17 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
     Ok((Step::saved_if_any(touched, pause_until), None))
 }
 
-/// `prs` with the families they go by: the Origin PR each names under `conventions`, and each PR that names
-/// one of those or one of `prs` as its Origin PR.
-fn families(
-    snapshot: &Snapshot<'_>,
-    prs: &BTreeSet<u32>,
-    conventions: Conventions,
-) -> Result<BTreeSet<u32>, Error> {
-    let links = snapshot.pr_links(prs, conventions)?;
-    let mut heads = prs.clone();
-    heads.extend(links.iter().filter_map(|links| links.origin));
-    let named = snapshot.prs_naming_origins(&heads, conventions)?;
-    heads.extend(named);
-    Ok(heads)
-}
-
-/// The facts that say whether each of `prs` is in Reach under `conventions`: those of what the walk of Reach
-/// can pass on its way from where it starts to one of them. That is each one's family, the Issues the family
-/// fixes, the PRs that fix those Issues, and their families, with the Filters' results. The read costs what
-/// those trees hold and not what the store holds. A Muted tree that reaches them from further away can't cut
-/// them here, so it can count a PR in Reach that a Mute takes out, which costs a fetch.
-fn facts_around(
-    snapshot: &Snapshot<'_>,
-    prs: &BTreeSet<u32>,
-    conventions: Conventions,
-) -> Result<WorkFacts, Error> {
-    let family = families(snapshot, prs, conventions)?;
-    let links = snapshot.pr_links(&family, conventions)?;
-    let issues: BTreeSet<u32> = (links.iter())
-        .flat_map(|links| links.fixes.iter().copied())
-        .collect();
-    let fixing = snapshot.prs_fixing(&issues, conventions)?;
-    let mut numbers = families(snapshot, &fixing, conventions)?;
-    numbers.extend(family);
-    let pull_requests = snapshot.pull_requests_numbered(&numbers)?;
-    let viewer = snapshot.viewer()?;
-    let items: BTreeSet<u32> = issues.union(&numbers).copied().collect();
-    Ok(WorkFacts {
-        activity: snapshot.activity_of(viewer.as_ref(), &items)?,
-        reviews: snapshot.reviews_of(&pull_requests)?,
-        viewer,
-        issues: snapshot.issues_numbered(&issues)?,
-        pull_requests,
-        filters: snapshot.filter_results()?,
-    })
-}
-
-/// The Issues that the PRs in Reach under `repository`'s settings name and Tsugiki lacks, from what the store
-/// holds now. Reach is worked out only around the PRs that name a number the store lacks, so a stranger's PR
-/// whose Issue Tsugiki doesn't hold costs a read of its tree at each refresh, and not one of the Repository.
-fn issues_reach_lacks(
-    link: &Link<'_>,
-    repository: &RepositorySettings,
-) -> Result<BTreeSet<u32>, Error> {
-    let naming = link.store.prs_naming_lacking_issues(link.repository)?;
-    if naming.is_empty() {
-        return Ok(BTreeSet::new());
-    }
-    let prs: BTreeSet<u32> = naming.keys().copied().collect();
-    let conventions = repository.conventions;
-    let facts = (link.store).read_snapshot(link.repository, move |snapshot| {
-        facts_around(snapshot, &prs, conventions)
-    })?;
-    let reached = reach(&facts, repository);
-    let lacking = (naming.into_iter())
-        .filter(|(pr, _)| reached.contains(pr))
-        .flat_map(|(_, numbers)| numbers);
-    Ok(lacking.collect())
-}
-
-/// Fetches the next batch of the Issues that the PRs in Reach name and Tsugiki lacks, whatever the state of
-/// each PR, so a merged PR shows under its Issue and not as a Standalone PR (#980). A refresh saves a
-/// stranger's PR alone, and a PR that merged before it became the user's work doesn't change again, so the
-/// Issue comes from Reach, as the Mirror's heads and the reads ahead do. Going by what the store holds, it
-/// mends a store that lacks the Issue from before. It asks again before each batch, since an Issue it saves
-/// can put more PRs in Reach, and finishes once none are left. The store keeps each number GitHub answered
-/// with no Issue, so the next refresh doesn't ask for it again. A batch GitHub refuses waits for the next
-/// refresh, and only trouble that speaks for all of GitHub stops this one, as in `read_ahead`.
-pub(super) fn fetch_reached_issues(
-    link: &Link<'_>,
-    asked: &mut Asked,
-    repository: &RepositorySettings,
-) -> Result<Moved, Error> {
-    let lacking = issues_reach_lacks(link, repository)?;
+/// Fetches the next batch of the Issues that the PRs Tsugiki holds name, under any Conventions, and it lacks,
+/// whatever the state of each PR, so a merged PR shows under its Issue and not as a Standalone PR (#980). A
+/// refresh saves a stranger's PR alone, and a PR that merged before it became the user's work doesn't change
+/// again, so this goes by what the store holds, which also mends a store that lacked the Issue from before.
+/// A saved Issue is an ordinary item: the Inbox lists it, and the usual rules say if it Needs attention. It
+/// asks the store again before each batch and finishes once none are left. The store keeps each number
+/// GitHub answered with no Issue, so the next refresh doesn't ask for it again. A batch GitHub refuses
+/// waits for the next refresh, and only trouble that speaks for all of GitHub stops this one, as in
+/// `read_ahead`.
+pub(super) fn fetch_lacking_issues(link: &Link<'_>, asked: &mut Asked) -> Result<Moved, Error> {
+    let lacking = link.store.named_issues_lacking(link.repository)?;
     let numbers: Vec<u32> = lacking.difference(&asked.numbers).copied().collect();
     if numbers.is_empty() {
         return Ok((Step::Finished, None));
@@ -563,11 +490,14 @@ pub(super) fn fetch_reached_issues(
     {
         Ok(batch) => batch,
         Err(problem) if !problem.kind.speaks_for_all_of_github() => {
+            // The failure doesn't say how far a retry after a 502 shrank the request, so the whole batch
+            // waits for the next refresh.
+            let batch: Vec<u32> = numbers.into_iter().take(FETCH_BATCH).collect();
             log::warn!(
-                "GitHub wouldn't give the Issues {numbers:?}: {}",
+                "GitHub wouldn't give the Issues {batch:?}: {}",
                 problem.message
             );
-            asked.numbers.extend(numbers.into_iter().take(FETCH_BATCH));
+            asked.numbers.extend(batch);
             return Ok((Step::Searched { pause_until: None }, None));
         }
         Err(problem) => return Err(problem),

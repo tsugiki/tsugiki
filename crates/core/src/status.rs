@@ -40,6 +40,21 @@ impl Status {
             | Self::Problem { .. } => false,
         }
     }
+
+    /// What it says while GitHub is asked again after it couldn't be reached, keeping who was signed in last
+    /// time, as at the start. Any other status stays until the answer.
+    fn asking_again(&self) -> Option<Self> {
+        match self {
+            Self::Offline => Some(Self::Connecting),
+            Self::OfflineAs { last_login } => Some(Self::ConnectingAs {
+                last_login: last_login.clone(),
+            }),
+            Self::Connecting
+            | Self::ConnectingAs { .. }
+            | Self::Online { .. }
+            | Self::Problem { .. } => None,
+        }
+    }
 }
 
 /// What a sync changed in a Repository's stored facts (ADR 0008).
@@ -262,6 +277,19 @@ impl StatusBoard {
     /// Whether the status says GitHub can't be reached.
     pub(crate) fn is_offline(&self) -> bool {
         self.current.is_offline()
+    }
+
+    /// Says "Connecting…" while GitHub is asked again, if the status says it can't be reached, so a click on
+    /// Try again shows it was heard. Returns whether it did.
+    #[must_use = "only a status that said offline is asked again"]
+    pub(crate) fn asking_again(&mut self) -> bool {
+        match self.current.asking_again() {
+            Some(asking) => {
+                self.set(asking);
+                true
+            }
+            None => false,
+        }
     }
 
     pub(crate) fn set(&mut self, status: Status) {

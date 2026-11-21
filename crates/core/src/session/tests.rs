@@ -2984,11 +2984,15 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
     };
+    let connecting_as = Status::ConnectingAs {
+        last_login: Login::new("octocat"),
+    };
     assert_eq!(
         heard.try_iter().collect::<Vec<_>>(),
         [
             Heard::Status(octocat()),
             Heard::Status(offline_as),
+            Heard::Status(connecting_as),
             Heard::Status(octocat()),
             Heard::Changed(vec![7]),
             Heard::Changed(vec![9]),
@@ -3004,7 +3008,36 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
 }
 
 #[test]
-fn a_refresh_while_github_is_still_away_stays_offline_and_runs_no_step() {
+fn a_refresh_offline_from_the_start_says_connecting_until_github_fails_again() {
+    let (messages, incoming) = mpsc::channel();
+    let requests = sending(messages.clone(), mirrors());
+    let on_status = move |shown| {
+        if shown == 1 {
+            requests.refresh();
+            messages.send(SessionMessage::Stop).unwrap();
+        }
+    };
+    let (mut board, heard) = heard_board(on_status, |_| {});
+    let refreshes = Refreshes {
+        intervals: HOURLY,
+        incoming,
+        ..unheard_refreshes()
+    };
+
+    watch(&mut board, &empty_store(), offline(), &refreshes);
+
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [
+            Heard::Status(Status::Offline),
+            Heard::Status(Status::Connecting),
+            Heard::Status(Status::Offline),
+        ]
+    );
+}
+
+#[test]
+fn a_refresh_while_github_is_still_away_says_connecting_then_offline_and_runs_no_step() {
     let (access, up, asked) = outage();
     let (messages, incoming) = mpsc::channel();
     let requests = sending(messages.clone(), mirrors());
@@ -3029,9 +3062,17 @@ fn a_refresh_while_github_is_still_away_stays_offline_and_runs_no_step() {
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
     };
+    let connecting_as = Status::ConnectingAs {
+        last_login: Login::new("octocat"),
+    };
     assert_eq!(
         heard.try_iter().collect::<Vec<_>>(),
-        [Heard::Status(octocat()), Heard::Status(offline_as)]
+        [
+            Heard::Status(octocat()),
+            Heard::Status(offline_as.clone()),
+            Heard::Status(connecting_as),
+            Heard::Status(offline_as),
+        ]
     );
     let asked: Vec<String> = asked.try_iter().collect();
     // The step asks again for half as much after no answer, and the click asks only who is signed in.

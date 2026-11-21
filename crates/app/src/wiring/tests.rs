@@ -797,6 +797,27 @@ fn a_window_that_loads_after_an_announcement_gets_the_same_status() {
     assert_eq!(asked, announced);
 }
 
+/// What the smoke test's first check does through the window: Offline from the start, a refresh, then
+/// "Connecting…" until GitHub fails again.
+#[test]
+fn a_refresh_while_offline_tells_the_window_connecting_then_offline() {
+    let (folders, _root) = temp_folders("wired-refresh-offline");
+    let wired = Wired::start(Ok(folders), no_network());
+    let offline = json!({ "state": "offline" });
+    assert_eq!(wired.statuses.recv_timeout(PLENTY).unwrap(), offline);
+
+    let clicked = wired.ask("refresh", json!({}));
+    let connecting = wired.statuses.recv_timeout(PLENTY).unwrap();
+    let after = wired.statuses.recv_timeout(PLENTY).unwrap();
+    drop(wired.stop());
+
+    assert_eq!(clicked, Ok(Value::Null));
+    assert_eq!(
+        (connecting, after),
+        (json!({ "state": "connecting" }), offline)
+    );
+}
+
 /// A system browser that won't start.
 fn no_browser(_: &WebAddress) -> Result<(), Error> {
     Err(Error::new(

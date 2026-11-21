@@ -298,7 +298,7 @@ fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
 pub const SIGNED_IN: TokenFrom = gh_alone(signed_in_gh);
 
 pub fn token() -> Token {
-    crate::token::read_token(SIGNED_IN, crate::token::AskAgain::AtRestart).unwrap()
+    crate::token::read_token(SIGNED_IN).unwrap()
 }
 
 /// Hears of the requests in flight, and passes on what each asks as it goes, and nothing as it ends.

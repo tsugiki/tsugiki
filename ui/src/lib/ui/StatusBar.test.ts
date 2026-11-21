@@ -628,6 +628,15 @@ describe("StatusBar's request in flight", () => {
     }
   });
 
+  it("says when Tsugiki waits for gh to give the token", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    render(StatusBar, {
+      status: { state: "connecting" },
+      inFlight: { asked: { kind: "token" }, since: went },
+    });
+    expect(screen.queryByTitle(/^Waiting for gh/)?.textContent).toBe("Waiting for gh to give the token, 4 s");
+  });
+
   it("shows its whole text in its tooltip", () => {
     vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
     render(StatusBar, { status: online, inFlight: refresh });

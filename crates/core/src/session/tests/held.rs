@@ -171,12 +171,3 @@ fn fetch_beside(asked: &Fetching) -> Result<ItemFetch, RecvTimeoutError> {
     thread::spawn(move || answer.send(fetching.fetch_unstored(gcmon(), 7)));
     answered.recv_timeout(PLENTY)
 }
-
-/// The next status the board passed on, skipping the changes.
-fn next_status(heard: &Receiver<Heard>) -> Status {
-    loop {
-        if let Heard::Status(status) = heard.recv_timeout(PLENTY).unwrap() {
-            return status;
-        }
-    }
-}

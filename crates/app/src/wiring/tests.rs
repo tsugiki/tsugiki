@@ -661,6 +661,9 @@ fn the_request_in_flight_reaches_the_window_until_it_ends() {
     let wired = Wired::start(Ok(folders), access(StuckGitHub { arrived, released }));
     request_arrived.recv_timeout(PLENTY).unwrap();
 
+    // The read of the token goes first, and ends before the request.
+    let token_read = wired.in_flight.recv_timeout(PLENTY).unwrap();
+    let token_read_ended = wired.in_flight.recv_timeout(PLENTY).unwrap();
     let heard = wired.in_flight.recv_timeout(PLENTY).unwrap();
     let asked = wired.ask("in_flight", json!({})).unwrap();
     drop(release);
@@ -668,6 +671,8 @@ fn the_request_in_flight_reaches_the_window_until_it_ends() {
     let after = wired.ask("in_flight", json!({})).unwrap();
     drop(wired.stop());
 
+    assert_eq!(token_read["asked"], json!({ "kind": "token" }));
+    assert_eq!(token_read_ended, Value::Null);
     assert_eq!(heard["asked"], json!({ "kind": "status" }));
     assert!(heard["since"].is_string(), "{heard}");
     assert_eq!(asked, heard);

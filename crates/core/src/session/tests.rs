@@ -56,6 +56,7 @@ use tsugiki_token::testing::NO_GH;
 
 mod held;
 mod in_flight;
+mod no_token;
 mod rate_limit;
 
 /// A real store that keeps nothing once it closes.
@@ -100,6 +101,13 @@ fn octocat() -> Status {
     }
 }
 
+/// Connects through `access` at the GitHub thread's start, with nothing else asking it, and gives the client
+/// if it found a token.
+fn connect_alone(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
+    let (refreshes, _done) = Refreshes::new(HOURLY, mpsc::channel().1, unheard(), listed(vec![]));
+    connect(board, store, access, &refreshes).ok()
+}
+
 /// Folders that are all one temp folder, and that folder. Stop the session before the folder drops.
 fn temp_folders(name: &str) -> (Folders, TempPath) {
     let folder = crate::testing::temp_path(&format!("session-{name}"));
@@ -135,7 +143,7 @@ fn a_second_session_on_the_same_folder_says_why_it_stopped() {
 #[test]
 fn signing_in_remembers_the_login() {
     let store = store_remembering("hubot");
-    assert!(connect(&mut quiet_board(), &store, octocat_answers()).is_some());
+    assert!(connect_alone(&mut quiet_board(), &store, octocat_answers()).is_some());
     assert_eq!(store.last_login().unwrap(), Some(Login::new("octocat")));
 }
 
@@ -143,7 +151,7 @@ fn signing_in_remembers_the_login() {
 fn the_last_login_shows_before_github_answers() {
     let (mut board, seen) = watched_board();
     let store = store_remembering("hubot");
-    assert!(connect(&mut board, &store, octocat_answers()).is_some());
+    assert!(connect_alone(&mut board, &store, octocat_answers()).is_some());
     assert_eq!(
         announced(&seen),
         [
@@ -158,14 +166,14 @@ fn the_last_login_shows_before_github_answers() {
 #[test]
 fn nobody_is_shown_before_the_first_answer() {
     let (mut board, seen) = watched_board();
-    assert!(connect(&mut board, &empty_store(), octocat_answers()).is_some());
+    assert!(connect_alone(&mut board, &empty_store(), octocat_answers()).is_some());
     assert_eq!(announced(&seen), [octocat()]);
 }
 
 #[test]
 fn without_the_network_or_a_last_login_the_status_is_offline() {
     let (mut board, seen) = watched_board();
-    assert!(connect(&mut board, &empty_store(), offline()).is_some());
+    assert!(connect_alone(&mut board, &empty_store(), offline()).is_some());
     assert_eq!(showing(&seen), Status::Offline);
 }
 
@@ -173,7 +181,7 @@ fn without_the_network_or_a_last_login_the_status_is_offline() {
 fn without_the_network_the_last_login_still_shows() {
     let (mut board, seen) = watched_board();
     let store = store_remembering("hubot");
-    assert!(connect(&mut board, &store, offline()).is_some());
+    assert!(connect_alone(&mut board, &store, offline()).is_some());
     assert_eq!(
         showing(&seen),
         Status::OfflineAs {
@@ -198,7 +206,7 @@ fn problem_kind(status: Status) -> Option<ErrorKind> {
 fn a_refused_token_is_a_problem_and_keeps_the_last_login_stored() {
     let (mut board, seen) = watched_board();
     let store = store_remembering("hubot");
-    assert!(connect(&mut board, &store, answering(401, "")).is_some());
+    assert!(connect_alone(&mut board, &store, answering(401, "")).is_some());
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
     assert_eq!(store.last_login().unwrap(), Some(Login::new("hubot")));
 }
@@ -210,21 +218,21 @@ fn without_gh_nothing_is_asked_and_the_problem_shows() {
         transport: Box::new(Canned(Err(Unreachable::Offline))),
         token_from: NO_GH,
     };
-    assert!(connect(&mut board, &empty_store(), access).is_none());
+    assert!(connect_alone(&mut board, &empty_store(), access).is_none());
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Unauthorized));
 }
 
 #[test]
 fn a_last_login_that_cant_be_read_doesnt_stop_tsugiki_connecting() {
     let (mut board, seen) = watched_board();
-    assert!(connect(&mut board, &Store::stopped(), octocat_answers()).is_some());
+    assert!(connect_alone(&mut board, &Store::stopped(), octocat_answers()).is_some());
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
 }
 
 #[test]
 fn a_login_that_cant_be_stored_is_a_problem() {
     let (mut board, seen) = watched_board();
-    let github = connect(&mut quiet_board(), &empty_store(), octocat_answers()).unwrap();
+    let github = connect_alone(&mut quiet_board(), &empty_store(), octocat_answers()).unwrap();
     refresh(&mut board, &Store::stopped(), &github);
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
 }
@@ -232,7 +240,7 @@ fn a_login_that_cant_be_stored_is_a_problem() {
 #[test]
 fn a_last_login_that_cant_be_read_offline_is_a_problem() {
     let (mut board, seen) = watched_board();
-    let github = connect(&mut quiet_board(), &empty_store(), offline()).unwrap();
+    let github = connect_alone(&mut quiet_board(), &empty_store(), offline()).unwrap();
     refresh(&mut board, &Store::stopped(), &github);
     assert_eq!(problem_kind(showing(&seen)), Some(ErrorKind::Internal));
 }
@@ -255,7 +263,7 @@ fn a_certificate_outside_its_dates_asks_for_the_clock_until_github_answers() {
     let access = replying(vec![Err(Unreachable::CertificateDates), signed_in()]);
     let (mut board, seen) = watched_board();
     let store = empty_store();
-    let github = connect(&mut board, &store, access).unwrap();
+    let github = connect_alone(&mut board, &store, access).unwrap();
     let words =
         "GitHub's certificate isn't valid by this computer's clock. Check the date and time.";
     assert_eq!(
@@ -1078,7 +1086,7 @@ fn problems_for_the_status_bar(github: &mpsc::Receiver<GitHubMessage>) -> Vec<Er
 fn what_an_issue_says_that_cant_be_stored_is_a_problem() {
     let (mut board, seen) = watched_board();
     let access = replying(vec![signed_in(), issue_content_reply()]);
-    let github = connect(&mut quiet_board(), &empty_store(), access).unwrap();
+    let github = connect_alone(&mut quiet_board(), &empty_store(), access).unwrap();
 
     let read = Reading {
         github: &github,
@@ -1205,7 +1213,7 @@ impl OneRead {
             (conversations.into_iter())
                 .map(|conversation| pull_request_answer(conversation, RATE_LIMIT)),
         );
-        let github = connect(&mut quiet_board(), &store, replying(replies)).unwrap();
+        let github = connect_alone(&mut quiet_board(), &store, replying(replies)).unwrap();
         let (demands, incoming, heard) = crate::fetching::testing::handle();
         let listing = listed(vec![plain_gcmon()]);
         let mut syncs = Syncs::new(listing.clone());
@@ -3326,6 +3334,15 @@ fn heard_board(
     (board, seen)
 }
 
+/// The next status the board passed on, skipping the changes.
+fn next_status(heard: &Receiver<Heard>) -> Status {
+    loop {
+        if let Heard::Status(status) = heard.recv_timeout(PLENTY).unwrap() {
+            return status;
+        }
+    }
+}
+
 #[test]
 fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
     let (access, up, _asked) = outage();
@@ -3824,7 +3841,7 @@ fn the_session_reads_a_hidden_issue_no_more_until_it_shows_and_then_at_once() {
 }
 
 #[test]
-fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
+fn with_no_token_a_click_brings_on_a_read_of_it_and_a_stop_ends_the_wait() {
     let (messages, incoming) = mpsc::channel();
     let refreshes = Refreshes {
         intervals: HOURLY,
@@ -3833,14 +3850,14 @@ fn a_session_with_no_token_ignores_a_refresh_until_it_stops() {
     };
     messages.send(GitHubMessage::Refresh).unwrap();
     messages.send(GitHubMessage::Stop).unwrap();
+    let wait = || {
+        let mut syncs = Syncs::new(listed(vec![]));
+        refreshes.wait_for_token(&mut quiet_board(), &empty_store(), &mut syncs)
+    };
 
-    refreshes.wait_for_stop(&mut quiet_board());
+    let reads = [wait(), wait()];
 
-    assert_eq!(
-        refreshes.refreshes_done.get(),
-        1,
-        "the session passes the next refresh on"
-    );
+    assert_eq!(reads, [Some(TokenRead::Clicked), None]);
 }
 
 #[test]

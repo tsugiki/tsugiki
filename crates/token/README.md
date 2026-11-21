@@ -14,7 +14,8 @@ Tsugiki runs `gh auth token --hostname github.com`, the [GitHub CLI](https://cli
 each time it starts. If the `GH_TOKEN` environment variable holds a token, Tsugiki takes that instead and
 runs no `gh`: `gh auth token` would print the same. If `gh` isn't installed, fails, or prints nothing,
 Tsugiki has no token and asks you to run `gh auth login`. If `gh` doesn't answer in time, Tsugiki stops it
-and says so. The code is `Token::find` in
+and says so. Until a run finds a token, Tsugiki runs the same command again each minute and when you ask it
+to refresh. The code is `Token::find` in
 [`src/lib.rs`](src/lib.rs). Only one function in the rest of Tsugiki may call it, and the lint settings in
 [`clippy.toml`](../../clippy.toml) fail the build on any other caller. That function hands the log a copy of
 the token to hide, wherever it came from.

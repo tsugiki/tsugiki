@@ -192,3 +192,15 @@ fn the_item_due_first_reads_first() {
     assert_eq!(on_screen.wake(), Some(start + MINUTE));
     assert_eq!(on_screen.due(start + 2 * MINUTE), Some(pr));
 }
+
+#[test]
+fn once_tsugiki_has_a_token_each_item_on_screen_is_due_at_once() {
+    let start = Instant::now();
+    let mut on_screen = opened_at(start);
+
+    on_screen.all_due(start + MINUTE / 2);
+
+    assert_eq!(on_screen.wake(), Some(start + MINUTE / 2));
+    let read = Some(Fetched::Issue(issue(7)));
+    assert_eq!(on_screen.due(start + MINUTE / 2), read);
+}

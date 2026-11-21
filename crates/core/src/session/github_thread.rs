@@ -19,7 +19,7 @@ use crate::facts::pull_request_content::PullRequestContent;
 use crate::fetching::{
     Fetched, Fetching, Headless, Item, ItemFetch, ItemUnfetched, NoHead, ScreenMove,
 };
-use crate::github::in_flight::Asking;
+use crate::github::in_flight::{self, AnnounceInFlight, Asking};
 use crate::github::{GitHub, GitHubAccess};
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::repository::RepositoryName;
@@ -28,7 +28,7 @@ use crate::settings::SettingsView;
 use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{ConversationSaved, HeadKept, Store};
 use crate::sync::{Progress, Syncs};
-use crate::token::{AskAgain, read_token};
+use crate::token::read_token;
 
 use super::on_screen::OnScreen;
 use super::{Intervals, stopped_checking, unstored};
@@ -67,33 +67,93 @@ pub(super) enum GitHubMessage {
     Problem(Error),
 }
 
-/// Shows who was signed in last time, reads the token (from gh only when `GH_TOKEN` is unset), asks GitHub
-/// who it belongs to, and shows the result on `board`. Returns the client when there is a token, even
-/// offline, since GitHub may come back.
-#[must_use = "without the client, nothing asks GitHub again"]
-pub(super) fn connect(
+/// What brings on a read of the token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TokenRead {
+    /// The GitHub thread starts.
+    Start,
+    /// The status check's interval passed since a read that found none.
+    Due,
+    /// The user clicked Refresh after a read that found none.
+    Clicked,
+}
+
+/// GitHub access with no token yet, which reads the token again when asked, what hears of each read while
+/// it is out, until the client takes it, and the queue whose clicks a read covers.
+pub(super) struct Unconnected<'a> {
+    access: GitHubAccess,
+    announce: RefCell<AnnounceInFlight>,
+    refreshes: &'a Refreshes,
+}
+
+/// Connects at the thread's start, as [`Unconnected::connect`] says.
+#[must_use = "without the client, nothing asks GitHub"]
+pub(super) fn connect<'a>(
     board: &mut StatusBoard,
     store: &Store,
     access: GitHubAccess,
-) -> Option<GitHub> {
-    // The last login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki
-    // connecting. `refresh` uses the store next, and shows the problem if the store is still failing.
-    if let Ok(Some(last_login)) = store.last_login() {
-        board.set(Status::ConnectingAs { last_login });
-    }
-    let token = match read_token(access.token_from, AskAgain::AtRestart) {
-        Ok(token) => token,
-        Err(problem) => {
-            board.set(Status::Problem { problem });
-            return None;
-        }
+    refreshes: &'a Refreshes,
+) -> Result<GitHub, Unconnected<'a>> {
+    let announce = board.in_flight().unwrap_or_else(|| Box::new(|_| {}));
+    let unconnected = Unconnected {
+        access,
+        announce: RefCell::new(announce),
+        refreshes,
     };
-    let mut github = GitHub::new(access.transport, token);
-    if let Some(announce) = board.in_flight() {
-        github.announce_in_flight(announce);
+    unconnected.connect(board, store, TokenRead::Start)
+}
+
+impl Unconnected<'_> {
+    /// Reads the token (from gh only when `GH_TOKEN` is unset), asks GitHub who it belongs to, and shows the
+    /// result on `board`. Returns the client when there is a token, even offline, since GitHub may come
+    /// back, and else itself, to read again later, with the problem on `board`. At the start and on a click,
+    /// the status bar says "Connecting…" meanwhile, with who was signed in last time. A read that finds no
+    /// token covers each click that came while it was out.
+    fn connect(
+        self,
+        board: &mut StatusBoard,
+        store: &Store,
+        read: TokenRead,
+    ) -> Result<GitHub, Self> {
+        let refreshes = self.refreshes;
+        match read {
+            TokenRead::Start | TokenRead::Clicked => board.set(connecting(store)),
+            // The status bar keeps saying why there is no token, so it doesn't change each minute.
+            TokenRead::Due => {}
+        }
+        let from = self.access.token_from;
+        let token = in_flight::announced(&self.announce, Asking::Token, || read_token(from));
+        // Before the board hears the answer, so a click once the status bar says it asks again (#987). A
+        // click that came while a read that found a token was out asks GitHub, as it would have before.
+        if token.is_err() {
+            refreshes.clicks_covered();
+        }
+        if read == TokenRead::Clicked {
+            refreshes.refresh_done();
+        }
+        match token {
+            Ok(token) => {
+                let mut github = GitHub::new(self.access.transport, token);
+                github.announce_in_flight(self.announce.into_inner());
+                refresh(board, store, &github);
+                Ok(github)
+            }
+            Err(problem) => {
+                board.set(Status::Problem { problem });
+                Err(self)
+            }
+        }
     }
-    refresh(board, store, &github);
-    Some(github)
+}
+
+/// What the status bar says while Tsugiki connects: who was signed in last time, if the store says. The last
+/// login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki connecting. `refresh`
+/// uses the store next, and shows the problem if the store is still failing.
+fn connecting(store: &Store) -> Status {
+    match store.last_login() {
+        Ok(Some(last_login)) => Status::ConnectingAs { last_login },
+        Ok(None) | Err(_) => Status::Connecting,
+    }
 }
 
 /// The news for the window that a read of what `item` says failed, and `why`.
@@ -227,24 +287,56 @@ impl Refreshes {
         board.failed_read(&failed(item, why.into()));
     }
 
-    /// Waits for a stop message, for a thread with nothing to ask GitHub with. A check dropped here tells
-    /// the one asking that GitHub can't be asked, and a read says why. The session saves the marks and the
-    /// rest that needs no GitHub, as it does with a token.
-    pub(super) fn wait_for_stop(&self, board: &mut StatusBoard) {
-        while let Ok(message) = self.next_message(Duration::MAX) {
-            match message {
-                GitHubMessage::Stop => return,
-                GitHubMessage::Fetch(fetched) => {
+    /// A read of the token found none, so each click that came while it was out is done with it, as a read
+    /// at once would only find none again, or wait on `gh` as long. The session passes a click on while none
+    /// it passed is left, so one can come during a read at the start or the status check's.
+    fn clicks_covered(&self) {
+        let mut backlog = self.backlog.borrow_mut();
+        backlog.extend(self.incoming.try_iter());
+        backlog.retain(|message| {
+            let click = matches!(message, GitHubMessage::Refresh);
+            if click {
+                self.refresh_done();
+            }
+            !click
+        });
+    }
+
+    /// Waits for the next read of the token, after one that found none: once the status check's interval
+    /// has passed, or at once on the user's click. Meanwhile a check dropped here tells the one asking that
+    /// GitHub can't be asked, and a read says why. The Repositories the window opens wait in `syncs` for a
+    /// token, and the items on screen in `on_screen`, as the status bar shows each one's last sync. The
+    /// session saves the marks and the rest that needs no GitHub, as it does with a token. Nothing, once the
+    /// session stops the thread.
+    pub(super) fn wait_for_token(
+        &self,
+        board: &mut StatusBoard,
+        store: &Store,
+        syncs: &mut Syncs,
+    ) -> Option<TokenRead> {
+        let due = Instant::now() + self.intervals.status;
+        loop {
+            match self.next_message(due.saturating_duration_since(Instant::now())) {
+                Ok(GitHubMessage::Stop) | Err(RecvTimeoutError::Disconnected) => return None,
+                Err(RecvTimeoutError::Timeout) => return Some(TokenRead::Due),
+                Ok(GitHubMessage::Refresh) => return Some(TokenRead::Clicked),
+                Ok(GitHubMessage::Fetch(fetched)) => {
                     self.read_failed(board, &fetched, ItemUnread::NoToken);
                 }
-                GitHubMessage::Problem(problem) => board.set(Status::Problem { problem }),
-                GitHubMessage::Refresh => self.refresh_done(),
+                Ok(GitHubMessage::Problem(problem)) => board.set(Status::Problem { problem }),
+                Ok(GitHubMessage::Sync { repository }) => {
+                    syncs.add(repository.clone());
+                    show_last_sync(board, store, repository);
+                }
+                Ok(GitHubMessage::Screen(moved)) => {
+                    self.on_screen.borrow_mut().moved(moved, Instant::now());
+                }
                 // Each dropped reply answers its caller that GitHub can't be asked.
-                GitHubMessage::Check { .. }
-                | GitHubMessage::FetchUnstored { .. }
-                | GitHubMessage::Size { .. }
-                | GitHubMessage::Sync { .. }
-                | GitHubMessage::Screen(_) => {}
+                Ok(
+                    GitHubMessage::Check { .. }
+                    | GitHubMessage::FetchUnstored { .. }
+                    | GitHubMessage::Size { .. },
+                ) => {}
             }
         }
     }
@@ -371,21 +463,46 @@ pub(super) fn run_thread(
     }
 }
 
+/// Connects, and while a read of the token finds none, answers what the thread is asked that GitHub can't
+/// be asked, and reads the token again at the status check's interval and on the user's click. Gives the
+/// client and the syncs of the Repositories the window opened meanwhile, or nothing once the session stops
+/// the thread.
+fn until_connected(
+    board: &mut StatusBoard,
+    store: &Store,
+    access: GitHubAccess,
+    refreshes: &Refreshes,
+) -> Option<(GitHub, Syncs)> {
+    let mut syncs = Syncs::new(refreshes.settings.clone());
+    let mut connected = connect(board, store, access, refreshes);
+    loop {
+        match connected {
+            Ok(github) => return Some((github, syncs)),
+            Err(unconnected) => {
+                let read = refreshes.wait_for_token(board, store, &mut syncs)?;
+                connected = unconnected.connect(board, store, read);
+                // The window still says each item on screen needs a token, so it reads them now.
+                if connected.is_ok() {
+                    refreshes.on_screen.borrow_mut().all_due(Instant::now());
+                }
+            }
+        }
+    }
+}
+
 /// Connects, then refreshes and runs the syncs the app asks for, until the session stops it. With no token
-/// `board` shows why, and the thread answers what it's asked that GitHub can't be asked.
+/// `board` shows why, and the thread reads it again as `until_connected` says.
 pub(super) fn watch(
     board: &mut StatusBoard,
     store: &Store,
     access: GitHubAccess,
     refreshes: &Refreshes,
 ) {
-    let Some(github) = connect(board, store, access) else {
-        refreshes.wait_for_stop(board);
+    let Some((github, mut syncs)) = until_connected(board, store, access, refreshes) else {
         return;
     };
     board.hour_points(github.hour_points());
     board.points_back(github.points_back());
-    let mut syncs = Syncs::new(refreshes.settings.clone());
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
     loop {

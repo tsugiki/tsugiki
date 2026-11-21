@@ -84,8 +84,8 @@ pub struct Change {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadFailure {
-    /// Tsugiki has no token, so it asks GitHub nothing until it starts again, and the status bar says how to
-    /// sign in.
+    /// Tsugiki has no token, so it asks GitHub nothing until a read of the token finds one, and the status
+    /// bar says why.
     NoToken,
     /// GitHub can't be asked anything now, and the status bar says why. A read after GitHub answers again
     /// brings it.
@@ -105,7 +105,7 @@ pub enum ReadFailure {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemUnread {
-    /// Tsugiki has no token, so no read brings the item until it starts again.
+    /// Tsugiki has no token, so no read brings the item until a read of the token finds one.
     NoToken,
     /// GitHub has no such item, or the token can't see it.
     #[serde(rename = "not_on_github")]

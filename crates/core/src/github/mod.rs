@@ -32,7 +32,7 @@ use time::{Date, Duration, OffsetDateTime};
 use crate::error::{Error, ErrorKind};
 use crate::github::clock::{GitHubClock, skew_warning};
 use crate::github::gate::{Gate, Hold};
-use crate::github::in_flight::{AnnounceInFlight, Asking, InFlight};
+use crate::github::in_flight::{AnnounceInFlight, Asking};
 use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
@@ -216,13 +216,7 @@ impl GitHub {
         let Some(asked) = asked else {
             return send();
         };
-        let in_flight = InFlight {
-            asked,
-            since: OffsetDateTime::now_utc(),
-        };
-        (self.announce_in_flight.borrow_mut())(Some(&in_flight));
-        let _ended = Ended(&self.announce_in_flight);
-        send()
+        in_flight::announced(&self.announce_in_flight, asked, send)
     }
 
     /// GitHub's clock, as its replies so far tell it.
@@ -467,19 +461,6 @@ struct AskingBefore<'a> {
 impl Drop for AskingBefore<'_> {
     fn drop(&mut self) {
         *self.asking.borrow_mut() = self.before.take();
-    }
-}
-
-/// Announces that the request in flight ended, as its send ends, a panic included, so the window doesn't
-/// count the seconds of a request the GitHub thread no longer waits for.
-struct Ended<'a>(&'a RefCell<AnnounceInFlight>);
-
-impl Drop for Ended<'_> {
-    fn drop(&mut self) {
-        // A panic while unwinding would abort, so a borrow already out goes unannounced.
-        if let Ok(mut announce) = self.0.try_borrow_mut() {
-            announce(None);
-        }
     }
 }
 

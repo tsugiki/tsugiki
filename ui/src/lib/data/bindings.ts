@@ -496,10 +496,15 @@ export type AppearanceSettings = {
 };
 
 /**
- *  What a request asks GitHub, as the status bar names it. Whoever asks says so through `GitHub::asking`,
- *  as the GraphQL operation's name means nothing to a user.
+ *  What a request asks GitHub, as the status bar names it, or the token Tsugiki asks `gh` for. Whoever asks
+ *  says so through `GitHub::asking`, as the GraphQL operation's name means nothing to a user.
  */
 export type Asking = 
+/**
+ *  The token, which Tsugiki asks `gh auth token` for when `GH_TOKEN` is unset. No request to GitHub goes
+ *  out until it answers.
+ */
+{ kind: "token" } | 
 /**  Who is signed in, which Tsugiki asks about once a minute. */
 { kind: "status" } | 
 /**  A step of a Repository's refresh. */
@@ -1322,7 +1327,7 @@ export type HourPoints_Serialize = {
 };
 
 /**
- *  The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+ *  What the GitHub thread waits on: what it asks, and when it asked, by this computer's clock, from which
  *  the window counts the seconds itself.
  */
 export type InFlight = InFlight_Serialize | InFlight_Deserialize;
@@ -1346,7 +1351,7 @@ export type InFlightChanged_Deserialize = InFlight_Deserialize | null;
 export type InFlightChanged_Serialize = InFlight_Serialize | null;
 
 /**
- *  The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+ *  What the GitHub thread waits on: what it asks, and when it asked, by this computer's clock, from which
  *  the window counts the seconds itself.
  */
 export type InFlight_Deserialize = {
@@ -1355,7 +1360,7 @@ export type InFlight_Deserialize = {
 };
 
 /**
- *  The request to GitHub in flight: what it asks, and when it went, by this computer's clock, from which
+ *  What the GitHub thread waits on: what it asks, and when it asked, by this computer's clock, from which
  *  the window counts the seconds itself.
  */
 export type InFlight_Serialize = {
@@ -1709,7 +1714,7 @@ export type ItemUnfetched =
  *  waits for the head the Conversation names shows it.
  */
 export type ItemUnread = 
-/**  Tsugiki has no token, so no read brings the item until it starts again. */
+/**  Tsugiki has no token, so no read brings the item until a read of the token finds one. */
 "no_token" | 
 /**  GitHub has no such item, or the token can't see it. */
 "not_on_github" | 
@@ -2699,8 +2704,8 @@ export type ReadFailed = FailedRead;
 /**  The reason a read of what an Issue or a PR says didn't bring it from GitHub. */
 export type ReadFailure = 
 /**
- *  Tsugiki has no token, so it asks GitHub nothing until it starts again, and the status bar says how to
- *  sign in.
+ *  Tsugiki has no token, so it asks GitHub nothing until a read of the token finds one, and the status
+ *  bar says why.
  */
 "no_token" | 
 /**

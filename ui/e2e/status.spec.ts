@@ -46,28 +46,31 @@ test("the status bar says when a newer version is out, found before or after the
   await expect(page.getByRole("button", { name: "Tsugiki 0.4.0 is out" })).toBeVisible();
 });
 
-test("a slow request keeps one width whatever it asks, and a long subject ends in an ellipsis", async ({
+const longAgo = () => new Date(Date.now() - 60_000).toISOString();
+const longSubject = {
+  asked: { kind: "refresh", repository: `some-maintainer/${"g".repeat(80)}` },
+  since: longAgo(),
+} as const;
+
+test("a slow request keeps one width whatever it asks, and a long subject ends in an ellipsis before the seconds", async ({
   page,
 }) => {
-  const since = new Date(Date.now() - 60_000).toISOString();
-  const short = { asked: { kind: "status" }, since } as const;
-  const long = {
-    asked: { kind: "refresh", repository: `some-maintainer/${"g".repeat(80)}` },
-    since,
-  } as const;
+  const short = { asked: { kind: "status" }, since: longAgo() } as const;
   await mockCore(page, { settings: defaults, status: online, inFlight: short });
   await page.goto("/");
-  const part = page.getByText(/^Waiting for GitHub/);
+  const part = page.getByTitle(/^Waiting for GitHub/);
   await expect(part).toHaveText(/^Waiting for GitHub: status check, \d+ s$/);
   const shortBox = await part.boundingBox();
 
-  await emitFromCore(page, "in-flight-changed", long);
+  await emitFromCore(page, "in-flight-changed", longSubject);
   await expect(part).toHaveAttribute(
     "title",
     /^Waiting for GitHub: refresh of some-maintainer\/g{80}, \d+ s$/,
   );
   const longBox = await part.boundingBox();
-  const cut = await part.evaluate((element) => element.scrollWidth > element.clientWidth);
+  const subject = part.getByText(/^Waiting for GitHub/);
+  const cut = await subject.evaluate((element) => element.scrollWidth > element.clientWidth);
+  const seconds = await part.getByText(/^, \d+ s$/).boundingBox();
   await emitFromCore(page, "in-flight-changed", null);
 
   expect(shortBox).not.toBeNull();
@@ -75,7 +78,26 @@ test("a slow request keeps one width whatever it asks, and a long subject ends i
   expect(Math.abs((longBox?.width ?? 0) - (shortBox?.width ?? 0))).toBeLessThanOrEqual(0.5);
   expect(Math.abs((longBox?.x ?? 0) - (shortBox?.x ?? 0))).toBeLessThanOrEqual(0.5);
   expect(cut).toBe(true);
+  // The seconds sit whole inside the part, at its end.
+  expect(seconds?.width ?? 0).toBeGreaterThan(0);
+  const partEnd = (longBox?.x ?? 0) + (longBox?.width ?? 0);
+  expect((seconds?.x ?? 0) + (seconds?.width ?? 0)).toBeLessThanOrEqual(partEnd + 0.5);
   await expect(part).toHaveCount(0);
+});
+
+test("in a narrow window a slow request leaves the status room", async ({ page }) => {
+  await page.setViewportSize({ width: 700, height: 500 });
+  await mockCore(page, { settings: defaults, status: online, inFlight: longSubject });
+  await page.goto("/");
+  const part = page.getByTitle(/^Waiting for GitHub/);
+  await expect(part).toBeVisible();
+
+  const status = await page.getByRole("status").boundingBox();
+  const partBox = await part.boundingBox();
+
+  expect(status?.width ?? 0).toBeGreaterThan(200);
+  expect(partBox?.width ?? 0).toBeLessThanOrEqual(0.3 * 700 + 16 + 0.5);
+  await expect(part.getByText(/^, \d+ s$/)).toBeVisible();
 });
 
 test("the status bar follows the core's status event", async ({ page }) => {

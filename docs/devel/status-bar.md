@@ -27,9 +27,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     sync sends about one request a second, so the part leaves out those that answer sooner. It names the
     status check, a refresh or a first sync of a Repository, a read of an Issue or a PR on screen, quick
     open's fetch of a number, Add repository's check, or the size the Mirror worker asks before a clone. The
-    part keeps one width whatever it names, a long subject ends in an ellipsis, and the tooltip holds the
-    whole text. It goes once GitHub answers or the request fails, and the status shows a failure, such as
-    Offline.
+    part keeps one width whatever it names, narrower in a narrow window so the status keeps its room. A long
+    subject ends in an ellipsis before the seconds, and the tooltip holds the whole text. It goes once GitHub
+    answers or the request fails, and the status shows a failure, such as Offline.
   - Sync status, which a click refreshes: "Synced 2 min ago" or "Not synced yet" for the open Repository,
     and a first sync's part and progress in its place ([sync.md](sync.md)). The background work follows
     ("· python/peps syncing", "· Cloning python/cpython 42%", "· Cloning python/cpython starts once GitHub

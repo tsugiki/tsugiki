@@ -625,6 +625,39 @@ fn a_request_outside_any_asking_goes_unannounced() {
     assert_eq!(heard.try_iter().collect::<Vec<_>>(), [Heard::Sent]);
 }
 
+/// Panics on each request, as a bug in the network code would.
+struct Panicking;
+
+impl Transport for Panicking {
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "the test is about a request that panics"
+    )]
+    fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
+        panic!("the network code broke");
+    }
+}
+
+#[test]
+fn a_request_that_panics_ends_and_gives_back_what_was_asked_before() {
+    let mut github = github(Panicking);
+    let (announce, heard) = super::testing::in_flight_heard();
+    github.announce_in_flight(announce);
+
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        github.asking(Asking::Status, || github.viewer())
+    }));
+    let after = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| github.viewer()));
+
+    assert!(ran.is_err());
+    assert!(after.is_err());
+    // The second request asked nothing, so it went unannounced.
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [Some(Asking::Status), None]
+    );
+}
+
 #[test]
 fn an_asking_inside_another_names_its_own_requests_and_gives_the_outer_one_back() {
     let (script, _) = Scripted::new(vec![signed_in_as("octocat"), signed_in_as("octocat")]);

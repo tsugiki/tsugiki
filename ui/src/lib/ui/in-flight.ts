@@ -26,11 +26,17 @@ function askingWords(asked: InFlight["asked"]): string {
   }
 }
 
+/** The words for a slow request, in two, so the status bar can cut a long subject and keep the seconds. */
+export type InFlightWords = { asking: string; waited: string };
+
 /** What the request in flight asks and the whole seconds it has waited by `now`, in milliseconds, once it
  * has waited [`SLOW_MS`]. Nothing, between requests and while one is quick. */
-export function inFlightWords(inFlight: InFlight | null, now: number): string | null {
+export function inFlightWords(inFlight: InFlight | null, now: number): InFlightWords | null {
   if (inFlight === null) return null;
   const waited = now - Date.parse(inFlight.since);
   if (waited < SLOW_MS) return null;
-  return `Waiting for GitHub: ${askingWords(inFlight.asked)}, ${String(Math.floor(waited / SECOND_MS))} s`;
+  return {
+    asking: `Waiting for GitHub: ${askingWords(inFlight.asked)}`,
+    waited: `, ${String(Math.floor(waited / SECOND_MS))} s`,
+  };
 }

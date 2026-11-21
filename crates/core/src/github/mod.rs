@@ -203,9 +203,11 @@ impl GitHub {
     /// `asking` goes unannounced.
     pub fn asking<T>(&self, asked: Asking, ask: impl FnOnce() -> T) -> T {
         let before = self.asking.replace(Some(asked));
-        let answered = ask();
-        *self.asking.borrow_mut() = before;
-        answered
+        let _restore = AskingBefore {
+            asking: &self.asking,
+            before,
+        };
+        ask()
     }
 
     /// Sends a request through `send`, announcing it while it is out, and gives what it gave.
@@ -219,9 +221,8 @@ impl GitHub {
             since: OffsetDateTime::now_utc(),
         };
         (self.announce_in_flight.borrow_mut())(Some(&in_flight));
-        let answered = send();
-        (self.announce_in_flight.borrow_mut())(None);
-        answered
+        let _ended = Ended(&self.announce_in_flight);
+        send()
     }
 
     /// GitHub's clock, as its replies so far tell it.
@@ -454,6 +455,28 @@ impl GitHub {
     fn query<D: DeserializeOwned>(&self, request: &Request<'_>) -> Result<D, Error> {
         let reply = self.post(request)?;
         self.answer(&reply)
+    }
+}
+
+/// Gives `asking` back what it held before, as an `asking` ends, a panic included.
+struct AskingBefore<'a> {
+    asking: &'a RefCell<Option<Asking>>,
+    before: Option<Asking>,
+}
+
+impl Drop for AskingBefore<'_> {
+    fn drop(&mut self) {
+        *self.asking.borrow_mut() = self.before.take();
+    }
+}
+
+/// Announces that the request in flight ended, as its send ends, a panic included, so the window doesn't
+/// count the seconds of a request the GitHub thread no longer waits for.
+struct Ended<'a>(&'a RefCell<AnnounceInFlight>);
+
+impl Drop for Ended<'_> {
+    fn drop(&mut self) {
+        (self.0.borrow_mut())(None);
     }
 }
 

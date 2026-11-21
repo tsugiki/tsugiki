@@ -2,10 +2,10 @@
 import { SvelteDate } from "svelte/reactivity";
 import { MINUTE_MS, SECOND_MS } from "./time";
 
-/** The time now in milliseconds, set again on each whole second after the moment `since` gives, while it
- * gives one and the component that calls this as it starts is on screen, so a count of seconds since then
- * moves on by itself. */
-export function secondClock(since: () => string | null): { readonly now: number } {
+/** The time now in milliseconds, set as the moment `since` gives changes, then again `after` milliseconds
+ * past that moment and on each whole second after it, while it gives one and the component that calls this
+ * as it starts is on screen, so a count of seconds since then moves on by itself once it shows. */
+export function secondClock(since: () => string | null, after: number): { readonly now: number } {
   let now = $state(Date.now());
   $effect(() => {
     const from = since();
@@ -15,8 +15,10 @@ export function secondClock(since: () => string | null): { readonly now: number 
     const tick = () => {
       const at = Date.now();
       now = at;
-      // To the next whole second after `start`, which a late timer doesn't push back.
-      ticking = setTimeout(tick, SECOND_MS - ((at - start) % SECOND_MS));
+      const waited = at - start;
+      // To `after`, then to the next whole second after `start`, which a late timer doesn't push back.
+      const next = waited < after ? after - waited : SECOND_MS - (waited % SECOND_MS);
+      ticking = setTimeout(tick, next);
     };
     tick();
     return () => {

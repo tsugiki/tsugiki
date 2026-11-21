@@ -26,7 +26,7 @@
     syncingWords,
   } from "./synced";
   import { minuteClock, secondClock } from "./clock.svelte";
-  import { inFlightWords } from "./in-flight";
+  import { inFlightWords, SLOW_MS } from "./in-flight";
 
   const GIT_DOWNLOADS = "https://git-scm.com/downloads";
 
@@ -85,7 +85,8 @@
   // "Synced 2 min ago" has to move on by itself between syncs.
   const now = minuteClock();
   // The core says only when a request goes and ends, as its thread waits meanwhile, so the bar counts.
-  const seconds = secondClock(() => inFlight?.since ?? null);
+  // It ticks only once the part can show: on a bar the settings show, from the request's third second.
+  const seconds = secondClock(() => (visible ? (inFlight?.since ?? null) : null), SLOW_MS);
   const waiting = $derived(visible ? inFlightWords(inFlight, seconds.now) : null);
 
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
@@ -184,7 +185,9 @@
   <!-- Outside the live region, or a screen reader would read it out each second. The tooltip holds what
        a long subject's ellipsis cuts. -->
   {#if waiting !== null}
-    <span class="in-flight" class:offline title={waiting}>{waiting}</span>
+    <span class="in-flight" class:offline title={`${waiting.asking}${waiting.waited}`}
+      ><span class="asking">{waiting.asking}</span><span class="waited">{waiting.waited}</span></span
+    >
   {/if}
   <!-- Outside the live region, or a screen reader would read this out each minute, and each page of a
        sync. -->
@@ -239,11 +242,23 @@
     border-top: 1px solid var(--border);
   }
 
-  /* One width whatever it asks, so the bar doesn't jump as the subject changes. */
+  /* One width whatever it asks, so the bar doesn't jump as the subject changes, and in a narrow window no
+     more of the bar than leaves the status room. */
   .in-flight {
+    display: flex;
     width: 30em;
+    max-width: 30%;
+  }
+
+  /* A long subject ends in an ellipsis, and the seconds stay. */
+  .asking {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .waited {
+    flex: none;
   }
 
   /* A part of the bar, so square, unlike the window's other buttons. */

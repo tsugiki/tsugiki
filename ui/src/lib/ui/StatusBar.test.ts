@@ -573,7 +573,7 @@ describe("StatusBar's request in flight", () => {
   const online = { state: "online", login: "octocat" } as const;
   const went = "2026-11-22T10:00:00Z";
   const refresh = { asked: { kind: "refresh", repository: "some-maintainer/gcmon" }, since: went } as const;
-  const waiting = () => screen.queryByText(/^Waiting for GitHub/);
+  const waiting = () => screen.queryByTitle(/^Waiting for GitHub/);
 
   afterEach(() => {
     vi.useRealTimers();
@@ -656,5 +656,26 @@ describe("StatusBar's request in flight", () => {
     vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
     render(StatusBar, { status: online, inFlight: refresh, visible: false });
     expect(waiting()).toBeNull();
+  });
+
+  it("keeps the seconds apart from the subject, which alone can end in an ellipsis", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-22T10:00:04Z") });
+    render(StatusBar, { status: online, inFlight: refresh });
+    const [asking, waited] = [...(waiting()?.children ?? [])];
+    expect(asking?.textContent).toBe("Waiting for GitHub: refresh of some-maintainer/gcmon");
+    expect(waited?.textContent).toBe(", 4 s");
+  });
+
+  it("sets no timer on a hidden bar, and none before the request's third second", async () => {
+    vi.useFakeTimers({ now: new Date(went) });
+    const { rerender } = render(StatusBar, { status: online, visible: false });
+    const idle = vi.getTimerCount();
+    await rerender({ status: online, visible: false, inFlight: refresh });
+    expect(vi.getTimerCount()).toBe(idle);
+    await rerender({ status: online, visible: true, inFlight: refresh });
+    expect(vi.getTimerCount()).toBe(idle + 1);
+    await vi.advanceTimersToNextTimerAsync();
+    expect(Date.now() - Date.parse(went)).toBe(3000);
+    expect(waiting()?.textContent).toBe("Waiting for GitHub: refresh of some-maintainer/gcmon, 3 s");
   });
 });

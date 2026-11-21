@@ -46,7 +46,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - The status bar, for what is app-wide: who is signed in or being offline, problems, sync status and the
   background work, unsent Pending reviews, the hour's GitHub points, a newer version, a chord's first key,
-  and the request to GitHub that is slow to answer. Each part has a switch.
+  and the request to GitHub that is slow to answer.
 
 ### Links ([links.md](devel/links.md))
 

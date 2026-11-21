@@ -5,20 +5,6 @@
 use super::*;
 use crate::github::in_flight::{Asking, InFlight};
 use crate::github::testing::in_flight_heard;
-use std::sync::mpsc::Receiver;
-
-/// Tells the test each operation as it goes to GitHub, and answers it with what the test sends next.
-struct Held {
-    going: Sender<String>,
-    answers: Receiver<Result<Reply, Unreachable>>,
-}
-
-impl Transport for Held {
-    fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        pass_on(&self.going, request.operation.to_owned());
-        self.answers.recv().unwrap_or(Err(Unreachable::Offline))
-    }
-}
 
 /// A session on GitHub through `transport`, whose board passes on the requests in flight, and what the
 /// Mirror worker, which isn't there, would ask.
@@ -44,21 +30,24 @@ fn in_flight_session(
 
 #[test]
 fn a_request_is_in_flight_from_when_it_goes_until_github_answers() {
-    let (going, gone) = mpsc::channel();
-    let (answer, answers) = mpsc::channel();
+    let (asked, request) = mpsc::channel();
+    let (answer, answering) = mpsc::channel();
     let (heard, in_flight) = mpsc::channel();
     let announce = Box::new(move |now: Option<&InFlight>| pass_on(&heard, now.cloned()));
     let before = OffsetDateTime::now_utc();
-    let (session, _mirrors, _folder) =
-        in_flight_session("in-flight-held", Held { going, answers }, announce);
+    let held = Held {
+        asked,
+        answer: answering,
+    };
+    let (session, _mirrors, _folder) = in_flight_session("in-flight-held", held, announce);
 
-    assert_eq!(gone.recv_timeout(PLENTY).unwrap(), "Viewer");
+    request.recv_timeout(PLENTY).unwrap();
     let out = in_flight.recv_timeout(PLENTY).unwrap();
     let still_out = in_flight.try_recv();
-    answer.send(signed_in()).unwrap();
+    answer.send(()).unwrap();
     let ended = in_flight.recv_timeout(PLENTY).unwrap();
-    drop(answer);
     session.stop(PLENTY);
+    drop(answer);
 
     let out = out.unwrap();
     assert_eq!(out.asked, Asking::Status);

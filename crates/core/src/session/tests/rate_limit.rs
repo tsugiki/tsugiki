@@ -181,10 +181,7 @@ fn below_the_floor_a_fetch_of_an_unstored_item_asks_nothing_and_answers_offline(
     let asked = paused.asked();
     let heard = paused.stop();
 
-    let offline = ItemFetch::Unfetched {
-        why: ItemUnfetched::Offline,
-    };
-    assert_eq!(fetched, offline);
+    assert_eq!(fetched, UNFETCHED_OFFLINE);
     assert_eq!(asked, Vec::<String>::new());
     assert_eq!(announced(&heard.statuses).last(), Some(&octocat()));
 }

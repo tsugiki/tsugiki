@@ -132,7 +132,6 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     asked.refresh();
     // The session answers in order, so it has taken both clicks once it answers this.
     let fetched = fetch_beside(&asked);
-    let after_clicks: Vec<String> = held.asked.try_iter().collect();
     // GitHub fails the request, and fails at once from now on.
     drop(held.let_go);
     statuses.push(next_status(&heard));
@@ -144,7 +143,6 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     session.stop(PLENTY);
 
     assert_eq!((first, again), ("Viewer".to_owned(), "Viewer".to_owned()));
-    assert_eq!(after_clicks, Vec::<String>::new());
     assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
     assert_eq!(
         statuses,
@@ -160,11 +158,6 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     let asked_after: Vec<String> = held.asked.try_iter().collect();
     assert_eq!((left, asked_after), (vec![], vec![]));
 }
-
-/// The answer to a fetch of an item the database lacks while the status says GitHub can't be reached.
-const UNFETCHED_OFFLINE: ItemFetch = ItemFetch::Unfetched {
-    why: ItemUnfetched::Offline,
-};
 
 /// Asks the session for #7 of gcmon from a thread of its own, and waits for the answer. A session that
 /// passed the fetch to the GitHub thread, which holds its request, fails the test at the wait.

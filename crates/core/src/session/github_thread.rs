@@ -394,21 +394,24 @@ pub(super) fn watch(
             Turn::RefreshNow => {
                 let asked = (github.points_back().is_none() && board.asking_again())
                     .then(|| asked_who(store, &github));
-                // The session drops a click until this one is done, so it's done before the window hears the
-                // answer: a click once the status says offline again asks again (#987).
-                refreshes.refresh_done();
-                if let Some(answer) = asked {
-                    board.set(answer);
-                    if !board.is_offline() {
-                        due.status = Instant::now() + intervals.status;
-                    }
+                let offline = asked
+                    .as_ref()
+                    .map_or_else(|| board.is_offline(), Status::is_offline);
+                if asked.is_some() && !offline {
+                    due.status = Instant::now() + intervals.status;
                 }
-                if board.is_offline() {
+                if offline {
                     syncs.put_open_first();
                 } else {
                     syncs.refresh_now();
                 }
                 due.repository = Instant::now() + intervals.repository;
+                // The session drops a click until this one is done, so it's done before the window hears the
+                // answer: a click once the status says offline again asks again (#987).
+                refreshes.refresh_done();
+                if let Some(answer) = asked {
+                    board.set(answer);
+                }
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::Problem(problem) => board.set(Status::Problem { problem }),

@@ -79,5 +79,5 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Tsugiki asks GitHub who is signed in about once a minute, and only that answer brings it back online.
   Refresh while offline asks at once, and the status bar says Connecting… until GitHub answers or the ask
   fails. If GitHub answers, the sync, the mirror's fetches and the open item's reads carry on. If it still
-  doesn't, Tsugiki goes back to offline and the sync waits for the next minute's ask. A click while the
-  status bar says Connecting… adds no ask, and a click once it says offline again asks again.
+  doesn't, Tsugiki goes back to offline and the sync waits for the next minute's ask. A click while the ask
+  is still out adds no ask, and a click once the status bar says offline again asks again.

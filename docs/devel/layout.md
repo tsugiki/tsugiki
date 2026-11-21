@@ -217,4 +217,5 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     the middle of the hour it says "Tsugiki spent 410 since 14:05".
   - Each part can be switched off from the bar's right-click menu or Settings › General, and the whole bar can
     be hidden ("View: Toggle Status Bar"). Being offline or an expired token still shows: the bar comes back
-    with only that problem, since nothing else would tell the user.
+    with only that problem, since nothing else would tell the user. A Refresh while offline keeps it, saying
+    Connecting… until GitHub answers.

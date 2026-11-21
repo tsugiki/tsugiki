@@ -9,9 +9,11 @@ top-level README and [ADR 0005](0005-token-stays-in-the-rust-core.md) will link 
 The crate holds:
 
 - `Token`, with no way to read its string from outside the crate. It has no serde, so no command or event can
-  carry it, and its `Debug` prints `Token(***)`. It is `Clone`, so the logger can hold a copy.
-- `Token::from_gh`, which runs `gh auth token --hostname github.com` and returns `NoToken` (gh is missing,
-  failed, or printed nothing) when it can't. `run_gh` and the places it looks for `gh` come with it. The
+  carry it, and its `Debug` prints `Token(***)`. It is `Clone` and `Eq`, so the logger can hold one copy of
+  each token.
+- `Token::find`, which takes `GH_TOKEN` when it holds a token, runs `gh auth token --hostname github.com`
+  when it doesn't, and returns `NoToken` (gh is missing, failed, or printed nothing) when neither gives one.
+  `run_gh` and the places it looks for `gh` come with it. The
   personal access token ([ADR 0004](0004-auth-via-gh-cli-token.md)) joins it here, so `keyring` is a
   dependency of this crate only.
 - `Token::hide_in` and `hide_token_shapes`, which the logger and the GraphQL recorder use to take a token out
@@ -25,7 +27,7 @@ The crate holds:
 
 The core keeps the GraphQL client, the queries and the parsing of replies. It implements its `Transport`
 trait for `Https`, so its test doubles stay as they are, and it still hands `&Token` to them. Its `read_token`
-is the only caller of `Token::from_gh`: it logs why gh gave no token, shows the sign-in message, and gives the
+is the only caller of `Token::find`: it logs why gh gave no token, shows the sign-in message, and gives the
 logger a copy of the token.
 
 ## Considered Options
@@ -48,10 +50,11 @@ logger a copy of the token.
 - `tsugiki-core` no longer depends on `ureq` or `rustls`. `cargo tree -i ureq` shows that only
   `tsugiki-token` links an HTTP client, and `cargo machete` notices if the core takes one up again.
 - `clippy.toml` sends the network and `gh` to `crates/token/src/live.rs`, and `git` to the core's
-  `github/live.rs`. A `disallowed-methods` entry keeps `Token::from_gh` inside `read_token`.
+  `github/live.rs`. A `disallowed-methods` entry keeps `Token::find` inside `read_token`.
 - `crates/token/src/lib.rs` keeps the 100% coverage gate
-  ([ADR 0009](0009-testing-and-full-coverage.md)). `live.rs` is left out of it, as the core's was, and the
-  release checks exercise it.
+  ([ADR 0009](0009-testing-and-full-coverage.md)). `live.rs` is left out of it, as the core's was. The
+  smoke test runs its HTTP client and its read of `GH_TOKEN`, but it sets `GH_TOKEN`, so no automated check
+  runs the real `gh`.
 - The crate stays small by rule. Code belongs in it only if it decides where a token comes from, where bytes
   go on the network, or how a secret is hidden. GraphQL, JSON, reply parsing, GitHub's clock, rate limits,
   retries, domain types, UI text and logging belong in the core. `just lint` checks the crate's direct

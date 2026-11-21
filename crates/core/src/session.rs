@@ -49,8 +49,9 @@ compile_error!("`session::run` catches panics, so Tsugiki can't build with `pani
 
 const STOPPED_CHECKING: &str = "Tsugiki stopped checking GitHub. Restart Tsugiki to check again.";
 
-/// Shows who was signed in last time, reads gh's token, asks GitHub who it belongs to, and shows the result
-/// on `board`. Returns the client when there is a token, even offline, since GitHub may come back.
+/// Shows who was signed in last time, reads the token (from gh only when `GH_TOKEN` is unset), asks GitHub
+/// who it belongs to, and shows the result on `board`. Returns the client when there is a token, even
+/// offline, since GitHub may come back.
 #[must_use = "without the client, nothing asks GitHub again"]
 fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Option<GitHub> {
     // The last login only fills the status bar for a moment, so a failed read doesn't stop Tsugiki
@@ -58,7 +59,7 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     if let Ok(Some(last_login)) = store.last_login() {
         board.set(Status::ConnectingAs { last_login });
     }
-    let token = match read_token(access.run_gh) {
+    let token = match read_token(access.token_from) {
         Ok(token) => token,
         Err(problem) => {
             board.set(Status::Problem { problem });
@@ -70,8 +71,8 @@ fn connect(board: &mut StatusBoard, store: &Store, access: GitHubAccess) -> Opti
     Some(github)
 }
 
-/// A run of Tsugiki on its own thread, so the window opens without waiting on the disk, gh or the network
-/// (ADR 0017). It shows its own failures on the board.
+/// A run of Tsugiki on its own thread, so the window opens without waiting on the disk, the token or the
+/// network (ADR 0017). It shows its own failures on the board.
 #[must_use = "dropping the session stops it"]
 pub struct Session {
     /// The handle the app asks through, which also tells this session to stop.
@@ -584,10 +585,11 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 syncs.refresh_open(store);
                 due.repository = Instant::now() + intervals.repository;
             }
-            // Only asking who is signed in sets the status back online, so offline a click asks that first.
-            // While GitHub stays away, the syncs keep waiting for the next status check.
+            // Only asking who is signed in sets the status back online, so offline a click asks that first,
+            // and the status bar says "Connecting…" until GitHub answers. While GitHub stays away, the syncs
+            // keep waiting for the next status check.
             Turn::RefreshNow => {
-                if board.is_offline() {
+                if board.asking_again() {
                     refresh(board, store, &github);
                     if !board.is_offline() {
                         due.status = Instant::now() + intervals.status;

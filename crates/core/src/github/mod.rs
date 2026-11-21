@@ -32,7 +32,7 @@ use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
 use crate::repository::{FoundRepository, RepositoryCounts, RepositoryName, WINDOW_DAYS};
-use crate::token::{RunGh, Token};
+use crate::token::{Token, TokenFrom};
 pub use tsugiki_token::RestPath;
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
@@ -110,10 +110,10 @@ pub trait Transport: Send {
     }
 }
 
-/// How to reach GitHub: the network and gh in the app, stand-ins in tests.
+/// How to reach GitHub: the network, the environment and gh in the app, stand-ins in tests.
 pub struct GitHubAccess {
     pub transport: Box<dyn Transport>,
-    pub run_gh: RunGh,
+    pub token_from: TokenFrom,
 }
 
 /// The signed-in user.

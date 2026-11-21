@@ -2,7 +2,7 @@
 //! reaches the webview (ADR 0005), and nothing in the core can read its string.
 
 use tsugiki_token::NoToken;
-pub use tsugiki_token::{GhOutput, RunGh, Token};
+pub use tsugiki_token::{GhOutput, Token, TokenFrom};
 
 use crate::error::{Error, ErrorKind};
 use crate::logfile;
@@ -10,14 +10,14 @@ use crate::logfile;
 const SIGN_IN: &str = "Tsugiki reads your token from the GitHub CLI. Install `gh`, run \
                        `gh auth login`, and restart Tsugiki.";
 
-/// Asks `gh` for its token, and hands the logger a copy to hide. Without one, the log says why and the
-/// user reads how to sign in.
-pub fn read_token(run: RunGh) -> Result<Token, Error> {
+/// Takes the token from `GH_TOKEN` or asks `gh` for it, and hands the logger a copy to hide. Without one,
+/// the log says why and the user reads how to sign in.
+pub fn read_token(from: TokenFrom) -> Result<Token, Error> {
     #[expect(
         clippy::disallowed_methods,
         reason = "the one caller clippy.toml allows, so every token is hidden in the log"
     )]
-    let token = Token::from_gh(run);
+    let token = Token::find(from);
     match token {
         Ok(token) => {
             logfile::hide(token.clone());

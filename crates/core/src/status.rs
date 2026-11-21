@@ -25,19 +25,45 @@ pub enum Status {
     Offline,
     /// GitHub can't be reached, and this is who was signed in last time.
     OfflineAs { last_login: Login },
+    /// Nobody is known, and GitHub, which couldn't be reached, is being asked again. A status bar the
+    /// settings hide still shows it, as it showed being offline.
+    Reconnecting,
+    /// GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time.
+    ReconnectingAs { last_login: Login },
     /// Something stops Tsugiki reading, such as a refused token.
     Problem { problem: Error },
 }
 
 impl Status {
-    /// Whether it says GitHub can't be reached. A rate limit is a problem of the API's alone.
+    /// Whether it says GitHub can't be reached, or hasn't answered since it couldn't be, so git stays held
+    /// back while Tsugiki asks again. A rate limit is a problem of the API's alone.
     pub(crate) fn is_offline(&self) -> bool {
         match self {
-            Self::Offline | Self::OfflineAs { .. } => true,
+            Self::Offline
+            | Self::OfflineAs { .. }
+            | Self::Reconnecting
+            | Self::ReconnectingAs { .. } => true,
             Self::Connecting
             | Self::ConnectingAs { .. }
             | Self::Online { .. }
             | Self::Problem { .. } => false,
+        }
+    }
+
+    /// What it says while GitHub is asked again after it couldn't be reached, keeping who was signed in last
+    /// time. Any other status stays until the answer.
+    fn asking_again(&self) -> Option<Self> {
+        match self {
+            Self::Offline => Some(Self::Reconnecting),
+            Self::OfflineAs { last_login } => Some(Self::ReconnectingAs {
+                last_login: last_login.clone(),
+            }),
+            Self::Connecting
+            | Self::ConnectingAs { .. }
+            | Self::Reconnecting
+            | Self::ReconnectingAs { .. }
+            | Self::Online { .. }
+            | Self::Problem { .. } => None,
         }
     }
 }
@@ -259,9 +285,22 @@ impl StatusBoard {
         (self.announce_last_sync)(last_sync);
     }
 
-    /// Whether the status says GitHub can't be reached.
+    /// Whether the status says GitHub can't be reached, or hasn't answered since it couldn't be.
     pub(crate) fn is_offline(&self) -> bool {
         self.current.is_offline()
+    }
+
+    /// Says "Connecting…" while GitHub is asked again, if the status says it can't be reached, so a click on
+    /// Refresh shows it was heard. Returns whether it did.
+    #[must_use = "only a status that said offline is asked again"]
+    pub(crate) fn asking_again(&mut self) -> bool {
+        match self.current.asking_again() {
+            Some(asking) => {
+                self.set(asking);
+                true
+            }
+            None => false,
+        }
     }
 
     pub(crate) fn set(&mut self, status: Status) {

@@ -1,6 +1,7 @@
-//! The only code in Tsugiki that reaches the network or runs `gh`. Tests replace both (ADR 0009), so this
-//! file is left out of the coverage gate. No automated check reaches GitHub through it: the smoke test runs
-//! the real `gh`, but its proxy never lets TLS start. `npm run record` does reach GitHub through it.
+//! The only code in Tsugiki that reaches the network, runs `gh` or reads `GH_TOKEN`. Tests replace all
+//! three (ADR 0009), so this file is left out of the coverage gate. No automated check reaches GitHub
+//! through it: the smoke test gives a made-up token in `GH_TOKEN`, so it runs no `gh`, and its proxy never
+//! lets TLS start. `npm run record` does reach GitHub through it.
 
 #![expect(
     clippy::disallowed_types,
@@ -16,7 +17,9 @@ use ureq::http::Response;
 use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
-use crate::{API_HOST, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable};
+use crate::{
+    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable,
+};
 
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
 /// 10 s, so this leaves 5 s for the network, and it strikes when the network or a proxy has stopped
@@ -148,8 +151,13 @@ const GH_PROGRAMS: [&str; 3] = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh
 #[cfg(not(target_os = "macos"))]
 const GH_PROGRAMS: [&str; 1] = ["gh"];
 
+/// The process's `GH_TOKEN`.
+pub(crate) fn read_env() -> Option<String> {
+    std::env::var(GH_TOKEN).ok()
+}
+
 /// Runs `gh`.
-pub fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
+pub(crate) fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
     let mut outcome = Err(io::Error::from(io::ErrorKind::NotFound));
     for program in GH_PROGRAMS {
         outcome = run_program(program, args);

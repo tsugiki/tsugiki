@@ -207,9 +207,10 @@ The smaller ones say what they do in their first `//!` line.
 
 ## Where tests draw the line
 
-- `token/src/live.rs` holds everything that touches the real network and `gh`, and the core's
+- `token/src/live.rs` holds everything that touches the real network, `gh` and `GH_TOKEN`, and the core's
   `github/live.rs` runs the real `git` and hands requests to the token crate's client. Tests swap the
-  network and `gh` for the replayer in `github/replay.rs`, and `github/record.rs` captures new answers
+  network for the replayer in `github/replay.rs` and `gh` and `GH_TOKEN` for stand-ins in
+  `token/src/testing.rs`, and `github/record.rs` captures new answers
   ([ADR 0009](adr/0009-testing-and-full-coverage.md)).
 - `app/src/wiring.rs` sets up the commands and events on any Tauri runtime, so its tests run on Tauri's
   mock runtime without a window. `app/src/startup.rs` opens the real window, and only `just smoke` tests it.

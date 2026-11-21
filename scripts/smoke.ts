@@ -9,8 +9,9 @@
 // It reads the page over the Chrome DevTools Protocol, on a port only this test's build opens. We don't use
 // WebDriver because an msedgedriver session opens a second window on the primary display (#76).
 //
-// It needs `gh`, but not your sign-in: it gives Tsugiki a made-up token, and a proxy that decides when
-// "GitHub" stops answering, so the status changes when the test says and nothing reaches GitHub.
+// It needs neither `gh` nor your sign-in: it gives Tsugiki a made-up token in `GH_TOKEN`, and a proxy that
+// never answers. The proxy drops each request until the test has it hold them, then holds them until the
+// test cuts them off, so the status changes when the test says and nothing reaches GitHub.
 //
 //   npm run smoke
 //
@@ -29,11 +30,14 @@ const DEBUG_PORT = 9333;
 const APP_ADDRESS = "http://tauri.localhost/";
 const SETTLE_MS = 2000;
 const CLOSE_MS = 10_000;
-// Tsugiki runs `gh auth token` before its first request and gives `gh` 30 s (`GH_TIMEOUT` in the token
-// crate's live.rs). The first request has arrived late before, cause unknown (#86). This wait starts once the
-// page is ready, so a `gh` that times out still fails the check. A request waits at the proxy for 15 s at
-// most (`REQUEST_TIMEOUT`), so one that arrives more than 15 s before the page is ready fails it too.
-const FIRST_REQUEST_MS = 35_000;
+// How long the first check waits, once the page has settled, for "Offline", which the proxy's refusal of
+// Tsugiki's first request brings. The session sends it once it has read the database, usually before the
+// page is ready. Only a session that never asks takes this long, so the wait costs a passing run nothing.
+const FIRST_ANSWER_MS = 30_000;
+// How long the first check waits for "Connecting…" after it asks for a refresh. A status check that was
+// already waiting at the proxy holds the refresh up until it gives up, after 15 s at most
+// (`REQUEST_TIMEOUT` in the token crate's live.rs).
+const REFRESH_MS = 20_000;
 const BUILD_CONFIG = ".temp/smoke-config.json";
 const TAURI_BROWSER_ARGS = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection";
 
@@ -149,14 +153,19 @@ type FakeGitHub = {
   held: () => number;
   /** How many requests have arrived since the test started. */
   requests: () => number;
-  /** Drops those requests and any later ones, which Tsugiki reads as being offline. */
+  /** Leaves each request from now on waiting, so Tsugiki stays on "Connecting…" while it asks. */
+  hold: () => void;
+  /** Drops the requests waiting and any later ones, which Tsugiki reads as being offline. */
   cutOff: () => void;
 };
 
-/** Listens as Tsugiki's proxy and leaves each request waiting, so Tsugiki stays on "Connecting…". */
+/**
+ * Listens as Tsugiki's proxy and drops each request until told to hold them, so Tsugiki starts Offline
+ * however late its page is ready.
+ */
 async function startFakeGitHub(): Promise<FakeGitHub> {
   const held = new Set<Socket>();
-  let cut = false;
+  let cut = true;
   let requests = 0;
   const server = createServer((socket) => {
     requests += 1;
@@ -178,6 +187,9 @@ async function startFakeGitHub(): Promise<FakeGitHub> {
     port: (server.address() as AddressInfo).port,
     held: () => held.size,
     requests: () => requests,
+    hold: () => {
+      cut = false;
+    },
     cutOff: () => {
       cut = true;
       for (const socket of held) {
@@ -315,34 +327,50 @@ async function until(condition: () => boolean | Promise<boolean>, patienceMs = 5
 }
 
 /** Waits for the status bar to show `text`, and returns what it shows instead if it doesn't. */
-async function statusBarShows(run: Session["run"], text: string): Promise<string | undefined> {
+async function statusBarShows(
+  run: Session["run"],
+  text: string,
+  patienceMs?: number,
+): Promise<string | undefined> {
   let shown = "";
   const showed = await until(async () => {
     shown = await run<string>(STATUS_BAR_TEXT);
     return shown.includes(text);
-  });
+  }, patienceMs);
   return showed ? undefined : `the status bar says "${shown}", and should say "${text}"`;
 }
 
 /** Each check returns what went wrong, or nothing. */
 const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> = {
-  // First, because it needs Tsugiki's first request to GitHub still waiting. Without the event the page has
-  // no other way to learn this: it only asks `status()` when it loads, and the settling gives it time to.
+  // Without the event the page has no other way to learn of "Connecting…" and "Offline": it only asks
+  // `status()` when it loads. The page's own Refresh needs a Repository, which this run doesn't have, so the
+  // check calls the command that Refresh calls.
   "a status change reaches the open window": async ({ run, github, secondsRunning }) => {
     try {
-      if (!(await until(() => github.held() > 0, FIRST_REQUEST_MS))) {
-        const shown = await run<string>(STATUS_BAR_TEXT);
-        const running = String(secondsRunning());
+      const offline = await statusBarShows(run, "Offline", FIRST_ANSWER_MS);
+      if (offline !== undefined) {
         const requests = String(github.requests());
-        return `after ${running} s, no request is waiting at the test's proxy, which has seen ${requests}, and the status bar says "${shown}"`;
+        return `after ${String(secondsRunning())} s, ${offline}, and the test's proxy has seen ${requests} request(s)`;
+      }
+      // Offline without the proxy would mean Tsugiki's requests go somewhere else.
+      if (github.requests() === 0) {
+        return "the status bar says Offline, but no request reached the test's proxy";
+      }
+      github.hold();
+      const before = github.requests();
+      await run("void window.__TAURI_INTERNALS__.invoke('refresh')");
+      const connecting = await statusBarShows(run, "Connecting…", REFRESH_MS);
+      if (connecting !== undefined) {
+        return `after a refresh, ${connecting}, with ${String(github.held())} request(s) waiting at the test's proxy`;
+      }
+      // The core says "Connecting…" before it asks, so only the proxy shows the refresh went out. The
+      // session asks one thing at a time, so the request after "Connecting…" is the refresh's.
+      if (!(await until(() => github.requests() > before && github.held() > 0))) {
+        return `after a refresh, the status bar says "Connecting…", but no request is waiting at the test's proxy`;
       }
       console.log(
-        `Tsugiki's first request is waiting at the proxy, ${String(secondsRunning())} s after it started`,
+        `Tsugiki's refresh is waiting at the proxy, ${String(secondsRunning())} s after Tsugiki started`,
       );
-      const problem = await statusBarShows(run, "Connecting…");
-      if (problem !== undefined) {
-        return problem;
-      }
       github.cutOff();
       return await statusBarShows(run, "Offline");
     } finally {
@@ -541,7 +569,7 @@ const app = spawn(application, [], {
   stdio: "ignore",
   env: {
     ...process.env,
-    // `gh auth token` prints this instead of reading your sign-in.
+    // Tsugiki takes this in place of your sign-in, and runs no `gh`.
     GH_TOKEN: "smoke-test-not-a-token",
     // The first variable the HTTP client looks at, so a proxy of your own can't take the request.
     ALL_PROXY: `http://127.0.0.1:${String(github.port)}`,

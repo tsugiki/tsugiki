@@ -8,6 +8,7 @@ import {
   type MirrorProblem,
   type MirrorState_Serialize as MirrorState,
   type NewVersion,
+  type PointsBack_Serialize as PointsBack,
   type RepositoryMirror_Serialize as RepositoryMirror,
   type Status_Serialize as Status,
   type SyncActivity,
@@ -20,13 +21,15 @@ export type {
   MirrorProblem,
   MirrorState,
   NewVersion,
+  PointsBack,
   RepositoryMirror,
   Status,
   SyncActivity,
 };
 
 /** Whether `status` says GitHub can't be reached, while Refresh asks it again too, as the core judges it:
- * a fetch then fails, so the window offers none (#981). */
+ * a fetch then fails, so the window offers none (#981). The rate limit's gate does the same while it holds,
+ * which `StatusState.pointsBack` says. */
 export function isOffline(status: Status | undefined): boolean {
   switch (status?.state) {
     case "offline":
@@ -57,6 +60,10 @@ export class StatusState {
    */
   hourPoints = $state<HourPoints | null>(null);
   #heardPoints = false;
+  /** The time GitHub's points come back, while the rate limit's gate holds every request to GitHub. Nothing,
+   * while it lets them through. */
+  pointsBack = $state<PointsBack | null>(null);
+  #heardBack = false;
   /** A mirror's clone under way. Nothing, between clones. */
   cloning = $state<Cloning | null>(null);
   #heardCloning = false;
@@ -91,6 +98,10 @@ export class StatusState {
         this.hourPoints = payload;
         this.#heardPoints = true;
       });
+      await events.pointsBackChanged.listen(({ payload }) => {
+        this.pointsBack = payload;
+        this.#heardBack = true;
+      });
       await events.cloningChanged.listen(({ payload }) => {
         this.cloning = payload;
         this.#heardCloning = true;
@@ -114,6 +125,7 @@ export class StatusState {
       const lastSync = await commands.lastSync();
       const syncActivity = await commands.syncActivity();
       const hourPoints = await commands.hourPoints();
+      const pointsBack = await commands.pointsBack();
       const cloning = await commands.cloning();
       const mirrorProblem = await commands.mirrorProblem();
       const mirrorQuestion = await commands.mirrorQuestion();
@@ -124,6 +136,7 @@ export class StatusState {
       this.lastSync ??= lastSync;
       if (!this.#heardActivity) this.syncActivity = syncActivity;
       if (!this.#heardPoints) this.hourPoints = hourPoints;
+      if (!this.#heardBack) this.pointsBack = pointsBack;
       if (!this.#heardCloning) this.cloning = cloning;
       if (!this.#heardProblem) this.mirrorProblem = mirrorProblem;
       if (!this.#heardQuestion) this.mirrorQuestion = mirrorQuestion;

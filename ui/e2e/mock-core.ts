@@ -38,6 +38,7 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       lastSync: null,
       syncActivity: null,
       hourPoints: null,
+      pointsBack: null,
       cloning: null,
       mirrorProblem: null,
       checkMirrorsAgain: null,

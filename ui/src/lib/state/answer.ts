@@ -23,6 +23,14 @@ export async function ask<A extends Refusable>(
   }
 }
 
+/** The time GitHub's points come back, by this computer's clock, when `error` is the rate limit's and says
+ * it. The core then asked GitHub nothing (#1001). */
+export function pointsBackIn(error: { message: string } | { kind: string; resets_at?: number | null }) {
+  if (!("kind" in error) || error.kind !== "rate_limited" || typeof error.resets_at !== "number") return null;
+  const secondsToMs = 1000;
+  return new Date(error.resets_at * secondsToMs).toISOString();
+}
+
 /** The problem a command ran into, or nothing if it did what it was asked. */
 export async function problemIn(
   asking: Promise<Refusable> | (() => Promise<Refusable>),

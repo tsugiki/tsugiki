@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 
 use super::issues::save_issue_batch;
 use super::origins::save_origin;
-use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step, pause_until};
+use super::{FETCH_BATCH, Leads, Link, Moved, SEARCH_PAGE, Step};
 use crate::error::Error;
 use crate::facts::issues::ListedPr;
 use crate::facts::references::IssueReferences;
@@ -362,7 +362,7 @@ fn count(link: &Link<'_>, loading: &mut Loading) -> Result<Step, Error> {
     let today = link.github.clock().now().date();
     let found = link.github.check_repository(link.repository, today)?;
     loading.lists = Some(lists_for(found.counts.size()));
-    Ok(Step::Searched { pause_until: None })
+    Ok(Step::Searched)
 }
 
 fn read_long(
@@ -389,9 +389,7 @@ fn read_long(
         let number = read.number;
         loading.long_reads.push_front(LongRead { number, cursor });
     }
-    Ok(Step::Searched {
-        pause_until: pause_until(page.rate_limit),
-    })
+    Ok(Step::Searched)
 }
 
 fn read_urgent_issues(
@@ -405,9 +403,7 @@ fn read_urgent_issues(
     let frozen = frozen(link)?;
     loading.join_urgent_references(read.references, &held(fetched, &frozen));
     drop(loading.urgent_issues.drain(..read.asked_for));
-    Ok(Step::Searched {
-        pause_until: pause_until(read.rate_limit),
-    })
+    Ok(Step::Searched)
 }
 
 /// Fetches the next PRs, urgent ones first, and saves them.
@@ -449,7 +445,7 @@ fn fetch_batch(
     }
     loading.list_goes_next = true;
     let touched = batch.pull_requests.iter().map(|pr| pr.number).collect();
-    Ok(Step::saved_if_any(touched, pause_until(batch.rate_limit)))
+    Ok(Step::saved_if_any(touched))
 }
 
 /// Fetches the Issues that PRs name and the lists haven't brought: a fresh PR on an old Issue doesn't move
@@ -463,7 +459,7 @@ fn fetch_named_issues(
     loading
         .issues_seen
         .extend(numbers.iter().take(saved.asked_for).copied());
-    Ok(Step::saved_if_any(saved.touched, saved.pause_until))
+    Ok(Step::saved_if_any(saved.touched))
 }
 
 fn read_issue_page(
@@ -487,7 +483,7 @@ fn read_issue_page(
     loading.issues_seen.extend(numbers.iter().copied());
     loading.move_list_on(page.next);
     loading.count_issues(numbers.len(), page.total);
-    Ok(Step::saved_if_any(numbers, pause_until(page.rate_limit)))
+    Ok(Step::saved_if_any(numbers))
 }
 
 /// Reads a page of PRs, and queues each one the Issues haven't brought. A frozen PR goes back in only if it
@@ -522,9 +518,7 @@ fn read_pull_request_page(
         .collect();
     loading.join(moved, Urgency::InTurn, &|pr| fetched.contains(&pr));
     loading.move_list_on(page.next);
-    Ok(Step::Searched {
-        pause_until: pause_until(page.rate_limit),
-    })
+    Ok(Step::Searched)
 }
 
 /// Fetches the next Origin PR an urgent PR needs. A frozen one stays as it's stored.

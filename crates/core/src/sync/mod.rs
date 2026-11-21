@@ -28,7 +28,7 @@ use crate::facts::issues::ListedPr;
 use crate::facts::pull_requests::{NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
 use crate::github::GitHub;
-use crate::github::pull_requests::{PrFetch, RateLimit};
+use crate::github::pull_requests::PrFetch;
 use crate::links::{possible_numbers, possible_origin};
 use crate::login::Login;
 use crate::repository::{RepositoryName, WINDOW_DAYS};
@@ -45,9 +45,6 @@ use refresh::{Changed, Poll, Probing};
 use searches::search;
 use trees::read_cross_references;
 
-/// Below this many points left, a sync waits for the reset, because the hourly 5,000 are also the user's
-/// other tools'. We haven't measured what those tools need, and GitHub's `remaining` is approximate.
-const RATE_LIMIT_FLOOR: u32 = 500;
 /// The number of IDs one search page asks for (ADR 0015).
 pub const SEARCH_PAGE: usize = 50;
 /// The number of PRs one fetch asks for: fewer than a search's, because CI rollups are slow (ADR 0015).
@@ -257,27 +254,22 @@ struct Leads {
 enum Step {
     /// It only moved on to the next phase, and asked GitHub for nothing.
     Moved,
-    Searched {
-        pause_until: Option<OffsetDateTime>,
-    },
+    /// It asked GitHub, and the store didn't change.
+    Searched,
     /// The store changed, and a screen showing it needs to ask again. `touched` names the Issues and PRs.
     Saved {
         touched: Vec<u32>,
-        pause_until: Option<OffsetDateTime>,
     },
     Finished,
 }
 
 impl Step {
     /// A refresh often finds its answers match what Tsugiki holds, and then no screen needs to ask again.
-    fn saved_if_any(touched: Vec<u32>, pause_until: Option<OffsetDateTime>) -> Self {
+    fn saved_if_any(touched: Vec<u32>) -> Self {
         if touched.is_empty() {
-            Self::Searched { pause_until }
+            Self::Searched
         } else {
-            Self::Saved {
-                touched,
-                pause_until,
-            }
+            Self::Saved { touched }
         }
     }
 }
@@ -572,7 +564,7 @@ impl UserWorkSync {
                 return self.advance(github, store, settings);
             }
         }
-        if let (Kind::First(first_sync), Step::Searched { .. } | Step::Saved { .. }) =
+        if let (Kind::First(first_sync), Step::Searched | Step::Saved { .. }) =
             (&mut self.kind, &step)
         {
             first_sync.pages += 1;
@@ -623,11 +615,6 @@ impl Leads {
         self.origins.retain(|number| !held.contains(number));
         Ok(())
     }
-}
-
-/// The time to ask again, if the points left are below the floor.
-fn pause_until(limit: RateLimit) -> Option<OffsetDateTime> {
-    (limit.remaining < RATE_LIMIT_FLOOR).then_some(limit.reset_at)
 }
 
 #[cfg(test)]

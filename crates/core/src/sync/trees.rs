@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Batches, Leads, Link, Moved, Reading, Resumable, SEARCH_PAGE, Step, pause_until};
+use super::{Batches, Leads, Link, Moved, Reading, Resumable, SEARCH_PAGE, Step};
 use crate::error::Error;
 use crate::facts::issues::ListedPr;
 use crate::facts::pull_requests::NodeId;
@@ -42,8 +42,7 @@ pub(super) fn read_cross_references(
     if cursor.is_none() {
         drop(issues.drain(..1));
     }
-    let pause_until = pause_until(page.rate_limit);
-    Ok((Step::Searched { pause_until }, None))
+    Ok((Step::Searched, None))
 }
 
 /// The leads of the PRs in `listed` that this refresh has already saved. It saves a changed PR without

@@ -9,9 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use time::OffsetDateTime;
 
 use super::filters::{FilterWalk, RefreshWalk, blames_the_search, can_narrow};
-use super::{
-    Ahead, Asked, FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until,
-};
+use super::{Ahead, Asked, FETCH_BATCH, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::activity::ItemActivity;
@@ -172,7 +170,7 @@ pub(super) fn poll(
         return Ok((read_page(link, poll, check)?, None));
     }
     if let Some(merged) = merge_next_answer(link, poll)? {
-        return Ok((Step::saved_if_any(merged, None), None));
+        return Ok((Step::saved_if_any(merged), None));
     }
     let next = Phase::FetchingChanged(plan_the_rest(link, poll)?);
     Ok((Step::Moved, Some(next)))
@@ -216,7 +214,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         (RepositorySize::Small, None) => ChangeCheck::Untagged,
         (RepositorySize::Small, Some(tag)) => ChangeCheck::Tagged(tag),
     };
-    Ok(Step::saved_if_any(touched, pause_until(answer.rate_limit)))
+    Ok(Step::saved_if_any(touched))
 }
 
 /// Saves each Issue Tsugiki holds that this answer changes. An Issue it doesn't hold isn't on any screen, and
@@ -372,8 +370,7 @@ pub(super) fn fetch_changed(
         changed.walk.learn_from(pull_request, link.repository);
     }
     drop(changed.ids.drain(..batch.asked_for));
-    let pause_until = pause_until(batch.rate_limit);
-    Ok((Step::saved_if_any(touched, pause_until), None))
+    Ok((Step::saved_if_any(touched), None))
 }
 
 /// The open PRs on the user's own lists, and the open Bot backports of what the user wrote or reviewed, that
@@ -430,7 +427,7 @@ fn read_failed_checks(link: &Link<'_>) -> Result<Step, Error> {
     };
     let touched = read.found.iter().map(|(number, _)| *number).collect();
     link.store.save_failed_checks(link.repository, read.found)?;
-    Ok(Step::saved_if_any(touched, pause_until(read.rate_limit)))
+    Ok(Step::saved_if_any(touched))
 }
 
 /// Probes the next batch of the user's open PRs, for the CI and Reviews that don't move `updatedAt`.
@@ -460,8 +457,7 @@ pub(super) fn probe(link: &Link<'_>, probing: &mut Probing) -> Result<Moved, Err
         touched.clone(),
     )?;
     drop(probing.numbers.drain(..batch.asked_for));
-    let pause_until = pause_until(batch.rate_limit);
-    Ok((Step::saved_if_any(touched, pause_until), None))
+    Ok((Step::saved_if_any(touched), None))
 }
 
 /// Fetches the next batch of the Issues that the PRs Tsugiki holds name under the Repository's
@@ -502,7 +498,7 @@ pub(super) fn fetch_lacking_issues(
                 problem.message
             );
             asked.numbers.extend(batch);
-            return Ok((Step::Searched { pause_until: None }, None));
+            return Ok((Step::Searched, None));
         }
         Err(problem) => return Err(problem),
     };
@@ -516,8 +512,7 @@ pub(super) fn fetch_lacking_issues(
     asked
         .numbers
         .extend(numbers.into_iter().take(batch.asked_for));
-    let pause_until = pause_until(batch.rate_limit);
-    Ok((Step::saved_if_any(touched, pause_until), None))
+    Ok((Step::saved_if_any(touched), None))
 }
 
 /// The Conversations the rules want read ahead under `repository`'s settings, from what the store holds
@@ -556,7 +551,6 @@ pub(super) fn read_ahead(
             )?;
             Step::Saved {
                 touched: vec![number],
-                pause_until: pause_until(read.rate_limit),
             }
         }
         Err(problem) if !problem.kind.speaks_for_all_of_github() => {
@@ -564,7 +558,7 @@ pub(super) fn read_ahead(
                 "GitHub wouldn't give PR {number}'s Conversation: {}",
                 problem.message
             );
-            Step::Searched { pause_until: None }
+            Step::Searched
         }
         Err(problem) => return Err(problem),
     };

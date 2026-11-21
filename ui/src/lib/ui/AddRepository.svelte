@@ -5,6 +5,7 @@
   import { takeFocus } from "./focus";
   import MirrorChoices from "./MirrorChoices.svelte";
   import { describeCheck } from "./repository-check";
+  import { pointsBackWords } from "./synced";
 
   let {
     onclose,
@@ -60,7 +61,7 @@
     {#if step.step === "checking"}
       <p>Asking GitHub…</p>
     {:else if step.step === "failed"}
-      <p role="alert">{step.problem}</p>
+      <p role="alert">{step.back === undefined ? step.problem : pointsBackWords(step.back)}</p>
     {:else if step.step === "held"}
       <p>{`Tsugiki has ${step.name} already.`}</p>
     {:else if check}

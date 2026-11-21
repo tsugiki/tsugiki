@@ -72,6 +72,19 @@ it("says what's wrong and lets the user try again", async () => {
   expect(button("Check").disabled).toBe(false);
 });
 
+it("says when GitHub's points come back while the rate limit holds the check", async () => {
+  const back = new Date(2026, 10, 21, 14, 5);
+  const resets_at = back.getTime() / 1000;
+  const error = { kind: "rate_limited", resets_at, message: "GitHub's rate limit is low." } as const;
+  core.checkRepository.mockResolvedValue({ status: "error", error });
+  render(AddRepository, { onclose: () => {}, onadded: () => {}, onswitch: () => {} });
+  await fireEvent.click(button("Check"));
+  const time = back.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    `GitHub's rate limit is low. Tsugiki can ask it again at ${time}`,
+  );
+});
+
 it("typing again asks for another check", async () => {
   render(AddRepository, { onclose: () => {}, onadded: () => {}, onswitch: () => {} });
   await checked();

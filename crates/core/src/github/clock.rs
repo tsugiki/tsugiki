@@ -50,6 +50,19 @@ impl GitHubClock {
         };
         (clock, news)
     }
+
+    /// The time this computer's clock says when GitHub's says `at`, rounded up to a whole second, so the
+    /// same time on GitHub's clock gives the same answer while the skew stays within that second, and the
+    /// answer is never before `at`.
+    pub(crate) fn local(self, at: OffsetDateTime) -> OffsetDateTime {
+        let local = self.skew.map_or(at, |skew| at - skew);
+        let whole = local.replace_nanosecond(0).unwrap_or(local);
+        if whole < local {
+            whole + Duration::SECOND
+        } else {
+            whole
+        }
+    }
 }
 
 /// The log's words for a skew of `skew`, GitHub's time less the local time.

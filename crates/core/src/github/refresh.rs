@@ -269,8 +269,12 @@ pub(super) fn github_time(at: OffsetDateTime) -> String {
 
 impl GitHub {
     /// Asks whether anything in `repository` moved since `tag`. A 304 costs nothing. After a failure of any
-    /// kind the refresh asks by GraphQL, which reports what went wrong.
+    /// kind the refresh asks by GraphQL, which reports what went wrong, as it does when the rate limit's gate
+    /// holds this request.
     pub fn check_list(&self, repository: &RepositoryName, tag: Option<&Etag>) -> ListCheck {
+        if self.pass_gate().is_err() {
+            return ListCheck::Moved(None);
+        }
         let path = format!("/repos/{}/{}/issues", repository.owner(), repository.name());
         // A Repository's name holds nothing a path refuses, and if one did, the refresh would ask by GraphQL.
         let reply = RestPath::parse(&path)

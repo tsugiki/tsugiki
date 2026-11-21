@@ -191,6 +191,17 @@ type AnnounceActivity = Box<dyn FnMut(Option<&SyncActivity>) + Send>;
 
 type AnnouncePoints = Box<dyn FnMut(Option<&HourPoints>) + Send>;
 
+/// The time GitHub's points come back, by this computer's clock, while the rate limit's gate holds every
+/// request to GitHub (ADR 0015). Quick open offers the browser in place of a fetch until then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct PointsBack {
+    #[serde(with = "time::serde::rfc3339")]
+    #[specta(type = String)]
+    pub at: OffsetDateTime,
+}
+
+type AnnouncePointsBack = Box<dyn FnMut(Option<&PointsBack>) + Send>;
+
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
 /// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
@@ -204,6 +215,8 @@ pub struct StatusBoard {
     announce_sync_activity: AnnounceActivity,
     hour_points: Option<HourPoints>,
     announce_hour_points: AnnouncePoints,
+    points_back: Option<PointsBack>,
+    announce_points_back: AnnouncePointsBack,
 }
 
 impl StatusBoard {
@@ -218,6 +231,8 @@ impl StatusBoard {
             announce_sync_activity: Box::new(|_| {}),
             hour_points: None,
             announce_hour_points: Box::new(|_| {}),
+            points_back: None,
+            announce_points_back: Box::new(|_| {}),
         }
     }
 
@@ -263,6 +278,24 @@ impl StatusBoard {
         if self.hour_points != points {
             self.hour_points = points;
             (self.announce_hour_points)(self.hour_points.as_ref());
+        }
+    }
+
+    /// Also tells `announce` the time GitHub's points come back, each time the rate limit's gate starts
+    /// holding or moves that time, and nothing once it opens.
+    #[must_use]
+    pub fn with_points_back(mut self, announce: AnnouncePointsBack) -> Self {
+        self.announce_points_back = announce;
+        self
+    }
+
+    /// Announces the time GitHub's points come back, `at` by this computer's clock, if it changed, or
+    /// nothing once the gate opens.
+    pub(crate) fn points_back(&mut self, at: Option<OffsetDateTime>) {
+        let back = at.map(|at| PointsBack { at });
+        if self.points_back != back {
+            self.points_back = back;
+            (self.announce_points_back)(self.points_back.as_ref());
         }
     }
 

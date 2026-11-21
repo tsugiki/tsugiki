@@ -1,7 +1,7 @@
 //! The user's own searches, which find the PRs a first sync starts from (ADR 0015).
 
 use super::filters::FilterWalk;
-use super::{Link, Moved, Resumable, SEARCH_PAGE, Step, pause_until};
+use super::{Link, Moved, Resumable, SEARCH_PAGE, Step};
 use crate::error::Error;
 use crate::facts::pull_requests::NodeId;
 use crate::github::pull_requests::{PageRequest, PrSearch};
@@ -56,8 +56,7 @@ pub(super) fn search(
     if cursor.is_none() {
         *next_search += 1;
     }
-    let pause_until = pause_until(page.rate_limit);
-    Ok((Step::Searched { pause_until }, None))
+    Ok((Step::Searched, None))
 }
 
 #[cfg(test)]

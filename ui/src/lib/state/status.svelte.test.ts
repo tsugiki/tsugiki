@@ -9,6 +9,7 @@ vi.mock("$lib/data/bindings", () => ({
     lastSync: vi.fn(),
     syncActivity: vi.fn(),
     hourPoints: vi.fn(),
+    pointsBack: vi.fn(),
     cloning: vi.fn(),
     mirrorProblem: vi.fn(),
     mirrorQuestion: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("$lib/data/bindings", () => ({
     lastSyncChanged: { listen: vi.fn() },
     syncActivityChanged: { listen: vi.fn() },
     hourPointsChanged: { listen: vi.fn() },
+    pointsBackChanged: { listen: vi.fn() },
     cloningChanged: { listen: vi.fn() },
     mirrorProblemChanged: { listen: vi.fn() },
     mirrorQuestionChanged: { listen: vi.fn() },
@@ -174,6 +176,45 @@ describe("StatusState's last sync", () => {
       const state = new StatusState();
       await state.load();
       expect(state.hourPoints).toBeNull();
+    });
+  });
+
+  describe("the time GitHub's points come back", () => {
+    const back = { at: "2026-11-21T14:00:00Z" };
+    const catchBack = () => {
+      const listener = vi.fn<(payload: typeof back | null) => void>();
+      vi.mocked(events.pointsBackChanged.listen).mockImplementation(async (callback) => {
+        listener.mockImplementation((payload) => {
+          callback({ event: "points-back-changed", id: 1, payload });
+        });
+        return () => {};
+      });
+      return listener;
+    };
+
+    it("holds what the core says when the window loads, then follows the gate", async () => {
+      catchLastSync();
+      const backChanged = catchBack();
+      vi.mocked(commands.pointsBack).mockResolvedValue(null);
+      const state = new StatusState();
+      await state.load();
+      expect(state.pointsBack).toBeNull();
+      backChanged(back);
+      expect(state.pointsBack).toEqual(back);
+      backChanged(null);
+      expect(state.pointsBack).toBeNull();
+    });
+
+    it("lets a gate that opens while asking win", async () => {
+      catchLastSync();
+      const backChanged = catchBack();
+      vi.mocked(commands.pointsBack).mockImplementation(async () => {
+        backChanged(null);
+        return back;
+      });
+      const state = new StatusState();
+      await state.load();
+      expect(state.pointsBack).toBeNull();
     });
   });
 

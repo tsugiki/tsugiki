@@ -46,7 +46,7 @@ use tsugiki_core::search::{Query, SearchId, SearchState, TextSearch};
 use tsugiki_core::settings::{
     CommandId, Home, LoadedSettings, PaneLayout, SettingsOwner, TokenSource,
 };
-use tsugiki_core::status::{Change, FailedRead, LastSync, Status, SyncActivity};
+use tsugiki_core::status::{Change, FailedRead, LastSync, PointsBack, Status, SyncActivity};
 use tsugiki_core::theme::ThemeKind;
 use tsugiki_core::version::Version;
 use tsugiki_core::web::{GitHubItem, WebAddress};
@@ -137,6 +137,16 @@ type LatestHourPoints = LatestReader<Option<HourPoints>>;
 #[tauri::command]
 #[specta::specta]
 fn hour_points(latest: State<'_, LatestHourPoints>) -> Option<HourPoints> {
+    latest.get()
+}
+
+type LatestPointsBack = LatestReader<Option<PointsBack>>;
+
+/// The time GitHub's points come back, while the rate limit's gate holds every request to GitHub, for a
+/// window that has just loaded.
+#[tauri::command]
+#[specta::specta]
+fn points_back(latest: State<'_, LatestPointsBack>) -> Option<PointsBack> {
     latest.get()
 }
 
@@ -949,6 +959,11 @@ struct SyncActivityChanged(Option<SyncActivity>);
 #[derive(Clone, Serialize, Type, Event)]
 struct HourPointsChanged(Option<HourPoints>);
 
+/// Sent when the rate limit's gate starts holding every request to GitHub, with the time the points come
+/// back, and with nothing when it opens, so quick open offers the browser in place of a fetch.
+#[derive(Clone, Serialize, Type, Event)]
+struct PointsBackChanged(Option<PointsBack>);
+
 /// Sent when a mirror's clone moves on, and when it ends, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
 struct CloningChanged(Option<Cloning>);
@@ -1013,6 +1028,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             last_sync,
             sync_activity,
             hour_points,
+            points_back,
             cloning,
             mirror_problem,
             check_mirrors_again,
@@ -1094,6 +1110,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             LastSyncChanged,
             SyncActivityChanged,
             HourPointsChanged,
+            PointsBackChanged,
             CloningChanged,
             MirrorProblemChanged,
             MirrorQuestionChanged,

@@ -523,11 +523,15 @@ impl Refreshes {
 /// could leave the old hour's count up long after it.
 const HOUR_CHECK: Duration = Duration::from_secs(60);
 
-/// The instant to see whether the hour's points have reset by GitHub's clock, while the window shows them:
-/// at the reset, or [`HOUR_CHECK`] from now if that's sooner. The hour's count then ends, and the next
-/// hour's waits for GitHub's next answer.
+/// The instant to see whether the hour's points have reset by GitHub's clock, while the window shows them,
+/// or whether the rate limit's gate has opened, while it holds: at the reset or the gate's opening, or
+/// [`HOUR_CHECK`] from now if that's sooner. The hour's count then ends, and the next hour's waits for
+/// GitHub's next answer. The window hears that the gate opened.
 fn hour_check(github: &GitHub) -> Option<Instant> {
-    let left = github.hour_left()?;
+    let gate_left = github
+        .points_back()
+        .map(|at| Duration::try_from(at - OffsetDateTime::now_utc()).unwrap_or(Duration::ZERO));
+    let left = github.hour_left().into_iter().chain(gate_left).min()?;
     Some(Instant::now() + left.min(HOUR_CHECK))
 }
 
@@ -580,6 +584,7 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
         return;
     };
     board.hour_points(github.hour_points());
+    board.points_back(github.points_back());
     let mut syncs = Syncs::new(refreshes.settings.clone());
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
@@ -596,9 +601,9 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
             }
             // Only asking who is signed in sets the status back online, so offline a click asks that first,
             // and the status bar says "Connecting…" until GitHub answers. While GitHub stays away, the syncs
-            // keep waiting for the next status check.
+            // keep waiting for the next status check. While the rate limit's gate holds, it asks nothing.
             Turn::RefreshNow => {
-                if board.asking_again() {
+                if github.points_back().is_none() && board.asking_again() {
                     refresh(board, store, &github);
                     if !board.is_offline() {
                         due.status = Instant::now() + intervals.status;
@@ -645,8 +650,8 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                     syncs: &syncs,
                 };
                 if let Err(problem) = read_conversation(board, store, &read, &fetched) {
-                    syncs.after_fetch_failure(&problem, due.status, github.clock());
-                    board.set(status_after(problem, store));
+                    syncs.after_fetch_failure(&problem, due.status);
+                    tell_problem(board, problem, store);
                 }
                 // A failed read waits its minute too, or the session would ask GitHub again at once.
                 (refreshes.on_screen.borrow_mut()).read(fetched.item(), Instant::now());
@@ -660,10 +665,10 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 };
                 let answer = fetch_unstored(board, store, &read, &item);
                 if let Err(problem) = &answer {
-                    syncs.after_fetch_failure(problem, due.status, github.clock());
+                    syncs.after_fetch_failure(problem, due.status);
                 }
                 let answer = answer.unwrap_or_else(|problem| {
-                    board.set(status_after(problem, store));
+                    tell_problem(board, problem, store);
                     ItemFetch::Unfetched {
                         why: ItemUnfetched::Offline,
                     }
@@ -692,14 +697,15 @@ fn watch(board: &mut StatusBoard, store: &Store, access: GitHubAccess, refreshes
                 Ok(None) => {}
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
                 Err(failure) => {
-                    syncs.after_failure(&failure, due.status, github.clock());
-                    board.set(status_after(failure.problem, store));
+                    syncs.after_failure(&failure, due.status);
+                    tell_problem(board, failure.problem, store);
                 }
             },
         }
         board.sync_activity(syncs.activity());
         // Whichever turn asked GitHub, a sync, a read of what's on screen or the status, counts.
         board.hour_points(github.hour_points());
+        board.points_back(github.points_back());
     }
 }
 
@@ -1158,15 +1164,16 @@ struct Reading<'a> {
 /// and goes to the log.
 /// Fetches `item`, which the database lacks, as the user asked (#981), and says what came of it: the kind it
 /// saved, which it tells the window and the Mirror worker of, or why nothing came. A failure that speaks for
-/// all of GitHub comes back for the caller to show. The window offers no fetch while offline, and one that
-/// raced the status asks nothing, as a request then would only keep the user waiting for its failure.
+/// all of GitHub comes back for the caller to show. The window offers no fetch while offline or while the
+/// rate limit's gate holds, and one that raced the status or the gate asks nothing, as a request then would
+/// only keep the user waiting for its failure.
 fn fetch_unstored(
     board: &mut StatusBoard,
     store: &Store,
     read: &Reading<'_>,
     item: &Item,
 ) -> Result<ItemFetch, Error> {
-    if board.is_offline() {
+    if board.is_offline() || read.github.points_back().is_some() {
         return Ok(ItemFetch::Unfetched {
             why: ItemUnfetched::Offline,
         });
@@ -1338,8 +1345,12 @@ fn show_last_sync(board: &mut StatusBoard, store: &Store, repository: Repository
     }
 }
 
-/// Asks GitHub again, so `board` follows the network going and coming back.
+/// Asks GitHub again, so `board` follows the network going and coming back. While the rate limit's gate
+/// holds, it asks nothing and the status stays as it is.
 fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
+    if github.points_back().is_some() {
+        return;
+    }
     board.set(match github.viewer() {
         Ok(viewer) => match store.remember_login(&viewer.login) {
             Ok(()) => Status::Online {
@@ -1349,6 +1360,15 @@ fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
         },
         Err(problem) => status_after(problem, store),
     });
+}
+
+/// Sets the status bar's words after a job's request failed. The rate limit leaves them as they are: the
+/// gate holds every request until the reset, and the status bar says when the sync goes on. Only the
+/// question of who is signed in shows GitHub's refusal, as it asks nothing while the gate holds.
+fn tell_problem(board: &mut StatusBoard, problem: Error, store: &Store) {
+    if !matches!(problem.kind, ErrorKind::RateLimited { .. }) {
+        board.set(status_after(problem, store));
+    }
 }
 
 /// The status bar's words after GitHub didn't answer as it should.

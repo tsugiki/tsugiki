@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 
-use super::{Batches, Leads, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step, pause_until};
+use super::{Batches, Leads, Link, Moved, Phase, Resumable, SEARCH_PAGE, Step};
 use crate::error::{Error, ErrorKind};
 use crate::facts::filters::{FilterProblem, FilterResults};
 use crate::facts::pull_requests::{NodeId, PullRequestFacts};
@@ -71,10 +71,9 @@ pub(super) fn can_narrow(stored: Option<&FilterResults>) -> bool {
 #[derive(Serialize, Deserialize)]
 enum Place {
     Reading(Pages),
-    /// It has no more to read, and its results wait to be saved.
-    Read {
-        pause_until: Option<OffsetDateTime>,
-    },
+    /// It has no more to read, and its results wait to be saved. A struct with no fields, so the place an
+    /// older Tsugiki saved, which held the time GitHub's points came back, still parses.
+    Read {},
 }
 
 impl Default for Place {
@@ -174,10 +173,9 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
     let Some(search) = walk.left.front().cloned() else {
         return Ok((Step::Moved, Some(fetch_what_is_missing(link, walk)?)));
     };
-    let pause_until = match read_page(link, walk, &search)? {
-        Page::Stays(step) => return Ok((step, None)),
-        Page::Last { pause_until } => pause_until,
-    };
+    if let Page::Stays(step) = read_page(link, walk, &search)? {
+        return Ok((step, None));
+    }
     let query = &search.query;
     let numbers = walk.current.clone();
     let step = if search.since.is_some() {
@@ -192,12 +190,9 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
         let touched: Vec<u32> = moved.into_iter().collect();
         // The Sidebar shows the problem, so a cut-off search counts as a change even with no number in it.
         if walk.cut_off {
-            Step::Saved {
-                touched,
-                pause_until,
-            }
+            Step::Saved { touched }
         } else {
-            Step::saved_if_any(touched, pause_until)
+            Step::saved_if_any(touched)
         }
     } else {
         let touched = numbers.iter().copied().collect();
@@ -205,10 +200,7 @@ pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Mov
         let results = FilterResults { numbers, problem };
         link.store
             .save_filter_results(link.repository, query, results)?;
-        Step::Saved {
-            touched,
-            pause_until,
-        }
+        Step::Saved { touched }
     };
     walk.start_the_next_search();
     Ok((step, None))
@@ -219,18 +211,14 @@ enum Page {
     /// This step ends here, with the search still under way or done with.
     Stays(Step),
     /// The search has no more to read, so its results are ready to save.
-    Last { pause_until: Option<OffsetDateTime> },
+    Last,
 }
 
 /// Reads the next page of the search under way. A search read to its end stays that way, so a save that
 /// failed goes again with no new request.
 fn read_page(link: &Link<'_>, walk: &mut FilterWalk, search: &WalkedSearch) -> Result<Page, Error> {
     let pages = match &mut walk.place {
-        Place::Read { pause_until } => {
-            return Ok(Page::Last {
-                pause_until: *pause_until,
-            });
-        }
+        Place::Read {} => return Ok(Page::Last),
         Place::Reading(pages) => pages,
     };
     let query = &search.query;
@@ -252,13 +240,11 @@ fn read_page(link: &Link<'_>, walk: &mut FilterWalk, search: &WalkedSearch) -> R
             walk.start_the_next_search();
             return Ok(Page::Stays(Step::Saved {
                 touched: Vec::new(),
-                pause_until: None,
             }));
         }
         Err(problem) => return Err(problem),
     };
-    let pause_until = pause_until(page.rate_limit);
-    let more = Page::Stays(Step::Searched { pause_until });
+    let more = Page::Stays(Step::Searched);
     if pages.cursor.is_none() && page.total > SEARCH_CAP {
         let today = link.github.clock().now().date();
         if let Some((older, newer)) = pages.slice.halves(today) {
@@ -281,8 +267,8 @@ fn read_page(link: &Link<'_>, walk: &mut FilterWalk, search: &WalkedSearch) -> R
         pages.cursor = None;
         return Ok(more);
     }
-    walk.place = Place::Read { pause_until };
-    Ok(Page::Last { pause_until })
+    walk.place = Place::Read {};
+    Ok(Page::Last)
 }
 
 /// True when GitHub refused this search, which the next Filter's search wouldn't run into. An outage, no

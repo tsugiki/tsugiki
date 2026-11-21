@@ -80,6 +80,8 @@ const THEMES = {
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 const statuses = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
+/** The listener for the time GitHub's points come back, so a test can say the rate limit's gate holds. */
+const pointsBack = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
 vi.mock("$lib/data/bindings", async () => {
   const { itemMoves, prFilesEvents } = await import("$lib/testing/fixtures");
@@ -93,6 +95,7 @@ vi.mock("$lib/data/bindings", async () => {
       lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
       syncActivity: async () => null,
       hourPoints: async () => null,
+      pointsBack: async () => null,
       cloning: async () => null,
       newVersion: async () => null,
       refresh: async () => null,
@@ -112,6 +115,14 @@ vi.mock("$lib/data/bindings", async () => {
       lastSyncChanged: { listen: async () => () => {} },
       syncActivityChanged: { listen: async () => () => {} },
       hourPointsChanged: { listen: async () => () => {} },
+      pointsBackChanged: {
+        listen: async (callback: (event: { payload: unknown }) => void) => {
+          pointsBack.changed.mockImplementation((payload) => {
+            callback({ payload });
+          });
+          return () => {};
+        },
+      },
       mirrorProblemChanged: { listen: async () => () => {} },
       mirrorQuestionChanged: { listen: async () => () => {} },
       newVersionFound: { listen: async () => () => {} },
@@ -729,10 +740,12 @@ describe("quick open", () => {
       expect(pane.getByRole("status").textContent).toBe("Fetching some-maintainer/gcmon #12 from GitHub…");
     });
 
-    it("offers it in the browser in place of a fetch while GitHub can't be reached", async () => {
+    /** Quick open's rows for #12 once `hold` has told the window GitHub can't be asked, and the browser
+     * opened by Enter on the first. */
+    const browsingTwelve = async (hold: () => void) => {
       render(Page);
       await screen.findByRole("button", { name: "#7 It crashes" });
-      statuses.changed({ state: "offline_as", last_login: "octocat" });
+      hold();
       await ctrlP();
       await fireEvent.input(box(), { target: { value: "#12" } });
       await screen.findByRole("option", { name: "Open #12 in browser" });
@@ -748,6 +761,29 @@ describe("quick open", () => {
         });
       });
       expect(core.fetchItem).not.toHaveBeenCalled();
+    };
+
+    it("offers it in the browser in place of a fetch while GitHub can't be reached", async () => {
+      await browsingTwelve(() => {
+        statuses.changed({ state: "offline_as", last_login: "octocat" });
+      });
+    });
+
+    it("offers it in the browser in place of a fetch while the rate limit holds every request", async () => {
+      await browsingTwelve(() => {
+        pointsBack.changed({ at: "2026-11-21T14:00:00Z" });
+      });
+    });
+
+    it("offers the fetch again once GitHub's points come back", async () => {
+      render(Page);
+      await screen.findByRole("button", { name: "#7 It crashes" });
+      pointsBack.changed({ at: "2026-11-21T14:00:00Z" });
+      pointsBack.changed(null);
+      await ctrlP();
+      await fireEvent.input(box(), { target: { value: "#12" } });
+
+      expect(await screen.findByRole("option", { name: "Fetch #12 from GitHub" })).toBeTruthy();
     });
 
     it("opens an Issue the fetch found as an Issue", async () => {

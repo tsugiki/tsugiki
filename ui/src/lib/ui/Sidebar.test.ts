@@ -13,13 +13,12 @@ const involved = {
 
 const whole = { kind: "whole" } as const;
 const button = (name: string) => screen.getByRole("button", { name });
-/** The open Repository, with nothing Archived, for the tests that don't look at them. */
+/** The open Repository and its callbacks, for the tests that don't look at them. */
 const cpython = {
   repository: "python/cpython",
   onpick: () => {},
   onsettings: () => {},
   onicons: () => {},
-  archived: 0,
 };
 
 it("starts with the open Repository's name, and a click on it asks for the Repository picker", async () => {
@@ -103,13 +102,12 @@ it("names ⚙'s key in its tooltip as the OS calls it", () => {
   platform.mockRestore();
 });
 
-it("lists the Workbench, the Built-in views with Archived last, and each Filter with its count", () => {
+it("lists the Workbench, the Built-in views with Archived last and uncounted, and each Filter with its count", () => {
   render(Sidebar, {
     ...cpython,
     count: 12,
     reviewRequests: 4,
     staleReviews: 2,
-    archived: 5,
     filters: [mine, involved],
     selected: whole,
     onselect: () => {},
@@ -122,7 +120,7 @@ it("lists the Workbench, the Built-in views with Archived last, and each Filter 
     "Inbox",
     "Review requests 4",
     "Stale reviews 2",
-    "Archived 5",
+    "Archived",
     "Mine 3",
     "Involved 9",
   ]);
@@ -224,7 +222,7 @@ it("marks Archived selected", () => {
     selected: { kind: "archived" },
     onselect: () => {},
   });
-  expect(button("Archived 0").getAttribute("aria-current")).toBe("true");
+  expect(button("Archived").getAttribute("aria-current")).toBe("true");
   expect(button("Stale reviews 2").getAttribute("aria-current")).toBeNull();
 });
 
@@ -245,7 +243,7 @@ it("says which line the user picks", async () => {
   expect(onselect).toHaveBeenLastCalledWith({ kind: "review_requests" });
   await fireEvent.click(button("Stale reviews 2"));
   expect(onselect).toHaveBeenLastCalledWith({ kind: "stale_reviews" });
-  await fireEvent.click(button("Archived 0"));
+  await fireEvent.click(button("Archived"));
   expect(onselect).toHaveBeenLastCalledWith({ kind: "archived" });
   await fireEvent.click(button("Workbench 12"));
   expect(onselect).toHaveBeenLastCalledWith(whole);

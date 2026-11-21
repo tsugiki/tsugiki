@@ -37,7 +37,6 @@
     count,
     reviewRequests,
     staleReviews,
-    archived,
     filters,
     selected,
     onselect,
@@ -51,8 +50,6 @@
     count: number;
     reviewRequests: number;
     staleReviews: number;
-    /** How many items the Archived view holds. */
-    archived: number;
     filters: FilterLine[];
     selected: SidebarView;
     /** Brings the full Sidebar back and shows `view`. */
@@ -105,7 +102,7 @@
   <span class="rule"></span>
   {@render entry(ICONS.review_requests, "Review requests", reviewRequests, { kind: "review_requests" })}
   {@render entry(ICONS.stale_reviews, "Stale reviews", staleReviews, { kind: "stale_reviews" })}
-  {@render entry(ICONS.archived, "Archived", archived, { kind: "archived" })}
+  {@render entry(ICONS.archived, "Archived", 0, { kind: "archived" })}
   {#if filters.length > 0}
     <span class="rule"></span>
   {/if}

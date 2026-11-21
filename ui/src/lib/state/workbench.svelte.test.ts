@@ -639,14 +639,13 @@ describe("WorkbenchState", () => {
   it("holds the counts of the Built-in views", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(
-      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2, archived: 6 }),
+      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2 }),
     );
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
     expect(state.reviewRequests).toBe(3);
     expect(state.staleReviews).toBe(2);
-    expect(state.archived).toBe(6);
   });
 
   it("names the Archived view", async () => {

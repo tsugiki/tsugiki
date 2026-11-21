@@ -287,8 +287,6 @@ pub struct Workbench {
     pub review_requests: u32,
     /// The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one.
     pub stale_reviews: u32,
-    /// The count of Archived items.
-    pub archived: u32,
     pub filters: Vec<FilterLine>,
 }
 
@@ -390,7 +388,6 @@ impl Workbench {
         let put_away: Vec<&ListedItem> = (listed.iter())
             .filter(|listed| listed.is_archived())
             .collect();
-        let archived = count_of(put_away.iter());
         let shown_of = |from: &[&ListedItem]| {
             let shown = from.iter().filter(|listed| match selected {
                 Some(numbers) => listed.item.is_reached_by(numbers),
@@ -413,7 +410,6 @@ impl Workbench {
             count,
             review_requests,
             stale_reviews,
-            archived,
             filters: lines,
         }
     }

@@ -159,6 +159,37 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     assert_eq!((left, asked_after), (vec![], vec![]));
 }
 
+#[test]
+fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() {
+    let (folders, _folder) = temp_folders("held-fetch-raced");
+    let (board, changes) = changes_board();
+    let held = hanging(vec![signed_in()]);
+    let session = Session::start(board, Ok(folders), reaching(held.access), HOURLY);
+    let asked = session.fetching();
+    asked.sync(gcmon());
+    drop(held.asked.recv_timeout(PLENTY).unwrap());
+
+    // Online, so the session passes the fetch on, and the GitHub thread takes it after the step.
+    let answer = asked.fetch_unstored_later(Item {
+        repository: gcmon(),
+        number: 7,
+    });
+    // The session answers in order, so it has passed the fetch on once it tells of this mark.
+    asked.mark_unseen(gcmon(), 7, None);
+    drop(changes.recv_timeout(PLENTY).unwrap());
+    // The step fails, and the status says offline before the GitHub thread takes the fetch.
+    drop(held.let_go);
+    let fetched = answer.recv_timeout(PLENTY);
+    session.stop(PLENTY);
+
+    assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
+    let fetches = held
+        .asked
+        .try_iter()
+        .filter(|operation| operation == "FetchItem");
+    assert_eq!(fetches.count(), 0);
+}
+
 /// Asks the session for #7 of gcmon from a thread of its own, and waits for the answer. A session that
 /// passed the fetch to the GitHub thread, which holds its request, fails the test at the wait.
 fn fetch_beside(asked: &Fetching) -> Result<ItemFetch, RecvTimeoutError> {

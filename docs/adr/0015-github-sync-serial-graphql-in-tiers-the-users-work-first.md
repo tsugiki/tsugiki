@@ -56,6 +56,18 @@ Requests stay serial because GitHub allows 60 seconds of GraphQL CPU time a minu
 total response time, and a batch of 25 PRs takes about 6 seconds. A second thread would only reach that limit
 sooner.
 
+One thread sends every request with the token: the syncs, the reads of what's on screen, the user's demands,
+Add repository's check and the size the Mirror worker asks before a clone. The rate limit's gate holds them
+all, and each one's cost counts in the hour's points. That GitHub thread waits on each request with a
+blocking call. The session's thread takes the window's messages meanwhile. It saves the marks, follows
+changes to the settings and keeps the Mirror's patch-ids itself, and passes each demand on GitHub to the
+GitHub thread's queue, where the user's demands go ahead of the sync's next step. A mark never waits on a
+request, and a demand waits for one at most
+([#997](https://github.com/tsugiki/tsugiki/issues/997)). The GitHub thread tells the session's thread what it
+saved, and the session's thread alone works out what the rules make of the facts: the Mirror worker's wants
+and the kept checks of the Stale review check. A set of wants read before a Mute then can't land after the
+Mute's own.
+
 Measured on python/typeshed ([#120](https://github.com/tsugiki/tsugiki/issues/120)), a small Repository with
 385 open items, the oldest unchanged since 2018: the add dialog counted 577 items and estimated 150 seconds
 and 67 points. The sync took 150 seconds and 44 queries, so about 44 points, and loaded 592 items. 6 of those
@@ -150,6 +162,8 @@ and reads the trees it still owed.
 - **Parallel requests**, such as one thread for Issues and one for PRs. Faster on paper, but GraphQL's
   CPU-time limit and the user's shared budget make serial the safe choice, and the first phase is quick
   anyway.
+- **One thread for the requests and the window's messages.** A mark or a change to the settings then waited
+  for the request under way, up to GitHub's timeout while the network hung.
 - **The window, then the trees.** The user's own Issues waited 15 minutes for their trees this way, in a sync
   of 15 minutes that sent 78 cross-reference queries, one Issue each. Listing PRs whole took 5.4 seconds a
   query against under 1 for the light list, and the batches fetch those PRs whole anyway.

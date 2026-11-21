@@ -150,8 +150,14 @@ fn check_repository_query() -> String {
     )
 }
 
-const REPOSITORY_SIZE: &str = "query RepositorySize($owner: String!, $name: String!) { \
-                               repository(owner: $owner, name: $name) { diskUsage } }";
+/// The question of a Repository's size, which the Mirror worker asks before a clone. It asks what its points
+/// were, so they count in the hour's.
+fn repository_size_query() -> String {
+    format!(
+        "query RepositorySize($owner: String!, $name: String!) {{ \
+         repository(owner: $owner, name: $name) {{ diskUsage }} {RATE_LIMIT_FIELDS} }}"
+    )
+}
 
 /// A GraphQL client that holds the token, so no caller has to.
 pub struct GitHub {
@@ -304,7 +310,7 @@ impl GitHub {
         }
         let data: Data = self.query(&Request {
             operation: "RepositorySize",
-            query: Cow::Borrowed(REPOSITORY_SIZE),
+            query: Cow::Owned(repository_size_query()),
             variables: json!({ "owner": repository.owner(), "name": repository.name() }),
         })?;
         Ok(data.repository.disk_usage.unwrap_or(0).saturating_mul(1024))

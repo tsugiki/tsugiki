@@ -80,7 +80,8 @@ impl Setup {
                 | SessionMessage::Refresh
                 | SessionMessage::SettingsChanged(..)
                 | SessionMessage::Mark(_)
-                | SessionMessage::Patched(..) => None,
+                | SessionMessage::Patched(..)
+                | SessionMessage::Saved(_) => None,
             })
             .collect()
     }
@@ -122,7 +123,8 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::FetchUnstored { .. }
             | SessionMessage::Refresh
             | SessionMessage::Mark(_)
-            | SessionMessage::Patched(..) => None,
+            | SessionMessage::Patched(..)
+            | SessionMessage::Saved(_) => None,
         })
         .collect()
 }

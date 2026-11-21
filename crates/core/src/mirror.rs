@@ -13,20 +13,20 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use specta::Type;
+use time::OffsetDateTime;
 
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::patch_ids::{FilePatch, PatchesOf};
 use crate::facts::pull_requests::{PrHead, ReviewedCommit};
 use crate::folders::Folders;
-use crate::github::{GitHub, Transport, live};
+use crate::github::live;
 use crate::latest::{self, LatestReader, LatestWriter};
 use crate::mirror_queue::{self, Next, Pace, Problem, Queue, Queued, Waiting};
 use crate::mirror_source::{MirrorSource, MirrorSources};
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::status::Status;
-use crate::token::{AskAgain, TokenFrom, read_token};
 
 mod heads;
 mod lookup;
@@ -152,18 +152,35 @@ pub type SizeOf = Box<dyn FnMut(&RepositoryName) -> Result<u64, Error> + Send>;
 /// The bytes free on the disk that holds a folder.
 pub type FreeSpace = Box<dyn Fn(&Path) -> io::Result<u64> + Send>;
 
-/// Asks GitHub for a Repository's size, through a new connection signed in with a token read each time, as
-/// a clone is rare and the session owns the other one.
-pub fn sizes_on_github(new_transport: fn() -> Box<dyn Transport>, token_from: TokenFrom) -> SizeOf {
-    Box::new(move |repository| {
-        let token = read_token(token_from, AskAgain::OnRetry)?;
-        GitHub::new(new_transport(), token).repository_size(repository)
-    })
+/// Where the worker learns a Repository's size on GitHub.
+enum Sizes {
+    /// What the remotes were made with, as in tests.
+    Own(SizeOf),
+    /// The session's GitHub thread, which owns GitHub access, once the session hands over the way to ask it
+    /// (`MirrorRequests::size_through`). The rate limit's gate then holds the request as it holds every
+    /// other.
+    FromSession(Option<SizeOf>),
 }
 
-/// A connection to GitHub's API, for a Repository's size.
-fn https() -> Box<dyn Transport> {
-    Box::new(tsugiki_token::Https::new())
+impl Sizes {
+    fn size_of(&mut self, repository: &RepositoryName) -> Result<u64, Error> {
+        match self {
+            Self::Own(size_of) | Self::FromSession(Some(size_of)) => size_of(repository),
+            Self::FromSession(None) => Err(Error::new(
+                ErrorKind::Offline,
+                &format!(
+                    "Tsugiki can't ask GitHub for the size of {repository} before it connects."
+                ),
+            )),
+        }
+    }
+
+    /// Asks the session through `size_of` from now on, if the remotes are GitHub's.
+    fn take(&mut self, size_of: SizeOf) {
+        if let Self::FromSession(asking) = self {
+            *asking = Some(size_of);
+        }
+    }
 }
 
 /// Where git clones to, in the Repository's folder, so a clone cut off never looks like a mirror.
@@ -255,17 +272,17 @@ pub struct Remotes {
     patience: Duration,
     /// The wait before a clone that failed goes back in line.
     retry: Duration,
-    size_of: SizeOf,
+    size_of: Sizes,
     free_space: FreeSpace,
     /// The schedule of each mirror's upkeep, or nothing for mirrors left as they are.
     upkeep: Option<Schedule>,
 }
 
 impl Remotes {
-    /// GitHub's remotes, whose sizes its API gives, signed in with the token Tsugiki reads.
+    /// GitHub's remotes, whose sizes its API gives through the session.
     pub fn github() -> Self {
         Self {
-            size_of: sizes_on_github(https, TokenFrom::LIVE),
+            size_of: Sizes::FromSession(None),
             free_space: Box::new(|folder| fs4::available_space(folder)),
             prefixes: GITHUB_PREFIXES.map(str::to_owned).to_vec(),
             upkeep: Some(Schedule::DAILY_AND_WEEKLY),
@@ -280,7 +297,7 @@ impl Remotes {
             base,
             patience: BEHIND_PATIENCE,
             retry: CLONE_RETRY,
-            size_of: Box::new(|_| Ok(0)),
+            size_of: Sizes::Own(Box::new(|_| Ok(0))),
             free_space: Box::new(|_| Ok(u64::MAX)),
             upkeep: None,
         }
@@ -310,7 +327,7 @@ impl Remotes {
     /// The same remotes, sized by `size_of` on a disk that `free_space` measures, for tests.
     pub fn on_disk(self, size_of: SizeOf, free_space: FreeSpace) -> Self {
         Self {
-            size_of,
+            size_of: Sizes::Own(size_of),
             free_space,
             ..self
         }
@@ -338,6 +355,8 @@ enum Message {
     Patches(RepositoryName, Vec<PatchesOf>),
     /// Where to hand the patch-ids read from now on.
     PatchesTo(AnnouncePatched),
+    /// How to ask GitHub a Repository's size from now on.
+    SizesFrom(SizeOf),
     /// The head of a PR the user opened, which the mirror lacks.
     First(RepositoryName, PrHead),
     /// A PR the user opened, whose ref stays until the next launch.
@@ -455,6 +474,14 @@ impl MirrorRequests {
         self.send(Message::PatchesTo(announce));
     }
 
+    /// Asks a Repository's size before a clone through `size_of` from now on, the session's way to its
+    /// GitHub thread, if the worker clones from GitHub. Until then a clone fails its size check, and tries
+    /// again after its wait. A session with no token answers each ask with a failure, so its clones keep
+    /// failing until the next launch.
+    pub fn size_through(&self, size_of: SizeOf) {
+        self.send(Message::SizesFrom(size_of));
+    }
+
     /// Fetches the head of a PR the user opened, which `repository`'s mirror lacks, ahead of the heads
     /// waiting, in a fetch of its own, or in the fetch of that PR at the same commit under way. The worker
     /// fetches it whatever it noted of it before, so a ref GitHub made late arrives. A hand-over never
@@ -563,6 +590,18 @@ impl HeardRequests {
         })
     }
 
+    /// The way to ask a Repository's size that the session handed the worker as it started.
+    pub(crate) fn sizes(&self) -> SizeOf {
+        let handed = self.take(|message| {
+            let Message::SizesFrom(size_of) = message else {
+                return Err(message);
+            };
+            Ok(size_of)
+        });
+        (handed.into_iter().next())
+            .expect("the session hands the worker a way to ask sizes as it starts")
+    }
+
     /// The heads asked for first since the last call.
     pub(crate) fn firsts(&self) -> Vec<(RepositoryName, PrHead)> {
         self.take(|message| {
@@ -622,6 +661,7 @@ impl HeardRequests {
             }
             other @ (Message::Clone(..)
             | Message::PatchesTo(_)
+            | Message::SizesFrom(_)
             | Message::First(..)
             | Message::LookUp(..)
             | Message::Checkout(..)
@@ -960,6 +1000,37 @@ struct Worker {
     awaiting_idle: Vec<Sender<()>>,
 }
 
+/// Why the worker can't say whether a clone has room on the disk.
+#[derive(Debug, PartialEq, Eq)]
+enum Unmeasured {
+    /// The rate limit's gate holds every request to GitHub until `back`, so the size can't be asked before
+    /// then, and the clone waits for it rather than for its doubled retry. `words` say why.
+    PointsOut { back: Instant, words: String },
+    /// Anything else, in words.
+    Other(String),
+}
+
+impl Unmeasured {
+    /// Why the size check failed, from its `problem`. A rate limit that names no reset fails like any other.
+    fn of(problem: Error) -> Self {
+        let resets_at = if let ErrorKind::RateLimited { resets_at } = problem.kind {
+            resets_at
+        } else {
+            None
+        };
+        let back = resets_at
+            .and_then(|at| OffsetDateTime::from_unix_timestamp(at.into()).ok())
+            .map(|at| Duration::try_from(at - OffsetDateTime::now_utc()).unwrap_or(Duration::ZERO));
+        match back {
+            Some(left) => Self::PointsOut {
+                back: Instant::now() + left,
+                words: problem.message,
+            },
+            None => Self::Other(problem.message),
+        }
+    }
+}
+
 /// A Repository whose clone failed.
 struct FailedClone {
     repository: RepositoryName,
@@ -1004,6 +1075,7 @@ impl Worker {
                     self.hand_over_patches(&repository, wanted);
                 }
                 Ok(Message::PatchesTo(announce)) => self.patched = Some(announce),
+                Ok(Message::SizesFrom(size_of)) => self.remotes.size_of.take(size_of),
                 Ok(Message::First(repository, head)) => {
                     self.wake();
                     self.put_first(&repository, head);
@@ -1322,7 +1394,14 @@ impl Worker {
                 self.set_problem(Some(short));
                 return;
             }
-            Err(cause) => {
+            Err(Unmeasured::PointsOut { back, words }) => {
+                log::warn!(
+                    "Tsugiki holds back the clone of {repository} until GitHub's points come back: {words}"
+                );
+                self.wait_clone(repository, words, back);
+                return;
+            }
+            Err(Unmeasured::Other(cause)) => {
                 log::warn!("Tsugiki can't say if {repository}'s mirror has room: {cause}");
                 self.fail_clone(repository, cause);
                 return;
@@ -1392,15 +1471,16 @@ impl Worker {
         repository: &RepositoryName,
         root: &Path,
         mirror: &Path,
-    ) -> Result<Option<MirrorProblem>, String> {
-        let size = (self.remotes.size_of)(repository).map_err(|problem| problem.message)?;
+    ) -> Result<Option<MirrorProblem>, Unmeasured> {
+        let size = (self.remotes.size_of.size_of(repository)).map_err(Unmeasured::of)?;
         let needed = size.saturating_add(ROOM_TO_SPARE);
-        let mut free = self.free_space(root)?;
+        let mut free = self.free_space(root).map_err(Unmeasured::Other)?;
         if free < needed && has_broken(mirror) {
             delete_broken(repository, mirror);
             // A broken mirror that couldn't be deleted gave back no room.
             let gone = !has_broken(mirror);
-            free = (gone.then(|| self.free_space(root)).transpose()?).unwrap_or(free);
+            let after = gone.then(|| self.free_space(root)).transpose();
+            free = after.map_err(Unmeasured::Other)?.unwrap_or(free);
         }
         Ok((free < needed).then(|| MirrorProblem::DiskShort {
             repository: repository.clone(),
@@ -1432,6 +1512,11 @@ impl Worker {
             }
         };
         let retry_at = Instant::now() + clone_wait(self.remotes.retry, tries);
+        self.wait_clone(repository, words, retry_at);
+    }
+
+    /// Puts the clone of `repository`, which failed for the reason in `words`, back in line at `retry_at`.
+    fn wait_clone(&mut self, repository: RepositoryName, words: String, retry_at: Instant) {
         self.failed.push(FailedClone {
             repository,
             retry_at,

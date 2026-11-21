@@ -1,17 +1,17 @@
 //! The job that works out the links the store keeps again, once a release changes the rules that work them
 //! out (#950). The store opens with the links it kept and answers reads from them meanwhile. The session
-//! takes the job a batch of a Repository's PRs at a time, ahead of the syncs' next steps, and answers what
-//! it's asked between two batches.
+//! takes the job a batch of a Repository's PRs at a time, whenever no message waits, and answers what it's
+//! asked between two batches. It asks GitHub nothing, so it runs while the GitHub thread waits on a request.
 
 use std::collections::VecDeque;
 use std::num::NonZeroU32;
 
 use crate::repository::RepositoryName;
-use crate::status::{Change, StatusBoard};
+use crate::status::{Change, Changes};
 use crate::store::Store;
 
-/// How many PRs a step works out the links of, at most. The step keeps the session from what it's asked
-/// for as long as it runs, and a Repository the size of CPython's would keep it for several of these.
+/// How many PRs a step works out the links of, at most. The step keeps the session's thread from its next
+/// message as long as it runs, and a Repository the size of CPython's would keep it for several of these.
 const BATCH: NonZeroU32 = NonZeroU32::MIN.saturating_add(4999);
 
 /// A Repository whose links are still to work out again, from the PR it has got to.
@@ -85,13 +85,13 @@ impl LinkRefill {
         }
     }
 
-    /// Works out the links of the next batch of PRs again. Once a Repository has none left, it tells
-    /// `board`, whose screens of the Repository read them again, and once no Repository is left, it saves
-    /// the names of `LinkRule::SET` as the kept links' rules. A step that fails ends the refill. Its batch
-    /// keeps the links it would replace, and the names stay, for the next launch to refill every
-    /// Repository. The earlier batches of its Repository keep what they saved, so `board` hears of the
-    /// Repository then too.
-    pub(super) fn step(&mut self, board: &mut StatusBoard, store: &Store) {
+    /// Works out the links of the next batch of PRs again. Once a Repository has none left, it tells the
+    /// window through `board`, and the screens of the Repository read them again. Once no Repository is
+    /// left, it saves the names of `LinkRule::SET` as the kept links' rules. A step that fails ends the
+    /// refill. Its batch keeps the links it would replace, and the names stay, for the next launch to refill
+    /// every Repository. The earlier batches of its Repository keep what they saved, so the window hears of
+    /// the Repository then too.
+    pub(super) fn step(&mut self, board: &Changes, store: &Store) {
         let Some(left) = &mut self.left else {
             return;
         };

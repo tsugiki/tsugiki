@@ -4,9 +4,10 @@
 //!
 //! [`Fetching`] is a handle with no thread of its own, which the session and the core's calls each hold a
 //! clone of. Only the core can name it: the app asks through `calls` (ADR 0023). Two queues stay behind it,
-//! each with one owner: the session runs GitHub's, one request at a time (ADR 0015), and the Mirror worker
-//! runs git's. Each ranks the user's demands first, then the rules' wants, then its own background work, such
-//! as the sync's tiers or a Mirror's upkeep.
+//! each with one owner: the session's GitHub thread runs GitHub's, one request at a time (ADR 0015), and the
+//! Mirror worker runs git's. Each ranks the user's demands first, then the rules' wants, then its own
+//! background work, such as the sync's tiers or a Mirror's upkeep. The session's own thread takes what this
+//! handle sends it at once, and passes what needs GitHub on to the GitHub thread.
 
 use std::path::Path;
 use std::sync::mpsc::{self, Sender};
@@ -26,7 +27,7 @@ use crate::mirror_source::MirrorSource;
 use crate::patch_ids::PatchReads;
 use crate::repository::RepositoryName;
 use crate::repository_settings::{RepositoryCheck, SettingsSave};
-use crate::status::ItemUnread;
+use crate::status::{Change, ItemUnread};
 use crate::work::SeenMark;
 
 pub(crate) const NOT_CONNECTED: &str =
@@ -202,8 +203,9 @@ pub(crate) enum ScreenMove {
     WindowLoaded,
 }
 
-/// What the session's thread is asked, which alone holds the token, the client and the store's writer. It
-/// takes each between two sync steps, so the user's demands go ahead of the sync's tiers.
+/// What the session's thread is asked. It takes each at once: it saves a mark or the Mirror's patch-ids
+/// itself, and passes a demand on GitHub to the GitHub thread, which alone holds the token and the client,
+/// and takes it between two sync steps, so the user's demands go ahead of the sync's tiers.
 pub(crate) enum SessionMessage {
     Stop,
     Check {
@@ -225,6 +227,11 @@ pub(crate) enum SessionMessage {
     Screen(ScreenMove),
     /// The per-file patch-ids the Mirror worker read, or the commits it can't read, for the store to keep.
     Patched(RepositoryName, PatchReads),
+    /// The GitHub thread saved facts of a Repository that can change what the rules want of the Mirror, and
+    /// of the items the change names. The session works the wants out and keeps the checks, as it does after
+    /// a mark, so one thread writes what the rules make of the facts. Then it hands the worker those items'
+    /// heads.
+    Saved(Change),
     /// A fetch of an Issue or a PR the database lacks, which answers what it found (#981).
     FetchUnstored {
         item: Item,
@@ -272,8 +279,8 @@ pub struct Queued(());
 pub type KeepPatchIds = Box<dyn FnMut(&RepositoryName, PatchReads) + Send>;
 
 /// Asks GitHub and the Mirrors for data, from any thread. Each call returns at once, but for `check` and
-/// `check_clone`. A check waits for what the session is doing first, which at the start can be `gh` or a
-/// slow request, so don't call it from the thread that draws the window.
+/// `check_clone`. A check waits for what the GitHub thread is doing first, which at the start can be `gh` or
+/// a slow request, so don't call it from the thread that draws the window.
 #[derive(Clone)]
 pub struct Fetching {
     session: Sender<SessionMessage>,
@@ -400,6 +407,12 @@ impl Fetching {
         self.mirrors.no_head(repository, number);
     }
 
+    /// The GitHub thread saved facts of `change`'s Repository that can change what the rules want of the
+    /// Mirror, and of the items it names.
+    pub(crate) fn facts_saved(&self, change: Change) {
+        self.to_session(SessionMessage::Saved(change));
+    }
+
     /// Mark Seen on what `mark` names, as the window drew it. A session that can't ask GitHub still records
     /// it.
     pub fn mark_seen(&self, repository: RepositoryName, mark: SeenMark) {
@@ -473,9 +486,10 @@ impl Fetching {
     }
 
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.
-    /// The session takes it between two sync steps, ahead of the sync's queued work, saves what it found,
-    /// and says which kind it was. A session with no token or no database answers `ItemUnfetched::Offline`,
-    /// and has already shown why on the status bar.
+    /// The GitHub thread takes it between two sync steps, ahead of the sync's queued work, saves what it
+    /// found, and says which kind it was. A session with no token or no database answers
+    /// `ItemUnfetched::Offline`, and has already shown why on the status bar. So does one offline or below
+    /// the rate limit's floor, at once, without waiting for the request under way.
     pub fn fetch_unstored(&self, repository: RepositoryName, number: u32) -> ItemFetch {
         let (reply, answer) = mpsc::channel();
         let item = Item { repository, number };

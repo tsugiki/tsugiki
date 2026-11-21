@@ -1971,39 +1971,33 @@ mod problems {
         start.args.first().is_some_and(|arg| arg == "clone")
     }
 
-    fn two_kilobytes() -> Box<dyn Transport> {
-        Box::new(crate::github::testing::answered(
-            200,
-            r#"{"data":{"repository":{"diskUsage":2}}}"#,
-        ))
-    }
-
-    fn empty() -> Box<dyn Transport> {
-        Box::new(crate::github::testing::answered(
-            200,
-            r#"{"data":{"repository":{"diskUsage":null}}}"#,
-        ))
-    }
-
-    #[test]
-    fn github_gives_a_repositorys_size_in_kilobytes_or_nothing_when_its_empty() {
-        let signed_in = crate::github::testing::SIGNED_IN;
-        let mut sized = sizes_on_github(two_kilobytes, signed_in);
-        let mut empty = sizes_on_github(empty, signed_in);
-
-        assert_eq!(sized(&named("octo-org/hello")).unwrap(), 2048);
-        assert_eq!(empty(&named("octo-org/hello")).unwrap(), 0);
-    }
-
     #[test]
     fn githubs_remotes_measure_the_disk_their_folder_is_on() {
         let place = Place::new("live-room");
 
         let free = (Remotes::github().free_space)(&place.folders.data).unwrap();
-        // A connection to the API, which asks nothing until a size is wanted.
-        drop(https());
 
         assert!(free > 0);
+    }
+
+    #[test]
+    fn githubs_remotes_ask_no_size_before_the_session_hands_them_its_way() {
+        let mut remotes = Remotes::github();
+
+        let unasked = remotes.size_of.size_of(&named("octo-org/hello"));
+        remotes.size_of.take(Box::new(|_| Ok(2048)));
+
+        assert_eq!(unasked.unwrap_err().kind, ErrorKind::Offline);
+        assert_eq!(remotes.size_of.size_of(&named("octo-org/hello")), Ok(2048));
+    }
+
+    #[test]
+    fn remotes_with_sizes_of_their_own_keep_them_when_the_session_hands_its_way() {
+        let mut remotes = Remotes::under("http://127.0.0.1/".to_owned());
+
+        remotes.size_of.take(Box::new(|_| Ok(2048)));
+
+        assert_eq!(remotes.size_of.size_of(&named("octo-org/hello")), Ok(0));
     }
 
     #[test]
@@ -2134,6 +2128,70 @@ mod problems {
         assert!(short.is_some());
         assert!(fetched);
         assert!(heard.is_err(), "{heard:?}");
+    }
+
+    #[test]
+    fn a_clone_asks_its_size_the_way_the_session_handed_the_worker() {
+        let place = Place::new("size-handed");
+        let remotes = Remotes {
+            size_of: Sizes::FromSession(None),
+            ..place.clone_source()
+        };
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+        let (asking, asked) = channel();
+
+        mirrors.requests().size_through(Box::new(move |repository| {
+            asking.send(repository.clone()).unwrap();
+            Ok(0)
+        }));
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
+        starts.recv_timeout(PLENTY).unwrap().fail();
+        mirrors.stop_cleanly(PLENTY);
+
+        assert_eq!(
+            asked.try_iter().collect::<Vec<_>>(),
+            [named("octo-org/hello")]
+        );
+    }
+
+    #[test]
+    fn a_clone_the_rate_limit_holds_back_waits_for_the_reset_and_not_its_doubled_retry() {
+        let place = Place::new("size-points-out");
+        let reset = OffsetDateTime::now_utc() + time::Duration::seconds(2);
+        let resets_at = u32::try_from(reset.unix_timestamp()).unwrap();
+        let mut asked = 0;
+        let size_of = Box::new(move |_: &RepositoryName| {
+            asked += 1;
+            if asked > 1 {
+                return Ok(0);
+            }
+            let limited = ErrorKind::RateLimited {
+                resets_at: Some(resets_at),
+            };
+            Err(Error::new(limited, "GitHub's points are out"))
+        });
+        let remotes = (place.clone_source())
+            .on_disk(size_of, Box::new(|_| Ok(u64::MAX)))
+            .retrying(PLENTY * 10);
+        let (_versions, answers) = channel();
+        let (mirrors, starts) =
+            place.start_faked_from(remotes, Announce::cloning_only(Box::new(|_| {})), answers);
+        let asked_at = Instant::now();
+
+        mirrors
+            .requests()
+            .clone_mirror(named("octo-org/hello"), download());
+        let clone = starts.recv_timeout(PLENTY).unwrap();
+        let waited = asked_at.elapsed();
+        clone.fail();
+        mirrors.stop_cleanly(PLENTY);
+
+        // The reset's second, a whole one at most after it was asked, comes a second or two later.
+        assert!(waited >= Duration::from_millis(500), "{waited:?}");
     }
 
     #[test]

@@ -1,12 +1,15 @@
 //! App-wide status, owned by the core (ADR 0008). For now: the connection, who is signed in, problems, the
 //! syncs' work and the hour's points.
 
+use std::sync::Arc;
+
 use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::Error;
 use crate::github::points::HourPoints;
+use crate::latest::{self, LatestReader, LatestWriter};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
@@ -202,13 +205,41 @@ pub struct PointsBack {
 
 type AnnouncePointsBack = Box<dyn FnMut(Option<&PointsBack>) + Send>;
 
+/// Tells the window that a Repository's stored facts changed, from whichever thread saved them: the GitHub
+/// thread for what GitHub answered, the session for what the user marked (ADR 0008).
+#[derive(Clone)]
+pub(crate) struct Changes(Arc<dyn Fn(&Change) + Send + Sync>);
+
+impl Changes {
+    pub(crate) fn changed(&self, change: &Change) {
+        (self.0)(change);
+    }
+}
+
+/// What the status bar shows of whether GitHub can be asked now, as a copy the board keeps for the session,
+/// which answers at once what it can't ask.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Shown {
+    pub(crate) status: Status,
+    pub(crate) points_back: Option<PointsBack>,
+}
+
+impl Shown {
+    /// Whether a request now would only wait for its failure: GitHub can't be reached, or the rate limit's
+    /// gate holds every request until the reset.
+    pub(crate) fn refuses_requests(&self) -> bool {
+        self.status.is_offline() || self.points_back.is_some()
+    }
+}
+
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
 /// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
-/// Repository finishes (ADR 0008). The session's thread owns it, so nothing here needs a lock.
+/// Repository finishes (ADR 0008). The GitHub thread owns it, so nothing here needs a lock, and the session
+/// tells the window of its own changes through a clone of `changes`.
 pub struct StatusBoard {
     current: Status,
     announce: Box<dyn FnMut(&Status) + Send>,
-    announce_change: Box<dyn FnMut(&Change) + Send>,
+    announce_change: Changes,
     announce_failed_read: Box<dyn FnMut(&FailedRead) + Send>,
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
     sync_activity: Option<SyncActivity>,
@@ -217,6 +248,8 @@ pub struct StatusBoard {
     announce_hour_points: AnnouncePoints,
     points_back: Option<PointsBack>,
     announce_points_back: AnnouncePointsBack,
+    /// The copy of the status and the gate's hold, once someone asked for it.
+    shown: Option<LatestWriter<Shown>>,
 }
 
 impl StatusBoard {
@@ -224,7 +257,7 @@ impl StatusBoard {
         Self {
             current: Status::default(),
             announce,
-            announce_change: Box::new(|_| {}),
+            announce_change: Changes(Arc::new(|_| {})),
             announce_failed_read: Box::new(|_| {}),
             announce_last_sync: Box::new(|_| {}),
             sync_activity: None,
@@ -233,13 +266,14 @@ impl StatusBoard {
             announce_hour_points: Box::new(|_| {}),
             points_back: None,
             announce_points_back: Box::new(|_| {}),
+            shown: None,
         }
     }
 
     /// Also tells `announce` when a Repository's stored facts change.
     #[must_use]
-    pub fn with_changes(mut self, announce: Box<dyn FnMut(&Change) + Send>) -> Self {
-        self.announce_change = announce;
+    pub fn with_changes(mut self, announce: Box<dyn Fn(&Change) + Send + Sync>) -> Self {
+        self.announce_change = Changes(Arc::from(announce));
         self
     }
 
@@ -296,7 +330,35 @@ impl StatusBoard {
         if self.points_back != back {
             self.points_back = back;
             (self.announce_points_back)(self.points_back.as_ref());
+            self.copy_shown();
         }
+    }
+
+    /// A copy of the status and the gate's hold, which the board keeps up to date from now on.
+    pub(crate) fn shown(&mut self) -> LatestReader<Shown> {
+        let (mut writer, reader) = latest::channel(Shown::default());
+        writer.set(&self.now_shown());
+        self.shown = Some(writer);
+        reader
+    }
+
+    fn now_shown(&self) -> Shown {
+        Shown {
+            status: self.current.clone(),
+            points_back: self.points_back,
+        }
+    }
+
+    fn copy_shown(&mut self) {
+        let now = self.now_shown();
+        if let Some(shown) = &mut self.shown {
+            shown.set(&now);
+        }
+    }
+
+    /// The way to tell the window of a change from another thread.
+    pub(crate) fn changes(&self) -> Changes {
+        self.announce_change.clone()
     }
 
     pub(crate) fn sync_activity(&mut self, activity: Option<SyncActivity>) {
@@ -307,7 +369,7 @@ impl StatusBoard {
     }
 
     pub(crate) fn changed(&mut self, change: &Change) {
-        (self.announce_change)(change);
+        self.announce_change.changed(change);
     }
 
     pub(crate) fn failed_read(&mut self, failed: &FailedRead) {
@@ -342,6 +404,8 @@ impl StatusBoard {
                 log::error!("The status bar says: {}", problem.message);
             }
             self.current = status;
+            // The copy first, so the session reads the status no later than the window hears it.
+            self.copy_shown();
             (self.announce)(&self.current);
         }
     }

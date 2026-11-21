@@ -44,6 +44,15 @@ delete it once its PR has merged: `just worktree-remove <n>` deletes the worktre
 Use it in place of `just merged`, which switches to main, as git refuses that while the main checkout holds
 main.
 
+Before you build a ticket, read the tickets that settle rules for the same code, open or closed and in any
+milestone, the security milestone included, and grep the code and docs for comments that name a later
+ticket. Where one disagrees with the ticket, follow the later decision, and raise the conflict with the user
+before you build. A build of #820 reversed #919, settled after it, and #976 let code outside the token
+crate run `gh` with any arguments, which #912 rules out.
+
+Put a follow-up ticket that a review or a build files in the milestone of the release being built, the one
+`just next` lists, not in a later one.
+
 To build several tickets of a milestone at once, one background agent per ticket, use the `wave` skill in
 `.claude/skills/wave/`.
 

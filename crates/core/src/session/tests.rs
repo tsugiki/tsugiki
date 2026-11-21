@@ -2984,7 +2984,7 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
     };
-    let connecting_as = Status::ConnectingAs {
+    let reconnecting_as = Status::ReconnectingAs {
         last_login: Login::new("octocat"),
     };
     assert_eq!(
@@ -2992,7 +2992,7 @@ fn a_refresh_while_offline_comes_back_online_before_the_next_status_check() {
         [
             Heard::Status(octocat()),
             Heard::Status(offline_as),
-            Heard::Status(connecting_as),
+            Heard::Status(reconnecting_as),
             Heard::Status(octocat()),
             Heard::Changed(vec![7]),
             Heard::Changed(vec![9]),
@@ -3030,7 +3030,7 @@ fn a_refresh_offline_from_the_start_says_connecting_until_github_fails_again() {
         heard.try_iter().collect::<Vec<_>>(),
         [
             Heard::Status(Status::Offline),
-            Heard::Status(Status::Connecting),
+            Heard::Status(Status::Reconnecting),
             Heard::Status(Status::Offline),
         ]
     );
@@ -3062,7 +3062,7 @@ fn a_refresh_while_github_is_still_away_says_connecting_then_offline_and_runs_no
     let offline_as = Status::OfflineAs {
         last_login: Login::new("octocat"),
     };
-    let connecting_as = Status::ConnectingAs {
+    let reconnecting_as = Status::ReconnectingAs {
         last_login: Login::new("octocat"),
     };
     assert_eq!(
@@ -3070,7 +3070,7 @@ fn a_refresh_while_github_is_still_away_says_connecting_then_offline_and_runs_no
         [
             Heard::Status(octocat()),
             Heard::Status(offline_as.clone()),
-            Heard::Status(connecting_as),
+            Heard::Status(reconnecting_as),
             Heard::Status(offline_as),
         ]
     );

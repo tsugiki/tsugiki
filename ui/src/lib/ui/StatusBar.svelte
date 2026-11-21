@@ -78,8 +78,12 @@
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
   const points = $derived(visible ? hourPoints : null);
   const offline = $derived(status?.state === "offline" || status?.state === "offline_as");
+  // Asking GitHub again after being offline, which the bar showed, so it goes on showing while it asks.
+  const reconnecting = $derived(status?.state === "reconnecting" || status?.state === "reconnecting_as");
   // Hiding the bar can't hide these: nothing else would tell the user.
-  const showStatus = $derived(visible || offline || status?.state === "problem" || Boolean(error));
+  const showStatus = $derived(
+    visible || offline || reconnecting || status?.state === "problem" || Boolean(error),
+  );
   const paused = $derived(pausedWords(syncActivity));
   // Hiding the bar can't hide why the Files tab has no diff either.
   const mirror = $derived(mirrorWords(mirrorProblem));
@@ -129,7 +133,7 @@
         {`${status.last_login} · Offline: read-only`}
       {:else if status?.state === "online"}
         {status.login}
-      {:else if status?.state === "connecting_as"}
+      {:else if status?.state === "connecting_as" || status?.state === "reconnecting_as"}
         {`${status.last_login} · Connecting…`}
       {:else}
         Connecting…

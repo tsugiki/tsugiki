@@ -15,6 +15,7 @@ export function signedIn(status: Status | undefined): SignedIn {
     case "online":
       return { login: status.login };
     case "connecting_as":
+    case "reconnecting_as":
       return { login: status.last_login, note: "Signed in last time. GitHub hasn't answered yet." };
     case "offline_as":
       return { login: status.last_login, note: "Signed in last time. GitHub can't be reached now." };
@@ -28,6 +29,7 @@ export function signedIn(status: Status | undefined): SignedIn {
             : "Not known: GitHub hasn't said who is signed in.",
       };
     case "connecting":
+    case "reconnecting":
     case undefined:
       return { note: "Not known yet: GitHub hasn't answered." };
   }

@@ -814,7 +814,7 @@ fn a_refresh_while_offline_tells_the_window_connecting_then_offline() {
     assert_eq!(clicked, Ok(Value::Null));
     assert_eq!(
         (connecting, after),
-        (json!({ "state": "connecting" }), offline)
+        (json!({ "state": "reconnecting" }), offline)
     );
 }
 

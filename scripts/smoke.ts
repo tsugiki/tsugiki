@@ -10,8 +10,8 @@
 // WebDriver because an msedgedriver session opens a second window on the primary display (#76).
 //
 // It needs neither `gh` nor your sign-in: it gives Tsugiki a made-up token in `GH_TOKEN`, and a proxy that
-// decides when "GitHub" answers and when it stops, so the status changes when the test says and nothing
-// reaches GitHub.
+// never answers. The proxy drops each request until the test has it hold them, then holds them until the
+// test cuts them off, so the status changes when the test says and nothing reaches GitHub.
 //
 //   npm run smoke
 //
@@ -352,11 +352,19 @@ const CHECKS: Record<string, (session: Session) => Promise<string | undefined>> 
         const requests = String(github.requests());
         return `after ${String(secondsRunning())} s, ${offline}, and the test's proxy has seen ${requests} request(s)`;
       }
+      // Offline without the proxy would mean Tsugiki's requests go somewhere else.
+      if (github.requests() === 0) {
+        return "the status bar says Offline, but no request reached the test's proxy";
+      }
       github.hold();
       await run("void window.__TAURI_INTERNALS__.invoke('refresh')");
       const connecting = await statusBarShows(run, "Connecting…", REFRESH_MS);
       if (connecting !== undefined) {
         return `after a refresh, ${connecting}, with ${String(github.held())} request(s) waiting at the test's proxy`;
+      }
+      // The core says "Connecting…" before it asks, so only the proxy shows the refresh went out.
+      if (!(await until(() => github.held() > 0))) {
+        return `after a refresh, the status bar says "Connecting…", but no request is waiting at the test's proxy`;
       }
       console.log(
         `Tsugiki's refresh is waiting at the proxy, ${String(secondsRunning())} s after Tsugiki started`,

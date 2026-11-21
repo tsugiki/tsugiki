@@ -46,7 +46,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     cursor on, from a key, the palette or the header's button, and with the list hidden too, the Detail pane
     opens the item the cursor moved to, as `Enter` does, which leaves its Last seen alone; with no item
     after it, the pane shows nothing open. The pane waits for the item to go however long the core takes,
-    and a sync that takes the same item out of place first counts as the mark. On a PR from an Issue's tree,
+    and a sync that takes the same item out of place first counts as the mark. It stops waiting once the
+    user moves the cursor off the item, and once the list draws the item changed but in its place, as a
+    Filter's view keeps an Archived item or a Stale review keeps it waiting; the pane then keeps the item, as
+    it does when the item stays the list's last line. On a PR from an Issue's tree,
     `E` and `M` act on the Issue, so the pane opens the item after the Issue, while `Q` marks the PR alone
     and leaves the cursor on its row. A mark on a row the pane doesn't show, a mark that fails, or a sync
     that moves the cursor on otherwise, leaves the pane as it is. Focus in the Detail pane stays there, in

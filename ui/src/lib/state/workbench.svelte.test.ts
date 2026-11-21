@@ -1119,7 +1119,7 @@ describe("WorkbenchState", () => {
       expect(state.cursor?.number).toBe(2);
     });
     const next = { number: 2, kind: "pull_request", issue: undefined };
-    expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 3, to: { kind: "next", stop: next } });
+    expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "next", stop: next } });
     state.stop();
   });
 
@@ -1167,7 +1167,7 @@ describe("WorkbenchState", () => {
     send("python/cpython", [3]);
 
     await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 3, to: { kind: "last" } });
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "last" } });
     });
     expect(state.cursor).toEqual({ number: 8, kind: "pull_request", issue: 7 });
     state.stop();
@@ -1210,31 +1210,140 @@ describe("WorkbenchState", () => {
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([]);
     });
-    expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 3, to: { kind: "stayed" } });
+    expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "empty" } });
     expect(state.cursor?.number).toBe(3);
     expect(state.underCursor).toBeUndefined();
     state.stop();
   });
 
-  it("names the Issue the cursor left when it was on a PR in the Issue's tree", async () => {
-    const { send } = catchChanged();
-    const issue = issueWith(7, 8);
-    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)], { count: 0 }));
-    vi.mocked(commands.archive).mockResolvedValue(done);
-    const landed = vi.fn();
-    const state = new WorkbenchState("python/cpython", { landed });
-    await state.load();
-    state.moveTo({ number: 8, kind: "pull_request", issue: 7 });
+  it("says the item stayed when the cursor's item was the last and keeps its line once it stops waiting", async () => {
+    const { state, send, landed } = await listingWithCursor([4, 3], 1);
 
-    await state.archive({ key: issue.key, mark: issue.seen.mark });
-    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([item(3)], { count: 0 }));
-    send("python/cpython", [7]);
+    answering([4], [3]);
+    send("python/cpython", [3]);
 
-    const next = { number: 3, kind: "pull_request", issue: undefined };
     await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ left: 7, to: { kind: "next", stop: next } });
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "kept" } });
     });
+    expect(state.cursor?.number).toBe(3);
     state.stop();
+  });
+
+  describe("finish (#982)", () => {
+    const next = { number: 2, kind: "pull_request", issue: undefined };
+    /** Answers with item 3 quiet, below 4, 2 and 1, and waits for that answer to place the cursor. */
+    const quieted = async (send: (repository: string, items?: number[]) => void) => {
+      answering([4, 2, 1], [3]);
+      send("python/cpython", [3]);
+      await nextTask();
+    };
+
+    it("says the cursor finished the Issue whose PR's line it was on once Archive takes the Issue away", async () => {
+      const { send } = catchChanged();
+      const issue = issueWith(7, 8);
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(3)], { count: 0 }));
+      vi.mocked(commands.archive).mockResolvedValue(done);
+      const landed = vi.fn();
+      const state = new WorkbenchState("python/cpython", { landed });
+      await state.load();
+      state.moveTo({ number: 8, kind: "pull_request", issue: 7 });
+
+      await state.finish(7, state.archive({ key: issue.key, mark: issue.seen.mark }));
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([item(3)], { count: 0 }));
+      send("python/cpython", [7]);
+
+      const after = { number: 3, kind: "pull_request", issue: undefined };
+      await vi.waitFor(() => {
+        expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: true, to: { kind: "next", stop: after } });
+      });
+      state.stop();
+    });
+
+    it("waits through answers that draw the item as it was, and a change of order", async () => {
+      const { state, send, landed, order } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.markSeen).mockResolvedValue(done);
+
+      await state.finish(3, state.markSeen(waiting(3).seen.mark));
+      send("python/cpython");
+      await nextTask();
+      order.now = "last_update";
+      await state.reorder();
+      await quieted(send);
+
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: true, to: { kind: "next", stop: next } });
+      state.stop();
+    });
+
+    it("stops waiting once the cursor leaves the item, though it comes back", async () => {
+      const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.markSeen).mockResolvedValue(done);
+
+      await state.finish(3, state.markSeen(waiting(3).seen.mark));
+      state.moveCursor(1);
+      state.moveCursor(-1);
+      await quieted(send);
+
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "next", stop: next } });
+      state.stop();
+    });
+
+    it("stops waiting once an answer draws the item changed but in place", async () => {
+      const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.markSeen).mockResolvedValue(done);
+
+      await state.finish(3, state.markSeen(waiting(3).seen.mark));
+      // A Stale review the check found after the window drew the page still waits (#908).
+      const stale = { since: "2026-11-04T11:00:00Z", why: [{ kind: "stale_review" as const }] };
+      vi.mocked(commands.workbench).mockResolvedValue(
+        workbenchPage([waiting(4), { ...item(3), attention: stale }, waiting(2), waiting(1)], { count: 0 }),
+      );
+      send("python/cpython", [3]);
+      await nextTask();
+      await quieted(send);
+
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "next", stop: next } });
+      state.stop();
+    });
+
+    it("keeps waiting when one of two marks on the item fails and the other is done", async () => {
+      const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      const seen = Promise.withResolvers<typeof done>();
+      vi.mocked(commands.markSeen).mockReturnValue(seen.promise);
+      vi.mocked(commands.archive).mockResolvedValue(refused("no database"));
+
+      const marking = state.finish(3, state.markSeen(waiting(3).seen.mark));
+      expect(await state.finish(3, state.archive({ key: waiting(3).key, mark: waiting(3).seen.mark }))).toBe(
+        "no database",
+      );
+      seen.resolve(done);
+      expect(await marking).toBeUndefined();
+      await quieted(send);
+
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: true, to: { kind: "next", stop: next } });
+      state.stop();
+    });
+
+    it("stops waiting once each mark on the item failed", async () => {
+      const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.markSeen).mockResolvedValue(refused("no database"));
+
+      expect(await state.finish(3, state.markSeen(waiting(3).seen.mark))).toBe("no database");
+      await quieted(send);
+
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "next", stop: next } });
+      state.stop();
+    });
+
+    it("waits for nothing when the cursor isn't on the item", async () => {
+      const { state, send, landed } = await listingWithCursor([4, 3, 2, 1], 1);
+      vi.mocked(commands.markSeen).mockResolvedValue(done);
+
+      await state.finish(4, state.markSeen(waiting(4).seen.mark));
+      await quieted(send);
+
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "next", stop: next } });
+      state.stop();
+    });
   });
 
   it("says which lines are an item's own that Needs attention", async () => {

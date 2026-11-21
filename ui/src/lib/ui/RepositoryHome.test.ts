@@ -2073,7 +2073,8 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
  * Seen on #5, or once a sync took #5's attention, which drops it below the others, and says that the change
  * names `items`; with `number`, it does so for that item, the first of `items` if they name one. `tookAway`
  * answers as it does once it saved Archive or Mute on #5, or on item `number`, which takes it off the
- * list. `synced` answers as for a sync that changed none of them. */
+ * list. `synced` answers as for a sync that changed none of them, and `redrawn` as for a change that left
+ * #5 in its place with `fields` changed. */
 const threeAlone = async ({ inbox = false } = {}) => {
   const send = catchEveryListener();
   const alone = (number: number, title: string) => ({
@@ -2121,7 +2122,11 @@ const threeAlone = async ({ inbox = false } = {}) => {
     answer([first, next, last]);
     send("python/cpython", []);
   };
-  return { component, marked, markedSeen, tookAway, synced };
+  const redrawn = (fields: object) => {
+    answer([{ ...first, ...fields }, next, last]);
+    send("python/cpython", [5]);
+  };
+  return { component, marked, markedSeen, tookAway, synced, redrawn };
 };
 
 it("moves the cursor and the focus to the next row once Q drops the row under the cursor down the list", async () => {
@@ -2543,6 +2548,132 @@ it("stops the Detail pane taking the focus by a click once the focus it took for
   await vi.waitFor(() => {
     expect(pane?.hasAttribute("tabindex")).toBe(false);
   });
+});
+
+it("keeps the focus the Detail pane took for the next item through another app in front and the palette", async () => {
+  const { tookAway } = await threeAlone();
+  const button = await screen.findByRole("button", { name: "Mark Seen" });
+  button.focus();
+  await fireEvent.keyDown(button, { key: "e" });
+  tookAway();
+  await screen.findByRole("heading", { name: /PR 6/ });
+  await detailFocused();
+  const pane = document.querySelector<HTMLElement>('[data-pane="detail"]');
+
+  // Alt+Tab: the focus leaves the page for nothing in it.
+  pane?.blur();
+  await tick();
+  pane?.focus();
+  expect(document.activeElement).toBe(pane);
+  // The palette, outside the panes, takes the focus and hands it back.
+  const palette = document.createElement("input");
+  document.body.append(palette);
+  palette.focus();
+  await tick();
+  pane?.focus();
+  palette.remove();
+
+  expect(document.activeElement).toBe(pane);
+});
+
+it("leaves the Detail pane as it is once the user moves the cursor off the item and back before the mark takes effect", async () => {
+  const { marked, markedSeen } = await threeAlone();
+  marked.focus();
+
+  await fireEvent.keyDown(marked, { key: "q" });
+  await fireEvent.keyDown(marked, { key: "ArrowDown" });
+  await fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
+  await rowFocused("#5 Alone");
+  markedSeen([]);
+
+  await rowFocused("#6 Next");
+  await nextTask();
+  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+});
+
+it("leaves the Detail pane as it is once Mark Seen leaves the item waiting, and a later sync quiets it", async () => {
+  const { marked, markedSeen, redrawn } = await threeAlone();
+  marked.focus();
+
+  await fireEvent.keyDown(marked, { key: "q" });
+  // A Stale review the check found after the window drew the page still waits (#908).
+  redrawn({
+    attention: { since: "2026-11-04T11:00:00Z", why: [{ kind: "stale_review" }] },
+    seen: { mark: { numbers: [5], up_to: "2026-11-04T11:00:00Z", findings: [] }, state: "seen" },
+  });
+  await nextTask();
+  markedSeen([]);
+
+  await rowFocused("#6 Next");
+  await nextTask();
+  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+});
+
+it("leaves the Detail pane as it is once a view keeps the archived item drawn Archived, and a later sync quiets it", async () => {
+  const { marked, markedSeen, redrawn } = await threeAlone();
+  marked.focus();
+
+  await fireEvent.keyDown(marked, { key: "e" });
+  // A Filter's view keeps an Archived item that a Review request still holds in it (#824).
+  redrawn({ hidden: "archived" });
+  await nextTask();
+  markedSeen([]);
+
+  await rowFocused("#6 Next");
+  await nextTask();
+  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+});
+
+it("opens the next item once E on the row of an Issue whose view hasn't arrived archives it", async () => {
+  core.issue.mockReturnValue(new Promise(() => {}));
+  const changed = catchEveryListener();
+  const { issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  await screen.findByRole("region", { name: "Issue view" });
+  issueRow.focus();
+
+  await fireEvent.keyDown(issueRow, { key: "e" });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+  changed("python/cpython", issue.seen.mark.numbers);
+
+  expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
+});
+
+it("opens the next item once Mark Seen takes effect, though an Archive made while it waited failed", async () => {
+  const seen = Promise.withResolvers<typeof done>();
+  core.markSeen.mockReturnValue(seen.promise);
+  core.archive.mockResolvedValue(refused("no database"));
+  const { marked, markedSeen } = await threeAlone();
+  marked.focus();
+
+  await fireEvent.keyDown(marked, { key: "q" });
+  await fireEvent.keyDown(marked, { key: "e" });
+  await screen.findByText(/no database/);
+  seen.resolve(done);
+  await nextTask();
+  markedSeen();
+
+  expect(await screen.findByRole("heading", { name: /PR 6/ })).toBeTruthy();
+});
+
+it("keeps the last item on show once Mark Seen leaves it last, where the cursor stays", async () => {
+  const { markedSeen } = await threeAlone();
+  const lastRow = screen.getByRole("button", { name: "#8 Last" });
+  await fireEvent.click(lastRow);
+  await screen.findByRole("heading", { name: /PR 8/ });
+  lastRow.focus();
+
+  await fireEvent.keyDown(lastRow, { key: "q" });
+  const asked = core.workbench.mock.calls.length;
+  markedSeen([8]);
+  await vi.waitFor(() => {
+    expect(core.workbench).toHaveBeenCalledTimes(asked + 1);
+  });
+  await nextTask();
+  await tick();
+
+  expect(lastRow.getAttribute("aria-current")).toBe("true");
+  expect(screen.getByRole("heading", { name: /PR 8/ })).toBeTruthy();
 });
 
 /** Lays the list out as a browser would, which jsdom can't: a 40 px header, then each item's rows 50 px

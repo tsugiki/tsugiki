@@ -91,6 +91,10 @@ type Line = { stop: Stop; title: string };
 /** The key of view `view`, which keeps its own unfolded Issues. */
 const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
 
+/** The parts of `item`'s row that a mark changes: hidden or not, why it Needs attention, and how seen it
+ * is. Two answers that draw it the same can't tell whether a mark between them took effect (#982). */
+const drawnOf = (item: ListedItem) => JSON.stringify([item.hidden, item.attention, item.seen.state]);
+
 /** The item of `items` whose own line `stop` is, as against a PR or Backport in its tree. Only that line
  * carries the item's attention. */
 const ownerOf = (stop: Stop, items: ListedItem[]) =>
@@ -116,14 +120,15 @@ function linesOf(item: ListedItem, unfolded: (issue: number) => boolean): Line[]
   }));
 }
 
-/** The item whose line the cursor moved on from once the line lost its attention or left the list, and
- * where the cursor went, as `landed` hears them. */
+/** The cursor's move once the line under it lost its attention or left the list: whether it finished the
+ * item for a mark that `finish` waited on, and where it went, as `landed` hears them. */
 export type Landing = {
-  /** The number of the item that holds the line the cursor left. */
-  left: number;
-  /** Onto the line of the first item after it that the list still shows, onto the last line when no item
-   * came after it, or nowhere, as the cursor stays where it was with the list empty. */
-  to: { kind: "next"; stop: Stop } | { kind: "last" } | { kind: "stayed" };
+  /** Whether the cursor left the item that `finish` waited for it to leave (#982). */
+  finished: boolean;
+  /** Onto the line of the first item after it that the list still shows; onto the last line, of another
+   * item, when none came after it; onto the last line, still the same item's, as nothing else came after
+   * it and the item stayed; or nowhere, as the cursor stays where it was with the list empty. */
+  to: { kind: "next"; stop: Stop } | { kind: "last" } | { kind: "kept" } | { kind: "empty" };
 };
 
 /** The hooks a Workbench calls on the page that shows it, each with a default that does nothing. */
@@ -166,6 +171,10 @@ export class WorkbenchState {
    * Only `#placeCursor` reads it, so it needn't be reactive. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   #leaving = new Set<number>();
+  /** The item `finish` waits for the cursor to leave, as the list drew it when the first mark on it was
+   * made, how many marks on it wait for the core's reply, and whether one of them did what it was asked
+   * (#982). Only the cursor's moves and `#placeCursor` read it, so it needn't be reactive. */
+  #finish: { number: number; drawn: string; replies: number; done: boolean } | undefined;
   /** The Issues unfolded in each view, by the view's key. */
   #unfolded = new SvelteMap<string, SvelteSet<number>>();
   /** The keys of the views whose fold of Muted items is open. */
@@ -333,7 +342,7 @@ export class WorkbenchState {
   /** Hides Issue `issue`'s PRs. A cursor on one of them moves to the Issue. */
   fold(issue: number) {
     this.#open()?.delete(issue);
-    if (this.cursor?.issue === issue) this.cursor = { number: issue, kind: "issue", issue: undefined };
+    if (this.cursor?.issue === issue) this.#put({ number: issue, kind: "issue", issue: undefined });
   }
 
   /** Whether the list shows the Muted items it folds at its end. Each view starts with them folded, and
@@ -351,7 +360,7 @@ export class WorkbenchState {
       return;
     }
     const cursor = this.cursor;
-    if (cursor && this.#itemOf(cursor, this.muted)) this.cursor = this.#stops().at(-1);
+    if (cursor && this.#itemOf(cursor, this.muted)) this.#put(this.#stops().at(-1));
   }
 
   /** Puts the cursor on line `stop`, unfolding the Issue it's under, and the Muted items when it's one of
@@ -359,7 +368,40 @@ export class WorkbenchState {
   moveTo(stop: Stop) {
     if (stop.issue !== undefined) this.unfold(stop.issue);
     if (!this.mutedShown && this.#itemOf(stop, this.muted)) this.#mutedOpen.add(this.#viewKey());
+    this.#put(stop);
+  }
+
+  /** Puts the cursor on line `stop`, or on none. A cursor that leaves the item a finish waits on stops the
+   * wait, as only the cursor leaving that item for the mark finishes it (#982). */
+  #put(stop: Stop | undefined) {
     this.cursor = stop;
+    const holder = stop && this.#itemOf(stop, this.#everything);
+    if (holder?.number !== this.#finish?.number) this.#finish = undefined;
+  }
+
+  /**
+   * Waits for `marking`, the user's own Mark Seen, Archive or Mute that takes item `number` out of place,
+   * and says what went wrong, if anything did (#982). While the cursor is on a line of that item, `landed`
+   * then hears that the cursor leaving it finished it, whichever answer shows the item gone: the core
+   * replies before it writes, so no answer's time can tell. The wait stops when the cursor leaves the item
+   * for anything else, when an answer shows the item changed but in place, as a Filter's view keeps an
+   * Archived item (#824) or a Stale review keeps it waiting (#908), and when each mark that waits on the
+   * item failed.
+   */
+  async finish(number: number, marking: Promise<string | undefined>) {
+    const cursor = this.cursor;
+    const holder = cursor && this.#itemOf(cursor, this.#everything);
+    if (holder?.number !== number) return marking;
+    if (this.#finish?.number !== number) {
+      this.#finish = { number, drawn: drawnOf(holder), replies: 0, done: false };
+    }
+    const finish = this.#finish;
+    finish.replies += 1;
+    const problem = await marking;
+    finish.replies -= 1;
+    if (problem === undefined) finish.done = true;
+    else if (finish.replies === 0 && !finish.done && this.#finish === finish) this.#finish = undefined;
+    return problem;
   }
 
   /** The part in Mark Seen of line `stop`: an Issue's covers its tree, and a PR's the PR alone. */
@@ -531,7 +573,7 @@ export class WorkbenchState {
     const stops = this.#stops();
     const at = stops.findIndex((stop) => sameStop(this.cursor, stop));
     const next = at === -1 ? 0 : Math.min(Math.max(at + step, 0), stops.length - 1);
-    this.cursor = stops[next] ?? this.cursor;
+    this.#put(stops[next] ?? this.cursor);
   }
 
   stop() {
@@ -586,9 +628,10 @@ export class WorkbenchState {
       const after = before.slice(before.indexOf(was) + 1);
       const next = after.map((item) => owns(item.number)).find((stop) => stop !== undefined);
       const last = stops.at(-1);
+      const finished = this.#finish?.number === was.number;
+      this.#finish = undefined;
       this.cursor = next ?? last ?? cursor;
-      const to = next ? { kind: "next" as const, stop: next } : ({ kind: last ? "last" : "stayed" } as const);
-      this.#landed({ left: was.number, to });
+      this.#landed({ finished, to: this.#landing(next, last, was) });
       return;
     }
     // The lines of `items`, folded Issues' PRs too, so the cursor never opens the folded Muted items.
@@ -596,6 +639,17 @@ export class WorkbenchState {
     const line =
       stops.find((stop) => sameStop(cursor, stop)) ?? stops.find((stop) => stop.number === cursor.number);
     if (line) this.moveTo(line);
+    // An item the answer draws changed but in place shows what the mark did, which then didn't move it.
+    const holder = line && this.#itemOf(line, this.#everything);
+    if (this.#finish && (!holder || drawnOf(holder) !== this.#finish.drawn)) this.#finish = undefined;
+  }
+
+  /** The place a cursor that left a line of `was` went to: onto `next`, the line of the first item after it
+   * that the list still shows, or else onto `last`, the list's last line, which may be `was`'s own still. */
+  #landing(next: Stop | undefined, last: Stop | undefined, was: ListedItem): Landing["to"] {
+    if (next) return { kind: "next", stop: next };
+    if (!last) return { kind: "empty" };
+    return this.#itemOf(last, this.#everything)?.number === was.number ? { kind: "kept" } : { kind: "last" };
   }
 
   /** The item of `items` that holds line `stop`, under a folded Issue or not. */

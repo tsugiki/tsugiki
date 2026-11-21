@@ -131,13 +131,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
       ([keyboard.md](keyboard.md)), shows `owner/repo #N` at once, with "Fetching owner/repo #N from
       GitHub…" under it. The pane takes the focus as a pick from quick open does. The session fetches the
       item ahead of the sync's queued work, and the database keeps it as it keeps an Origin PR outside the
-      window. A PR updated since the last sync started may have opened since, and brings back an Archived
-      Issue it names, as a refresh would. The pane then opens the item as an Issue view or a PR view,
-      whichever GitHub says #N is, with the focus moving as a pick moves it unless the user went on to a
-      text box meanwhile. A fetch that brings nothing says why, with an Open in browser button: GitHub has
-      no Issue or PR #N there, the token can't see it, Tsugiki doesn't hold it and can't ask GitHub now,
-      which the status bar explains, or something else went wrong, which `tsugiki.log` says. Opening
-      anything else meanwhile drops the fetch's answer, though the database still keeps what it brought.
+      window. A PR that the next refresh would find changed may have opened since, and brings back an
+      Archived Issue it names, as that refresh would. The pane then opens the item as an Issue view or a PR
+      view, whichever GitHub says #N is. The focus moves as a pick moves it only from a row, the Detail
+      pane or nowhere, and stays anywhere else the user went meanwhile, such as a text box or the Sidebar.
+      A fetch that brings nothing says why, with an Open in browser button: GitHub has no Issue or PR #N
+      there, the token can't see it, Tsugiki doesn't hold it and can't ask GitHub now, which the status bar
+      explains, or something else went wrong, which `tsugiki.log` says. Opening anything else meanwhile
+      drops the fetch's answer, though the database still keeps what it brought.
     - **Look**, which the prototype settled, with colours from the Theme's tokens ([themes.md](themes.md)):
       - A muted 12 px line over the title gives the Issue's state, or the Issue a PR was opened under, the
         branch it goes into and when it changed. The title is 18 px. The 13 px line under it names the

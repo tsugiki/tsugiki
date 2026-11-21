@@ -691,7 +691,7 @@ fn a_changed_pr_saved_for_the_first_time_is_an_opening_when_it_names_an_archived
 }
 
 #[test]
-fn a_fetched_pr_is_an_opening_only_when_it_changed_since_the_last_sync_started() {
+fn a_fetched_pr_is_an_opening_only_when_the_next_refresh_would_find_it_changed() {
     let (path, _folder) = temp_database("activity-unstored-openings");
     let repository = cpython();
     let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
@@ -721,11 +721,14 @@ fn a_fetched_pr_is_an_opening_only_when_it_changed_since_the_last_sync_started()
         now - Duration::days(900),
     ));
     fetch(titled(12, "gh-1: Follow up", now));
+    let lagging = now - Duration::hours(1) - Duration::minutes(1);
+    fetch(titled(13, "gh-1: Fix it as the sync started", lagging));
     let openings = store.openings(&repository).unwrap();
 
     store.close();
-    // PR 11 is older than the last sync, and PR 10 came before any.
-    assert_eq!(openings, BTreeSet::from([12]));
+    // PR 13 changed within the minutes the next refresh asks about again, as GitHub's search can lag. PR 11
+    // is older than the last sync, and PR 10 came before any.
+    assert_eq!(openings, BTreeSet::from([12, 13]));
 }
 
 #[test]

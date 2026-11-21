@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { About } from "$lib/state/about.svelte";
 import { actionOn, remapKeys } from "$lib/state/keymap.svelte";
 import { settingsAsk } from "$lib/state/settings-ask.svelte";
@@ -784,6 +784,9 @@ describe("quick open", () => {
         expect(document.activeElement).toBe(detailPane());
       });
       const typing = document.body.appendChild(document.createElement("input"));
+      onTestFinished(() => {
+        typing.remove();
+      });
       typing.focus();
 
       answerFetch({ kind: "issue" });
@@ -794,7 +797,6 @@ describe("quick open", () => {
       await tick();
 
       expect(document.activeElement).toBe(typing);
-      typing.remove();
     });
 
     it("opens nothing it found once the user opened another item meanwhile", async () => {

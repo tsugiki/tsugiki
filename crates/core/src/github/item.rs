@@ -22,7 +22,7 @@ const OPERATION: &str = "FetchItem";
 fn fetch_item_query() -> String {
     format!(
         "query {OPERATION}($owner: String!, $name: String!, $number: Int!) {{ \
-         repository(owner: $owner, name: $name) {{ {FIELD}(number: $number) {{ __typename \
+         repository(owner: $owner, name: $name) {{ nameWithOwner {FIELD}(number: $number) {{ __typename \
          ... on Issue {{ repository {{ nameWithOwner }} {ISSUE_FIELDS} }} \
          ... on PullRequest {{ {PULL_REQUEST_FIELDS} }} }} }} \
          {RATE_LIMIT_FIELDS} }}"
@@ -75,8 +75,11 @@ impl GitHub {
             Issue(HeldIssue),
             PullRequest(Box<PullRequestWire>),
         }
+        /// The Repository asked about, under the name it has now, which GitHub finds under an old one too.
         #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct Holder {
+            name_with_owner: RepositoryName,
             #[serde(rename = "issueOrPullRequest")]
             item: Option<Wire>,
         }
@@ -97,6 +100,7 @@ impl GitHub {
         })?;
         let (data, refused): (Data, _) =
             self.answer_with_refused(&reply, |field| field == FIELD)?;
+        let asked = data.repository.name_with_owner;
         let numbered = match data.repository.item {
             _ if !refused.is_empty() => {
                 for refusal in refused {
@@ -104,7 +108,7 @@ impl GitHub {
                 }
                 Numbered::Hidden
             }
-            Some(Wire::Issue(held)) if held.repository.name_with_owner.is_same(repository) => {
+            Some(Wire::Issue(held)) if held.repository.name_with_owner.is_same(&asked) => {
                 let (facts, activity) = held.issue.into();
                 Numbered::Issue(facts, activity)
             }

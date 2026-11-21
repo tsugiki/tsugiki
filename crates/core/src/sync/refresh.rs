@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use time::{Duration, OffsetDateTime};
+use time::OffsetDateTime;
 
 use super::filters::{FilterWalk, RefreshWalk, blames_the_search, can_narrow};
 use super::{
@@ -25,13 +25,8 @@ use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
 use crate::repository::RepositorySize;
 use crate::repository_settings::RepositorySettings;
-use crate::store::{ChangeCheck, NarrowedResults, SyncState};
+use crate::store::{ChangeCheck, NarrowedResults, OVERLAP, SyncState};
 use crate::work::{conversations_to_read, reasons};
-
-/// GitHub's search can lag behind what it changed, so a refresh also asks about the minutes before the last
-/// one (ADR 0015). The fetches skip what Tsugiki already holds. A change this new can't yet say an item left
-/// a Filter, and the next refresh still sees it.
-const OVERLAP: Duration = Duration::minutes(2);
 
 /// A refresh's poll: one request, and more only while a list has more that changed.
 pub(super) struct Poll {
@@ -116,7 +111,7 @@ pub(super) fn first_phase(
         .cloned()
         .partition(|query| can_narrow(stored.get(query)));
     let poll = Poll {
-        since: state.started_at - OVERLAP,
+        since: state.changes_since(),
         settled_before: link.github.clock().now() - OVERLAP,
         redo: state.refresh_under_way,
         in_request,

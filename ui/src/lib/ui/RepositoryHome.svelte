@@ -319,11 +319,11 @@
     focusCursor();
     void view.load((kind) => {
       // The answer can come long after the pick, as it waits for the sync's step under way. It takes the
-      // focus as a pick does only from a row, the Detail pane or nowhere, and leaves it in a text box.
+      // focus as a pick does only from a row, the Detail pane or nowhere, and leaves it anywhere else the
+      // user went meanwhile, such as a text box or the Sidebar.
       const focused = document.activeElement;
-      const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
-      const onRow = focused instanceof HTMLElement && focused.matches("[data-item]");
-      open(workbench.stopFor(number, kind), inDetail || onRow || focused === document.body ? "pick" : "open");
+      const pick = inDetailPane(focused) || followsCursor(focused);
+      open(workbench.stopFor(number, kind), pick ? "pick" : "open");
     });
   }
 
@@ -441,7 +441,7 @@
   export function paneOf(target: EventTarget | null): Pane {
     const inList =
       target === document.body || (target instanceof HTMLElement && target.closest(".list") !== null);
-    const inDetail = target instanceof Node && detailPane()?.contains(target) === true;
+    const inDetail = inDetailPane(target);
     return inList ? "list" : inDetail ? "detail" : null;
   }
 
@@ -509,7 +509,7 @@
   function cursorLanded({ finished, to }: Landing) {
     const focused = document.activeElement;
     if (finished && to.kind !== "kept") {
-      const inDetail = focused instanceof Node && detailPane()?.contains(focused) === true;
+      const inDetail = inDetailPane(focused);
       if (to.kind === "next") open(to.stop);
       else swap(undefined);
       if (inDetail) {
@@ -518,8 +518,7 @@
       }
     }
     if (to.kind === "empty") return;
-    const onRow = focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused);
-    if (onRow || focused === document.body) focusCursor();
+    if (followsCursor(focused)) focusCursor();
   }
 
   /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when
@@ -543,7 +542,7 @@
    * pane took for the item it opened. Focus that leaves the page, for the palette, a dialog or another app,
    * comes back to the pane. */
   function focusMoved(e: FocusEvent) {
-    if (focusedView && !(e.target instanceof Node && detailPane()?.contains(e.target))) {
+    if (focusedView && !inDetailPane(e.target)) {
       focusedView = undefined;
     }
   }
@@ -1139,6 +1138,19 @@
   }
 
   const detailPane = () => home?.querySelector<HTMLElement>('[data-pane="detail"]');
+
+  /** Whether `target`, such as the focused element, is in the Detail pane. */
+  function inDetailPane(target: EventTarget | null): boolean {
+    return target instanceof Node && detailPane()?.contains(target) === true;
+  }
+
+  /** Whether `focused` is a row of the list, or the page's body, which holds the focus once nothing else
+   * does. The focus then follows the cursor. */
+  function followsCursor(focused: Element | null): boolean {
+    const onRow =
+      focused instanceof HTMLElement && focused.matches("[data-item]") && list?.contains(focused) === true;
+    return onRow || focused === document.body;
+  }
 
   /** Scrolls the Detail pane by a line, or the diff on a PR's Files tab, or the file view over it, or the
    * Conversation beside the rail, each of which scrolls by itself. */

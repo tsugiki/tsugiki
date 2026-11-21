@@ -30,7 +30,7 @@ fn fetched(
 
 #[test]
 fn an_issue_is_saved_and_said_to_be_one() {
-    let (fetched, store) = fetched(item_answer(issue_item(7, &gcmon())));
+    let (fetched, store) = fetched(item_answer(&gcmon(), issue_item(7, &gcmon())));
 
     let saved = fetched.unwrap().unwrap();
     let change = Change {
@@ -53,7 +53,7 @@ fn an_issue_is_saved_and_said_to_be_one() {
 
 #[test]
 fn a_pr_is_saved_and_said_to_be_one() {
-    let (fetched, store) = fetched(item_answer(pr_item(7)));
+    let (fetched, store) = fetched(item_answer(&gcmon(), pr_item(7)));
 
     assert_eq!(fetched.unwrap().unwrap().kind, ItemFetch::PullRequest);
     let facts = store.work_facts(&gcmon()).unwrap();

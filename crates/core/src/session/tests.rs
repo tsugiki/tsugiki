@@ -2860,7 +2860,10 @@ fn turn_reply(turn: &Turn) -> &Sender<ItemFetch> {
 fn a_fetched_unstored_item_tells_the_window_and_stays_in_the_database() {
     let (folders, folder) = temp_folders("fetch-unstored");
     let (board, changes) = changes_board();
-    let access = replying(vec![signed_in(), item_answer(issue_item(7, &gcmon()))]);
+    let access = replying(vec![
+        signed_in(),
+        item_answer(&gcmon(), issue_item(7, &gcmon())),
+    ]);
     let session = Session::start(board, Ok(folders.clone()), reaching(access), HOURLY);
 
     let fetched = session.fetching().fetch_unstored(gcmon(), 7);

@@ -219,12 +219,15 @@ pub fn pull_request_answer(pull_request: Value, rate: &str) -> Result<Reply, Unr
     )
 }
 
-/// GitHub's answer to `FetchItem`, which found `item` under the number asked, Issue or PR.
-pub fn item_answer(item: Value) -> Result<Reply, Unreachable> {
-    answer(
-        json!({ "repository": { "issueOrPullRequest": item } }),
-        RATE_LIMIT,
-    )
+/// GitHub's answer to `FetchItem`, which found `item` under the number asked, Issue or PR, in the Repository
+/// that GitHub now names `asked`.
+pub fn item_answer(asked: &RepositoryName, item: Value) -> Result<Reply, Unreachable> {
+    answer(item_data(asked, item), RATE_LIMIT)
+}
+
+/// The data of an answer to `FetchItem` in `asked` with `item`.
+fn item_data(asked: &RepositoryName, item: Value) -> Value {
+    json!({ "repository": { "nameWithOwner": asked.to_string(), "issueOrPullRequest": item } })
 }
 
 /// Issue `number` as `FetchItem` answers with it, which `repository` holds now.
@@ -244,7 +247,7 @@ pub fn pr_item(number: u32) -> Value {
 /// GitHub's answer to `FetchItem` for a number that names nothing.
 pub fn item_missing() -> Result<Reply, Unreachable> {
     not_found(
-        json!({ "repository": { "issueOrPullRequest": null } }),
+        item_data(&crate::testing::cpython(), Value::Null),
         json!(["repository", "issueOrPullRequest"]),
     )
 }
@@ -253,7 +256,7 @@ pub fn item_missing() -> Result<Reply, Unreachable> {
 /// Repository and not the item.
 pub fn item_refused() -> Result<Reply, Unreachable> {
     erring(
-        json!({ "repository": { "issueOrPullRequest": null } }),
+        item_data(&crate::testing::cpython(), Value::Null),
         (
             "FORBIDDEN",
             "Resource not accessible by personal access token",

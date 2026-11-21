@@ -8,6 +8,7 @@ use crate::github::testing::{
 use crate::github::{Reply, Unreachable};
 use crate::testing::{cpython, gcmon};
 
+/// What a fetch of #12 of python/cpython answered with `reply` came to.
 fn fetched(reply: Result<Reply, Unreachable>) -> Numbered {
     let (script, _asked) = Scripted::new(vec![reply]);
     github(script).fetch_item(&cpython(), 12).unwrap().numbered
@@ -15,7 +16,7 @@ fn fetched(reply: Result<Reply, Unreachable>) -> Numbered {
 
 #[test]
 fn a_number_that_names_an_issue_comes_back_as_the_issue() {
-    let (script, asked) = Scripted::new(vec![item_answer(issue_item(12, &cpython()))]);
+    let (script, asked) = Scripted::new(vec![item_answer(&cpython(), issue_item(12, &cpython()))]);
 
     let fetched = github(script).fetch_item(&cpython(), 12).unwrap();
 
@@ -34,7 +35,7 @@ fn a_number_that_names_an_issue_comes_back_as_the_issue() {
 
 #[test]
 fn a_number_that_names_a_pr_comes_back_as_the_pr() {
-    let Numbered::PullRequest(facts, _) = fetched(item_answer(pr_item(12))) else {
+    let Numbered::PullRequest(facts, _) = fetched(item_answer(&cpython(), pr_item(12))) else {
         panic!("not a PR");
     };
     assert_eq!(facts.number, 12);
@@ -49,15 +50,29 @@ fn a_number_that_names_nothing_comes_back_missing() {
 fn an_issue_transferred_away_comes_back_missing_under_any_number() {
     let moved = [issue_item(99, &gcmon()), issue_item(12, &gcmon())];
 
-    let fetched = moved.map(|issue| fetched(item_answer(issue)));
+    let fetched = moved.map(|issue| fetched(item_answer(&cpython(), issue)));
 
     assert_eq!(fetched, [Numbered::Missing, Numbered::Missing]);
 }
 
 #[test]
-fn a_repository_named_in_another_case_holds_its_issue() {
-    let issue = issue_item(12, &RepositoryName::parse("Python/CPython").unwrap());
-    assert!(matches!(fetched(item_answer(issue)), Numbered::Issue(..)));
+fn a_repository_named_in_another_case_or_renamed_holds_its_issue() {
+    let other_case = RepositoryName::parse("Python/CPython").unwrap();
+    let renamed = RepositoryName::parse("python/cpython-renamed").unwrap();
+    let held = [
+        item_answer(&cpython(), issue_item(12, &other_case)),
+        // GitHub finds a renamed Repository under its old name, and answers with its new one.
+        item_answer(&renamed, issue_item(12, &renamed)),
+    ];
+
+    let fetched = held.map(fetched);
+
+    assert!(
+        fetched
+            .iter()
+            .all(|numbered| matches!(numbered, Numbered::Issue(..))),
+        "{fetched:?}"
+    );
 }
 
 #[test]
@@ -80,7 +95,7 @@ fn the_query_asks_for_either_kind_under_one_field() {
     let query = fetch_item_query();
     assert!(query.starts_with("query FetchItem("), "{query}");
     assert!(
-        query.contains("issueOrPullRequest(number: $number)"),
+        query.contains("{ nameWithOwner issueOrPullRequest(number: $number)"),
         "{query}"
     );
     assert!(

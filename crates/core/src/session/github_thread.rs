@@ -392,19 +392,26 @@ pub(super) fn watch(
             // and the status bar says "Connecting…" until GitHub answers. While GitHub stays away, the syncs
             // keep waiting for the next status check. While the rate limit's gate holds, it asks nothing.
             Turn::RefreshNow => {
-                if github.points_back().is_none() && board.asking_again() {
-                    refresh(board, store, &github);
-                    if !board.is_offline() {
-                        due.status = Instant::now() + intervals.status;
-                    }
+                let asked = (github.points_back().is_none() && board.asking_again())
+                    .then(|| asked_who(store, &github));
+                let offline = asked
+                    .as_ref()
+                    .map_or_else(|| board.is_offline(), Status::is_offline);
+                if asked.is_some() && !offline {
+                    due.status = Instant::now() + intervals.status;
                 }
-                if board.is_offline() {
+                if offline {
                     syncs.put_open_first();
                 } else {
                     syncs.refresh_now();
                 }
                 due.repository = Instant::now() + intervals.repository;
+                // The session drops a click until this one is done, so it's done before the window hears the
+                // answer: a click once the status says offline again asks again (#987).
                 refreshes.refresh_done();
+                if let Some(answer) = asked {
+                    board.set(answer);
+                }
             }
             Turn::Opened(repository) => show_last_sync(board, store, repository),
             Turn::Problem(problem) => board.set(Status::Problem { problem }),
@@ -699,10 +706,14 @@ pub(super) fn show_last_sync(board: &mut StatusBoard, store: &Store, repository:
 /// Asks GitHub again, so `board` follows the network going and coming back. While the rate limit's gate
 /// holds, it asks nothing and the status stays as it is.
 pub(super) fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
-    if github.points_back().is_some() {
-        return;
+    if github.points_back().is_none() {
+        board.set(asked_who(store, github));
     }
-    board.set(match github.viewer() {
+}
+
+/// Asks GitHub who is signed in, and says what the status bar says after its answer.
+fn asked_who(store: &Store, github: &GitHub) -> Status {
+    match github.viewer() {
         Ok(viewer) => match store.remember_login(&viewer.login) {
             Ok(()) => Status::Online {
                 login: viewer.login,
@@ -710,7 +721,7 @@ pub(super) fn refresh(board: &mut StatusBoard, store: &Store, github: &GitHub) {
             Err(problem) => Status::Problem { problem },
         },
         Err(problem) => status_after(problem, store),
-    });
+    }
 }
 
 /// Sets the status bar's words after a job's request failed. The rate limit leaves them as they are: the

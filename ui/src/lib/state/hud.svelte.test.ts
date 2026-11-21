@@ -570,6 +570,21 @@ describe("the misses it logs, shown or not", () => {
     expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({ kind: "view_query", ms: 73 });
   });
 
+  it("gives a query's answer over its budget when the core throws on logging the miss", async () => {
+    const { hud, core, setNow } = harness();
+    // A bindings mock without `recordMiss` throws a TypeError where the call would start.
+    core.recordMiss.mockImplementation(() => {
+      throw new TypeError("recordMiss is not a function");
+    });
+    setNow(0);
+    const answer = hud.timed(() => {
+      setNow(73);
+      return Promise.resolve("rows");
+    });
+    expect(await answer).toBe("rows");
+    expect(core.recordMiss).toHaveBeenCalledExactlyOnceWith({ kind: "view_query", ms: 73 });
+  });
+
   it("logs the start-up, fast or slow", async () => {
     const { hud, core } = harness();
     await hud.markUsable();

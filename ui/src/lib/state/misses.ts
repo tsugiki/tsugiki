@@ -133,9 +133,17 @@ export class MissLog {
     }
   }
 
-  /** The line fails only if the log can't be written, and the window has nowhere else to say so. */
+  /**
+   * The line fails only if the log can't be written, and the window has nowhere else to say so. A throw
+   * fails it as a rejection does: a miss is logged from a `finally`, such as the one around a view query,
+   * and a throw there would turn the query's answer into an error.
+   */
   #send(miss: Miss) {
-    this.#core.recordMiss(miss).catch(() => undefined);
+    try {
+      this.#core.recordMiss(miss).catch(() => undefined);
+    } catch {
+      // Nowhere to say so, as above.
+    }
   }
 }
 

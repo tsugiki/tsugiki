@@ -1,23 +1,11 @@
 use std::sync::mpsc::{self, Receiver};
 
-use super::{
-    Fetched, Fetching, Headless, Item, ItemFetch, Marked, Queued, ScreenMove, SessionMessage,
-};
+use super::{Fetched, Fetching, Headless, Marked, Queued, ScreenMove, SessionMessage};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::SavedBy;
 
 /// What each call of `Fetching` that queues a job answers, for a test to compare with.
 pub(crate) const QUEUED: Queued = Queued(());
-
-impl Fetching {
-    /// Asks the session for `item` as `fetch_unstored` does, without waiting: the answer comes on the
-    /// receiver. A test can then send the session more, and know the fetch reached it first.
-    pub(crate) fn fetch_unstored_later(&self, item: Item) -> Receiver<ItemFetch> {
-        let (reply, answer) = mpsc::channel();
-        self.to_session(SessionMessage::FetchUnstored { item, reply });
-        answer
-    }
-}
 
 /// `message` as a test names it: what it reads, refreshes, changes or marks, or "other".
 pub(crate) fn named(message: SessionMessage) -> String {

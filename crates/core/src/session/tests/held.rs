@@ -27,7 +27,7 @@ impl Transport for Hanging {
 /// A request to GitHub that hangs, as `Hanging` says, with what the test holds of it.
 struct Held {
     access: GitHubAccess,
-    /// Says each question that hangs.
+    /// Names each question asked once `before` runs out: those that hang, and those after the test lets go.
     asked: Receiver<String>,
     /// Lets the questions go once dropped.
     let_go: Sender<()>,
@@ -174,14 +174,17 @@ fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() 
         repository: gcmon(),
         number: 7,
     });
-    // The session answers in order, so it has passed the fetch on once it tells of this mark.
+    // The session answers in order, so it has passed the fetch on once it tells of this mark. A fetch it
+    // refuses it answers at once, so no answer yet means the GitHub thread holds it.
     asked.mark_unseen(gcmon(), 7, None);
     drop(changes.recv_timeout(PLENTY).unwrap());
+    let before = answer.try_recv();
     // The step fails, and the status says offline before the GitHub thread takes the fetch.
     drop(held.let_go);
     let fetched = answer.recv_timeout(PLENTY);
     session.stop(PLENTY);
 
+    assert_eq!(before, Err(TryRecvError::Empty));
     assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
     let fetches = held
         .asked

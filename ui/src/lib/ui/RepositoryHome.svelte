@@ -333,6 +333,8 @@
     }
     keep?.hide();
     kept = keep;
+    // The item a mark on the view on show waits to finish mustn't replace what opens instead (#982).
+    if (next !== detail) workbench.forgetFinish();
     detail = next;
     if (focusedView !== next) focusedView = undefined;
   }
@@ -495,11 +497,16 @@
    * it shows nothing. While the list shows, the pane takes it as it does with the list hidden, until the
    * focus goes elsewhere in the page. */
   function focusDetail() {
-    focusedView = detail;
-    void tick().then(() => {
+    void tick().then(async () => {
       const pane = detailPane();
-      if (pane) pane.focus();
-      else focusCursor();
+      if (!pane) {
+        focusCursor();
+        return;
+      }
+      // Only once the view the pane left has gone, as the control that goes with it drops the focus.
+      focusedView = detail;
+      await tick();
+      pane.focus();
     });
   }
 
@@ -510,6 +517,12 @@
     if (focusedView && !(e.target instanceof Node && detailPane()?.contains(e.target))) {
       focusedView = undefined;
     }
+  }
+
+  /** Focus that falls to the page's body while the window keeps the system's focus, as on a click in blank
+   * space or when the focused control goes, ends it too. Another app in front takes the window's focus. */
+  function focusDropped(e: FocusEvent) {
+    if (focusedView && e.relatedTarget === null && document.hasFocus()) focusedView = undefined;
   }
 
   /**
@@ -1371,6 +1384,7 @@
   style:--list-width={panes.list === null ? undefined : `${String(panes.list)}px`}
   bind:this={home}
   onfocusin={focusMoved}
+  onfocusout={focusDropped}
 >
   {#if !panes.hidden("sidebar")}
     {#if panes.sidebarIcons}

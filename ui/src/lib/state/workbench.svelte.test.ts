@@ -207,9 +207,9 @@ describe("WorkbenchState", () => {
       });
 
     const folded = walk(4).map((stop) => stop?.number);
-    state.cursor = undefined;
+    state.moveTo({ number: 10, kind: "issue", issue: undefined });
     state.unfold(10);
-    const stops = walk(7);
+    const stops = [state.underCursor, ...walk(6)];
 
     expect(folded).toEqual([10, 20, 21, 30]);
     expect(stops).toEqual([
@@ -607,7 +607,7 @@ describe("WorkbenchState", () => {
     vi.mocked(commands.workbench).mockResolvedValue(answer(2, 1));
     const state = new WorkbenchState("python/cpython");
     await state.load();
-    state.cursor = { number: 99, kind: "issue", issue: undefined };
+    state.moveTo({ number: 99, kind: "issue", issue: undefined });
 
     state.moveCursor(1);
 
@@ -1216,14 +1216,16 @@ describe("WorkbenchState", () => {
     state.stop();
   });
 
-  it("says the item stayed when the cursor's item was the last and keeps its line once it stops waiting", async () => {
+  it("says the item stayed when the cursor's item was the last and keeps its line once Mark Seen takes effect", async () => {
     const { state, send, landed } = await listingWithCursor([4, 3], 1);
+    vi.mocked(commands.markSeen).mockResolvedValue(done);
 
+    await state.finish(3, state.markSeen(waiting(3).seen.mark));
     answering([4], [3]);
     send("python/cpython", [3]);
 
     await vi.waitFor(() => {
-      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: false, to: { kind: "kept" } });
+      expect(landed).toHaveBeenCalledExactlyOnceWith({ finished: true, to: { kind: "kept" } });
     });
     expect(state.cursor?.number).toBe(3);
     state.stop();

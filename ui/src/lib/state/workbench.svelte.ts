@@ -165,8 +165,9 @@ export class WorkbenchState {
   /** The "On the Workbench" switch each Filter's search has, as the user last set it, while that waits to
    * save. */
   #wanted = new SvelteMap<string, boolean>();
-  /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). */
-  cursor = $state<Stop>();
+  /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). Only `#put` and a landing
+   * write it, so a finish's wait sees each move (#982). */
+  #cursor = $state<Stop>();
   /** The numbers of the items the user archived or unarchived whose answer hasn't placed the cursor yet.
    * Only `#placeCursor` reads it, so it needn't be reactive. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -307,6 +308,11 @@ export class WorkbenchState {
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
   }
 
+  /** The line the list's keys act on, which `moveTo` and `moveCursor` move. */
+  get cursor(): Stop | undefined {
+    return this.#cursor;
+  }
+
   /** The line under the cursor, wherever the list now has it. */
   get underCursor(): Stop | undefined {
     return this.#stops().find((stop) => sameStop(this.cursor, stop));
@@ -374,9 +380,15 @@ export class WorkbenchState {
   /** Puts the cursor on line `stop`, or on none. A cursor that leaves the item a finish waits on stops the
    * wait, as only the cursor leaving that item for the mark finishes it (#982). */
   #put(stop: Stop | undefined) {
-    this.cursor = stop;
+    this.#cursor = stop;
     const holder = stop && this.#itemOf(stop, this.#everything);
     if (holder?.number !== this.#finish?.number) this.#finish = undefined;
+  }
+
+  /** Ends the wait `finish` started, as the Detail pane has opened something else than the view the mark
+   * was made on, which the item's going then mustn't replace (#982). */
+  forgetFinish() {
+    this.#finish = undefined;
   }
 
   /**
@@ -630,7 +642,7 @@ export class WorkbenchState {
       const last = stops.at(-1);
       const finished = this.#finish?.number === was.number;
       this.#finish = undefined;
-      this.cursor = next ?? last ?? cursor;
+      this.#cursor = next ?? last ?? cursor;
       this.#landed({ finished, to: this.#landing(next, last, was) });
       return;
     }

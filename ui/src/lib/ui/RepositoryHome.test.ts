@@ -2560,9 +2560,11 @@ it("keeps the focus the Detail pane took for the next item through another app i
   await detailFocused();
   const pane = document.querySelector<HTMLElement>('[data-pane="detail"]');
 
-  // Alt+Tab: the focus leaves the page for nothing in it.
+  // Alt+Tab: the focus leaves the page for nothing in it, as the window loses the system's focus.
+  const away = vi.spyOn(document, "hasFocus").mockReturnValue(false);
   pane?.blur();
   await tick();
+  away.mockRestore();
   pane?.focus();
   expect(document.activeElement).toBe(pane);
   // The palette, outside the panes, takes the focus and hands it back.
@@ -2674,6 +2676,76 @@ it("keeps the last item on show once Mark Seen leaves it last, where the cursor 
 
   expect(lastRow.getAttribute("aria-current")).toBe("true");
   expect(screen.getByRole("heading", { name: /PR 8/ })).toBeTruthy();
+});
+
+it.each([
+  {
+    how: "from the Issue view",
+    open: (view: HTMLElement) => within(view).findByRole("button", { name: /^#160662 / }),
+  },
+  {
+    how: "from its row",
+    open: () =>
+      within(issueList() as HTMLElement).findByRole("button", {
+        name: "#160662 gh-112564: Fix UAF for gc debug print",
+      }),
+  },
+])(
+  "keeps a PR of the Issue's tree opened $how while the Issue's Archive waited to land",
+  async ({ open }) => {
+    core.issue.mockResolvedValue(
+      ok({
+        ...issue,
+        merged: [],
+        merged_count: 0,
+        author: "issue-author",
+        assignees: [],
+        labels: [],
+        content: null,
+        needs_attention: [],
+      }),
+    );
+    const changed = catchEveryListener();
+    const { issueRow } = await listing();
+    await fireEvent.click(issueRow);
+    const view = await screen.findByRole("region", { name: "Issue view" });
+    await within(view).findByRole("button", { name: "Archive" });
+
+    await fireEvent.keyDown(view, { key: "e" });
+    await fireEvent.click(await open(view));
+    await screen.findByRole("heading", { name: /PR 160662/ });
+    core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
+    changed("python/cpython", issue.seen.mark.numbers);
+    await vi.waitFor(() => {
+      expect(itemOrder()).toEqual(["#5 Alone"]);
+    });
+    await nextTask();
+
+    expect(screen.getByRole("heading", { name: /PR 160662/ })).toBeTruthy();
+    expect(core.pullRequest).not.toHaveBeenCalledWith("python/cpython", 5);
+  },
+);
+
+it("stops the Detail pane taking the focus by a click once the focus it took falls to the page", async () => {
+  const { tookAway } = await threeAlone();
+  const button = await screen.findByRole("button", { name: "Mark Seen" });
+  button.focus();
+  await fireEvent.keyDown(button, { key: "e" });
+  tookAway();
+  await screen.findByRole("heading", { name: /PR 6/ });
+  await detailFocused();
+  const pane = document.querySelector<HTMLElement>('[data-pane="detail"]');
+
+  // A click in blank space, with the window still in front, which jsdom doesn't track.
+  const front = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  onTestFinished(() => {
+    front.mockRestore();
+  });
+  pane?.blur();
+
+  await vi.waitFor(() => {
+    expect(pane?.hasAttribute("tabindex")).toBe(false);
+  });
 });
 
 /** Lays the list out as a browser would, which jsdom can't: a 40 px header, then each item's rows 50 px

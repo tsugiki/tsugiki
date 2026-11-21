@@ -13,10 +13,10 @@ use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::SettingsView;
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
-use tsugiki_core::token::{GhOutput, Token, TokenFrom, read_token};
+use tsugiki_core::token::{GhOutput, Token, read_token};
 use tsugiki_core::version::Version;
 use tsugiki_core::{latest, logfile};
-use tsugiki_token::testing::{NO_GH, gh_alone, gh_prints};
+use tsugiki_token::testing::{NO_GH, gh_alone, gh_prints, gh_token};
 
 /// A token no shape gives away, so only hiding it by its value keeps it out of the log.
 const NO_KNOWN_SHAPE: &str = "0123456789abcdef";
@@ -27,8 +27,8 @@ fn gh_prints_a_token_of_no_known_shape(_: &[&str]) -> io::Result<GhOutput> {
     gh_prints(&format!("{NO_KNOWN_SHAPE}\n"))
 }
 
-fn gh_token_holds_a_token_of_no_known_shape(name: &str) -> Option<String> {
-    (name == "GH_TOKEN").then(|| IN_GH_TOKEN.to_owned())
+fn gh_token_holds_a_token_of_no_known_shape() -> Option<String> {
+    Some(IN_GH_TOKEN.to_owned())
 }
 
 /// Answers the way a corporate proxy might.
@@ -68,11 +68,7 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
 fn a_token_from_gh_token_is_hidden_too(path: &Path) {
-    let _token = read_token(TokenFrom {
-        env: gh_token_holds_a_token_of_no_known_shape,
-        ..NO_GH
-    })
-    .unwrap();
+    let _token = read_token(gh_token(gh_token_holds_a_token_of_no_known_shape)).unwrap();
     log::warn!("GitHub refused {IN_GH_TOKEN} too");
     log::logger().flush();
     let file = fs::read_to_string(path).unwrap();

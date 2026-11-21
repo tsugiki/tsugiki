@@ -17,7 +17,9 @@ use ureq::http::Response;
 use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
-use crate::{API_HOST, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable};
+use crate::{
+    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable,
+};
 
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
 /// 10 s, so this leaves 5 s for the network, and it strikes when the network or a proxy has stopped
@@ -149,9 +151,9 @@ const GH_PROGRAMS: [&str; 3] = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh
 #[cfg(not(target_os = "macos"))]
 const GH_PROGRAMS: [&str; 1] = ["gh"];
 
-/// The process's environment variable `name`.
-pub(crate) fn read_env(name: &str) -> Option<String> {
-    std::env::var(name).ok()
+/// The process's `GH_TOKEN`.
+pub(crate) fn read_env() -> Option<String> {
+    std::env::var(GH_TOKEN).ok()
 }
 
 /// Runs `gh`.

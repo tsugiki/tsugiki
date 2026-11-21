@@ -17,7 +17,8 @@ use url::form_urlencoded;
 
 pub use live::Https;
 
-/// The variable `gh auth token` reads before its own sign-in, which Tsugiki reads first.
+/// The variable `gh auth token` reads before its own sign-in, which Tsugiki reads first, and the only one it
+/// reads.
 const GH_TOKEN: &str = "GH_TOKEN";
 /// The one host [`Https`] sends requests to (ADR 0005).
 const API_HOST: &str = "api.github.com";
@@ -38,17 +39,17 @@ pub struct GhOutput {
 }
 
 /// Runs `gh` with the given arguments: `gh` itself in the app, a stand-in in tests.
-pub type RunGh = fn(&[&str]) -> io::Result<GhOutput>;
+pub(crate) type RunGh = fn(&[&str]) -> io::Result<GhOutput>;
 
-/// The value of an environment variable, if it is set and is Unicode: the process's own in the app, a
-/// stand-in in tests.
-pub type ReadEnv = fn(&str) -> Option<String>;
+/// The value of `GH_TOKEN`, if it is set and is Unicode: the process's own in the app, a stand-in in tests.
+pub(crate) type ReadEnv = fn() -> Option<String>;
 
-/// Where [`Token::find`] looks for a token.
+/// Where [`Token::find`] looks for a token. Its fields are private, so nothing outside this crate can run
+/// the real `gh` through [`TokenFrom::LIVE`]. Tests build one through the `testing` module.
 #[derive(Clone, Copy)]
 pub struct TokenFrom {
-    pub env: ReadEnv,
-    pub gh: RunGh,
+    env: ReadEnv,
+    gh: RunGh,
 }
 
 impl TokenFrom {
@@ -80,7 +81,7 @@ impl Token {
     /// The token in `GH_TOKEN` when it holds one, and otherwise gh's token for github.com. `gh auth token`
     /// gives `GH_TOKEN` first too, so the token is the same either way, but taking it here runs no `gh`.
     pub fn find(from: TokenFrom) -> Result<Self, NoToken> {
-        match (from.env)(GH_TOKEN) {
+        match (from.env)() {
             Some(set) if !set.trim().is_empty() => Ok(Self(set.trim().to_owned())),
             _ => Self::from_gh(from.gh),
         }

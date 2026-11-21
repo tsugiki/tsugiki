@@ -29,7 +29,7 @@ fn the_token_comes_from_gh_auth_token_for_github_com() {
 #[test]
 fn gh_token_set_gives_its_token_and_runs_no_gh() {
     let token = Token::find(TokenFrom {
-        env: |name| (name == "GH_TOKEN").then(|| "ghp_from_env\n".to_owned()),
+        env: || Some("ghp_from_env\n".to_owned()),
         gh: GH_NEVER_RUNS,
     })
     .unwrap();
@@ -40,8 +40,8 @@ fn gh_token_set_gives_its_token_and_runs_no_gh() {
 fn without_gh_token_or_with_it_empty_the_token_comes_from_gh() {
     let unset_or_empty: [ReadEnv; 3] = [
         nothing_set,
-        |_| Some(String::new()),
-        |_| Some(" \n".to_owned()),
+        || Some(String::new()),
+        || Some(" \n".to_owned()),
     ];
     for env in unset_or_empty {
         let token = Token::find(TokenFrom {
@@ -56,7 +56,7 @@ fn without_gh_token_or_with_it_empty_the_token_comes_from_gh() {
 #[test]
 fn a_token_from_gh_token_is_hidden_wherever_it_appears() {
     let token = Token::find(TokenFrom {
-        env: |_| Some("0123456789abcdef".to_owned()),
+        env: || Some("0123456789abcdef".to_owned()),
         gh: GH_NEVER_RUNS,
     })
     .unwrap();

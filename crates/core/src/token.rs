@@ -2,7 +2,7 @@
 //! reaches the webview (ADR 0005), and nothing in the core can read its string.
 
 use tsugiki_token::NoToken;
-pub use tsugiki_token::{GhOutput, RunGh, Token, TokenFrom};
+pub use tsugiki_token::{GhOutput, Token, TokenFrom};
 
 use crate::error::{Error, ErrorKind};
 use crate::logfile;

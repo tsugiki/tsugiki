@@ -10,7 +10,7 @@ use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::pull_requests::NodeId;
 use tsugiki_core::github::replay::Replayer;
 use tsugiki_core::github::{
-    GitHub, GitHubAccess, Reply, Request, Selection, Transport, Unreachable, Write,
+    GitHub, GitHubAccess, Grant, Reply, Request, Selection, Transport, Unreachable, Write,
 };
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::session::{Connections, Intervals, Session};
@@ -45,6 +45,7 @@ impl Transport for Proxy {
             reset: None,
             date: None,
             body: "Blocked by your company's proxy".to_owned(),
+            grant: Grant::default(),
         })
     }
 }

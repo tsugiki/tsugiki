@@ -2,11 +2,14 @@
 //! `Transport` for `Https` that calls these is in `live.rs`, because it reaches the network.
 
 use std::fmt;
+use std::sync::OnceLock;
 
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use tsugiki_token::{Reply as Answer, RestPath, Unreachable as NotSent};
 
 use super::clock::http_date;
-use super::{ConditionalReply, Reply, Request, Selection, Unreachable, Write};
+use super::{ConditionalReply, Grant, Reply, Request, Selection, Unreachable, Write};
 
 /// `request` as the JSON body that GitHub's GraphQL endpoint takes.
 pub(super) fn graphql_body(request: &Request<'_>) -> String {
@@ -53,7 +56,33 @@ pub(super) fn reply(operation: &str, sent: Result<Answer, NotSent>) -> Result<Re
         reset: answer.ratelimit_reset.and_then(|reset| reset.parse().ok()),
         date: answer.date.as_deref().and_then(http_date),
         body: answer.body,
+        grant: Grant {
+            scopes: answer.scopes,
+            expires: answer.token_expiration.as_deref().and_then(expiration),
+        },
     })
+}
+
+/// The time in `GitHub-Authentication-Token-Expiration`, which GitHub writes as `2026-12-01 09:30:00 UTC`,
+/// or with an offset such as `+0100` in place of `UTC`. Anything else is no time, and the log says so once a
+/// run, as each answer brings the header again.
+fn expiration(text: &str) -> Option<OffsetDateTime> {
+    static WARNED: OnceLock<()> = OnceLock::new();
+    let parsed = text.split_once(' ').and_then(|(date, rest)| {
+        let (clock, zone) = rest.split_once(' ')?;
+        let offset = match zone {
+            "UTC" => "Z".to_owned(),
+            _ => {
+                let (hours, minutes) = zone.split_at_checked(3)?;
+                format!("{hours}:{minutes}")
+            }
+        };
+        OffsetDateTime::parse(&format!("{date}T{clock}{offset}"), &Rfc3339).ok()
+    });
+    if parsed.is_none() && WARNED.set(()).is_ok() {
+        log::warn!("GitHub named a token expiry Tsugiki can't read: {text}");
+    }
+    parsed
 }
 
 /// A REST answer to a conditional request for `path`. A refresh reads its tag and date and drops the body.

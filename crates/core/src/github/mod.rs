@@ -36,8 +36,10 @@ use crate::github::in_flight::{AnnounceInFlight, Asking};
 use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
-use crate::repository::{FoundRepository, RepositoryCounts, RepositoryName, WINDOW_DAYS};
-use crate::token::{Token, TokenFrom};
+use crate::repository::{
+    FoundRepository, RepositoryCounts, RepositoryName, Visibility, WINDOW_DAYS,
+};
+use crate::token::{Token, TokenFrom, TokenKind, WriteScope};
 pub use tsugiki_token::{RestPath, Selection, Write};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
@@ -57,6 +59,19 @@ pub struct Reply {
     /// The `Date` header: GitHub's time when it answered.
     pub date: Option<OffsetDateTime>,
     pub body: String,
+    /// What the answer's headers say of the token that sent the request.
+    pub grant: Grant,
+}
+
+/// What GitHub's answer says of the token that sent the request: what its scopes let it write, and when it
+/// expires.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Grant {
+    /// Nothing, for a token GitHub names no scopes of, as a fine-grained one: GitHub doesn't say what one
+    /// may write.
+    pub scopes: Option<WriteScope>,
+    /// Nothing, for a token that doesn't expire.
+    pub expires: Option<OffsetDateTime>,
 }
 
 /// A REST request that can answer "not modified", which a refresh asks first (ADR 0015).
@@ -187,6 +202,15 @@ fn repository_size_query() -> String {
     )
 }
 
+/// The question of whether a Repository is private, which a token that writes to public repositories alone
+/// needs answered (#398).
+fn repository_visibility_query() -> String {
+    format!(
+        "query RepositoryVisibility($owner: String!, $name: String!) {{ \
+         repository(owner: $owner, name: $name) {{ isPrivate }} {RATE_LIMIT_FIELDS} }}"
+    )
+}
+
 /// A GraphQL client that holds the token, so no caller has to.
 pub struct GitHub {
     transport: Box<dyn Transport>,
@@ -205,6 +229,8 @@ pub struct GitHub {
     /// Hears each request as it goes and once it ends, so the status bar can show one GitHub is slow to
     /// answer while the thread waits for it.
     announce_in_flight: RefCell<AnnounceInFlight>,
+    /// What GitHub's last answer said of the token. Nothing, until GitHub first answers.
+    grant: Cell<Option<Grant>>,
 }
 
 impl GitHub {
@@ -212,6 +238,7 @@ impl GitHub {
         Self {
             transport,
             token,
+            grant: Cell::new(None),
             clock: Cell::new(GitHubClock::default()),
             points: Cell::new(None),
             gate: Cell::new(Gate::default()),
@@ -341,8 +368,44 @@ impl GitHub {
         let reply = self.in_flight(|| self.transport.post(&self.token, request))?;
         if reply.status == 200 {
             self.set_clock(reply.date);
+            self.grant.set(Some(reply.grant));
         }
         Ok(reply)
+    }
+
+    /// What GitHub's last answer said of the token: each answer, a read too, says what its scopes let it
+    /// write. Nothing, until GitHub first answers.
+    pub fn grant(&self) -> Option<Grant> {
+        self.grant.get()
+    }
+
+    /// The kind of the token the client sends.
+    pub fn token_kind(&self) -> TokenKind {
+        self.token.kind()
+    }
+
+    /// Whether `repository` is public or private. GitHub says a private one a token can't see doesn't
+    /// exist, as it says of one that doesn't.
+    pub fn repository_visibility(&self, repository: &RepositoryName) -> Result<Visibility, Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Holder {
+            is_private: bool,
+        }
+        #[derive(Deserialize)]
+        struct Data {
+            repository: Holder,
+        }
+        let data: Data = self.query(&Request {
+            operation: "RepositoryVisibility",
+            query: Cow::Owned(repository_visibility_query()),
+            variables: json!({ "owner": repository.owner(), "name": repository.name() }),
+        })?;
+        Ok(if data.repository.is_private {
+            Visibility::Private
+        } else {
+            Visibility::Public
+        })
     }
 
     /// Sets GitHub's clock by `date`, from a reply GitHub sent. Another status can come from a proxy, whose

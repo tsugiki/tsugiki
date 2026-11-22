@@ -23,6 +23,7 @@ use tsugiki_core::facts::activity::ShowMuted;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
+use tsugiki_core::read_only::RepositoryState;
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
@@ -306,6 +307,17 @@ pub(crate) fn issue(
     calls: State<'_, Calls>,
 ) -> Result<Option<IssueView>, Error> {
     crate::read_issue(repository, number, &calls)
+}
+
+/// The state of `repository`, which each write control reads: why Tsugiki can't write there, if it can't,
+/// and whether GitHub can be reached (#398). This waits on the database and never on GitHub.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn repository_state(
+    repository: &str,
+    calls: State<'_, Calls>,
+) -> Result<RepositoryState, Error> {
+    crate::read_repository_state(repository, &calls)
 }
 
 /// Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.

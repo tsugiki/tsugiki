@@ -6,6 +6,7 @@ use tsugiki_token::testing::refusal;
 
 use super::*;
 use crate::error::{Error, ErrorKind};
+use crate::token::WriteScope;
 
 const DATE: &str = "Tue, 10 Nov 2026 12:00:00 GMT";
 
@@ -20,6 +21,8 @@ fn answer(date: Option<&str>, reset: Option<&str>, etag: Option<&str>) -> Answer
         date: date.map(str::to_owned),
         ratelimit_reset: reset.map(str::to_owned),
         etag: etag.map(str::to_owned),
+        scopes: None,
+        token_expiration: None,
     }
 }
 
@@ -106,4 +109,35 @@ fn a_refused_request_fails_as_a_query_github_refused() {
     let refused = reply("Op", Err(NotSent::Refused("holds mutation".to_owned()))).unwrap_err();
     assert_eq!(refused, Unreachable::Refused);
     assert_eq!(Error::from(refused).kind, ErrorKind::QueryRefused);
+}
+
+#[test]
+fn a_reply_says_what_the_token_s_scopes_let_it_write_and_when_it_expires() {
+    let sent = Answer {
+        scopes: Some(WriteScope::Public),
+        token_expiration: Some("2026-11-10 12:00:00 UTC".to_owned()),
+        ..answer(None, None, None)
+    };
+    let grant = reply("Op", Ok(sent)).unwrap().grant;
+    assert_eq!(
+        grant,
+        Grant {
+            scopes: Some(WriteScope::Public),
+            expires: noon(),
+        }
+    );
+}
+
+#[test]
+fn a_token_expiry_may_name_an_offset_and_one_that_doesnt_parse_is_left_out() {
+    assert_eq!(expiration("2026-11-10 13:00:00 +0100"), noon());
+    assert_eq!(expiration("2026-11-10 07:00:00 -0500"), noon());
+    for unread in [
+        "soon",
+        "2026-11-10 12:00:00",
+        "2026-11-10 12:00:00 CET",
+        "x y +1",
+    ] {
+        assert_eq!(expiration(unread), None, "{unread}");
+    }
 }

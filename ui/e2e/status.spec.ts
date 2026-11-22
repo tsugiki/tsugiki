@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { done, loadedSettings, ok } from "../src/lib/testing/fixtures.ts";
+import { done, loadedSettings, ok, workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { home, issue, issueView } from "./fixtures.ts";
 import { emitFromCore, mockCore } from "./mock-core.ts";
 
 const online = { state: "online", login: "octocat" } as const;
@@ -16,7 +17,7 @@ test("the status bar shows who is signed in", async ({ page }) => {
 test("the status bar shows Offline without the network", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: offline });
   await page.goto("/");
-  await expect(page.getByRole("status")).toHaveText("Offline: read-only");
+  await expect(page.getByRole("status")).toHaveText("Offline");
 });
 
 test("the status bar shows the last login before the core has reached GitHub", async ({ page }) => {
@@ -28,7 +29,27 @@ test("the status bar shows the last login before the core has reached GitHub", a
 test("the status bar shows the last login while offline", async ({ page }) => {
   await mockCore(page, { settings: defaults, status: { state: "offline_as", last_login: "octocat" } });
   await page.goto("/");
-  await expect(page.getByRole("status")).toHaveText("octocat · Offline: read-only");
+  await expect(page.getByRole("status")).toHaveText("octocat · Offline");
+});
+
+test("a Read-only Repository says so in the status bar and atop its Issue view, and Offline apart", async ({
+  page,
+}) => {
+  await mockCore(page, {
+    settings: defaults,
+    status: { state: "offline_as", last_login: "octocat" },
+    home,
+    workbench: workbenchPage([issue]),
+    openIssue: done,
+    issue: ok(issueView),
+    repositoryState: ok({ read_only: ["token"], connection: "offline" }),
+  });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveText("octocat · Offline · Read-only");
+
+  await page.getByRole("button", { name: "#7 Issue 7" }).click();
+  const view = page.getByRole("region", { name: "Issue view" });
+  await expect(view.getByText("Read-only: your token can't write to python/cpython")).toBeVisible();
 });
 
 test("the status bar says when a newer version is out, found before or after the window loaded", async ({
@@ -121,7 +142,7 @@ test("settings can hide the status bar, and going offline brings it back", async
   await expect(page.getByRole("status")).toHaveText("");
   await expect(page.getByRole("status")).toHaveCSS("height", "0px");
   await emitFromCore(page, "status-changed", offline);
-  await expect(page.getByRole("status")).toHaveText("Offline: read-only");
+  await expect(page.getByRole("status")).toHaveText("Offline");
 });
 
 test("a settings file that doesn't parse is named beside the status", async ({ page }) => {

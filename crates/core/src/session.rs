@@ -45,6 +45,7 @@ use refill::LinkRefill;
 
 mod github_thread;
 mod on_screen;
+mod read_only;
 mod refill;
 mod unstored;
 
@@ -69,6 +70,8 @@ pub struct Session {
     fetching: Fetching,
     finished: Receiver<()>,
     reader: StoreReader,
+    /// The status board's copy of whether GitHub can be asked now.
+    shown: LatestReader<Shown>,
 }
 
 /// What a session reaches beyond its threads: GitHub with `gh`'s token, the Mirror worker, which it hands
@@ -122,7 +125,7 @@ impl Session {
             Telling {
                 changes: board.changes(),
                 github: to_github,
-                shown,
+                shown: shown.clone(),
                 refreshes_done,
             },
         );
@@ -144,7 +147,13 @@ impl Session {
             fetching,
             finished,
             reader,
+            shown,
         }
+    }
+
+    /// A copy of what the status bar shows of whether GitHub can be asked now.
+    pub(crate) fn shown(&self) -> LatestReader<Shown> {
+        self.shown.clone()
     }
 
     /// The way to ask GitHub and the Mirrors for data. Dropping the session stops it, whatever handles are

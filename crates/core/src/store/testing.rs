@@ -1,7 +1,7 @@
 use super::*;
 use crate::facts::activity::{Activity, ItemActivity};
 use crate::links::LinkRule;
-use crate::testing::{TempPath, cpython};
+use crate::testing::{TempPath, cpython, gcmon};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -169,6 +169,16 @@ pub(crate) fn refuse_new_links(store: &Store) {
     refusing.unwrap().unwrap();
 }
 
+/// Has `store` refuse each new Read-only mark, as a full disk would.
+pub(crate) fn refuse_read_only_marks(store: &Store) {
+    let refusing = store.call(|connection| {
+        connection.execute_batch(
+            "CREATE TRIGGER refuse_marks BEFORE INSERT ON read_only BEGIN SELECT RAISE(ABORT, 'full'); END;",
+        )
+    });
+    refusing.unwrap().unwrap();
+}
+
 /// Each fix `store` keeps, as its Repository, its PR and the Issue the PR fixes, in that order.
 pub(crate) fn kept_fixes(store: &Store) -> Vec<(String, u32, u32)> {
     let found = store.call(|connection| -> rusqlite::Result<Vec<(String, u32, u32)>> {
@@ -228,6 +238,12 @@ impl OpenStore {
             open,
             _folder: folder,
         }
+    }
+
+    /// Whether the store marks CPython and gcmon Read-only for the token (#398).
+    pub(crate) fn read_only_marks(&self) -> (bool, bool) {
+        let marked = |repository| self.reader.token_cant_write(&repository).unwrap();
+        (marked(cpython()), marked(gcmon()))
     }
 
     /// Closes the reader and the store, so the folder can go.

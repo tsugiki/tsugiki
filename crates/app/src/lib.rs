@@ -40,6 +40,7 @@ use tsugiki_core::mirror::{
 };
 use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::misses::Miss;
+use tsugiki_core::read_only::RepositoryState;
 use tsugiki_core::releases::NewVersion;
 use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
@@ -594,6 +595,10 @@ fn read_issue(repository: &str, number: u32, calls: &Calls) -> Result<Option<Iss
     calls.issue(RepositoryName::parse(repository)?, number)
 }
 
+fn read_repository_state(repository: &str, calls: &Calls) -> Result<RepositoryState, Error> {
+    calls.repository_state(&RepositoryName::parse(repository)?)
+}
+
 fn read_pull_request(
     repository: &str,
     number: u32,
@@ -1105,6 +1110,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::workbench,
             slow_commands::inbox,
             slow_commands::issue,
+            slow_commands::repository_state,
             slow_commands::pull_request,
             slow_commands::pull_request_files,
             slow_commands::pull_request_rows,

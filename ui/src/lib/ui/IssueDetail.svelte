@@ -4,10 +4,12 @@
   import type { ReadFailure } from "$lib/state/detail-view.svelte";
   import type { IssueView, IssueViewState } from "$lib/state/issue-view.svelte";
   import { LinkOpener } from "$lib/state/link-opener.svelte";
+  import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import { isMuted, treeRows, type MuteAuthor, type TreeEntry } from "$lib/state/workbench.svelte";
   import Conversation from "./Conversation.svelte";
   import MarkButton from "./MarkButton.svelte";
   import { issueIcon, prIcon, type Octicon } from "./octicons";
+  import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
   import { ago, backportWords, commentCount, headline } from "./workbench-row";
@@ -23,6 +25,7 @@
     onmuteauthor,
     focusable = false,
     header,
+    repositoryState,
   }: {
     repository: string;
     issue: IssueViewState;
@@ -43,6 +46,8 @@
     focusable?: boolean;
     /** What sits at the top of the pane, such as the history's arrows (#586). */
     header?: Snippet;
+    /** The Repository's state, which says atop the view why Tsugiki can't write there (#398). */
+    repositoryState?: RepositoryState | undefined;
   } = $props();
 
   /** The words in place of what the Issue says before a read lands, and why it hasn't once a read failed. */
@@ -140,6 +145,7 @@
   }}
 >
   {@render header?.()}
+  <ReadOnlyNote {repositoryState} {repository} />
   {#if issue.error}
     <p role="alert">{`Tsugiki can't show this Issue: ${issue.error}`}</p>
   {/if}

@@ -14,11 +14,13 @@ use crate::fetching::{Fetched, Headless, Item, NoHead, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
 use crate::mirror_source::MirrorSources;
+use crate::read_only::{ReadOnly, TokenSeen};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::SettingsFiles;
-use crate::status::ItemUnread;
+use crate::status::{ItemUnread, Status};
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings, gcmon, listing, one_folder, temp_path};
+use crate::token::TokenKind;
 use crate::workbench::pr_files::testing::World;
 
 /// PR 7's world, settings that list its Repository, and the queues and language servers its calls ask,
@@ -93,6 +95,55 @@ impl Setup {
     }
 }
 
+/// The status board's copy of `status`, with the gate open, and its writer.
+fn shown(status: Status) -> (LatestWriter<Shown>, LatestReader<Shown>) {
+    latest::channel(Shown {
+        status,
+        points_back: None,
+    })
+}
+
+#[test]
+fn a_repository_s_state_says_whether_the_token_can_write_there_and_whether_github_answers() {
+    let root = temp_path("calls-repository-state");
+    fs::create_dir_all(&root).unwrap();
+    let folders = one_folder(&root);
+    let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (fetching, _session, _heard, _headless) = handle_with_headless();
+    let db = OpenStore::new("calls-repository-state-store");
+    let online = Status::Online {
+        login: Login::new("octocat"),
+    };
+    let (mut status, copy) = shown(online);
+    let parts = CallParts {
+        folders: Ok(folders),
+        settings,
+        definitions: no_servers(),
+    };
+    let calls = Calls::launched(fetching, db.reader.clone(), copy, parts);
+    let token = TokenSeen {
+        kind: TokenKind::Classic,
+        expires: None,
+    };
+    assert!(db.store.mark_read_only(token, &gcmon()).unwrap());
+
+    let writable = calls.repository_state(&cpython()).unwrap();
+    let read_only = calls.repository_state(&gcmon()).unwrap();
+    status.set(&Shown {
+        status: Status::Offline,
+        points_back: None,
+    });
+    let offline = calls.repository_state(&cpython()).unwrap();
+    db.close();
+
+    assert_eq!(writable, RepositoryState::new([], Connection::Online));
+    assert_eq!(
+        read_only,
+        RepositoryState::new([ReadOnly::Token], Connection::Online)
+    );
+    assert_eq!(offline, RepositoryState::new([], Connection::Offline));
+}
+
 /// The language servers' thread, with no server to start and no Lookup checkout.
 fn no_servers() -> Definitions {
     Definitions::start(Sources {
@@ -149,7 +200,12 @@ fn the_handle_syncs_the_open_repository_and_clones_its_mirror_first_and_hands_th
         definitions: no_servers(),
     };
 
-    let calls = Calls::launched(fetching, db.reader.clone(), parts);
+    let calls = Calls::launched(
+        fetching,
+        db.reader.clone(),
+        shown(Status::Connecting).1,
+        parts,
+    );
     let at_launch = (synced_and_saved(&session), heard.clones());
     // The first hand edit since launch gives c/d a Filter, and adds e/f.
     let filter = "\n[[repositories.filters]]\nname = \"Bugs\"\nquery = \"label:bug\"\n";
@@ -191,7 +247,12 @@ fn the_window_tells_the_session_what_the_user_did_with_an_item_and_with_itself()
         settings,
         definitions: no_servers(),
     };
-    let calls = Calls::launched(fetching, db.reader.clone(), parts);
+    let calls = Calls::launched(
+        fetching,
+        db.reader.clone(),
+        shown(Status::Connecting).1,
+        parts,
+    );
     let cpython = || RepositoryName::parse("python/cpython").unwrap();
 
     calls.window_loaded();

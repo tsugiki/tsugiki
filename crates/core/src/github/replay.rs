@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Reply, Request, Selection, Transport, Unreachable, Write, https};
+use super::{Grant, Reply, Request, Selection, Transport, Unreachable, Write, https};
 use crate::token::Token;
 
 /// One recorded exchange, in `<operation>.json`.
@@ -65,6 +65,7 @@ impl Transport for Replayer {
                 reset: None,
                 date: None,
                 body: NO_ISSUES.to_owned(),
+                grant: Grant::default(),
             });
         }
         Ok(recording.answer(&path, &request.query))
@@ -111,6 +112,7 @@ impl Recording {
             reset: self.reset,
             date: None,
             body,
+            grant: Grant::default(),
         }
     }
 }

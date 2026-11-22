@@ -10,6 +10,7 @@
   } from "$lib/state/panes.svelte";
   import type { PrTab, PrViewState } from "$lib/state/pr-view.svelte";
   import { RAIL_TABS, type RailTab, railTabLabel, type RailTabId } from "$lib/state/rail.svelte";
+  import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import Conversation from "./Conversation.svelte";
   import FilesTab from "./FilesTab.svelte";
   import { focusBesideRail } from "./focus";
@@ -19,6 +20,7 @@
   import PaneEdge from "./PaneEdge.svelte";
   import Rail from "./Rail.svelte";
   import RailSearch from "./RailSearch.svelte";
+  import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
   import StateWords from "./StateWords.svelte";
   import { PR_UNREAD } from "./unread-words";
@@ -34,6 +36,7 @@
     marks = true,
     focusable = false,
     header,
+    repositoryState,
   }: {
     repository: string;
     pr: PrViewState;
@@ -51,6 +54,8 @@
     focusable?: boolean;
     /** What sits at the top of the pane, such as the history's arrows (#586). */
     header?: Snippet;
+    /** The Repository's state, which says atop the view why Tsugiki can't write there (#398). */
+    repositoryState?: RepositoryState | undefined;
   } = $props();
 
   const TABS: { tab: PrTab; name: string }[] = [
@@ -143,6 +148,7 @@
   onfocus={handOnFocus}
 >
   {@render header?.()}
+  <ReadOnlyNote {repositoryState} {repository} />
   {#if pr.error}
     <p role="alert">{`Tsugiki can't show this PR: ${pr.error}`}</p>
   {/if}

@@ -869,6 +869,25 @@ fn a_window_that_loads_after_an_announcement_gets_the_same_status() {
     assert_eq!(asked, announced);
 }
 
+#[test]
+fn a_repository_s_state_says_offline_once_github_cant_be_reached() {
+    let (folders, _root) = temp_folders("wired-repository-state");
+    let wired = Wired::start(Ok(folders), no_network());
+    let cpython = json!({ "repository": CPYTHON });
+
+    assert_eq!(
+        wired.statuses.recv_timeout(PLENTY).unwrap(),
+        json!({ "state": "offline" })
+    );
+    let state = wired.ask("repository_state", cpython);
+    drop(wired.stop());
+
+    assert_eq!(
+        state,
+        Ok(json!({ "read_only": [], "connection": "offline" }))
+    );
+}
+
 /// What the smoke test's first check does through the window: Offline from the start, a refresh, then
 /// "Connecting…" until GitHub fails again.
 #[test]

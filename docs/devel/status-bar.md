@@ -8,8 +8,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - Who is signed in, once GitHub has said. Before it answers, the login of the last run with
     "Connecting…", or "Connecting…" alone. A Refresh while offline says "Connecting…" too, until GitHub
     answers or the ask fails, and so does a Refresh without a token, until `gh` answers.
-  - **Offline: read-only**, after the login of the last run, if any, while GitHub can't be reached. It tints
-    the whole bar.
+  - **Offline**, after the login of the last run, if any, while GitHub can't be reached. It tints the whole
+    bar.
+  - **Read-only**, after the rest of the status, while the token can't write to the open Repository
+    ([token.md](token.md)). A problem's words leave it out.
   - A problem that stops Tsugiki reading, such as a refused token, in the core's words, each opening the
     Settings page that fixes it.
   - After the status, each problem with a file Tsugiki reads, such as a line of `settings.toml` it can't
@@ -26,7 +28,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     request at a time, and a request can take up to 15 s to fail, so the user's own asks wait behind it. A
     sync sends about one request a second, so the part leaves out those that answer sooner. It names the
     status check, a refresh or a first sync of a Repository, a read of an Issue or a PR on screen, quick
-    open's fetch of a number, Add repository's check, or the size the Mirror worker asks before a clone. The
+    open's fetch of a number, Add repository's check, the size the Mirror worker asks before a clone, or
+    whether a Repository is private, which Tsugiki asks of a token with `public_repo` alone. The
     part keeps one width whatever it names, narrower in a narrow window so the status keeps its room. A long
     subject ends in an ellipsis before the seconds, and the tooltip holds the whole text. It goes once GitHub
     answers or the request fails, and the status shows a failure, such as Offline. While Tsugiki asks `gh`

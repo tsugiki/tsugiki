@@ -95,6 +95,48 @@ fn printing_a_token_doesnt_show_it() {
 }
 
 #[test]
+fn a_token_s_prefix_says_its_kind() {
+    let kind_of = |text: &'static str| Token(text.to_owned()).kind();
+    assert_eq!(kind_of("gho_example"), TokenKind::OAuth);
+    assert_eq!(kind_of("ghp_example"), TokenKind::Classic);
+    assert_eq!(kind_of("github_pat_example"), TokenKind::FineGrained);
+    assert_eq!(kind_of("ghs_example"), TokenKind::Other);
+    assert_eq!(kind_of("0123456789abcdef"), TokenKind::Other);
+}
+
+#[test]
+fn repo_lets_a_token_write_everywhere_and_public_repo_alone_to_public_repositories() {
+    assert_eq!(
+        WriteScope::from_header("read:org, repo, workflow"),
+        WriteScope::Every
+    );
+    assert_eq!(
+        WriteScope::from_header("public_repo,repo"),
+        WriteScope::Every
+    );
+    assert_eq!(
+        WriteScope::from_header("gist, public_repo"),
+        WriteScope::Public
+    );
+}
+
+#[test]
+fn scopes_without_repo_or_public_repo_let_a_token_write_nothing() {
+    for header in [
+        "",
+        "read:org",
+        "repo:status, repo_deployment",
+        "public_repo:x",
+    ] {
+        assert_eq!(
+            WriteScope::from_header(header),
+            WriteScope::None,
+            "{header}"
+        );
+    }
+}
+
+#[test]
 fn a_token_is_hidden_wherever_it_appears() {
     let token = Token::find(gh_alone(|| gh_prints("0123456789abcdef"))).unwrap();
     assert_eq!(

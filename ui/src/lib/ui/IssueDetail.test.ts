@@ -593,3 +593,30 @@ it("says why it can't show the Issue", async () => {
 
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this Issue: no database");
 });
+
+it("says atop the view that the token can't write to a Read-only Repository, and nothing otherwise", async () => {
+  core.issue.mockResolvedValue(ok(null));
+  const state = new IssueViewState("python/cpython", 7);
+  await state.load();
+  const props = {
+    repository: "python/cpython",
+    issue: state,
+    now: NOW,
+    onopenpr: vi.fn(),
+    onmark: vi.fn(),
+    onarchive: vi.fn(),
+    onmute: vi.fn(),
+    onmuteauthor: vi.fn(),
+  };
+  const words = "Read-only: your token can't write to python/cpython";
+  const { rerender } = render(IssueDetail, {
+    ...props,
+    repositoryState: { read_only: ["token"], connection: "online" },
+  });
+  state.stop();
+
+  const pane = screen.getByRole("region", { name: "Issue view" });
+  expect(pane.querySelector("p")?.textContent).toBe(words);
+  await rerender({ ...props, repositoryState: { read_only: [], connection: "offline" } });
+  expect(screen.queryByText(words)).toBeNull();
+});

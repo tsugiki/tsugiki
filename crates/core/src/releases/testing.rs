@@ -19,6 +19,8 @@ pub fn answered(status: u16, body: &str) -> Result<Reply, Unreachable> {
         date: None,
         ratelimit_reset: None,
         etag: None,
+        scopes: None,
+        token_expiration: None,
     })
 }
 

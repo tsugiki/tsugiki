@@ -15,6 +15,7 @@ mod patch_ids;
 mod pr_links;
 mod pull_request_content;
 mod pull_requests;
+mod read_only;
 /// Draws the schema in `docs/schema.md` and keeps it current. Only its tests use it.
 #[cfg(test)]
 mod schema;
@@ -50,7 +51,9 @@ use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCo
 use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
+use crate::read_only::TokenSeen;
 use crate::repository::RepositoryName;
+use crate::token::TokenKind;
 use columns::Items;
 pub use columns::Numbers;
 pub use filters::NarrowedResults;
@@ -735,6 +738,56 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Forgets the Read-only marks of each token of another kind than `kind`, which Tsugiki knows before
+    /// GitHub first answers, and gives the Repositories they were on (#398).
+    pub fn forget_read_only_of_other_kinds(
+        &self,
+        kind: TokenKind,
+    ) -> Result<Vec<RepositoryName>, Error> {
+        let saved = self.call(move |connection| read_only::forget_other_kinds(connection, kind))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Forgets the Read-only marks of each token but `token`, and gives the Repositories they were on
+    /// (#398).
+    pub fn forget_read_only_of_other_tokens(
+        &self,
+        token: TokenSeen,
+    ) -> Result<Vec<RepositoryName>, Error> {
+        let saved =
+            self.call(move |connection| read_only::forget_other_tokens(connection, token))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Marks `repository` Read-only, as `token` can't write to it, and gives whether it wasn't before
+    /// (#398).
+    pub fn mark_read_only(
+        &self,
+        token: TokenSeen,
+        repository: &RepositoryName,
+    ) -> Result<bool, Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| read_only::mark(connection, token, &repository))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Forgets the Read-only marks of each Repository not in `listed`, and gives the Repositories they
+    /// were on (#398).
+    pub fn forget_read_only_of_unlisted(
+        &self,
+        listed: Vec<RepositoryName>,
+    ) -> Result<Vec<RepositoryName>, Error> {
+        let saved = self.call(move |connection| read_only::forget_unlisted(connection, &listed))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Clears `repository`'s Read-only mark, and gives whether it had one (#398).
+    pub fn clear_read_only(&self, repository: &RepositoryName) -> Result<bool, Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| read_only::clear(connection, &repository))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Turns `repository`'s "Show muted" to `show` (#825).
     pub fn switch_show_muted(
         &self,
@@ -1086,6 +1139,13 @@ impl StoreReader {
             };
             Ok(Some((pr, snapshot.pull_request_content(number)?)))
         })
+    }
+
+    /// Whether the store marks `repository` as one the token can't write to (#398).
+    pub fn token_cant_write(&self, repository: &RepositoryName) -> Result<bool, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| read_only::marked(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
     }
 
     /// The number, title, state and last update of each Issue and PR of `repository`, in no order.

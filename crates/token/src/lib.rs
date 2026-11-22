@@ -33,6 +33,10 @@ const TOKEN_PREFIXES: [&str; 6] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "gith
 /// The keyword each GraphQL operation that writes starts with. [`checked_read`] refuses a query that holds it
 /// anywhere, and [`checked_selection`] a selection.
 const MUTATION: &str = "mutation";
+/// The scope that lets an OAuth token or a classic one write to every repository its owner can push to.
+const REPO: &str = "repo";
+/// The scope that lets an OAuth token or a classic one write to public repositories alone.
+const PUBLIC_REPO: &str = "public_repo";
 /// The characters [`checked_selection`] refuses besides `mutation`: `"` starts a string and `#` a comment,
 /// inside which a brace wouldn't count.
 const NOT_IN_A_SELECTION: [char; 2] = ['"', '#'];
@@ -120,6 +124,60 @@ impl Token {
     /// The value of the `Authorization` header, the one place the token goes.
     fn bearer(&self) -> String {
         format!("Bearer {}", self.0)
+    }
+
+    /// What kind of token this is, which its prefix says. The kind gives nothing of the token away: every
+    /// token of the kind starts the same way.
+    pub fn kind(&self) -> TokenKind {
+        let kinds = [
+            ("gho_", TokenKind::OAuth),
+            ("ghp_", TokenKind::Classic),
+            ("github_pat_", TokenKind::FineGrained),
+        ];
+        kinds
+            .into_iter()
+            .find_map(|(prefix, kind)| self.0.starts_with(prefix).then_some(kind))
+            .unwrap_or(TokenKind::Other)
+    }
+}
+
+/// The kinds of GitHub token, as their prefixes tell them apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenKind {
+    /// An OAuth app's token, such as the one `gh auth login` makes: `gho_`.
+    OAuth,
+    /// A classic personal access token: `ghp_`.
+    Classic,
+    /// A fine-grained personal access token: `github_pat_`. GitHub doesn't say what one may write.
+    FineGrained,
+    /// Any other shape, such as a GitHub App's token or a classic token from before the prefixes.
+    Other,
+}
+
+/// What a token's scopes let it write, from the `X-OAuth-Scopes` header GitHub sends with each answer to an
+/// OAuth token or a classic one. A fine-grained token's answers carry no such header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteScope {
+    /// `repo`: every repository the token's owner can push to.
+    Every,
+    /// `public_repo` without `repo`: public repositories alone.
+    Public,
+    /// Neither, so no repository.
+    None,
+}
+
+impl WriteScope {
+    /// What the scopes in `header`, a list such as `repo, read:org`, let the token write. A scope that only
+    /// starts like one of these, such as `repo:status`, lets it write nothing.
+    pub fn from_header(header: &str) -> Self {
+        let scopes: Vec<&str> = header.split(',').map(str::trim).collect();
+        if scopes.contains(&REPO) {
+            Self::Every
+        } else if scopes.contains(&PUBLIC_REPO) {
+            Self::Public
+        } else {
+            Self::None
+        }
     }
 }
 
@@ -486,6 +544,12 @@ pub struct Reply {
     pub ratelimit_reset: Option<String>,
     /// The `ETag` header.
     pub etag: Option<String>,
+    /// What the `X-OAuth-Scopes` header lets the token write. Nothing, when the answer has no such header,
+    /// as one to a fine-grained token has none.
+    pub scopes: Option<WriteScope>,
+    /// The `GitHub-Authentication-Token-Expiration` header, which an answer to a token with an expiry
+    /// carries.
+    pub token_expiration: Option<String>,
 }
 
 /// The request didn't reach GitHub. Each kind carries the whole cause, for the log: a proxy that inspects

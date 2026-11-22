@@ -155,7 +155,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - Tiered polling, a first sync sized to the Repository, and older items on demand.
 - One local database for all Repositories, with Export database and Import database.
-- **Read-only** offline.
+- **Offline**: the cached data on screen, and what waits on GitHub sent once it answers.
 
 ### Keyboard ([keyboard.md](devel/keyboard.md))
 

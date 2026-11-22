@@ -29,6 +29,7 @@ pub mod mirror_queue;
 pub mod mirror_source;
 pub mod misses;
 pub mod patch_ids;
+pub mod read_only;
 pub mod releases;
 pub mod repository;
 pub mod repository_settings;

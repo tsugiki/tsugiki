@@ -125,6 +125,7 @@ pub fn replied(status: u16, body: &str) -> Result<Reply, Unreachable> {
         reset: None,
         date: None,
         body: body.to_owned(),
+        grant: Grant::default(),
     })
 }
 

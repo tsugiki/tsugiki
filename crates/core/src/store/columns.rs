@@ -109,6 +109,12 @@ impl ToSql for RepositoryName {
     }
 }
 
+impl FromSql for RepositoryName {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        Self::parse(value.as_str()?).map_err(|problem| FromSqlError::Other(problem.message.into()))
+    }
+}
+
 impl ToSql for Login {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         self.as_str().to_sql()

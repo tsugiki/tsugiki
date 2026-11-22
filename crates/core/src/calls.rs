@@ -29,11 +29,12 @@ use crate::latest::LatestReader;
 use crate::login::Login;
 use crate::mirror::{CloneRefusal, LookupAt};
 use crate::mirror_source::MirrorSource;
+use crate::read_only::{Connection, ReadOnly, RepositoryState};
 use crate::repository::RepositoryName;
 use crate::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use crate::session::Session;
 use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, SettingsView};
-use crate::status::ItemUnread;
+use crate::status::{ItemUnread, Shown};
 use crate::store::StoreReader;
 use crate::work::SeenMark;
 use crate::workbench::inbox::{Inbox, InboxPage};
@@ -53,6 +54,8 @@ use crate::workbench::{Workbench, WorkbenchView};
 pub struct Calls {
     fetching: Fetching,
     reader: StoreReader,
+    /// The status board's copy of whether GitHub can be asked now, which each Repository's state reads.
+    shown: LatestReader<Shown>,
     settings: SettingsOwner,
     folders: Result<Folders, Error>,
     /// The diff on show, which the Files tab's rows come from.
@@ -74,15 +77,20 @@ impl Calls {
     /// The handle on `session` and `parts`, with a Highlighter of its own, once it has started what the
     /// window opens on. Make one per run: each starts the syncs and the clones again.
     pub fn new(session: &Session, parts: CallParts) -> Self {
-        Self::launched(session.fetching(), session.reader(), parts)
+        Self::launched(session.fetching(), session.reader(), session.shown(), parts)
     }
 
-    /// The handle on `fetching`, `reader` and `parts`, once it has started what the window opens on: the open
-    /// Repository's sync, and its Mirror's clone ahead of the others. From here the settings owner hands the
-    /// session each Repository's settings it saves otherwise, before the window can ask for a change. The
-    /// Repositories added before 0.2 have no Mirror yet, and get theirs after the open one's. One the user
-    /// hasn't said where its objects come from asks when its turn comes.
-    fn launched(fetching: Fetching, reader: StoreReader, parts: CallParts) -> Self {
+    /// The handle on `fetching`, `reader`, `shown` and `parts`, once it has started what the window opens
+    /// on: the open Repository's sync, and its Mirror's clone ahead of the others. From here the settings
+    /// owner hands the session each Repository's settings it saves otherwise, before the window can ask for
+    /// a change. The Repositories added before 0.2 have no Mirror yet, and get theirs after the open one's.
+    /// One the user hasn't said where its objects come from asks when its turn comes.
+    fn launched(
+        fetching: Fetching,
+        reader: StoreReader,
+        shown: LatestReader<Shown>,
+        parts: CallParts,
+    ) -> Self {
         let CallParts {
             folders,
             settings,
@@ -91,6 +99,7 @@ impl Calls {
         let calls = Self {
             fetching,
             reader,
+            shown,
             settings,
             folders,
             diffs: Arc::default(),
@@ -167,6 +176,21 @@ impl Calls {
         number: u32,
     ) -> Result<Option<PrView>, Error> {
         PrView::read(&self.reader, &self.repository(repository), number)
+    }
+
+    /// The state of `repository`, open or not, which each write control reads: why Tsugiki can't write
+    /// there, if it can't, and whether GitHub can be reached (#398).
+    pub fn repository_state(&self, repository: &RepositoryName) -> Result<RepositoryState, Error> {
+        let token = self
+            .reader
+            .token_cant_write(repository)?
+            .then_some(ReadOnly::Token);
+        let connection = if self.shown.read(|shown| shown.status.is_offline()) {
+            Connection::Offline
+        } else {
+            Connection::Online
+        };
+        Ok(RepositoryState::new(token, connection))
     }
 
     /// The Issues and PRs of `repository` that quick open finds for what the user `typed`.

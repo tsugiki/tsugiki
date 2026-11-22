@@ -27,6 +27,8 @@ function askingWords(asked: AskingGitHub): string {
       return `check of ${asked.repository}`;
     case "size":
       return `size of ${asked.repository}`;
+    case "visibility":
+      return `visibility of ${asked.repository}`;
   }
 }
 

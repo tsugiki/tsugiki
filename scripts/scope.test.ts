@@ -86,21 +86,6 @@ describe("jobs", () => {
     expect(jobs(given, unread)).toEqual(EVERY_JOB);
   });
 
-  // CI's macOS job runs when `jobs` lists `rust` or `ui`, and its Playwright steps when it lists `e2e`.
-  it.each([
-    "ui/src/App.svelte",
-    "ui/package.json",
-    "crates/app/tauri.conf.json",
-    "crates/token/Cargo.toml",
-    "package-lock.json",
-    "justfile",
-    "scripts/scope.ts",
-    "crates/core/src/lib.rs",
-  ])("lists the Playwright specs for %s only with the UI job", (path) => {
-    const given = jobs([path], unread);
-    expect(!given.includes("e2e") || given.includes("ui"), path).toBe(true);
-  });
-
   it("runs everything when it can't see a path", () => {
     expect(jobs([], unread)).toEqual(EVERY_JOB);
   });

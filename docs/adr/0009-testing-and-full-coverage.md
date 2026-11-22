@@ -67,9 +67,10 @@ release. Coverage is held at 100%, and CI fails below it.
 - On every push to main, on Windows: rustfmt, clippy with warnings as errors, ESLint, Prettier,
   `svelte-check`, Vitest, Playwright on Chromium and WebKit, and both coverage gates. Rust's gate runs every
   Rust test, the stale-bindings check among them. A push to a PR runs the Rust checks when it reaches what
-  they read, and the UI checks when it reaches what those read (`scripts/scope.ts`), on every OS below, and
-  still reports `CI passed`. A change to docs alone runs neither, and a change to the scripts or the
-  workflow runs both. A push counts from the tree the PR's last passed run tested, so a fix to the UI after
+  they read, the UI checks when it reaches what those read, and Playwright when it reaches the UI
+  (`scripts/scope.ts`), on every OS below, and still reports `CI passed`. A change to docs alone runs
+  none, a change to the scripts runs all but Playwright, which reads no script, and a change to the
+  workflow runs all. A push counts from the tree the PR's last passed run tested, so a fix to the UI after
   a passed run skips the Rust checks. Codecov carries the last figure forward for a side a run skips.
   `ui/package.json` and the generated bindings count for both sides, because Rust tests read them.
 - On those same pushes, on macOS: what can differ there, which is clippy, Vitest, Playwright on

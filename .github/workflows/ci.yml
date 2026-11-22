@@ -328,13 +328,14 @@ jobs:
   # What can differ on macOS, as steps of one job so a run needs one macOS runner. A failed check doesn't stop
   # the checks after it. As on Windows, Rust's coverage gate runs the tests and the bindings check. The Rust
   # steps run when `jobs` lists `rust`, the UI ones when it lists `ui`, and the Playwright ones when it lists
-  # `e2e`, which scope.ts lists only with `ui`.
+  # `e2e`.
   macos:
     name: checks (macos-latest)
     needs: [changes]
     if: >-
       ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') ||
-      contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
+      contains(fromJSON(needs.changes.outputs.jobs), 'ui') ||
+      contains(fromJSON(needs.changes.outputs.jobs), 'e2e') }}
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -421,9 +422,9 @@ jobs:
       - macos
     runs-on: ubuntu-latest
     steps:
-      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS and dupes jobs read
-      # both, and the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets
-      # a line.
+      # A job may skip only when `changes` left out of `jobs` what it reads. The dupes job reads Rust and
+      # the UI, the macOS job those and Playwright, and the jobs with no `if:` always run. A job this table
+      # doesn't name fails it, so a new one gets a line.
       - name: Every job succeeded, or skipped because the change doesn't reach what it reads
         env:
           JOBS: ${{ needs.changes.outputs.jobs }}
@@ -439,7 +440,8 @@ jobs:
               dependencies) reads='"dependencies"' ;;
               ui) reads='"ui"' ;;
               playwright) reads='"e2e"' ;;
-              macos | dupes) reads='"rust", "ui"' ;;
+              dupes) reads='"rust", "ui"' ;;
+              macos) reads='"rust", "ui", "e2e"' ;;
               *) echo "CI passed doesn't know what $job reads"; exit 1 ;;
             esac
             listed=$(jq -r "[\"always\"] + . | any(.[]; IN($reads))" <<< "$JOBS")

@@ -28,6 +28,8 @@ const core = vi.hoisted(() => ({
   settings: vi.fn(),
   checkRepository: vi.fn(),
   addRepository: vi.fn(),
+  repositoryState: vi.fn(),
+  repositorySync: vi.fn(),
 }));
 /** The listener for the servers' rows, so a test can send it what the core would, and its stop. */
 const rowsHeard = vi.hoisted(() => ({
@@ -48,6 +50,10 @@ vi.mock("$lib/data/bindings", () => ({
         return rowsHeard.stop;
       },
     },
+    // A Repository's page listens for what can change its header.
+    changed: { listen: async () => () => {} },
+    statusChanged: { listen: async () => () => {} },
+    lastSyncChanged: { listen: async () => () => {} },
   },
 }));
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
@@ -185,6 +191,8 @@ beforeEach(async () => {
   core.previewThemes.mockImplementation(async (appearance: Values["appearance"]) => previewOf(appearance));
   core.turnWindow.mockResolvedValue(null);
   core.onThisMachine.mockResolvedValue(ok([]));
+  core.repositoryState.mockResolvedValue(ok({ read_only: [], connection: "online" }));
+  core.repositorySync.mockResolvedValue(ok({ last_sync: null, open: null }));
   state = new SettingsState();
   state.take(loaded(settingsWith()));
   theme = new ThemeState(LIGHT_SIDE);
@@ -242,6 +250,9 @@ describe("the Settings dialog", () => {
     await go("python/cpython");
     const repository = screen.getByRole("region", { name: "python/cpython" });
     expect(within(repository).getByRole("heading", { name: "python/cpython" })).toBeTruthy();
+    expect(await within(repository).findByText("Can write")).toBeTruthy();
+    expect(within(repository).getByText("Not synced yet")).toBeTruthy();
+    expect(core.repositorySync).toHaveBeenCalledWith("python/cpython");
     expect(within(nav()).getByRole("button", { name: "python/cpython" }).getAttribute("aria-current")).toBe(
       "page",
     );

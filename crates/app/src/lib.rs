@@ -1111,6 +1111,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::inbox,
             slow_commands::issue,
             slow_commands::repository_state,
+            slow_commands::repository_sync,
             slow_commands::pull_request,
             slow_commands::pull_request_files,
             slow_commands::pull_request_rows,

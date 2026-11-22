@@ -11,6 +11,7 @@ mod filters;
 mod issue_content;
 mod issues;
 mod migrate;
+mod open_items;
 mod patch_ids;
 mod pr_links;
 mod pull_request_content;
@@ -52,7 +53,7 @@ use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::read_only::TokenSeen;
-use crate::repository::RepositoryName;
+use crate::repository::{OpenItems, RepositoryName, RepositorySync};
 use crate::token::TokenKind;
 use columns::Items;
 pub use columns::Numbers;
@@ -322,6 +323,17 @@ impl Store {
             sync_state::forget_read_ahead(&transaction, &repository)?;
             transaction.commit()
         })?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Keeps `open` as what GitHub last counted open in `repository` (#534).
+    pub fn save_open_items(
+        &self,
+        repository: &RepositoryName,
+        open: OpenItems,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| open_items::save(connection, &repository, open))?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -1145,6 +1157,22 @@ impl StoreReader {
     pub fn token_cant_write(&self, repository: &RepositoryName) -> Result<bool, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| read_only::marked(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// The moment the last sync of `repository` finished, and its open Issues and PRs as GitHub last counted
+    /// them (#534).
+    pub fn repository_sync(&self, repository: &RepositoryName) -> Result<RepositorySync, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| {
+            let transaction = connection.transaction()?;
+            let synced = sync_state::read(&transaction, &repository)?;
+            let open = open_items::read(&transaction, &repository)?;
+            Ok::<_, rusqlite::Error>(RepositorySync {
+                last_sync: synced.map(|state| state.finished_at),
+                open,
+            })
+        })?;
         read.map_err(saying(CANT_READ))
     }
 

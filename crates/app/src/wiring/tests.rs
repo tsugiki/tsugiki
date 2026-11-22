@@ -888,6 +888,19 @@ fn a_repository_s_state_says_offline_once_github_cant_be_reached() {
     );
 }
 
+#[test]
+fn a_repository_no_sync_reached_says_so_and_a_bad_name_is_refused() {
+    let (folders, _root) = temp_folders("wired-repository-sync");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let synced = wired.ask("repository_sync", json!({ "repository": CPYTHON }));
+    let refused = wired.ask("repository_sync", json!({ "repository": "cpython" }));
+    drop(wired.stop());
+
+    assert_eq!(synced, Ok(json!({ "last_sync": null, "open": null })));
+    assert!(refused.is_err(), "{refused:?}");
+}
+
 /// What the smoke test's first check does through the window: Offline from the start, a refresh, then
 /// "Connecting…" until GitHub fails again.
 #[test]

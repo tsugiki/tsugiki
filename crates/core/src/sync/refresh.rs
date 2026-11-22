@@ -209,7 +209,8 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
     poll.changed_prs.extend(answer.pull_requests);
     poll.issues = answer.next_issues;
     poll.pull_requests = answer.next_pull_requests;
-    *check = match (RepositorySize::of(answer.open_items), poll.tag.clone()) {
+    link.keep_open_items(answer.open);
+    *check = match (RepositorySize::of(answer.open.total()), poll.tag.clone()) {
         (RepositorySize::Large, _) => ChangeCheck::Skipped,
         (RepositorySize::Small, None) => ChangeCheck::Untagged,
         (RepositorySize::Small, Some(tag)) => ChangeCheck::Tagged(tag),

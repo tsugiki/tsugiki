@@ -46,7 +46,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   off and say why. Status bar has Show the status bar, and says that problems and being
   offline still show when it's off. Updates has Check for new versions (`[releases] check`), the one setting
   that still needs a restart, so it says "Takes effect at the next start" under its row. Both live in
-  `settings.toml`. Each Repository's page and Sync say "Nothing to set here yet." for now.
+  `settings.toml`. Sync says "Nothing to set here yet." for now.
 - Repositories lists each Repository on a line of its own, in the order `settings.toml` gives: its number of
   Filters, "borrows from a clone" when `machine.toml` says its mirror borrows objects, and the size of its
   mirror on the disk, or "no mirror yet" before the first clone ends, or "can't measure the mirror" when
@@ -58,6 +58,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Cancel keeps it. Switch to it, on a Repository Tsugiki has already, closes Settings as Cancel does,
   putting back the changes not applied, and switches to that Repository; while Apply saves, Settings stays
   open and the window stays where it is.
+- A Repository's page opens with a header: its `owner/name`, then Read-only or Can write, its open Issues
+  and PRs, and its last sync, as "Can write · 1,204 open Issues · 342 open PRs · Synced 2 min ago". Read-only
+  follows the Repository's state, for any reason it holds, with the reasons in its tooltip, and changes as
+  the mark does. The counts are GitHub's as the last sync kept them ([sync.md](sync.md)), so a large
+  Repository counts all it has open, not the window Tsugiki holds; before a sync has counted them, they don't
+  show. The last sync says "Not synced yet" before the first one finishes, moves on each minute, and changes
+  when a sync of that Repository finishes. Each part waits for the core's answer. The page says
+  "Nothing to set here yet." under the header for now: its groups come later, in this order: Conventions,
+  First sync, Filters, Muted authors, On this machine, then Reset cache and Remove repository.
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps
   ([keyboard.md](keyboard.md)).
 - Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle

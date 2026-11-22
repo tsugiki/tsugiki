@@ -12,7 +12,7 @@ use crate::github::testing::{
     pull_request_answer, replied, reply_ok, signed_in_as,
 };
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
-use crate::repository::RepositoryName;
+use crate::repository::{OpenItems, RepositoryName};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::status::Change;
@@ -428,6 +428,25 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
     assert_eq!(asked[0].0, "RefreshRepository");
     assert_eq!(asked[0].1["since"], "2026-11-04T09:58:00Z");
     assert_eq!(changes, []);
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_keeps_what_github_counts_open_now() {
+    let harness = after_a_sync("poll-open-items", vec![quiet_poll()]);
+    let held = OpenItems { issues: 1, prs: 1 };
+    harness.db.store.save_open_items(&cpython(), held).unwrap();
+    let mut syncs = refreshing(filtering(&[]));
+
+    drop(run(&mut syncs, &harness));
+
+    let synced = harness.db.reader.repository_sync(&cpython()).unwrap();
+    let open = OpenItems {
+        issues: 9_000,
+        prs: 0,
+    };
+    assert_eq!(synced.open, Some(open));
+    assert!(synced.last_sync > Some(moment(LAST_SYNC)));
     harness.finish();
 }
 

@@ -32,7 +32,7 @@ use crate::github::in_flight;
 use crate::github::pull_requests::PrFetch;
 use crate::links::{possible_numbers, possible_origin};
 use crate::login::Login;
-use crate::repository::{RepositoryName, WINDOW_DAYS};
+use crate::repository::{OpenItems, RepositoryName, WINDOW_DAYS};
 use crate::repository_settings::RepositorySettings;
 use crate::status::{LastSync, LoadProgress, SyncPart};
 use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Opened, Store, SyncState};
@@ -324,6 +324,20 @@ struct Link<'a> {
     filters: &'a [FilterQuery],
     /// The start of a first sync's window. A refresh has no window.
     window_since: Option<OffsetDateTime>,
+}
+
+impl Link<'_> {
+    /// Keeps what GitHub counted open, for the Repository's page in Settings (#534). Only that page reads
+    /// it, so a save that fails goes to the log and the sync goes on.
+    fn keep_open_items(&self, open: OpenItems) {
+        if let Err(problem) = self.store.save_open_items(self.repository, open) {
+            log::warn!(
+                "Tsugiki couldn't keep the open Issues and PRs of {}: {}",
+                self.repository,
+                problem.message
+            );
+        }
+    }
 }
 
 /// A step's result, and the phase to move to.

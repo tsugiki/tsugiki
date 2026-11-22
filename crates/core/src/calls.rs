@@ -30,7 +30,7 @@ use crate::login::Login;
 use crate::mirror::{CloneRefusal, LookupAt};
 use crate::mirror_source::MirrorSource;
 use crate::read_only::{Connection, ReadOnly, RepositoryState};
-use crate::repository::RepositoryName;
+use crate::repository::{RepositoryName, RepositorySync};
 use crate::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use crate::session::Session;
 use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, SettingsView};
@@ -191,6 +191,12 @@ impl Calls {
             Connection::Online
         };
         Ok(RepositoryState::new(token, connection))
+    }
+
+    /// The last sync of `repository`, open or not, and its open Issues and PRs as GitHub last counted them,
+    /// which its page in Settings shows (#534).
+    pub fn repository_sync(&self, repository: &RepositoryName) -> Result<RepositorySync, Error> {
+        self.reader.repository_sync(repository)
     }
 
     /// The Issues and PRs of `repository` that quick open finds for what the user `typed`.

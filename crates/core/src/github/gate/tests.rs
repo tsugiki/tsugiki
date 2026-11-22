@@ -57,6 +57,23 @@ fn a_refusal_holds_until_the_time_github_named() {
 }
 
 #[test]
+fn a_refusal_says_when_it_lifts_though_the_floor_holds_longer() {
+    let refused_at = NOW + Duration::minutes(5);
+    let reset = NOW + Duration::minutes(30);
+    let below = points_left(RATE_LIMIT_FLOOR - 1, reset);
+
+    let gate = Gate::default().refused(Some(refused_at), NOW);
+
+    assert_eq!(
+        gate.holds_until(Some(below), NOW),
+        Some((reset, Hold::Floor))
+    );
+    assert_eq!(gate.refused_until(NOW), Some(refused_at));
+    assert_eq!(gate.refused_until(refused_at), None);
+    assert_eq!(Gate::default().refused_until(NOW), None);
+}
+
+#[test]
 fn a_refusal_with_no_time_or_a_past_one_holds_a_minute() {
     let unnamed = Gate::default().refused(None, NOW);
     let past = Gate::default().refused(Some(NOW - Duration::minutes(5)), NOW);

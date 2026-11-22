@@ -25,7 +25,7 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
 
 - The GitHub token from gh or a personal access token, held only by the Rust core.
 - The Account page, which says what the token lets Tsugiki do and guides the user to a narrower one.
-- Read-only for a Repository the token can't write to.
+- Read-only for a Repository the token can't write to, or that the user chose Read-only for.
 
 ### Repositories ([repositories.md](devel/repositories.md))
 

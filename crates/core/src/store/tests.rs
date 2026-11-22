@@ -223,6 +223,7 @@ fn view_statements(connection: &mut Connection) -> Vec<String> {
     filters::save(connection, &cpython, &query, &results).unwrap();
     // With nothing kept, the read would stop before it asks for the comments.
     let content = IssueContent {
+        id: None,
         body_html: "<p>It crashes</p>".to_owned(),
         comments: Vec::new(),
         earlier_comments: 0,

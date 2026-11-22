@@ -54,6 +54,14 @@ impl Gate {
             .max_by_key(|(at, _)| *at)?;
         Some((until.min(now + LONGEST_HOLD), why))
     }
+
+    /// The time by GitHub's clock its refusal for its rate limit lifts, while one holds at `now`, its time,
+    /// whether or not the floor holds longer. A write the user sends passes the floor but not a refusal
+    /// (#393).
+    pub(crate) fn refused_until(self, now: OffsetDateTime) -> Option<OffsetDateTime> {
+        let until = self.refused_until.filter(|at| *at > now)?;
+        Some(until.min(now + LONGEST_HOLD))
+    }
 }
 
 /// Why the gate holds.

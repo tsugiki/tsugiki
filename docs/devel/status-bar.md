@@ -10,8 +10,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     answers or the ask fails, and so does a Refresh without a token, until `gh` answers.
   - **Offline**, after the login of the last run, if any, while GitHub can't be reached. It tints the whole
     bar.
-  - **Read-only**, after the rest of the status, while the token can't write to the open Repository
-    ([token.md](token.md)). A problem's words leave it out.
+  - **Read-only**, after the rest of the status, while the open Repository is Read-only, for the token or
+    by the user's choice ([token.md](token.md)). A problem's words leave it out.
   - A problem that stops Tsugiki reading, such as a refused token, in the core's words, each opening the
     Settings page that fixes it.
   - After the status, each problem with a file Tsugiki reads, such as a line of `settings.toml` it can't

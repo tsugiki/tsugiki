@@ -11,6 +11,7 @@ use tsugiki_token::testing::{gh_alone, gh_prints};
 
 use super::*;
 use crate::facts::pull_requests::NodeId;
+use crate::read_only::WritableRepository;
 use crate::token::GhOutput;
 
 /// The points field of an answer's data: one point of 1,000 spent, with plenty left, so nothing pauses, in an
@@ -45,10 +46,9 @@ impl Transport for Canned {
     fn write(
         &self,
         _: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        _: &WritableRepository,
+        _: (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
-        https::assert_write(write, selection);
         self.0.clone()
     }
 }
@@ -96,11 +96,29 @@ impl Transport for Scripted {
     fn write(
         &self,
         _: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        _: &WritableRepository,
+        (write, _): (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
-        https::assert_write(write, selection);
         self.answer(write.operation(), write.variables())
+    }
+}
+
+/// `python/cpython`, writable, with the Issue whose ID is `I_1`, which [`a_comment`] goes to. Only the core's
+/// own tests get one, so no other crate holds a `WritableRepository` that no settings or store vouched for.
+#[cfg(test)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "for a test of what a write does once it may go, whatever the settings and the store say"
+)]
+pub(crate) fn writable() -> WritableRepository {
+    let subject = Some(NodeId::new("I_1".to_owned()));
+    WritableRepository::new(crate::testing::cpython(), subject, []).unwrap()
+}
+
+/// A comment that says "Thanks", which is [`a_comment`] once it reaches the Issue [`writable`] holds.
+pub fn thanks() -> ToItem {
+    ToItem::AddComment {
+        body: "Thanks".to_owned(),
     }
 }
 
@@ -242,6 +260,7 @@ pub fn issue_node(number: u32) -> Value {
 /// on top.
 pub fn pr_content(changes: &Value) -> Value {
     let pull_request = json!({
+        "id": "PR_1",
         "bodyHTML": "<p>Fixes the crash</p>",
         "createdAt": "2026-11-01T09:00:00Z",
         "comments": { "totalCount": 0, "nodes": [] },

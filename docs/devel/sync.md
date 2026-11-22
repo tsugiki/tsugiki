@@ -75,8 +75,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   time, the open one first and before the next sync step, and each screen of a Repository reads it again
   once its links are done. A refill that fails keeps the old links, and the next start tries again.
 - **Offline**, Tsugiki shows the mirror and the cached GitHub data, and what waits on GitHub goes once it
-  answers. Offline isn't **Read-only**, which only a token that can't write makes a Repository: see
-  [token.md](token.md). Each Repository's state, which each write control reads, says both apart.
+  answers. Offline isn't **Read-only**, which only a token that can't write or the user's choice makes a
+  Repository: see [token.md](token.md). Each Repository's state, which each write control reads, says both
+  apart.
   - An Issue view or a PR view without what the item says, and an Issue view of an Issue Tsugiki doesn't
     hold, say why the read failed: while GitHub can't be reached, that it comes once GitHub answers, and
     after a not-found, that GitHub doesn't have it or the token can't see it. The words go once a later read

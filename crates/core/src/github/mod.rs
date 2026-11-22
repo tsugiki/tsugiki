@@ -36,11 +36,30 @@ use crate::github::in_flight::{AnnounceInFlight, Asking};
 use crate::github::points::HourPoints;
 use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
+use crate::read_only::WritableRepository;
 use crate::repository::{
     FoundRepository, RepositoryCounts, RepositoryName, Visibility, WINDOW_DAYS,
 };
 use crate::token::{Token, TokenFrom, TokenKind, WriteScope};
+use tsugiki_token::NodeId;
 pub use tsugiki_token::{RestPath, Selection, Write};
+
+/// A write to an Issue or a PR, short of the item's ID, which [`Write`] names it by. The client takes the ID
+/// from the [`WritableRepository`] the write goes to, so no write can name another Repository's item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ToItem {
+    /// A comment on an Issue, or on a PR's Conversation.
+    AddComment { body: String },
+}
+
+impl ToItem {
+    /// The write that does this to the item GitHub knows as `subject`.
+    fn on(self, subject: NodeId) -> Write {
+        match self {
+            Self::AddComment { body } => Write::AddComment { subject, body },
+        }
+    }
+}
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
 pub struct Request<'a> {
@@ -137,21 +156,15 @@ pub trait Transport: Send {
         Err(Unreachable::Offline)
     }
 
-    /// Sends `write`, its payload asked for `selection` (ADR 0025). A transport that doesn't write, as the
-    /// tests' that only read, counts as unreachable here. In tests each double checks the selection as
-    /// `Https` would, until the client sends writes and checks them beside `assert_read`.
-    #[cfg_attr(
-        not(any(test, feature = "testing")),
-        expect(unused_variables, reason = "only tests check a selection here")
-    )]
+    /// Sends `write`, its payload asked for `selection` (ADR 0025), to `writable`, which only a Repository
+    /// that isn't Read-only gives (#914). A transport that doesn't write, as the tests' that only read,
+    /// counts as unreachable here.
     fn write(
         &self,
         _token: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        _writable: &WritableRepository,
+        _sent: (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
-        #[cfg(any(test, feature = "testing"))]
-        https::assert_write(write, selection);
         Err(Unreachable::Offline)
     }
 }
@@ -371,6 +384,33 @@ impl GitHub {
             self.grant.set(Some(reply.grant));
         }
         Ok(reply)
+    }
+
+    /// Does `write` to the item `writable` holds, its payload asked for `selection`, and reads its answer
+    /// as a read's (ADR 0025). The write uses `writable` up, so the next write works out again whether it
+    /// may go. The rate limit's floor, which holds a sync back, doesn't hold back a write the user sends
+    /// (#393), but while GitHub refuses requests this asks nothing. The answer says what the token may
+    /// write, as a read's does.
+    pub(crate) fn write<D: DeserializeOwned>(
+        &self,
+        writable: WritableRepository,
+        write: ToItem,
+        selection: Selection<'_>,
+    ) -> Result<D, Error> {
+        let write = write.on(writable.subject().clone());
+        #[cfg(any(test, feature = "testing"))]
+        https::assert_write(&write, selection);
+        let clock = self.clock.get();
+        if let Some(until) = self.gate.get().refused_until(clock.now()) {
+            return Err(rate_limited(Some(clock.local(until)), RATE_LIMITED));
+        }
+        let sent = (&write, selection);
+        let reply = self.in_flight(|| self.transport.write(&self.token, &writable, sent))?;
+        if reply.status == 200 {
+            self.set_clock(reply.date);
+            self.grant.set(Some(reply.grant));
+        }
+        self.answer(&reply)
     }
 
     /// What GitHub's last answer said of the token: each answer, a read too, says what its scopes let it

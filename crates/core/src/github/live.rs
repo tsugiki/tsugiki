@@ -23,6 +23,7 @@ use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 use super::{
     ConditionalGet, ConditionalReply, Reply, Request, Selection, Transport, Unreachable, https,
 };
+use crate::read_only::WritableRepository;
 use crate::token::Token;
 
 /// GitHub through the token crate's client. `https.rs` builds what it sends and reads what comes back.
@@ -44,8 +45,8 @@ impl Transport for Https {
     fn write(
         &self,
         token: &Token,
-        write: &super::Write,
-        selection: Selection<'_>,
+        _writable: &WritableRepository,
+        (write, selection): (&super::Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
         let sent = self.post_write(token, write, selection);
         https::reply(write.operation(), sent)

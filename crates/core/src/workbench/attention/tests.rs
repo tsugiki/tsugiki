@@ -12,7 +12,6 @@ use super::Attention;
 use crate::facts::CommitSha;
 use crate::facts::activity::{Activity, ActivityKind, ItemKey, PutAway};
 use crate::facts::filters::FilterResults;
-use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{
     CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit,
@@ -27,7 +26,9 @@ use crate::session::{keep_checks, keep_mark};
 use crate::settings::ListOrder;
 use crate::store::Flagging;
 use crate::store::testing::{World, seeing};
-use crate::testing::{cpython, cpython_settings, hours_ago, issue_facts, me, pr_facts, sha_of};
+use crate::testing::{
+    cpython, cpython_settings, empty_conversation, hours_ago, issue_facts, me, pr_facts, sha_of,
+};
 use crate::work::{SeenMark, Why, YourReview};
 use crate::workbench::{
     ListedItem, Seen, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
@@ -1259,12 +1260,7 @@ impl World {
             ..pull_request
         }]);
         let content = PullRequestContent {
-            conversation: IssueContent {
-                body_html: String::new(),
-                comments: vec![],
-                earlier_comments: 0,
-                opened_at: None,
-            },
+            conversation: empty_conversation(),
             reviews: vec![Review {
                 id: None,
                 author: Some(me()),

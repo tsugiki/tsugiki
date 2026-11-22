@@ -193,6 +193,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
     },
     Migration {
         version: 42,
+        sql: super::issue_content::NODE_IDS,
+    },
+    Migration {
+        version: 43,
         sql: super::open_items::SCHEMA,
     },
 ];

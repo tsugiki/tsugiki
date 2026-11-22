@@ -171,8 +171,9 @@ const LAYERS: &[Layer] = &[
     },
     Layer {
         module: "repository_settings",
-        uses: &["conventions", "filters", "repository"],
-        why: "Holds a Repository's Conventions and Filters, and starts them with what adding it gives.",
+        uses: &["conventions", "filters", "read_only", "repository"],
+        why: "Holds a Repository's Conventions, Filters and the user's choice of Read-only, and starts them \
+              with what adding it gives.",
     },
     Layer {
         module: "github",
@@ -182,11 +183,13 @@ const LAYERS: &[Layer] = &[
             "facts",
             "filters",
             "login",
+            "read_only",
             "repository",
             "token",
         ],
-        why: "Sends the token with each request, runs a Filter's search, and parses what GitHub answers into \
-              `facts` through the Repository's Conventions.",
+        why: "Sends the token with each request, runs a Filter's search, parses what GitHub answers into \
+              `facts` through the Repository's Conventions, and sends a write only for a writable \
+              Repository.",
     },
     Layer {
         module: "patch_ids",

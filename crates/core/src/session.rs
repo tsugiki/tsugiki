@@ -48,6 +48,7 @@ mod on_screen;
 mod read_only;
 mod refill;
 mod unstored;
+pub mod write;
 
 // `run` catches a panic in its threads, to keep the window up and say that checking stopped. Tests unwind
 // whatever the release profile says, so only this line can catch the setting (docs/build-costs.md).

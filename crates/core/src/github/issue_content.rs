@@ -11,6 +11,7 @@ use super::pull_requests::{Person, RateLimit};
 use super::{GitHub, RATE_LIMIT_FIELDS, Request};
 use crate::error::{Error, ErrorKind};
 use crate::facts::issue_content::{Comment, CommentId, HiddenReason, IssueComment, IssueContent};
+use crate::facts::pull_requests::NodeId;
 use crate::repository::RepositoryName;
 
 /// Whose conversation a query reads. GitHub gives an Issue and a PR the same description and comments, and
@@ -63,8 +64,9 @@ impl Thread {
     }
 }
 
-/// The fields an Issue and a PR share: the description, when it was opened, and the last 30 comments.
-pub(super) const CONVERSATION_FIELDS: &str = "bodyHTML createdAt comments(last: 30) { totalCount \
+/// The fields an Issue and a PR share: its ID, which a write names it by, the description, when it was
+/// opened, and the last 30 comments.
+pub(super) const CONVERSATION_FIELDS: &str = "id bodyHTML createdAt comments(last: 30) { totalCount \
                                               nodes { fullDatabaseId author { login } createdAt bodyHTML \
                                               isMinimized minimizedReason } }";
 
@@ -136,6 +138,7 @@ struct CommentsWire {
 /// The answer to [`CONVERSATION_FIELDS`].
 #[derive(Deserialize)]
 pub(super) struct IssueWire {
+    id: NodeId,
     #[serde(rename = "bodyHTML")]
     body_html: String,
     #[serde(rename = "createdAt", with = "time::serde::rfc3339")]
@@ -162,6 +165,7 @@ impl From<IssueWire> for IssueContent {
             .collect();
         let held = u32::try_from(comments.len()).unwrap_or(u32::MAX);
         Self {
+            id: Some(wire.id),
             body_html: wire.body_html,
             comments,
             earlier_comments: wire.comments.total_count.saturating_sub(held),

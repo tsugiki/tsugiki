@@ -2819,6 +2819,8 @@ export type ReadFailure =
 
 /**  Why Tsugiki can't write to a Repository, whatever the connection. */
 export type ReadOnly = 
+/**  The user chose it: `read_only` in the Repository's settings. */
+"chosen" | 
 /**  The token can't write there: its scopes don't reach the Repository. */
 "token";
 
@@ -2877,7 +2879,7 @@ export type RepositoryCheck_Serialize = {
 /**
  *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
  *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
- *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ *  had the switch (#819) keeps them. `filters = []` means no Filters. One without `read_only` can write.
  * 
  *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
  *  way a Repository written twice comes once.
@@ -2887,7 +2889,7 @@ export type RepositoryInFile = RepositoryInFile_Serialize | RepositoryInFile_Des
 /**
  *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
  *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
- *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ *  had the switch (#819) keeps them. `filters = []` means no Filters. One without `read_only` can write.
  * 
  *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
  *  way a Repository written twice comes once.
@@ -2896,12 +2898,13 @@ export type RepositoryInFile_Deserialize = {
 	name: RepositoryName,
 	conventions?: Conventions | null,
 	filters?: Filter_Deserialize[] | null,
+	read_only?: boolean,
 };
 
 /**
  *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
  *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
- *  had the switch (#819) keeps them. `filters = []` means no Filters.
+ *  had the switch (#819) keeps them. `filters = []` means no Filters. One without `read_only` can write.
  * 
  *  The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
  *  way a Repository written twice comes once.
@@ -2910,6 +2913,7 @@ export type RepositoryInFile_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions | null,
 	filters: Filter_Serialize[] | null,
+	read_only: boolean,
 };
 
 /**  The state of one Repository's mirror. */
@@ -2941,6 +2945,11 @@ export type RepositorySettings_Serialize = {
 	name: RepositoryName,
 	conventions: Conventions,
 	filters: Filter_Serialize[],
+	/**
+	 *  The user chose **Read-only** for it, whatever the token can do. A Repository that can write leaves
+	 *  the key out of the file.
+	 */
+	read_only?: boolean,
 };
 
 /**  Which first sync a Repository gets (ADR 0015). */

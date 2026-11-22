@@ -42,6 +42,7 @@ pub(crate) fn reviewed() -> PullRequestContent {
     };
     PullRequestContent {
         conversation: IssueContent {
+            id: None,
             body_html: "<p>Fixes the crash</p>".to_owned(),
             comments: vec![IssueComment {
                 id: Some(CommentId::new(6_065_108_504)),

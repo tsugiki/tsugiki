@@ -323,6 +323,7 @@ fn an_issue_nobody_has_to_act_on_still_has_a_view_with_what_was_last_read() {
     let world = ViewWorld::new("issue-view-after-reading");
     world.has(vec![], vec![issue(1)]);
     let content = IssueContent {
+        id: None,
         body_html: "<p>It crashes</p>".to_owned(),
         comments: vec![IssueComment {
             id: Some(CommentId::new(6_065_108_504)),

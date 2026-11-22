@@ -27,8 +27,8 @@ pub(super) fn assert_read(request: &Request<'_>) {
 }
 
 /// Fails the test that sends `write` if `tsugiki-token` would refuse `selection`, as `assert_read` does a
-/// read. The test doubles that answer a write run it, so a selection that only `Https` would refuse fails a
-/// test before the app.
+/// read. The client runs it on each write, whatever transport answers it, so a selection that only `Https`
+/// would refuse fails a test before the app.
 #[cfg(any(test, feature = "testing"))]
 pub(super) fn assert_write(write: &Write, selection: Selection<'_>) {
     let refusal = write.query(selection).err();

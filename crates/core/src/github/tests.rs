@@ -1,6 +1,6 @@
 use super::testing::{
-    COMMENT_ID, Canned, RATE_LIMIT, Scripted, a_comment, answer, answered, dated, github, reply_ok,
-    signed_in_as,
+    COMMENT_ID, Canned, RATE_LIMIT, Scripted, answer, answered, dated, github, reply_ok,
+    signed_in_as, thanks, writable,
 };
 use super::*;
 use crate::github::in_flight::InFlight;
@@ -659,19 +659,113 @@ impl Transport for Panicking {
 
 #[test]
 fn a_transport_that_only_reads_counts_a_write_as_unreachable() {
-    let written = Panicking.write(&super::testing::token(), &a_comment(), COMMENT_ID);
-    assert_eq!(written.unwrap_err(), Unreachable::Offline);
+    let written = github(Panicking).write::<Value>(writable(), thanks(), COMMENT_ID);
+    assert_eq!(written.unwrap_err().kind, ErrorKind::Offline);
 }
 
 #[test]
-fn a_scripted_transport_answers_a_write_and_notes_its_operation_and_input() {
-    let (scripted, asked) = Scripted::new(vec![reply_ok("{}")]);
+fn a_write_reaches_the_transport_with_its_operation_and_input_and_its_answer_reads_as_a_read() {
+    let made = json!({ "addComment": { "commentEdge": { "node": { "id": "IC_1" } } } });
+    let (scripted, asked) = Scripted::new(vec![answer(made.clone(), RATE_LIMIT)]);
 
-    let written = scripted.write(&super::testing::token(), &a_comment(), COMMENT_ID);
+    let written: Value = github(scripted)
+        .write(writable(), thanks(), COMMENT_ID)
+        .unwrap();
 
-    assert_eq!(written.unwrap().body, "{}");
+    assert_eq!(written["addComment"], made["addComment"]);
     let input = json!({ "input": { "subjectId": "I_1", "body": "Thanks" } });
     assert_eq!(asked.recv().unwrap(), ("AddComment".to_owned(), input));
+}
+
+#[test]
+fn a_write_keeps_what_its_answer_says_of_the_token_as_a_read_does() {
+    let grant = Grant {
+        scopes: Some(WriteScope::Public),
+        expires: None,
+    };
+    let reply = reply_ok(r#"{"data":{}}"#).map(|reply| Reply { grant, ..reply });
+    let github = github(Canned(reply));
+    assert_eq!(github.grant(), None);
+
+    let written = github.write::<Value>(writable(), thanks(), COMMENT_ID);
+
+    assert!(written.is_ok(), "{written:?}");
+    assert_eq!(github.grant(), Some(grant));
+}
+
+#[test]
+fn a_write_passes_the_floor_that_holds_a_read_back() {
+    let made = json!({ "addComment": { "commentEdge": { "node": { "id": "IC_1" } } } });
+    let (script, asked) = Scripted::new(vec![viewer_costing(1, 4800), answer(made, RATE_LIMIT)]);
+    let github = github(script);
+    drop(github.viewer().unwrap());
+    assert_eq!(github.viewer().unwrap_err().message, HELD);
+    asked.try_iter().for_each(drop);
+
+    let written = github.write::<Value>(writable(), thanks(), COMMENT_ID);
+
+    assert!(written.is_ok(), "{written:?}");
+    assert_eq!(asked.try_iter().count(), 1);
+}
+
+#[test]
+fn a_write_while_github_refuses_requests_asks_nothing_and_says_when_it_can() {
+    let reset = seconds_from_now(1200);
+    let refused = Reply {
+        status: 429,
+        reset: Some(reset),
+        date: None,
+        body: String::new(),
+        grant: Grant::default(),
+    };
+    let (transport, asked) = Scripted::new(vec![Ok(refused)]);
+    let github = github(transport);
+    drop(github.viewer());
+    asked.try_iter().for_each(drop);
+
+    let error = github
+        .write::<Value>(writable(), thanks(), COMMENT_ID)
+        .unwrap_err();
+
+    assert_eq!(error.kind, limited_until(Some(reset)));
+    assert_eq!(error.message, RATE_LIMITED);
+    assert_eq!(asked.try_iter().count(), 0);
+}
+
+#[test]
+fn a_write_while_github_refuses_requests_asks_nothing_though_the_floor_holds_longer() {
+    let reset = seconds_from_now(1200);
+    let refused = Reply {
+        status: 429,
+        reset: Some(reset),
+        date: None,
+        body: String::new(),
+        grant: Grant::default(),
+    };
+    let made = json!({ "addComment": { "commentEdge": { "node": { "id": "IC_1" } } } });
+    let (script, asked) = Scripted::new(vec![
+        viewer_costing(1, 4800),
+        Ok(refused),
+        answer(made, RATE_LIMIT),
+    ]);
+    let github = github(script);
+    drop(github.viewer().unwrap());
+    drop(
+        github
+            .write::<Value>(writable(), thanks(), COMMENT_ID)
+            .unwrap_err(),
+    );
+    let held = github.viewer().unwrap_err();
+    assert_eq!(held.message, HELD, "the floor holds past the refusal");
+    asked.try_iter().for_each(drop);
+
+    let error = github
+        .write::<Value>(writable(), thanks(), COMMENT_ID)
+        .unwrap_err();
+
+    assert_eq!(error.kind, limited_until(Some(reset)));
+    assert_eq!(error.message, RATE_LIMITED);
+    assert_eq!(asked.try_iter().count(), 0);
 }
 
 #[test]
@@ -685,10 +779,10 @@ fn a_write_whose_selection_the_token_crate_would_refuse_fails_the_test_whatever_
         Box::new(Scripted::new(vec![reply_ok("{}")]).0),
         Box::new(Panicking),
     ];
-    let token = super::testing::token();
     for transport in transports {
+        let github = GitHub::new(transport, super::testing::token());
         let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            transport.write(&token, &a_comment(), quoted)
+            github.write::<Value>(writable(), thanks(), quoted)
         }));
         let panic = written.unwrap_err();
         let message = panic.downcast_ref::<String>().unwrap();

@@ -20,6 +20,7 @@ fn comment(id: Option<u64>, body_html: &str) -> IssueComment {
 
 fn content(body_html: &str, comments: Vec<IssueComment>) -> IssueContent {
     IssueContent {
+        id: Some(NodeId::new(format!("I_{body_html}"))),
         body_html: body_html.to_owned(),
         comments,
         earlier_comments: 2,
@@ -46,9 +47,11 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
     db.store
         .save_issue_content(&cpython(), 2, other.clone())
         .unwrap();
-    // A read kept from before Tsugiki asked when an Issue was opened has no time for it, and one from before
-    // it asked for GitHub's numbers has none for its comments.
+    // A read kept from before Tsugiki asked when an Issue was opened has no time for it, one from before it
+    // asked for GitHub's numbers has none for its comments, and one from before it asked for the Issue's ID
+    // has none for the Issue.
     let second = IssueContent {
+        id: None,
         opened_at: None,
         ..content("<p>Two</p>", vec![comment(None, "<p>d</p>")])
     };
@@ -61,5 +64,33 @@ fn each_read_replaces_the_last_and_other_issues_keep_theirs() {
     assert_eq!(read(1), Some(second));
     assert_eq!(read(2), Some(other));
     assert_eq!(read(3), None);
+    db.close();
+}
+
+#[test]
+fn an_items_id_comes_from_its_last_read_in_its_own_repository() {
+    let db = OpenStore::new("issue-content-node-ids");
+    let gcmon = crate::testing::gcmon();
+    db.store
+        .save_issue_content(&cpython(), 1, content("<p>One</p>", vec![]))
+        .unwrap();
+    db.store
+        .save_issue_content(&gcmon, 1, content("<p>Elsewhere</p>", vec![]))
+        .unwrap();
+    let kept_from_before = IssueContent {
+        id: None,
+        ..content("<p>Two</p>", vec![])
+    };
+    db.store
+        .save_issue_content(&cpython(), 2, kept_from_before)
+        .unwrap();
+
+    let id = |repository: &RepositoryName, number| db.reader.node_id(repository, number).unwrap();
+    let named = |id: &str| Some(NodeId::new(id.to_owned()));
+
+    assert_eq!(id(&cpython(), 1), named("I_<p>One</p>"));
+    assert_eq!(id(&gcmon, 1), named("I_<p>Elsewhere</p>"));
+    assert_eq!(id(&cpython(), 2), None);
+    assert_eq!(id(&cpython(), 3), None);
     db.close();
 }

@@ -14,7 +14,7 @@ fn example() -> Token {
     Token::find(gh_alone(|| gh_prints("gho_example\n"))).unwrap()
 }
 
-const GH_NEVER_RUNS: RunGh = || panic!("gh ran although GH_TOKEN holds a token");
+const GH_NEVER_RUNS: GhAuthToken = || panic!("gh ran although GH_TOKEN holds a token");
 
 #[test]
 fn gh_token_set_gives_its_token_and_runs_no_gh() {

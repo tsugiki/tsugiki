@@ -162,7 +162,7 @@ pub(crate) fn read_env() -> Option<String> {
 }
 
 /// Runs `gh auth token --hostname github.com`, the only command Tsugiki runs `gh` for.
-pub(crate) fn run_gh() -> io::Result<GhOutput> {
+pub(crate) fn gh_auth_token() -> io::Result<GhOutput> {
     let mut outcome = Err(io::Error::from(io::ErrorKind::NotFound));
     for program in GH_PROGRAMS {
         outcome = run_program(program, &["auth", "token", "--hostname", "github.com"]);

@@ -45,7 +45,7 @@ pub struct GhOutput {
 
 /// Runs `gh auth token --hostname github.com`, the one command Tsugiki runs `gh` for: `gh` itself in the
 /// app, a stand-in in tests.
-pub(crate) type RunGh = fn() -> io::Result<GhOutput>;
+pub(crate) type GhAuthToken = fn() -> io::Result<GhOutput>;
 
 /// The value of `GH_TOKEN`, if it is set and is Unicode: the process's own in the app, a stand-in in tests.
 pub(crate) type ReadEnv = fn() -> Option<String>;
@@ -55,14 +55,14 @@ pub(crate) type ReadEnv = fn() -> Option<String>;
 #[derive(Clone, Copy)]
 pub struct TokenFrom {
     env: ReadEnv,
-    gh: RunGh,
+    gh: GhAuthToken,
 }
 
 impl TokenFrom {
     /// The process's environment and the real `gh`.
     pub const LIVE: Self = Self {
         env: live::read_env,
-        gh: live::run_gh,
+        gh: live::gh_auth_token,
     };
 }
 
@@ -96,7 +96,7 @@ impl Token {
     }
 
     /// Asks `gh` for its token for github.com.
-    fn from_gh(run: RunGh) -> Result<Self, NoToken> {
+    fn from_gh(run: GhAuthToken) -> Result<Self, NoToken> {
         let output = run().map_err(gh_unrun)?;
         let token = output.stdout.trim();
         if !output.success {

@@ -44,8 +44,8 @@ it is [ADR 0025](../../docs/adr/0025-tsugiki-token-lets-through-reads-and-the-wr
   anywhere. GraphQL changes data only through an operation that starts with that word, and has no other way
   to spell it. GitHub gets the crate's own copy of what it checked, never the text it was handed.
 - **REST: GET only.** `Https` has no other REST method.
-- **`gh`: one command.** Tsugiki runs `gh auth token --hostname github.com`, and nothing else: `run_gh` in
-  [`src/live.rs`](src/live.rs) takes no arguments and holds that command.
+- **`gh`: one command.** Tsugiki runs `gh auth token --hostname github.com`, and nothing else:
+  `gh_auth_token` in [`src/live.rs`](src/live.rs) takes no arguments and holds that command.
 - **Writes.** Tsugiki sends none yet. Each write it may send will get a row here, and a new one changes this
   crate.
 

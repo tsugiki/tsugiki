@@ -4,7 +4,7 @@
 
 use std::io;
 
-use crate::{GhOutput, ReadEnv, RunGh, TokenFrom, checked_read};
+use crate::{GhAuthToken, GhOutput, ReadEnv, TokenFrom, checked_read};
 
 /// The reason `Https::post_graphql` would give for refusing `body`, or nothing when it would send it.
 pub fn refusal(body: &str) -> Option<String> {
@@ -25,7 +25,7 @@ pub(crate) fn nothing_set() -> Option<String> {
 }
 
 /// A machine with no `GH_TOKEN`, so the token comes from `gh`.
-pub const fn gh_alone(gh: RunGh) -> TokenFrom {
+pub const fn gh_alone(gh: GhAuthToken) -> TokenFrom {
     TokenFrom {
         env: nothing_set,
         gh,

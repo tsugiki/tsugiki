@@ -2,14 +2,13 @@ use time::OffsetDateTime;
 
 use super::*;
 use crate::facts::activity::{ItemKey, PutAway};
-use crate::facts::issue_content::IssueContent;
 use crate::facts::patch_ids::PatchId;
 use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::ReviewState;
 use crate::login::Login;
 use crate::store::testing::{at_second, database_before, migrated_database};
 use crate::store::{Archiving, Muting, Seeing, Store};
-use crate::testing::{TempPath, cpython, me, pr_facts, sha_of};
+use crate::testing::{TempPath, cpython, empty_conversation, me, pr_facts, sha_of};
 
 fn file(path: &str, digit: char) -> FilePatch {
     let id = PatchId::parse(&digit.to_string().repeat(40)).unwrap();
@@ -40,12 +39,7 @@ fn pull_request(number: u32, head: &CommitSha) -> PullRequestFacts {
 /// A PR's Conversation with the user's Review of `commit`.
 fn reviewed_at(commit: &CommitSha) -> PullRequestContent {
     PullRequestContent {
-        conversation: IssueContent {
-            body_html: String::new(),
-            comments: vec![],
-            earlier_comments: 0,
-            opened_at: None,
-        },
+        conversation: empty_conversation(),
         reviews: vec![Review {
             id: None,
             author: Some(me()),

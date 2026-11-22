@@ -179,8 +179,10 @@ impl Calls {
     }
 
     /// The state of `repository`, open or not, which each write control reads: why Tsugiki can't write
-    /// there, if it can't, and whether GitHub can be reached (#398).
+    /// there, if it can't, and whether GitHub can be reached (#398). It can't when the user chose Read-only
+    /// for it in the settings, or the store marks it as one the token can't write to (#914).
     pub fn repository_state(&self, repository: &RepositoryName) -> Result<RepositoryState, Error> {
+        let chosen = self.repository(repository.clone()).chosen_read_only();
         let token = self
             .reader
             .token_cant_write(repository)?
@@ -190,7 +192,7 @@ impl Calls {
         } else {
             Connection::Online
         };
-        Ok(RepositoryState::new(token, connection))
+        Ok(RepositoryState::new([chosen, token].into_iter().flatten(), connection))
     }
 
     /// The Issues and PRs of `repository` that quick open finds for what the user `typed`.

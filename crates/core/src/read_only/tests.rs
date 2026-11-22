@@ -37,6 +37,32 @@ fn the_state_goes_to_the_window_as_typed_values() {
 }
 
 #[test]
+fn the_users_choice_comes_before_the_token_and_each_reaches_the_window_by_name() {
+    let state = RepositoryState::new([ReadOnly::Token, ReadOnly::Chosen], Connection::Online);
+    assert_eq!(state.read_only, [ReadOnly::Chosen, ReadOnly::Token]);
+    assert_eq!(
+        serde_json::to_value(state).unwrap()["read_only"],
+        serde_json::json!(["chosen", "token"])
+    );
+}
+
+#[test]
+fn a_repository_no_reason_holds_is_writable() {
+    let writable = WritableRepository::new(&crate::testing::cpython(), []).unwrap();
+    assert_eq!(writable.repository(), &crate::testing::cpython());
+}
+
+#[test]
+fn a_repository_a_reason_holds_gives_the_first_reason_and_isnt_writable() {
+    let cpython = crate::testing::cpython();
+    let refused = |reasons: &[ReadOnly]| WritableRepository::new(&cpython, reasons.to_vec());
+    assert_eq!(refused(&[ReadOnly::Chosen]).unwrap_err(), ReadOnly::Chosen);
+    assert_eq!(refused(&[ReadOnly::Token]).unwrap_err(), ReadOnly::Token);
+    let both = refused(&[ReadOnly::Token, ReadOnly::Chosen]);
+    assert_eq!(both.unwrap_err(), ReadOnly::Chosen);
+}
+
+#[test]
 fn repo_writes_everywhere_and_no_scope_nowhere_whatever_the_visibility() {
     for visibility in [None, Some(Visibility::Public), Some(Visibility::Private)] {
         assert_eq!(token_cant_write(WriteScope::Every, visibility), Some(false));

@@ -2,12 +2,13 @@
 //! replaces the last. These rows hold long HTML, so unlike the other tables they keep a rowid: SQLite advises
 //! against `WITHOUT ROWID` for large rows.
 
-use rusqlite::{Row, Transaction, named_params};
+use rusqlite::{OptionalExtension, Row, Transaction, named_params};
 use time::OffsetDateTime;
 
 use super::Connection;
-use super::columns::UnixTime;
+use super::columns::{NodeColumn, UnixTime};
 use crate::facts::issue_content::{Comment, IssueComment, IssueContent};
+use crate::facts::pull_requests::NodeId;
 use crate::repository::RepositoryName;
 
 pub(super) const SCHEMA: &str = "
@@ -33,6 +34,10 @@ pub(super) const SCHEMA: &str = "
 /// Adds the time each Issue and PR was opened. A read kept from before this step lacks it until the next
 /// read (#595).
 pub(super) const OPENED: &str = "ALTER TABLE issue_content ADD COLUMN opened_at INTEGER;";
+
+/// Adds GitHub's ID of each Issue and PR, which a write names it by. A read kept from before this step lacks
+/// it until the next read (#914).
+pub(super) const NODE_IDS: &str = "ALTER TABLE issue_content ADD COLUMN node_id TEXT;";
 
 /// Replaces what's kept of Issue `number` with `content`, in one transaction.
 pub(super) fn save(
@@ -69,15 +74,18 @@ fn save_body(
 ) -> rusqlite::Result<()> {
     connection
         .execute(
-            "INSERT INTO issue_content (repository, number, body_html, earlier_comments, opened_at)
-             VALUES (:repository, :number, :body_html, :earlier_comments, :opened_at)
+            "INSERT INTO issue_content
+                 (repository, number, node_id, body_html, earlier_comments, opened_at)
+             VALUES (:repository, :number, :node_id, :body_html, :earlier_comments, :opened_at)
              ON CONFLICT (repository, number) DO UPDATE SET
+                 node_id = excluded.node_id,
                  body_html = excluded.body_html,
                  earlier_comments = excluded.earlier_comments,
                  opened_at = excluded.opened_at",
             named_params! {
                 ":repository": repository,
                 ":number": number,
+                ":node_id": content.id.clone().map(NodeColumn),
                 ":body_html": content.body_html,
                 ":earlier_comments": content.earlier_comments,
                 ":opened_at": content.opened_at.map(OffsetDateTime::unix_timestamp),
@@ -138,7 +146,7 @@ fn comment_in(row: &Row<'_>) -> rusqlite::Result<IssueComment> {
     })
 }
 
-const SELECT_BODY: &str = "SELECT body_html, earlier_comments, opened_at FROM issue_content
+const SELECT_BODY: &str = "SELECT node_id, body_html, earlier_comments, opened_at FROM issue_content
      WHERE repository = :repository AND number = :number";
 const SELECT_COMMENTS: &str =
     "SELECT database_id, author, created_at, body_html, hidden FROM issue_comments
@@ -156,17 +164,34 @@ pub(super) fn read(
     let Some(row) = found.next()? else {
         return Ok(None);
     };
+    let id: Option<NodeColumn> = row.get("node_id")?;
     let body_html = row.get("body_html")?;
     let earlier_comments = row.get("earlier_comments")?;
     let opened_at: Option<UnixTime> = row.get("opened_at")?;
     let mut statement = connection.prepare(SELECT_COMMENTS)?;
     let comments = statement.query_map(asked, comment_in)?;
     Ok(Some(IssueContent {
+        id: id.map(|NodeColumn(id)| id),
         body_html,
         comments: comments.collect::<rusqlite::Result<_>>()?,
         earlier_comments,
         opened_at: opened_at.map(|UnixTime(at)| at),
     }))
+}
+
+/// GitHub's ID of Issue or PR `number` of `repository`, from its last read. Nothing, before Tsugiki has read
+/// it, or for a read kept from before Tsugiki asked.
+pub(super) fn node_id(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<Option<NodeId>> {
+    let query = "SELECT node_id FROM issue_content WHERE repository = :repository AND number = :number";
+    let asked = named_params! { ":repository": repository, ":number": number };
+    let found: Option<Option<NodeColumn>> = connection
+        .query_row(query, asked, |row| row.get(0))
+        .optional()?;
+    Ok(found.flatten().map(|NodeColumn(id)| id))
 }
 
 #[cfg(test)]

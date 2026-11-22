@@ -1,5 +1,5 @@
 use super::*;
-use crate::github::testing::{COMMENT_ID, a_comment, token};
+use crate::github::testing::{COMMENT_ID, a_comment, token, writable};
 use crate::github::{Request, Transport};
 
 fn fixture(name: &str, contents: &str) -> crate::testing::TempPath {
@@ -100,7 +100,7 @@ fn a_write_that_asks_for_another_selection_needs_a_new_recording() {
     let replayer = Replayer::new(dir.to_path_buf());
     let token = token();
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        replayer.write(&token, &a_comment(), COMMENT_ID)
+        replayer.write(&token, &writable(), (&a_comment(), COMMENT_ID))
     }))
     .unwrap_err();
     let message = panic.downcast_ref::<String>().unwrap();

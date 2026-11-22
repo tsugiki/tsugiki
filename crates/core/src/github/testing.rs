@@ -11,6 +11,7 @@ use tsugiki_token::testing::{gh_alone, gh_prints};
 
 use super::*;
 use crate::facts::pull_requests::NodeId;
+use crate::read_only::WritableRepository;
 use crate::token::GhOutput;
 
 /// The points field of an answer's data: one point of 1,000 spent, with plenty left, so nothing pauses, in an
@@ -45,10 +46,9 @@ impl Transport for Canned {
     fn write(
         &self,
         _: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        _: &WritableRepository,
+        _: (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
-        https::assert_write(write, selection);
         self.0.clone()
     }
 }
@@ -96,12 +96,16 @@ impl Transport for Scripted {
     fn write(
         &self,
         _: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        _: &WritableRepository,
+        (write, _): (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
-        https::assert_write(write, selection);
         self.answer(write.operation(), write.variables())
     }
+}
+
+/// `python/cpython`, which no reason holds Read-only.
+pub fn writable() -> WritableRepository {
+    WritableRepository::new(&crate::testing::cpython(), []).unwrap()
 }
 
 /// A comment that says "Thanks" on the Issue whose ID is `I_1`.
@@ -242,6 +246,7 @@ pub fn issue_node(number: u32) -> Value {
 /// on top.
 pub fn pr_content(changes: &Value) -> Value {
     let pull_request = json!({
+        "id": "PR_1",
         "bodyHTML": "<p>Fixes the crash</p>",
         "createdAt": "2026-11-01T09:00:00Z",
         "comments": { "totalCount": 0, "nodes": [] },

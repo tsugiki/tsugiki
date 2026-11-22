@@ -77,6 +77,7 @@ fn opened_with(names: &[&str], conventions: Conventions, filters: Vec<Filter>) -
             name: repository(names[0]),
             conventions,
             filters,
+            read_only: false,
         },
         others: names[1..].iter().map(|name| repository(name)).collect(),
     }
@@ -1040,6 +1041,43 @@ fn adding_a_repository_writes_its_starter_filters_where_the_user_can_edit_them()
 }
 
 #[test]
+fn read_only_round_trips_through_settings_toml_and_a_repository_without_it_can_write() {
+    let without = the_repository_in("writable", "[[repositories]]\nname = \"a/b\"\n");
+    let chosen = the_repository_in(
+        "read-only",
+        "[[repositories]]\nname = \"a/b\"\nread_only = true\n",
+    );
+    assert!(!without.read_only);
+    assert!(chosen.read_only);
+
+    let (written, read) = added("added-read-only", &chosen);
+    assert!(written.contains("read_only = true"), "{written}");
+    assert_eq!(read, chosen);
+    assert_eq!(the_repository_in("read-only-again", &written), chosen);
+}
+
+#[test]
+fn adding_a_repository_that_can_write_leaves_read_only_out_of_the_file() {
+    let (written, read) = added("added-writable", &RepositorySettings::new(repository("a/b")));
+
+    assert!(!written.contains("read_only"), "{written}");
+    assert!(!read.read_only);
+}
+
+/// What `settings.toml` says once Tsugiki adds `repository` to a file with none, and what it then reads.
+fn added(name: &str, repository: &RepositorySettings) -> (String, RepositorySettings) {
+    let (folders, _root) = temp_folders(name);
+    let mut files = SettingsFiles::load(folders.clone());
+    drop(
+        files
+            .add_repository(repository, &MirrorSource::Download, WHENEVER)
+            .unwrap(),
+    );
+    let written = fs::read_to_string(folders.settings_file()).unwrap();
+    (written, files.loaded().settings.repositories[0].clone())
+}
+
+#[test]
 fn a_repository_with_no_filters_in_the_file_gets_the_starters_switched_off() {
     let read = the_repository_in("no-filters", "[[repositories]]\nname = \"a/b\"\n");
     assert_eq!(read.filters, Filter::left_out());
@@ -1508,6 +1546,7 @@ fn a_repositorys_settings_come_from_the_list_whatever_the_case_of_its_name() {
         name: cpython(),
         conventions: Conventions::Github,
         filters: Vec::new(),
+        read_only: false,
     };
     let settings = Settings {
         repositories: vec![chosen.clone()],

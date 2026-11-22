@@ -160,6 +160,15 @@ describe("readOnlyWords", () => {
     );
   });
 
+  it("says the user chose Read-only, and gives each reason in the core's order", () => {
+    const chosen: RepositoryState = { read_only: ["chosen"], connection: "online" };
+    const both: RepositoryState = { read_only: ["chosen", "token"], connection: "online" };
+    expect(readOnlyWords(chosen, "python/cpython")).toBe("Read-only: you chose it in this Repository's settings");
+    expect(readOnlyWords(both, "python/cpython")).toBe(
+      "Read-only: you chose it in this Repository's settings, and your token can't write to python/cpython",
+    );
+  });
+
   it("says nothing while Tsugiki can write there, offline too, or before the core says", () => {
     expect(readOnlyWords(writable, "python/cpython")).toBeNull();
     expect(readOnlyWords(offline, "python/cpython")).toBeNull();

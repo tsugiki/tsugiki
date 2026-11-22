@@ -1,6 +1,6 @@
 use super::testing::{
     COMMENT_ID, Canned, RATE_LIMIT, Scripted, a_comment, answer, answered, dated, github, reply_ok,
-    signed_in_as,
+    signed_in_as, writable,
 };
 use super::*;
 use crate::github::in_flight::InFlight;
@@ -659,19 +659,38 @@ impl Transport for Panicking {
 
 #[test]
 fn a_transport_that_only_reads_counts_a_write_as_unreachable() {
-    let written = Panicking.write(&super::testing::token(), &a_comment(), COMMENT_ID);
-    assert_eq!(written.unwrap_err(), Unreachable::Offline);
+    let written = github(Panicking).write::<Value>(&writable(), &a_comment(), COMMENT_ID);
+    assert_eq!(written.unwrap_err().kind, ErrorKind::Offline);
 }
 
 #[test]
-fn a_scripted_transport_answers_a_write_and_notes_its_operation_and_input() {
-    let (scripted, asked) = Scripted::new(vec![reply_ok("{}")]);
+fn a_write_reaches_the_transport_with_its_operation_and_input_and_its_answer_reads_as_a_read() {
+    let made = json!({ "addComment": { "commentEdge": { "node": { "id": "IC_1" } } } });
+    let (scripted, asked) = Scripted::new(vec![answer(made.clone(), RATE_LIMIT)]);
 
-    let written = scripted.write(&super::testing::token(), &a_comment(), COMMENT_ID);
+    let written: Value = github(scripted)
+        .write(&writable(), &a_comment(), COMMENT_ID)
+        .unwrap();
 
-    assert_eq!(written.unwrap().body, "{}");
+    assert_eq!(written["addComment"], made["addComment"]);
     let input = json!({ "input": { "subjectId": "I_1", "body": "Thanks" } });
     assert_eq!(asked.recv().unwrap(), ("AddComment".to_owned(), input));
+}
+
+#[test]
+fn a_write_keeps_what_its_answer_says_of_the_token_as_a_read_does() {
+    let grant = Grant {
+        scopes: Some(WriteScope::Public),
+        expires: None,
+    };
+    let reply = reply_ok(r#"{"data":{}}"#).map(|reply| Reply { grant, ..reply });
+    let github = github(Canned(reply));
+    assert_eq!(github.grant(), None);
+
+    let written = github.write::<Value>(&writable(), &a_comment(), COMMENT_ID);
+
+    assert!(written.is_ok(), "{written:?}");
+    assert_eq!(github.grant(), Some(grant));
 }
 
 #[test]
@@ -685,10 +704,10 @@ fn a_write_whose_selection_the_token_crate_would_refuse_fails_the_test_whatever_
         Box::new(Scripted::new(vec![reply_ok("{}")]).0),
         Box::new(Panicking),
     ];
-    let token = super::testing::token();
     for transport in transports {
+        let github = GitHub::new(transport, super::testing::token());
         let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            transport.write(&token, &a_comment(), quoted)
+            github.write::<Value>(&writable(), &a_comment(), quoted)
         }));
         let panic = written.unwrap_err();
         let message = panic.downcast_ref::<String>().unwrap();

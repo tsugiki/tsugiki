@@ -1,17 +1,20 @@
-//! Whether Tsugiki can write to a Repository now (#398): **Read-only** when the token can't write there,
-//! and **Offline** while GitHub can't be reached. Each write control follows the Repository's state.
+//! Whether Tsugiki can write to a Repository now (#398): **Read-only** when the user chose it or the token
+//! can't write there, and **Offline** while GitHub can't be reached. Each write control follows the
+//! Repository's state, and a write goes out only for a [`WritableRepository`] (#914).
 
 use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
-use crate::repository::Visibility;
+use crate::repository::{RepositoryName, Visibility};
 use crate::token::{TokenKind, WriteScope};
 
 /// Why Tsugiki can't write to a Repository, whatever the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadOnly {
+    /// The user chose it: `read_only` in the Repository's settings.
+    Chosen,
     /// The token can't write there: its scopes don't reach the Repository.
     Token,
 }
@@ -46,6 +49,36 @@ impl RepositoryState {
             read_only,
             connection,
         }
+    }
+}
+
+/// A Repository Tsugiki may write to as a write goes out. Only [`WritableRepository::new`] makes one, and
+/// only when no reason holds the Repository Read-only, so a write that gets past a write control still
+/// can't reach a Read-only Repository. It isn't `Clone`, so none outlives the write it was made for.
+#[derive(Debug)]
+pub struct WritableRepository {
+    repository: RepositoryName,
+}
+
+impl WritableRepository {
+    /// `repository`, writable, when none of `reasons` holds it Read-only, or else the first reason, in the
+    /// order [`RepositoryState`] lists them. The caller works the reasons out for each write, from the
+    /// settings and the store, so a mark that changed since a control showed Send counts.
+    pub fn new(
+        repository: &RepositoryName,
+        reasons: impl IntoIterator<Item = ReadOnly>,
+    ) -> Result<Self, ReadOnly> {
+        match reasons.into_iter().min() {
+            Some(reason) => Err(reason),
+            None => Ok(Self {
+                repository: repository.clone(),
+            }),
+        }
+    }
+
+    /// The Repository a write may go to.
+    pub fn repository(&self) -> &RepositoryName {
+        &self.repository
     }
 }
 

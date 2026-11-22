@@ -287,10 +287,11 @@ PR brings its Issue back with it. Kept in Tsugiki only, per **Repository** and i
 _Avoid_: Unread, flagged, starred, snoozed
 
 **Read-only**:
-Tsugiki shows a **Repository** but can't write to GitHub there, because the token can't: a classic token
-without `repo`, or with `public_repo` alone on a private Repository. It lasts until the token changes, across
-restarts, and says nothing of the connection, which is **Offline**'s. Comments and reviews can still be
-written in the composer and copied to GitHub by hand.
+Tsugiki shows a **Repository** but sends no write to GitHub there, for one of two reasons. The user chose it
+for the Repository, which lasts until they choose otherwise. Or the token can't write there: a classic token
+without `repo`, or with `public_repo` alone on a private Repository, which lasts until the token changes,
+across restarts. It says nothing of the connection, which is **Offline**'s. Comments and reviews can still
+be written in the composer and copied to GitHub by hand.
 _Avoid_: View-only, guest mode
 
 **Offline**:

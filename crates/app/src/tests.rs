@@ -24,6 +24,7 @@ pub(crate) fn cpython() -> Home {
             name: RepositoryName::parse("python/cpython").unwrap(),
             conventions: Conventions::Cpython,
             filters: Filter::starters(),
+            read_only: false,
         },
         others: Vec::new(),
     }

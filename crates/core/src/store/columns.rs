@@ -13,7 +13,7 @@ use crate::facts::patch_ids::PatchId;
 use crate::facts::pull_request_content::{
     Anchor, Resolution, ReviewId, Side, Submission, ThreadCommentId,
 };
-use crate::facts::pull_requests::{CiState, PrState, ReviewState};
+use crate::facts::pull_requests::{CiState, NodeId, PrState, ReviewState};
 use crate::filters::FilterQuery;
 use crate::github::refresh::Etag;
 use crate::login::Login;
@@ -46,6 +46,27 @@ impl ToSql for UnixMillis {
 impl FromSql for UnixMillis {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         OffsetDateTime::from_unix_timestamp_nanos(i128::from(value.as_i64()?) * 1_000_000)
+            .map(Self)
+            .map_err(|cause| FromSqlError::Other(Box::new(cause)))
+    }
+}
+
+/// GitHub's ID of a node in a column, as text. Outside tests a `NodeId` comes only from parsing JSON, so the
+/// store keeps the string it serializes to, and parses it back the same way.
+pub(super) struct NodeColumn(pub(super) NodeId);
+
+impl ToSql for NodeColumn {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        let text = serde_json::to_value(&self.0).and_then(serde_json::from_value::<String>);
+        let text = text.map_err(|cause| rusqlite::Error::ToSqlConversionFailure(Box::new(cause)))?;
+        Ok(ToSqlOutput::from(text))
+    }
+}
+
+impl FromSql for NodeColumn {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let text = serde_json::Value::String(value.as_str()?.to_owned());
+        serde_json::from_value(text)
             .map(Self)
             .map_err(|cause| FromSqlError::Other(Box::new(cause)))
     }

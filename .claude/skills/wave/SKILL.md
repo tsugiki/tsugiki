@@ -91,29 +91,16 @@ raise them again. Run a third round only when a fix added a mechanism of its own
 channel or type that other code goes through: in 0.3.2 a third round found a break only in such a mechanism,
 and cleanups elsewhere.
 
-If a round finds flags that fall out of step with each other, ask the builder to replace them with one value
-whose variants carry their data, as AGENTS.md's "Make invalid states unrepresentable" says, and send no fix
-for each case: each such fix lets the flags fall out of step some new way.
+When a round's findings share one cause, or a fix brings one in, ask the builder to change the cause once
+and send no fix for each case: from 0.3.3 to 0.3.5, each such fix opened a new case. The causes so far,
+with the change to ask for, and the rule in AGENTS.md it follows where there is one:
 
-In the same way, when a round's findings come from code that guesses which async answer belongs to which
-action, ask the builder to remove the guess, not to patch each race: in 0.3.3 each fix to such a guess
-opened a new race.
-
-When a fix adds a queue or scheduler beside one the code already has, ask the builder to fold its work into
-the existing one: in 0.3.3 a second queue of reads drew five of a round's eight findings, and folding it
-into the refresh fixed all five.
-
-When a round finds an owner's data reaching another thread in a different order than the owner saved it,
-because each caller forwards its copy after the owner answers, ask the builder to have the owner send it
-itself, from its own thread, in save order: in 0.3.3 that took a stale copy out of every path at once.
-
-When a ticket only moves code, and a round finds bugs that main has too, ask the builder to keep main's
-behaviour there and file a ticket for the bugs: in 0.3.4 each of #896's fixes to such a bug opened a new case.
-
-When a round's findings come from code that works around an answer it didn't read in full, ask the builder
-to read the answer where it enters the core, as AGENTS.md's "Parse at the boundary" says, instead of a fix
-for each case: in 0.3.5 a stack that halved #980's refused batches drew five of a round's eight findings,
-and reading GraphQL's error for each alias replaced it with no new state.
+- Flags out of step: one value whose variants carry their data (make invalid states unrepresentable).
+- Code that guesses which async answer belongs to which action: remove the guess.
+- A second queue or scheduler beside one the code already has: fold its work into the existing one.
+- An owner's data reaching another thread out of save order: the owner sends it (one writer, many readers).
+- A ticket that only moves code, with bugs main has too: keep main's behaviour and file a ticket for them.
+- Code working around an answer it didn't read in full: read it where it enters (parse at the boundary).
 
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs

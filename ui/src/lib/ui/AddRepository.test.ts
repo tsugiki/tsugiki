@@ -175,6 +175,25 @@ it("borrows from a clone the user picks, and adds with it", async () => {
   expect(core.addRepository).toHaveBeenCalledWith({
     name: "some-maintainer/gcmon",
     source: { kind: "borrow", folder: lender },
+    read_only: true,
+  });
+});
+
+it("offers Read-only checked, and adds a Repository that can write once the user unchecks it", async () => {
+  core.addRepository.mockResolvedValue({ status: "ok", data: home });
+  render(AddRepository, { onclose: () => {}, onadded: () => {}, onswitch: () => {} });
+  await checked();
+  const box = screen.getByRole<HTMLInputElement>("checkbox", { name: "Read-only" });
+  const started = box.checked;
+
+  await fireEvent.click(box);
+  await fireEvent.click(button("Add"));
+
+  expect(started).toBe(true);
+  expect(core.addRepository).toHaveBeenCalledWith({
+    name: "some-maintainer/gcmon",
+    source: { kind: "download" },
+    read_only: false,
   });
 });
 
@@ -205,6 +224,7 @@ it("holds its text still while it adds", async () => {
   await checked();
   await fireEvent.click(button("Add"));
   expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Repository" }).readOnly).toBe(true);
+  expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Read-only" }).disabled).toBe(true);
   expect(button("Add").disabled).toBe(true);
 });
 

@@ -495,11 +495,12 @@ impl Calls {
         Ok(self.fetching.check(repository)?.mirror)
     }
 
-    /// Adds `repository`, starts its first sync (ADR 0015) and its Mirror's clone with its objects from
-    /// `source`, and says what the window opens on now.
+    /// Adds `repository` with its settings, its choice of Read-only among them (#915), starts its first sync
+    /// (ADR 0015) and its Mirror's clone with its objects from `source`, and says what the window opens on
+    /// now.
     pub fn add_repository(
         &self,
-        repository: RepositoryName,
+        repository: RepositorySettings,
         source: MirrorSource,
     ) -> Result<Home, Error> {
         let view = self.settings.add_repository(repository, source)?;

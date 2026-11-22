@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
 import { IssueViewState, type IssueView } from "$lib/state/issue-view.svelte";
+import { settingsAsk } from "$lib/state/settings-ask.svelte";
 import type { TreeEntry } from "$lib/state/workbench.svelte";
 import { done, ok, refused, workbenchRow } from "$lib/testing/fixtures";
 import IssueDetail from "./IssueDetail.svelte";
@@ -610,7 +611,7 @@ it("says why it can't show the Issue", async () => {
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this Issue: no database");
 });
 
-it("says atop the view that the token can't write to a Read-only Repository, and nothing otherwise", async () => {
+it("says atop the view why a Repository is Read-only, with a link for the user's choice, and nothing otherwise", async () => {
   core.issue.mockResolvedValue(ok(null));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
@@ -634,6 +635,14 @@ it("says atop the view that the token can't write to a Read-only Repository, and
 
   const pane = screen.getByRole("region", { name: "Issue view" });
   expect(pane.querySelector("p")?.textContent).toBe(words);
+  expect(within(pane.querySelector("p") ?? pane).queryByRole("button")).toBeNull();
   await rerender({ ...props, repositoryState: { read_only: [], connection: "offline" } });
   expect(screen.queryByText(words)).toBeNull();
+
+  // The user's choice links to the Repository's page in Settings, which switches it.
+  await rerender({ ...props, repositoryState: { read_only: ["chosen"], connection: "online" } });
+  const chosen = pane.querySelector("p");
+  expect(chosen?.textContent).toBe("Read-only: you chose it in this Repository's settings");
+  await fireEvent.click(within(pane).getByRole("button", { name: "this Repository's settings" }));
+  expect(settingsAsk.take()).toEqual({ repository: "python/cpython" });
 });

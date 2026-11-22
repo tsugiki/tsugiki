@@ -20,8 +20,7 @@
   } from "$lib/state/quick-open.svelte";
   import { RecentCommands } from "$lib/state/recent-commands.svelte";
   import { RepositoryStateView } from "$lib/state/repository-state.svelte";
-  import type { ServerName } from "$lib/state/server-words";
-  import { settingsAsk } from "$lib/state/settings-ask.svelte";
+  import { type SettingsAt, settingsAsk } from "$lib/state/settings-ask.svelte";
   import { SettingsState } from "$lib/state/settings.svelte";
   import { isOffline, StatusState } from "$lib/state/status.svelte";
   import { applyTheme, ThemeState } from "$lib/state/theme.svelte";
@@ -136,8 +135,9 @@
     paletteAt = keyTargetOf(document.activeElement);
     paletteText = quickOpen === undefined ? "" : text;
   };
-  /** The language server whose row in Settings › Advanced the dialog opens at, if it opened at one. */
-  let settingsAt = $state<ServerName>();
+  /** The language server's row in Settings › Advanced or the Repository's page the dialog opens at, if it
+   * opened at one. */
+  let settingsAt = $state<SettingsAt>();
   /** Opens the Settings dialog on its General page, from `Ctrl+,`, ⚙ or the palette. */
   const openSettings = () => {
     if (!dialogOpen) {
@@ -145,13 +145,14 @@
       settingsOpen = true;
     }
   };
-  // The Definition peek's link asks for a server's row in Settings › Advanced (#683). With another dialog
-  // open the ask goes, as a press behind a dialog does nothing.
+  // The Definition peek's link asks for a server's row in Settings › Advanced (#683), and the link in a
+  // Read-only Repository's line for its page (#915). With another dialog open the ask goes, as a press
+  // behind a dialog does nothing.
   $effect(() => {
-    if (settingsAsk.server === undefined) return;
-    const server = settingsAsk.take();
+    if (settingsAsk.asked === undefined) return;
+    const asked = settingsAsk.take();
     if (!untrack(() => dialogOpen)) {
-      settingsAt = server;
+      settingsAt = asked;
       settingsOpen = true;
     }
   });

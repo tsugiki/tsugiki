@@ -2327,13 +2327,14 @@ export type NameCheck_Serialize =
 { kind: "new"; check: RepositoryCheck_Serialize };
 
 /**
- *  The user's choice in Add repository: the Repository, by the name GitHub gave it, and where its mirror gets
- *  its objects. The name stays text until the core parses it, so a name that isn't one gets the same refusal
- *  as everywhere else.
+ *  The user's choice in Add repository: the Repository, by the name GitHub gave it, where its mirror gets
+ *  its objects, and whether the user chose **Read-only** for it (#915). The name stays text until the core
+ *  parses it, so a name that isn't one gets the same refusal as everywhere else.
  */
 export type NewRepository = {
 	name: string,
 	source: MirrorSource,
+	read_only: boolean,
 };
 
 /**  A version newer than the running one, and its release page. */
@@ -2879,6 +2880,15 @@ export type ReadOnly =
 "chosen" | 
 /**  The token can't write there: its scopes don't reach the Repository. */
 "token";
+
+/**
+ *  The choice of **Read-only** a Repository's page in Settings leaves, which Apply writes as the
+ *  Repository's `read_only` (#915).
+ */
+export type ReadOnlyChoice = {
+	repository: RepositoryName,
+	read_only: boolean,
+};
 
 /**  The background refreshes that ran while the window drew frames. */
 export type Refreshes = {
@@ -3489,6 +3499,8 @@ export type SettingsChanges_Deserialize = {
 	language_servers?: LanguageServerSettings_Deserialize | null,
 	/**  The Filters of each Repository whose page changed them (#535). */
 	filters?: RepositoryFilters_Deserialize[],
+	/**  The choice of **Read-only** of each Repository whose page changed it (#915). */
+	read_only?: ReadOnlyChoice[],
 };
 
 /**
@@ -3504,6 +3516,8 @@ export type SettingsChanges_Serialize = {
 	language_servers: LanguageServerSettings_Serialize | null,
 	/**  The Filters of each Repository whose page changed them (#535). */
 	filters: RepositoryFilters_Serialize[],
+	/**  The choice of **Read-only** of each Repository whose page changed it (#915). */
+	read_only: ReadOnlyChoice[],
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */

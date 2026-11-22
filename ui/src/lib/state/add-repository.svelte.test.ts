@@ -99,6 +99,23 @@ it("adds by the name GitHub gave and returns what the window opens on", async ()
   expect(commands.addRepository).toHaveBeenCalledWith({
     name: "Some-Maintainer/gcmon",
     source: { kind: "download" },
+    read_only: true,
+  });
+});
+
+it("adds a Repository that can write once the user turns Read-only off, and keeps the choice as they type", async () => {
+  const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
+  vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
+  const state = new AddRepositoryState();
+
+  state.readOnly = false;
+  state.input = "other/repo";
+  await state.add(check);
+
+  expect(commands.addRepository).toHaveBeenCalledWith({
+    name: "Some-Maintainer/gcmon",
+    source: { kind: "download" },
+    read_only: false,
   });
 });
 
@@ -123,6 +140,7 @@ it("adds with the clone the user picked, and forgets it when the text changes", 
   expect(commands.addRepository).toHaveBeenCalledWith({
     name: "Some-Maintainer/gcmon",
     source: { kind: "borrow", folder: lender },
+    read_only: true,
   });
   expect(state.mirror.source).toEqual({ kind: "download" });
 });

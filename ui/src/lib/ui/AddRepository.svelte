@@ -75,6 +75,14 @@
         choosing={adding.mirror}
         disabled={step.step === "adding"}
       />
+      <label class="read-only">
+        <input type="checkbox" bind:checked={adding.readOnly} disabled={step.step === "adding"} />
+        Read-only
+      </label>
+      <p class="help">
+        Tsugiki sends nothing to GitHub there, such as a comment or a review, until you turn this off on the
+        Repository's page in Settings.
+      </p>
     {/if}
     <div class="buttons">
       <button type="button" onclick={onclose}>Cancel</button>
@@ -104,6 +112,25 @@
   p {
     margin: 8px 0 0;
     overflow-wrap: anywhere;
+  }
+
+  label.read-only {
+    gap: 6px;
+    align-items: center;
+    margin-top: 12px;
+    cursor: pointer;
+  }
+
+  label.read-only input {
+    flex: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .help {
+    margin: 3px 0 0 22px;
+    font-size: 12px;
+    color: var(--fg-muted);
   }
 
   .buttons {

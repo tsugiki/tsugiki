@@ -750,15 +750,18 @@ pub(super) fn pins(
     let query = "SELECT number, id, tree_read FROM pinned WHERE repository = :repository";
     let mut statement = connection.prepare(query)?;
     let asked = named_params! { ":repository": repository };
-    let rows = statement.query_map(asked, |row| {
-        let tree = if row.get("tree_read")? {
-            PinTree::Read
-        } else {
-            PinTree::ToRead(PinId(row.get("id")?))
-        };
-        Ok((row.get("number")?, tree))
-    })?;
+    let rows = statement.query_map(asked, pin_in)?;
     rows.collect()
+}
+
+/// The Issue's number and its pin's tree in a row of `pinned`.
+fn pin_in(row: &Row<'_>) -> rusqlite::Result<(u32, PinTree)> {
+    let tree = if row.get("tree_read")? {
+        PinTree::Read
+    } else {
+        PinTree::ToRead(PinId(row.get("id")?))
+    };
+    Ok((row.get("number")?, tree))
 }
 
 /// Keeps that a sync read the trees of the Issues `read` pins (#488). A pin the user has since dropped, or
@@ -1008,9 +1011,8 @@ pub(super) fn closings(
                                    WHERE pinned.repository = closings.repository
                                      AND pinned.number = closings.number)";
     let mut statement = connection.prepare(query)?;
-    let rows = statement.query_map(named_params! { ":repository": repository }, |row| {
-        row.get("number")
-    })?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, |row| row.get("number"))?;
     rows.collect()
 }
 

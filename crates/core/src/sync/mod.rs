@@ -613,16 +613,11 @@ impl UserWorkSync {
     /// Saves that this sync finished, and says when. The store keeps whole seconds, so the window hears what
     /// a later start reads back. Only a refresh, which read ahead what the store owed, has it forget those
     /// reads. One a Filter switch owed during a first sync waits for the next refresh (#900).
-    /// It marks read the trees of the pins it read (#488), and a failure to leaves them for the next sync.
+    /// It marks read the trees of the pins it read (#488) first, so a failure to fails the finish, which the
+    /// queue tries again.
     fn finish(&self, store: &Store) -> Result<LastSync, Error> {
-        if !self.pin_trees.is_empty()
-            && let Err(problem) = store.read_pin_trees(&self.repository, self.pin_trees.clone())
-        {
-            log::warn!(
-                "Tsugiki couldn't keep that it read the Pinned issues of {}: {}",
-                self.repository,
-                problem.message
-            );
+        if !self.pin_trees.is_empty() {
+            store.read_pin_trees(&self.repository, self.pin_trees.clone())?;
         }
         let now = OffsetDateTime::now_utc();
         let finished_at = now.replace_nanosecond(0).unwrap_or(now);

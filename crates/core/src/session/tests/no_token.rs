@@ -154,7 +154,7 @@ fn gh_held() -> io::Result<GhOutput> {
 
 /// Waits until the session has taken what the test asked before this, as it answers in order.
 fn taken(asked: &Fetching, heard: &Receiver<Heard>) {
-    asked.mark_unseen(gcmon(), 7, None).unwrap();
+    asked.mark_answered(gcmon(), unseen(7), replied().0);
     while heard.recv_timeout(PLENTY).unwrap() != Heard::Changed(vec![7]) {}
 }
 

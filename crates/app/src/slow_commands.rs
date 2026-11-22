@@ -19,9 +19,8 @@ use tsugiki_core::calls::{Calls, ItemFetch, OnThisMachine, PrFiles};
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::facts::activity::{ItemKey, ShowMuted};
+use tsugiki_core::facts::activity::ShowMuted;
 use tsugiki_core::highlight::Span;
-use tsugiki_core::login::Login;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::read_only::RepositoryState;
@@ -32,7 +31,6 @@ use tsugiki_core::settings::{
 };
 use tsugiki_core::theme::{ThemeLibrary, ThemePick, Themes};
 use tsugiki_core::web::{GitHubItem, WebAddress};
-use tsugiki_core::work::SeenMark;
 use tsugiki_core::workbench::inbox::{Inbox, InboxPage};
 use tsugiki_core::workbench::issue_view::IssueView;
 use tsugiki_core::workbench::pr_view::PrView;
@@ -123,87 +121,6 @@ pub(crate) fn switch_show_muted(
     calls: State<'_, Calls>,
 ) -> Result<(), Error> {
     crate::switch_show_muted_of(repository, show, &calls)
-}
-
-/// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
-/// draws that Archived (#491). Like each mark that can take an item off the window's list, it returns once
-/// the store has kept it, so each read the window asks after it shows the mark, and the answer to that read
-/// settles whether the item left (#489). It waits on the session's thread and the database, and never on
-/// GitHub. The `changed` event follows.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn mark_unseen(
-    repository: &str,
-    number: u32,
-    archived: Option<ItemKey>,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    crate::mark_unseen_of(repository, number, archived, &calls)
-}
-
-/// Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns
-/// once the store has kept it, as `mark_unseen` does.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn archive(
-    repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    crate::archive_of(repository, item, mark, &calls)
-}
-
-/// Unarchives the item `item` names, and returns once the store has kept it, as `mark_unseen` does.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn unarchive(
-    repository: &str,
-    item: ItemKey,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    crate::unarchive_of(repository, item, &calls)
-}
-
-/// Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns once
-/// the store has kept it, as `mark_unseen` does.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn mute(
-    repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    crate::mute_of(repository, item, mark, &calls)
-}
-
-/// Mute author on `author` in `repository` (#494). Returns once the store has kept it, as `mark_unseen`
-/// does, and the core marks their open items seen in the background.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn mute_author(
-    repository: &str,
-    author: Login,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    crate::mute_author_of(repository, author, &calls)
-}
-
-/// Pins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen`
-/// does.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn pin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    crate::pin_of(repository, number, &calls)
-}
-
-/// Unpins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen`
-/// does.
-#[tauri::command(async)]
-#[specta::specta]
-pub(crate) fn unpin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    crate::unpin_of(repository, number, &calls)
 }
 
 /// Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the

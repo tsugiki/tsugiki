@@ -8,7 +8,8 @@ import type { commands } from "../src/lib/data/bindings.ts";
  * check again has nothing to say, no mirror waits for an answer or has a state, no newer version is out, the
  * panes take their default layout, the palette has no recent commands and puts each run first, the themes
  * set no token, so the system's colours stand in, the window turns without saying a side, so the page goes
- * on with its media query, and the core takes what the user did with an item or the window. */
+ * on with its media query, the core takes what the user did with an item or the window, and it keeps each
+ * mark the window waits on, such as Archive or Unpin. */
 export type CoreAnswers = { [C in keyof typeof commands]?: Awaited<ReturnType<(typeof commands)[C]>> };
 
 type Listener = (message: { event: string; id: number; payload: unknown }) => void;
@@ -53,6 +54,7 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
       hideItem: { status: "ok", data: null },
       showItem: { status: "ok", data: null },
       closeItem: { status: "ok", data: null },
+      markAnswered: { status: "ok", data: null },
       windowLoaded: null,
       windowHidden: null,
       windowShown: null,
@@ -83,10 +85,22 @@ export const mockCore = (page: Page, answers: CoreAnswers, unanswered: (keyof Co
           callbacks.set(id, callback);
           return id;
         },
-        invoke: async (command: string, args: { event: string; handler: number; command: string }) => {
+        invoke: async (
+          command: string,
+          args: { event: string; handler: number; command: string; kept?: { id: number } },
+        ) => {
           if (command === "plugin:event|listen") {
             (listeners[args.event] ??= []).push(callbacks.get(args.handler) as Listener);
             return callbacks.size;
+          }
+          // The core keeps each mark the window waits on, and says so on the mark's channel, after the
+          // command answered, in the form Tauri's channel reads.
+          const kept = command === "mark_answered" && !refused.includes("markAnswered") && args.kept;
+          if (kept) {
+            const hear = callbacks.get(kept.id) as unknown as (message: unknown) => void;
+            setTimeout(() => {
+              hear({ index: 0, message: { status: "ok" } });
+            });
           }
           // The bindings name commands in camelCase, and the core in snake_case.
           const name = command.replace(/_(.)/g, (_, letter: string) => letter.toUpperCase());

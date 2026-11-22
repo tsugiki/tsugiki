@@ -21,8 +21,8 @@ use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::activity::{ItemKey, ShowMuted};
 use crate::facts::pull_requests::HeadInMirror;
+pub use crate::fetching::{AnsweredMark, ItemFetch, ItemUnfetched, MarkReply, Queued};
 use crate::fetching::{Fetched, Fetching, Item, NoHead, ScreenMove};
-pub use crate::fetching::{ItemFetch, ItemUnfetched, Queued};
 use crate::folders::Folders;
 use crate::highlight::Span;
 use crate::latest::LatestReader;
@@ -424,26 +424,10 @@ impl Calls {
         self.fetching.mark_seen(repository, mark);
     }
 
-    /// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it. Returns once
-    /// the store has kept it, as each mark that can take an item off the window's list does (#489).
-    pub fn mark_unseen(
-        &self,
-        repository: RepositoryName,
-        number: u32,
-        archived: Option<ItemKey>,
-    ) -> Result<(), Error> {
-        self.fetching.mark_unseen(repository, number, archived)
-    }
-
-    /// Archive on the item `item` names, with Mark Seen on what `mark` names. Returns once the store has
-    /// kept it.
-    pub fn archive(
-        &self,
-        repository: RepositoryName,
-        item: ItemKey,
-        mark: SeenMark,
-    ) -> Result<(), Error> {
-        self.fetching.archive(repository, item, mark)
+    /// `mark` on an item of `repository`, which can take the item off the window's list. Returns at once,
+    /// with the mark behind each one asked before it, and `reply` hears once the store has kept it (#489).
+    pub fn mark_answered(&self, repository: RepositoryName, mark: AnsweredMark, reply: MarkReply) {
+        self.fetching.mark_answered(repository, mark, reply);
     }
 
     /// Mark Seen with `mark` on the item `item` names, which stays Archived.
@@ -451,45 +435,14 @@ impl Calls {
         self.fetching.keep_archived(repository, item, mark);
     }
 
-    /// Unarchives the item `item` names. Returns once the store has kept it.
-    pub fn unarchive(&self, repository: RepositoryName, item: ItemKey) -> Result<(), Error> {
-        self.fetching.unarchive(repository, item)
-    }
-
-    /// Mute on the item `item` names, with Mark Seen on what `mark` names. Returns once the store has kept
-    /// it.
-    pub fn mute(
-        &self,
-        repository: RepositoryName,
-        item: ItemKey,
-        mark: SeenMark,
-    ) -> Result<(), Error> {
-        self.fetching.mute(repository, item, mark)
-    }
-
     /// Unmutes the item `item` names.
     pub fn unmute(&self, repository: RepositoryName, item: ItemKey) {
         self.fetching.unmute(repository, item);
     }
 
-    /// Mute author on `author` in `repository`. Returns once the store has kept it.
-    pub fn mute_author(&self, repository: RepositoryName, author: Login) -> Result<(), Error> {
-        self.fetching.mute_author(repository, author)
-    }
-
     /// Unmutes `author` in `repository`.
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
         self.fetching.unmute_author(repository, author);
-    }
-
-    /// Pins Issue `number` of `repository` (#488). Returns once the store has kept it.
-    pub fn pin(&self, repository: RepositoryName, number: u32) -> Result<(), Error> {
-        self.fetching.pin(repository, number)
-    }
-
-    /// Unpins Issue `number` of `repository` (#488). Returns once the store has kept it.
-    pub fn unpin(&self, repository: RepositoryName, number: u32) -> Result<(), Error> {
-        self.fetching.unpin(repository, number)
     }
 
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.

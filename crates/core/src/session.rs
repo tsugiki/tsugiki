@@ -328,14 +328,15 @@ impl Keeper {
         let telling = &self.telling;
         match message {
             SessionMessage::Stop => return ControlFlow::Break(()),
-            SessionMessage::Mark(marked) => self.mark(store, marked),
-            SessionMessage::MarkAnswered { marked, reply } => {
-                self.mark(store, marked);
+            SessionMessage::Mark(marked) => {
                 #[expect(
                     clippy::let_underscore_must_use,
-                    reason = "this fails only if the caller has gone, and nobody then waits for the answer"
+                    reason = "nobody waits on this mark, and the status bar says why the store couldn't keep it"
                 )]
-                let _ = reply.send(Ok(()));
+                let _ = self.mark(store, marked);
+            }
+            SessionMessage::MarkAnswered { marked, reply } => {
+                reply.answer(self.mark(store, marked));
             }
             SessionMessage::SettingsChanged(save) => {
                 self.follow_settings(store, &save, HandEdits::Listed);
@@ -518,7 +519,9 @@ impl Keeper {
     /// those settings hold them. The saves' moves of Reach then end where the mark's starts, and the two
     /// chain. Without, a save that comes after the mark moves Reach on the facts after it, and a PR that only
     /// the pair puts in Reach is owed by neither.
-    fn mark(&self, store: &Store, marked: Marked) {
+    ///
+    /// Returns the store's result, for a mark the window waits on, after the status bar has heard it.
+    fn mark(&self, store: &Store, marked: Marked) -> Result<(), Error> {
         let repository = marked.repository().clone();
         let (told, settings) =
             (self.settings).read(|view| (view.saves_told, view.repository(repository)));
@@ -532,7 +535,8 @@ impl Keeper {
         {
             moved.follow(&self.fetching, store);
         }
-        tell_marked(&self.telling, saved, &change);
+        tell_marked(&self.telling, saved.clone(), &change);
+        saved
     }
 }
 

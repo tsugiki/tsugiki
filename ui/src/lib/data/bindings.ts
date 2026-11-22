@@ -100,49 +100,22 @@ export const commands = {
 	 */
 	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
 	/**
-	 *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
-	 *  draws that Archived (#491). Like each mark that can take an item off the window's list, it returns once
-	 *  the store has kept it, so each read the window asks after it shows the mark, and the answer to that read
-	 *  settles whether the item left (#489). It waits on the session's thread and the database, and never on
-	 *  GitHub. The `changed` event follows.
+	 *  Mark Unseen, Archive, Unarchive, Mute, Mute author, Pin or Unpin, as `mark` says, on an item of
+	 *  `repository` or its author: a mark that can take its item off the window's list (#489). It hands the
+	 *  mark to the core on this thread, so marks reach the core in the order the window sent them, and returns
+	 *  at once. `kept` hears once the store has kept it, or why it couldn't, so each read the window asks after
+	 *  that shows it. The `changed` event comes with the mark, and can arrive before `kept` hears.
 	 */
-	markUnseen: (repository: string, number: number, archived: ItemKey | null) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number, archived })),
-	/**
-	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns
-	 *  once the store has kept it, as `mark_unseen` does.
-	 */
-	archive: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, item, mark })),
+	markAnswered: (repository: string, mark: AnsweredMark_Deserialize, kept: Channel<MarkKept_Deserialize>) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_answered", { repository, mark, kept })),
 	/**
 	 *  Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
 	 *  its place in the Archived view (#491). Returns at once, and the `changed` event follows.
 	 */
 	keepArchived: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, item, mark })),
-	/**  Unarchives the item `item` names, and returns once the store has kept it, as `mark_unseen` does. */
-	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
-	/**
-	 *  Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns once
-	 *  the store has kept it, as `mark_unseen` does.
-	 */
-	mute: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, item, mark })),
 	/**  Unmutes the item `item` names, and returns at once. */
 	unmute: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute", { repository, item })),
-	/**
-	 *  Mute author on `author` in `repository` (#494). Returns once the store has kept it, as `mark_unseen`
-	 *  does, and the core marks their open items seen in the background.
-	 */
-	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
 	/**  Unmutes `author` in `repository`, and returns at once. */
 	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
-	/**
-	 *  Pins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen`
-	 *  does.
-	 */
-	pin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("pin", { repository, number })),
-	/**
-	 *  Unpins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen`
-	 *  does.
-	 */
-	unpin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unpin", { repository, number })),
 	/**
 	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,
 	 *  or says why it couldn't. The window then asks for the Inbox again. This waits on the session's thread
@@ -466,6 +439,68 @@ export type Answer_Serialize =
 { state: "no_server" } | 
 /**  A newer lookup, or the user, cancelled it before the server answered. */
 { state: "cancelled" };
+
+/**
+ *  A mark that can take its item off the window's list, which the window waits on as `MarkReply` says. The
+ *  window sends it with the parts it drew.
+ */
+export type AnsweredMark = AnsweredMark_Serialize | AnsweredMark_Deserialize;
+
+/**
+ *  A mark that can take its item off the window's list, which the window waits on as `MarkReply` says. The
+ *  window sends it with the parts it drew.
+ */
+export type AnsweredMark_Deserialize = 
+/**
+ *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the
+ *  window draws that Archived (#491).
+ */
+{ kind: "unseen"; number: number; archived?: ItemKey | null } | 
+/**
+ *  Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away
+ *  until something new Needs attention there (#490).
+ */
+{ kind: "archive"; key: ItemKey; mark: SeenMark_Deserialize } | { kind: "unarchive"; key: ItemKey } | 
+/**
+ *  Mute on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item hidden until
+ *  the user unmutes it (#492).
+ */
+{ kind: "mute"; key: ItemKey; mark: SeenMark_Deserialize } | 
+/**
+ *  Mute author on `author` (#494): their items count as Muted, and the session marks their open items
+ *  seen in the background, finding them under the Repository's settings.
+ */
+{ kind: "mute_author"; author: Login } | 
+/**  Pin on Issue `number` (#488): it stays on the Workbench until the user unpins it. */
+{ kind: "pin"; number: number } | { kind: "unpin"; number: number };
+
+/**
+ *  A mark that can take its item off the window's list, which the window waits on as `MarkReply` says. The
+ *  window sends it with the parts it drew.
+ */
+export type AnsweredMark_Serialize = 
+/**
+ *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the
+ *  window draws that Archived (#491).
+ */
+{ kind: "unseen"; number: number; archived: ItemKey | null } | 
+/**
+ *  Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away
+ *  until something new Needs attention there (#490).
+ */
+{ kind: "archive"; key: ItemKey; mark: SeenMark_Serialize } | { kind: "unarchive"; key: ItemKey } | 
+/**
+ *  Mute on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item hidden until
+ *  the user unmutes it (#492).
+ */
+{ kind: "mute"; key: ItemKey; mark: SeenMark_Serialize } | 
+/**
+ *  Mute author on `author` (#494): their items count as Muted, and the session marks their open items
+ *  seen in the background, finding them under the Repository's settings.
+ */
+{ kind: "mute_author"; author: Login } | 
+/**  Pin on Issue `number` (#488): it stays on the Workbench until the user unpins it. */
+{ kind: "pin"; number: number } | { kind: "unpin"; number: number };
 
 /**
  *  What the Settings dialog's Apply changed in `[appearance]`: each key it changed, and nothing for the
@@ -2030,6 +2065,27 @@ export type LongFrame_Serialize = {
 	/**  Nothing, if Tsugiki did nothing the HUD knows of during it or right before. */
 	cause: Cause | null,
 };
+
+/**
+ *  What the channel of a mark that can take its item off the window's list hears once the session has done
+ *  what the mark asks (#489), shaped as a command's answer is: the store kept it, or why it couldn't, which
+ *  the status bar says too.
+ */
+export type MarkKept = MarkKept_Serialize | MarkKept_Deserialize;
+
+/**
+ *  What the channel of a mark that can take its item off the window's list hears once the session has done
+ *  what the mark asks (#489), shaped as a command's answer is: the store kept it, or why it couldn't, which
+ *  the status bar says too.
+ */
+export type MarkKept_Deserialize = { status: "ok" } | { status: "error"; error: Error_Deserialize };
+
+/**
+ *  What the channel of a mark that can take its item off the window's list hears once the session has done
+ *  what the mark asks (#489), shaped as a command's answer is: the store kept it, or why it couldn't, which
+ *  the status bar says too.
+ */
+export type MarkKept_Serialize = { status: "ok" } | { status: "error"; error: Error_Serialize };
 
 /**
  *  Where a search found its text: the diff's row, and from `start` to `end` in the row's code in UTF-16

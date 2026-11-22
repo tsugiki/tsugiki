@@ -1,6 +1,10 @@
 use std::sync::mpsc::{self, Receiver};
 
-use super::{Fetched, Fetching, Headless, Marked, Queued, ScreenMove, SessionMessage};
+use super::{
+    AnsweredMark, Fetched, Fetching, Headless, MarkReply, Marked, Queued, ScreenMove,
+    SessionMessage,
+};
+use crate::error::{Error, ErrorKind};
 use crate::mirror::HeardRequests;
 use crate::repository_settings::SavedBy;
 
@@ -18,7 +22,11 @@ pub(crate) fn named(message: SessionMessage) -> String {
             SavedBy::HandEdit => format!("settings of {}", save.saved().name),
             SavedBy::Window => "switch".to_owned(),
         },
-        SessionMessage::Mark(Marked::Unmuted { key, .. }) => format!("unmuted #{}", key.number()),
+        SessionMessage::Mark(marked) => marked_name(&marked),
+        // A mark the window waits on says so, as it answers once the store has kept it (#489).
+        SessionMessage::MarkAnswered { marked, .. } => {
+            format!("{}, answered", marked_name(&marked))
+        }
         SessionMessage::Stop => "stop".to_owned(),
         SessionMessage::Screen(moved) => match moved {
             ScreenMove::Opened(Fetched::Issue(item)) => format!("opened Issue #{}", item.number),
@@ -34,22 +42,56 @@ pub(crate) fn named(message: SessionMessage) -> String {
         },
         SessionMessage::Check { .. }
         | SessionMessage::Sync { .. }
-        | SessionMessage::Mark(
-            Marked::Seen { .. }
-            | Marked::Unseen { .. }
-            | Marked::Archived { .. }
-            | Marked::Unarchived { .. }
-            | Marked::Muted { .. }
-            | Marked::AuthorMuted { .. }
-            | Marked::AuthorUnmuted { .. }
-            | Marked::Pinned { .. }
-            | Marked::Unpinned { .. },
-        )
-        | SessionMessage::MarkAnswered { .. }
         | SessionMessage::ShowMuted { .. }
         | SessionMessage::Patched(..)
         | SessionMessage::Saved(_) => "other".to_owned(),
     }
+}
+
+/// What `marked` does, and to which item, as a test names it.
+fn marked_name(marked: &Marked) -> String {
+    match marked {
+        Marked::Seen { mark, .. } => format!("seen {:?}", mark.numbers),
+        Marked::Unseen { number, .. } => format!("unseen #{number}"),
+        Marked::Archived { key, .. } => format!("archived #{}", key.number()),
+        Marked::Unarchived { key, .. } => format!("unarchived #{}", key.number()),
+        Marked::Muted { key, .. } => format!("muted #{}", key.number()),
+        Marked::Unmuted { key, .. } => format!("unmuted #{}", key.number()),
+        Marked::AuthorMuted { author, .. } => format!("muted author {}", author.as_str()),
+        Marked::AuthorUnmuted { author, .. } => format!("unmuted author {}", author.as_str()),
+        Marked::Pinned { number, .. } => format!("pinned #{number}"),
+        Marked::Unpinned { number, .. } => format!("unpinned #{number}"),
+    }
+}
+
+/// A reply to a mark the window waits on, and where a test hears the answer it hands on (#489).
+pub(crate) fn replied() -> (MarkReply, Receiver<Result<(), Error>>) {
+    let (heard, answer) = mpsc::channel();
+    let reply = MarkReply::new(move |result| {
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "this fails only once the test stopped listening, and then nobody wants the answer"
+        )]
+        let _ = heard.send(result);
+    });
+    (reply, answer)
+}
+
+/// Mark Unseen on Issue or PR `number`, which no Archived item holds.
+pub(crate) fn unseen(number: u32) -> AnsweredMark {
+    AnsweredMark::Unseen {
+        number,
+        archived: None,
+    }
+}
+
+/// What the session answers the mark `mark` sends with the reply it's handed, once it answers, as the
+/// window waits for it. A reply answers, if only as it drops, so the last arm is there for the types.
+pub(crate) fn kept(mark: impl FnOnce(MarkReply)) -> Result<(), Error> {
+    let (reply, answer) = replied();
+    mark(reply);
+    (answer.recv())
+        .unwrap_or_else(|_| Err(Error::new(ErrorKind::Offline, "the reply went unanswered")))
 }
 
 /// A handle, what reaches the session through it, and what reaches the Mirror worker.

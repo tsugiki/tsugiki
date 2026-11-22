@@ -11,7 +11,8 @@ use crate::facts::patch_ids::{CantCheck, CommitPatches, FilePatch, PatchId, Patc
 use crate::facts::patch_ids::{LastCheck, ReviewFacts, UncheckedCommit};
 use crate::facts::pull_request_content::{PullRequestContent, Review};
 use crate::facts::pull_requests::{PullRequestFacts, ReviewState};
-use crate::fetching::testing::QUEUED;
+use crate::fetching::AnsweredMark;
+use crate::fetching::testing::{QUEUED, kept, replied, unseen};
 use crate::fetching::{Fetched, NoHead, ScreenMove};
 use crate::filters::{Filter, FilterQuery, OnWorkbench};
 use crate::github::GitHub;
@@ -431,7 +432,7 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
     let drawn = hours_ago(2);
 
     let (content, activity, _) = after_asking("mark-seen", access, |asked| {
-        asked.mark_unseen(gcmon(), 8, None).unwrap();
+        asked.mark_answered(gcmon(), unseen(8), replied().0);
         asked.mark_seen(
             gcmon(),
             SeenMark {
@@ -460,10 +461,15 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
             up_to: Some(drawn),
             findings: vec![],
         };
-        asked.archive(gcmon(), issue, mark(vec![7, 8])).unwrap();
+        let archive = |key, numbers| AnsweredMark::Archive {
+            key,
+            mark: mark(numbers),
+        };
+        asked.mark_answered(gcmon(), archive(issue, vec![7, 8]), replied().0);
         asked.keep_archived(gcmon(), issue, mark(vec![7]));
-        asked.archive(gcmon(), standalone, mark(vec![9])).unwrap();
-        asked.unarchive(gcmon(), standalone).unwrap();
+        asked.mark_answered(gcmon(), archive(standalone, vec![9]), replied().0);
+        let unarchive = AnsweredMark::Unarchive { key: standalone };
+        asked.mark_answered(gcmon(), unarchive, replied().0);
     });
 
     let archived = activity.archived.iter();
@@ -489,8 +495,12 @@ fn mute_marks_the_item_seen_and_keeps_it_muted_until_unmute() {
             up_to: Some(drawn),
             findings: vec![],
         };
-        asked.mute(gcmon(), issue, mark(vec![7, 8])).unwrap();
-        asked.mute(gcmon(), standalone, mark(vec![9])).unwrap();
+        let mute = |key, numbers| AnsweredMark::Mute {
+            key,
+            mark: mark(numbers),
+        };
+        asked.mark_answered(gcmon(), mute(issue, vec![7, 8]), replied().0);
+        asked.mark_answered(gcmon(), mute(standalone, vec![9]), replied().0);
         asked.unmute(gcmon(), standalone);
     });
 
@@ -505,7 +515,7 @@ fn mark_unseen_flags_the_item_from_now() {
     let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
 
     let (_, activity, _) = after_asking("mark-unseen", access, |asked| {
-        asked.mark_unseen(gcmon(), 7, None).unwrap();
+        asked.mark_answered(gcmon(), unseen(7), replied().0);
     });
 
     let flagged = activity.marked_unseen.get(&7).copied().unwrap();
@@ -590,7 +600,7 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
                 findings: vec![],
             },
         );
-        asked.mark_unseen(gcmon(), 8, None).unwrap();
+        asked.mark_answered(gcmon(), unseen(8), replied().0);
     });
 
     assert_eq!(content, None);
@@ -813,6 +823,14 @@ fn mute_5() -> Marked {
     }
 }
 
+/// Mute on Issue 5 as the window asks it, with Mark Seen on its tree.
+fn mute_issue_5() -> AnsweredMark {
+    AnsweredMark::Mute {
+        key: ItemKey::Issue { number: 5 },
+        mark: issue_5_seen(),
+    }
+}
+
 fn unmute_5() -> Marked {
     Marked::Unmuted {
         repository: gcmon(),
@@ -930,7 +948,7 @@ fn a_mark_follows_only_the_saves_its_settings_hold() {
     let messages = vec![cpython_saved(), SessionMessage::SettingsChanged(switch)];
     let keeper = quiet_keeper(1, cpython_gcmon(), messages);
 
-    keeper.mark(&store, unmute_5());
+    keeper.mark(&store, unmute_5()).unwrap();
 
     assert_eq!(left_in(&keeper), ["switch"]);
 }
@@ -941,7 +959,7 @@ fn a_mark_the_queue_holds_no_owed_save_for_is_kept_at_once() {
     stores_issue_5_with_its_prs(&store);
     let keeper = quiet_keeper(1, cpython_gcmon(), vec![SessionMessage::Refresh]);
 
-    keeper.mark(&store, mute_5());
+    keeper.mark(&store, mute_5()).unwrap();
 
     assert!(issue_5_muted(&store));
     assert_eq!(left_in(&keeper), ["refresh"]);
@@ -993,7 +1011,7 @@ fn what_the_github_thread_saved_has_the_session_hand_over_the_wants_then_the_hea
 fn a_mark_that_moves_no_reach_follows_no_save() {
     let keeper = quiet_keeper(1, cpython_gcmon(), vec![cpython_saved()]);
 
-    keeper.mark(&Store::stopped(), unseen_7());
+    assert!(keeper.mark(&Store::stopped(), unseen_7()).is_err());
 
     assert_eq!(left_in(&keeper), [format!("settings of {}", gcmon())]);
 }
@@ -1012,7 +1030,7 @@ fn a_hand_edit_a_mute_follows_ahead_of_the_open_of_its_repository_tells_the_wind
     let (mut board, changes) = board_hearing_settings();
     let keeper = keeper_told(1, cpython_gcmon(), messages, telling(&mut board).0);
 
-    keeper.mark(&store, mute_5());
+    keeper.mark(&store, mute_5()).unwrap();
 
     let told: Vec<Change> = changes.try_iter().collect();
     assert_eq!(
@@ -1036,12 +1054,12 @@ fn a_save_missing_from_the_queue_leaves_later_marks_to_the_saves_their_view_coun
     };
     let quiet = telling(&mut quiet_board()).0;
     let keeper = Keeper::new(incoming, unheard(), crate::latest::channel(view).1, quiet);
-    keeper.mark(&store, mute_5());
+    keeper.mark(&store, mute_5()).unwrap();
     // A save that only a view after this one counts.
     let switch = SettingsSave::new(cpython_gcmon(), &[cpython_gcmon()], SavedBy::Window);
     sent.send(SessionMessage::SettingsChanged(switch)).unwrap();
 
-    keeper.mark(&store, unmute_5());
+    keeper.mark(&store, unmute_5()).unwrap();
 
     assert_eq!(left_in(&keeper), ["switch"]);
 }
@@ -1066,7 +1084,7 @@ fn a_mark_that_cant_be_stored_is_a_problem() {
         let (told, github) = telling(&mut quiet_board());
         let keeper = keeper_told(0, plain_gcmon(), vec![], told);
 
-        keeper.mark(&Store::stopped(), marked);
+        assert!(keeper.mark(&Store::stopped(), marked).is_err());
 
         assert_eq!(problems_for_the_status_bar(&github), [ErrorKind::Internal]);
     }
@@ -2510,7 +2528,7 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute(gcmon(), issue, issue_5_seen()).unwrap();
+    asked.mark_answered(gcmon(), mute_issue_5(), replied().0);
     let muted = heard.asked_through("wants heads none", PLENTY);
     asked.unmute(gcmon(), issue);
     let unmuted = heard.asked_through("wants heads #8", PLENTY);
@@ -2553,10 +2571,10 @@ fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unp
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.pin(gcmon(), 5).unwrap();
+    asked.mark_answered(gcmon(), AnsweredMark::Pin { number: 5 }, replied().0);
     let pinned = heard.asked_through("wants heads #8", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
-    asked.unpin(gcmon(), 5).unwrap();
+    asked.mark_answered(gcmon(), AnsweredMark::Unpin { number: 5 }, replied().0);
     let unpinned = heard.asked_through("wants heads none", PLENTY);
     session.stop(PLENTY);
     let store = Store::open(&folders.database()).unwrap();
@@ -2605,7 +2623,7 @@ fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute(gcmon(), issue, issue_5_seen()).unwrap();
+    asked.mark_answered(gcmon(), mute_issue_5(), replied().0);
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     asked.unmute(gcmon(), issue);
@@ -2649,7 +2667,10 @@ fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmu
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute_author(gcmon(), author.clone()).unwrap();
+    let mute_author = AnsweredMark::MuteAuthor {
+        author: author.clone(),
+    };
+    asked.mark_answered(gcmon(), mute_author, replied().0);
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     let store = session.reader();
@@ -2767,9 +2788,9 @@ fn a_mark_the_window_waits_for_answers_once_a_read_shows_it() {
     let activity = || session.reader().work_facts(&gcmon()).unwrap().activity;
 
     // Each read right after an answer, while the session's thread may still run, shows the mark.
-    asked.mute(gcmon(), issue, issue_5_seen()).unwrap();
+    kept(|reply| asked.mark_answered(gcmon(), mute_issue_5(), reply)).unwrap();
     let muted = activity().muted.contains_key(&issue);
-    asked.mark_unseen(gcmon(), 5, None).unwrap();
+    kept(|reply| asked.mark_answered(gcmon(), unseen(5), reply)).unwrap();
     let unseen = activity().marked_unseen.contains_key(&5);
     session.stop(PLENTY);
 
@@ -2777,18 +2798,21 @@ fn a_mark_the_window_waits_for_answers_once_a_read_shows_it() {
 }
 
 #[test]
-fn a_mark_the_window_waits_for_answers_when_the_store_couldnt_keep_it() {
+fn a_mark_the_window_waits_for_answers_why_the_store_couldnt_keep_it() {
     let db = OpenStore::new("session-mark-lost");
-    let (lossy, _calls) = db.store.failing_at_call(Some(0));
+    stores_issue_5_with_its_prs(&db.store);
+    // The calls go: the facts before the Mute, then the Mute, which goes missing.
+    let (lossy, _calls) = db.store.failing_at_call(Some(1));
     let (mirrors, _heard) = HeardRequests::new();
     let (messages, incoming) = mpsc::channel();
+    let (told, github) = telling(&mut quiet_board());
     let keeper = Keeper::new(
         incoming,
         sending(messages, mirrors),
         listed(vec![cpython_gcmon()]),
-        telling(&mut quiet_board()).0,
+        told,
     );
-    let (reply, answer) = mpsc::channel();
+    let (reply, answer) = replied();
 
     let took = keeper.take(
         &lossy,
@@ -2801,8 +2825,16 @@ fn a_mark_the_window_waits_for_answers_when_the_store_couldnt_keep_it() {
     drop(lossy);
     db.close();
     assert!(took.is_continue());
-    // The status bar says why the store couldn't keep it, as for any mark.
-    assert_eq!(answer.recv().unwrap(), Ok(()));
+    let problem = answer.recv().unwrap().unwrap_err();
+    // The status bar says why too, as for any mark.
+    let shown = github.try_iter().find_map(|message| {
+        if let GitHubMessage::Problem(shown) = message {
+            Some(shown)
+        } else {
+            None
+        }
+    });
+    assert_eq!(shown, Some(problem));
 }
 
 #[test]
@@ -2826,7 +2858,8 @@ fn a_mute_whose_facts_the_store_cant_read_back_keeps_the_mute_and_hands_the_mirr
         at: OffsetDateTime::now_utc(),
     };
 
-    keeper.mark(&lossy, muted);
+    // The store kept the Mute, though it couldn't read back the facts after it.
+    keeper.mark(&lossy, muted).unwrap();
 
     // The calls go: the facts before the Mute, the Mute, then the facts after it, which went missing. The
     // next step that saves hands the Mirror its heads.
@@ -4154,7 +4187,7 @@ fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_chec
     assert_eq!(seen.recv_timeout(PLENTY), Ok(octocat()));
 
     // The panic drops the mark's reply, which then says Tsugiki isn't connected.
-    assert!(session.fetching().mark_unseen(gcmon(), 7, None).is_err());
+    assert!(kept(|reply| session.fetching().mark_answered(gcmon(), unseen(7), reply)).is_err());
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
@@ -4181,7 +4214,7 @@ fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_check
         Some(ErrorKind::Unauthorized)
     );
 
-    assert!(session.fetching().mark_unseen(gcmon(), 7, None).is_err());
+    assert!(kept(|reply| session.fetching().mark_answered(gcmon(), unseen(7), reply)).is_err());
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 

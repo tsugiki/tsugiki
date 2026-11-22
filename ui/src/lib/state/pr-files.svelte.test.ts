@@ -1894,7 +1894,7 @@ it("goes to the header of the page after the one the tab is at in all files, and
   files.nextFile(1);
   expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
   // The tab lands on the file's header, and the user scrolls on into it.
-  files.scrolled(files.layout.headerOf({ kind: "file", file: 0 }) ?? -1, true);
+  files.scrolled(files.layout.headerOf({ kind: "file", file: 0 }) ?? -1, { landing: true });
   files.scrolled(files.layout.placeOfRow(7) ?? -1);
   files.nextFile(1);
   expect(files.jump).toEqual({ page: { kind: "file", file: 1 } });
@@ -1903,7 +1903,7 @@ it("goes to the header of the page after the one the tab is at in all files, and
   files.nextFile(-1);
   expect(files.jump).toEqual({ page: { kind: "news" } });
   // Past the last place, as a scroll can land while the layout shrinks, it starts from the first page.
-  files.scrolled(-2, true);
+  files.scrolled(-2, { landing: true });
   files.scrolled(999);
   files.nextFile(1);
   expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
@@ -1955,7 +1955,7 @@ it("is at the page a move went to while the top stays where the tab landed, thou
   const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
 
   // A short file at the end of the diff leaves the top of the tab in the file before it.
-  files.scrolled(header - 5, true);
+  files.scrolled(header - 5, { landing: true });
   files.scrolled(header - 5);
   const landed = files.onScreen;
   files.scrolled(header - 6);
@@ -1966,6 +1966,53 @@ it("is at the page a move went to while the top stays where the tab landed, thou
   expect([unseen, moved, landed, left, files.onScreen]).toEqual([undefined, 1, 1, 0, 0]);
 });
 
+it("stays at a short last file the tab moved to while the tab stays at its end, as the layout changes", async () => {
+  const files = await loaded(changed());
+  files.goToFile(1);
+  const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
+  files.scrolled(header - 5, { landing: true, end: true });
+
+  // A layout that changes as a thread measures, a comment comes or the view switches leaves the tab at its
+  // end, with another place at the top, or keeps the row at the top, which lands again.
+  files.scrolled(header - 7, { end: true });
+  const atEnd = files.onScreen;
+  files.scrolled(header - 3, { landing: true });
+  files.scrolled(header - 3);
+  const kept = files.onScreen;
+  // Once it lands short of the end, the end doesn't keep it.
+  files.scrolled(header - 4, { end: true });
+
+  expect([atEnd, kept, files.onScreen]).toEqual([1, 1, 0]);
+});
+
+it("counts the changes of the file on screen by its path, which a newer diff can list elsewhere", async () => {
+  const files = await loaded(changed());
+  const counts = [files.screenChanges];
+  const count = () => counts.push(files.screenChanges);
+
+  files.scrolled(0);
+  count();
+  files.scrolled(5);
+  count();
+  files.goToFile(0);
+  files.scrolled(0, { landing: true });
+  count();
+  files.scrolled(files.layout.placeOfRow(20) ?? -1);
+  count();
+  files.toggleMode();
+  files.toggleMode();
+  count();
+  core.pullRequestFiles.mockResolvedValue(
+    ok(ready("def", 30, [diffFile("Lib/new.py", 0), diffFile("Python/generated.c.h", 10)])),
+  );
+  await files.ask();
+  count();
+  files.scrolled(0);
+  count();
+
+  expect(counts.map((at) => at - (counts[0] ?? 0))).toEqual([0, 1, 1, 1, 2, 2, 2, 3]);
+});
+
 it("goes on with F7 and Shift+F7 from the page the tab moved to, though its header can't reach the top", async () => {
   const files = await loaded({
     ...changed(),
@@ -1974,15 +2021,15 @@ it("goes on with F7 and Shift+F7 from the page the tab moved to, though its head
   files.scrolled(0);
   files.nextFile(1);
   const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
-  files.scrolled(header - 5, true);
+  files.scrolled(header - 5, { landing: true });
 
   files.nextFile(1);
   const onward = files.jump;
   // The heading of the threads on files no longer in the diff can't reach the top either.
-  files.scrolled(header - 5, true);
+  files.scrolled(header - 5, { landing: true });
   files.nextFile(-1);
   const back = files.jump;
-  files.scrolled(header - 5, true);
+  files.scrolled(header - 5, { landing: true });
   files.toggleMode();
 
   expect([onward, back, files.shown]).toEqual([
@@ -1996,7 +2043,7 @@ it("forgets the page a move went to as a newer diff comes, and keeps it past a m
   const files = await loaded(changed());
   files.goToFile(1);
   const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
-  files.scrolled(header - 5, true);
+  files.scrolled(header - 5, { landing: true });
 
   // A file the diff doesn't hold moves nothing.
   files.goToFile(9);

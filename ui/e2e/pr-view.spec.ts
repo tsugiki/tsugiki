@@ -665,8 +665,21 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
   await tree.getByRole("treeitem", { name: /setup\.py/ }).click();
   await expect.poll(() => headerBelowTop(diff, "setup.py")).toBeGreaterThan(100);
   await expect(current).toHaveText("setup.py+3−0");
-  // The file before goes on from the file marked.
+  // Side by side and back, and one file at a time and back, leave the tab at that file.
   await diff.focus();
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  const bar = pane.getByRole("navigation", { name: "File on show" });
+  for (let round = 0; round < 2; round += 1) {
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("o");
+    await expect(bar).toContainText("4 of 4");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("o");
+    await expect(bar).toBeHidden();
+    await expect(current).toHaveText("setup.py+3−0");
+  }
+  // The file before goes on from the file marked.
   await page.keyboard.press("Alt+PageUp");
   await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
   await expect(current).toHaveText("os.py+40−0");
@@ -686,7 +699,6 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
   // ↓ ↑ move, ← folds, and Enter opens a file, one file at a time showing it alone.
   await page.keyboard.press("ControlOrMeta+k");
   await page.keyboard.press("o");
-  const bar = pane.getByRole("navigation", { name: "File on show" });
   await expect(bar).toContainText("2 of 4");
   await tree.focus();
   await page.keyboard.press("ArrowUp");

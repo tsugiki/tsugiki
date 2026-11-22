@@ -170,12 +170,24 @@ it("follows from the first change of the file on screen, though the file it held
   expect([held, followed, back, onFile, state.cursor]).toEqual([0, 4, 3, 5, 5]);
 });
 
+it("ends a hold as another file comes on screen, though the tree isn't read until that file is gone", () => {
+  const { files, tree: state } = tree(diff());
+  files.onScreen = 1;
+  state.moveTo(0);
+
+  // As while the rail shows Search, nothing reads the cursor in between.
+  files.onScreen = 2;
+  files.onScreen = 1;
+
+  expect(state.cursor).toBe(3);
+});
+
 it("holds the cursor by the path of the file on screen, which a newer diff lists elsewhere", () => {
   const { files, tree: state } = tree(diff());
   files.onScreen = 1;
   state.moveTo(5);
-  // The newer diff drops Lib/ast.py, so Lib/test/test_ast.py is its first file.
-  files.view = {
+  // The newer diff drops Lib/ast.py, so Lib/test/test_ast.py, still on screen, is its first file.
+  const newer = {
     ...diff(),
     files: diff().files.slice(1),
     tree: {
@@ -189,7 +201,7 @@ it("holds the cursor by the path of the file on screen, which a newer diff lists
       folded: false,
     },
   };
-  files.onScreen = 0;
+  files.show(newer, 0);
   const kept = state.cursor;
   files.onScreen = 1;
 

@@ -118,6 +118,7 @@
           },
           "createdAt": "2026-06-26T18:36:12Z",
           "headRefOid": "a4c2623368acdf75d3c088f2f84c3ddc6d78c75e",
+          "id": "PR_kwDOBN0Z8c6recorded",
           "reviewThreads": {
             "nodes": [
               {
@@ -1587,7 +1588,7 @@
       }
     }
   },
-  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { bodyHTML createdAt comments(last: 30) { totalCount nodes { fullDatabaseId author { login } createdAt bodyHTML isMinimized minimizedReason } } updatedAt headRefOid reviews(last: 100) { totalCount nodes { id fullDatabaseId author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { fullDatabaseId pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } } } } rateLimit { cost limit used remaining resetAt } }",
+  "query": "query FetchPullRequestContent($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id bodyHTML createdAt comments(last: 30) { totalCount nodes { fullDatabaseId author { login } createdAt bodyHTML isMinimized minimizedReason } } updatedAt headRefOid reviews(last: 100) { totalCount nodes { id fullDatabaseId author { login } state submittedAt bodyHTML isMinimized minimizedReason commit { oid } } } reviewThreads(last: 100) { nodes { id path line originalLine diffSide subjectType isResolved isOutdated comments(first: 100) { totalCount nodes { fullDatabaseId pullRequestReview { id } author { login } createdAt bodyHTML bodyText isMinimized minimizedReason diffHunk } } } } } } rateLimit { cost limit used remaining resetAt } }",
   "reset": 1795066145,
   "status": 200
 }

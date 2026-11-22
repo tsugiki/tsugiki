@@ -7,6 +7,7 @@ fn gcmon() -> RepositorySettings {
         name: RepositoryName::parse("some-maintainer/gcmon").unwrap(),
         conventions: Conventions::Github,
         filters: Vec::new(),
+        read_only: false,
     }
 }
 

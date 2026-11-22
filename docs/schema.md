@@ -220,6 +220,7 @@ erDiagram
         INTEGER earlier_reviews
         TEXT head_sha "nullable"
         INTEGER opened_at "nullable"
+        TEXT node_id "nullable"
     }
     issue_comments {
         TEXT repository PK, FK

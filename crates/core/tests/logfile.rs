@@ -13,6 +13,8 @@ use tsugiki_core::github::{
     GitHub, GitHubAccess, Grant, Reply, Request, Selection, Transport, Unreachable, Write,
 };
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
+use tsugiki_core::read_only::WritableRepository;
+use tsugiki_core::repository::RepositoryName;
 use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::SettingsView;
 use tsugiki_core::status::StatusBoard;
@@ -107,9 +109,15 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
     clippy::unwrap_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test of the transport, which a write reaches once it may go; this file builds without the \
+              core's `testing` helpers"
+)]
 fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) {
+    let subject = NodeId::new("I_1".to_owned());
     let comment = Write::AddComment {
-        subject: NodeId::new("I_1".to_owned()),
+        subject: subject.clone(),
         body: "Thanks".to_owned(),
     };
     let second_field = Selection {
@@ -117,7 +125,9 @@ fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) 
         fragments: "",
     };
     let no_recordings = path.with_file_name("no recordings");
-    let refused = Replayer::new(no_recordings).write(token, &comment, second_field);
+    let cpython = RepositoryName::parse("python/cpython").unwrap();
+    let writable = WritableRepository::new(cpython, Some(subject), []).unwrap();
+    let refused = Replayer::new(no_recordings).write(token, &writable, (&comment, second_field));
     assert_eq!(refused.unwrap_err(), Unreachable::Refused);
     log::logger().flush();
     let file = fs::read_to_string(path).unwrap();

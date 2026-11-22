@@ -6,6 +6,7 @@ use specta::Type;
 
 use crate::conventions::Conventions;
 use crate::filters::Filter;
+use crate::read_only::ReadOnly;
 use crate::repository::{FoundRepository, RepositoryName, RepositorySize, WINDOW_DAYS};
 
 /// Fitted to a first sync of CPython's last 30 days (ADR 0015, #133), one request at a time, with whole trees
@@ -73,6 +74,10 @@ pub struct RepositorySettings {
     pub name: RepositoryName,
     pub conventions: Conventions,
     pub filters: Vec<Filter>,
+    /// The user chose **Read-only** for it, whatever the token can do. A Repository that can write leaves
+    /// the key out of the file.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub read_only: bool,
 }
 
 impl RepositorySettings {
@@ -84,13 +89,19 @@ impl RepositorySettings {
             name,
             conventions,
             filters: Filter::starters(),
+            read_only: false,
         }
+    }
+
+    /// The reason the user's choice holds the Repository Read-only, if it does.
+    pub fn chosen_read_only(&self) -> Option<ReadOnly> {
+        self.read_only.then_some(ReadOnly::Chosen)
     }
 }
 
 /// A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
 /// adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
-/// had the switch (#819) keeps them. `filters = []` means no Filters.
+/// had the switch (#819) keeps them. `filters = []` means no Filters. One without `read_only` can write.
 ///
 /// The view of a Filter goes by its search, so of two Filters with the same search the second goes, the
 /// way a Repository written twice comes once.
@@ -99,6 +110,8 @@ struct RepositoryInFile {
     name: RepositoryName,
     conventions: Option<Conventions>,
     filters: Option<Vec<Filter>>,
+    #[serde(default)]
+    read_only: bool,
 }
 
 impl From<RepositoryInFile> for RepositorySettings {
@@ -116,6 +129,7 @@ impl From<RepositoryInFile> for RepositorySettings {
             name: file.name,
             conventions,
             filters,
+            read_only: file.read_only,
         }
     }
 }

@@ -2576,6 +2576,7 @@ fn conversation_of_pr_1(head: &str) -> PullRequestContent {
     };
     PullRequestContent {
         conversation: IssueContent {
+            id: None,
             body_html: String::new(),
             comments: vec![],
             earlier_comments: 0,

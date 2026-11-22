@@ -1,11 +1,10 @@
 use super::*;
 use crate::error::ErrorKind;
 use crate::facts::CommitSha;
-use crate::facts::issue_content::IssueContent;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::store::Store;
 use crate::store::testing::temp_database;
-use crate::testing::cpython;
+use crate::testing::{cpython, empty_conversation};
 fn at(seconds: i64, check: ChangeCheck) -> SyncState {
     let started_at = OffsetDateTime::from_unix_timestamp(seconds).unwrap();
     SyncState {
@@ -122,12 +121,7 @@ fn the_reads_a_refresh_owes_last_until_a_refresh_finishes() {
 
 fn no_conversation() -> PullRequestContent {
     PullRequestContent {
-        conversation: IssueContent {
-            body_html: String::new(),
-            comments: vec![],
-            earlier_comments: 0,
-            opened_at: None,
-        },
+        conversation: empty_conversation(),
         reviews: vec![],
         earlier_reviews: 0,
         head: None,

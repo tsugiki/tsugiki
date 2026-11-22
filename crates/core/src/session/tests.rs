@@ -36,8 +36,8 @@ use crate::store::testing::{OpenStore, kept_fixes, store_with_old_links};
 use crate::store::{ChangeCheck, SyncState};
 use crate::sync::Syncs;
 use crate::testing::{
-    TempPath, cpython, cpython_settings, gcmon, hours_ago, issue_facts, listed, listing, me,
-    one_folder, pr_facts, recordings,
+    TempPath, cpython, cpython_settings, empty_conversation, gcmon, hours_ago, issue_facts, listed,
+    listing, me, one_folder, pr_facts, recordings,
 };
 use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
@@ -380,6 +380,7 @@ fn watching_follows_github_until_told_to_stop() {
 /// The answer to `FetchIssueContent`.
 fn issue_content_reply() -> Result<Reply, Unreachable> {
     let issue = json!({
+        "id": "I_1",
         "bodyHTML": "<p>It crashes</p>",
         "createdAt": "2026-11-01T09:00:00Z",
         "comments": { "totalCount": 0, "nodes": [] },
@@ -3084,12 +3085,7 @@ fn reads_the_store_kept_reach_the_window_though_it_cant_keep_the_finding() {
 /// A PR's Conversation with one Review by `author`, of `commit`.
 fn reviewed_by(author: &str, commit: &CommitSha) -> PullRequestContent {
     PullRequestContent {
-        conversation: IssueContent {
-            body_html: String::new(),
-            comments: vec![],
-            earlier_comments: 0,
-            opened_at: None,
-        },
+        conversation: empty_conversation(),
         reviews: vec![Review {
             id: None,
             author: Some(Login::new(author)),

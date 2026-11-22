@@ -10,6 +10,7 @@ use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
 use crate::facts::CommitSha;
+use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::folders::Folders;
@@ -140,6 +141,18 @@ pub fn issue_facts(number: u32) -> IssueFacts {
         labels: vec![],
         updated_at: OffsetDateTime::UNIX_EPOCH,
         state: Some(IssueState::Open),
+    }
+}
+
+/// A read of an Issue or a PR with no description and no comments, kept from before Tsugiki asked for its
+/// ID and its opening: a base whose fields a test overrides.
+pub fn empty_conversation() -> IssueContent {
+    IssueContent {
+        id: None,
+        body_html: String::new(),
+        comments: vec![],
+        earlier_comments: 0,
+        opened_at: None,
     }
 }
 

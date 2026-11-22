@@ -144,6 +144,42 @@ fn a_repository_s_state_says_whether_the_token_can_write_there_and_whether_githu
     assert_eq!(offline, RepositoryState::new([], Connection::Offline));
 }
 
+#[test]
+fn a_repository_s_state_gives_the_users_choice_of_read_only_and_the_tokens_each_as_a_reason() {
+    let root = temp_path("calls-repository-state-chosen");
+    fs::create_dir_all(&root).unwrap();
+    let folders = one_folder(&root);
+    let text = "[[repositories]]\nname = \"python/cpython\"\nread_only = true\n\n\
+                [[repositories]]\nname = \"some-maintainer/gcmon\"\nread_only = true\n";
+    fs::write(folders.settings_file(), text).unwrap();
+    let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
+    let (fetching, _session, _heard, _headless) = handle_with_headless();
+    let db = OpenStore::new("calls-repository-state-chosen-store");
+    let online = Status::Online {
+        login: Login::new("octocat"),
+    };
+    let (_status, copy) = shown(online);
+    let parts = CallParts {
+        folders: Ok(folders),
+        settings,
+        definitions: no_servers(),
+    };
+    let calls = Calls::launched(fetching, db.reader.clone(), copy, parts);
+    let token = TokenSeen {
+        kind: TokenKind::Classic,
+        expires: None,
+    };
+    assert!(db.store.mark_read_only(token, &gcmon()).unwrap());
+
+    let chosen = calls.repository_state(&cpython()).unwrap();
+    let both = calls.repository_state(&gcmon()).unwrap();
+    db.close();
+
+    let reasons = |reasons: Vec<ReadOnly>| RepositoryState::new(reasons, Connection::Online);
+    assert_eq!(chosen, reasons(vec![ReadOnly::Chosen]));
+    assert_eq!(both, reasons(vec![ReadOnly::Chosen, ReadOnly::Token]));
+}
+
 /// The language servers' thread, with no server to start and no Lookup checkout.
 fn no_servers() -> Definitions {
     Definitions::start(Sources {

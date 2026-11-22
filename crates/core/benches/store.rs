@@ -222,6 +222,7 @@ fn settings(repository: &RepositoryName) -> RepositorySettings {
             filter("Open Issues", "is:issue is:open"),
             filter("Open PRs", "is:pr is:open"),
         ],
+        read_only: false,
     }
 }
 
@@ -435,6 +436,7 @@ fn is_open(number: u32) -> bool {
 fn content() -> IssueContent {
     let paragraph = "<p>It crashes when the <code>gc</code> runs during <code>__del__</code>.</p>";
     IssueContent {
+        id: None,
         body_html: paragraph.repeat(20),
         comments: (0..20)
             .map(|at| IssueComment {

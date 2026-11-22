@@ -4,6 +4,7 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
+use crate::facts::pull_requests::NodeId;
 use crate::login::Login;
 
 /// The reason someone gave for hiding a comment on GitHub. The comment folds to it until the user opens it.
@@ -62,6 +63,11 @@ pub struct Comment {
 /// An Issue's description and its recent comments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
 pub struct IssueContent {
+    /// GitHub's ID of the Issue or PR, which a write names it by (#914). Nothing, for a read kept from
+    /// before Tsugiki asked, until the next read. The window has no use for it.
+    #[serde(skip)]
+    #[specta(skip)]
+    pub id: Option<NodeId>,
     /// GitHub's rendering, written by a stranger. The webview's content security policy holds it (ADR 0005).
     pub body_html: String,
     /// The most recent comments, oldest first.

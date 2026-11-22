@@ -14,6 +14,7 @@ use super::{
     https,
 };
 use crate::conventions::{CPYTHON_BACKPORT_APP, CPYTHON_BOT_ACCOUNTS};
+use crate::read_only::WritableRepository;
 use crate::token::Token;
 
 const SCRUBBED: &str = "[token]";
@@ -290,11 +291,11 @@ impl Transport for Recorder {
     fn write(
         &self,
         token: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        writable: &WritableRepository,
+        (write, selection): (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
         let query = https::write_query(write, selection)?;
-        let reply = self.inner.write(token, write, selection)?;
+        let reply = self.inner.write(token, writable, (write, selection))?;
         let asked = Asked {
             operation: write.operation(),
             query: &query,

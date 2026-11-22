@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{Grant, Reply, Request, Selection, Transport, Unreachable, Write, https};
+use crate::read_only::WritableRepository;
 use crate::token::Token;
 
 /// One recorded exchange, in `<operation>.json`.
@@ -76,8 +77,8 @@ impl Transport for Replayer {
     fn write(
         &self,
         _: &Token,
-        write: &Write,
-        selection: Selection<'_>,
+        _: &WritableRepository,
+        (write, selection): (&Write, Selection<'_>),
     ) -> Result<Reply, Unreachable> {
         let query = https::write_query(write, selection)?;
         let (path, recording) = self.recording(write.operation());

@@ -7,7 +7,7 @@ use tsugiki_token::testing::{gh_alone, gh_prints};
 
 use super::*;
 use crate::github::testing::{
-    RATE_LIMIT, Scripted, answer, github, not_found, signed_in_as, token,
+    RATE_LIMIT, Scripted, answer, github, not_found, replied, signed_in_as, token,
 };
 use crate::github::{Grant, Reply, Unreachable};
 use crate::status::Status;
@@ -31,13 +31,21 @@ fn granted(
     })
 }
 
-/// GitHub's answer that the Repository asked about has `visibility`.
+/// GitHub's answer that the Repository asked about has `visibility`, to a token that writes to public
+/// repositories alone and doesn't expire, as each answer names the token's scopes again.
 fn visibility(visibility: Visibility) -> Result<Reply, Unreachable> {
     let private = visibility == Visibility::Private;
-    answer(
+    let answer = answer(
         json!({ "repository": { "isPrivate": private } }),
         RATE_LIMIT,
-    )
+    );
+    answer.map(|reply| Reply {
+        grant: Grant {
+            scopes: Some(WriteScope::Public),
+            expires: None,
+        },
+        ..reply
+    })
 }
 
 /// A client that sends `token`, whose first answer is `first` and then `rest`, once it has asked who is
@@ -225,6 +233,50 @@ fn a_visibility_github_couldnt_answer_is_asked_again_once_the_wait_is_over() {
 
     assert_eq!(unjudged, (false, false));
     assert_eq!(db.read_only_marks(), (true, false));
+    db.close();
+}
+
+#[test]
+fn a_server_error_on_a_visibility_question_keeps_the_mark_and_asks_again_later() {
+    let db = OpenStore::new("judge-server-error");
+    let (mut board, changes) = changes_board();
+    let (github, _asked) = after_answer(
+        granted(Some(WriteScope::Public), None),
+        vec![
+            visibility(Visibility::Private),
+            replied(502, "Bad Gateway"),
+            visibility(Visibility::Private),
+        ],
+    );
+    let mut judge = WriteJudge::new(Duration::ZERO);
+    judge.follow(parts(&mut board, &db, &github), &[cpython()]);
+    assert_eq!(heard(&changes), [cpython()]);
+
+    // The next run asks again, and GitHub stumbles once.
+    let mut next_run = WriteJudge::new(Duration::ZERO);
+    next_run.follow(parts(&mut board, &db, &github), &[cpython()]);
+    let kept = db.read_only_marks();
+    next_run.follow(parts(&mut board, &db, &github), &[cpython()]);
+
+    assert_eq!(kept, (true, false));
+    assert_eq!(db.read_only_marks(), (true, false));
+    assert_eq!(heard(&changes), []);
+    db.close();
+}
+
+#[test]
+fn a_repository_the_settings_drop_loses_its_mark() {
+    let db = OpenStore::new("judge-dropped");
+    let (mut board, changes) = changes_board();
+    let (github, _asked) = after_answer(granted(Some(WriteScope::None), None), vec![]);
+    let mut judge = WriteJudge::new(AN_HOUR);
+    judge.follow(parts(&mut board, &db, &github), &both());
+    assert_eq!(heard(&changes), both());
+
+    judge.follow(parts(&mut board, &db, &github), &[cpython()]);
+
+    assert_eq!(db.read_only_marks(), (true, false));
+    assert_eq!(heard(&changes), [gcmon()]);
     db.close();
 }
 

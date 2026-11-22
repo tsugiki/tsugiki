@@ -67,6 +67,33 @@ pub(super) fn mark(
     Ok(!before)
 }
 
+/// Forgets the marks of each Repository not in `listed`, and gives the Repositories they were on.
+pub(super) fn forget_unlisted(
+    connection: &mut Connection,
+    listed: &[RepositoryName],
+) -> rusqlite::Result<Vec<RepositoryName>> {
+    let transaction = connection.transaction()?;
+    let marked = {
+        let mut statement = transaction.prepare("SELECT repository FROM read_only")?;
+        let rows = statement.query_map([], |row| row.get::<_, RepositoryName>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let unlisted: Vec<RepositoryName> = marked
+        .into_iter()
+        .filter(|marked| !listed.iter().any(|repository| repository.is_same(marked)))
+        .collect();
+    for repository in &unlisted {
+        transaction
+            .execute(
+                "DELETE FROM read_only WHERE repository = :repository",
+                named_params! { ":repository": repository },
+            )
+            .map(drop)?;
+    }
+    transaction.commit()?;
+    Ok(unlisted)
+}
+
 /// Clears `repository`'s mark, and gives whether it had one.
 pub(super) fn clear(
     connection: &Connection,

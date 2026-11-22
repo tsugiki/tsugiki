@@ -65,6 +65,23 @@ fn another_token_forgets_the_marks_and_says_where_they_were() {
 }
 
 #[test]
+fn the_marks_of_repositories_no_longer_listed_go() {
+    let db = OpenStore::new("read-only-unlisted");
+    assert!(db.store.mark_read_only(GH, &cpython()).unwrap());
+    assert!(db.store.mark_read_only(GH, &gcmon()).unwrap());
+    let shouted = RepositoryName::parse("Python/CPython").unwrap();
+
+    let forgot = db
+        .store
+        .forget_read_only_of_unlisted(vec![shouted])
+        .unwrap();
+
+    assert_eq!(forgot, [gcmon()]);
+    assert_eq!(db.read_only_marks(), (true, false));
+    db.close();
+}
+
+#[test]
 fn a_mark_survives_a_restart() {
     let (path, folder) = temp_database("read-only-restart");
     let store = Store::open(&path).unwrap();

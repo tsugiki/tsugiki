@@ -28,6 +28,9 @@ pub(super) struct WriteJudge {
     /// The Repositories judged for `token` and `scope`, saved or not: a save that failed waits for another
     /// token or scope rather than trying again each turn.
     judged: Vec<RepositoryName>,
+    /// The Repositories the settings listed when the store last forgot the marks of the others, for
+    /// `scope`. Nothing, until then.
+    listed: Option<Vec<RepositoryName>>,
     /// Each Repository's visibility as GitHub answered this run, which a token that writes to public
     /// repositories alone needs.
     visibility: Vec<(RepositoryName, Visibility)>,
@@ -52,6 +55,7 @@ impl WriteJudge {
             token: None,
             scope: None,
             judged: Vec::new(),
+            listed: None,
             visibility: Vec::new(),
             ask_after: None,
         }
@@ -96,6 +100,16 @@ impl WriteJudge {
         if self.scope != Some(scope) {
             self.scope = Some(scope);
             self.judged.clear();
+            self.listed = None;
+        }
+        // The window can ask the state of any Repository, so a mark the scopes no longer judge goes.
+        if !self
+            .listed
+            .as_deref()
+            .is_some_and(|known| same_repositories(known, listed))
+        {
+            self.listed = Some(listed.to_vec());
+            tell(board, store.forget_read_only_of_unlisted(listed.to_vec()));
         }
         for repository in listed {
             if self.judged.iter().any(|judged| judged.is_same(repository)) {
@@ -143,18 +157,17 @@ impl WriteJudge {
             Ok(visibility) => visibility,
             // A public repository shows itself to any token, so one this token can't see is private.
             Err(problem) if matches!(problem.kind, ErrorKind::NotFound) => Visibility::Private,
-            Err(problem) if problem.kind.speaks_for_all_of_github() => {
+            // Any other failure, such as a server error that passes, leaves the question open: judging the
+            // Repository on it would clear a mark that may be right until the next run.
+            Err(problem) => {
+                if !problem.kind.speaks_for_all_of_github() {
+                    log::warn!(
+                        "Tsugiki couldn't ask GitHub whether {repository} is private: {}",
+                        problem.message
+                    );
+                }
                 self.ask_after = Some(Instant::now() + self.retry);
                 return None;
-            }
-            // Asking again would fail the same way, so the token is judged able to write there, and a
-            // write GitHub refuses says otherwise.
-            Err(problem) => {
-                log::warn!(
-                    "Tsugiki couldn't ask GitHub whether {repository} is private: {}",
-                    problem.message
-                );
-                Visibility::Public
             }
         };
         self.visibility.push((repository.clone(), visibility));
@@ -167,6 +180,11 @@ impl WriteJudge {
             .find(|(known, _)| known.is_same(repository))
             .map(|(_, visibility)| *visibility)
     }
+}
+
+/// Whether `one` and `other` name the same Repositories in the same order, whatever their case.
+fn same_repositories(one: &[RepositoryName], other: &[RepositoryName]) -> bool {
+    one.len() == other.len() && one.iter().zip(other).all(|(one, other)| one.is_same(other))
 }
 
 /// Tells the window of each Repository whose mark `saved` changed, with a change that names no item, so its

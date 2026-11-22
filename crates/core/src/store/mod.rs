@@ -771,6 +771,16 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Forgets the Read-only marks of each Repository not in `listed`, and gives the Repositories they
+    /// were on (#398).
+    pub fn forget_read_only_of_unlisted(
+        &self,
+        listed: Vec<RepositoryName>,
+    ) -> Result<Vec<RepositoryName>, Error> {
+        let saved = self.call(move |connection| read_only::forget_unlisted(connection, &listed))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Clears `repository`'s Read-only mark, and gives whether it had one (#398).
     pub fn clear_read_only(&self, repository: &RepositoryName) -> Result<bool, Error> {
         let repository = repository.clone();

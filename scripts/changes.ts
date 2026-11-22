@@ -1,5 +1,5 @@
 // Tells a workflow which of its checks a run needs, by a line it writes to `$GITHUB_OUTPUT`. scope.ts holds
-// the rules, which `just rust-gates` applies too. A rename counts as both of its paths. On a PR the checkout
+// the rules, which `just check` applies too. A rename counts as both of its paths. On a PR the checkout
 // is the merge commit HEAD of the base HEAD^1 and the PR's head HEAD^2.
 //
 // CI's `changes` job writes the jobs to run, as `jobs=["rust", ...]`:

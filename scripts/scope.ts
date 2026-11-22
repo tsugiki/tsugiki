@@ -1,16 +1,17 @@
-// The CI jobs a change needs, from the paths it touches. CI's `changes` job and `just rust-gates` both ask
-// this module, so the two agree on which paths count.
+// The CI jobs a change needs, from the paths it touches. CI's `changes` job and `just check` both ask this
+// module, so the two agree on which paths count.
 
 /**
  * What a CI job reads, which decides when it runs. `rust` is rustfmt, Clippy and the Rust tests with their
  * coverage gate, on Windows and macOS. `dependencies` is cargo-deny and cargo-machete. `ui` is ESLint,
- * Prettier, svelte-check, token-deps, Vitest and Playwright, on Windows and macOS. The dupes gate reads both
- * `rust` and `ui`, so either runs it.
+ * Prettier, svelte-check, token-deps and Vitest, on Windows and macOS. `e2e` is the Playwright specs, on
+ * Windows and macOS: each path `ui` reads, but no script. The dupes gate reads both `rust` and `ui`, so
+ * either runs it.
  */
-export type Job = "rust" | "dependencies" | "ui";
+export type Job = "rust" | "dependencies" | "ui" | "e2e";
 
 /** Every job, in the order CI lists them. A change to anything no rule below claims runs them all. */
-export const EVERY_JOB: readonly Job[] = ["rust", "dependencies", "ui"];
+export const EVERY_JOB: readonly Job[] = ["rust", "dependencies", "ui", "e2e"];
 
 /** Files outside `crates/` that a Rust check reads, so a change to one runs the Rust jobs. */
 const READ_BY_RUST = new Set([
@@ -64,15 +65,19 @@ function isDocs(path: string): boolean {
 }
 
 /**
- * The jobs a change to `path` needs. Docs need none, and a path no rule claims, such as a script, needs all.
+ * The jobs a change to `path` needs. Docs need none, and a script needs all but the Playwright specs, which
+ * read none: they drive the built UI. A path no rule claims, such as the `justfile`, needs all.
  */
 function jobsOf(path: string): readonly Job[] {
   const rust = READ_BY_RUST.has(path) || RUST_ROOT.has(path) || path.startsWith("crates/");
   const ui = READ_BY_UI.has(path) || (path.startsWith("ui/") && !isDocs(path));
   if (rust || ui) {
-    return [...(rust ? (["rust", "dependencies"] as const) : []), ...(ui ? (["ui"] as const) : [])];
+    return [...(rust ? (["rust", "dependencies"] as const) : []), ...(ui ? (["ui", "e2e"] as const) : [])];
   }
-  return isDocs(path) || READ_BY_NO_JOB.has(path) ? [] : EVERY_JOB;
+  if (isDocs(path) || READ_BY_NO_JOB.has(path)) {
+    return [];
+  }
+  return path.startsWith("scripts/") ? EVERY_JOB.filter((job) => job !== "e2e") : EVERY_JOB;
 }
 
 /** The paths in what `git diff --name-only` printed, one a line. */

@@ -35,8 +35,8 @@ export default defineConfig({
         "../scripts/doc-width.ts",
         "../scripts/prose-check.ts",
         "../scripts/changes.ts",
-        // coverage: runs the real Rust gates or skips them, with its logic in scope.ts.
-        "../scripts/rust-gates.ts",
+        // coverage: runs the real gates or skips them, with its logic in scope.ts.
+        "../scripts/gates.ts",
         // coverage: asks GitHub about a real PR and deletes a real branch, which no unit test can do.
         "../scripts/merged.ts",
         // coverage: makes and deletes a real worktree and runs npm ci, with its logic in worktrees.ts.

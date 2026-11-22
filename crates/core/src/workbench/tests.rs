@@ -55,7 +55,7 @@ fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_marked_pinned_until_unpi
 }
 
 #[test]
-fn the_pinned_view_lists_the_pins_in_the_workbenchs_order_and_counts_those_that_need_attention() {
+fn the_pinned_view_lists_the_pins_in_the_workbench_order_and_counts_those_that_need_attention() {
     let world = ViewWorld::new("workbench-pinned-view");
     let updated = |number, seconds| crate::facts::issues::IssueFacts {
         updated_at: at(seconds),

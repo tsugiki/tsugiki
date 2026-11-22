@@ -63,7 +63,7 @@ tsugiki-lsp = { path = "crates/lsp" }
 tsugiki-test-git = { path = "crates/test-git" }
 tsugiki-token = { path = "crates/token" }
 tsugiki-webview-keys = { path = "crates/webview-keys" }
-url = "2.5.8"
+url = "2.5.9"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls"] }
 webview2-com = "0.39.1" # The version Tauri's window hands its controller in.
 # A job object that kills a language server and what it started when Tsugiki's process ends, even in a crash

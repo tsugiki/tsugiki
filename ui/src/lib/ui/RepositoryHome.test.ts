@@ -45,6 +45,8 @@ const core = vi.hoisted(() => ({
   unmute: vi.fn(),
   muteAuthor: vi.fn(),
   unmuteAuthor: vi.fn(),
+  pin: vi.fn(),
+  unpin: vi.fn(),
   putFilterOnWorkbench: vi.fn(),
   switchShowMuted: vi.fn(),
   openOnGithub: vi.fn(),
@@ -88,6 +90,8 @@ vi.mock("$lib/data/bindings", async () => {
       unmute: core.unmute,
       muteAuthor: core.muteAuthor,
       unmuteAuthor: core.unmuteAuthor,
+      pin: core.pin,
+      unpin: core.unpin,
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       switchShowMuted: core.switchShowMuted,
       openOnGithub: core.openOnGithub,
@@ -143,6 +147,7 @@ const issue = {
     state: "new_activity",
   },
   mute_author: { kind: "mute", login: "issue-author" } as MuteAuthor,
+  pinned: false,
   key: { kind: "issue", number: 112564 },
   hidden: null,
 };
@@ -186,6 +191,8 @@ beforeEach(() => {
   core.unmute.mockResolvedValue(done);
   core.muteAuthor.mockResolvedValue(done);
   core.unmuteAuthor.mockResolvedValue(done);
+  core.pin.mockResolvedValue(done);
+  core.unpin.mockResolvedValue(done);
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -204,6 +211,7 @@ beforeEach(() => {
       content: null,
       seen: issue.seen,
       mute_author: issue.mute_author,
+      pinned: false,
       hidden: null,
     },
   });
@@ -3051,6 +3059,100 @@ it("says why an Archive failed", async () => {
   await fireEvent.keyDown(prRow, { key: "e" });
 
   expect(await screen.findByText("Tsugiki couldn't mark this item: no database")).toBeTruthy();
+});
+
+it("pins and unpins an Issue from the ★ on its row, which a Standalone PR's row lacks", async () => {
+  const pinned = { ...issue, number: 7, title: "Kept", key: { kind: "issue", number: 7 }, pinned: true };
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...issue, attention: null },
+      { ...pinned, attention: null },
+      { ...standalone, attention: null },
+    ]),
+  );
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+
+  await fireEvent.click(await screen.findByRole("button", { name: "Pin #112564" }));
+  const unpin = screen.getByRole("button", { name: "Unpin #7" });
+  await fireEvent.click(unpin);
+
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", 7);
+  expect([screen.getByRole("button", { name: "Pin #112564" }).textContent, unpin.textContent]).toEqual([
+    "☆",
+    "★",
+  ]);
+  expect(screen.queryByRole("button", { name: /^(Pin|Unpin) #5$/ })).toBeNull();
+  expect(core.openIssue).not.toHaveBeenCalled();
+});
+
+it("pins on Ctrl+K P and the palette the Issue that holds the line under the cursor, and nothing on a Standalone PR's", async () => {
+  const { component, treeRow, prRow } = await listing();
+  treeRow.focus();
+  await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+
+  component.runChord("pin", chordEnd());
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(paletteRow(component, "pin")?.title).toBe("Pin or Unpin");
+  prRow.focus();
+  await fireEvent.keyDown(prRow, { key: "ArrowDown" });
+  await fireEvent.keyDown(prRow, { key: "ArrowDown" });
+  expect(prRow.getAttribute("aria-current")).toBe("true");
+  component.runChord("pin", chordEnd());
+
+  expect(core.pin).toHaveBeenCalledOnce();
+  expect(paletteRow(component, "pin")).toBeUndefined();
+});
+
+it("unpins on Ctrl+K P with the list hidden the Issue the PR on show came from, and the Issue on show from the palette", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  core.pullRequest.mockImplementation((_repository: string, number: number) =>
+    Promise.resolve(
+      ok({
+        ...row,
+        number,
+        content: null,
+        shares_review_of: null,
+        hidden: null,
+        issues: [
+          { number: 9, pinned: false },
+          { number: issue.number, pinned: true },
+        ],
+      }),
+    ),
+  );
+  const { component, treeRow } = await listing();
+  await fireEvent.click(treeRow);
+  await screen.findByRole("region", { name: "PR view" });
+  await toggleList();
+
+  component.runChord("pin", chordEnd());
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  await toggleList();
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+  const view = await screen.findByRole("region", { name: "Issue view" });
+  await screen.findByRole("button", { name: "☆ Pin" });
+  paletteRow(component, "pin", view)?.run();
+
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+});
+
+it("pins nothing on Ctrl+K P with the list hidden on a Standalone PR, or with nothing open", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { component, prRow } = await listing();
+  await fireEvent.click(prRow);
+  await screen.findByRole("region", { name: "PR view" });
+  await toggleList();
+  component.runChord("pin", chordEnd());
+  cleanup();
+  const { component: empty } = await listing();
+  await toggleList();
+  await screen.findByText(/Nothing open/);
+  empty.runChord("pin", chordEnd());
+
+  expect(core.pin).not.toHaveBeenCalled();
+  expect(core.unpin).not.toHaveBeenCalled();
 });
 
 it("mutes on M the item that holds the line under the cursor, and the cursor lands on the next row", async () => {

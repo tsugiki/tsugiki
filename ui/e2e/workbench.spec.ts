@@ -22,6 +22,7 @@ const review: ListedItem = {
   state: "OPEN",
   people: ["issue-author", "some-author"],
   mute_author: { kind: "mute", login: "issue-author" },
+  pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     {
@@ -91,7 +92,7 @@ test("an item that Needs attention shows an accent bar and title, and a long tit
 test("an item with nothing waiting sits in the one list below what does, and Alt+← goes back to it", async ({
   page,
 }) => {
-  const ownView = { ...reviewRow, ...own, content: null, shares_review_of: null, hidden: null };
+  const ownView = { ...reviewRow, ...own, content: null, shares_review_of: null, hidden: null, issues: [] };
   await mockCore(page, {
     home,
     workbench: workbenchPage([review, own]),
@@ -269,6 +270,7 @@ async function openFarDown(page: Page) {
       title: "Item 1020",
       content: null,
       shares_review_of: null,
+      issues: [],
       hidden: null,
     }),
   });

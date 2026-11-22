@@ -2699,6 +2699,88 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
     harness.finish();
 }
 
+#[test]
+fn a_refresh_leaves_a_pinned_issue_that_closes_on_the_workbench_not_archived() {
+    let replies = vec![
+        polled(
+            &list(
+                &[
+                    issue_in(1, AFTER_IT, "CLOSED"),
+                    issue_in(2, AFTER_IT, "CLOSED"),
+                ],
+                None,
+            ),
+            &list(&[], None),
+            &[search(&[], None)],
+        ),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-pinned", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    holding_issue(&harness, 2, LONG_BEFORE);
+    stored_filter(&harness, "a", &[2]);
+    (harness.db.store)
+        .pin(&cpython(), 1, moment(LONG_BEFORE))
+        .unwrap();
+    let settings = filtering(&["a"]);
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    // Filter "a" put Issue 2 on the Workbench, and it archives as it closes. The pin holds Issue 1 there.
+    assert_eq!(archived(&harness), [ItemKey::Issue { number: 2 }]);
+    let pinned = listed(
+        &harness,
+        &settings,
+        &WorkbenchView::Whole,
+        ItemKey::Issue { number: 1 },
+    );
+    assert_eq!(pinned.map(|listed| listed.hidden), Some(None));
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_reads_the_tree_of_each_issue_pinned_since_the_last_one_and_fetches_one_it_lacks() {
+    let merged = json!({
+        "title": "gh-1: Fix it",
+        "author": { "login": "some-author" },
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": LONG_BEFORE,
+    });
+    let replies = vec![
+        polled(&list(&[], None), &list(&[], None), &[]),
+        issues(&[3], RATE_LIMIT),
+        cross_references(&[30], None, RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        fetched_nodes(&[pr_node(30, &merged)], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("pinned-trees", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    holding_issue(&harness, 2, LONG_BEFORE);
+    let store = &harness.db.store;
+    store.pin(&cpython(), 1, moment(LAST_SYNC)).unwrap();
+    store.pin(&cpython(), 2, moment(LONG_BEFORE)).unwrap();
+    store.pin(&cpython(), 3, moment(LONG_BEFORE)).unwrap();
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+
+    // Issue 2 was pinned before the last refresh, which read its tree, and nothing changed on it since.
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchIssues",
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+            "FetchTreePullRequests"
+        ]
+    );
+    assert_eq!(harness.numbers(), [30]);
+    assert_eq!(harness.issue_numbers(), [1, 2, 3]);
+    harness.finish();
+}
+
 /// Archives the items `keys` name as a sync does when it sees them close.
 fn archived_on_closing(harness: &Harness, keys: &[ItemKey]) {
     crate::store::testing::archived_on_closing(&harness.db.store, keys, moment(LAST_SYNC));

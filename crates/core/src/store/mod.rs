@@ -738,6 +738,37 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Pins Issue `number` (#488) at `now`, as `activity::pin` says.
+    pub fn pin(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::pin(connection, &repository, number, now))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unpins Issue `number` (#488).
+    pub fn unpin(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::unpin(connection, &repository, number))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The Pinned issues of `repository`, each with the moment the user pinned it (#488).
+    pub fn pinned(
+        &self,
+        repository: &RepositoryName,
+    ) -> Result<BTreeMap<u32, OffsetDateTime>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::pinned(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
     /// Forgets the Read-only marks of each token of another kind than `kind`, which Tsugiki knows before
     /// GitHub first answers, and gives the Repositories they were on (#398).
     pub fn forget_read_only_of_other_kinds(

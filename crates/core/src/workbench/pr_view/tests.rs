@@ -65,6 +65,34 @@ fn a_pr_says_whether_the_item_that_holds_it_is_muted() {
 }
 
 #[test]
+fn a_pr_names_each_issue_that_holds_it_and_whether_it_is_pinned() {
+    let world = ViewWorld::new("pr-view-pinned");
+    let both = PullRequestFacts {
+        closing_issues: vec![3],
+        ..fixing(5, 1)
+    };
+    let alone = PullRequestFacts {
+        number: 6,
+        title: "PR 6".to_owned(),
+        ..stranger()
+    };
+    world.has(vec![both, alone], vec![issue(1), issue(3)]);
+    world
+        .db
+        .store
+        .pin(&cpython(), 3, OffsetDateTime::now_utc())
+        .unwrap();
+
+    let holding = view(&world, 5).unwrap().issues;
+    let standalone = view(&world, 6).unwrap().issues;
+
+    world.finish();
+    let held = |number, pinned| HoldingIssue { number, pinned };
+    assert_eq!(holding, [held(1, false), held(3, true)]);
+    assert_eq!(standalone, [], "only an Issue takes a pin");
+}
+
+#[test]
 fn a_bot_backport_names_the_origin_pr_whose_review_state_it_shares() {
     let world = ViewWorld::new("pr-view-shared-review");
     let manual = backport(3, "[3.14] gh-1: Fix it (GH-1)", vec![Some(someone())]);

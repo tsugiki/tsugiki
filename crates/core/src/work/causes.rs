@@ -114,6 +114,8 @@ pub(crate) struct Causes {
     by_muted_authors: BTreeMap<ItemKey, OffsetDateTime>,
     /// The Repository's Muted authors.
     muted_authors: Vec<Login>,
+    /// The user's Pinned issues (#488).
+    pinned: BTreeSet<u32>,
     /// The user signed in, whose own items Mute author leaves alone.
     viewer: Option<Login>,
     /// The Review request or the assignment to the user that stands on each Issue and PR, acknowledged or
@@ -200,6 +202,7 @@ impl Causes {
             muted_authors: (facts.activity.muted_authors.iter())
                 .map(|muted| muted.login.clone())
                 .collect(),
+            pinned: facts.activity.pinned.keys().copied().collect(),
             viewer: Some(viewer.clone()),
             acknowledged: facts.activity.acknowledged.clone(),
         }
@@ -223,6 +226,11 @@ impl Causes {
     /// Whether the user muted `author` in this Repository (#494).
     pub(crate) fn is_muted_author(&self, author: &Login) -> bool {
         self.muted_authors.contains(author)
+    }
+
+    /// Whether Issue `number` is a Pinned issue (#488).
+    pub(crate) fn is_pinned(&self, issue: u32) -> bool {
+        self.pinned.contains(&issue)
     }
 
     /// The user signed in, if anyone has.

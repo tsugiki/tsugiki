@@ -29,6 +29,8 @@ pub struct IssueItem {
     pub seen: Seen,
     /// What Mute author offers for the Issue's author (#494).
     pub mute_author: MuteAuthor,
+    /// Whether the user pinned the Issue (#488), which its ★ shows.
+    pub pinned: bool,
 }
 
 /// The Issue `issue` with its tree `pull_requests`, its part in Mark Seen and Mute author as `causes` judge
@@ -44,6 +46,7 @@ pub(super) fn issue_item(
         .map(|row| row.number);
     let seen = seen_of(causes, std::iter::once(issue.number).chain(tree).collect());
     let mute_author = MuteAuthor::of(causes, issue.author.as_ref());
+    let pinned = causes.is_pinned(issue.number);
     let people = people(&issue, &pull_requests, conventions);
     let updated_at = pull_requests
         .iter()
@@ -59,6 +62,7 @@ pub(super) fn issue_item(
         pull_requests,
         seen,
         mute_author,
+        pinned,
     })
 }
 

@@ -27,6 +27,8 @@ vi.mock("$lib/data/bindings", () => ({
     unarchive: vi.fn(),
     mute: vi.fn(),
     unmute: vi.fn(),
+    pin: vi.fn(),
+    unpin: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
     switchShowMuted: vi.fn(),
   },
@@ -72,6 +74,7 @@ const issueWith = (number: number, pr: number): ListedItem => ({
   state: "OPEN",
   people: [],
   mute_author: { kind: "mute", login: "issue-author" },
+  pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", number: pr, seen: seen(pr), backports: [] }],
   seen: seen(number, pr),
@@ -181,6 +184,7 @@ describe("WorkbenchState", () => {
       state: "OPEN",
       people: [],
       mute_author: { kind: "mute", login: "issue-author" },
+      pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
       seen: seen(10, 11, 12, 13),
       pull_requests: [
@@ -237,6 +241,7 @@ describe("WorkbenchState", () => {
       state: "OPEN",
       people: [],
       mute_author: { kind: "mute", login: "issue-author" },
+      pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
       seen: seen(number, 5),
@@ -408,6 +413,7 @@ describe("WorkbenchState", () => {
       state: "OPEN",
       people: [],
       mute_author: { kind: "mute", login: "issue-author" },
+      pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [{ ...row, kind: "pr", number: 5, backports: [] }],
       seen: seen(10, 5),
@@ -1461,6 +1467,7 @@ describe("WorkbenchState", () => {
       state: "OPEN",
       people: [],
       mute_author: { kind: "mute", login: "issue-author" },
+      pinned: false,
       updated_at: "2026-11-04T10:00:00Z",
       pull_requests: [pr(10), pr(11)],
       seen: seen(5, 10, 11),
@@ -1779,6 +1786,36 @@ describe("WorkbenchState's Inbox", () => {
     });
     expect(pagesAsked()).toEqual(["latest", "older 3", "all"]);
     expect(state.olderToRead).toBe(false);
+    state.stop();
+  });
+
+  it("lands the cursor after an Issue pinned in the Inbox once it leaves, and waits for none to leave the Workbench", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.pin).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6));
+    paging({ latest: page([3, 2, 1]), all: page([3, 2, 1]) });
+    const state = await showingInbox();
+    state.moveCursor(1);
+
+    await state.pin(3);
+    paging({ all: page([2, 1]) });
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([2, 1]);
+    });
+    expect(state.cursor?.number).toBe(2);
+    expect(commands.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", 3);
+
+    // The Workbench keeps a Pinned issue, so one that leaves it left for another reason.
+    await state.select(whole);
+    state.moveCursor(1);
+    await state.pin(5);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(6));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6]);
+    });
+    expect(state.underCursor).toBeUndefined();
     state.stop();
   });
 

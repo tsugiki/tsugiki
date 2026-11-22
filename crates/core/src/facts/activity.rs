@@ -124,6 +124,8 @@ pub struct ActivityFacts {
     /// The Muted authors of the Repository, by login (#494). Their items count as Muted, worked out from
     /// each item's author, so the store keeps no Mute on each of them.
     pub muted_authors: Vec<MutedAuthor>,
+    /// The user's Pinned issues, each with the moment the user pinned it (#488).
+    pub pinned: BTreeMap<u32, OffsetDateTime>,
     /// Each event that names the user, and what happened after the first sync began on the items they wrote,
     /// reviewed, are assigned to or commented on, each at the time New activity goes by, oldest first. Only
     /// those can make an item Need attention, and a Repository holds too many others to read with each list.
@@ -132,4 +134,14 @@ pub struct ActivityFacts {
     pub ci_finished: BTreeMap<u32, OffsetDateTime>,
     /// The names of the failed checks of each PR Tsugiki has asked about.
     pub failed_checks: BTreeMap<u32, Vec<String>>,
+}
+
+impl ActivityFacts {
+    /// Whether the item `key` names is a Pinned issue (#488). Only an Issue takes a pin.
+    pub fn is_pinned(&self, key: ItemKey) -> bool {
+        match key {
+            ItemKey::Issue { number } => self.pinned.contains_key(&number),
+            ItemKey::PullRequest { .. } => false,
+        }
+    }
 }

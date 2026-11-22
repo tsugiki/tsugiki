@@ -46,6 +46,22 @@ pub(super) struct FilterWalk {
     leads: Leads,
     /// Each item a refresh found updated, which a narrowed search can say has stopped matching.
     changed: BTreeSet<u32>,
+    /// The Pinned issues whose trees the sync reads (#488). A place an older Tsugiki saved has none, and
+    /// reads them all.
+    #[serde(default)]
+    pinned: PinnedTrees,
+}
+
+/// The Pinned issues a sync fetches and reads the trees of, as it does the user's own Issues (#488), beside
+/// each one Tsugiki lacks.
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+enum PinnedTrees {
+    /// Each one, as a first sync reads all of the user's work.
+    #[default]
+    All,
+    /// Those the user pinned since this time. A refresh's poll has saved each other one that changed, and
+    /// read its tree.
+    PinnedSince(OffsetDateTime),
 }
 
 /// What a refresh hands to its walk.
@@ -129,7 +145,8 @@ impl FilterWalk {
         }
     }
 
-    /// The walk at the end of a refresh. The searches to run whole go first, as they have nothing to show.
+    /// The walk at the end of a refresh. The searches to run whole go first, as they have nothing to show. It
+    /// reads the trees of the Issues pinned since `since`, or of all the Pinned issues without one.
     pub(super) fn of_refresh(plan: RefreshWalk) -> Self {
         let RefreshWalk {
             whole,
@@ -148,6 +165,7 @@ impl FilterWalk {
             left: whole.chain(narrowed).collect(),
             hits,
             changed,
+            pinned: since.map_or(PinnedTrees::All, PinnedTrees::PinnedSince),
             ..Self::default()
         }
     }
@@ -300,7 +318,9 @@ impl FilterWalk {
 }
 
 /// The user's own PRs, and each item a Filter found that Tsugiki lacks or has an older copy of. An item it
-/// has as it is now only passes on what it points at, and so does a merged PR (ADR 0011). An open PR left out
+/// has as it is now only passes on what it points at, and so does a merged PR (ADR 0011). The Pinned issues
+/// count as the user's work (#488): a first sync fetches each one and reads its tree, and a refresh fetches
+/// those Tsugiki lacks and reads the trees of those pinned since its last one. An open PR left out
 /// here still comes with its Issue's tree, which keeps its CI current: CI finishing doesn't change
 /// `updatedAt`.
 fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase, Error> {
@@ -312,6 +332,8 @@ fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase
         .iter()
         .map(|issue| (issue.number, issue.updated_at))
         .collect();
+    // The store's last read, as a failed one leaves the walk as it was.
+    let pinned = link.store.pinned(link.repository)?;
     let mut ids = std::mem::take(&mut walk.work);
     let mut asking: BTreeSet<NodeId> = ids.iter().cloned().collect();
     let mut leads = std::mem::take(&mut walk.leads);
@@ -337,6 +359,15 @@ fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase
                     }
                 }
             },
+        }
+    }
+    for (number, at) in pinned {
+        match (issues.contains_key(&number), walk.pinned) {
+            (false, _) | (true, PinnedTrees::All) => leads.named.extend([number]),
+            (true, PinnedTrees::PinnedSince(since)) if at >= since => {
+                leads.held_issues.extend([number]);
+            }
+            (true, PinnedTrees::PinnedSince(_)) => {}
         }
     }
     Ok(Resumable::Fetching(Batches {

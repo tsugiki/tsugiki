@@ -23,6 +23,7 @@ const issue = (number: number): ListedItem => {
     state: "OPEN",
     people: ["issue-author"],
     mute_author: { kind: "mute", login: "issue-author" },
+    pinned: false,
     updated_at,
     pull_requests: [
       {

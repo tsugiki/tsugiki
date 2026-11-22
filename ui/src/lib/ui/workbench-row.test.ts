@@ -36,6 +36,7 @@ const issue: IssueItem = {
   state: "OPEN",
   people: ["issue-author", "some-author"],
   mute_author: { kind: "mute", login: "issue-author" },
+  pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [
     { kind: "pr", ...row, backports: [] },

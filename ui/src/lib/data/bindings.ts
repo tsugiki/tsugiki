@@ -130,6 +130,10 @@ export const commands = {
 	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
 	/**  Unmutes `author` in `repository`, and returns at once. */
 	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
+	/**  Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows. */
+	pin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("pin", { repository, number })),
+	/**  Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows. */
+	unpin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unpin", { repository, number })),
 	/**
 	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,
 	 *  or says why it couldn't. The window then asks for the Inbox again. This waits on the session's thread
@@ -1286,6 +1290,12 @@ export type Hit = {
 	text: string,
 };
 
+/**  An Issue whose tree holds the PR on show, with whether the user pinned it (#488). */
+export type HoldingIssue = {
+	number: number,
+	pinned: boolean,
+};
+
 /**  What the window opens on. */
 export type Home = Home_Serialize | Home_Deserialize;
 
@@ -1646,6 +1656,8 @@ export type IssueItem_Deserialize = {
 	seen: Seen_Deserialize,
 	/**  What Mute author offers for the Issue's author (#494). */
 	mute_author: MuteAuthor,
+	/**  Whether the user pinned the Issue (#488), which its ★ shows. */
+	pinned: boolean,
 };
 
 /**  An Issue on the Workbench, with its tree: each PR Tsugiki knows that fixes it, whatever its state. */
@@ -1663,6 +1675,8 @@ export type IssueItem_Serialize = {
 	seen: Seen_Serialize,
 	/**  What Mute author offers for the Issue's author (#494). */
 	mute_author: MuteAuthor,
+	/**  Whether the user pinned the Issue (#488), which its ★ shows. */
+	pinned: boolean,
 };
 
 /**  The Issues opened while recording, from the click to the Issue on screen. */
@@ -2681,6 +2695,11 @@ export type PrView_Deserialize = {
 	 *  Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
 	 */
 	hidden?: Hidden | null,
+	/**
+	 *  The Issues whose trees hold the PR, in number order. Pin acts on one of them while the PR is on show
+	 *  (#488), and on none for a Standalone PR.
+	 */
+	issues: HoldingIssue[],
 } & WorkbenchRow_Deserialize;
 
 /**  A PR as the Detail pane shows it. */
@@ -2697,6 +2716,11 @@ export type PrView_Serialize = {
 	 *  Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
 	 */
 	hidden: Hidden | null,
+	/**
+	 *  The Issues whose trees hold the PR, in number order. Pin acts on one of them while the PR is on show
+	 *  (#488), and on none for a Standalone PR.
+	 */
+	issues: HoldingIssue[],
 } & WorkbenchRow_Serialize;
 
 /**  A PR's description, its recent comments, and its Reviews. */

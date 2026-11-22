@@ -119,8 +119,8 @@ impl Inbox {
     }
 
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
-    /// the database and never on a sync (ADR 0018). A page with nothing left to list, as when Archive, Mute
-    /// and Show muted took out all it held, gives way to the next older one, so the window never gets an
+    /// the database and never on a sync (ADR 0018). A page with nothing left to list, as when Archive, Mute,
+    /// Pin and Show muted took out all it held, gives way to the next older one, so the window never gets an
     /// empty page with more to come.
     pub(crate) fn read(
         reader: &StoreReader,
@@ -151,8 +151,8 @@ impl Inbox {
         reader.read_snapshot(&repository.name, job)
     }
 
-    /// The page `read` holds, Archived and Muted items left out, and the rows Muted authors wrote as `show`
-    /// says.
+    /// The page `read` holds, Archived and Muted items and Pinned issues left out, and the rows Muted authors
+    /// wrote as `show` says.
     fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
@@ -161,9 +161,11 @@ impl Inbox {
             &BTreeSet::new(),
             &causes,
         );
-        // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
-        // A Muted author's item stays for "Show muted" to judge, unless one of those takes it out too.
+        // Archive takes an item out until it comes back (#490), Mute until the user unmutes it (#492), and a
+        // pin until the user unpins it (#488). A Muted author's item stays for "Show muted" to judge, unless
+        // one of those takes it out too.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
+            .filter(|item| !matches!(item, WorkbenchItem::Issue(issue) if issue.pinned))
             .filter_map(|item| match show {
                 ShowMuted::On => Some(ListedItem::of(&causes, item)),
                 ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),

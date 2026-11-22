@@ -23,6 +23,7 @@
     onarchive,
     onmute,
     onmuteauthor,
+    onpin,
     focusable = false,
     header,
     repositoryState,
@@ -41,6 +42,8 @@
     /** Mute author on the Issue's author, or Unmute author on a Muted author, as the header's button offers
      * for the view on show (#494). */
     onmuteauthor: (view: IssueView) => void;
+    /** Pin, or Unpin on a Pinned issue, as the header's ★ offers for the view on show (#488). */
+    onpin: (view: IssueView) => void;
     /** Whether the pane takes the focus, as it does while the Issue list is hidden. Otherwise a click in it
      * leaves the focus where it was, so Enter still opens the row under the cursor. */
     focusable?: boolean;
@@ -185,6 +188,11 @@
         <!-- A Muted Issue offers Unmute and Mute author (#492), and a Muted author's Issue only Unmute author
              (#494). Mute author is off on the user's own Issue. -->
         <MarkButton seen={view.seen} {onmark} marks={!muted}>
+          <button
+            onclick={() => {
+              onpin(view);
+            }}>{view.pinned ? "★ Unpin" : "☆ Pin"}</button
+          >
           {#if !muted}
             <button
               onclick={() => {

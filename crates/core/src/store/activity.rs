@@ -120,6 +120,17 @@ pub(super) const SHOW_MUTED: &str = "
     ) WITHOUT ROWID;
 ";
 
+/// The user's Pinned issues (#488), each with the moment the user pinned it. A sync after that moment reads
+/// the Issue's whole tree, as for the user's own Issues.
+pub(super) const PINNED: &str = "
+    CREATE TABLE pinned (
+        repository TEXT NOT NULL COLLATE NOCASE,
+        number INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (repository, number)
+    ) WITHOUT ROWID;
+";
+
 /// The Issues and PRs a save found closed that the store held open (#820), until the sync judges whether
 /// each closing archives an item. The sync judges right after the step that saved them, while the facts
 /// still say what put the item in Reach, and a closing left unjudged waits for the next step that saves.
@@ -595,6 +606,51 @@ pub(super) fn show_muted(
     Ok(found.map_or(ShowMuted::Off, |()| ShowMuted::On))
 }
 
+/// Pins Issue `number` (#488) at `now`, unless the user pinned it already, which keeps the moment of that
+/// pin. A pin keeps the Issue on the Workbench, so it unarchives the Issue too, and it takes the Issue out of
+/// the Inbox as Archive and Mute do, where a PR opening on it had brought it back (#823).
+pub(super) fn pin(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    number: u32,
+    now: OffsetDateTime,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO pinned (repository, number, at) VALUES (:repository, :number, :at)",
+            named_params! { ":repository": repository, ":number": number, ":at": now.unix_timestamp() },
+        )
+        .map(drop)?;
+    let key = ItemKey::Issue { number };
+    unarchive(&transaction, repository, key)?;
+    forget_brought_back(&transaction, repository, key)?;
+    transaction.commit()
+}
+
+/// Unpins Issue `number` (#488).
+pub(super) fn unpin(
+    connection: &Connection,
+    repository: &RepositoryName,
+    number: u32,
+) -> rusqlite::Result<()> {
+    connection
+        .execute(
+            "DELETE FROM pinned WHERE repository = :repository AND number = :number",
+            named_params! { ":repository": repository, ":number": number },
+        )
+        .map(drop)
+}
+
+/// The Pinned issues of `repository`, each with the moment the user pinned it (#488).
+pub(super) fn pinned(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, OffsetDateTime>> {
+    let query = "SELECT number, at FROM pinned WHERE repository = :repository";
+    moments(connection, query, repository, Items::All)
+}
+
 /// The Muted authors of `repository`, by login.
 fn muted_authors(
     connection: &Connection,
@@ -1054,6 +1110,8 @@ pub(super) fn read_facts_of(
     );
     let marked_unseen =
         format!("SELECT number, at FROM marked_unseen WHERE repository = :repository {condition}");
+    let pinned =
+        format!("SELECT number, at FROM pinned WHERE repository = :repository {condition}");
     let ci_finished = format!(
         "SELECT number, ci_finished_at AS at FROM pull_requests
          WHERE repository = :repository AND ci_finished_at IS NOT NULL {condition}"
@@ -1066,6 +1124,7 @@ pub(super) fn read_facts_of(
         archived: archived(connection, repository, items)?,
         muted: muted(connection, repository, items)?,
         muted_authors: muted_authors(connection, repository)?,
+        pinned: moments(connection, &pinned, repository, items)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,
         failed_checks: failed_checks::read(connection, repository, items)?,

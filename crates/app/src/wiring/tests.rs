@@ -1009,6 +1009,24 @@ fn mute_and_unmute_tell_the_window() {
 }
 
 #[test]
+fn pin_and_unpin_tell_the_window() {
+    let (folders, _root) = temp_folders("wired-pin");
+    let wired = Wired::start(Ok(folders), no_network());
+    let asked = json!({ "repository": CPYTHON, "number": 7 });
+
+    drop(wired.ask("pin", asked.clone()).unwrap());
+    let pinned = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    drop(wired.ask("unpin", asked).unwrap());
+    let unpinned = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let refused = wired.ask("pin", json!({ "repository": "no-slash", "number": 7 }));
+    drop(wired.stop());
+
+    assert_eq!(pinned, json!({ "repository": CPYTHON, "items": [7] }));
+    assert_eq!(unpinned, pinned);
+    assert!(refused.is_err(), "a Repository name that isn't one");
+}
+
+#[test]
 fn mute_author_and_unmute_author_tell_the_window() {
     let (folders, _root) = temp_folders("wired-mute-author");
     let wired = Wired::start(Ok(folders), no_network());

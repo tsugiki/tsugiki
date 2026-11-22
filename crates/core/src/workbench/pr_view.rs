@@ -6,7 +6,7 @@ use serde::Serialize;
 use specta::Type;
 
 use super::trees::{ItemRead, Named, Trees};
-use super::{Hidden, WorkbenchRow, candidates};
+use super::{Hidden, WorkbenchItem, WorkbenchRow, candidates};
 use crate::error::Error;
 use crate::facts::pull_request_content::PullRequestContent;
 use crate::repository_settings::RepositorySettings;
@@ -26,6 +26,16 @@ pub struct PrView {
     /// Whether the user's own state hides the item that holds the PR. On a Muted item the header offers no
     /// Mark Seen or Mark Unseen (#492), whether or not the list holds the item.
     pub hidden: Option<Hidden>,
+    /// The Issues whose trees hold the PR, in number order. Pin acts on one of them while the PR is on show
+    /// (#488), and on none for a Standalone PR.
+    pub issues: Vec<HoldingIssue>,
+}
+
+/// An Issue whose tree holds the PR on show, with whether the user pinned it (#488).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct HoldingIssue {
+    pub number: u32,
+    pub pinned: bool,
 }
 
 impl PrView {
@@ -57,18 +67,28 @@ impl PrView {
         let causes = Causes::of(&facts, conventions);
         let shares_review_of =
             SharedReviews::of(&facts.pull_requests, conventions).origin_of(number);
-        let found = candidates((facts, &links), repository, &BTreeSet::new(), &causes)
-            .iter()
-            .find_map(|item| {
-                let row = item.rows().into_iter().find(|row| row.number == number)?;
-                let hidden = Hidden::of(&causes, item.key(), &item.numbers());
-                Some((row.clone(), hidden))
-            });
+        let items = candidates((facts, &links), repository, &BTreeSet::new(), &causes);
+        let holds = |item: &WorkbenchItem| item.rows().iter().any(|row| row.number == number);
+        let issues = (items.iter().filter(|item| holds(item)))
+            .filter_map(|item| match item {
+                WorkbenchItem::Issue(issue) => Some(HoldingIssue {
+                    number: issue.number,
+                    pinned: issue.pinned,
+                }),
+                WorkbenchItem::StandalonePr(_) | WorkbenchItem::StandaloneBackport(_) => None,
+            })
+            .collect();
+        let found = items.iter().find_map(|item| {
+            let row = item.rows().into_iter().find(|row| row.number == number)?;
+            let hidden = Hidden::of(&causes, item.key(), &item.numbers());
+            Some((row.clone(), hidden))
+        });
         Ok(found.map(|(row, hidden)| Self {
             row,
             content,
             shares_review_of,
             hidden,
+            issues,
         }))
     }
 }

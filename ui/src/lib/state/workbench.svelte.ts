@@ -83,6 +83,9 @@ export type Hiding = { key: ItemKey; mark: SeenMark };
 /** A line the cursor stops on: an item of the list, or a PR or Backport in its tree, with the Issue above. */
 export type Stop = { number: number; kind: "issue" | "pull_request"; issue: number | undefined };
 
+/** The Issue that Pin or Unpin acts on, with whether the user pinned it (#488). */
+export type Pin = { number: number; pinned: boolean };
+
 /** Whether two stops are the same line. A PR that fixes two Issues has a line under each. */
 export const sameStop = (a: Stop | undefined, b: Stop) => a?.number === b.number && a.issue === b.issue;
 
@@ -477,6 +480,13 @@ export class WorkbenchState {
     return isMuted(this.#itemOf(stop, this.#everything)?.hidden);
   }
 
+  /** The Issue that holds line `stop`, with whether the user pinned it (#488). Nothing on a Standalone PR's
+   * line, as only Issues take a pin. */
+  pinOf(stop: Stop): Pin | undefined {
+    const item = this.#itemOf(stop, this.#everything);
+    return item?.kind === "issue" ? { number: item.number, pinned: item.pinned } : undefined;
+  }
+
   /** Mark Unseen on Issue or PR `number`. It unarchives `archived`, the item that holds it if the window
    * draws that Archived, as the flag on a PR in an Archived Issue's tree would otherwise leave the Issue
    * archived (#491). Says what went wrong, if anything did. */
@@ -521,6 +531,18 @@ export class WorkbenchState {
   /** Unmutes the author `login`, whose items come back. Says what went wrong, if anything did. */
   async unmuteAuthor(login: string) {
     return problemIn(commands.unmuteAuthor(this.#repository, login));
+  }
+
+  /** Pins Issue `number` (#488), which then stays on the Workbench and leaves the Inbox. A cursor on its line
+   * in the Inbox lands on the item after it. Says what went wrong, if anything did. */
+  async pin(number: number) {
+    const leaves = this.#shown.kind === "inbox" ? ({ kind: "issue", number } as const) : undefined;
+    return this.#leave(leaves, commands.pin(this.#repository, number));
+  }
+
+  /** Unpins Issue `number` (#488). Says what went wrong, if anything did. */
+  async unpin(number: number) {
+    return problemIn(commands.unpin(this.#repository, number));
   }
 
   /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),

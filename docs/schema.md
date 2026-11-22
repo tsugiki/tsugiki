@@ -304,6 +304,11 @@ erDiagram
     show_muted {
         TEXT repository PK
     }
+    pinned {
+        TEXT repository PK
+        INTEGER number PK
+        INTEGER at
+    }
     read_only {
         TEXT repository PK
         TEXT token_kind

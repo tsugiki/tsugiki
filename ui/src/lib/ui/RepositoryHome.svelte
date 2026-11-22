@@ -37,6 +37,7 @@
     type BackportRow,
     type ListedItem,
     type MuteAuthor,
+    type Pin,
     type Seen,
     type Stop,
     type SidebarView,
@@ -689,6 +690,34 @@
       : () => void sayMarkProblem((opened) => opened.unmuteAuthor(login));
   }
 
+  /** The Issue the Detail pane shows, or the Issue that holds the PR on show: of those its view names, the
+   * one the PR opened from, or else the first, and before the view arrives the Issue that holds its line in
+   * the list (#488). Nothing on a Standalone PR. */
+  function detailPin(): Pin | undefined {
+    if (detail instanceof IssueViewState) {
+      const view = detail.view;
+      return view ? { number: view.number, pinned: view.pinned } : undefined;
+    }
+    const issues = detail?.view?.issues ?? [];
+    const from = detail?.issue;
+    const line = detailLine();
+    return issues.find((issue) => issue.number === from) ?? issues[0] ?? (line && workbench.pinOf(line));
+  }
+
+  /** What `Ctrl+K P` does for a press `at` (#488): it pins the Issue that holds the line under the cursor,
+   * or the Detail pane's Issue while that holds the focus or the list is hidden, as for `E`, or unpins a
+   * Pinned issue. Nothing where no Issue is, as on a Standalone PR. */
+  function keyPin(at: KeyTarget): (() => void) | undefined {
+    const stop = forDetail(at) ? undefined : workbench.underCursor;
+    const pin = forDetail(at) ? detailPin() : stop && workbench.pinOf(stop);
+    return pin && (() => void togglePin(pin));
+  }
+
+  /** Pins the Issue `pin` names, or unpins it if the user pinned it. */
+  async function togglePin({ number, pinned }: Pin) {
+    await sayMarkProblem((opened) => (pinned ? opened.unpin(number) : opened.pin(number)));
+  }
+
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
   async function archive(archived: Hiding) {
     await finish(hidingOnDetail(archived), (opened) => opened.archive(archived));
@@ -1097,6 +1126,7 @@
     mute: (at) => once(keyMute(at)),
     // It has no key unless `[keys]` gives it one (#494).
     mute_author: (at) => once(keyMuteAuthor(at)),
+    pin: (at) => once(keyPin(at)),
     toggle_issue_list: () => (held) => {
       if (!held) void toggleListByKey();
     },
@@ -1311,6 +1341,16 @@
   {/if}
 {/snippet}
 
+<!-- ★ on a Pinned issue's row, and ☆ on another Issue's while the pointer or the focus is on the row, which
+     pin and unpin it (#488). It sits above the title's cover, so a click on it pins rather than opens. -->
+{#snippet star(pin: Pin)}
+  <button
+    class={["pin", { pinned: pin.pinned }]}
+    aria-label={`${pin.pinned ? "Unpin" : "Pin"} #${String(pin.number)}`}
+    onclick={() => void togglePin(pin)}>{pin.pinned ? "★" : "☆"}</button
+  >
+{/snippet}
+
 <!-- An item's three lines: the people, its headline with the size of its tree and its age, then why it Needs
      attention, or else a summary. -->
 {#snippet listed(item: ListedItem)}
@@ -1355,6 +1395,10 @@
           <small class="archived">Muted</small>
         {/if}
         <small class="age">{ago(item.updated_at, now)}</small>
+        <!-- Only Issues take a pin (#488). -->
+        {#if item.kind === "issue"}
+          {@render star({ number: item.number, pinned: item.pinned })}
+        {/if}
         {#if inArchived}
           <button
             class="link unarchive"
@@ -1598,6 +1642,7 @@
         onarchive={archiveByButton}
         onmute={muteByButton}
         onmuteauthor={muteAuthorByButton}
+        onpin={(view) => void togglePin({ number: view.number, pinned: view.pinned })}
         onopenpr={(number) => {
           open({ number, kind: "pull_request", issue: issue.number });
         }}
@@ -1817,6 +1862,29 @@
     z-index: 1;
     flex: none;
     font-size: 12px;
+  }
+
+  .pin {
+    all: unset;
+    position: relative;
+    z-index: 1;
+    flex: none;
+    width: 1em;
+    text-align: center;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+
+  .pin.pinned {
+    color: var(--accent);
+  }
+
+  .row:not(:hover, :focus-within) .pin:not(.pinned) {
+    opacity: 0;
+  }
+
+  .pin:focus-visible {
+    outline: 1px solid var(--focus-border);
   }
 
   /* › and ⌄ before an Issue with PRs, which fold and unfold its tree as ← and → do. It sits above the

@@ -8,9 +8,10 @@ use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
     FEW, Harness, LARGE, RATE_LIMIT, counted, cpython, empty_window_page, fetched, fetched_nodes,
-    issue_references, issues, no_issue_references, nothing, pr_node, run_to_the_end,
-    searches_finding,
+    fetched_titled, issue_references, issues, no_issue_references, nothing, pr_node,
+    run_to_the_end, searches_finding,
 };
+use crate::testing::issue_facts;
 use crate::token::Token;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -174,6 +175,39 @@ fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
     );
     assert_eq!(found_by(&harness, "a"), [1, 10]);
     assert_eq!(harness.numbers(), [10]);
+    harness.finish();
+}
+
+#[test]
+fn a_first_sync_fetches_each_pinned_issue_and_reads_its_whole_tree_with_the_users_work() {
+    let mut replies = searches_finding(&[]);
+    replies.push(issues(&[7, 8], RATE_LIMIT));
+    replies.push(issue_references(&[(7, &[30]), (8, &[])], RATE_LIMIT));
+    replies.push(fetched_titled(&[30], RATE_LIMIT, |_| {
+        "gh-7: Fix it".to_owned()
+    }));
+    let harness = Harness::new("filter-pinned", replies);
+    let store = &harness.db.store;
+    // Tsugiki holds Issue 7 already, and a first sync fetches it again all the same.
+    store.save_issues(&cpython(), vec![issue_facts(7)]).unwrap();
+    let pinned_at = OffsetDateTime::now_utc();
+    store.pin(&cpython(), 7, pinned_at).unwrap();
+    store.pin(&cpython(), 8, pinned_at).unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(filtering(&[]));
+
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations()[4..],
+        [
+            "FetchIssues",
+            "FetchIssueReferences",
+            "FetchTreePullRequests"
+        ]
+    );
+    assert_eq!(harness.issue_numbers(), [7, 8]);
+    assert_eq!(harness.numbers(), [30]);
     harness.finish();
 }
 

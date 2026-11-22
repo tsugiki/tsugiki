@@ -889,3 +889,59 @@ fn an_open_issue_a_pr_brought_back_leaves_the_mark_when_it_closes() {
     // The closing archives the Issue or leaves it out of the Inbox, as for any Issue that closes.
     assert_eq!(read.unwrap().unwrap(), BTreeSet::new());
 }
+
+#[test]
+fn a_pin_survives_a_restart_per_repository_and_keeps_the_moment_of_the_first_pin() {
+    let (path, _folder) = temp_database("activity-pinned");
+    let repository = cpython();
+    let elsewhere = RepositoryName::parse("python/mypy").unwrap();
+    let first = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
+    let later = first + Duration::hours(1);
+    let store = Store::open(&path).unwrap();
+    store.pin(&repository, 7, first).unwrap();
+    store.pin(&repository, 7, later).unwrap();
+    store.pin(&repository, 8, later).unwrap();
+    store.pin(&elsewhere, 9, later).unwrap();
+    store.close();
+
+    let store = Store::open(&path).unwrap();
+    // Repository names ignore case, as GitHub's do.
+    let restarted = store.pinned(&RepositoryName::parse("Python/CPython").unwrap());
+    let in_facts = store.work_facts(&repository).unwrap().activity.pinned;
+    store.unpin(&repository, 8).unwrap();
+    let after = store.pinned(&repository).unwrap();
+    let in_another = store.pinned(&elsewhere).unwrap();
+
+    store.close();
+    let both = BTreeMap::from([(7, first), (8, later)]);
+    assert_eq!(restarted.unwrap(), both);
+    assert_eq!(in_facts, both);
+    assert_eq!(after, BTreeMap::from([(7, first)]));
+    assert_eq!(in_another, BTreeMap::from([(9, later)]));
+}
+
+#[test]
+fn a_pin_unarchives_its_issue_and_takes_it_out_of_the_inbox_a_pr_brought_it_back_to() {
+    let (path, _folder) = temp_database("activity-pin-unarchives");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    archived_closed(&store, &[1, 2, 3], now);
+    store
+        .save_pull_requests(&repository, vec![titled(11, "gh-1, gh-2: Follow up", now)])
+        .unwrap();
+    let opened = Opened {
+        issues: vec![1, 2],
+        openings: BTreeSet::from([11]),
+    };
+    store.bring_back(&repository, opened).unwrap();
+
+    store.pin(&repository, 2, now).unwrap();
+    store.pin(&repository, 3, now).unwrap();
+    let read = store.call(move |connection| brought_back(connection, &cpython()));
+    let archived = (store.work_facts(&repository).unwrap().activity).archived;
+
+    store.close();
+    assert_eq!(read.unwrap().unwrap(), BTreeSet::from([1]));
+    assert_eq!(archived, BTreeMap::new());
+}

@@ -97,6 +97,7 @@ export const listedIssue = (
   pull_requests: [],
   seen: { mark: { numbers: [number], up_to: null, findings: [] }, state: "seen" },
   mute_author: { kind: "mute", login: "issue-author" },
+  pinned: false,
   attention: null,
   key: { kind: "issue", number },
   hidden: null,

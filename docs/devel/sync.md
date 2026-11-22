@@ -27,13 +27,17 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     PR that isn't a Backport to the Issues it fixes under the Repository's Conventions and brings each such
     Archived Issue back to the Inbox ([workbench.md](workbench.md), #823). GitHub's poll gives no time a PR
     opened, so an old PR the cache lacks that changes counts as one that opened.
+  - A refresh counts the Pinned issues as the user's work, beside the Filters' finds: it fetches each one
+    the database lacks, reads the tree of each one pinned since the last refresh, and the poll saves each
+    one that changed and reads its tree (#488).
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size ([ADR
   0015](../adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). A small one (up to 500 open
   Issues and PRs) loads everything open, plus what closed in the last 30 days. A large one like CPython loads
   the last 30 days of updates; the threshold and the window are settings. Either way it loads what waits on
-  the user first (Review requests, PRs with the user's Review, Own PRs, assignments, then the Filters), so the
-  Workbench is right in about a minute, then the trees of the user's Issues, then the rest of the window
+  the user first (Review requests, PRs with the user's Review, Own PRs, assignments, then the Filters and the
+  Pinned issues), so the Workbench is right in about a minute, then the trees of the user's Issues, Pinned
+  issues included, whatever their age, then the rest of the window
   newest first, with the PRs that changed in the window, and for a small one its open items from before the
   window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
   loads only the added days; narrowing it deletes nothing.

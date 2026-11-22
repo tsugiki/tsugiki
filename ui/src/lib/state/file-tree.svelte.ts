@@ -24,6 +24,11 @@ export type TreeSource = Pick<PrFilesState, "view" | "error" | "unfetched" | "wa
 /** A row by what it shows, so the cursor stays on it as the rows around it fold, filter or change. */
 type RowKey = { kind: "folder" | "file"; path: string };
 
+/** Where the cursor is: following the file on screen, on its row or the folded folder's it sits in, or held
+ * on the row the user put it on, by what that row shows, until a file other than `screen`, by its path,
+ * comes on screen. */
+type CursorAt = { kind: "following" } | { kind: "held"; key: RowKey; screen: string | undefined };
+
 /** The tree of a diff, with its files and the place of each file's row among the tree's rows. */
 type Tree = { tree: FileTree; files: DiffFile[]; rowOf: number[] };
 
@@ -46,11 +51,13 @@ export class FileTreeState {
   /** The same while the filter holds text, which starts every folder it keeps unfolded. A new text starts
    * them so again. */
   #chosenFiltered = new SvelteMap<string, boolean>();
-  /** The row the user put the cursor on, and the file on screen at the time: once another file comes on
-   * screen, the cursor follows it. */
-  #cursorKey = $state.raw<{ key: RowKey; screen: number | undefined }>();
+  /** Where the cursor is: following the file on screen, or held where the user put it. */
+  #cursorAt = $state.raw<CursorAt>({ kind: "following" });
+  /** The hold that another file coming on screen ended, which `cursor` notes as it reads the change: the
+   * cursor follows from then on, though that file comes back. Not reactive, as only `cursor` reads it. */
+  #ended: CursorAt | undefined;
   /** The row the cursor was on last, however it got there, which it keeps while there is no file to
-   * follow. Not reactive: `cursor` notes it each time it works the row out, and `moveTo` as it moves. */
+   * follow. Not reactive: `cursor` notes it each time it works the row out, and a hold as it moves. */
   #lastKey: RowKey | undefined;
 
   /** The tree of the diff the Files tab, `files`, holds, and the file it has on screen. */
@@ -153,14 +160,26 @@ export class FileTreeState {
    * screen, and then the row the tree marks. While it marks none, as while the filter hides the file on
    * screen, the row the cursor was on last, and the first while none of these shows. */
   readonly cursor: number = $derived.by(() => {
-    const chosen = this.#cursorKey;
-    const held = chosen?.screen === this.#files.onScreen ? this.#find(chosen?.key) : -1;
-    const at = held === -1 ? (this.current ?? this.#find(this.#lastKey)) : held;
-    const cursor = Math.max(at, 0);
+    const at = this.#cursorAt;
+    if (at.kind === "held" && at.screen !== this.#screen) this.#ended = at;
+    const held = at.kind === "held" && at !== this.#ended ? this.#find(at.key) : -1;
+    const cursor = Math.max(held === -1 ? (this.current ?? this.#find(this.#lastKey)) : held, 0);
     const row = this.rows[cursor];
     if (row !== undefined) this.#lastKey = keyOf(row);
     return cursor;
   });
+
+  /** The path of the file on screen in the Files tab. */
+  get #screen(): string | undefined {
+    const file = this.#files.onScreen;
+    return file === undefined ? undefined : this.#tree?.files[file]?.path;
+  }
+
+  /** Holds the cursor on `row`, as the user moves it there or folds it. */
+  #hold(row: ShownRow) {
+    this.#lastKey = keyOf(row);
+    this.#cursorAt = { kind: "held", key: this.#lastKey, screen: this.#screen };
+  }
 
   /** Where the row `key` names shows among the rows, or -1 while it doesn't. */
   #find(key: RowKey | undefined): number {
@@ -170,9 +189,7 @@ export class FileTreeState {
   /** Puts the cursor on row `index`, held within the rows. */
   moveTo(index: number) {
     const row = rowWithin(this.rows, index);
-    if (row === undefined) return;
-    this.#lastKey = keyOf(row);
-    this.#cursorKey = { key: this.#lastKey, screen: this.#files.onScreen };
+    if (row !== undefined) this.#hold(row);
   }
 
   /** ←: folds the open folder under the cursor, or moves the cursor to the folder that holds its row. */
@@ -181,6 +198,7 @@ export class FileTreeState {
     const row = this.rows[cursor];
     if (row === undefined) return;
     if (row.kind === "folder" && !row.folded) {
+      this.#hold(row);
       this.#folds.set(row.row.path, true);
       return;
     }
@@ -193,29 +211,34 @@ export class FileTreeState {
   unfold() {
     const row = this.rows[this.cursor];
     if (row?.kind !== "folder") return;
-    if (row.folded) this.#folds.set(row.row.path, false);
-    else this.moveTo(this.cursor + 1);
+    if (!row.folded) {
+      this.moveTo(this.cursor + 1);
+      return;
+    }
+    this.#hold(row);
+    this.#folds.set(row.row.path, false);
   }
 
   /** Enter or a click on the row under the cursor: a file's place among the diff's files, to open, or else
-   * the folder's fold flips. The file it opens is the one on screen next, which the cursor stays on until
-   * another comes on screen. */
+   * the folder's fold flips. The file it opens comes on screen, and the cursor follows it. */
   pick(): number | undefined {
     const row = this.rows[this.cursor];
     if (row?.kind === "file") {
-      this.#cursorKey = { key: keyOf(row), screen: row.row.file };
+      this.#cursorAt = { kind: "following" };
       return row.row.file;
     }
-    if (row !== undefined) this.#folds.set(row.row.path, !row.folded);
+    if (row === undefined) return undefined;
+    this.#hold(row);
+    this.#folds.set(row.row.path, !row.folded);
     return undefined;
   }
 
   /** The filter's text as the user types it, which unfolds every folder it keeps. The cursor goes back to
-   * the file on screen. */
+   * following the file on screen. */
   type(text: string) {
     this.filter = text;
     this.#chosenFiltered.clear();
-    this.#cursorKey = undefined;
+    this.#cursorAt = { kind: "following" };
   }
 }
 

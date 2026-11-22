@@ -177,11 +177,12 @@ it("marks the file on screen in the Files tab, and scrolls the list to keep it i
   const current = list().querySelector<HTMLElement>('[aria-current="true"]');
   expect(current?.textContent).toContain("test_900.py");
   expect(list().scrollTop).toBe(901 * ROW);
-  // The list draws only the rows near what shows, and names the cursor's row only while it draws it.
+  // The list draws only the rows near what shows, and names the cursor's row, which stays on the folder the
+  // user unfolded, only while it draws it.
   expect(items().length).toBeLessThan(40);
-  expect(list().getAttribute("aria-activedescendant")).toBe(current?.id);
+  expect(list().getAttribute("aria-activedescendant")).toBeNull();
   list().scrollTop = 0;
   await fireEvent.scroll(list());
   expect(texts()[0]).toBe("▾Lib");
-  expect(list().getAttribute("aria-activedescendant")).toBeNull();
+  expect(list().getAttribute("aria-activedescendant")).toBe(items()[0]?.id);
 });

@@ -20,7 +20,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   "View: One File at a Time" / "View: All Files" in the command palette switch the PR on show until it
   closes. The other segment's tooltip names `Ctrl+K O`, or the key `[keys]` puts in its place. A screen
   reader hears a group named "Files" of two buttons, the one on show pressed. Switching keeps the place:
-  the file at the top of the tab becomes the one shown, and switching back scrolls to where it was.
+  the file at the top of the tab becomes the one shown, or the file a move went to while the user hasn't
+  scrolled from where it landed, as a short file near the end can't reach the top, and switching back
+  scrolls to where it was. `Alt+PageDown` and `Alt+PageUp` go on from the same file.
   Tsugiki never switches by itself, however large the PR.
 - One file at a time, the NEWS entries come first, on a page of their own, then each file in the order of
   all files, a Generated file collapsed to its header as there. The threads on files no longer in the diff

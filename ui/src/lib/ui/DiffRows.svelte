@@ -88,9 +88,19 @@
   // The tab goes to the file after the one at the top, and shows that one alone as it switches. The rail's
   // tree marks the file on screen.
   $effect(() => {
-    const below = scrollTop - newsHeight;
-    diff.scrolled(Math.floor(below / ROW), Math.floor((below + height) / ROW) - 1);
+    // It runs again as the NEWS entries grow or shrink, as well as on a scroll.
+    void newsHeight;
+    report(false);
   });
+
+  /** Tells the tab the place at the top, or as `landing`, where a move to a page scrolled it. It reads the
+   * NEWS entries' height afresh, as a move right after the tab opens does, so the report that follows as
+   * `newsHeight` catches up says the same place, and the tab stays at the page it moved to. */
+  function report(landing: boolean) {
+    // An effect runs once the tab is drawn, so it is bound.
+    const news = (newsBox as HTMLElement).offsetHeight;
+    diff.scrolled(Math.floor((scrollTop - news) / ROW), landing);
+  }
 
   /** The layout the rows were last drawn from, which a new layout starts from. */
   let drawn: PrFilesState["layout"] | undefined;
@@ -122,6 +132,7 @@
       }
       // The rows to draw follow at once, as the scroll event comes after the next frame.
       scrollTop = region.scrollTop;
+      if (jump !== undefined && "page" in jump) report(true);
     });
   });
 

@@ -670,6 +670,15 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
   await page.keyboard.press("Alt+PageUp");
   await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
   await expect(current).toHaveText("os.py+40−0");
+  // The next file is the short one again, past which there is none, and the file before goes back.
+  await page.keyboard.press("Alt+PageDown");
+  await expect.poll(() => headerBelowTop(diff, "setup.py")).toBeGreaterThan(100);
+  await expect(current).toHaveText("setup.py+3−0");
+  await page.keyboard.press("Alt+PageDown");
+  await expect(current).toHaveText("setup.py+3−0");
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
+  await expect(current).toHaveText("os.py+40−0");
   await page.keyboard.press("Alt+PageUp");
   await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
   await expect(current).toHaveText("ast.py2+98−0");

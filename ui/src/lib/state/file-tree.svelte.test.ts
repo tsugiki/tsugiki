@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { treedFiles as diff } from "$lib/testing/fixtures";
+import { treedFiles as diff, fileRow, folderRow } from "$lib/testing/fixtures";
 import { treeSource } from "$lib/testing/tree-source.svelte";
 import { FileTreeState } from "./file-tree.svelte";
 import type { PrFiles } from "./pr-files.svelte";
@@ -148,6 +148,73 @@ it("keeps the cursor where the user put it until another file comes on screen, w
   expect(state.cursor).toBe(1);
   files.onScreen = 0;
   expect(state.cursor).toBe(0);
+});
+
+it("follows from the first change of the file on screen, though the file it held on comes back", () => {
+  const { files, tree: state } = tree(diff());
+  files.onScreen = 1;
+  state.moveTo(0);
+  const held = state.cursor;
+  files.onScreen = 2;
+  const followed = state.cursor;
+  files.onScreen = 1;
+  const back = state.cursor;
+  // Over the NEWS entries, no file on screen is a change too, and back to none is another.
+  state.moveTo(5);
+  files.onScreen = undefined;
+  state.moveTo(0);
+  files.onScreen = 3;
+  const onFile = state.cursor;
+  files.onScreen = undefined;
+
+  expect([held, followed, back, onFile, state.cursor]).toEqual([0, 4, 3, 5, 5]);
+});
+
+it("holds the cursor by the path of the file on screen, which a newer diff lists elsewhere", () => {
+  const { files, tree: state } = tree(diff());
+  files.onScreen = 1;
+  state.moveTo(5);
+  // The newer diff drops Lib/ast.py, so Lib/test/test_ast.py is its first file.
+  files.view = {
+    ...diff(),
+    files: diff().files.slice(1),
+    tree: {
+      rows: [
+        folderRow("Lib", "Lib", 0, 4),
+        folderRow("Lib/test", "test", 1, 4),
+        fileRow(0, "test_ast.py", 2),
+        fileRow(1, "test_re.py", 2),
+        fileRow(2, "README.rst", 0),
+      ],
+      folded: false,
+    },
+  };
+  files.onScreen = 0;
+  const kept = state.cursor;
+  files.onScreen = 1;
+
+  expect([kept, state.cursor]).toEqual([4, 3]);
+});
+
+it("holds the cursor on a folder the user unfolds or folds, where the file on screen sits", () => {
+  const { files, tree: state } = tree(diff(true));
+  // The cursor follows the file on screen onto the folded folder it sits in.
+  files.onScreen = 0;
+  const followed = state.cursor;
+  state.unfold();
+  const unfolded = state.cursor;
+  state.fold();
+  files.onScreen = 1;
+  const refollowed = state.cursor;
+  state.pick();
+
+  expect([followed, unfolded, refollowed, shown(state), state.cursor]).toEqual([
+    0,
+    0,
+    0,
+    ["▾ Lib", "ast.py", "▸ test", "README.rst"],
+    0,
+  ]);
 });
 
 it("follows the file on screen once the user scrolls back from the file they opened to the one before", () => {

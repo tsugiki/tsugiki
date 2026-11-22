@@ -1885,7 +1885,7 @@ it("shows the threads on files the PR no longer changes on a last page of their 
 /** The numbers from `start` up to `end`. */
 const range = (start: number, end: number) => Array.from({ length: end - start }, (_, at) => start + at);
 
-it("goes to the header of the file after the one at the top in all files, and back to the NEWS entries", async () => {
+it("goes to the header of the page after the one the tab is at in all files, and back to the NEWS entries", async () => {
   const files = await loaded({ ...changed(), news: [newsEntry("Misc/NEWS.d/next/x.rst")] });
 
   files.scrolled(-2);
@@ -1893,15 +1893,31 @@ it("goes to the header of the file after the one at the top in all files, and ba
   expect(files.jump).toBeUndefined();
   files.nextFile(1);
   expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+  // The tab lands on the file's header, and the user scrolls on into it.
+  files.scrolled(files.layout.headerOf({ kind: "file", file: 0 }) ?? -1, true);
   files.scrolled(files.layout.placeOfRow(7) ?? -1);
   files.nextFile(1);
   expect(files.jump).toEqual({ page: { kind: "file", file: 1 } });
   files.nextFile(-1);
+  expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+  files.nextFile(-1);
   expect(files.jump).toEqual({ page: { kind: "news" } });
   // Past the last place, as a scroll can land while the layout shrinks, it starts from the first page.
+  files.scrolled(-2, true);
   files.scrolled(999);
   files.nextFile(1);
   expect(files.jump).toEqual({ page: { kind: "file", file: 0 } });
+});
+
+it("goes on from the first page before the tab has said where it is, the NEWS entries when there are some", async () => {
+  const news = { ...changed(), news: [newsEntry("Misc/NEWS.d/next/x.rst")] };
+  const files = await loaded(news);
+  const other = await loaded(news);
+
+  files.nextFile(1);
+  other.toggleMode();
+
+  expect([files.jump, other.shown]).toEqual([{ page: { kind: "file", file: 0 } }, { kind: "news" }]);
 });
 
 it("switches to one file at a time on the file at the top, and back, for as long as the PR stays open", async () => {
@@ -1928,47 +1944,71 @@ it("says which file is on screen, as the rail's tree marks it: at the top of all
   expect(files.onScreen).toBeUndefined();
 });
 
-it("keeps the file the tree went to on screen while its header shows, though it can't reach the top", async () => {
+it("is at the page a move went to while the top stays where the tab landed, though a short file can't reach the top", async () => {
   const files = await loaded(changed());
-  // Before the tab says where it is, as before it was ever drawn, the tree doesn't know.
+  // Before the tab says where it is, as before it was ever drawn, no file is on screen.
   const unseen = files.onScreen;
   files.goToFile(1);
+  // A report before the tab has moved, as it scrolls on, leaves the move as it is.
+  files.scrolled(3);
+  const moved = files.onScreen;
   const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
 
   // A short file at the end of the diff leaves the top of the tab in the file before it.
-  files.scrolled(header - 5, header + 3);
+  files.scrolled(header - 5, true);
+  files.scrolled(header - 5);
   const landed = files.onScreen;
-  files.scrolled(header - 5, header - 1);
-  const scrolledOff = files.onScreen;
-  files.scrolled(header - 5, header + 3);
-  const back = files.onScreen;
-  // Any other move ends it.
-  files.showFile(0);
-  files.scrolled(header - 5, header + 3);
+  files.scrolled(header - 6);
+  const left = files.onScreen;
+  // Back at the place it landed on, the tab is at the page at the top.
+  files.scrolled(header - 5);
 
-  expect([unseen, landed, scrolledOff, back, files.onScreen]).toEqual([undefined, 1, 0, 1, 0]);
+  expect([unseen, moved, landed, left, files.onScreen]).toEqual([undefined, 1, 1, 0, 0]);
 });
 
-it("shows the file the tree went to alone, keeps it past a move it can't make, and drops it with the diff", async () => {
+it("goes on with F7 and Shift+F7 from the page the tab moved to, though its header can't reach the top", async () => {
+  const files = await loaded({
+    ...changed(),
+    threads: shown(diffThread("gone", { kind: "gone", path: "Lib/old.py", code: null })),
+  });
+  files.scrolled(0);
+  files.nextFile(1);
+  const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
+  files.scrolled(header - 5, true);
+
+  files.nextFile(1);
+  const onward = files.jump;
+  // The heading of the threads on files no longer in the diff can't reach the top either.
+  files.scrolled(header - 5, true);
+  files.nextFile(-1);
+  const back = files.jump;
+  files.scrolled(header - 5, true);
+  files.toggleMode();
+
+  expect([onward, back, files.shown]).toEqual([
+    { page: { kind: "gone" } },
+    { page: { kind: "file", file: 1 } },
+    { kind: "file", file: 1 },
+  ]);
+});
+
+it("forgets the page a move went to as a newer diff comes, and keeps it past a move it can't make", async () => {
   const files = await loaded(changed());
   files.goToFile(1);
   const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
-  files.scrolled(header - 5, header + 3);
+  files.scrolled(header - 5, true);
 
   // A file the diff doesn't hold moves nothing.
   files.goToFile(9);
   const kept = files.onScreen;
-  files.toggleMode();
-  const alone = files.shown;
-  files.toggleMode();
-  // A newer diff lists its files in other places.
   core.pullRequestFiles.mockResolvedValue(
     ok(ready("def", 30, [diffFile("Lib/new.py", 0), diffFile("Lib/ast.py", 5), diffFile("Lib/os.py", 10)])),
   );
   await files.ask();
-  files.scrolled(0, 25);
+  // The tab keeps its place at the top, which the newer diff fills with another file.
+  files.scrolled(header - 5);
 
-  expect([kept, alone, files.onScreen]).toEqual([1, { kind: "file", file: 1 }, 0]);
+  expect([kept, files.onScreen]).toEqual([1, 2]);
 });
 
 it("goes to a file from the rail's tree from its top, opened, and leaves the focus where it is", async () => {

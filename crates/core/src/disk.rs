@@ -16,28 +16,25 @@ pub enum FolderSize {
     Missing,
     /// Its files take `mb` whole megabytes.
     Measured { mb: u32 },
-    /// Something is there, but it can't be read as a folder, so its size is unknown.
+    /// Something is there, but it, or a folder inside it, can't be read as a folder, so its size is unknown.
     Unreadable,
 }
 
 impl FolderSize {
     /// How much of the disk `folder` takes now: the length of each file under it, in its folders too. A link
     /// counts as itself, so what it points to doesn't count twice. A file or a folder inside it that goes
-    /// while this counts, as git's upkeep deletes an old pack, counts as nothing, and so does one it can't
-    /// read: the size is for the user to read, not to act on. It reads the disk, so the window asks for it
-    /// off its own thread.
+    /// while this counts, as git's upkeep deletes an old pack, counts as nothing, and so does a file whose
+    /// length it can't read. A folder inside it that is there but can't be read leaves the size unknown, as
+    /// it may hold most of it. It reads the disk, so the window asks for it off its own thread.
     pub fn of(folder: &Path) -> Self {
-        let entries = match fs::read_dir(folder) {
-            Ok(entries) => entries,
-            Err(cause) if cause.kind() == ErrorKind::NotFound => return Self::Missing,
-            Err(_) => return Self::Unreadable,
-        };
         let mut bytes = 0_u64;
-        let mut folders = Vec::new();
-        count(entries, &mut bytes, &mut folders);
+        let mut folders = vec![folder.to_owned()];
         while let Some(next) = folders.pop() {
-            if let Ok(entries) = fs::read_dir(&next) {
-                count(entries, &mut bytes, &mut folders);
+            match fs::read_dir(&next) {
+                Ok(entries) => count(entries, &mut bytes, &mut folders),
+                Err(cause) if cause.kind() == ErrorKind::NotFound && next.as_path() != folder => {}
+                Err(cause) if cause.kind() == ErrorKind::NotFound => return Self::Missing,
+                Err(_) => return Self::Unreadable,
             }
         }
         Self::Measured {

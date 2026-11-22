@@ -34,8 +34,10 @@
   <p class="problem">{dialog.machineProblem}</p>
 {/if}
 <!-- Off until the dialog has read the files, as its other controls are, so Cancel has them to keep the
-     Repository it adds in. -->
-<button class="add" disabled={dialog.current === undefined} onclick={onadd}>Add repository…</button>
+     Repository it adds in, and while Apply saves, whose answer replaces the settings. -->
+<button class="add" disabled={dialog.current === undefined || dialog.applying} onclick={onadd}
+  >Add repository…</button
+>
 
 <style>
   ul {

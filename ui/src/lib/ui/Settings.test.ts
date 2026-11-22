@@ -1297,6 +1297,33 @@ describe("Settings › Repositories", () => {
     expect(core.applySettings).not.toHaveBeenCalled();
   });
 
+  it("stays open and switches nothing on Switch to it while Apply saves, and keeps Add repository… off", async () => {
+    const onclose = vi.fn();
+    await opened(onclose);
+    await fireEvent.click(statusBarBox());
+    await go("Repositories");
+    core.checkRepository.mockResolvedValue(ok({ kind: "held", name: "python/cpython" }));
+    await fireEvent.click(addButton());
+    await fireEvent.click(button("Check"));
+    const switchTo = await screen.findByRole("button", { name: "Switch to it" });
+    const saving = Promise.withResolvers<unknown>();
+    core.applySettings.mockReturnValue(saving.promise);
+    // Apply sits under Add repository…, out of the user's reach, and a test can still press it.
+    await fireEvent.click(button("Apply"));
+
+    await fireEvent.click(switchTo);
+
+    expect(addDialog()).toBeNull();
+    expect(onclose).not.toHaveBeenCalled();
+    expect(onswitch).not.toHaveBeenCalled();
+    expect(addButton().hasAttribute("disabled")).toBe(true);
+    saving.resolve(ok(loaded(settingsWith((settings) => (settings.status_bar.visible = false)))));
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+    expect(onswitch).not.toHaveBeenCalled();
+  });
+
   it("measures the Repositories only once the dialog has read the files", async () => {
     const reading = Promise.withResolvers<unknown>();
     core.rereadSettings.mockReturnValue(reading.promise);

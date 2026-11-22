@@ -25,6 +25,7 @@ const addedGcmon: Home = {
 describe("SettingsDialog", () => {
   it("changes nothing before the core has said what the settings are", async () => {
     core.onThisMachine.mockResolvedValue(ok([]));
+    // The add below makes Apply and Cancel load the settings as they close: a load the core never answers.
     core.settings.mockReturnValue(new Promise(() => {}));
     const settings = new SettingsState();
     const theme = new ThemeState(LIGHT_SIDE);
@@ -41,6 +42,7 @@ describe("SettingsDialog", () => {
     expect(await dialog.apply()).toBe(true);
     expect(dialog.cancel()).toBe(true);
     expect(settings.settings).toBeUndefined();
+    expect(core.settings).toHaveBeenCalledTimes(2);
   });
 
   it("lists a Repository Add repository added once, Cancel keeps it, and the settings load as it closes", async () => {

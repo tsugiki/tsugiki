@@ -169,10 +169,13 @@
       onadded(home);
     }}
     onswitch={(name) => {
-      // The user asked to go to that Repository, so the dialog goes too, as Cancel takes it.
+      // The user asked to go to that Repository, so the dialog goes too, as Cancel takes it. While Apply
+      // saves, the dialog stays and the window stays where it is.
       adding = false;
-      cancel();
-      onswitch(name);
+      if (dialog.cancel()) {
+        onclose();
+        onswitch(name);
+      }
     }}
   />
 {/if}

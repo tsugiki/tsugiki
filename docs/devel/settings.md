@@ -50,13 +50,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - Repositories lists each Repository on a line of its own, in the order `settings.toml` gives: its number of
   Filters, "borrows from a clone" when `machine.toml` says its mirror borrows objects, and the size of its
   mirror on the disk, or "no mirror yet" before the first clone ends, or "can't measure the mirror" when
-  something there can't be read as a folder. The core measures the mirrors each time the page shows, once
-  the dialog has read the files, on a thread apart from the window's. A line opens the Repository's page.
-  Add repository… under the list opens the add dialog over Settings, and Esc closes only that dialog. It
-  waits for the files, as the other controls do. A Repository it adds is saved at once and opened, as from
-  the Home page, and lists on the page and in the left column; Cancel keeps it. Switch to it, on a
-  Repository Tsugiki has already, closes Settings as Cancel does, putting back the changes not applied, and
-  switches to that Repository.
+  the mirror, or a folder in it, can't be read. The core measures the mirrors each time the page shows,
+  once the dialog has read the files, on a thread apart from the window's. A line opens the Repository's
+  page. Add repository… under the list opens the add dialog over Settings, and Esc closes only that
+  dialog. It waits for the files, and is off while Apply saves, as the other controls are. A Repository it
+  adds is saved at once and opened, as from the Home page, and lists on the page and in the left column;
+  Cancel keeps it. Switch to it, on a Repository Tsugiki has already, closes Settings as Cancel does,
+  putting back the changes not applied, and switches to that Repository; while Apply saves, Settings stays
+  open and the window stays where it is.
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps
   ([keyboard.md](keyboard.md)).
 - Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle

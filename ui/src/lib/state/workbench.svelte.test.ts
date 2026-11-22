@@ -643,16 +643,28 @@ describe("WorkbenchState", () => {
     expect(state.error).toBeUndefined();
   });
 
-  it("holds the counts of the Built-in views", async () => {
+  it("holds the counts of the Built-in views and the Pinned issues", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(
-      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2 }),
+      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2, pinned: 1 }),
     );
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
     expect(state.reviewRequests).toBe(3);
     expect(state.staleReviews).toBe(2);
+    expect(state.pinned).toBe(1);
+  });
+
+  it("names the Pinned issues' view", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([]));
+    const state = new WorkbenchState("python/cpython");
+
+    await state.select({ kind: "pinned" });
+
+    expect(state.title).toBe("Pinned issues");
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "pinned" });
   });
 
   it("names the Archived view", async () => {
@@ -1829,6 +1841,92 @@ describe("WorkbenchState's Inbox", () => {
       expect(numbers(state)).toEqual([6]);
     });
     expect(state.underCursor).toBeUndefined();
+    state.stop();
+  });
+
+  it("lands the cursor after an Issue unpinned in the Pinned issues once it leaves, but not one that leaves the Workbench", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.unpin).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6, 7));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.select({ kind: "pinned" });
+    state.moveCursor(1);
+
+    await state.unpin(5);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(6, 7));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6, 7]);
+    });
+    expect(state.cursor?.number).toBe(6);
+    expect(commands.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", 5);
+
+    // A known bug, which #1052 fixes: on the Workbench, an Issue only its pin held there leaves with the
+    // unpin, and the cursor drops off the list, as for any item that leaves with nothing waiting.
+    await state.select(whole);
+    await state.unpin(6);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(7));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([7]);
+    });
+    expect(state.underCursor, "the known bug #1052 fixes").toBeUndefined();
+    state.stop();
+  });
+
+  it("lands the cursor after an Archived pin unpinned in the Pinned issues, though a sync first lists it still", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.unpin).mockResolvedValue(done);
+    const archived: ListedItem = { ...item(5), hidden: "archived" };
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([archived, item(6)]));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.select({ kind: "pinned" });
+    state.moveCursor(1);
+    const reload = async (...listed: ListedItem[]) => {
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage(listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.items).toEqual(listed);
+      });
+    };
+
+    await state.unpin(5);
+    // The core replies before it writes, so a sync's answer can still list the pin, drawn Archived.
+    await reload(archived, item(6), item(7));
+    const before = state.cursor?.number;
+    await reload(item(6), item(7));
+
+    expect([before, state.cursor?.number]).toEqual([5, 6]);
+    state.stop();
+  });
+
+  it("forgets an archive in the Pinned issues, which keep listing the pin Archived", async () => {
+    const { send } = catchChanged();
+    const landed = vi.fn();
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([5, 6].map(item)));
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    await state.select({ kind: "pinned" });
+    state.moveCursor(1);
+    const reload = async (...listed: ListedItem[]) => {
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage(listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.items).toEqual(listed);
+      });
+    };
+
+    await state.archive({ key: item(5).key, mark: item(5).seen.mark });
+    await reload({ ...item(5), hidden: "archived" }, item(6));
+    const kept = state.underCursor?.number;
+    // Another window unpins it, which takes it out for a reason the archive didn't wait on.
+    await reload(item(6));
+
+    expect(kept).toBe(5);
+    expect([state.underCursor, landed.mock.calls.length]).toEqual([undefined, 0]);
     state.stop();
   });
 

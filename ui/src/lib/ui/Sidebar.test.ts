@@ -13,12 +13,13 @@ const involved = {
 
 const whole = { kind: "whole" } as const;
 const button = (name: string) => screen.getByRole("button", { name });
-/** The open Repository and its callbacks, for the tests that don't look at them. */
+/** The open Repository, its callbacks and its Pinned issues' count, for the tests that don't look at them. */
 const cpython = {
   repository: "python/cpython",
   onpick: () => {},
   onsettings: () => {},
   onicons: () => {},
+  pinned: 1,
 };
 
 it("starts with the open Repository's name, and a click on it asks for the Repository picker", async () => {
@@ -102,7 +103,7 @@ it("names ⚙'s key in its tooltip as the OS calls it", () => {
   platform.mockRestore();
 });
 
-it("lists the Workbench, the Built-in views with Archived last and uncounted, and each Filter with its count", () => {
+it("lists the Workbench, the Built-in views with Archived last and uncounted, each Filter with its count, then the Pinned issues with theirs", () => {
   render(Sidebar, {
     ...cpython,
     count: 12,
@@ -123,10 +124,11 @@ it("lists the Workbench, the Built-in views with Archived last and uncounted, an
     "Archived",
     "Mine 3",
     "Involved 9",
+    "Pinned issues 1",
   ]);
 });
 
-it("heads the built-in views, and the Filters while there are any", () => {
+it("heads the built-in views, the Filters while there are any, and the Pinned issues", () => {
   const headings = () => screen.queryAllByRole("heading").map((heading) => heading.textContent);
   const { unmount } = render(Sidebar, {
     ...cpython,
@@ -137,7 +139,7 @@ it("heads the built-in views, and the Filters while there are any", () => {
     selected: whole,
     onselect: () => {},
   });
-  expect(headings()).toEqual(["Built-in views", "Filters"]);
+  expect(headings()).toEqual(["Built-in views", "Filters", "Pinned"]);
   unmount();
 
   render(Sidebar, {
@@ -149,7 +151,7 @@ it("heads the built-in views, and the Filters while there are any", () => {
     selected: whole,
     onselect: () => {},
   });
-  expect(headings()).toEqual(["Built-in views"]);
+  expect(headings()).toEqual(["Built-in views", "Pinned"]);
 });
 
 it("marks the Workbench while nothing else is selected", () => {
@@ -226,6 +228,21 @@ it("marks Archived selected", () => {
   expect(button("Stale reviews 2").getAttribute("aria-current")).toBeNull();
 });
 
+it("marks the Pinned issues selected", () => {
+  render(Sidebar, {
+    ...cpython,
+    count: 12,
+    reviewRequests: 4,
+    staleReviews: 2,
+    filters: [mine],
+    selected: { kind: "pinned" },
+    onselect: () => {},
+  });
+  expect(button("Pinned issues 1").getAttribute("aria-current")).toBe("true");
+  expect(button("Workbench 12").getAttribute("aria-current")).toBeNull();
+  expect(button("Mine 3").getAttribute("aria-current")).toBeNull();
+});
+
 it("says which line the user picks", async () => {
   const onselect = vi.fn();
   render(Sidebar, {
@@ -249,6 +266,8 @@ it("says which line the user picks", async () => {
   expect(onselect).toHaveBeenLastCalledWith(whole);
   await fireEvent.click(button("Inbox"));
   expect(onselect).toHaveBeenLastCalledWith({ kind: "inbox" });
+  await fireEvent.click(button("Pinned issues 1"));
+  expect(onselect).toHaveBeenLastCalledWith({ kind: "pinned" });
 });
 
 it("lists two Filters that share a search", () => {

@@ -22,6 +22,7 @@ const strip = {
   reviewRequests: 4,
   staleReviews: 0,
   filters: [mine, involved],
+  pinned: 2,
   selected: whole,
   onselect: () => {},
 };
@@ -62,6 +63,7 @@ it("lists the initials, an icon for each entry with its count and name, then ⚙
     ["Archived", "Archived", ""],
     ["Mine (3)", "Mine", "3"],
     ["Involved", "Involved", ""],
+    ["Pinned issues (2)", "Pinned issues", "2"],
     ["Settings", "Settings (Ctrl+,)", "⚙"],
   ]);
   expect(screen.getByRole("navigation", { name: "Sidebar" })).toBeTruthy();
@@ -82,7 +84,15 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
   const onsettings = vi.fn();
   render(SidebarIcons, { ...strip, onselect, onfull, onsettings });
 
-  const names = ["Workbench (12)", "Inbox", "Review requests (4)", "Stale reviews", "Archived", "Mine (3)"];
+  const names = [
+    "Workbench (12)",
+    "Inbox",
+    "Review requests (4)",
+    "Stale reviews",
+    "Archived",
+    "Mine (3)",
+    "Pinned issues (2)",
+  ];
   for (const name of names) {
     await fireEvent.click(button(name));
   }
@@ -96,6 +106,7 @@ it("asks for each entry's view on a click, and for the full Sidebar on a click o
     [{ kind: "stale_reviews" }],
     [{ kind: "archived" }],
     [{ kind: "filter", query: mine.query }],
+    [{ kind: "pinned" }],
   ]);
   expect([onfull.mock.calls.length, onsettings.mock.calls.length]).toEqual([1, 1]);
 });
@@ -120,12 +131,12 @@ it("says why a Filter's last search failed, and marks its icon with ! in place o
   expect(icons.map((icon) => icon.querySelectorAll(".badge").length)).toEqual([1, 1]);
 });
 
-it("draws no rule over the Filters while there are none", () => {
+it("draws no rule over the Filters while there are none, and one over the Pinned issues", () => {
   const { container, unmount } = render(SidebarIcons, strip);
   const withFilters = container.querySelectorAll(".rule").length;
   unmount();
 
   const none = render(SidebarIcons, { ...strip, filters: [] });
 
-  expect([withFilters, none.container.querySelectorAll(".rule").length]).toEqual([2, 1]);
+  expect([withFilters, none.container.querySelectorAll(".rule").length]).toEqual([3, 2]);
 });

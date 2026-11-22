@@ -4154,7 +4154,9 @@ export type WorkbenchRow_Serialize = {
 /**  The list the window asks for. */
 export type WorkbenchView = { kind: "whole" } | { kind: "filter"; query: FilterQuery } | { kind: "review_requests" } | { kind: "stale_reviews" } | 
 /**  The Archived items, the last archived first (#491). */
-{ kind: "archived" };
+{ kind: "archived" } | 
+/**  The Pinned issues (#489). */
+{ kind: "pinned" };
 
 /**  A Repository's Workbench or one of its views, with what the Sidebar shows beside it. */
 export type Workbench_Deserialize = {
@@ -4174,6 +4176,8 @@ export type Workbench_Deserialize = {
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
+	/**  The count of Pinned issues on the Workbench that Need attention (#489). */
+	pinned: number,
 	filters: FilterLine_Deserialize[],
 };
 
@@ -4195,6 +4199,8 @@ export type Workbench_Serialize = {
 	review_requests: number,
 	/**  The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one. */
 	stale_reviews: number,
+	/**  The count of Pinned issues on the Workbench that Need attention (#489). */
+	pinned: number,
 	filters: FilterLine_Serialize[],
 };
 

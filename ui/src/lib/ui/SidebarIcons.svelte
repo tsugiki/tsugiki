@@ -38,6 +38,7 @@
     reviewRequests,
     staleReviews,
     filters,
+    pinned,
     selected,
     onselect,
   }: {
@@ -51,6 +52,8 @@
     reviewRequests: number;
     staleReviews: number;
     filters: FilterLine[];
+    /** The count of Pinned issues that Need attention (#489). */
+    pinned: number;
     selected: SidebarView;
     /** Brings the full Sidebar back and shows `view`. */
     onselect: (view: SidebarView) => void;
@@ -65,6 +68,7 @@
     stale_reviews: "M2 8a6 6 0 1 0 12 0 6 6 0 1 0-12 0M8 4.5V8l2.5 1.5",
     archived: "M2 3h12v3H2zM3 6v7h10V6M6.5 9h3",
     filter: "M2 3h12L9.5 8.5V13l-3 1.5V8.5z",
+    pinned: "M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.6l-3.8 2 .7-4.3-3.1-3 4.3-.6z",
   };
 </script>
 
@@ -117,6 +121,8 @@
       filter.problem,
     )}
   {/each}
+  <span class="rule"></span>
+  {@render entry(ICONS.pinned, "Pinned issues", { kind: "pinned" }, pinned)}
   <span class="grow"></span>
   <button
     class="entry"

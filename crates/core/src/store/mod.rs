@@ -981,6 +981,19 @@ fn read_titled(
     Ok(titled)
 }
 
+/// When the Repository's last sync finished and its open items, from one transaction.
+fn read_repository_sync(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<RepositorySync> {
+    let transaction = connection.transaction()?;
+    let synced = sync_state::read(&transaction, repository)?;
+    Ok(RepositorySync {
+        last_sync: synced.map(|state| state.finished_at),
+        open: open_items::read(&transaction, repository)?,
+    })
+}
+
 /// One Repository's facts as one read transaction sees them, for a view that works out what to read next
 /// from what it has read, as the Inbox does (ADR 0018). Each read takes only the rows it names, so its cost
 /// follows what it asks for and not what the store holds. `StoreReader::read_snapshot` hands one out.
@@ -1165,15 +1178,7 @@ impl StoreReader {
     /// them (#534).
     pub fn repository_sync(&self, repository: &RepositoryName) -> Result<RepositorySync, Error> {
         let repository = repository.clone();
-        let read = self.call(move |connection| {
-            let transaction = connection.transaction()?;
-            let synced = sync_state::read(&transaction, &repository)?;
-            let open = open_items::read(&transaction, &repository)?;
-            Ok::<_, rusqlite::Error>(RepositorySync {
-                last_sync: synced.map(|state| state.finished_at),
-                open,
-            })
-        })?;
+        let read = self.call(move |connection| read_repository_sync(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 

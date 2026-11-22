@@ -628,11 +628,8 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         repository: fill.repository.clone(),
     };
     let saved = github.asking(asked, || fetch_issue_batch(&link, numbers))?;
-    Ok(if saved.touched.is_empty() {
-        Stepped::Nothing
-    } else {
-        Stepped::Facts(saved.touched)
-    })
+    let touched = Some(saved.touched).filter(|touched| !touched.is_empty());
+    Ok(touched.map_or(Stepped::Nothing, Stepped::Facts))
 }
 
 /// The wait after `problem`: for the rate limit, until GitHub's points come back, as its gate says, and

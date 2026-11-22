@@ -73,6 +73,27 @@ describe("SettingsDialog", () => {
     expect(core.settings).toHaveBeenCalledOnce();
   });
 
+  it("switches Read-only on a listed Repository's page alone, one Add repository added included", async () => {
+    core.onThisMachine.mockResolvedValue(ok([]));
+    const cpython = { name: "python/cpython", conventions: "cpython" as const, filters: [] };
+    const files = { settings: defaultSettings({ repositories: [cpython] }), language_servers: NO_SERVERS };
+    core.rereadSettings.mockResolvedValue(ok({ ...files, problems: [] }));
+    const dialog = new SettingsDialog(new SettingsState(), new ThemeState(LIGHT_SIDE));
+    await dialog.open();
+    dialog.added({ ...addedGcmon, repository: { ...addedGcmon.repository, read_only: true } });
+
+    dialog.chooseReadOnly("python/gone", true);
+    const unlisted = dialog.changed;
+    dialog.chooseReadOnly("some-maintainer/gcmon", false);
+
+    expect(unlisted).toBe(false);
+    expect(dialog.readOnly("python/gone")).toBeUndefined();
+    expect(dialog.readOnly("python/cpython")).toBe(false);
+    expect(dialog.changes).toEqual({
+      read_only: [{ repository: "some-maintainer/gcmon", read_only: false }],
+    });
+  });
+
   it("takes what the newest ask measured, though an older answer comes after it", async () => {
     const older = Promise.withResolvers<unknown>();
     const measured = (mb: number) => [

@@ -1,6 +1,6 @@
 use super::*;
 use crate::github::replay::Replayer;
-use crate::github::testing::{COMMENT_ID, Canned, a_comment};
+use crate::github::testing::{COMMENT_ID, Canned, a_comment, writable};
 use crate::github::{Grant, RestPath};
 use crate::testing::TempPath;
 use crate::token::read_token;
@@ -87,9 +87,10 @@ fn a_write_records_under_its_operation_and_replays_by_it() {
     let body = r#"{"data":{"addComment":{"commentEdge":{"node":{"id":"IC_1"}}}}}"#;
     let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.to_path_buf());
 
-    let live = recorder.write(&token(), &a_comment(), COMMENT_ID).unwrap();
+    let sent = (&a_comment(), COMMENT_ID);
+    let live = recorder.write(&token(), &writable(), sent).unwrap();
     let replayed = Replayer::new(dir.to_path_buf())
-        .write(&token(), &a_comment(), COMMENT_ID)
+        .write(&token(), &writable(), sent)
         .unwrap();
     let on_disk: Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("AddComment.json")).unwrap())
@@ -112,8 +113,9 @@ fn a_write_whose_selection_the_token_crate_refuses_is_refused_unsent_and_unrecor
         fragments: "",
     };
 
-    let refused = recorder.write(&token(), &a_comment(), second_field);
-    let replayed = Replayer::new(dir.to_path_buf()).write(&token(), &a_comment(), second_field);
+    let sent = (&a_comment(), second_field);
+    let refused = recorder.write(&token(), &writable(), sent);
+    let replayed = Replayer::new(dir.to_path_buf()).write(&token(), &writable(), sent);
 
     assert_eq!(refused.unwrap_err(), Unreachable::Refused);
     assert_eq!(replayed.unwrap_err(), Unreachable::Refused);

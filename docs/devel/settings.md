@@ -98,6 +98,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   reads the first. The switch in the Filter's view saves it at once, without Apply, on the first Filter with
   that search, and writes the Filters of a Repository the file holds without them first. A Repository's page
   gets the switch with its Filters (#535).
+- `read_only = true` in a `[[repositories]]` table of `settings.toml` makes the Repository **Read-only** by
+  the user's choice, whatever the token can do, and Tsugiki sends no write there
+  ([token.md](token.md)). A Repository without it can write, and Tsugiki writes the key only when it is
+  true. The choice travels with the file, while the token's mark stays in the database, and Tsugiki works
+  out whether a write may go from both as it sends one. The Issue and PR views say "Read-only: you chose it
+  in this Repository's settings" atop. Only a hand edit sets it for now: Add repository and the
+  Repository's page get the switch (#915).
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,
   so a hand edit takes effect at the next of those ([ADR
   0014](../adr/0014-settings-in-toml-files-user-state-in-the-database-and-a-portable-mode.md)).
@@ -105,8 +112,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   waits a moment for a save under way. A save through a symbolic link changes the file it points to and keeps
   the link, and refuses, naming that file, while it isn't there. A save puts a new file in place, so a hard
   link stops sharing the file at the first save: link a file into a dotfiles repository with a symbolic link.
-  `settings.toml` travels: settings, remapped keybindings, and each Repository with its Conventions and
-  Filters; the user syncs it by pointing `settings_path` at a dotfiles repository or a synced folder.
+  `settings.toml` travels: settings, remapped keybindings, and each Repository with its Conventions,
+  Filters and choice of Read-only; the user syncs it by pointing `settings_path` at a dotfiles repository or
+  a synced folder.
   `machine.toml` stays: the token source, the editor command, paths, the clone each Repository borrows objects
   from, window places and zoom. A personal access token goes to the OS keychain. Pinned issues, Muted
   authors, Muted and Archived items, Local marks, Last seen times, and text typed into a composer but not yet

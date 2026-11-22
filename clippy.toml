@@ -43,6 +43,8 @@ disallowed-methods = [ # ureq's shortcuts reach the network without naming an `A
     { path = "ureq::trace", reason = "Reach the network in crates/token/src/live.rs", allow-invalid = true },
     # One caller finds the token, so the log hides it and a failure says how to sign in (ADR 0019).
     { path = "tsugiki_token::Token::find", reason = "Read the token with tsugiki_core::token::read_token", allow-invalid = true },
+    # A write goes only where no reason holds a Repository Read-only, worked out as it goes (#914).
+    { path = "tsugiki_core::read_only::WritableRepository::new", reason = "Send a write with tsugiki_core::session::write::send, which reads the settings in force and the store", allow-invalid = true },
     # A failed run's files stay in sight in `.temp`, not lost among the system's.
     { path = "std::env::temp_dir", reason = "Put a test's files in .temp at the repo root" },
 ]

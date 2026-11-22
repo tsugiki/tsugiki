@@ -59,6 +59,7 @@ fn review(author: &str, state: ReviewState, commit: Option<&str>, hours: i64) ->
 fn with_reviews(reviews: Vec<Review>) -> PullRequestContent {
     PullRequestContent {
         conversation: IssueContent {
+            id: None,
             body_html: "<p>Fixes the crash</p>".to_owned(),
             comments: vec![],
             earlier_comments: 0,

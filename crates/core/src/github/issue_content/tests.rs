@@ -16,6 +16,7 @@ fn answering(issue: &Value) -> (GitHub, Receiver<(String, Value)>) {
 #[test]
 fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
     let (github, asked) = answering(&json!({
+        "id": "I_7",
         "bodyHTML": "<p>It crashes</p>",
         "createdAt": "2026-11-01T09:00:00Z",
         "comments": {
@@ -47,6 +48,7 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
     assert_eq!(
         content,
         IssueContent {
+            id: Some(NodeId::new("I_7".to_owned())),
             body_html: "<p>It crashes</p>".to_owned(),
             comments: vec![
                 IssueComment {
@@ -81,6 +83,7 @@ fn an_issue_reads_as_its_rendering_with_the_comments_oldest_first() {
 #[test]
 fn a_comment_number_that_isnt_digits_fails_the_read() {
     let (github, _asked) = answering(&json!({
+        "id": "I_7",
         "bodyHTML": "",
         "createdAt": "2026-11-01T09:00:00Z",
         "comments": {

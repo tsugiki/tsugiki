@@ -49,8 +49,15 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   and goes as soon as Tsugiki sees another token. The Issue and PR views of a Read-only Repository say
   "Read-only: your token can't write to python/cpython" atop, and the status bar says "Read-only" on the
   left, after who is signed in.
+- A Repository is **Read-only** also when the user chose it in `settings.toml` ([settings.md](settings.md)).
+  Tsugiki sends no write to a Read-only Repository, whichever the reason. As a write is about to go, the
+  core works out from the settings and the database whether the Repository is Read-only, so a write that a
+  control let through, or one sent after the mark changed, still goes nowhere. Such a write fails as one
+  GitHub refused does, saying why ("Tsugiki sent nothing, as your token can't write to python/cpython."),
+  and the composer keeps its text. A write names its Issue or PR by the ID GitHub gave on the item's last
+  read, which the database keeps for that number in that Repository; before Tsugiki has read the item, the
+  write fails unsent and asks the user to open it again.
 - Later tickets build on the mark. Settings › Account lists the Read-only Repositories, and the status bar's
-  Read-only opens it (#434). Tsugiki sends no write to a Read-only Repository (#914). The composer stays
-  usable: it offers "Copy and open on GitHub" instead of sending, and Submit review is disabled with the
-  reason. With a fine-grained token Tsugiki finds out on the first refused write, keeping the text that was
-  being sent (#733).
+  Read-only opens it (#434). The composer stays usable: it offers "Copy and open on GitHub" instead of
+  sending, and Submit review is disabled with the reason. With a fine-grained token Tsugiki finds out on the
+  first refused write, keeping the text that was being sent (#733).

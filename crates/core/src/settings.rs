@@ -2039,14 +2039,11 @@ fn closing_space(table: &dyn TableLike) -> Option<(String, RawString)> {
 /// Keeps the space `closing` says the user wrote before the `}` of the inline table `table` before its last
 /// key changed. A key added at its end would follow that space, as `{ name = "a/b" , read_only = true }`, and
 /// one taken out of its end would leave none, as `{ name = "a/b"}`. So the space moves to the last value
-/// now, and the rest of the table stays as the user wrote it, a list over several lines with its comments
-/// included.
+/// now, which may be the one that held it, and the rest of the table stays as the user wrote it, a list
+/// over several lines with its comments included.
 fn keep_closing_space(table: &mut dyn TableLike, closing: (String, RawString)) {
     let (was_last, space) = closing;
     let last = table.iter().last().map(|(key, _)| key.to_owned());
-    if last.as_deref() == Some(was_last.as_str()) {
-        return;
-    }
     if let Some(value) = table.get_mut(&was_last).and_then(Item::as_value_mut) {
         value.decor_mut().set_suffix("");
     }

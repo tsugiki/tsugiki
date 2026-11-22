@@ -40,9 +40,9 @@ export const inboxPage = <Item>(
 ) => ok({ items, older, show_muted });
 
 /** The Workbench's answer, listing `items`, counting those that Need attention, with no folded Muted item,
- * no Review request, no Stale review and no Filter, unless `more` says otherwise. The items stay as loosely
- * typed as the caller made them: a mocked command checks nothing, and a typed one, as in the e2e specs,
- * checks them there. */
+ * no Review request, no Stale review, no Pinned issue that Needs attention and no Filter, unless `more` says
+ * otherwise. The items stay as loosely typed as the caller made them: a mocked command checks nothing, and a
+ * typed one, as in the e2e specs, checks them there. */
 export const workbenchPage = <Item, Filter = never>(
   items: Item[],
   more: {
@@ -50,6 +50,7 @@ export const workbenchPage = <Item, Filter = never>(
     count?: number;
     review_requests?: number;
     stale_reviews?: number;
+    pinned?: number;
     filters?: Filter[];
   } = {},
 ) =>
@@ -59,6 +60,7 @@ export const workbenchPage = <Item, Filter = never>(
     count: more.count ?? items.filter((item) => (item as { attention?: unknown }).attention != null).length,
     review_requests: more.review_requests ?? 0,
     stale_reviews: more.stale_reviews ?? 0,
+    pinned: more.pinned ?? 0,
     filters: more.filters ?? ([] as Filter[]),
   });
 

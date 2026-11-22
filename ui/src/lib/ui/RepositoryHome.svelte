@@ -93,6 +93,13 @@
     stale_reviews: "No Review of yours is stale.",
     archived: "Nothing archived. E archives the item under the cursor.",
     inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
+    /** Names the key that pins as the user bound it, or none while it has none (#489). */
+    get pinned() {
+      const key = actionLabel("pin", currentOs());
+      return key === null
+        ? "Nothing pinned. ☆ on an Issue's row in another list pins it."
+        : `Nothing pinned. ${key} pins the Issue under the cursor in another list, and so does ☆ on its row.`;
+    },
   };
 
   let {
@@ -714,10 +721,12 @@
     return pin && (() => void togglePin(pin));
   }
 
-  /** Pins the Issue `pin` names, or unpins it if the user pinned it. A pin that takes the Detail pane's Issue
-   * out of the view on show, the Inbox or Archived, opens the next item as Archive does (#982). */
-  async function togglePin({ number, pinned }: Pin) {
-    const leaves = pinned ? undefined : workbench.pinTakesOut(number);
+  /** Pins the Issue `pin` names, or unpins it if the user pinned it. A pin or unpin that takes the Detail
+   * pane's Issue out of the view on show, a pin the Inbox or Archived and an unpin the Pinned issues (#489),
+   * opens the next item as Archive does (#982). */
+  async function togglePin(pin: Pin) {
+    const { number, pinned } = pin;
+    const leaves = workbench.pinTakesOut(pin);
     const marking = (opened: WorkbenchState) => (pinned ? opened.unpin(number) : opened.pin(number));
     await finish(leaves && hidingOnDetail({ key: leaves }), marking);
   }
@@ -954,6 +963,7 @@
       { title: "View: Inbox", run: () => showView({ kind: "inbox" }) },
       { title: "View: Stale Reviews", run: () => showView({ kind: "stale_reviews" }) },
       { title: "View: Archived", run: () => showView({ kind: "archived" }) },
+      { title: "View: Pinned Issues", run: () => showView({ kind: "pinned" }) },
       // Each shape but the one on show, so a hidden Sidebar offers both.
       ...(panes.hidden("sidebar") || !panes.sidebarIcons
         ? [{ title: "View: Sidebar as Icons", run: () => showSidebar(true) }]
@@ -1505,6 +1515,7 @@
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
         filters={workbench.filters}
+        pinned={workbench.pinned}
         selected={workbench.selected}
         onselect={showViewInFull}
       />
@@ -1520,6 +1531,7 @@
         reviewRequests={workbench.reviewRequests}
         staleReviews={workbench.staleReviews}
         filters={workbench.filters}
+        pinned={workbench.pinned}
         selected={workbench.selected}
         onselect={showView}
       />

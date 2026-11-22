@@ -3480,6 +3480,62 @@ it("offers the palette Archived, which shows the list with that view, and says w
   expect(await screen.findByText("Nothing archived. E archives the item under the cursor.")).toBeTruthy();
 });
 
+it("offers the palette Pinned Issues, which shows the list with that view, and names the key that pins while nothing is pinned", async () => {
+  vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  const { component } = render(RepositoryHome, {
+    name: "python/cpython",
+    onpick: () => {},
+    onsettings: () => {},
+  });
+  await screen.findByRole("navigation", { name: "Sidebar" });
+
+  component
+    .paletteCommands()
+    .find((command) => command.title === "View: Pinned Issues")
+    ?.run();
+
+  expect(await screen.findByRole("heading", { name: "Pinned issues" })).toBeTruthy();
+  expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "pinned" });
+  expect(screen.getByRole("button", { name: /^Pinned issues/ }).getAttribute("aria-current")).toBe("true");
+  const said =
+    "Nothing pinned. Ctrl+K P pins the Issue under the cursor in another list, and so does ☆ on its row.";
+  expect(await screen.findByText(said)).toBeTruthy();
+  remapKeys({ pin: "ctrl+k s" });
+  expect(await screen.findByText(said.replace("Ctrl+K P", "Ctrl+K S"))).toBeTruthy();
+  remapKeys({ pin: "" });
+  expect(
+    await screen.findByText("Nothing pinned. ☆ on an Issue's row in another list pins it."),
+  ).toBeTruthy();
+  remapKeys({});
+});
+
+it("opens the next item once the Issue on show, unpinned from its view, leaves the Pinned issues", async () => {
+  const changed = catchEveryListener();
+  const kept = { ...issue, number: 7, title: "Kept", key: { kind: "issue", number: 7 }, pinned: true };
+  core.workbench.mockResolvedValue(
+    workbenchPage([
+      { ...issue, attention: null, pinned: true },
+      { ...kept, attention: null },
+    ]),
+  );
+  const shown = (await core.issue()) as { data: object };
+  core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, pinned: true } });
+  core.issue.mockClear();
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: /^Pinned issues/ }));
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+
+  await fireEvent.click(await screen.findByRole("button", { name: "★ Unpin" }));
+  core.workbench.mockResolvedValue(workbenchPage([{ ...kept, attention: null }]));
+  changed("python/cpython", [issue.number]);
+
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  await vi.waitFor(() => {
+    expect(core.issue.mock.calls.at(-1)?.[1]).toBe(7);
+  });
+  expect(screen.getByRole("button", { name: "#7 Kept" }).getAttribute("aria-current")).toBe("true");
+});
+
 it("offers Mark Unseen in the header of an item with nothing new, and the button marks it unseen", async () => {
   core.pullRequest.mockResolvedValue({
     status: "ok",

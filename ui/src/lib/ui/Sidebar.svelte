@@ -12,6 +12,7 @@
     reviewRequests,
     staleReviews,
     filters,
+    pinned,
     selected,
     onselect,
   }: {
@@ -27,6 +28,8 @@
     reviewRequests: number;
     staleReviews: number;
     filters: FilterLine[];
+    /** The count of Pinned issues that Need attention (#489). */
+    pinned: number;
     selected: SidebarView;
     onselect: (view: SidebarView) => void;
   } = $props();
@@ -90,6 +93,11 @@
       <small>{filter.problem}</small>
     {/if}
   {/each}
+  <h2 class="small-heading">Pinned</h2>
+  <button aria-current={current({ kind: "pinned" })} onclick={() => onselect({ kind: "pinned" })}>
+    <span>Pinned issues</span>
+    <span>{pinned}</span>
+  </button>
 </nav>
 
 <style>

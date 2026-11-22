@@ -158,6 +158,47 @@ test("the Sidebar lists the Filters, and selecting one shows its Issues", async 
   await expect(sidebar.getByRole("button", { name: "Mine 1" })).toHaveAttribute("aria-current", "true");
 });
 
+test("the Sidebar's Pinned issues lists the pins, and an unpin takes the row away and lowers the count", async ({
+  page,
+}) => {
+  const asked: ListedItem = { ...review, pinned: true };
+  const kept: ListedItem = {
+    ...review,
+    attention: null,
+    key: { kind: "issue", number: 7 },
+    number: 7,
+    title: "Kept",
+    pinned: true,
+  };
+  const more = { count: 1, filters: [mine], pinned: 1 };
+  await mockCore(page, { home, workbench: workbenchPage([asked, kept], more), unpin: done });
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+
+  await sidebar.getByRole("button", { name: "Pinned issues 1" }).click();
+  await expect(page.getByRole("heading", { name: "Pinned issues" })).toBeVisible();
+  await expect(page.locator(".list li.item")).toHaveCount(2);
+
+  await changeAnswer(page, "workbench", workbenchPage([kept], { ...more, pinned: 0 }));
+  await page.getByRole("button", { name: "Unpin #112564" }).click();
+  await emitFromCore(page, "changed", { repository: repository.name, items: [112564] });
+
+  await expect(page.getByRole("button", { name: "#112564 GIL drop during collection" })).toHaveCount(0);
+  await expect(page.locator(".list li.item")).toHaveCount(1);
+  await expect(sidebar.getByRole("button", { name: "Pinned issues 0" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+
+  await changeAnswer(page, "workbench", workbenchPage([], { ...more, pinned: 0 }));
+  await page.getByRole("button", { name: "Unpin #7" }).click();
+  await emitFromCore(page, "changed", { repository: repository.name, items: [7] });
+
+  await expect(
+    page.getByText(/^Nothing pinned\. (Ctrl|Cmd)\+K P pins the Issue under the cursor/),
+  ).toBeVisible();
+});
+
 test("a Filter's view switches it off the Workbench, beside its name and the list's order", async ({
   page,
 }) => {

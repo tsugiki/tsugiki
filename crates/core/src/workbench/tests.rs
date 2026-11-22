@@ -55,6 +55,78 @@ fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_marked_pinned_until_unpi
 }
 
 #[test]
+fn the_pinned_view_lists_the_pins_in_the_workbenchs_order_and_counts_those_that_need_attention() {
+    let world = ViewWorld::new("workbench-pinned-view");
+    let updated = |number, seconds| crate::facts::issues::IssueFacts {
+        updated_at: at(seconds),
+        ..issue(number)
+    };
+    let issues = vec![
+        updated(1, 5),
+        updated(2, 1),
+        updated(3, 3),
+        updated(4, 4),
+        updated(5, 9),
+    ];
+    world.has(vec![], issues);
+    let store = &world.db.store;
+    for number in 1..=4 {
+        store.pin(&cpython(), number).unwrap();
+    }
+    let now = time::OffsetDateTime::now_utc();
+    for number in [2, 5] {
+        let flagging = crate::store::Flagging::on(number);
+        store.mark_unseen(&cpython(), flagging, now).unwrap();
+    }
+    let archiving = crate::store::Archiving {
+        key: ItemKey::Issue { number: 3 },
+        numbers: vec![3],
+        up_to: None,
+        put_away: crate::facts::activity::PutAway::Now,
+        findings: vec![],
+    };
+    store.archive(&cpython(), archiving, now).unwrap();
+    world.mute_issue(4, vec![4]);
+    let read = |view: &WorkbenchView| {
+        Workbench::read(
+            &world.db.reader,
+            &world.settings(),
+            view,
+            ListOrder::Attention,
+        )
+        .unwrap()
+    };
+
+    let pinned = read(&WorkbenchView::Pinned);
+    let whole = read(&WorkbenchView::Whole);
+    crate::store::testing::unpin(store, &cpython(), 2);
+    let unpinned = read(&WorkbenchView::Pinned);
+
+    world.finish();
+    // What Needs attention comes first, then the rest by last update. The Archived pin stays in its place,
+    // marked, and the Muted one stays hidden. Issue 5 has no pin, so it Needs attention on the Workbench
+    // alone.
+    assert_eq!(
+        outline(&pinned),
+        [
+            ("issue", 2, vec![]),
+            ("issue", 1, vec![]),
+            ("issue", 3, vec![])
+        ]
+    );
+    let hidden: Vec<Option<Hidden>> = pinned.items.iter().map(|listed| listed.hidden).collect();
+    assert_eq!(hidden, [None, None, Some(Hidden::Archived)]);
+    assert_eq!((pinned.pinned, whole.pinned, whole.count), (1, 1, 2));
+    let sent = serde_json::to_value(&pinned).unwrap();
+    assert_eq!(sent["pinned"], 1);
+    assert_eq!(
+        outline(&unpinned),
+        [("issue", 1, vec![]), ("issue", 3, vec![])]
+    );
+    assert_eq!(unpinned.pinned, 0);
+}
+
+#[test]
 fn a_pr_of_someone_elses_with_no_issue_isnt_listed() {
     let found = workbench(vec![stranger()], vec![]);
     assert_eq!(outline(&found), []);

@@ -159,6 +159,8 @@ export class WorkbenchState {
   count = $state(0);
   reviewRequests = $state(0);
   staleReviews = $state(0);
+  /** The count of Pinned issues on the Workbench that Need attention (#489). */
+  pinned = $state(0);
   filters = $state<FilterLine[]>([]);
   selected = $state<SidebarView>({ kind: "whole" });
   error = $state<string>();
@@ -317,6 +319,7 @@ export class WorkbenchState {
     if (selected.kind === "review_requests") return "Review requests";
     if (selected.kind === "stale_reviews") return "Stale reviews";
     if (selected.kind === "archived") return "Archived";
+    if (selected.kind === "pinned") return "Pinned issues";
     return this.filters.find((filter) => filter.query === selected.query)?.name ?? selected.query;
   }
 
@@ -537,19 +540,23 @@ export class WorkbenchState {
    * the pin unarchives it. A cursor on any of its lines there lands on the item after it, as for Unarchive
    * (#491). Says what went wrong, if anything did. */
   async pin(number: number) {
-    return this.#leave(this.pinTakesOut(number), commands.pin(this.#repository, number));
+    const leaves = this.pinTakesOut({ number, pinned: false });
+    return this.#leave(leaves, commands.pin(this.#repository, number));
   }
 
-  /** The key of Issue `number`, while the list shows a view that a pin takes it out of: the Inbox, or
-   * Archived. Any other view keeps listing it. */
-  pinTakesOut(number: number): ItemKey | undefined {
+  /** The key of the Issue `pin` names, while the list shows a view that Pin or Unpin on it takes it out of:
+   * a pin the Inbox or Archived, an unpin the Pinned issues (#489). Any other view keeps listing it. */
+  pinTakesOut({ number, pinned }: Pin): ItemKey | undefined {
     const kind = this.#shown.kind;
-    return kind === "inbox" || kind === "archived" ? { kind: "issue", number } : undefined;
+    const leaves = pinned ? kind === "pinned" : kind === "inbox" || kind === "archived";
+    return leaves ? { kind: "issue", number } : undefined;
   }
 
-  /** Unpins Issue `number` (#488). Says what went wrong, if anything did. */
+  /** Unpins Issue `number` (#488), which then leaves the Pinned issues (#489). A cursor on any of its lines
+   * there lands on the item after it, as for a pin in the Inbox. Says what went wrong, if anything did. */
   async unpin(number: number) {
-    return problemIn(commands.unpin(this.#repository, number));
+    const leaves = this.pinTakesOut({ number, pinned: true });
+    return this.#leave(leaves, commands.unpin(this.#repository, number));
   }
 
   /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),
@@ -807,6 +814,7 @@ export class WorkbenchState {
       this.count = answer.data.count;
       this.reviewRequests = answer.data.review_requests;
       this.staleReviews = answer.data.stale_reviews;
+      this.pinned = answer.data.pinned;
       this.filters = answer.data.filters;
     }
     if (list?.status === "ok") this.showMuted = list.data.show_muted;

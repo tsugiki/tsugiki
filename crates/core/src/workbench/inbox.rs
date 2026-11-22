@@ -165,7 +165,7 @@ impl Inbox {
         // pin until the user unpins it (#488). A Muted author's item stays for "Show muted" to judge, unless
         // one of those takes it out too.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .filter(|item| !matches!(item, WorkbenchItem::Issue(issue) if issue.pinned))
+            .filter(|item| !item.is_pinned())
             .filter_map(|item| match show {
                 ShowMuted::On => Some(ListedItem::of(&causes, item)),
                 ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),

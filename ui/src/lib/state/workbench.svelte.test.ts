@@ -643,16 +643,28 @@ describe("WorkbenchState", () => {
     expect(state.error).toBeUndefined();
   });
 
-  it("holds the counts of the Built-in views", async () => {
+  it("holds the counts of the Built-in views and the Pinned issues", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValueOnce(
-      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2 }),
+      workbenchPage([item(4)], { review_requests: 3, stale_reviews: 2, pinned: 1 }),
     );
     const state = new WorkbenchState("python/cpython");
     await state.load();
 
     expect(state.reviewRequests).toBe(3);
     expect(state.staleReviews).toBe(2);
+    expect(state.pinned).toBe(1);
+  });
+
+  it("names the Pinned issues' view", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValueOnce(workbenchPage([]));
+    const state = new WorkbenchState("python/cpython");
+
+    await state.select({ kind: "pinned" });
+
+    expect(state.title).toBe("Pinned issues");
+    expect(commands.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "pinned" });
   });
 
   it("names the Archived view", async () => {
@@ -1827,6 +1839,37 @@ describe("WorkbenchState's Inbox", () => {
     send("python/cpython");
     await vi.waitFor(() => {
       expect(numbers(state)).toEqual([6]);
+    });
+    expect(state.underCursor).toBeUndefined();
+    state.stop();
+  });
+
+  it("lands the cursor after an Issue unpinned in the Pinned issues once it leaves, and waits for none to leave the Workbench", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.unpin).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6, 7));
+    const state = new WorkbenchState("python/cpython");
+    await state.load();
+    await state.select({ kind: "pinned" });
+    state.moveCursor(1);
+
+    await state.unpin(5);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(6, 7));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([6, 7]);
+    });
+    expect(state.cursor?.number).toBe(6);
+    expect(commands.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", 5);
+
+    // The Workbench lists an Issue a Filter reaches whether or not it is pinned, so one that leaves it left
+    // for another reason.
+    await state.select(whole);
+    await state.unpin(6);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(7));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([7]);
     });
     expect(state.underCursor).toBeUndefined();
     state.stop();

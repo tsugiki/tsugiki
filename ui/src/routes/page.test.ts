@@ -1292,6 +1292,7 @@ describe("every action in the palette", () => {
       ["View: Inbox", null],
       ["View: Stale Reviews", null],
       ["View: Archived", null],
+      ["View: Pinned Issues", null],
       ["View: Sidebar as Icons", null],
     ]);
   });
@@ -1344,6 +1345,7 @@ describe("every action in the palette", () => {
       ["View: Inbox", null],
       ["View: Stale Reviews", null],
       ["View: Archived", null],
+      ["View: Pinned Issues", null],
       ["View: Sidebar as Icons", null],
     ]);
   });

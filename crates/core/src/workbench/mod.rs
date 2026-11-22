@@ -174,6 +174,11 @@ impl WorkbenchItem {
         }
     }
 
+    /// Whether the item is a Pinned issue (#488).
+    pub(crate) fn is_pinned(&self) -> bool {
+        matches!(self, Self::Issue(issue) if issue.pinned)
+    }
+
     /// Whether the Issue or PR that heads the item is open. An Issue stored before Tsugiki kept states
     /// counts as open.
     fn is_open(&self) -> bool {
@@ -270,6 +275,8 @@ pub enum WorkbenchView {
     StaleReviews,
     /// The Archived items, the last archived first (#491).
     Archived,
+    /// The Pinned issues (#489).
+    Pinned,
 }
 
 /// A Repository's Workbench or one of its views, with what the Sidebar shows beside it.
@@ -287,6 +294,8 @@ pub struct Workbench {
     pub review_requests: u32,
     /// The count of PRs whose Stale review Needs attention, a stale Origin PR and its Bot backports as one.
     pub stale_reviews: u32,
+    /// The count of Pinned issues on the Workbench that Need attention (#489).
+    pub pinned: u32,
     pub filters: Vec<FilterLine>,
 }
 
@@ -307,7 +316,8 @@ impl Workbench {
             WorkbenchView::Whole
             | WorkbenchView::Filter { .. }
             | WorkbenchView::ReviewRequests
-            | WorkbenchView::StaleReviews => workbench.ordered(order),
+            | WorkbenchView::StaleReviews
+            | WorkbenchView::Pinned => workbench.ordered(order),
         })
     }
 
@@ -335,7 +345,7 @@ impl Workbench {
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
         let matched = filters.matched();
         let selected = match view {
-            WorkbenchView::Whole | WorkbenchView::Archived => None,
+            WorkbenchView::Whole | WorkbenchView::Archived | WorkbenchView::Pinned => None,
             WorkbenchView::Filter { query } => Some(filters.numbers_of(query)),
             WorkbenchView::ReviewRequests => Some(&causes.review_requests),
             WorkbenchView::StaleReviews => Some(&causes.stale_reviews),
@@ -375,6 +385,15 @@ impl Workbench {
                 Some(Hidden::Muted | Hidden::MutedAuthor) => listed.attention.is_some(),
             })
             .collect();
+        // The Pinned issues' view lists each one the Workbench shows, and an Archived one in its place,
+        // marked Archived as a Filter's view marks it, so the user finds every pin there to unpin (#489).
+        let in_pinned: Vec<&ListedItem> = (listed.iter())
+            .filter(|listed| listed.item.is_pinned())
+            .filter(|listed| match listed.hidden {
+                None | Some(Hidden::Archived) => true,
+                Some(Hidden::Muted | Hidden::MutedAuthor) => listed.attention.is_some(),
+            })
+            .collect();
         // A Filter's count leaves out what it found that the user put away (#824). One switched on counts
         // what Needs attention as the Workbench does, a Muted item asked about after the mute included.
         let lines = filters.lines(&on_workbench, &unhidden);
@@ -382,6 +401,10 @@ impl Workbench {
             on_workbench
                 .iter()
                 .filter(|listed| listed.attention.is_some()),
+        );
+        let pinned = count_of(
+            (on_workbench.iter())
+                .filter(|listed| listed.item.is_pinned() && listed.attention.is_some()),
         );
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
         let stale_reviews = prs_of(&unhidden, &causes.stale_reviews);
@@ -400,6 +423,7 @@ impl Workbench {
             WorkbenchView::Whole => (shown_of(&on_workbench), Vec::new()),
             WorkbenchView::StaleReviews => (shown_of(&unhidden), Vec::new()),
             WorkbenchView::Archived => (last_archived_first(&listed, &causes), Vec::new()),
+            WorkbenchView::Pinned => (shown_of(&in_pinned), Vec::new()),
         };
         Self {
             items,
@@ -407,6 +431,7 @@ impl Workbench {
             count,
             review_requests,
             stale_reviews,
+            pinned,
             filters: lines,
         }
     }

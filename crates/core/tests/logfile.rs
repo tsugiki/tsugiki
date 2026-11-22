@@ -4,10 +4,12 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::pull_requests::NodeId;
+use tsugiki_core::folders::Folders;
 use tsugiki_core::github::replay::Replayer;
 use tsugiki_core::github::{
     GitHub, GitHubAccess, Grant, Reply, Request, Selection, Transport, Unreachable, Write,
@@ -19,7 +21,7 @@ use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::SettingsView;
 use tsugiki_core::status::StatusBoard;
 use tsugiki_core::store::Store;
-use tsugiki_core::token::{GhOutput, Token, read_token};
+use tsugiki_core::token::{GhOutput, Token, TokenFrom, TokenReads, read_token};
 use tsugiki_core::version::Version;
 use tsugiki_core::{latest, logfile};
 use tsugiki_token::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, gh_token};
@@ -77,8 +79,7 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
 fn a_token_from_gh_token_is_hidden_too(path: &Path) {
     let _token = read_token(gh_token(gh_token_holds_a_token_of_no_known_shape)).unwrap();
     log::warn!("GitHub refused {IN_GH_TOKEN} too");
-    log::logger().flush();
-    let file = fs::read_to_string(path).unwrap();
+    let file = log_at(path);
     assert!(!file.contains(IN_GH_TOKEN), "{file}");
     assert!(file.contains("GitHub refused [token] too"), "{file}");
 }
@@ -96,12 +97,72 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
         "{}",
         problem.message
     );
-    log::logger().flush();
-    let file = fs::read_to_string(path).unwrap();
+    let file = log_at(path);
     assert!(
         file.contains("gh didn't answer within 30 s, so Tsugiki stopped it"),
         "{file}"
     );
+}
+
+/// Reads that fail the same way log their cause once, as each minute's read does without `gh` (#1009). A
+/// read that fails another way logs its own, and so does a failed read after one that found a token.
+fn a_failed_read_logs_its_cause_once_until_the_cause_changes(path: &Path) {
+    let cant_run = "Tsugiki can't run gh: ";
+    let stopped = "gh didn't answer within 30 s, so Tsugiki stopped it";
+    let mut reads = TokenReads::default();
+    let mut logged = |from: TokenFrom, times: usize, line: &str| {
+        log_of_reads(path, &mut reads, from, times)
+            .matches(line)
+            .count()
+    };
+
+    assert_eq!(logged(NO_GH, 3, cant_run), 1);
+    // The system refusing to run `gh` is another cause than a `gh` it can't find.
+    assert_eq!(logged(gh_alone(gh_refused), 1, cant_run), 1);
+    // So is a refusal that says something else.
+    assert_eq!(logged(gh_alone(gh_refused_by_policy), 2, cant_run), 1);
+    assert_eq!(logged(SLOW_GH, 2, stopped), 1);
+    assert_eq!(logged(NO_GH, 2, cant_run), 1);
+
+    let token = gh_alone(gh_prints_a_token_of_no_known_shape);
+    assert_eq!(logged(token, 1, cant_run), 0);
+    assert_eq!(logged(NO_GH, 1, cant_run), 1);
+}
+
+/// The lines the log at `path` gains while `reads` reads the token from `from` as many `times` as it says.
+/// Another line goes before each read, as the app's other threads log meanwhile, so the logger's skip of a
+/// line that repeats the one before it can't hide a repeat.
+#[expect(
+    clippy::panic,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn log_of_reads(path: &Path, reads: &mut TokenReads, from: TokenFrom, times: usize) -> String {
+    let before = log_at(path).len();
+    for _ in 0..times {
+        log::warn!("Meanwhile, another thread's line");
+        let _found = reads.read(from);
+    }
+    let log = log_at(path);
+    let Some(gained) = log.get(before..) else {
+        panic!(
+            "the log shrank from {before} bytes to {}: it rolled over to tsugiki.log.1",
+            log.len()
+        );
+    };
+    gained.to_owned()
+}
+
+/// The answer of a `gh` the system refuses to run.
+fn gh_refused() -> io::Result<GhOutput> {
+    Err(io::Error::from(io::ErrorKind::PermissionDenied))
+}
+
+/// The answer of a `gh` the system refuses to run, in other words.
+fn gh_refused_by_policy() -> io::Result<GhOutput> {
+    Err(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "a policy blocks gh",
+    ))
 }
 
 /// A write whose selection the token crate refuses leaves the reason in the log, and says nothing was sent.
@@ -129,8 +190,7 @@ fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) 
     let writable = WritableRepository::new(cpython, Some(subject), []).unwrap();
     let refused = Replayer::new(no_recordings).write(token, &writable, (&comment, second_field));
     assert_eq!(refused.unwrap_err(), Unreachable::Refused);
-    log::logger().flush();
-    let file = fs::read_to_string(path).unwrap();
+    let file = log_at(path);
     let says =
         "Tsugiki refused to send AddComment to GitHub: a write's payload isn't one selection set";
     assert!(file.contains(says), "{file}");
@@ -142,10 +202,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     let path = folder.join("tsugiki.log");
     logfile::start(path.clone());
     logfile::start(folder.join("a second start changes nothing.log"));
-    let read_after_flush = || {
-        log::logger().flush();
-        fs::read_to_string(&path).unwrap()
-    };
+    let read_after_flush = || log_at(&path);
 
     a_run_says_it_started_only_when_told_to(&path);
 
@@ -169,6 +226,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     assert!(file.contains("Tsugiki can't run gh: "), "{file}");
 
     a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(&path);
+    a_failed_read_logs_its_cause_once_until_the_cause_changes(&path);
 
     // A folder where the database should be: SQLite says why, and the user sees plain words.
     let in_the_way = folder.join("database");
@@ -189,31 +247,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     );
 
     // Each problem the status bar shows, including one no earlier line explains.
-    let lost = || Err(Error::new(ErrorKind::Internal, "the folders are lost"));
-    let mirrors = Mirrors::start(
-        lost(),
-        Remotes::under(String::new()),
-        Announce::cloning_only(Box::new(|_| {})),
-    );
-    let session = Session::start(
-        StatusBoard::new(Box::new(|_| {})),
-        lost(),
-        Connections {
-            github: GitHubAccess {
-                transport: Box::new(Proxy),
-                token_from: NO_GH,
-            },
-            mirrors: mirrors.requests(),
-            settings: latest::channel(SettingsView::default()).1,
-        },
-        Intervals {
-            status: Duration::from_secs(3600),
-            repository: Duration::from_secs(3600),
-            on_screen: Duration::from_secs(3600),
-        },
-    );
-    session.stop(Duration::from_secs(10));
-    mirrors.stop(Duration::from_secs(10));
+    run_session(Err(lost()), NO_GH, Duration::from_secs(3600), || true);
     let file = read_after_flush();
     assert!(file.contains("the folders are lost"), "{file}");
 
@@ -222,4 +256,95 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
         3,
         "the log, the folder in the way and the store's lock only"
     );
+
+    the_github_thread_logs_why_its_reads_find_no_token_once(&path);
+}
+
+/// The count of the GitHub thread's asks of `gh` for its token, in the step that counts them.
+static GH_ASKED: AtomicUsize = AtomicUsize::new(0);
+
+/// A `gh` that isn't installed, which logs a line of its own each time it is asked, as another thread might
+/// between two reads, so the logger's skip of a line that repeats the one before it can't hide a repeat.
+fn gh_missing_and_counted() -> io::Result<GhOutput> {
+    let asked = GH_ASKED.fetch_add(1, Ordering::SeqCst) + 1;
+    log::warn!("gh asked {asked} times");
+    Err(io::Error::from(io::ErrorKind::NotFound))
+}
+
+/// The GitHub thread keeps its reads of the token while it has none, so each minute's read without `gh`
+/// adds no line once the first has said why (#1009).
+fn the_github_thread_logs_why_its_reads_find_no_token_once(path: &Path) {
+    let cant_run = "Tsugiki can't run gh: ";
+    let cant_run_before = lines_with(path, cant_run);
+    let folder = tsugiki_test_git::temp_path("logfile-session");
+    let folders = Folders {
+        data: folder.to_path_buf(),
+        settings: folder.to_path_buf(),
+        logs: folder.to_path_buf(),
+    };
+    let asked_thrice = || GH_ASKED.load(Ordering::SeqCst) >= 3;
+    run_session(
+        Ok(folders),
+        gh_alone(gh_missing_and_counted),
+        Duration::from_millis(10),
+        asked_thrice,
+    );
+    assert!(asked_thrice());
+    assert_eq!(lines_with(path, cant_run), cant_run_before + 1);
+}
+
+/// The error of folders Tsugiki couldn't find.
+fn lost() -> Error {
+    Error::new(ErrorKind::Internal, "the folders are lost")
+}
+
+/// Runs a session on `folders`, whose GitHub thread takes the token `from` and reads it again each
+/// `status` while it finds none, until `done` holds or 10 s are up, then stops it. Its Mirrors have lost
+/// their folders.
+fn run_session(
+    folders: Result<Folders, Error>,
+    from: TokenFrom,
+    status: Duration,
+    done: impl FnMut() -> bool,
+) {
+    let mirrors = Mirrors::start(
+        Err(lost()),
+        Remotes::under(String::new()),
+        Announce::cloning_only(Box::new(|_| {})),
+    );
+    let session = Session::start(
+        StatusBoard::new(Box::new(|_| {})),
+        folders,
+        Connections {
+            github: GitHubAccess {
+                transport: Box::new(Proxy),
+                token_from: from,
+            },
+            mirrors: mirrors.requests(),
+            settings: latest::channel(SettingsView::default()).1,
+        },
+        Intervals {
+            status,
+            repository: Duration::from_secs(3600),
+            on_screen: Duration::from_secs(3600),
+        },
+    );
+    tsugiki_test_git::wait_until(Duration::from_secs(10), done);
+    session.stop(Duration::from_secs(10));
+    mirrors.stop(Duration::from_secs(10));
+}
+
+/// The count of `line` in the log at `path`, once the logger has written what it was sent.
+fn lines_with(path: &Path, line: &str) -> usize {
+    log_at(path).matches(line).count()
+}
+
+/// The log at `path`, once the logger has written what it was sent.
+#[expect(
+    clippy::unwrap_used,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn log_at(path: &Path) -> String {
+    log::logger().flush();
+    fs::read_to_string(path).unwrap()
 }

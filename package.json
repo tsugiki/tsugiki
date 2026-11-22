@@ -26,6 +26,7 @@
     "rustfmt": "cargo fmt --all --check",
     "token-deps": "node scripts/token-deps.ts",
     "pre-commit": "pre-commit run --all-files",
+    "typos": "pre-commit run typos --all-files",
     "svelte-check": "npm run check -w ui",
     "clippy": "cargo clippy --workspace --all-targets -- -D warnings",
     "vitest": "npm run coverage -w ui --",

@@ -12,7 +12,7 @@ use crate::github::testing::{
 use crate::github::{Grant, Reply, Unreachable};
 use crate::status::Status;
 use crate::status::testing::changes_board;
-use crate::store::testing::OpenStore;
+use crate::store::testing::{OpenStore, refuse_read_only_marks};
 use crate::testing::{cpython, gcmon};
 use crate::token::{GhOutput, Token, read_token};
 
@@ -277,6 +277,24 @@ fn a_repository_the_settings_drop_loses_its_mark() {
 
     assert_eq!(db.read_only_marks(), (true, false));
     assert_eq!(heard(&changes), [gcmon()]);
+    db.close();
+}
+
+#[test]
+fn a_mark_the_store_refuses_goes_to_the_log_and_leaves_the_status_alone() {
+    let db = OpenStore::new("judge-refused");
+    refuse_read_only_marks(&db.store);
+    let (said, statuses) = std::sync::mpsc::channel();
+    let mut board = StatusBoard::new(Box::new(move |status: &Status| {
+        said.send(status.clone()).unwrap();
+    }));
+    let (github, _asked) = after_answer(granted(Some(WriteScope::None), None), vec![]);
+    let mut judge = WriteJudge::new(AN_HOUR);
+
+    judge.follow(parts(&mut board, &db, &github), &both());
+
+    assert_eq!(db.read_only_marks(), (false, false));
+    assert_eq!(statuses.try_iter().count(), 0);
     db.close();
 }
 

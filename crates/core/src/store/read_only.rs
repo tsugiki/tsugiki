@@ -18,6 +18,13 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
+const FORGET_OTHER_TOKENS: &str = "
+    DELETE FROM read_only WHERE token_kind <> :kind OR token_expires_at IS NOT :expires
+    RETURNING repository
+";
+
+const CLEAR: &str = "DELETE FROM read_only WHERE repository = :repository";
+
 /// Forgets the marks of each token of another kind than `kind`, and gives the Repositories they were on.
 pub(super) fn forget_other_kinds(
     connection: &Connection,
@@ -37,10 +44,7 @@ pub(super) fn forget_other_tokens(
     connection: &Connection,
     token: TokenSeen,
 ) -> rusqlite::Result<Vec<RepositoryName>> {
-    let mut statement = connection.prepare(
-        "DELETE FROM read_only WHERE token_kind <> :kind OR token_expires_at IS NOT :expires
-         RETURNING repository",
-    )?;
+    let mut statement = connection.prepare(FORGET_OTHER_TOKENS)?;
     let (kind, expires) = token_columns(token);
     let named = named_params! { ":kind": kind, ":expires": expires };
     let forgot = statement.query_map(named, |row| row.get(0))?;
@@ -83,12 +87,7 @@ pub(super) fn forget_unlisted(
         .filter(|marked| !listed.iter().any(|repository| repository.is_same(marked)))
         .collect();
     for repository in &unlisted {
-        transaction
-            .execute(
-                "DELETE FROM read_only WHERE repository = :repository",
-                named_params! { ":repository": repository },
-            )
-            .map(drop)?;
+        clear(&transaction, repository).map(drop)?;
     }
     transaction.commit()?;
     Ok(unlisted)
@@ -99,10 +98,7 @@ pub(super) fn clear(
     connection: &Connection,
     repository: &RepositoryName,
 ) -> rusqlite::Result<bool> {
-    let cleared = connection.execute(
-        "DELETE FROM read_only WHERE repository = :repository",
-        named_params! { ":repository": repository },
-    )?;
+    let cleared = connection.execute(CLEAR, named_params! { ":repository": repository })?;
     Ok(cleared > 0)
 }
 

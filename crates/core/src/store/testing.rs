@@ -169,6 +169,16 @@ pub(crate) fn refuse_new_links(store: &Store) {
     refusing.unwrap().unwrap();
 }
 
+/// Has `store` refuse each new Read-only mark, as a full disk would.
+pub(crate) fn refuse_read_only_marks(store: &Store) {
+    let refusing = store.call(|connection| {
+        connection.execute_batch(
+            "CREATE TRIGGER refuse_marks BEFORE INSERT ON read_only BEGIN SELECT RAISE(ABORT, 'full'); END;",
+        )
+    });
+    refusing.unwrap().unwrap();
+}
+
 /// Each fix `store` keeps, as its Repository, its PR and the Issue the PR fixes, in that order.
 pub(crate) fn kept_fixes(store: &Store) -> Vec<(String, u32, u32)> {
     let found = store.call(|connection| -> rusqlite::Result<Vec<(String, u32, u32)>> {

@@ -4,6 +4,22 @@ use crate::store::testing::stored_texts;
 use rusqlite::named_params;
 
 #[test]
+fn a_repository_column_reads_a_name_and_refuses_what_isnt_one() {
+    let connection = Connection::open_in_memory().unwrap();
+    let read = |text: &str| {
+        connection.query_row("SELECT :text", named_params! {":text": text}, |row| {
+            row.get::<_, RepositoryName>(0)
+        })
+    };
+
+    assert_eq!(
+        read("python/cpython").unwrap().to_string(),
+        "python/cpython"
+    );
+    assert!(read("not a name").is_err());
+}
+
+#[test]
 fn a_time_in_milliseconds_keeps_them_and_refuses_one_past_the_calendar() {
     let at = OffsetDateTime::from_unix_timestamp_nanos(1_795_000_000_123_456_789).unwrap();
     let connection = Connection::open_in_memory().unwrap();

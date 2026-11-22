@@ -247,6 +247,14 @@ pub(crate) enum SessionMessage {
     /// The user changed what a Repository's settings say, and nothing on GitHub changed with them.
     SettingsChanged(SettingsSave),
     Mark(Marked),
+    /// A mark that can take its item off the window's list, which answers once the session has done what it
+    /// asks, after the store's write (#489). Every read the window asks after the answer then shows the mark,
+    /// so the list's answer to it settles whether the item left. A mark the store couldn't keep answers all
+    /// the same, and says why on the status bar as `Mark` does.
+    MarkAnswered {
+        marked: Marked,
+        reply: Sender<Result<(), Error>>,
+    },
     /// A read of what an item says. A demand that comes while the same read waits or runs shares its outcome.
     Fetch(Fetched),
     /// What the user did with an item on screen, or with the window.
@@ -453,22 +461,40 @@ impl Fetching {
     }
 
     /// Mark Unseen on Issue or PR `number`, from now. It unarchives `archived`, the item that holds it, when
-    /// the window draws that Archived (#491).
-    pub fn mark_unseen(&self, repository: RepositoryName, number: u32, archived: Option<ItemKey>) {
+    /// the window draws that Archived (#491). Waits for the session, as `answered_mark` says.
+    pub fn mark_unseen(
+        &self,
+        repository: RepositoryName,
+        number: u32,
+        archived: Option<ItemKey>,
+    ) -> Result<(), Error> {
         let at = OffsetDateTime::now_utc();
-        self.to_session(SessionMessage::Mark(Marked::Unseen {
+        self.answered_mark(Marked::Unseen {
             repository,
             number,
             archived,
             at,
-        }));
+        })
     }
 
     /// Archive on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item put away
-    /// now, until something new Needs attention there.
-    pub fn archive(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
-        let archived = Marked::archived(repository, key, mark, PutAway::Now);
-        self.to_session(SessionMessage::Mark(archived));
+    /// now, until something new Needs attention there. Waits for the session, as `answered_mark` says.
+    pub fn archive(
+        &self,
+        repository: RepositoryName,
+        key: ItemKey,
+        mark: SeenMark,
+    ) -> Result<(), Error> {
+        self.answered_mark(Marked::archived(repository, key, mark, PutAway::Now))
+    }
+
+    /// Hands the session `marked`, and waits until it has done what the mark asks, after the store's write
+    /// (#489). A session that has stopped answers that it isn't connected.
+    fn answered_mark(&self, marked: Marked) -> Result<(), Error> {
+        answered(&self.session, |reply| SessionMessage::MarkAnswered {
+            marked,
+            reply,
+        })
     }
 
     /// Mark Seen with `mark` on the item `key` names, which the window draws Archived: Archive that keeps
@@ -478,22 +504,26 @@ impl Fetching {
         self.to_session(SessionMessage::Mark(archived));
     }
 
-    /// Unarchives the item `key` names.
-    pub fn unarchive(&self, repository: RepositoryName, key: ItemKey) {
-        self.to_session(SessionMessage::Mark(Marked::Unarchived { repository, key }));
+    /// Unarchives the item `key` names. Waits for the session, as `answered_mark` says.
+    pub fn unarchive(&self, repository: RepositoryName, key: ItemKey) -> Result<(), Error> {
+        self.answered_mark(Marked::Unarchived { repository, key })
     }
 
     /// Mute on the item `key` names: Mark Seen with `mark`, as the window drew it, and the item hidden until
-    /// the user unmutes it (#492).
-    pub fn mute(&self, repository: RepositoryName, key: ItemKey, mark: SeenMark) {
+    /// the user unmutes it (#492). Waits for the session, as `answered_mark` says.
+    pub fn mute(
+        &self,
+        repository: RepositoryName,
+        key: ItemKey,
+        mark: SeenMark,
+    ) -> Result<(), Error> {
         let at = OffsetDateTime::now_utc();
-        let muted = Marked::Muted {
+        self.answered_mark(Marked::Muted {
             repository,
             key,
             mark,
             at,
-        };
-        self.to_session(SessionMessage::Mark(muted));
+        })
     }
 
     /// Unmutes the item `key` names.
@@ -502,14 +532,14 @@ impl Fetching {
     }
 
     /// Mute author on `author` in `repository` (#494): their items count as Muted, and the session marks
-    /// their open items seen in the background, finding them under the Repository's settings.
-    pub fn mute_author(&self, repository: RepositoryName, author: Login) {
-        let muted = Marked::AuthorMuted {
+    /// their open items seen in the background, finding them under the Repository's settings. Waits for the
+    /// session, as `answered_mark` says.
+    pub fn mute_author(&self, repository: RepositoryName, author: Login) -> Result<(), Error> {
+        self.answered_mark(Marked::AuthorMuted {
             repository,
             author,
             at: OffsetDateTime::now_utc(),
-        };
-        self.to_session(SessionMessage::Mark(muted));
+        })
     }
 
     /// Unmutes `author` in `repository`.
@@ -518,16 +548,15 @@ impl Fetching {
         self.to_session(SessionMessage::Mark(unmuted));
     }
 
-    /// Pins Issue `number` of `repository` (#488): it stays on the Workbench until the user unpins it.
-    pub fn pin(&self, repository: RepositoryName, number: u32) {
-        let pinned = Marked::Pinned { repository, number };
-        self.to_session(SessionMessage::Mark(pinned));
+    /// Pins Issue `number` of `repository` (#488): it stays on the Workbench until the user unpins it. Waits
+    /// for the session, as `answered_mark` says.
+    pub fn pin(&self, repository: RepositoryName, number: u32) -> Result<(), Error> {
+        self.answered_mark(Marked::Pinned { repository, number })
     }
 
-    /// Unpins Issue `number` of `repository` (#488).
-    pub fn unpin(&self, repository: RepositoryName, number: u32) {
-        let unpinned = Marked::Unpinned { repository, number };
-        self.to_session(SessionMessage::Mark(unpinned));
+    /// Unpins Issue `number` of `repository` (#488). Waits for the session, as `answered_mark` says.
+    pub fn unpin(&self, repository: RepositoryName, number: u32) -> Result<(), Error> {
+        self.answered_mark(Marked::Unpinned { repository, number })
     }
 
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and waits for the session to save

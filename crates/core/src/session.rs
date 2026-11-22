@@ -329,6 +329,14 @@ impl Keeper {
         match message {
             SessionMessage::Stop => return ControlFlow::Break(()),
             SessionMessage::Mark(marked) => self.mark(store, marked),
+            SessionMessage::MarkAnswered { marked, reply } => {
+                self.mark(store, marked);
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller has gone, and nobody then waits for the answer"
+                )]
+                let _ = reply.send(Ok(()));
+            }
             SessionMessage::SettingsChanged(save) => {
                 self.follow_settings(store, &save, HandEdits::Listed);
             }

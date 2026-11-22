@@ -431,7 +431,7 @@ fn mark_seen_moves_last_seen_to_the_moment_the_window_drew_and_asks_github_nothi
     let drawn = hours_ago(2);
 
     let (content, activity, _) = after_asking("mark-seen", access, |asked| {
-        asked.mark_unseen(gcmon(), 8, None);
+        asked.mark_unseen(gcmon(), 8, None).unwrap();
         asked.mark_seen(
             gcmon(),
             SeenMark {
@@ -460,10 +460,10 @@ fn archive_marks_the_item_seen_and_keeps_it_archived_until_unarchive() {
             up_to: Some(drawn),
             findings: vec![],
         };
-        asked.archive(gcmon(), issue, mark(vec![7, 8]));
+        asked.archive(gcmon(), issue, mark(vec![7, 8])).unwrap();
         asked.keep_archived(gcmon(), issue, mark(vec![7]));
-        asked.archive(gcmon(), standalone, mark(vec![9]));
-        asked.unarchive(gcmon(), standalone);
+        asked.archive(gcmon(), standalone, mark(vec![9])).unwrap();
+        asked.unarchive(gcmon(), standalone).unwrap();
     });
 
     let archived = activity.archived.iter();
@@ -489,8 +489,8 @@ fn mute_marks_the_item_seen_and_keeps_it_muted_until_unmute() {
             up_to: Some(drawn),
             findings: vec![],
         };
-        asked.mute(gcmon(), issue, mark(vec![7, 8]));
-        asked.mute(gcmon(), standalone, mark(vec![9]));
+        asked.mute(gcmon(), issue, mark(vec![7, 8])).unwrap();
+        asked.mute(gcmon(), standalone, mark(vec![9])).unwrap();
         asked.unmute(gcmon(), standalone);
     });
 
@@ -505,7 +505,7 @@ fn mark_unseen_flags_the_item_from_now() {
     let before = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
 
     let (_, activity, _) = after_asking("mark-unseen", access, |asked| {
-        asked.mark_unseen(gcmon(), 7, None)
+        asked.mark_unseen(gcmon(), 7, None).unwrap();
     });
 
     let flagged = activity.marked_unseen.get(&7).copied().unwrap();
@@ -590,7 +590,7 @@ fn mark_seen_and_mark_unseen_work_with_no_token() {
                 findings: vec![],
             },
         );
-        asked.mark_unseen(gcmon(), 8, None);
+        asked.mark_unseen(gcmon(), 8, None).unwrap();
     });
 
     assert_eq!(content, None);
@@ -2510,7 +2510,7 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute(gcmon(), issue, issue_5_seen());
+    asked.mute(gcmon(), issue, issue_5_seen()).unwrap();
     let muted = heard.asked_through("wants heads none", PLENTY);
     asked.unmute(gcmon(), issue);
     let unmuted = heard.asked_through("wants heads #8", PLENTY);
@@ -2553,10 +2553,10 @@ fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unp
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.pin(gcmon(), 5);
+    asked.pin(gcmon(), 5).unwrap();
     let pinned = heard.asked_through("wants heads #8", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
-    asked.unpin(gcmon(), 5);
+    asked.unpin(gcmon(), 5).unwrap();
     let unpinned = heard.asked_through("wants heads none", PLENTY);
     session.stop(PLENTY);
     let store = Store::open(&folders.database()).unwrap();
@@ -2605,7 +2605,7 @@ fn with_no_token_mute_tells_the_window_and_unmute_owes_the_read_of_a_pr_read_at_
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute(gcmon(), issue, issue_5_seen());
+    asked.mute(gcmon(), issue, issue_5_seen()).unwrap();
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     asked.unmute(gcmon(), issue);
@@ -2649,7 +2649,7 @@ fn mute_author_marks_their_items_seen_takes_their_trees_from_the_mirror_and_unmu
 
     let asked = session.fetching();
     asked.sync(gcmon());
-    asked.mute_author(gcmon(), author.clone());
+    asked.mute_author(gcmon(), author.clone()).unwrap();
     let muted = heard.asked_through("wants heads none", PLENTY);
     let change = changes.recv_timeout(PLENTY).unwrap();
     let store = session.reader();
@@ -2747,6 +2747,62 @@ fn show_muted_answers_once_the_store_kept_the_switch_or_why_it_couldnt() {
     assert_eq!(saved.recv().unwrap(), Ok(()));
     assert!(lost.recv().unwrap().is_err(), "the save went missing");
     assert_eq!(read.unwrap(), ShowMuted::On);
+}
+
+#[test]
+fn a_mark_the_window_waits_for_answers_once_a_read_shows_it() {
+    let (folders, _folder) = temp_folders("mark-answered");
+    let store = Store::open(&folders.database()).unwrap();
+    stores_issue_5_with_its_prs(&store);
+    store.close();
+    let (mirrors, _heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+        settings: listed(vec![cpython_gcmon()]),
+    };
+    let session = Session::start(quiet_board(), Ok(folders), connections, HOURLY);
+    let issue = ItemKey::Issue { number: 5 };
+    let asked = session.fetching();
+    let activity = || session.reader().work_facts(&gcmon()).unwrap().activity;
+
+    // Each read right after an answer, while the session's thread may still run, shows the mark.
+    asked.mute(gcmon(), issue, issue_5_seen()).unwrap();
+    let muted = activity().muted.contains_key(&issue);
+    asked.mark_unseen(gcmon(), 5, None).unwrap();
+    let unseen = activity().marked_unseen.contains_key(&5);
+    session.stop(PLENTY);
+
+    assert!(muted && unseen, "muted {muted}, unseen {unseen}");
+}
+
+#[test]
+fn a_mark_the_window_waits_for_answers_when_the_store_couldnt_keep_it() {
+    let db = OpenStore::new("session-mark-lost");
+    let (lossy, _calls) = db.store.failing_at_call(Some(0));
+    let (mirrors, _heard) = HeardRequests::new();
+    let (messages, incoming) = mpsc::channel();
+    let keeper = Keeper::new(
+        incoming,
+        sending(messages, mirrors),
+        listed(vec![cpython_gcmon()]),
+        telling(&mut quiet_board()).0,
+    );
+    let (reply, answer) = mpsc::channel();
+
+    let took = keeper.take(
+        &lossy,
+        SessionMessage::MarkAnswered {
+            marked: mute_5(),
+            reply,
+        },
+    );
+
+    drop(lossy);
+    db.close();
+    assert!(took.is_continue());
+    // The status bar says why the store couldn't keep it, as for any mark.
+    assert_eq!(answer.recv().unwrap(), Ok(()));
 }
 
 #[test]
@@ -4097,7 +4153,8 @@ fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_chec
     let session = Session::start(board, Ok(folders), reaching(octocat_answers()), HOURLY);
     assert_eq!(seen.recv_timeout(PLENTY), Ok(octocat()));
 
-    session.fetching().mark_unseen(gcmon(), 7, None);
+    // The panic drops the mark's reply, which then says Tsugiki isn't connected.
+    assert!(session.fetching().mark_unseen(gcmon(), 7, None).is_err());
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 
@@ -4124,7 +4181,7 @@ fn a_panic_in_the_sessions_thread_with_no_token_still_says_tsugiki_stopped_check
         Some(ErrorKind::Unauthorized)
     );
 
-    session.fetching().mark_unseen(gcmon(), 7, None);
+    assert!(session.fetching().mark_unseen(gcmon(), 7, None).is_err());
     let stopped = seen.recv_timeout(PLENTY).unwrap();
     session.stop(PLENTY);
 

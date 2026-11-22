@@ -140,7 +140,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
     let saved = |by| SettingsSave::new(RepositorySettings::new(cpython()), &[], by);
     fetching.settings_changed(saved(SavedBy::HandEdit));
     fetching.settings_changed(saved(SavedBy::Window));
-    fetching.mark_unseen(cpython(), 9, None);
+    fetching.unmute(cpython(), ItemKey::Issue { number: 9 });
     fetching.sync(cpython());
     fetching.stop_session();
 
@@ -153,7 +153,7 @@ fn the_users_demands_of_github_reach_the_session_in_the_order_asked() {
             "refresh",
             "settings of python/cpython",
             "switch",
-            "unseen #9",
+            "unmuted #9",
             "other",
             "stop"
         ]
@@ -169,4 +169,30 @@ fn a_check_with_no_session_says_tsugiki_isnt_connected() {
 
     assert_eq!(problem.kind, ErrorKind::Offline);
     assert_eq!(problem.message, NOT_CONNECTED);
+}
+
+#[test]
+fn each_mark_the_window_waits_for_with_no_session_says_tsugiki_isnt_connected() {
+    let (fetching, incoming, _heard) = handle();
+    drop(incoming);
+    let key = ItemKey::Issue { number: 5 };
+    let mark = || SeenMark {
+        numbers: vec![5],
+        up_to: None,
+        findings: vec![],
+    };
+
+    let answers = [
+        fetching.mark_unseen(cpython(), 5, Some(key)),
+        fetching.archive(cpython(), key, mark()),
+        fetching.unarchive(cpython(), key),
+        fetching.mute(cpython(), key, mark()),
+        fetching.mute_author(cpython(), Login::new("some-author")),
+        fetching.pin(cpython(), 5),
+        fetching.unpin(cpython(), 5),
+    ];
+
+    for answer in answers {
+        assert_eq!(answer.unwrap_err().message, NOT_CONNECTED);
+    }
 }

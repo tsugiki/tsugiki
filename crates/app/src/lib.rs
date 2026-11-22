@@ -295,31 +295,21 @@ fn mark_seen(repository: &str, mark: SeenMark, calls: State<'_, Calls>) -> Resul
 }
 
 /// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
-/// draws that Archived (#491). Returns at once.
-#[tauri::command]
-#[specta::specta]
-fn mark_unseen(
+/// draws that Archived (#491). Returns once the store has kept it, so each read the window asks after shows
+/// it (#489), and the `changed` event follows.
+fn mark_unseen_of(
     repository: &str,
     number: u32,
     archived: Option<ItemKey>,
-    calls: State<'_, Calls>,
+    calls: &Calls,
 ) -> Result<(), Error> {
-    calls.mark_unseen(RepositoryName::parse(repository)?, number, archived);
-    Ok(())
+    calls.mark_unseen(RepositoryName::parse(repository)?, number, archived)
 }
 
-/// Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
-/// once, and the `changed` event follows.
-#[tauri::command]
-#[specta::specta]
-fn archive(
-    repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    calls.archive(RepositoryName::parse(repository)?, item, mark);
-    Ok(())
+/// Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns
+/// once the store has kept it, as `mark_unseen_of` does.
+fn archive_of(repository: &str, item: ItemKey, mark: SeenMark, calls: &Calls) -> Result<(), Error> {
+    calls.archive(RepositoryName::parse(repository)?, item, mark)
 }
 
 /// Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
@@ -336,26 +326,15 @@ fn keep_archived(
     Ok(())
 }
 
-/// Unarchives the item `item` names, and returns at once.
-#[tauri::command]
-#[specta::specta]
-fn unarchive(repository: &str, item: ItemKey, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.unarchive(RepositoryName::parse(repository)?, item);
-    Ok(())
+/// Unarchives the item `item` names, and returns once the store has kept it, as `mark_unseen_of` does.
+fn unarchive_of(repository: &str, item: ItemKey, calls: &Calls) -> Result<(), Error> {
+    calls.unarchive(RepositoryName::parse(repository)?, item)
 }
 
-/// Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
-/// once, and the `changed` event follows.
-#[tauri::command]
-#[specta::specta]
-fn mute(
-    repository: &str,
-    item: ItemKey,
-    mark: SeenMark,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    calls.mute(RepositoryName::parse(repository)?, item, mark);
-    Ok(())
+/// Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns once
+/// the store has kept it, as `mark_unseen_of` does.
+fn mute_of(repository: &str, item: ItemKey, mark: SeenMark, calls: &Calls) -> Result<(), Error> {
+    calls.mute(RepositoryName::parse(repository)?, item, mark)
 }
 
 /// Unmutes the item `item` names, and returns at once.
@@ -366,13 +345,10 @@ fn unmute(repository: &str, item: ItemKey, calls: State<'_, Calls>) -> Result<()
     Ok(())
 }
 
-/// Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
-/// the background, and the `changed` event follows.
-#[tauri::command]
-#[specta::specta]
-fn mute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.mute_author(RepositoryName::parse(repository)?, author);
-    Ok(())
+/// Mute author on `author` in `repository` (#494). Returns once the store has kept it, as `mark_unseen_of`
+/// does: the core marks their open items seen in the background.
+fn mute_author_of(repository: &str, author: Login, calls: &Calls) -> Result<(), Error> {
+    calls.mute_author(RepositoryName::parse(repository)?, author)
 }
 
 /// Unmutes `author` in `repository`, and returns at once.
@@ -383,20 +359,16 @@ fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Re
     Ok(())
 }
 
-/// Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
-#[tauri::command]
-#[specta::specta]
-fn pin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.pin(RepositoryName::parse(repository)?, number);
-    Ok(())
+/// Pins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen_of`
+/// does.
+fn pin_of(repository: &str, number: u32, calls: &Calls) -> Result<(), Error> {
+    calls.pin(RepositoryName::parse(repository)?, number)
 }
 
-/// Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
-#[tauri::command]
-#[specta::specta]
-fn unpin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
-    calls.unpin(RepositoryName::parse(repository)?, number);
-    Ok(())
+/// Unpins Issue `number` of `repository` (#488), and returns once the store has kept it, as
+/// `mark_unseen_of` does.
+fn unpin_of(repository: &str, number: u32, calls: &Calls) -> Result<(), Error> {
+    calls.unpin(RepositoryName::parse(repository)?, number)
 }
 
 /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.
@@ -1099,16 +1071,16 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             window_shown,
             window_loaded,
             mark_seen,
-            mark_unseen,
-            archive,
+            slow_commands::mark_unseen,
+            slow_commands::archive,
             keep_archived,
-            unarchive,
-            mute,
+            slow_commands::unarchive,
+            slow_commands::mute,
             unmute,
-            mute_author,
+            slow_commands::mute_author,
             unmute_author,
-            pin,
-            unpin,
+            slow_commands::pin,
+            slow_commands::unpin,
             slow_commands::switch_show_muted,
             settings,
             slow_commands::themes,

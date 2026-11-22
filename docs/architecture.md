@@ -104,7 +104,9 @@ each time. The GitHub thread does one request per step (`sync::Syncs`) and takes
 steps, so no demand waits for longer than one request
 ([ADR 0015](adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). The session thread takes
 the rest at once, so a mark, a change to the settings or the Mirror's patch-ids never wait on GitHub.
-The window never waits on the session to read the database: the StoreReader reads while the Store saves
+A mark that can take its item off the window's list, such as Archive or Unpin, answers the window once the
+store has kept it, so each read the window asks after the answer shows it (#489). The window never waits on
+the session to read the database: the StoreReader reads while the Store saves
 ([ADR 0018](adr/0018-the-window-reads-the-database-on-its-own-read-only-connection.md)).
 
 `app/src/wiring.rs` starts all of them in `connect_core` and hands the commands what they need through

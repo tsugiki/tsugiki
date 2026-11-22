@@ -18,7 +18,7 @@ pub(crate) fn named(message: SessionMessage) -> String {
             SavedBy::HandEdit => format!("settings of {}", save.saved().name),
             SavedBy::Window => "switch".to_owned(),
         },
-        SessionMessage::Mark(Marked::Unseen { number, .. }) => format!("unseen #{number}"),
+        SessionMessage::Mark(Marked::Unmuted { key, .. }) => format!("unmuted #{}", key.number()),
         SessionMessage::Stop => "stop".to_owned(),
         SessionMessage::Screen(moved) => match moved {
             ScreenMove::Opened(Fetched::Issue(item)) => format!("opened Issue #{}", item.number),
@@ -36,15 +36,16 @@ pub(crate) fn named(message: SessionMessage) -> String {
         | SessionMessage::Sync { .. }
         | SessionMessage::Mark(
             Marked::Seen { .. }
+            | Marked::Unseen { .. }
             | Marked::Archived { .. }
             | Marked::Unarchived { .. }
             | Marked::Muted { .. }
-            | Marked::Unmuted { .. }
             | Marked::AuthorMuted { .. }
             | Marked::AuthorUnmuted { .. }
             | Marked::Pinned { .. }
             | Marked::Unpinned { .. },
         )
+        | SessionMessage::MarkAnswered { .. }
         | SessionMessage::ShowMuted { .. }
         | SessionMessage::Patched(..)
         | SessionMessage::Saved(_) => "other".to_owned(),

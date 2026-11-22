@@ -2939,10 +2939,11 @@ it("archives on E the item that holds the line under the cursor, and the cursor 
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+  // The core has archived it by the time it replies.
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
 
   await fireEvent.keyDown(treeRow, { key: "e" });
   await fireEvent.keyDown(treeRow, { key: "e", repeat: true });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   changed("python/cpython", issue.seen.mark.numbers);
 
   expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
@@ -3172,10 +3173,11 @@ it("mutes on M the item that holds the line under the cursor, and the cursor lan
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
+  // The core has muted it by the time it replies.
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
 
   await fireEvent.keyDown(treeRow, { key: "m" });
   await fireEvent.keyDown(treeRow, { key: "m", repeat: true });
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   changed("python/cpython", issue.seen.mark.numbers);
 
   expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);

@@ -64,7 +64,7 @@ fn while_a_sync_step_hangs_the_session_keeps_marks_and_patch_ids_and_tells_of_a_
     asked.sync(gcmon());
     drop(held.asked.recv_timeout(PLENTY).unwrap());
 
-    asked.mark_unseen(gcmon(), 7, None);
+    asked.mark_unseen(gcmon(), 7, None).unwrap();
     let marked = changes.recv_timeout(PLENTY).unwrap();
     asked.settings_changed(bugs_saved(OnWorkbench::Off, SavedBy::HandEdit));
     let edited = changes.recv_timeout(PLENTY).unwrap();
@@ -176,7 +176,7 @@ fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() 
     });
     // The session answers in order, so it has passed the fetch on once it tells of this mark. A fetch it
     // refuses it answers at once, so no answer yet means the GitHub thread holds it.
-    asked.mark_unseen(gcmon(), 7, None);
+    asked.mark_unseen(gcmon(), 7, None).unwrap();
     drop(changes.recv_timeout(PLENTY).unwrap());
     let before = answer.try_recv();
     // The step fails, and the status says offline before the GitHub thread takes the fetch.

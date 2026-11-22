@@ -101,12 +101,15 @@ export const commands = {
 	markSeen: (repository: string, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_seen", { repository, mark })),
 	/**
 	 *  Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
-	 *  draws that Archived (#491). Returns at once.
+	 *  draws that Archived (#491). Like each mark that can take an item off the window's list, it returns once
+	 *  the store has kept it, so each read the window asks after it shows the mark, and the answer to that read
+	 *  settles whether the item left (#489). It waits on the session's thread and the database, and never on
+	 *  GitHub. The `changed` event follows.
 	 */
 	markUnseen: (repository: string, number: number, archived: ItemKey | null) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mark_unseen", { repository, number, archived })),
 	/**
-	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
-	 *  once, and the `changed` event follows.
+	 *  Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns
+	 *  once the store has kept it, as `mark_unseen` does.
 	 */
 	archive: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("archive", { repository, item, mark })),
 	/**
@@ -114,25 +117,31 @@ export const commands = {
 	 *  its place in the Archived view (#491). Returns at once, and the `changed` event follows.
 	 */
 	keepArchived: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("keep_archived", { repository, item, mark })),
-	/**  Unarchives the item `item` names, and returns at once. */
+	/**  Unarchives the item `item` names, and returns once the store has kept it, as `mark_unseen` does. */
 	unarchive: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unarchive", { repository, item })),
 	/**
-	 *  Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
-	 *  once, and the `changed` event follows.
+	 *  Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns once
+	 *  the store has kept it, as `mark_unseen` does.
 	 */
 	mute: (repository: string, item: ItemKey, mark: SeenMark_Deserialize) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute", { repository, item, mark })),
 	/**  Unmutes the item `item` names, and returns at once. */
 	unmute: (repository: string, item: ItemKey) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute", { repository, item })),
 	/**
-	 *  Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
-	 *  the background, and the `changed` event follows.
+	 *  Mute author on `author` in `repository` (#494). Returns once the store has kept it, as `mark_unseen`
+	 *  does, and the core marks their open items seen in the background.
 	 */
 	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
 	/**  Unmutes `author` in `repository`, and returns at once. */
 	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
-	/**  Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows. */
+	/**
+	 *  Pins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen`
+	 *  does.
+	 */
 	pin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("pin", { repository, number })),
-	/**  Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows. */
+	/**
+	 *  Unpins Issue `number` of `repository` (#488), and returns once the store has kept it, as `mark_unseen`
+	 *  does.
+	 */
 	unpin: (repository: string, number: number) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unpin", { repository, number })),
 	/**
 	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,

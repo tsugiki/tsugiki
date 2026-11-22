@@ -424,14 +424,26 @@ impl Calls {
         self.fetching.mark_seen(repository, mark);
     }
 
-    /// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it.
-    pub fn mark_unseen(&self, repository: RepositoryName, number: u32, archived: Option<ItemKey>) {
-        self.fetching.mark_unseen(repository, number, archived);
+    /// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it. Returns once
+    /// the store has kept it, as each mark that can take an item off the window's list does (#489).
+    pub fn mark_unseen(
+        &self,
+        repository: RepositoryName,
+        number: u32,
+        archived: Option<ItemKey>,
+    ) -> Result<(), Error> {
+        self.fetching.mark_unseen(repository, number, archived)
     }
 
-    /// Archive on the item `item` names, with Mark Seen on what `mark` names.
-    pub fn archive(&self, repository: RepositoryName, item: ItemKey, mark: SeenMark) {
-        self.fetching.archive(repository, item, mark);
+    /// Archive on the item `item` names, with Mark Seen on what `mark` names. Returns once the store has
+    /// kept it.
+    pub fn archive(
+        &self,
+        repository: RepositoryName,
+        item: ItemKey,
+        mark: SeenMark,
+    ) -> Result<(), Error> {
+        self.fetching.archive(repository, item, mark)
     }
 
     /// Mark Seen with `mark` on the item `item` names, which stays Archived.
@@ -439,14 +451,20 @@ impl Calls {
         self.fetching.keep_archived(repository, item, mark);
     }
 
-    /// Unarchives the item `item` names.
-    pub fn unarchive(&self, repository: RepositoryName, item: ItemKey) {
-        self.fetching.unarchive(repository, item);
+    /// Unarchives the item `item` names. Returns once the store has kept it.
+    pub fn unarchive(&self, repository: RepositoryName, item: ItemKey) -> Result<(), Error> {
+        self.fetching.unarchive(repository, item)
     }
 
-    /// Mute on the item `item` names, with Mark Seen on what `mark` names.
-    pub fn mute(&self, repository: RepositoryName, item: ItemKey, mark: SeenMark) {
-        self.fetching.mute(repository, item, mark);
+    /// Mute on the item `item` names, with Mark Seen on what `mark` names. Returns once the store has kept
+    /// it.
+    pub fn mute(
+        &self,
+        repository: RepositoryName,
+        item: ItemKey,
+        mark: SeenMark,
+    ) -> Result<(), Error> {
+        self.fetching.mute(repository, item, mark)
     }
 
     /// Unmutes the item `item` names.
@@ -454,9 +472,9 @@ impl Calls {
         self.fetching.unmute(repository, item);
     }
 
-    /// Mute author on `author` in `repository`.
-    pub fn mute_author(&self, repository: RepositoryName, author: Login) {
-        self.fetching.mute_author(repository, author);
+    /// Mute author on `author` in `repository`. Returns once the store has kept it.
+    pub fn mute_author(&self, repository: RepositoryName, author: Login) -> Result<(), Error> {
+        self.fetching.mute_author(repository, author)
     }
 
     /// Unmutes `author` in `repository`.
@@ -464,14 +482,14 @@ impl Calls {
         self.fetching.unmute_author(repository, author);
     }
 
-    /// Pins Issue `number` of `repository` (#488).
-    pub fn pin(&self, repository: RepositoryName, number: u32) {
-        self.fetching.pin(repository, number);
+    /// Pins Issue `number` of `repository` (#488). Returns once the store has kept it.
+    pub fn pin(&self, repository: RepositoryName, number: u32) -> Result<(), Error> {
+        self.fetching.pin(repository, number)
     }
 
-    /// Unpins Issue `number` of `repository` (#488).
-    pub fn unpin(&self, repository: RepositoryName, number: u32) {
-        self.fetching.unpin(repository, number);
+    /// Unpins Issue `number` of `repository` (#488). Returns once the store has kept it.
+    pub fn unpin(&self, repository: RepositoryName, number: u32) -> Result<(), Error> {
+        self.fetching.unpin(repository, number)
     }
 
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.

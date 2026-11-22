@@ -40,7 +40,7 @@ use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
 use crate::error::{Error, ErrorKind};
-use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey};
+use crate::facts::activity::{ActivityFacts, ItemActivity, ItemKey, ShowMuted};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssuePlace, IssueState};
@@ -735,6 +735,18 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Turns `repository`'s "Show muted" to `show` (#825).
+    pub fn switch_show_muted(
+        &self,
+        repository: &RepositoryName,
+        show: ShowMuted,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self
+            .call(move |connection| activity::switch_show_muted(connection, &repository, show))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// The events kept for item `number`, oldest first.
     #[cfg(test)]
     pub fn activity(
@@ -920,6 +932,11 @@ impl Snapshot<'_> {
     /// The Issues a PR that opened on them brought back to the Inbox (#823), closed or not.
     pub fn brought_back(&self) -> Result<BTreeSet<u32>, Error> {
         activity::brought_back(&self.transaction, &self.repository).map_err(saying(CANT_READ))
+    }
+
+    /// The Repository's "Show muted" (#825).
+    pub fn show_muted(&self) -> Result<ShowMuted, Error> {
+        activity::show_muted(&self.transaction, &self.repository).map_err(saying(CANT_READ))
     }
 
     /// The links of each PR with these numbers that the store holds, under `conventions`, in number order.

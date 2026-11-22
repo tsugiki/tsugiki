@@ -43,6 +43,7 @@ pub(crate) fn named(message: SessionMessage) -> String {
             | Marked::AuthorMuted { .. }
             | Marked::AuthorUnmuted { .. },
         )
+        | SessionMessage::ShowMuted { .. }
         | SessionMessage::Patched(..)
         | SessionMessage::Saved(_) => "other".to_owned(),
     }

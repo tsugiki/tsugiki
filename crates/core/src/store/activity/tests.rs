@@ -4,7 +4,9 @@ use super::*;
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::migrate::MIGRATIONS;
-use crate::store::testing::{archived_on_closing, database_before, seeing, temp_database};
+use crate::store::testing::{
+    OpenStore, archived_on_closing, database_before, seeing, temp_database,
+};
 use crate::store::{ChangeCheck, Store, SyncState};
 use crate::testing::{cpython, issue_facts, pr_facts};
 
@@ -614,6 +616,36 @@ fn a_muted_author_survives_a_restart_and_mute_author_marks_their_items_seen() {
     assert_eq!(restarted.muted, BTreeMap::new(), "no Mute on each item");
     assert_eq!(after.muted_authors, [muted(&author, now)]);
     assert_eq!(in_another.muted_authors, []);
+}
+
+#[test]
+fn show_muted_starts_off_and_keeps_its_value_per_repository_through_a_restart() {
+    let (path, folder) = temp_database("activity-show-muted");
+    let repository = cpython();
+    let elsewhere = RepositoryName::parse("python/mypy").unwrap();
+    let store = Store::open(&path).unwrap();
+    store.switch_show_muted(&repository, ShowMuted::On).unwrap();
+    store.switch_show_muted(&repository, ShowMuted::On).unwrap();
+    store.switch_show_muted(&elsewhere, ShowMuted::On).unwrap();
+    store.switch_show_muted(&elsewhere, ShowMuted::Off).unwrap();
+    store.close();
+
+    let db = OpenStore::of(path, folder);
+    let show_muted = |name: &RepositoryName| {
+        let read = db
+            .reader
+            .read_snapshot(name, |snapshot| snapshot.show_muted());
+        read.unwrap()
+    };
+    // Repository names ignore case, as GitHub's do.
+    let shown = show_muted(&RepositoryName::parse("Python/CPython").unwrap());
+    let switched_off = show_muted(&elsewhere);
+    let never = show_muted(&RepositoryName::parse("python/typeshed").unwrap());
+    db.close();
+
+    assert_eq!(shown, ShowMuted::On);
+    assert_eq!(switched_off, ShowMuted::Off);
+    assert_eq!(never, ShowMuted::Off);
 }
 
 #[test]

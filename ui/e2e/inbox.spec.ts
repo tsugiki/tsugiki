@@ -3,7 +3,7 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { ok, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -41,11 +41,11 @@ const issues = (from: number, to: number) =>
 
 /** A page of the Inbox holding `items`, whose next page starts after the last of them while `more` says
  * the cache holds more. */
-const inboxPage = (items: ListedItem[], more: boolean) => {
+const pageOf = (items: ListedItem[], more: boolean) => {
   const last = items.at(-1);
   const older: InboxCursor | null =
     more && last ? { updated_at: last.updated_at, number: last.number } : null;
-  return ok({ items, older });
+  return inboxPage(items, older);
 };
 
 /** Opens the Inbox from the Sidebar. */
@@ -61,7 +61,7 @@ const scrollToEnd = (page: Page) =>
 test("the Sidebar and the palette open the Inbox, each Issue with its PRs, in its own order", async ({
   page,
 }) => {
-  await mockCore(page, { home, workbench, inbox: inboxPage(issues(3, 1), false) });
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(3, 1), false) });
   await page.goto("/");
 
   await openInbox(page);
@@ -83,11 +83,11 @@ test("the Sidebar and the palette open the Inbox, each Issue with its PRs, in it
 
 test("scrolling to the end of the Inbox reads the next page and draws it", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 600 });
-  await mockCore(page, { home, workbench, inbox: inboxPage(issues(400, 341), true) });
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(400, 341), true) });
   await page.goto("/");
   await openInbox(page);
   await expect(page.getByRole("button", { name: "#400 Issue 400" })).toBeVisible();
-  await changeAnswer(page, "inbox", inboxPage(issues(340, 281), false));
+  await changeAnswer(page, "inbox", pageOf(issues(340, 281), false));
 
   // The first page fills the list, so nothing older is read until the user scrolls.
   await expect(page.getByRole("button", { name: "#340 Issue 340" })).toHaveCount(0);
@@ -102,7 +102,7 @@ test("scrolling to the end of the Inbox reads the next page and draws it", async
 
 test("with a cache the size of CPython's, the Inbox draws only the items on screen", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 600 });
-  await mockCore(page, { home, workbench, inbox: inboxPage(issues(3000, 1), false) });
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(3000, 1), false) });
   await page.goto("/");
   await openInbox(page);
   // A role query weighs every row's name, which takes seconds over 3000 of them.
@@ -139,7 +139,7 @@ test("the Detail pane's item comes on screen from far down the Inbox, past items
   await page.setViewportSize({ width: 1200, height: 600 });
   // Fewer than the 3000 above, as each click weighs every row, and still some 130 screens of them.
   const count = 1000;
-  await mockCore(page, { home, workbench, inbox: inboxPage(issues(count, 1), false) });
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(count, 1), false) });
   await page.goto("/");
   await openInbox(page);
   const row = (number: number) => page.locator(`[data-item="#${String(number)}"]`);
@@ -147,7 +147,7 @@ test("the Detail pane's item comes on screen from far down the Inbox, past items
   await expect(page.getByRole("region", { name: "Issue view" })).toBeVisible();
 
   // A change takes the item from the top of the list to its end.
-  await changeAnswer(page, "inbox", inboxPage([...issues(count - 1, 1), issue(count)], false));
+  await changeAnswer(page, "inbox", pageOf([...issues(count - 1, 1), issue(count)], false));
   await emitFromCore(page, "changed", { repository: repository.name, items: [count] });
   await expect(
     page
@@ -170,13 +170,39 @@ test("the Detail pane's item comes on screen from far down the Inbox, past items
   await expect(row(count - 1)).toBeInViewport();
 });
 
+test("Show muted greys a Muted author's rows, and turning it off lists the Inbox without them", async ({
+  page,
+}) => {
+  const muted: ListedItem = { ...issue(2), mute_author: { kind: "unmute", login: "issue-author" } };
+  await mockCore(page, {
+    home,
+    workbench,
+    inbox: inboxPage([issue(3), muted, issue(1)], null, "on"),
+    switchShowMuted: { status: "ok", data: null },
+  });
+  await page.goto("/");
+  await openInbox(page);
+  const show = page.getByRole("checkbox", { name: "Show muted" });
+  await expect(show).toBeChecked();
+  const line = (number: number) => page.locator(`[data-row="#${String(number)}"]`);
+  await expect(line(2)).toHaveCSS("opacity", "0.55");
+  await expect(line(3)).toHaveCSS("opacity", "1");
+
+  // The core has saved the switch once it answers, and the Inbox read after that leaves the row out.
+  await changeAnswer(page, "inbox", inboxPage([issue(3), issue(1)], null, "off"));
+  await show.click();
+
+  await expect(page.getByRole("button", { name: "#2 Issue 2" })).toHaveCount(0);
+  await expect(show).not.toBeChecked();
+});
+
 test("an item that closed leaves the Inbox at the next refresh", async ({ page }) => {
-  await mockCore(page, { home, workbench, inbox: inboxPage(issues(3, 1), false) });
+  await mockCore(page, { home, workbench, inbox: pageOf(issues(3, 1), false) });
   await page.goto("/");
   await openInbox(page);
   await expect(page.getByRole("button", { name: "#2 Issue 2" })).toBeVisible();
 
-  await changeAnswer(page, "inbox", inboxPage([issue(3), issue(1)], false));
+  await changeAnswer(page, "inbox", pageOf([issue(3), issue(1)], false));
   await emitFromCore(page, "changed", { repository: repository.name, items: [2] });
 
   await expect(page.getByRole("button", { name: "#2 Issue 2" })).toHaveCount(0);

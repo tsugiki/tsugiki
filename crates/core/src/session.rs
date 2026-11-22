@@ -21,8 +21,8 @@ use crate::facts::activity::ItemKey;
 use crate::facts::pull_requests::PrHead;
 use crate::facts::{CommitSha, WorkFacts};
 use crate::fetching::{
-    Fetching, Headless, Item, ItemFetch, ItemUnfetched, Marked, MirrorWant, NOT_CONNECTED,
-    SessionMessage,
+    Fetching, Headless, Item, ItemFetch, ItemUnfetched, Marked, MirrorWant, SessionMessage,
+    answered,
 };
 use crate::folders::Folders;
 use crate::github::GitHubAccess;
@@ -192,11 +192,8 @@ fn sizes_through(github: Sender<GitHubMessage>, shown: LatestReader<Shown>) -> S
                 format!("GitHub can't be reached, so Tsugiki can't ask how big {repository} is.");
             return Err(Error::new(ErrorKind::Offline, &words));
         }
-        let (reply, answer) = mpsc::channel();
         let repository = repository.clone();
-        (github.send(GitHubMessage::Size { repository, reply }).ok())
-            .and_then(|()| answer.recv().ok())
-            .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
+        answered(&github, |reply| GitHubMessage::Size { repository, reply })
     })
 }
 
@@ -350,6 +347,17 @@ impl Keeper {
                 telling.to_github(GitHubMessage::Check { name, reply });
             }
             SessionMessage::Screen(moved) => telling.to_github(GitHubMessage::Screen(moved)),
+            SessionMessage::ShowMuted {
+                repository,
+                show,
+                reply,
+            } => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller has gone, and nobody then shows the answer"
+                )]
+                let _ = reply.send(store.switch_show_muted(&repository, show));
+            }
         }
         ControlFlow::Continue(())
     }

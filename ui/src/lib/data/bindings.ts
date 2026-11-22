@@ -130,6 +130,12 @@ export const commands = {
 	muteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("mute_author", { repository, author })),
 	/**  Unmutes `author` in `repository`, and returns at once. */
 	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
+	/**
+	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,
+	 *  or says why it couldn't. The window then asks for the Inbox again. This waits on the session's thread
+	 *  and the database, and never on GitHub.
+	 */
+	switchShowMuted: (repository: string, show: ShowMuted) => typedError<null, Error_Serialize>(__TAURI_INVOKE("switch_show_muted", { repository, show })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */
 	settings: () => __TAURI_INVOKE<LoadedSettings_Serialize>("settings"),
 	/**
@@ -1464,6 +1470,11 @@ export type Inbox_Deserialize = {
 	 *  more days reads from GitHub (#469).
 	 */
 	older?: InboxCursor_Deserialize | null,
+	/**
+	 *  Whether the page lists the rows Muted authors wrote, as the Repository's "Show muted" stood when it
+	 *  was read (#825).
+	 */
+	show_muted: ShowMuted,
 };
 
 /**  A page of the Inbox. It is empty only when the Inbox is, as before anyone signs in. */
@@ -1475,6 +1486,11 @@ export type Inbox_Serialize = {
 	 *  more days reads from GitHub (#469).
 	 */
 	older: InboxCursor_Serialize | null,
+	/**
+	 *  Whether the page lists the rows Muted authors wrote, as the Repository's "Show muted" stood when it
+	 *  was read (#825).
+	 */
+	show_muted: ShowMuted,
 };
 
 /**
@@ -3324,6 +3340,12 @@ export type Settings_Serialize = {
 	keys: Partial<{ [key in Action]: string }>,
 	repositories: RepositorySettings_Serialize[],
 };
+
+/**
+ *  Whether a Repository's Inbox lists the rows Muted authors wrote: its "Show muted" switch (#825), which
+ *  starts off.
+ */
+export type ShowMuted = "off" | "on";
 
 /**  A diff the Files tab shows: its ends, its files, how many rows it has, and the PR's NEWS entries. */
 export type ShownDiff = ShownDiff_Serialize | ShownDiff_Deserialize;

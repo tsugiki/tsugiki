@@ -21,6 +21,7 @@ import {
   type PrState,
   type SeenMark_Serialize,
   type Seen_Serialize,
+  type ShowMuted,
   type TreeEntry_Serialize,
   type WorkbenchRow_Serialize,
   type WorkbenchView,
@@ -60,6 +61,10 @@ export type {
 
 /** Whether `hidden` hides a Muted item, on its own (#492) or as a Muted author's (#494). */
 export const isMuted = (hidden: Hidden | null | undefined) => hidden === "muted" || hidden === "muted_author";
+
+/** Whether a Muted author wrote the Issue or PR of a row, as Mute author offers Unmute author on it alone
+ * (#494). */
+export const byMutedAuthor = (row: { mute_author: MuteAuthor }) => row.mute_author.kind === "unmute";
 
 /** A line of the Sidebar whose items the list shows: a view of the Workbench, or the Inbox (#822). */
 export type SidebarView = WorkbenchView | { kind: "inbox" };
@@ -160,6 +165,12 @@ export class WorkbenchState {
   switchProblem = $state<string>();
   /** A change to a Filter's "On the Workbench" is saving. */
   switching = $state(false);
+  /** The Inbox's "Show muted" (#825), as the last answer about the Inbox says the core holds it. */
+  showMuted = $state<ShowMuted>("off");
+  /** A change to "Show muted" is saving. */
+  savingShowMuted = $state(false);
+  /** The reason the core refused the last change to "Show muted", if it did. */
+  showMutedProblem = $state<string>();
   /** The "On the Workbench" switch each Filter's search has, as the user last set it, while that waits to
    * save. */
   #wanted = new SvelteMap<string, boolean>();
@@ -578,6 +589,15 @@ export class WorkbenchState {
     await this.#ask();
   }
 
+  /** Turns the Inbox's "Show muted" to `show` (#825), and asks again once the core has saved it, or says why
+   * it couldn't. `showMuted` changes only with that answer, or a later one. */
+  async switchShowMuted(show: ShowMuted) {
+    this.savingShowMuted = true;
+    this.showMutedProblem = await problemIn(commands.switchShowMuted(this.#repository, show));
+    this.savingShowMuted = false;
+    await this.#ask();
+  }
+
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */
   moveCursor(step: 1 | -1) {
     const stops = this.#stops();
@@ -760,6 +780,7 @@ export class WorkbenchState {
       this.staleReviews = answer.data.stale_reviews;
       this.filters = answer.data.filters;
     }
+    if (list?.status === "ok") this.showMuted = list.data.show_muted;
     const listed = list ?? answer;
     if (listed.status === "ok") {
       const muted = list === undefined && answer.status === "ok" ? answer.data.muted : [];

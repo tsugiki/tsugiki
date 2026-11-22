@@ -19,6 +19,7 @@ use tsugiki_core::calls::{Calls, ItemFetch, OnThisMachine, PrFiles};
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
+use tsugiki_core::facts::activity::ShowMuted;
 use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
@@ -105,6 +106,19 @@ pub(crate) fn put_filter_on_workbench(
     owner: State<'_, SettingsOwner>,
 ) -> Result<(), Error> {
     crate::switch_filter(change, &owner)
+}
+
+/// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,
+/// or says why it couldn't. The window then asks for the Inbox again. This waits on the session's thread
+/// and the database, and never on GitHub.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn switch_show_muted(
+    repository: &str,
+    show: ShowMuted,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    crate::switch_show_muted_of(repository, show, &calls)
 }
 
 /// Makes `name` the open Repository, starts its sync and puts its mirror's clone next, and says what the

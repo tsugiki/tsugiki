@@ -5,7 +5,7 @@ import {
   type InboxPage_Deserialize as InboxPage,
   type ListOrder,
 } from "$lib/data/bindings";
-import { done, ok, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import { done, inboxPage, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import { catchChanged } from "$lib/testing/state";
 import {
@@ -28,6 +28,7 @@ vi.mock("$lib/data/bindings", () => ({
     mute: vi.fn(),
     unmute: vi.fn(),
     putFilterOnWorkbench: vi.fn(),
+    switchShowMuted: vi.fn(),
   },
   events: { changed: { listen: vi.fn() } },
 }));
@@ -1595,7 +1596,7 @@ const at = (number: number, hour: number): InboxCursor => ({
 });
 
 /** A page of the Inbox holding items `numbers`, whose next older page starts after `older`. */
-const page = (numbers: number[], older: InboxCursor | null = null) => ok({ items: numbers.map(item), older });
+const page = (numbers: number[], older: InboxCursor | null = null) => inboxPage(numbers.map(item), older);
 
 type Page = ReturnType<typeof page> | ReturnType<typeof refused>;
 
@@ -2030,6 +2031,50 @@ describe("WorkbenchState's Inbox", () => {
 
     await state.select(whole);
     expect(state.olderError).toBeUndefined();
+    state.stop();
+  });
+
+  it("holds Show muted as the answers say, and asks again once the core has saved a switch", async () => {
+    const { send } = catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: page([3]), all: page([3]) });
+    const state = await showingInbox();
+    const saving = Promise.withResolvers<typeof done>();
+    vi.mocked(commands.switchShowMuted).mockReturnValue(saving.promise);
+
+    const switched = state.switchShowMuted("on");
+    // A change that lands while the switch saves reads the Inbox as the core holds it then.
+    send("python/cpython");
+    await nextTask();
+    expect(state.showMuted).toBe("off");
+    expect(state.savingShowMuted).toBe(true);
+    paging({ all: inboxPage([item(3), item(2)], null, "on") });
+    saving.resolve(done);
+    await switched;
+    await nextTask();
+
+    expect(commands.switchShowMuted).toHaveBeenCalledExactlyOnceWith("python/cpython", "on");
+    expect(numbers(state)).toEqual([3, 2]);
+    expect(state.showMuted).toBe("on");
+    expect(state.savingShowMuted).toBe(false);
+    expect(state.showMutedProblem).toBeUndefined();
+    expect(pagesAsked()).toEqual(["latest", "all", "all"]);
+    state.stop();
+  });
+
+  it("keeps Show muted as the core holds it when the core refuses the switch", async () => {
+    catchChanged();
+    vi.mocked(commands.workbench).mockResolvedValue(answer());
+    paging({ latest: page([3]), all: page([3]) });
+    const state = await showingInbox();
+    vi.mocked(commands.switchShowMuted).mockResolvedValue(refused("no such Repository"));
+
+    await state.switchShowMuted("on");
+    await nextTask();
+
+    expect(state.showMuted).toBe("off");
+    expect(state.showMutedProblem).toBe("no such Repository");
+    expect(pagesAsked()).toEqual(["latest", "all"]);
     state.stop();
   });
 });

@@ -18,7 +18,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
-use crate::facts::activity::{ItemKey, PutAway};
+use crate::facts::activity::{ItemKey, PutAway, ShowMuted};
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, ReviewedCommit};
 use crate::login::Login;
@@ -32,6 +32,18 @@ use crate::work::SeenMark;
 
 pub(crate) const NOT_CONNECTED: &str =
     "Tsugiki isn't connected to GitHub. The status bar says why.";
+
+/// Sends `to` the message `asking` makes around a reply channel, and waits for its answer. A thread that has
+/// stopped, or drops the message with its reply, answers that Tsugiki isn't connected.
+pub(crate) fn answered<M, T>(
+    to: &Sender<M>,
+    asking: impl FnOnce(Sender<Result<T, Error>>) -> M,
+) -> Result<T, Error> {
+    let (reply, answer) = mpsc::channel();
+    (to.send(asking(reply)).ok())
+        .and_then(|()| answer.recv().ok())
+        .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
+}
 
 /// What the rules want of a Repository's Mirror, worked out each time a sync step saves the Repository's
 /// facts. Each part is the whole set, and replaces the last one.
@@ -236,6 +248,13 @@ pub(crate) enum SessionMessage {
     FetchUnstored {
         item: Item,
         reply: Sender<ItemFetch>,
+    },
+    /// "Show muted" on the Inbox of `repository` turned to `show` (#825), which answers once the store has
+    /// kept it, or why it couldn't. The window then asks for the Inbox again.
+    ShowMuted {
+        repository: RepositoryName,
+        show: ShowMuted,
+        reply: Sender<Result<(), Error>>,
     },
 }
 
@@ -485,6 +504,20 @@ impl Fetching {
         self.to_session(SessionMessage::Mark(unmuted));
     }
 
+    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and waits for the session to save
+    /// it. A session that has stopped, or has no database, answers that it isn't connected.
+    pub fn switch_show_muted(
+        &self,
+        repository: RepositoryName,
+        show: ShowMuted,
+    ) -> Result<(), Error> {
+        answered(&self.session, |reply| SessionMessage::ShowMuted {
+            repository,
+            show,
+            reply,
+        })
+    }
+
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.
     /// The GitHub thread takes it between two sync steps, ahead of the sync's queued work, saves what it
     /// found, and says which kind it was. A session with no token or no database answers
@@ -508,12 +541,7 @@ impl Fetching {
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
     /// error, and has already shown why on the status bar.
     pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
-        let (reply, answer) = mpsc::channel();
-        self.session
-            .send(SessionMessage::Check { name, reply })
-            .ok()
-            .and_then(|()| answer.recv().ok())
-            .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
+        answered(&self.session, |reply| SessionMessage::Check { name, reply })
     }
 
     /// What keeps the per-file patch-ids the Mirror worker read of commits in a Repository, and the commits

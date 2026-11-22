@@ -2,7 +2,8 @@
 //! state, grouped as the Workbench groups them, and every Standalone PR that has an open PR in its tree on
 //! its own, the latest update first. A closed Issue that a PR opening on it brought back (#823) is listed
 //! as an open one is. The window reads it a page at a time: the items updated in the last two days, then
-//! older batches. Reading it adds nothing to Reach.
+//! older batches. Reading it adds nothing to Reach. While the Repository's "Show muted" is off, the rows
+//! Muted authors wrote leave the pages, and the items stay at the places their whole trees give them (#825).
 //!
 //! An item's place is the latest update in it: the Issue's own or a PR's in its tree. A page walks the
 //! updates down from where it starts, the PRs' and the open Issues', a step at a time. Each step reads the
@@ -31,19 +32,21 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::{Duration, OffsetDateTime};
 
+use super::attention::summed;
 use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
-use super::{Hidden, ListedItem, candidates};
+use super::{Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
+use crate::facts::activity::{ItemKey, ShowMuted};
 use crate::facts::issues::{IssuePlace, IssueState};
 use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader, Updates};
-use crate::work::Causes;
+use crate::work::{Cause, Causes};
 
 /// How far back from now the first page reaches.
 const LATEST: Duration = Duration::days(2);
@@ -100,6 +103,9 @@ pub struct Inbox {
     /// Where the next older page starts, or nothing once the cache holds nothing older. Past that, Load 30
     /// more days reads from GitHub (#469).
     pub older: Option<InboxCursor>,
+    /// Whether the page lists the rows Muted authors wrote, as the Repository's "Show muted" stood when it
+    /// was read (#825).
+    pub show_muted: ShowMuted,
 }
 
 impl Inbox {
@@ -113,8 +119,9 @@ impl Inbox {
     }
 
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
-    /// the database and never on a sync (ADR 0018). A page whose items are all Archived gives way to the next
-    /// older one, so the window never gets an empty page with more to come.
+    /// the database and never on a sync (ADR 0018). A page with nothing left to list, as when Archive, Mute
+    /// and Show muted took out all it held, gives way to the next older one, so the window never gets an
+    /// empty page with more to come.
     pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
@@ -124,15 +131,17 @@ impl Inbox {
         let settings = repository.clone();
         // One snapshot holds the pages it walks, so they fit together as the pages of one read do.
         let job = move |snapshot: &Snapshot<'_>| {
+            let show_muted = snapshot.show_muted()?;
             let mut page = page;
             loop {
                 let Some(read) = read_page(snapshot, settings.conventions, page, now)? else {
                     return Ok(Self {
                         items: Vec::new(),
                         older: None,
+                        show_muted,
                     });
                 };
-                let inbox = Self::listed(read, &settings);
+                let inbox = Self::listed(read, &settings, show_muted);
                 match (inbox.items.is_empty(), inbox.older) {
                     (true, Some(after)) => page = InboxPage::Older { after },
                     (false, _) | (true, None) => return Ok(inbox),
@@ -142,8 +151,9 @@ impl Inbox {
         reader.read_snapshot(&repository.name, job)
     }
 
-    /// The page `read` holds, Archived and Muted items left out.
-    fn listed(read: PageRead, repository: &RepositorySettings) -> Self {
+    /// The page `read` holds, Archived and Muted items left out, and the rows Muted authors wrote as `show`
+    /// says.
+    fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
             (read.facts, &read.links),
@@ -152,9 +162,12 @@ impl Inbox {
             &causes,
         );
         // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
-        // A Muted author's item stays, unless one of those takes it out too, until #825 leaves it out.
+        // A Muted author's item stays for "Show muted" to judge, unless one of those takes it out too.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .map(|item| ListedItem::of(&causes, item))
+            .filter_map(|item| match show {
+                ShowMuted::On => Some(ListedItem::of(&causes, item)),
+                ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
+            })
             .filter(|listed| match listed.hidden {
                 None => true,
                 Some(Hidden::Archived | Hidden::Muted) => false,
@@ -171,7 +184,101 @@ impl Inbox {
         Self {
             items,
             older: read.older,
+            show_muted: show,
         }
+    }
+}
+
+impl ListedItem {
+    /// `item` with each row a Muted author wrote gone, or nothing once no row is left, and what `causes`
+    /// judge of the rows left. A Muted author's row stays while a Review request or an assignment to the user
+    /// that started after the mute stands on it, the rule that brings a Muted item back to the Workbench
+    /// (#817), and goes once Mark Seen acknowledges that ask, as the Muted item leaves the Workbench then. An
+    /// ask anywhere in the tree of a Muted author's own item keeps the whole item, which the Workbench lists.
+    /// A row stays while a row under it does: an Issue over its PRs, a PR over its Backports. Archive and
+    /// attention are judged over the rows left, where a Muted author's row counts only for its fresh asks.
+    /// The item keeps its place and its Mark Seen, which cover its whole tree.
+    fn without_muted_authors(causes: &Causes, item: WorkbenchItem) -> Option<Self> {
+        let key = item.key();
+        let fresh = |key: ItemKey, numbers: &[u32]| causes.fresh_asks(key, numbers);
+        if causes.is_by_muted_author(key) && !fresh(key, &item.numbers()).is_empty() {
+            return Some(Self::of(causes, item));
+        }
+        let hides =
+            |key: ItemKey| causes.is_by_muted_author(key) && fresh(key, &[key.number()]).is_empty();
+        let item = item.without(&hides)?;
+        let asked: Vec<Cause> = (item.keys().into_iter())
+            .filter(|&key| causes.is_by_muted_author(key))
+            .flat_map(|key| fresh(key, &[key.number()]))
+            .collect();
+        let others = (item.keys().into_iter())
+            .filter(|&key| !causes.is_by_muted_author(key))
+            .flat_map(|key| causes.on(key.number()));
+        Some(Self {
+            attention: summed(asked.iter().chain(others)),
+            hidden: Hidden::of(causes, key, &item.numbers()),
+            key,
+            item,
+        })
+    }
+}
+
+impl WorkbenchItem {
+    /// The key of each row the item shows: its Issue, if it has one, then each PR.
+    fn keys(&self) -> Vec<ItemKey> {
+        let issue = match self {
+            Self::Issue(issue) => Some(ItemKey::Issue {
+                number: issue.number,
+            }),
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) => None,
+        };
+        let prs = (self.rows().into_iter()).map(|row| ItemKey::PullRequest { number: row.number });
+        issue.into_iter().chain(prs).collect()
+    }
+
+    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        match self {
+            Self::Issue(mut issue) => {
+                let entries = std::mem::take(&mut issue.pull_requests).into_iter();
+                issue.pull_requests = entries.filter_map(|entry| entry.without(hides)).collect();
+                let key = ItemKey::Issue {
+                    number: issue.number,
+                };
+                (!issue.pull_requests.is_empty() || !hides(key)).then_some(Self::Issue(issue))
+            }
+            Self::StandalonePr(tree) => tree.without(hides).map(Self::StandalonePr),
+            Self::StandaloneBackport(backport) => {
+                (!backport.row.hidden_by(hides)).then_some(Self::StandaloneBackport(backport))
+            }
+        }
+    }
+}
+
+impl TreeEntry {
+    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        match self {
+            Self::Pr(tree) => tree.without(hides).map(Self::Pr),
+            Self::Backport(backport) => {
+                (!backport.row.hidden_by(hides)).then_some(Self::Backport(backport))
+            }
+        }
+    }
+}
+
+impl PrTree {
+    fn without(mut self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        self.backports
+            .retain(|backport| !backport.row.hidden_by(hides));
+        (!self.backports.is_empty() || !self.row.hidden_by(hides)).then_some(self)
+    }
+}
+
+impl WorkbenchRow {
+    /// Whether `hides` takes out this PR's row.
+    fn hidden_by(&self, hides: &impl Fn(ItemKey) -> bool) -> bool {
+        hides(ItemKey::PullRequest {
+            number: self.number,
+        })
     }
 }
 

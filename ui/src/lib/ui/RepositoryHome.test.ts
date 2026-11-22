@@ -9,7 +9,7 @@ import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
 import type { MuteAuthor } from "$lib/state/workbench.svelte";
-import { done, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
 
@@ -46,6 +46,7 @@ const core = vi.hoisted(() => ({
   muteAuthor: vi.fn(),
   unmuteAuthor: vi.fn(),
   putFilterOnWorkbench: vi.fn(),
+  switchShowMuted: vi.fn(),
   openOnGithub: vi.fn(),
   pullRequestFiles: vi.fn(),
   pullRequestFind: vi.fn(),
@@ -88,6 +89,7 @@ vi.mock("$lib/data/bindings", async () => {
       muteAuthor: core.muteAuthor,
       unmuteAuthor: core.unmuteAuthor,
       putFilterOnWorkbench: core.putFilterOnWorkbench,
+      switchShowMuted: core.switchShowMuted,
       openOnGithub: core.openOnGithub,
       pullRequestFiles: core.pullRequestFiles,
       pullRequestFind: core.pullRequestFind,
@@ -2094,7 +2096,7 @@ const threeAlone = async ({ inbox = false } = {}) => {
   );
   const answer = (items: object[]) => {
     core.workbench.mockResolvedValue(workbenchPage(items, { count: items.length }));
-    core.inbox.mockResolvedValue(inboxPage(items));
+    core.inbox.mockResolvedValue(pageOf(items));
   };
   answer([first, next, last]);
   const { component } = render(RepositoryHome, {
@@ -4922,8 +4924,8 @@ it("marks each Issue and PR in the list with the icon of its state", async () =>
 });
 
 /** A page of the Inbox holding `items`, whose next page starts after item `older`, if it names one. */
-const inboxPage = (items: unknown[], older?: number) =>
-  ok({ items, older: older === undefined ? null : { updated_at: "2026-11-04T09:00:00Z", number: older } });
+const pageOf = (items: unknown[], older?: number) =>
+  inboxPage(items, older === undefined ? null : { updated_at: "2026-11-04T09:00:00Z", number: older });
 
 /** Lays the Issue list out, as jsdom doesn't: 500 px of room over `content` px of items. */
 function listRoom(content: number) {
@@ -4938,7 +4940,7 @@ function listRoom(content: number) {
 
 it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order", async () => {
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
-  core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }]));
+  core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await screen.findByRole("button", { name: "#5 Alone" });
   expect(issueList()?.querySelector("ul.lazy")).toBeNull();
@@ -4958,11 +4960,62 @@ it("lists the Inbox from the Sidebar, each Issue with its PRs, in its own order"
   expect(screen.getByRole("button", { name: "#160662 gh-112564: Fix UAF for gc debug print" })).toBeTruthy();
 });
 
+it("switches Show muted atop the Inbox, which greys each row a Muted author wrote", async () => {
+  const muted: MuteAuthor = { kind: "unmute", login: "some-author" };
+  const items = [
+    { ...issue, attention: null, pull_requests: [{ kind: "pr", ...row, mute_author: muted, backports: [] }] },
+    { ...standalone, attention: null, mute_author: muted },
+  ];
+  core.workbench.mockResolvedValue(workbenchPage(items));
+  core.inbox.mockResolvedValue(inboxPage(items, null, "on"));
+  const saving = Promise.withResolvers<typeof done>();
+  core.switchShowMuted.mockReturnValue(saving.promise);
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await screen.findByRole("button", { name: "#5 Alone" });
+  expect(screen.queryByRole("checkbox", { name: "Show muted" })).toBeNull();
+  expect(issueList()?.querySelector(".greyed")).toBeNull();
+
+  await fireEvent.click(screen.getByRole("button", { name: "Inbox" }));
+  await screen.findByRole("heading", { name: "Inbox" });
+  await fireEvent.click(screen.getByRole("button", { name: "PRs of #112564" }));
+  const greyed = [...(issueList()?.querySelectorAll(".greyed") ?? [])].map((line) =>
+    line.getAttribute("data-row"),
+  );
+  const show = screen.getByRole("checkbox", { name: "Show muted" }) as HTMLInputElement;
+  expect(show.checked).toBe(true);
+  await fireEvent.click(show);
+  // The box waits for the answer read after the save, and takes no second click meanwhile.
+  const waited = { checked: show.checked, disabled: show.disabled };
+  core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }], null, "off"));
+  saving.resolve(done);
+
+  await waitFor(() => {
+    expect(show.checked).toBe(false);
+  });
+  expect(greyed).toEqual(["112564#160662", "#5"]);
+  expect(core.switchShowMuted).toHaveBeenCalledExactlyOnceWith("python/cpython", "off");
+  expect(waited).toEqual({ checked: true, disabled: true });
+  expect(show.disabled).toBe(false);
+});
+
+it("says why the core refused a change to Show muted", async () => {
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }]));
+  core.switchShowMuted.mockResolvedValue(refused("no such Repository"));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+
+  await fireEvent.click(await screen.findByRole("checkbox", { name: "Show muted" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toBe("Tsugiki couldn't switch Show muted: no such Repository");
+});
+
 it("reads the Inbox's next page once the list is scrolled near its end", async () => {
   listRoom(5000);
   core.inbox
-    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
-    .mockResolvedValueOnce(inboxPage([{ ...standalone, attention: null }]));
+    .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(pageOf([{ ...standalone, attention: null }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await screen.findByRole("button", { name: "#112564 GIL drop during collection" });
@@ -4986,8 +5039,8 @@ it("reads the Inbox's next page once the list is scrolled near its end", async (
 
 it("reads the Inbox's pages one after another while they leave the list short of its end", async () => {
   core.inbox
-    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
-    .mockResolvedValueOnce(inboxPage([{ ...standalone, attention: null }]));
+    .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(pageOf([{ ...standalone, attention: null }]));
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
 
@@ -4998,8 +5051,8 @@ it("reads the Inbox's pages one after another while they leave the list short of
 it("reads no page of the Inbox while the list is hidden, and looks again once it's back", async () => {
   const tall = listRoom(5000);
   core.inbox
-    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
-    .mockResolvedValueOnce(inboxPage([{ ...standalone, attention: null }]));
+    .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(pageOf([{ ...standalone, attention: null }]));
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
     onpick: () => {},
@@ -5029,7 +5082,7 @@ it("offers the palette the Inbox, which keeps its own order", async () => {
     onsettings: () => {},
   });
   await screen.findByText(/^Nothing here yet/);
-  core.inbox.mockResolvedValue(inboxPage([]));
+  core.inbox.mockResolvedValue(pageOf([]));
   const titles = () => component.paletteCommands().map((command) => command.title);
   expect(titles()).toContain("Sort by Last Update");
 
@@ -5045,7 +5098,7 @@ it("offers the palette the Inbox, which keeps its own order", async () => {
 
 it("says why it couldn't read the Inbox's older items, and keeps the list on show", async () => {
   core.inbox
-    .mockResolvedValueOnce(inboxPage([{ ...issue, attention: null }], 112564))
+    .mockResolvedValueOnce(pageOf([{ ...issue, attention: null }], 112564))
     .mockResolvedValueOnce({ status: "error", error: { kind: "internal", message: "disk gone" } });
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));

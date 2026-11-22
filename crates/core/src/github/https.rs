@@ -11,6 +11,15 @@ pub(super) fn graphql_body(request: &Request<'_>) -> String {
     serde_json::json!({ "query": request.query, "variables": request.variables }).to_string()
 }
 
+/// Fails the test that sends `request` if `tsugiki-token` would refuse it. Each request a test sends
+/// through the client comes here, whatever transport answers it, so a query that holds `mutation` fails a
+/// test before `Https` refuses it in the app.
+#[cfg(test)]
+pub(super) fn assert_read(request: &Request<'_>) {
+    let refusal = tsugiki_token::testing::refusal(&graphql_body(request));
+    assert_eq!(refusal, None, "{} isn't a read", request.operation);
+}
+
 /// A GraphQL answer, with the headers the client reads parsed.
 pub(super) fn reply(sent: Result<Answer, NotSent>) -> Result<Reply, Unreachable> {
     let answer = sent.map_err(unreachable)?;
@@ -34,12 +43,14 @@ pub(super) fn conditional_reply(
     })
 }
 
-/// The status bar says only that GitHub can't be reached, or that its certificate's dates don't fit the
-/// clock, so this is the one place the whole reason shows: a proxy that inspects TLS, for example.
+/// The status bar says only that GitHub can't be reached, that its certificate's dates don't fit the clock,
+/// or that Tsugiki refused the request, so this is the one place the whole reason shows: a proxy that
+/// inspects TLS, for example.
 fn unreachable(failure: NotSent) -> Unreachable {
     let (cause, unreachable) = match failure {
         NotSent::Offline(cause) => (cause, Unreachable::Offline),
         NotSent::CertificateDates(cause) => (cause, Unreachable::CertificateDates),
+        NotSent::Refused(cause) => (cause, Unreachable::Refused),
     };
     log::warn!("A request to GitHub failed: {cause}");
     unreachable

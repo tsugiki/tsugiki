@@ -24,7 +24,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   0005](../adr/0005-token-stays-in-the-rust-core.md)).
 - Tsugiki sends GitHub GraphQL reads and REST GETs, and a write only where `tsugiki-token` lists it ([ADR
   0025](../adr/0025-tsugiki-token-lets-through-reads-and-the-writes-it-lists.md)). A GraphQL body that holds
-  `mutation` never leaves: the status bar says Tsugiki can't reach GitHub, and the log says why.
+  `mutation` never leaves: Tsugiki says it refused a request to GitHub, the log says why, and the request
+  counts as failed, as one GitHub refused would.
 - The **Account** page shows who is signed in, where the token comes from, and what it lets Tsugiki do in
   plain words ("read public repositories", "write reviews and comments", "push to any repository you can
   push to"), with gh's or a classic token's scopes. It says what Tsugiki does with the token (ADR 0005):

@@ -33,7 +33,7 @@ pub const fn gh_alone(gh: RunGh) -> TokenFrom {
 }
 
 /// What running a `gh` that isn't installed gives.
-fn gh_not_found(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_not_found() -> io::Result<GhOutput> {
     Err(io::Error::from(io::ErrorKind::NotFound))
 }
 
@@ -41,7 +41,7 @@ fn gh_not_found(_: &[&str]) -> io::Result<GhOutput> {
 pub const NO_GH: TokenFrom = gh_alone(gh_not_found);
 
 /// The error a `gh` that didn't answer in time gives.
-fn gh_timed_out(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_timed_out() -> io::Result<GhOutput> {
     Err(io::Error::from(io::ErrorKind::TimedOut))
 }
 

@@ -11,19 +11,14 @@ use super::*;
 use crate::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, nothing_set, refusal};
 
 fn example() -> Token {
-    Token::find(gh_alone(|_| gh_prints("gho_example\n"))).unwrap()
+    Token::find(gh_alone(|| gh_prints("gho_example\n"))).unwrap()
 }
 
-const GH_NEVER_RUNS: RunGh = |_| panic!("gh ran although GH_TOKEN holds a token");
+const GH_NEVER_RUNS: RunGh = || panic!("gh ran although GH_TOKEN holds a token");
 
 #[test]
-fn the_token_comes_from_gh_auth_token_for_github_com() {
-    let token = Token::find(gh_alone(|args| {
-        assert_eq!(args, ["auth", "token", "--hostname", "github.com"]);
-        gh_prints("gho_example\n")
-    }))
-    .unwrap();
-    assert_eq!(token.bearer(), "Bearer gho_example");
+fn the_token_comes_from_gh_trimmed() {
+    assert_eq!(example().bearer(), "Bearer gho_example");
 }
 
 #[test]
@@ -46,7 +41,7 @@ fn without_gh_token_or_with_it_empty_the_token_comes_from_gh() {
     for env in unset_or_empty {
         let token = Token::find(TokenFrom {
             env,
-            gh: |_| gh_prints("gho_example\n"),
+            gh: || gh_prints("gho_example\n"),
         })
         .unwrap();
         assert_eq!(token.bearer(), "Bearer gho_example");
@@ -82,7 +77,7 @@ fn gh_that_doesnt_answer_in_time_gives_no_token_and_says_so() {
 
 #[test]
 fn gh_that_fails_gives_no_token() {
-    let failed = Token::find(gh_alone(|_| {
+    let failed = Token::find(gh_alone(|| {
         Ok(GhOutput {
             success: false,
             stdout: "gho_example".to_owned(),
@@ -93,7 +88,7 @@ fn gh_that_fails_gives_no_token() {
 
 #[test]
 fn an_empty_answer_from_gh_is_not_a_token() {
-    let empty = Token::find(gh_alone(|_| gh_prints(" \n")));
+    let empty = Token::find(gh_alone(|| gh_prints(" \n")));
     assert!(matches!(empty, Err(NoToken::GhPrintedNothing)));
 }
 
@@ -106,7 +101,7 @@ fn printing_a_token_doesnt_show_it() {
 
 #[test]
 fn a_token_is_hidden_wherever_it_appears() {
-    let token = Token::find(gh_alone(|_| gh_prints("0123456789abcdef"))).unwrap();
+    let token = Token::find(gh_alone(|| gh_prints("0123456789abcdef"))).unwrap();
     assert_eq!(
         token.hide_in("Bearer 0123456789abcdef, again 0123456789abcdef", "[token]"),
         "Bearer [token], again [token]"
@@ -325,4 +320,13 @@ fn a_refusal_says_why() {
     let unparsed = refusal(r#"{"query":"","variables":null,"extra":1}"#).unwrap();
     assert!(unparsed.contains("unknown field `extra`"), "{unparsed}");
     assert_eq!(refusal(&body_of("query { viewer { login } }")), None);
+}
+
+#[test]
+fn a_refused_body_is_refused_not_offline_and_says_why() {
+    let refused = checked_read(&body_of("mutation { a }")).map_err(Unreachable::from);
+    assert_eq!(
+        refused,
+        Err(Unreachable::Refused(NotARead::Mutation.to_string()))
+    );
 }

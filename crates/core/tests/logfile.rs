@@ -23,7 +23,7 @@ const NO_KNOWN_SHAPE: &str = "0123456789abcdef";
 /// Another such token, in `GH_TOKEN`.
 const IN_GH_TOKEN: &str = "fedcba9876543210";
 
-fn gh_prints_a_token_of_no_known_shape(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_prints_a_token_of_no_known_shape() -> io::Result<GhOutput> {
     gh_prints(&format!("{NO_KNOWN_SHAPE}\n"))
 }
 

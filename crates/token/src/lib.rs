@@ -43,8 +43,9 @@ pub struct GhOutput {
     pub stdout: String,
 }
 
-/// Runs `gh` with the given arguments: `gh` itself in the app, a stand-in in tests.
-pub(crate) type RunGh = fn(&[&str]) -> io::Result<GhOutput>;
+/// Runs `gh auth token --hostname github.com`, the one command Tsugiki runs `gh` for: `gh` itself in the
+/// app, a stand-in in tests.
+pub(crate) type RunGh = fn() -> io::Result<GhOutput>;
 
 /// The value of `GH_TOKEN`, if it is set and is Unicode: the process's own in the app, a stand-in in tests.
 pub(crate) type ReadEnv = fn() -> Option<String>;
@@ -96,7 +97,7 @@ impl Token {
 
     /// Asks `gh` for its token for github.com.
     fn from_gh(run: RunGh) -> Result<Self, NoToken> {
-        let output = run(&["auth", "token", "--hostname", "github.com"]).map_err(gh_unrun)?;
+        let output = run().map_err(gh_unrun)?;
         let token = output.stdout.trim();
         if !output.success {
             Err(NoToken::GhFailed)
@@ -231,6 +232,10 @@ fn is_github(url: &Url) -> bool {
 
 /// A GraphQL request as [`Https::post_graphql`] sends it. Serde refuses a body with any other key, or with
 /// one of these twice, so the request GitHub gets is the one [`checked_read`] looked at.
+///
+/// The variables go out as `serde_json` writes them again, so a variable must come through a parse and a
+/// write unchanged: text, a boolean, null, or a whole number that fits in 64 bits. A fraction can come back
+/// with other digits, and a whole number past 64 bits as a fraction.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct GraphQl {
@@ -250,6 +255,13 @@ enum NotARead {
 impl NotARead {
     fn unparsed(cause: serde_json::Error) -> Self {
         Self::Unparsed(cause.to_string())
+    }
+}
+
+/// The [`Unreachable`] that [`Https::post_graphql`] answers for a body it won't send.
+impl From<NotARead> for Unreachable {
+    fn from(refused: NotARead) -> Self {
+        Self::Refused(refused.to_string())
     }
 }
 
@@ -296,14 +308,16 @@ pub struct Reply {
     pub etag: Option<String>,
 }
 
-/// GitHub couldn't be reached at all. Each kind carries the whole cause, for the log: a proxy that
-/// inspects TLS, for example.
+/// The request didn't reach GitHub. Each kind carries the whole cause, for the log: a proxy that inspects
+/// TLS, for example.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unreachable {
-    /// No network, no answer in time, an address that isn't GitHub's, a GraphQL body that isn't a read, or a
-    /// connection that failed some other way, a certificate that failed for a reason other than its dates
-    /// among them.
+    /// No network, no answer in time, an address that isn't GitHub's, or a connection that failed some other
+    /// way, a certificate that failed for a reason other than its dates among them.
     Offline(String),
+    /// The crate refused to send the request, which would fail the same way each time it was asked: a
+    /// GraphQL body that isn't a read.
+    Refused(String),
     /// GitHub's certificate isn't valid at this computer's date and time. The clock may be wrong, or the
     /// certificate may have expired, and the check can't tell which.
     CertificateDates(String),

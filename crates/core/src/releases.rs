@@ -99,7 +99,9 @@ fn latest(ask: &mut AskPublic) -> Result<Version, String> {
     let latest = format!("/repos/{TSUGIKI}/releases/latest");
     let path = RestPath::parse(&latest).ok_or(format!("{latest} isn't a path"))?;
     let reply = ask(&path).map_err(|failure| match failure {
-        Unreachable::Offline(cause) | Unreachable::CertificateDates(cause) => cause,
+        Unreachable::Offline(cause)
+        | Unreachable::CertificateDates(cause)
+        | Unreachable::Refused(cause) => cause,
     })?;
     if reply.status != 200 {
         return Err(format!("GitHub answered {}", reply.status));

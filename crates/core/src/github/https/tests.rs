@@ -5,6 +5,7 @@ use time::OffsetDateTime;
 use tsugiki_token::testing::refusal;
 
 use super::*;
+use crate::error::{Error, ErrorKind};
 
 const DATE: &str = "Tue, 10 Nov 2026 12:00:00 GMT";
 
@@ -55,6 +56,16 @@ fn each_recorded_query_passes_the_token_crates_check_for_a_read() {
 }
 
 #[test]
+#[should_panic(expected = "Op isn't a read")]
+fn a_test_that_sends_a_query_the_token_crate_refuses_fails() {
+    assert_read(&Request {
+        operation: "Op",
+        query: Cow::Borrowed("query Op { mutations: viewer { login } }"),
+        variables: Value::Null,
+    });
+}
+
+#[test]
 fn a_reply_reads_githubs_clock_and_its_rate_limit_reset() {
     let reply = reply(Ok(answer(Some(DATE), Some("1794312000"), None))).unwrap();
     assert_eq!(reply.status, 200);
@@ -91,4 +102,13 @@ fn a_request_that_got_no_answer_says_what_the_user_can_do() {
         conditional_reply(Err(dates)).unwrap_err(),
         Unreachable::CertificateDates
     );
+}
+
+#[test]
+fn a_refused_request_fails_that_request_and_not_all_of_github() {
+    let refused = reply(Err(NotSent::Refused("holds mutation".to_owned()))).unwrap_err();
+    assert_eq!(refused, Unreachable::Refused);
+    let error = Error::from(refused);
+    assert_eq!(error.kind, ErrorKind::Internal);
+    assert!(!error.kind.speaks_for_all_of_github());
 }

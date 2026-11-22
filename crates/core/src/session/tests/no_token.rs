@@ -69,7 +69,7 @@ impl ScriptedGh {
 }
 
 /// GitHub, which answers each request that octocat is signed in, with the token from `gh`.
-fn through(gh: fn(&[&str]) -> io::Result<GhOutput>) -> GitHubAccess {
+fn through(gh: fn() -> io::Result<GhOutput>) -> GitHubAccess {
     GitHubAccess {
         token_from: gh_alone(gh),
         ..octocat_answers()
@@ -92,7 +92,7 @@ fn says(status: &Status, words: &str) -> bool {
 
 static ON_THE_INTERVAL: ScriptedGh = ScriptedGh::new();
 
-fn gh_on_the_interval(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_on_the_interval() -> io::Result<GhOutput> {
     ON_THE_INTERVAL.answer()
 }
 
@@ -121,7 +121,7 @@ fn after_a_read_that_found_no_token_the_status_check_reads_it_again_and_connects
 
 static ON_REFRESH: ScriptedGh = ScriptedGh::new();
 
-fn gh_on_refresh(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_on_refresh() -> io::Result<GhOutput> {
     ON_REFRESH.answer()
 }
 
@@ -148,7 +148,7 @@ fn after_a_read_that_found_no_token_a_refresh_reads_it_again_and_connects() {
 
 static HELD: ScriptedGh = ScriptedGh::new();
 
-fn gh_held(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_held() -> io::Result<GhOutput> {
     HELD.answer()
 }
 
@@ -208,7 +208,7 @@ fn clicks_while_a_read_of_the_token_is_out_add_no_read() {
 
 static ANNOUNCED: ScriptedGh = ScriptedGh::new();
 
-fn gh_announced(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_announced() -> io::Result<GhOutput> {
     ANNOUNCED.answer()
 }
 
@@ -243,7 +243,7 @@ fn a_read_of_the_token_is_in_flight_until_gh_answers_and_github_hears_the_rest()
 
 static ON_SCREEN: ScriptedGh = ScriptedGh::new();
 
-fn gh_on_screen(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_on_screen() -> io::Result<GhOutput> {
     ON_SCREEN.answer()
 }
 
@@ -280,7 +280,7 @@ fn an_item_opened_without_a_token_is_read_as_soon_as_a_read_finds_one() {
 
 static OPENED: ScriptedGh = ScriptedGh::new();
 
-fn gh_opened(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_opened() -> io::Result<GhOutput> {
     OPENED.answer()
 }
 

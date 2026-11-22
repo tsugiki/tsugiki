@@ -57,16 +57,16 @@ impl Https {
     }
 
     /// Sends `body`, a GraphQL request as JSON, with `token`, if it can only read. GitHub gets the request as
-    /// [`checked_read`] wrote it again, never `body` itself. A body that isn't a read reaches no network.
+    /// [`checked_read`] wrote it again: the shadowing leaves the text it was handed out of reach. A body that
+    /// isn't a read reaches no network.
     pub fn post_graphql(&self, token: &Token, body: &str) -> Result<Reply, Unreachable> {
-        let read =
-            checked_read(body).map_err(|refused| Unreachable::Offline(refused.to_string()))?;
+        let body = checked_read(body)?;
         let response = self
             .agent
             .post(GRAPHQL)
             .header("Authorization", token.bearer())
             .content_type("application/json")
-            .send(read)
+            .send(body)
             .map_err(|cause| unreachable(&cause))?;
         with_body(response)
     }
@@ -161,11 +161,11 @@ pub(crate) fn read_env() -> Option<String> {
     std::env::var(GH_TOKEN).ok()
 }
 
-/// Runs `gh`.
-pub(crate) fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
+/// Runs `gh auth token --hostname github.com`, the only command Tsugiki runs `gh` for.
+pub(crate) fn run_gh() -> io::Result<GhOutput> {
     let mut outcome = Err(io::Error::from(io::ErrorKind::NotFound));
     for program in GH_PROGRAMS {
-        outcome = run_program(program, args);
+        outcome = run_program(program, &["auth", "token", "--hostname", "github.com"]);
         if !matches!(&outcome, Err(error) if error.kind() == io::ErrorKind::NotFound) {
             break;
         }

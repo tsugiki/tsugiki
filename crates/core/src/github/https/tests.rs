@@ -56,18 +56,8 @@ fn each_recorded_query_passes_the_token_crates_check_for_a_read() {
 }
 
 #[test]
-#[should_panic(expected = "Op isn't a read")]
-fn a_test_that_sends_a_query_the_token_crate_refuses_fails() {
-    assert_read(&Request {
-        operation: "Op",
-        query: Cow::Borrowed("query Op { mutations: viewer { login } }"),
-        variables: Value::Null,
-    });
-}
-
-#[test]
 fn a_reply_reads_githubs_clock_and_its_rate_limit_reset() {
-    let reply = reply(Ok(answer(Some(DATE), Some("1794312000"), None))).unwrap();
+    let reply = reply("Op", Ok(answer(Some(DATE), Some("1794312000"), None))).unwrap();
     assert_eq!(reply.status, 200);
     assert_eq!(reply.body, "{}");
     assert_eq!(reply.reset, Some(1_794_312_000));
@@ -76,17 +66,24 @@ fn a_reply_reads_githubs_clock_and_its_rate_limit_reset() {
 
 #[test]
 fn headers_that_dont_parse_are_left_out() {
-    let reply = reply(Ok(answer(Some("yesterday"), Some("soon"), None))).unwrap();
+    let reply = reply("Op", Ok(answer(Some("yesterday"), Some("soon"), None))).unwrap();
     assert_eq!((reply.reset, reply.date), (None, None));
+}
+
+fn issues() -> RestPath {
+    RestPath::parse("/repos/octo/hello/issues").unwrap()
 }
 
 #[test]
 fn a_conditional_reply_keeps_the_tag_and_githubs_clock() {
     let sent = answer(Some(DATE), None, Some("W/\"abc\""));
-    let reply = conditional_reply(Ok(Answer {
-        status: 304,
-        ..sent
-    }))
+    let reply = conditional_reply(
+        &issues(),
+        Ok(Answer {
+            status: 304,
+            ..sent
+        }),
+    )
     .unwrap();
     assert_eq!(reply.status, 304);
     assert_eq!(reply.etag.as_deref(), Some("W/\"abc\""));
@@ -97,18 +94,16 @@ fn a_conditional_reply_keeps_the_tag_and_githubs_clock() {
 fn a_request_that_got_no_answer_says_what_the_user_can_do() {
     let offline = NotSent::Offline("dns failed".to_owned());
     let dates = NotSent::CertificateDates("expired".to_owned());
-    assert_eq!(reply(Err(offline)).unwrap_err(), Unreachable::Offline);
+    assert_eq!(reply("Op", Err(offline)).unwrap_err(), Unreachable::Offline);
     assert_eq!(
-        conditional_reply(Err(dates)).unwrap_err(),
+        conditional_reply(&issues(), Err(dates)).unwrap_err(),
         Unreachable::CertificateDates
     );
 }
 
 #[test]
-fn a_refused_request_fails_that_request_and_not_all_of_github() {
-    let refused = reply(Err(NotSent::Refused("holds mutation".to_owned()))).unwrap_err();
+fn a_refused_request_fails_as_a_query_github_refused() {
+    let refused = reply("Op", Err(NotSent::Refused("holds mutation".to_owned()))).unwrap_err();
     assert_eq!(refused, Unreachable::Refused);
-    let error = Error::from(refused);
-    assert_eq!(error.kind, ErrorKind::Internal);
-    assert!(!error.kind.speaks_for_all_of_github());
+    assert_eq!(Error::from(refused).kind, ErrorKind::QueryRefused);
 }

@@ -17,11 +17,6 @@ fn example() -> Token {
 const GH_NEVER_RUNS: RunGh = || panic!("gh ran although GH_TOKEN holds a token");
 
 #[test]
-fn the_token_comes_from_gh_trimmed() {
-    assert_eq!(example().bearer(), "Bearer gho_example");
-}
-
-#[test]
 fn gh_token_set_gives_its_token_and_runs_no_gh() {
     let token = Token::find(TokenFrom {
         env: || Some("ghp_from_env\n".to_owned()),

@@ -49,7 +49,7 @@ it is [ADR 0025](../../docs/adr/0025-tsugiki-token-lets-through-reads-and-the-wr
 - **Writes.** Tsugiki sends none yet. Each write it may send will get a row here, and a new one changes this
   crate.
 
-A refused request reaches no network. Tsugiki says it refused a request, and its log says why.
+A refused request reaches no network and fails on its own, and Tsugiki's log says why.
 
 ## What Tsugiki asks without a token
 

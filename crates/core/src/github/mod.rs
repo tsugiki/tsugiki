@@ -87,7 +87,7 @@ pub enum Unreachable {
     /// certificate may have expired, and the check can't tell which.
     CertificateDates,
     /// `tsugiki-token` wouldn't send the request, as a GraphQL body that isn't a read (ADR 0025). Asking
-    /// again fails the same way, so it counts as a failure of the one request, not an outage.
+    /// again fails the same way, so it fails as a query GitHub refused does, and not as an outage.
     Refused,
 }
 
@@ -100,7 +100,7 @@ impl From<Unreachable> for Error {
                 "GitHub's certificate isn't valid by this computer's clock. Check the date and time.",
             ),
             Unreachable::Refused => Error::new(
-                ErrorKind::Internal,
+                ErrorKind::QueryRefused,
                 "Tsugiki refused to send a request to GitHub. The log says why.",
             ),
         }
@@ -316,7 +316,7 @@ impl GitHub {
 
     /// Sends `request` if the gate lets it through, and sets GitHub's clock by the reply's `Date`.
     fn post(&self, request: &Request<'_>) -> Result<Reply, Error> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         https::assert_read(request);
         self.pass_gate()?;
         let reply = self.in_flight(|| self.transport.post(&self.token, request))?;

@@ -116,6 +116,9 @@ and its body from the file the builder keeps. Report the PR and, once it finishe
 and write the result into the log. If CI fails, send the failed gate's log to the agent; it fixes the gate
 and reruns only that gate, and you push again with `just ship`. A force push needs the user's say each time.
 
+A PR that changes the gates ships with `just ship --check`, as AGENTS.md says. Start no agent's
+`just preflight` while it runs, since its `just check` runs the same suites.
+
 The user merges each PR. Stop at the report.
 
 If a PR changes what `just smoke` covers (AGENTS.md names the files), ask the user before running it, and

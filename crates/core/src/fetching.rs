@@ -72,7 +72,7 @@ impl Item {
     }
 }
 
-/// A mark the user made on an item: seen or unseen, archived or not, muted or not.
+/// A mark the user made on an item: seen or unseen, archived or not, muted or not, pinned or not.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Marked {
     Seen {
@@ -124,6 +124,15 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         author: Login,
     },
+    /// Pin on Issue `number` (#488).
+    Pinned {
+        repository: RepositoryName,
+        number: u32,
+    },
+    Unpinned {
+        repository: RepositoryName,
+        number: u32,
+    },
 }
 
 impl Marked {
@@ -144,13 +153,16 @@ impl Marked {
         }
     }
 
-    /// Whether the mark moves Reach: Mute and Unmute, on an item or an author (#918).
+    /// Whether the mark moves Reach: Mute and Unmute, on an item or an author (#918), and Pin and Unpin
+    /// (#488).
     pub(crate) fn moves_reach(&self) -> bool {
         match self {
             Self::Muted { .. }
             | Self::Unmuted { .. }
             | Self::AuthorMuted { .. }
-            | Self::AuthorUnmuted { .. } => true,
+            | Self::AuthorUnmuted { .. }
+            | Self::Pinned { .. }
+            | Self::Unpinned { .. } => true,
             Self::Seen { .. }
             | Self::Unseen { .. }
             | Self::Archived { .. }
@@ -168,7 +180,9 @@ impl Marked {
             | Self::Muted { repository, .. }
             | Self::Unmuted { repository, .. }
             | Self::AuthorMuted { repository, .. }
-            | Self::AuthorUnmuted { repository, .. } => repository,
+            | Self::AuthorUnmuted { repository, .. }
+            | Self::Pinned { repository, .. }
+            | Self::Unpinned { repository, .. } => repository,
         }
     }
 }
@@ -502,6 +516,18 @@ impl Fetching {
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
         let unmuted = Marked::AuthorUnmuted { repository, author };
         self.to_session(SessionMessage::Mark(unmuted));
+    }
+
+    /// Pins Issue `number` of `repository` (#488): it stays on the Workbench until the user unpins it.
+    pub fn pin(&self, repository: RepositoryName, number: u32) {
+        let pinned = Marked::Pinned { repository, number };
+        self.to_session(SessionMessage::Mark(pinned));
+    }
+
+    /// Unpins Issue `number` of `repository` (#488).
+    pub fn unpin(&self, repository: RepositoryName, number: u32) {
+        let unpinned = Marked::Unpinned { repository, number };
+        self.to_session(SessionMessage::Mark(unpinned));
     }
 
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and waits for the session to save

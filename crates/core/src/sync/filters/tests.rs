@@ -4,13 +4,15 @@ use crate::github::testing::{filter_page, replied, reply_ok};
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository_settings::RepositorySettings;
 use crate::store::Store;
+use crate::store::testing::pins_to_read;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
     FEW, Harness, LARGE, RATE_LIMIT, counted, cpython, empty_window_page, fetched, fetched_nodes,
-    issue_references, issues, no_issue_references, nothing, pr_node, run_to_the_end,
-    searches_finding,
+    fetched_titled, issue_references, issues, no_issue_references, nothing, pr_node,
+    run_to_the_end, searches_finding,
 };
+use crate::testing::issue_facts;
 use crate::token::Token;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -174,6 +176,40 @@ fn a_filter_runs_after_the_users_work_and_fetches_what_it_found() {
     );
     assert_eq!(found_by(&harness, "a"), [1, 10]);
     assert_eq!(harness.numbers(), [10]);
+    harness.finish();
+}
+
+#[test]
+fn a_first_sync_fetches_each_pinned_issue_and_reads_its_whole_tree_with_the_users_work() {
+    let mut replies = searches_finding(&[]);
+    replies.push(issues(&[8], RATE_LIMIT));
+    replies.push(issue_references(&[(7, &[30]), (8, &[])], RATE_LIMIT));
+    replies.push(fetched_titled(&[30], RATE_LIMIT, |_| {
+        "gh-7: Fix it".to_owned()
+    }));
+    let harness = Harness::new("filter-pinned", replies);
+    let store = &harness.db.store;
+    // Tsugiki holds Issue 7 already, so the sync only reads its tree.
+    store.save_issues(&cpython(), vec![issue_facts(7)]).unwrap();
+    store.pin(&cpython(), 7).unwrap();
+    store.pin(&cpython(), 8).unwrap();
+    let mut syncs = Syncs::default();
+    syncs.add_listed(filtering(&[]));
+
+    drop(run_to_the_end(&mut syncs, &harness));
+
+    assert_eq!(
+        harness.operations()[4..],
+        [
+            "FetchIssues",
+            "FetchIssueReferences",
+            "FetchTreePullRequests"
+        ]
+    );
+    assert_eq!(harness.issue_numbers(), [7, 8]);
+    assert_eq!(harness.numbers(), [30]);
+    let left = pins_to_read(&harness.db.store, &cpython());
+    assert!(left.is_empty(), "the sync read both trees: {left:?}");
     harness.finish();
 }
 
@@ -689,7 +725,7 @@ fn a_narrowed_search_github_cuts_off_removes_nothing_and_counts_as_a_change() {
 
     let mut said_nothing_new = false;
     loop {
-        let (step, next) = walk_filters(&link, &mut walk).unwrap();
+        let (step, next) = walk_filters(&link, &mut walk, &mut BTreeMap::new()).unwrap();
         if let Step::Saved { touched, .. } = step {
             said_nothing_new = touched.is_empty();
         }

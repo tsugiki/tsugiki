@@ -43,7 +43,7 @@ use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -2525,6 +2525,53 @@ fn mute_takes_an_issues_heads_from_the_mirror_and_unmute_hands_them_back_and_owe
     let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
     assert!(unmuted.contains(&heads.to_owned()), "{unmuted:?}");
     assert_eq!(owed, [8, 9].into());
+}
+
+#[test]
+fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unpin_takes_them_back()
+{
+    let (folders, _folder) = temp_folders("pinned-session");
+    let store = Store::open(&folders.database()).unwrap();
+    store.remember_login(&me()).unwrap();
+    store.save_issues(&gcmon(), vec![issue_facts(5)]).unwrap();
+    // Nobody else puts Issue 5 on the Workbench: the PRs that fix it are someone else's.
+    let theirs = |number: u32, head: &str| PullRequestFacts {
+        title: "gh-5: Fix it".to_owned(),
+        ..stored_pr(number, "some-author", head)
+    };
+    let stored = vec![theirs(8, "4567def"), theirs(9, "89abcde")];
+    store.save_pull_requests(&gcmon(), stored).unwrap();
+    store.close();
+    let (mirrors, heard) = HeardRequests::new();
+    let connections = Connections {
+        github: offline(),
+        mirrors,
+        settings: listed(vec![cpython_gcmon()]),
+    };
+    let (board, changes) = changes_board();
+    let session = Session::start(board, Ok(folders.clone()), connections, HOURLY);
+
+    let asked = session.fetching();
+    asked.sync(gcmon());
+    asked.pin(gcmon(), 5);
+    let pinned = heard.asked_through("wants heads #8", PLENTY);
+    let change = changes.recv_timeout(PLENTY).unwrap();
+    asked.unpin(gcmon(), 5);
+    let unpinned = heard.asked_through("wants heads none", PLENTY);
+    session.stop(PLENTY);
+    let store = Store::open(&folders.database()).unwrap();
+    let owed = store.read_ahead_owed(&gcmon()).unwrap();
+    let left = crate::store::testing::pinned(&store, &gcmon());
+
+    let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
+    assert!(pinned.contains(&heads.to_owned()), "{pinned:?}");
+    assert_eq!(change.items, [5]);
+    assert!(
+        unpinned.contains(&"some-maintainer/gcmon wants heads none".to_owned()),
+        "{unpinned:?}"
+    );
+    assert_eq!(owed, [8, 9].into());
+    assert_eq!(left, BTreeSet::new());
 }
 
 #[test]

@@ -1265,13 +1265,14 @@ describe("every action in the palette", () => {
     await onRow();
     await ctrlShiftP();
     // The diff's actions wait for a Files tab, and the actions with nothing built behind them yet, such as
-    // Pin or Unpin, for theirs. The palette's own keys open the box it is.
+    // Local Mark, for theirs. The palette's own keys open the box it is.
     expect(rows()).toEqual([
       ["Hide Sidebar", "Ctrl+B"],
       ["Hide Issue List", "Ctrl+Alt+B"],
       ["Unfold an Issue's PRs", "→"],
       ["Fold an Issue's PRs", "←"],
       ["Show Only the Detail Pane", "Ctrl+K Z"],
+      ["Pin or Unpin", "Ctrl+K P"],
       ["Pick a Theme", "Ctrl+K T"],
       ["Reload Themes", "Ctrl+K R"],
       ["Go Back", "Alt+←"],

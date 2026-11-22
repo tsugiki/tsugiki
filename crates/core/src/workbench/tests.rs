@@ -4,7 +4,8 @@ use super::*;
 use crate::facts::activity::ActivityFacts;
 use crate::facts::patch_ids::ReviewFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::testing::cpython_settings;
+use crate::settings::ListOrder;
+use crate::testing::{cpython, cpython_settings};
 use crate::workbench::testing::{
     ViewWorld, at, first_issue, fixing, grouped_whole, issue, mine, outline, reasons_for, stranger,
     workbench,
@@ -18,6 +19,39 @@ fn an_issue_with_no_pr_of_the_users_isnt_listed() {
     };
     let found = workbench(vec![other], vec![issue(1), issue(2)]);
     assert_eq!(outline(&found), []);
+}
+
+#[test]
+fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_marked_pinned_until_unpinned() {
+    let world = ViewWorld::new("workbench-pinned");
+    let closed = crate::facts::issues::IssueFacts {
+        state: Some(crate::facts::issues::IssueState::Closed),
+        ..issue(1)
+    };
+    // GitHub numbers Issues and PRs apart, and the store refuses a pin on a PR's number.
+    let theirs = PullRequestFacts {
+        number: 10,
+        ..stranger()
+    };
+    world.has(vec![theirs], vec![closed, issue(2)]);
+    let store = &world.db.store;
+    store.pin(&cpython(), 1).unwrap();
+    let read = || {
+        let (view, order) = (&WorkbenchView::Whole, ListOrder::Attention);
+        Workbench::read(&world.db.reader, &world.settings(), view, order).unwrap()
+    };
+
+    let pinned = read();
+    crate::store::testing::unpin(store, &cpython(), 1);
+    let unpinned = read();
+
+    world.finish();
+    // A pin holds the Issue as a Filter would, closed or not, with the stranger's PR in its tree.
+    assert_eq!(outline(&pinned), [("issue", 1, vec![10])]);
+    assert!(first_issue(&pinned).pinned);
+    let sent = serde_json::to_value(&pinned).unwrap();
+    assert_eq!(sent["items"][0]["pinned"], true);
+    assert_eq!(outline(&unpinned), []);
 }
 
 #[test]

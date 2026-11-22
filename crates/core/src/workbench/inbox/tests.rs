@@ -368,6 +368,37 @@ fn mute_takes_an_item_out() {
     assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
 }
 
+#[test]
+fn a_pin_takes_an_issue_out_until_unpinned() {
+    let world = ViewWorld::new("inbox-pinned");
+    world.has(
+        vec![pr_at(10, Some(1), ago(1)), pr_at(20, None, ago(3))],
+        vec![issue_at(1, ago(2)), issue_at(2, ago(4))],
+    );
+    let store = &world.db.store;
+    store.pin(&cpython(), 1).unwrap();
+    // Only an Issue takes a pin, so a pin on a Standalone PR's number pins nothing in the Inbox.
+    store.pin(&cpython(), 20).unwrap();
+
+    let pinned = read(&world, InboxPage::Latest);
+    crate::store::testing::unpin(store, &cpython(), 1);
+    let unpinned = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(
+        outline(&pinned),
+        [("standalone", 20, vec![]), ("issue", 2, vec![])]
+    );
+    assert_eq!(
+        outline(&unpinned),
+        [
+            ("issue", 1, vec![10]),
+            ("standalone", 20, vec![]),
+            ("issue", 2, vec![])
+        ]
+    );
+}
+
 /// `facts`, written by `login`.
 fn by(login: &str, facts: PullRequestFacts) -> PullRequestFacts {
     PullRequestFacts {

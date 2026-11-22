@@ -22,7 +22,9 @@ mod read_only;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, Seeing};
+pub use activity::{
+    Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, PinId, PinTree, Seeing,
+};
 
 use pull_requests::FirstSave;
 
@@ -658,7 +660,7 @@ impl Store {
     }
 
     /// The Issues and PRs of `repository` a save found closed that the store held open, whose closing the
-    /// sync hasn't judged yet (#820).
+    /// sync hasn't judged yet (#820), but for a Pinned issue's, which waits for its unpin (#488).
     pub fn closings(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| activity::closings(connection, &repository))?;
@@ -748,6 +750,57 @@ impl Store {
         let (repository, author) = (repository.clone(), author.clone());
         let saved =
             self.call(move |connection| activity::unmute_author(connection, &repository, &author))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Pins Issue `number` (#488), as `activity::pin` says.
+    pub fn pin(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| activity::pin(connection, &repository, number))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Unpins Issue `number` (#488), and archives it, put away `now`, where its pin held back its closing,
+    /// as `activity::unpin` says.
+    pub fn unpin(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let unpin = move |connection: &mut Connection| {
+            activity::unpin(connection, &repository, number, now)
+        };
+        let saved = self.call(unpin)?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Drops the pins of `numbers`, which a fetch found name no Issue of `repository` (#488).
+    pub fn drop_pins(&self, repository: &RepositoryName, numbers: Vec<u32>) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::drop_pins(connection, &repository, &numbers))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The Pinned issues of `repository` (#488), each with whether a sync has read its tree since the pin.
+    pub fn pins(&self, repository: &RepositoryName) -> Result<BTreeMap<u32, PinTree>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::pins(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Keeps that a sync read the trees of the Issues `read` pins (#488), as `activity::read_pin_trees`
+    /// says.
+    pub fn read_pin_trees(
+        &self,
+        repository: &RepositoryName,
+        read: BTreeMap<u32, PinId>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::read_pin_trees(connection, &repository, &read))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

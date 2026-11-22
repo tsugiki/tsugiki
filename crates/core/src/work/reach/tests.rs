@@ -632,6 +632,41 @@ fn closing_leaves_a_muted_item_as_it_is_an_ask_in_its_tree_or_not() {
     assert_eq!(archived, []);
 }
 
+/// `facts` with Issues `numbers` pinned (#488).
+fn pinning(mut facts: WorkFacts, numbers: &[u32]) -> WorkFacts {
+    facts.activity.pinned.extend(numbers);
+    facts
+}
+
+#[test]
+fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_with_its_whole_tree_in_reach() {
+    let pull_requests = vec![
+        colleagues(11, 1, PrState::Open),
+        colleagues(12, 1, PrState::Merged),
+        colleagues(14, 2, PrState::Open),
+    ];
+    let facts = pinning(facts(pull_requests, vec![closed(1), issue(2)]), &[1]);
+    let settings = cpython_settings();
+    let causes = Causes::of(&facts, settings.conventions);
+
+    assert_eq!(
+        in_own_right(&facts, &settings, &causes),
+        BTreeSet::from([1])
+    );
+    assert_eq!(reach(&facts, &settings), BTreeSet::from([1, 11, 12]));
+}
+
+#[test]
+fn closing_leaves_a_pinned_issue_on_the_workbench() {
+    let pull_requests = vec![colleagues(11, 1, PrState::Open), fixing(10, 2)];
+    let facts = pinning(facts(pull_requests, vec![closed(1), closed(2)]), &[1]);
+
+    let archived = archived_by_closing(facts, &cpython_settings(), &BTreeSet::from([1, 2]));
+
+    // The user's open PR 10 held Issue 2, which archives as any Issue that closes.
+    assert_eq!(archived, [issue_key(2)]);
+}
+
 /// `facts` with the items `keys` name Archived.
 fn archiving(mut facts: WorkFacts, keys: &[ItemKey]) -> WorkFacts {
     let archive = Archive {

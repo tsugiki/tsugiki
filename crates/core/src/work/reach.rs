@@ -34,10 +34,10 @@ pub(crate) fn matched(
         .collect()
 }
 
-/// The Issues and PRs on the Workbench in their own right: those a Filter found, each open PR the user wrote
-/// or reviewed, and each that Needs attention, as `causes` says. A Review request holds a PR only while it
-/// Needs attention, so Mark Seen takes it off (#865). No viewer means nobody has signed in yet, so nothing
-/// is the user's work.
+/// The Issues and PRs on the Workbench in their own right: those a Filter found, each Pinned issue (#488),
+/// each open PR the user wrote or reviewed, and each that Needs attention, as `causes` says. A Review request
+/// holds a PR only while it Needs attention, so Mark Seen takes it off (#865). No viewer means nobody has
+/// signed in yet, so nothing is the user's work.
 pub(crate) fn in_own_right(
     facts: &WorkFacts,
     repository: &RepositorySettings,
@@ -51,6 +51,7 @@ pub(crate) fn in_own_right(
         .filter(|pr| reasons(pr, viewer).iter().any(holds))
         .map(|pr| pr.number);
     let mut own = matched(&repository.filters, &facts.filters);
+    own.extend(&facts.activity.pinned);
     own.extend(reasoned);
     own.extend(causes.waiting());
     own
@@ -208,7 +209,8 @@ fn reach(facts: &WorkFacts, repository: &RepositorySettings) -> BTreeSet<u32> {
 /// the store held open: each Issue, and each PR that heads its own tree as the list draws it, that Reach
 /// held while it was open. Reach goes by the stored facts with each of `closings` open again, `open`, as the
 /// sync judges them right after the step that saved them, while the facts still hold what put them in
-/// Reach, such as a Filter's results. A Muted item stays as it is, an ask in its tree or not.
+/// Reach, such as a Filter's results. A Muted item stays as it is, an ask in its tree or not, and a Pinned
+/// issue stays on the Workbench (#488).
 pub(crate) fn archived_by_closing(
     mut open: WorkFacts,
     repository: &RepositorySettings,
@@ -232,10 +234,11 @@ pub(crate) fn archived_by_closing(
     let pull_requests =
         (open.pull_requests.iter()).map(|pr| ItemKey::PullRequest { number: pr.number });
     let muted = muted_items(&open);
+    let pinned = |key: &ItemKey| open.activity.is_pinned(*key);
     issues
         .chain(pull_requests)
         .filter(|key| closings.contains(&key.number()) && reached.contains(&key.number()))
-        .filter(|key| !muted.contains(key) && !walk.tree(*key).is_empty())
+        .filter(|key| !muted.contains(key) && !pinned(key) && !walk.tree(*key).is_empty())
         .collect()
 }
 

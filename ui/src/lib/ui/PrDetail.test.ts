@@ -72,6 +72,7 @@ const view: PrView = {
     earlier_reviews: 0,
   },
   shares_review_of: null,
+  issues: [],
   hidden: null,
 };
 

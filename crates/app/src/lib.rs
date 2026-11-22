@@ -383,6 +383,22 @@ fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Re
     Ok(())
 }
 
+/// Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn pin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.pin(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn unpin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.unpin(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
 /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.
 fn switch_show_muted_of(repository: &str, show: ShowMuted, calls: &Calls) -> Result<(), Error> {
     calls.switch_show_muted(RepositoryName::parse(repository)?, show)
@@ -1091,6 +1107,8 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             unmute,
             mute_author,
             unmute_author,
+            pin,
+            unpin,
             slow_commands::switch_show_muted,
             settings,
             slow_commands::themes,

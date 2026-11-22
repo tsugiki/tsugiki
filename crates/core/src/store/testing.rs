@@ -49,11 +49,40 @@ pub(super) fn migrated_database(name: &str) -> (PathBuf, TempPath) {
 
 /// Archives the items of CPython that `keys` name as a sync does when it sees them close, put away `now`.
 pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDateTime) {
+    let closed = keys.to_vec();
+    let keep = move |connection: &mut Connection| {
+        let closed_on =
+            |key| activity::follow_state(connection, &cpython(), key, activity::StateMove::Closed);
+        closed.into_iter().try_for_each(closed_on)
+    };
+    store.call(keep).unwrap().unwrap();
     let judged = Judged {
         archived: keys.to_vec(),
-        closings: BTreeSet::new(),
+        closings: keys.iter().map(|key| key.number()).collect(),
     };
     store.archive_closed(&cpython(), judged, now).unwrap();
+}
+
+/// The Pinned issues of `repository` (#488).
+pub(crate) fn pinned(store: &Store, repository: &RepositoryName) -> BTreeSet<u32> {
+    store.pins(repository).unwrap().into_keys().collect()
+}
+
+/// The pins of `repository` whose trees no sync has read since the pin (#488).
+pub(crate) fn pins_to_read(store: &Store, repository: &RepositoryName) -> BTreeMap<u32, PinId> {
+    let pins = store.pins(repository).unwrap().into_iter();
+    let to_read = pins.filter_map(|(number, tree)| match tree {
+        PinTree::ToRead(pin) => Some((number, pin)),
+        PinTree::Read => None,
+    });
+    to_read.collect()
+}
+
+/// Unpins Issue `number` of `repository` (#488).
+pub(crate) fn unpin(store: &Store, repository: &RepositoryName, number: u32) {
+    store
+        .unpin(repository, number, OffsetDateTime::now_utc())
+        .unwrap();
 }
 
 /// Mark Seen on `numbers` up to `up_to`, with no Stale review drawn.

@@ -100,7 +100,7 @@ fn save_in(
 }
 
 /// Stores `issues` as `save` does, and keeps each of `issueless` as a number that will never name an Issue,
-/// a PR's or a transferred Issue's, in one transaction.
+/// a PR's or a transferred Issue's, dropping its pin (#488), in one transaction.
 pub(super) fn save_with_issueless(
     connection: &mut Connection,
     repository: &RepositoryName,
@@ -117,6 +117,7 @@ pub(super) fn save_with_issueless(
         insert.execute(values).map(drop)?;
     }
     drop(insert);
+    activity::drop_pins_in(&transaction, repository, issueless)?;
     transaction.commit()
 }
 

@@ -30,6 +30,7 @@ const view: PrView = {
   ...workbenchRow(11, { title: "gh-10: Fix the crash", author: "some-author", ci: null }),
   content: null,
   shares_review_of: null,
+  issues: [],
   hidden: null,
 };
 

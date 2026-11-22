@@ -464,6 +464,16 @@ impl Calls {
         self.fetching.unmute_author(repository, author);
     }
 
+    /// Pins Issue `number` of `repository` (#488).
+    pub fn pin(&self, repository: RepositoryName, number: u32) {
+        self.fetching.pin(repository, number);
+    }
+
+    /// Unpins Issue `number` of `repository` (#488).
+    pub fn unpin(&self, repository: RepositoryName, number: u32) {
+        self.fetching.unpin(repository, number);
+    }
+
     /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.
     pub fn switch_show_muted(
         &self,

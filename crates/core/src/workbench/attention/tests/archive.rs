@@ -1,11 +1,9 @@
 //! Archive (#490) as scenarios in the glossary's words: an item put away until something new Needs attention
 //! there, read the way the window reads it.
 
-use std::collections::BTreeSet;
-
 use super::*;
 use crate::facts::activity::PutAway;
-use crate::store::{Archiving, Judged};
+use crate::store::Archiving;
 
 impl World {
     /// Archive on item `number`'s line of `view`, as the window drew it.
@@ -52,15 +50,8 @@ impl World {
 
     /// Archives the item `key` names as the sync does when it sees the item close (#820).
     fn archive_closed(&self, key: ItemKey) {
-        let judged = Judged {
-            archived: vec![key],
-            closings: BTreeSet::new(),
-        };
         let now = OffsetDateTime::now_utc();
-        self.db
-            .store
-            .archive_closed(&cpython(), judged, now)
-            .unwrap();
+        crate::store::testing::archived_on_closing(&self.db.store, &[key], now);
     }
 }
 

@@ -46,6 +46,7 @@ const view: IssueView = {
   state: "OPEN",
   people: ["issue-author"],
   mute_author: { kind: "mute", login: "issue-author" },
+  pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
   author: "issue-author",
   assignees: [],
@@ -106,12 +107,13 @@ const shown = async (
   onarchive = vi.fn(),
   onmute = vi.fn(),
   onmuteauthor = vi.fn(),
+  onpin = vi.fn(),
 ) => {
   core.issue.mockResolvedValue(ok(answer));
   const state = new IssueViewState("python/cpython", 7);
   await state.load();
   const issue = state;
-  const on = { onopenpr, onmark, onarchive, onmute, onmuteauthor };
+  const on = { onopenpr, onmark, onarchive, onmute, onmuteauthor, onpin };
   render(IssueDetail, { repository: "python/cpython", issue, now: NOW, ...on });
   state.stop();
   return state;
@@ -183,6 +185,19 @@ it("offers Mute beside Archive, and on a Muted Issue Unmute and Mute author", as
   expect(headerButtons()).toEqual(["Unmute", "Mute issue-author"]);
   await fireEvent.click(screen.getByRole("button", { name: "Unmute" }));
   expect(onmute).toHaveBeenLastCalledWith(muted);
+});
+
+it("offers Pin, and Unpin on a Pinned issue, whether Muted or not", async () => {
+  const onpin = vi.fn();
+  const pinned = { ...view, pinned: true };
+
+  await shown(view, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onpin);
+  await fireEvent.click(screen.getByRole("button", { name: "☆ Pin" }));
+  expect(onpin).toHaveBeenCalledExactlyOnceWith(view);
+  cleanup();
+  await shown({ ...pinned, hidden: "muted" }, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), onpin);
+  await fireEvent.click(screen.getByRole("button", { name: "★ Unpin" }));
+  expect(onpin).toHaveBeenLastCalledWith({ ...pinned, hidden: "muted" });
 });
 
 it("offers Mute author for the Issue's author, only Unmute author for a Muted author, and none for the user", async () => {
@@ -588,6 +603,7 @@ it("says why it can't show the Issue", async () => {
     onarchive: vi.fn(),
     onmute: vi.fn(),
     onmuteauthor: vi.fn(),
+    onpin: vi.fn(),
   });
   state.stop();
 
@@ -607,6 +623,7 @@ it("says atop the view that the token can't write to a Read-only Repository, and
     onarchive: vi.fn(),
     onmute: vi.fn(),
     onmuteauthor: vi.fn(),
+    onpin: vi.fn(),
   };
   const words = "Read-only: your token can't write to python/cpython";
   const { rerender } = render(IssueDetail, {

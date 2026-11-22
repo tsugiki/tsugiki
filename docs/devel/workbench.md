@@ -103,7 +103,21 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   touched, stays in the one list: By attention sorts it below the items that do, and By last update among
   them. It has no section or fold of its own, in the Workbench, a Filter or a Built-in view.
 - A PR that fixes no Issue is a **Standalone PR**: its own item in the Issue list.
-- A Pinned issue stays until the user unpins it.
+- A Pinned issue stays until the user unpins it (#488). Closing doesn't unpin it, and the sync doesn't
+  archive it as it closes. ★ on an Issue's row, in the Workbench, a Filter or the Inbox, and ☆ Pin in the
+  Issue view pin the Issue and unpin it again. The row shows ★ on a Pinned issue, and ☆ on another while the
+  pointer or the focus is on the row. `Ctrl+K P` and "Pin or Unpin" in the palette act on the Issue that
+  holds the line under the cursor, a PR's line in its tree too. In the Detail pane, or with the Issue list
+  hidden, they act on the Issue on show, or with a PR on show on the Issue it opened from, or else the first
+  Issue whose tree holds it. Only Issues take a pin, so on a Standalone PR, or with nothing open, they do
+  nothing, and the core refuses a number it knows is a PR's. Pinning an Archived Issue unarchives it, and
+  pinning takes the Issue out of the Inbox; with the Inbox or Archived on show, the cursor and the Detail
+  pane move on to the next item, as on Archive. A Pinned issue the user mutes stays hidden while Muted.
+  An Issue that closes while pinned keeps its closing for the unpin, which archives it at once: the pin had
+  kept the Issue on the Workbench, so its closing means it's done, whatever a Filter finds. An Issue that
+  closed before the pin, or that Tsugiki first saw closed, stays where it is when unpinned. A pin whose
+  number a fetch shows names no Issue, a PR's, a transferred or a deleted Issue's, goes. Tsugiki keeps the
+  pins per Repository.
 - Hiding, all kept in Tsugiki only:
   - **Archive** puts an item away until something new needs attention there: an Issue, a Standalone PR or
     a Standalone Backport. It marks the item seen as Mark Seen does, across an Issue's whole tree, so a
@@ -129,7 +143,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     item on the Workbench. A closed Archived item, however it got there, stays put away while nothing in its
     tree Needs attention, and comes back while something does; Mark Seen then puts it back in Archived. An
     item that reopens leaves Archived. Unarchive keeps a closed item out of Archived until it reopens and
-    closes again. A Muted item stays Muted.
+    closes again. A Muted item stays Muted, and a Pinned issue stays on the Workbench.
   - **A PR that opens on an Archived Issue** ([#823](https://github.com/tsugiki/tsugiki/issues/823)), such
     as a follow-up on an Issue closed long ago, unarchives the Issue as Unarchive does, and brings it back
     to the Inbox as a row with its PRs, closed or not, until the user archives or mutes it, or it reopens or

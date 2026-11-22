@@ -41,7 +41,9 @@ pub(crate) fn named(message: SessionMessage) -> String {
             | Marked::Muted { .. }
             | Marked::Unmuted { .. }
             | Marked::AuthorMuted { .. }
-            | Marked::AuthorUnmuted { .. },
+            | Marked::AuthorUnmuted { .. }
+            | Marked::Pinned { .. }
+            | Marked::Unpinned { .. },
         )
         | SessionMessage::ShowMuted { .. }
         | SessionMessage::Patched(..)

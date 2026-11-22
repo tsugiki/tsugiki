@@ -144,6 +144,8 @@ pub(super) fn check_list(
     };
     let next = match link.github.check_list(link.repository, stored_tag)? {
         ListCheck::Same => {
+            // Nothing to narrow, but the walk still reads the tree of each Pinned issue that no sync has
+            // read since the pin (#488).
             let walk = FilterWalk::of_refresh(RefreshWalk {
                 whole: std::mem::take(&mut poll.whole),
                 ..RefreshWalk::default()

@@ -712,22 +712,24 @@ fn follow_move(fetching: &Fetching, store: &Store, before: ReachFrom<'_>, now: R
     }
 }
 
-/// A Mute or an Unmute, which moves Reach (#918), with the Repository's settings and the stored facts from
-/// before the store keeps it. It moves Reach with or without a token (#946).
+/// A Mute or an Unmute, which moves Reach (#918), or a Pin or an Unpin (#488), with the Repository's
+/// settings and the stored facts from before the store keeps it. It moves Reach with or without a token
+/// (#946).
 ///
 /// Mute takes the item's tree out of Reach, apart from what an ask or another item keeps there, so the
 /// Mirror worker stops wanting their heads. Unmute puts the tree back, which no change on GitHub would have
 /// the Mirror fetch the heads of or a refresh read ahead. So the Mirror worker hears the new Reach at once,
 /// and the store owes the reads the rules say Unmute owes, as with a Filter switched on (`follow_reach`).
+/// Pin puts the Issue's tree in Reach as Unmute does, and Unpin takes out what nothing else keeps there.
 struct ReachMove {
     settings: RepositorySettings,
     before: WorkFacts,
 }
 
 impl ReachMove {
-    /// The move `marked` makes, under the Repository's `settings`: none for a mark other than Mute and
-    /// Unmute. Facts the store can't read, before the mark or after it, leave the heads to the next step that
-    /// saves, and lose the reads an Unmute owes.
+    /// The move `marked` makes, under the Repository's `settings`: none for a mark that moves no Reach.
+    /// Facts the store can't read, before the mark or after it, leave the heads to the next step that saves,
+    /// and lose the reads an Unmute or a Pin owes.
     fn of(marked: &Marked, store: &Store, settings: &RepositorySettings) -> Option<Self> {
         if !marked.moves_reach() {
             return None;
@@ -949,6 +951,16 @@ pub(crate) fn keep_mark(
                 .map(|authored| authored.numbers)
                 .unwrap_or_default();
             let saved = store.unmute_author(&repository, &author);
+            (saved, Change { repository, items })
+        }
+        Marked::Pinned { repository, number } => {
+            let saved = store.pin(&repository, number);
+            let items = vec![number];
+            (saved, Change { repository, items })
+        }
+        Marked::Unpinned { repository, number } => {
+            let saved = store.unpin(&repository, number, OffsetDateTime::now_utc());
+            let items = vec![number];
             (saved, Change { repository, items })
         }
     }

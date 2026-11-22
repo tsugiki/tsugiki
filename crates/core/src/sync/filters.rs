@@ -15,7 +15,7 @@ use crate::filters::FilterQuery;
 use crate::github::filters::{CreatedRange, FilterHit, FilterHitKind, FilterSearch};
 use crate::github::pull_requests::{PageRequest, PrFetch};
 use crate::repository::RepositoryName;
-use crate::store::NarrowedResults;
+use crate::store::{NarrowedResults, PinId, PinTree};
 
 /// The most results GitHub lists for one search (ADR 0015).
 const SEARCH_CAP: u32 = 1000;
@@ -169,9 +169,14 @@ impl FilterWalk {
 
 /// Reads the next page of the search under way, or moves on from the last of them. One Filter that GitHub
 /// won't answer keeps what it last found and says why, and stops nothing else (ADR 0015).
-pub(super) fn walk_filters(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Moved, Error> {
+pub(super) fn walk_filters(
+    link: &Link<'_>,
+    walk: &mut FilterWalk,
+    pin_trees: &mut BTreeMap<u32, PinId>,
+) -> Result<Moved, Error> {
     let Some(search) = walk.left.front().cloned() else {
-        return Ok((Step::Moved, Some(fetch_what_is_missing(link, walk)?)));
+        let next = fetch_what_is_missing(link, walk, pin_trees)?;
+        return Ok((Step::Moved, Some(next)));
     };
     if let Page::Stays(step) = read_page(link, walk, &search)? {
         return Ok((step, None));
@@ -300,10 +305,16 @@ impl FilterWalk {
 }
 
 /// The user's own PRs, and each item a Filter found that Tsugiki lacks or has an older copy of. An item it
-/// has as it is now only passes on what it points at, and so does a merged PR (ADR 0011). An open PR left out
-/// here still comes with its Issue's tree, which keeps its CI current: CI finishing doesn't change
-/// `updatedAt`.
-fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase, Error> {
+/// has as it is now only passes on what it points at, and so does a merged PR (ADR 0011). The Pinned issues
+/// count as the user's work (#488): the sync fetches each one Tsugiki lacks, and reads the tree of each one
+/// that no sync has read since the pin. `pin_trees` takes the pins it reads, for the sync to mark read as it
+/// finishes. An open PR left out here still comes with its Issue's tree, which keeps its CI current: CI
+/// finishing doesn't change `updatedAt`.
+fn fetch_what_is_missing(
+    link: &Link<'_>,
+    walk: &mut FilterWalk,
+    pin_trees: &mut BTreeMap<u32, PinId>,
+) -> Result<Phase, Error> {
     let stored = link.store.pull_requests(link.repository)?;
     let stored: BTreeMap<u32, PullRequestFacts> =
         stored.into_iter().map(|pr| (pr.number, pr)).collect();
@@ -312,6 +323,8 @@ fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase
         .iter()
         .map(|issue| (issue.number, issue.updated_at))
         .collect();
+    // The store's reads first, as a failed one leaves the walk as it was.
+    let pins = link.store.pins(link.repository)?;
     let mut ids = std::mem::take(&mut walk.work);
     let mut asking: BTreeSet<NodeId> = ids.iter().cloned().collect();
     let mut leads = std::mem::take(&mut walk.leads);
@@ -337,6 +350,17 @@ fn fetch_what_is_missing(link: &Link<'_>, walk: &mut FilterWalk) -> Result<Phase
                     }
                 }
             },
+        }
+    }
+    for (number, tree) in pins {
+        match (issues.contains_key(&number), tree) {
+            (false, _) => leads.named.extend([number]),
+            (true, PinTree::ToRead(_)) => leads.held_issues.extend([number]),
+            (true, PinTree::Read) => {}
+        }
+        // The sync marks read the trees these leads read. A pin made after this read waits for the next.
+        if let PinTree::ToRead(pin) = tree {
+            pin_trees.extend([(number, pin)]);
         }
     }
     Ok(Resumable::Fetching(Batches {

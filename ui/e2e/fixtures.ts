@@ -33,6 +33,7 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   state: "OPEN",
   people: ["issue-author"],
   mute_author: { kind: "mute", login: "issue-author" },
+  pinned: false,
   updated_at: "2026-11-04T10:00:00Z",
   pull_requests: [{ ...row, kind: "pr", backports: [] }],
   seen: { mark: { numbers: [7, 10], up_to: null, findings: [] }, state: "seen" },
@@ -83,6 +84,7 @@ export const prView = (reviews: Review[] = []): PrView => ({
     earlier_reviews: 0,
   },
   shares_review_of: null,
+  issues: [],
   hidden: null,
 });
 

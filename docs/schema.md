@@ -310,6 +310,12 @@ erDiagram
     show_muted {
         TEXT repository PK
     }
+    pinned {
+        INTEGER id PK
+        TEXT repository
+        INTEGER number
+        INTEGER tree_read
+    }
     read_only {
         TEXT repository PK
         TEXT token_kind

@@ -6,6 +6,7 @@ use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
+use crate::fetching::Marked;
 use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{
     answer, dated, erring, filter_page, github, not_found, page_info, pr_content,
@@ -14,9 +15,10 @@ use crate::github::testing::{
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::{OpenItems, RepositoryName};
 use crate::repository_settings::RepositorySettings;
+use crate::session::keep_mark;
 use crate::settings::ListOrder;
 use crate::status::Change;
-use crate::store::testing::seeing;
+use crate::store::testing::{pinned, pins_to_read, seeing};
 use crate::store::{Archiving, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
@@ -2730,6 +2732,226 @@ fn a_refresh_keeps_an_item_unarchived_by_hand_out_and_unarchives_one_that_reopen
     drop(run(&mut refreshing(filtering(&["a"])), &harness));
 
     // Issue 1 changed while closed, and Issue 2 reopened.
+    assert_eq!(archived(&harness), []);
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_leaves_a_pinned_issue_that_closes_on_the_workbench_not_archived() {
+    let replies = vec![
+        polled(
+            &list(
+                &[
+                    issue_in(1, AFTER_IT, "CLOSED"),
+                    issue_in(2, AFTER_IT, "CLOSED"),
+                ],
+                None,
+            ),
+            &list(&[], None),
+            &[search(&[], None)],
+        ),
+        no_cross_references(RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("archive-pinned", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    holding_issue(&harness, 2, LONG_BEFORE);
+    stored_filter(&harness, "a", &[2]);
+    harness.db.store.pin(&cpython(), 1).unwrap();
+    let settings = filtering(&["a"]);
+
+    drop(run(&mut refreshing(settings.clone()), &harness));
+
+    // Filter "a" put Issue 2 on the Workbench, and it archives as it closes. The pin holds Issue 1 there.
+    assert_eq!(archived(&harness), [ItemKey::Issue { number: 2 }]);
+    let pinned = listed(
+        &harness,
+        &settings,
+        &WorkbenchView::Whole,
+        ItemKey::Issue { number: 1 },
+    );
+    assert_eq!(pinned.map(|listed| listed.hidden), Some(None));
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_reads_the_tree_of_each_pin_no_sync_read_and_fetches_an_issue_it_lacks() {
+    let merged = json!({
+        "title": "gh-1: Fix it",
+        "author": { "login": "some-author" },
+        "state": "MERGED",
+        "mergeCommit": { "oid": "0".repeat(40) },
+        "updatedAt": LONG_BEFORE,
+    });
+    let replies = vec![
+        polled(&list(&[], None), &list(&[], None), &[]),
+        issues(&[3], RATE_LIMIT),
+        cross_references(&[30], None, RATE_LIMIT),
+        no_cross_references(RATE_LIMIT),
+        fetched_nodes(&[pr_node(30, &merged)], RATE_LIMIT),
+    ];
+    let harness = after_a_sync("pinned-trees", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    holding_issue(&harness, 2, LONG_BEFORE);
+    let store = &harness.db.store;
+    store.pin(&cpython(), 2).unwrap();
+    let read = pins_to_read(store, &cpython());
+    store.read_pin_trees(&cpython(), read).unwrap();
+    store.pin(&cpython(), 1).unwrap();
+    store.pin(&cpython(), 3).unwrap();
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    let left = pins_to_read(store, &cpython());
+
+    assert!(left.is_empty(), "the refresh read the trees: {left:?}");
+    // An earlier sync read Issue 2's tree, and nothing changed on it since.
+    assert_eq!(
+        harness.operations(),
+        [
+            "RefreshRepository",
+            "FetchIssues",
+            "FetchCrossReferences",
+            "FetchCrossReferences",
+            "FetchTreePullRequests"
+        ]
+    );
+    assert_eq!(harness.numbers(), [30]);
+    assert_eq!(harness.issue_numbers(), [1, 2, 3]);
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_leaves_unread_the_tree_of_a_pin_made_after_it_took_the_pins() {
+    let replies = vec![
+        polled(&list(&[], None), &list(&[], None), &[]),
+        no_cross_references(RATE_LIMIT),
+    ];
+    let harness = after_a_sync("pinned-meanwhile", replies);
+    holding_issue(&harness, 1, LONG_BEFORE);
+    holding_issue(&harness, 2, LONG_BEFORE);
+    let store = &harness.db.store;
+    store.pin(&cpython(), 1).unwrap();
+    let mut syncs = refreshing(filtering(&[]));
+    // The walk takes the pins as it moves on to the Issues: run until the tree of Issue 1 is asked for.
+    let mut asked = Vec::new();
+    while syncs.ready_at().is_some() && asked.len() < 2 {
+        drop(syncs.step(&harness.github, store).unwrap());
+        asked.extend(harness.operations());
+    }
+    store.pin(&cpython(), 2).unwrap();
+
+    drop(run(&mut syncs, &harness));
+    let left = pins_to_read(store, &cpython());
+
+    assert_eq!(asked, ["RefreshRepository", "FetchCrossReferences"]);
+    assert_eq!(harness.operations(), Vec::<String>::new());
+    assert_eq!(left.keys().copied().collect::<Vec<_>>(), [2]);
+    harness.finish();
+}
+
+#[test]
+fn a_refresh_drops_the_pin_of_a_number_that_turns_out_to_name_no_issue_and_asks_no_more() {
+    let path = json!(["repository", "i40"]);
+    let fetched = not_found(
+        json!({ "repository": { "i40": null, "i41": { "__typename": "PullRequest" } } }),
+        path,
+    );
+    let replies = vec![quiet_poll(), fetched, quiet_poll()];
+    let harness = after_a_sync("pinned-issueless", replies);
+    let store = &harness.db.store;
+    store.pin(&cpython(), 40).unwrap();
+    store.pin(&cpython(), 41).unwrap();
+
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    drop(run(&mut refreshing(filtering(&[])), &harness));
+    let left = pinned(store, &cpython());
+    store.pin(&cpython(), 41).unwrap();
+    let refused = pinned(store, &cpython());
+
+    assert_eq!(
+        harness.operations(),
+        ["RefreshRepository", "FetchIssues", "RefreshRepository"]
+    );
+    assert_eq!(left, BTreeSet::new());
+    assert_eq!(refused, BTreeSet::new(), "41 is a PR's number");
+    harness.finish();
+}
+
+/// A refresh that sees Issue 1, which a Filter finds, close.
+fn issue_1_closing() -> Vec<Result<Reply, Unreachable>> {
+    let polled = polled(
+        &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
+        &list(&[], None),
+        &[search(&[issue_hit(1)], None)],
+    );
+    vec![polled, no_cross_references(RATE_LIMIT)]
+}
+
+/// Unpins Issue `number` of CPython as the user does, under the Repository's `settings`.
+fn unpinning(harness: &Harness, settings: &RepositorySettings, number: u32) {
+    let marked = Marked::Unpinned {
+        repository: cpython(),
+        number,
+    };
+    let (saved, change) = keep_mark(&harness.db.store, settings, marked);
+    saved.unwrap();
+    assert_eq!(change.items, [number]);
+}
+
+#[test]
+fn a_closing_a_pin_held_back_archives_its_issue_at_the_unpin_with_no_step_of_a_sync() {
+    let harness = after_a_sync("unpin-closed", issue_1_closing());
+    holding_issue(&harness, 1, LONG_BEFORE);
+    stored_filter(&harness, "a", &[1]);
+    harness.db.store.pin(&cpython(), 1).unwrap();
+    let settings = filtering(&["a"]);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let kept = archived(&harness);
+    // An `is:open` Filter drops the closed Issue, which the pin alone holds then.
+    stored_filter(&harness, "a", &[]);
+
+    unpinning(&harness, &settings, 1);
+
+    assert_eq!(kept, []);
+    assert_eq!(archived(&harness), [ItemKey::Issue { number: 1 }]);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_pinned_after_its_closing_archived_it_stays_on_the_workbench_at_the_unpin() {
+    let harness = after_a_sync("unpin-archived-before", issue_1_closing());
+    holding_issue(&harness, 1, LONG_BEFORE);
+    stored_filter(&harness, "a", &[1]);
+    let settings = filtering(&["a"]);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let put_away = archived(&harness);
+    // The pin takes the Issue out of Archived, as an unarchive does.
+    harness.db.store.pin(&cpython(), 1).unwrap();
+
+    unpinning(&harness, &settings, 1);
+
+    assert_eq!(put_away, [ItemKey::Issue { number: 1 }]);
+    assert_eq!(archived(&harness), []);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_tsugiki_first_saw_closed_stays_on_the_workbench_at_the_unpin() {
+    let harness = after_a_sync("unpin-first-closed", Vec::new());
+    let closed = IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue_facts(1)
+    };
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![closed])
+        .unwrap();
+    stored_filter(&harness, "a", &[1]);
+    harness.db.store.pin(&cpython(), 1).unwrap();
+
+    unpinning(&harness, &filtering(&["a"]), 1);
+
     assert_eq!(archived(&harness), []);
     harness.finish();
 }

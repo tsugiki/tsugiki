@@ -13,7 +13,7 @@
 
 <h3>Repositories</h3>
 {#if dialog.listed.length > 0}
-  <ul>
+  <ul class="row-list">
     <!-- By place: a name written twice in settings.toml lists twice. -->
     {#each dialog.listed as repository, at (at)}
       <li>
@@ -40,36 +40,10 @@
 >
 
 <style>
-  ul {
-    margin: 0 0 10px;
-    padding: 0;
-    overflow: hidden;
-    list-style: none;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-
-  li + li {
-    border-top: 1px solid var(--border);
-  }
-
   li button {
-    all: unset;
     display: grid;
     grid-template-columns: 1fr auto;
-    box-sizing: border-box;
-    width: 100%;
     padding: 8px 12px;
-    cursor: pointer;
-  }
-
-  li button:hover {
-    background: color-mix(in srgb, currentColor 6%, transparent);
-  }
-
-  li button:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: -1px;
   }
 
   .name,

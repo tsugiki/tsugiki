@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commands, type NameCheck_Serialize } from "$lib/data/bindings";
-import { repositoryCheck } from "$lib/testing/fixtures";
+import { openOn, repositoryCheck } from "$lib/testing/fixtures";
 import { AddRepositoryState } from "./add-repository.svelte";
 
 vi.mock("$lib/data/bindings", () => ({
@@ -88,7 +88,7 @@ it("ignores an answer about text the user has since changed", async () => {
 });
 
 it("adds by the name GitHub gave and returns what the window opens on", async () => {
-  const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
+  const home = openOn(check.repository);
   vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
   const state = new AddRepositoryState();
 
@@ -111,7 +111,7 @@ function picking(folder: string | null, refusal: { kind: "no_remote" } | null = 
 }
 
 it("adds with the clone the user picked, and forgets it when the text changes", async () => {
-  const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
+  const home = openOn(check.repository);
   vi.mocked(commands.addRepository).mockResolvedValue({ status: "ok", data: home });
   const state = new AddRepositoryState();
   picking(lender);

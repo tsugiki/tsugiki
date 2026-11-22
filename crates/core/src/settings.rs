@@ -17,6 +17,7 @@ use std::time::Duration;
 use serde::de::{DeserializeOwned, IgnoredAny};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
+use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 use toml_edit::{
     Array, ArrayOfTables, Datetime, Decor, DocumentMut, InlineTable, Item, Key, RawString, Table,
@@ -653,11 +654,25 @@ pub enum Home {
     /// The Repository opened most recently on this machine that the settings still hold, or else the first.
     Repository {
         repository: RepositorySettings,
-        /// The names of the other Repositories the settings hold, in the order the Repository picker lists
-        /// them below the open one: those opened on this machine first, most recently opened first, and then
-        /// the rest in the settings' order.
-        others: Vec<RepositoryName>,
+        /// The time the user last opened it on this machine, if `recent` says.
+        #[serde(with = "time::serde::rfc3339::option")]
+        #[specta(type = Option<String>)]
+        opened_at: Option<OffsetDateTime>,
+        /// The other Repositories the settings hold, in the order the Repository picker and the Home page
+        /// list them below the open one: those opened on this machine first, most recently opened first,
+        /// and then the rest in the settings' order.
+        others: Vec<Opened>,
     },
+}
+
+/// A Repository, and when the user last opened it on this machine: nothing for one `recent` doesn't hold,
+/// or holds with no time, as a 0.2.0 `last_repository` became.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct Opened {
+    pub name: RepositoryName,
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub opened_at: Option<OffsetDateTime>,
 }
 
 impl Default for Home {
@@ -794,23 +809,33 @@ fn or_default<'de, D: Deserializer<'de>, T: Deserialize<'de> + Default>(
     Ok(Read::<T>::deserialize(given)?.given().unwrap_or_default())
 }
 
-/// The names in `recent`, leaving out an entry Tsugiki can't read, for the reason `sources_or_skip` gives.
-/// A `recent` that isn't a list counts as none. Only the order is read: nothing asks when yet.
-fn recent_or_skip<'de, D: Deserializer<'de>>(
-    given: D,
-) -> Result<Option<Vec<RepositoryName>>, D::Error> {
-    /// An entry of `recent`. Its field is the `NAME` that `recent_entry` writes.
+/// The entries in `recent`, leaving out one Tsugiki can't read, for the reason `sources_or_skip` gives. A
+/// `recent` that isn't a list counts as none, and an `opened_at` that isn't a time with its offset as none.
+fn recent_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<Option<Vec<Opened>>, D::Error> {
+    /// An entry of `recent`. Its fields are the `NAME` and `OPENED_AT` that `recent_entry` writes.
     #[derive(Deserialize)]
-    struct Opened {
+    struct Entry {
         name: RepositoryName,
+        opened_at: Option<Read<Datetime>>,
     }
-    let entries = Read::<Vec<Read<Opened>>>::deserialize(given)?.given();
+    let entries = Read::<Vec<Read<Entry>>>::deserialize(given)?.given();
     Ok(entries.map(|entries| {
         entries
             .into_iter()
-            .filter_map(|entry| Some(entry.given()?.name))
+            .filter_map(|entry| {
+                let entry = entry.given()?;
+                Some(Opened {
+                    name: entry.name,
+                    opened_at: entry.opened_at.and_then(Read::given).and_then(moment),
+                })
+            })
             .collect()
     }))
+}
+
+/// The moment TOML's `at` names, unless it leaves out its date, its time or its offset.
+fn moment(at: Datetime) -> Option<OffsetDateTime> {
+    OffsetDateTime::parse(&at.to_string(), &Rfc3339).ok()
 }
 
 /// The commands in `recent_commands`, leaving out an entry that isn't text, for the reason `sources_or_skip`
@@ -864,7 +889,7 @@ fn sources_or_skip<'de, D: Deserializer<'de>>(given: D) -> Result<MirrorSources,
 struct MachineFile {
     settings_path: Option<PathBuf>,
     #[serde(deserialize_with = "recent_or_skip")]
-    recent: Option<Vec<RepositoryName>>,
+    recent: Option<Vec<Opened>>,
     /// The Repository to reopen, as 0.2.0 kept it. It counts while the file has no `recent`, and the next
     /// write of `machine.toml` puts `recent` in its place.
     last_repository: Option<RepositoryName>,
@@ -918,9 +943,10 @@ struct Machine {
     /// Where `settings.toml` is, if not in its usual folder. A relative path starts at `machine.toml`'s
     /// folder.
     settings_path: Option<PathBuf>,
-    /// The Repositories opened most recently on this machine, newest first. They stay on this machine and
-    /// are read with the settings, so a normal launch knows what to reopen before the window exists.
-    recent: Vec<RepositoryName>,
+    /// The Repositories opened most recently on this machine, newest first, each with when. They stay on
+    /// this machine and are read with the settings, so a normal launch knows what to reopen before the
+    /// window exists.
+    recent: Vec<Opened>,
     /// The command palette's commands run on this machine, most recently run first.
     recent_commands: Vec<CommandId>,
     panes: PaneLayout,
@@ -933,9 +959,14 @@ impl From<MachineFile> for Machine {
     fn from(file: MachineFile) -> Self {
         Self {
             settings_path: file.settings_path,
-            recent: file
-                .recent
-                .unwrap_or_else(|| file.last_repository.into_iter().collect()),
+            recent: file.recent.unwrap_or_else(|| {
+                let last = file.last_repository.into_iter();
+                last.map(|name| Opened {
+                    name,
+                    opened_at: None,
+                })
+                .collect()
+            }),
             recent_commands: file.recent_commands,
             panes: file.panes,
             mirrors: file.mirrors,
@@ -1141,7 +1172,8 @@ impl SettingsFiles {
 
     /// What the window opens on: the Repository opened most recently that the settings still hold, or else
     /// the first. The others follow in the Repository picker's order: those in `recent` as it lists them,
-    /// then the rest in the settings' order, each name once.
+    /// then the rest in the settings' order, each name once. Each comes with when its first entry in `recent`
+    /// says it was opened.
     pub fn home(&self) -> Home {
         let repositories = &self.loaded.settings.repositories;
         let recent = self
@@ -1150,13 +1182,23 @@ impl SettingsFiles {
             .map_or(&[][..], |machine| &machine.recent);
         let reopened = recent
             .iter()
-            .filter_map(|name| repositories.iter().find(|one| one.name.is_same(name)));
+            .filter_map(|opened| (repositories.iter()).find(|one| one.name.is_same(&opened.name)));
         // A name the user wrote twice, in either file, comes once.
         let order = first_of_each(reopened.chain(repositories));
+        let opened_at = |name: &RepositoryName| {
+            let entry = recent.iter().find(|opened| opened.name.is_same(name));
+            entry.and_then(|opened| opened.opened_at)
+        };
         match order.split_first() {
             Some((&repository, others)) => Home::Repository {
                 repository: repository.clone(),
-                others: others.iter().map(|one| one.name.clone()).collect(),
+                opened_at: opened_at(&repository.name),
+                others: (others.iter())
+                    .map(|one| Opened {
+                        name: one.name.clone(),
+                        opened_at: opened_at(&one.name),
+                    })
+                    .collect(),
             },
             None => Home::default(),
         }

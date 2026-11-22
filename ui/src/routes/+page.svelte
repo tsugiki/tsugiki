@@ -51,6 +51,7 @@
     type QuickOpenRows,
   } from "$lib/ui/Palette.svelte";
   import PerformanceHud from "$lib/ui/PerformanceHud.svelte";
+  import HomePage from "$lib/ui/HomePage.svelte";
   import RepositoryHome from "$lib/ui/RepositoryHome.svelte";
   import Settings from "$lib/ui/Settings.svelte";
   import StatusBar from "$lib/ui/StatusBar.svelte";
@@ -118,12 +119,20 @@
   const openAdd = () => {
     if (!dialogOpen) addOpen = true;
   };
+  /** Whether a Repository is open, whose screen or the Home page over it shows. */
+  const hasOpen = () => home.current?.screen === "repository";
   /** Whether a Repository's screen shows. */
-  const onRepository = () => home.current?.screen === "repository";
-  /** Opens the Repository picker, which only a Repository's screen has: its button is the screen's, and its
-   * key's `when` is `onRepository`. */
+  const onRepository = () => hasOpen() && !home.page;
+  /** Whether the Home page shows, over the open Repository (#564). */
+  const onHome = () => hasOpen() && home.page;
+  /** Opens the Repository picker, which a Repository's screen and the Home page have: the button is the
+   * screen's, and the key's `when` is `hasOpen`. */
   const openPicker = () => {
     if (!dialogOpen) pickerOpen = true;
+  };
+  /** Leaves the Home page for the Repository the user came from. */
+  const leaveHome = () => {
+    home.leave();
   };
   /** Opens the palette with `text` in its box, unless a dialog is open. On a Repository's screen it has
    * quick open too, which searches that Repository (#557): `Ctrl+P` opens it with nothing typed, and
@@ -132,7 +141,9 @@
   const openPalette = (text: "" | ">") => {
     if (dialogOpen) return;
     quickOpen =
-      openName === undefined ? undefined : new QuickOpenState(openName, repositoryHome?.changedFiles());
+      openName === undefined || !onRepository()
+        ? undefined
+        : new QuickOpenState(openName, repositoryHome?.changedFiles());
     paletteAt = keyTargetOf(document.activeElement);
     paletteText = quickOpen === undefined ? "" : text;
   };
@@ -203,7 +214,18 @@
         palette: false,
       },
     ],
-    ["switch_repository", { when: onRepository, run: openPicker }],
+    ["switch_repository", { when: hasOpen, run: openPicker }],
+    [
+      "go_home",
+      {
+        when: onRepository,
+        run: () => {
+          home.goHome();
+        },
+      },
+    ],
+    // On a Repository's screen the screen runs Go Back through its own history.
+    ["go_back", { when: onHome, run: leaveHome }],
     ["open_settings", { run: openSettings }],
     [
       "toggle_hud",
@@ -292,9 +314,11 @@
   const runPage: ChordRun = (action, e) => {
     pageBindings[action]?.(e);
   };
+  /** Runs the page's action if it can run now, and the screen's otherwise: Go Back is the Home page's, and
+   * the screen's on a Repository's screen. */
   const runAll: ChordRun = (action, e) => {
     const page = pageBindings[action];
-    if (page) page(e);
+    if (page && pageCanRun(action)) page(e);
     else repositoryHome?.runChord(action, e);
   };
   /**
@@ -318,12 +342,19 @@
   };
   /** The name of the open Repository, if one is. */
   const openName = $derived(home.current?.screen === "repository" ? home.current.repository.name : undefined);
-  /** The Repositories other than the open one, most recently opened first. */
-  const others = $derived(home.current?.screen === "repository" ? home.current.others : []);
+  /** The names of the Repositories other than the open one, most recently opened first. */
+  const others = $derived(home.rows.slice(1).map((row) => row.name));
   /** Switches to `name`. The core read the files again to switch, so a problem the user has since fixed
    * can go. */
   const switchTo = (name: string) => {
     void home.open(name).then(() => settings.load());
+  };
+  /** Opens the screen of the Repository named `name`, from the Home page, the picker, the palette, or Add
+   * repository when it finds Tsugiki has `name` already: a switch, unless it's the open one, which the Home
+   * page leaves for. */
+  const openNamed = (name: string) => {
+    if (name === openName) leaveHome();
+    else switchTo(name);
   };
   /** Opens what Add repository has added, from the Home page or from Settings › Repositories. */
   const added = (next: Home) => {
@@ -332,35 +363,50 @@
     // holds this load back while it's open, and loads again as it closes.
     void settings.load();
   };
-  /** Switches to `name`, which Add repository found Tsugiki has already, unless it's the one open. */
-  const switchFromAdd = (name: string) => {
-    if (name !== openName) switchTo(name);
-  };
-  /** A row that switches to each Repository but the open one, titled `prefix` and its name, with the note
-   * `noteOf` gives it. They come most recently opened first, as `others` does, so the palette's history
-   * leaves them out. */
+  /** A row that opens each of `names`, titled `prefix` and its name, with the note `noteOf` gives it. They
+   * come most recently opened first, as the core lists them, so the palette's history leaves them out. */
   const switchRows = (
+    names: readonly string[],
     prefix: string,
     noteOf: (name: string) => string | null = () => null,
   ): PaletteCommand[] =>
-    others.map((name) => ({
+    names.map((name) => ({
       title: `${prefix}${name}`,
       note: noteOf(name),
       history: false,
       run: () => {
-        switchTo(name);
+        openNamed(name);
       },
     }));
   /** Why `name`'s diffs aren't there yet, while its mirror isn't ready. */
   const mirrorNoteOf = (name: string) =>
     mirrorNote(name, status.mirrorStates.find((mirror) => mirror.repository === name)?.state);
-  /** The picker's rows: the open Repository, named `open`, the others, then Add repository…. It opens on
-   * the one opened before the open one, so Ctrl+R and Enter go back to it. */
+  /** The row that opens Add repository, in the picker and in the Home page's palette. */
+  const addRow: PaletteCommand = { title: "Add repository…", run: openAdd };
+  /** The picker's rows: Home, the open Repository, named `open`, the others, then Add repository…. The row
+   * of what shows is marked open, and opening it again leaves it on show. */
   const pickerRows = (open: string): PaletteCommand[] => [
-    { title: open, current: true, note: mirrorNoteOf(open), run: () => {} },
-    ...switchRows("", mirrorNoteOf),
-    { title: "Add repository…", run: openAdd },
+    {
+      title: "Home",
+      current: onHome(),
+      run: () => {
+        home.goHome();
+      },
+    },
+    { title: open, current: onRepository(), note: mirrorNoteOf(open), run: leaveHome },
+    ...switchRows(others, "", mirrorNoteOf),
+    addRow,
   ];
+  /** The row the picker opens on, which Ctrl+R and Enter run: on a Repository's screen the one opened before
+   * it, the first of the others, and on the Home page the open Repository, the one the user came from. */
+  const pickerStart = () => (onRepository() && others.length > 0 ? 2 : 1);
+  /** The palette's rows that open a Repository: on the Home page each of them, then Add repository…, and on
+   * a Repository's screen each other one. */
+  const openRows = () => {
+    if (!onHome()) return switchRows(others, "Repository: ");
+    const all = home.rows.map((row) => row.name);
+    return [...switchRows(all, "Repository: "), addRow];
+  };
   /** The open Repository's state, which its Issue and PR views and the status bar say while it is Read-only
    * (#398). Another Repository has its own, so a switch starts a new one and stops the last. */
   let repositoryState = $state<RepositoryStateView>();
@@ -379,11 +425,12 @@
     openName === undefined || status.lastSync?.repository === openName ? status.lastSync : null,
   );
   /** Names the open Repository, so the user can tell which one this is with the Sidebar hidden, in the
-   * taskbar and in Alt+Tab, and then the build. The Repository comes first, as they cut a long title short.
-   * `startup.rs` copies it to the window. */
-  const title = $derived(
-    home.current?.screen === "repository" ? `${home.current.repository.name} · ${about.title}` : about.title,
-  );
+   * taskbar and in Alt+Tab, or else the Home page, and then the build. The Repository comes first, as they
+   * cut a long title short. `startup.rs` copies it to the window. */
+  const title = $derived.by(() => {
+    if (openName === undefined) return about.title;
+    return `${home.page ? "Home" : openName} · ${about.title}`;
+  });
   // A run that opens on Onboarding has no Workbench to time until the user adds a Repository.
   $effect(() => {
     if (home.current?.screen === "onboarding" || home.error) hud.skipStartup();
@@ -473,12 +520,12 @@
   };
   /** The palette's commands for the focus `at`: those the user ran, most recently run first, then the others
    * in their usual order: each action that can run there, the page's or the screen's, in the key table's
-   * order, then the screen's commands that run no action, then a switch to each other Repository. */
+   * order, then the screen's commands that run no action, then the rows that open a Repository. */
   const paletteCommands = (at: KeyTarget): PaletteCommand[] =>
     recentCommands.order<PaletteCommand>([
       ...keyTable().flatMap((row) => pageRow(row, at) ?? repositoryHome?.paletteRow(row, at) ?? []),
       ...(repositoryHome?.paletteCommands() ?? []),
-      ...switchRows("Repository: "),
+      ...openRows(),
     ]);
 </script>
 
@@ -493,16 +540,27 @@
     {#if home.switchProblem}
       <p role="alert">{home.switchProblem}</p>
     {/if}
-    <RepositoryHome
-      bind:this={repositoryHome}
-      name={home.current.repository.name}
-      onpick={openPicker}
-      onsettings={openSettings}
-      {keysActive}
-      diffFiles={settings.diffFiles}
-      diffPeek={settings.diffPeek}
-      repositoryState={repositoryState?.state}
-    />
+    {#if home.page}
+      <HomePage
+        rows={home.rows}
+        {keysActive}
+        onopen={openNamed}
+        onback={leaveHome}
+        onadd={openAdd}
+        onsettings={openSettings}
+      />
+    {:else}
+      <RepositoryHome
+        bind:this={repositoryHome}
+        name={home.current.repository.name}
+        onpick={openPicker}
+        onsettings={openSettings}
+        {keysActive}
+        diffFiles={settings.diffFiles}
+        diffPeek={settings.diffPeek}
+        repositoryState={repositoryState?.state}
+      />
+    {/if}
   {:else if home.error}
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
     <p>{`Tsugiki can't say what to open: ${home.error}`}</p>
@@ -530,7 +588,7 @@
   mirrorProblem={status.mirrorProblem}
   mirrorQuestion={status.mirrorQuestion}
   newVersion={status.newVersion}
-  readOnly={openName !== undefined && (repositoryState?.state?.read_only.length ?? 0) > 0}
+  readOnly={onRepository() && (repositoryState?.state?.read_only.length ?? 0) > 0}
   chord={chord.first}
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}
@@ -557,7 +615,7 @@
     }}
     onswitch={(name) => {
       addOpen = false;
-      switchFromAdd(name);
+      openNamed(name);
     }}
   />
 {/if}
@@ -580,7 +638,7 @@
   <Palette
     commands={pickerRows(openName)}
     words={PICKER_WORDS}
-    start={others.length > 0 ? 1 : 0}
+    start={pickerStart()}
     onclose={() => {
       pickerOpen = false;
     }}
@@ -608,7 +666,7 @@
     repository={openName}
     at={settingsAt}
     onadded={added}
-    onswitch={switchFromAdd}
+    onswitch={openNamed}
     onclose={() => {
       settingsOpen = false;
     }}

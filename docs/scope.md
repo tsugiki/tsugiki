@@ -41,6 +41,9 @@ section's file in [devel/](devel/) says how it behaves. Read the files a ticket 
   or the diff's search, the file view, which goes back to the diff, and last a PR, which goes back to its
   Issue.
 - Showing only the Detail pane, and Reset Layout.
+- The **Home page** in place of the panes: the Repository picker's first row and "Go to Home" in the command
+  palette open it, a Repository's row opens that Repository on its Workbench, and Esc and `Alt+←` go back to
+  the Repository the user came from.
 
 ### Status bar ([status-bar.md](devel/status-bar.md))
 

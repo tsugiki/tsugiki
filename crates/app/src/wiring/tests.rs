@@ -229,6 +229,16 @@ fn add_cpython() -> Value {
     json!({ "repository": { "name": CPYTHON, "source": { "kind": "download" } } })
 }
 
+/// The answer `home`, with no time of opening, as a test can't know when it ran.
+fn untimed(home: &Value) -> Value {
+    let mut home = home.clone();
+    home["opened_at"] = Value::Null;
+    for other in home["others"].as_array_mut().into_iter().flatten() {
+        other["opened_at"] = Value::Null;
+    }
+    home
+}
+
 fn the_whole_workbench() -> Value {
     json!({ "repository": CPYTHON, "view": { "kind": "whole" } })
 }
@@ -807,7 +817,8 @@ fn a_repository_added_reaches_both_files_and_opens_after_a_restart() {
     drop(restarted.stop());
 
     assert_eq!(before["screen"], "onboarding");
-    assert_eq!(added, json!(cpython()));
+    assert!(added["opened_at"].is_string(), "{added}");
+    assert_eq!(untimed(&added), json!(cpython()));
     assert_eq!(after, added);
     assert_eq!(reopened, added);
     assert!(
@@ -844,11 +855,13 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     let reopened = restarted.ask("home", json!({})).unwrap();
     drop(restarted.stop());
 
-    // The Repository picker lists the one left behind below the open one.
+    // The Repository picker lists the one left behind below the open one, opened when it was added.
+    let opened = opened.unwrap();
     let mut switched = json!(cpython());
-    switched["others"] = json!(["python/peps"]);
-    assert_eq!(opened.unwrap(), switched);
-    assert_eq!(home, switched);
+    switched["others"] = json!([{ "name": "python/peps", "opened_at": null }]);
+    assert_eq!(untimed(&opened), switched);
+    assert!(opened["others"][0]["opened_at"].is_string(), "{opened}");
+    assert_eq!(home, opened);
     // The session tells the status bar when each Repository opened last synced, the switched-to one last.
     assert_eq!(synced, [CPYTHON, "python/peps", CPYTHON]);
     assert_eq!(
@@ -856,7 +869,7 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
         "Tsugiki doesn't have python/gone."
     );
     assert_eq!(nonsense.unwrap_err()["kind"], "not_found");
-    assert_eq!(reopened, switched);
+    assert_eq!(reopened, opened);
 }
 
 #[test]

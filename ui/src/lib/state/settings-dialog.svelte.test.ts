@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { defaultSettings, NO_SERVERS, ok } from "$lib/testing/fixtures";
+import { defaultSettings, NO_SERVERS, ok, openOn } from "$lib/testing/fixtures";
 import type { Home } from "./home.svelte";
 import { SettingsDialog } from "./settings-dialog.svelte";
 import { LIGHT_SIDE } from "$lib/testing/state";
@@ -15,11 +15,9 @@ const core = vi.hoisted(() => ({
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
 /** What the window opens on once Add repository has added some-maintainer/gcmon. */
-const addedGcmon: Home = {
-  screen: "repository",
-  repository: { name: "some-maintainer/gcmon", conventions: "github", filters: [] },
-  others: ["python/cpython"],
-};
+const addedGcmon: Home = openOn({ name: "some-maintainer/gcmon", conventions: "github", filters: [] }, [
+  "python/cpython",
+]);
 
 describe("SettingsDialog", () => {
   it("changes nothing before the core has said what the settings are", async () => {

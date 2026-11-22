@@ -10,6 +10,7 @@ import {
   listedIssue,
   loadedSettings,
   ok,
+  openOn,
   readyFiles,
   workbenchPage,
   workbenchRow,
@@ -154,9 +155,9 @@ vi.mock("$lib/data/bindings", async () => {
 vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: () => {} }));
 
 const onboarding = { screen: "onboarding", token: "gh" } as const;
-const gcmon = { name: "some-maintainer/gcmon", conventions: "github", filters: [] } as const;
+const gcmon = { name: "some-maintainer/gcmon", conventions: "github" as const, filters: [] };
 /** The window open on gcmon, the only Repository. */
-const gcmonHome = { screen: "repository", repository: gcmon, others: [] } as const;
+const gcmonHome = openOn(gcmon);
 /** The Workbench with one Issue, #7, on it. */
 const oneIssue = workbenchPage([listedIssue(7, { title: "It crashes" })]);
 
@@ -642,11 +643,11 @@ describe("Open DevTools", () => {
   });
 });
 
-const peps = { name: "python/peps", conventions: "github", filters: [] } as const;
+const peps = { name: "python/peps", conventions: "github" as const, filters: [] };
 /** The window open on gcmon, with peps opened before it. */
-const gcmonAfterPeps = { screen: "repository", repository: gcmon, others: [peps.name] } as const;
+const gcmonAfterPeps = openOn(gcmon, [peps.name]);
 /** The window switched to peps. */
-const pepsHome = { screen: "repository", repository: peps, others: [gcmon.name] } as const;
+const pepsHome = openOn(peps, [gcmon.name]);
 /** Each option's text, with the space before a row's "open" mark as a plain one. */
 const spaced = (option: HTMLElement) => option.textContent.replace(/\s/g, " ");
 const options = () => screen.getAllByRole("option").map(spaced);
@@ -1229,7 +1230,7 @@ describe("the palette's order", () => {
     const listed = options();
     await fireEvent.click(screen.getByRole("option", { name: "python/peps" }));
 
-    expect(listed).toEqual(["some-maintainer/gcmon open", "python/peps", "Add repository…"]);
+    expect(listed).toEqual(["Home", "some-maintainer/gcmon open", "python/peps", "Add repository…"]);
     expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
     expect(core.rememberCommand).not.toHaveBeenCalled();
   });
@@ -1279,6 +1280,7 @@ describe("every action in the palette", () => {
       ["Go Forward", "Alt+→"],
       ["Open on GitHub", "Ctrl+Shift+G"],
       ["Switch Repository", "Ctrl+R"],
+      ["Go to Home", null],
       ["Reset Layout", null],
       ["Archive", "E"],
       ["Mute", "M"],
@@ -1332,6 +1334,7 @@ describe("every action in the palette", () => {
       ["Go Forward", "Alt+→"],
       ["Open on GitHub", "Ctrl+Shift+G"],
       ["Switch Repository", "Ctrl+R"],
+      ["Go to Home", null],
       ["Reset Layout", null],
       ["Archive", "E"],
       ["Mute", "M"],
@@ -1478,21 +1481,27 @@ describe("the Repository picker", () => {
   const picker = () => screen.queryByRole("dialog", { name: "Repository picker" });
   const filter = () => screen.getByRole("combobox", { name: "Repository" });
   /** The window open on gcmon, with peps opened before it and a/third before that. */
-  const threeHome = { ...gcmonAfterPeps, others: [peps.name, "a/third"] };
+  const threeHome = openOn(gcmon, [peps.name, "a/third"]);
 
   beforeEach(() => {
     vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
     core.home.mockResolvedValue(threeHome);
   });
 
-  it("opens on Ctrl+R: the Repositories most recently opened first, the open one marked, the previous picked", async () => {
+  it("opens on Ctrl+R: Home, the Repositories most recently opened first, the open one marked, the previous picked", async () => {
     render(Page);
     await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
 
     expect(picker()).toBeTruthy();
     expect(document.activeElement).toBe(filter());
-    expect(options()).toEqual(["some-maintainer/gcmon open", "python/peps", "a/third", "Add repository…"]);
+    expect(options()).toEqual([
+      "Home",
+      "some-maintainer/gcmon open",
+      "python/peps",
+      "a/third",
+      "Add repository…",
+    ]);
     expect(spaced(screen.getByRole("option", { current: true }))).toBe("some-maintainer/gcmon open");
     expect(screen.getByRole("option", { selected: true }).textContent).toBe("python/peps");
   });
@@ -1509,6 +1518,7 @@ describe("the Repository picker", () => {
     // The page asks for the states as it loads, after a few other answers.
     await vi.waitFor(() => {
       expect(options()).toEqual([
+        "Home",
         "some-maintainer/gcmon open",
         "python/peps · cloning, 40%",
         "a/third · waiting for python/peps's clone",
@@ -1523,6 +1533,7 @@ describe("the Repository picker", () => {
     ]);
     await vi.waitFor(() => {
       expect(options()).toEqual([
+        "Home",
         "some-maintainer/gcmon open",
         "python/peps",
         "a/third · cloning",
@@ -1540,7 +1551,7 @@ describe("the Repository picker", () => {
     await screen.findByRole("button", { name: gcmon.name });
     await ctrlR();
     await vi.waitFor(() => {
-      expect(options()[0]).toBe("some-maintainer/gcmon · the mirror waits for your answer open");
+      expect(options()[1]).toBe("some-maintainer/gcmon · the mirror waits for your answer open");
     });
   });
 
@@ -1666,6 +1677,187 @@ describe("the Repository picker", () => {
   });
 });
 
+describe("the Home page", () => {
+  const HOUR_MS = 3_600_000;
+  /** A time `hours` before now, as the core writes it. */
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR_MS).toISOString();
+  /** The window open on gcmon, opened an hour ago, with peps opened before it and a/never not opened here. */
+  const homeOfThree = () =>
+    openOn(gcmon, [{ name: peps.name, opened_at: hoursAgo(26) }, "a/never"], hoursAgo(1));
+  const ctrlR = () => fireEvent.keyDown(document.body, { key: "r", code: "KeyR", ctrlKey: true });
+  const homeHeading = () => screen.queryByRole("heading", { name: "Home" });
+  const repositoryRows = () =>
+    within(screen.getByRole("list", { name: "Repositories" }))
+      .getAllByRole("button")
+      .map((row) => Array.from(row.querySelectorAll("span"), (span) => span.textContent));
+  const rowOf = (name: string) =>
+    within(screen.getByRole("list", { name: "Repositories" })).getByRole("button", {
+      name: new RegExp(name),
+    });
+
+  beforeEach(() => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    core.home.mockResolvedValue(homeOfThree());
+  });
+
+  /** Opens the page on gcmon, and the Home page from the picker's first row. */
+  const goHome = async () => {
+    render(Page);
+    await screen.findByRole("button", { name: gcmon.name });
+    await ctrlR();
+    await fireEvent.click(screen.getByRole("option", { name: "Home" }));
+    await vi.waitFor(() => {
+      expect(homeHeading()).toBeTruthy();
+    });
+  };
+
+  it("opens from the picker's first row on every Repository, the one the user came from first", async () => {
+    await goHome();
+
+    expect(repositoryRows()).toEqual([
+      ["some-maintainer/gcmon", "opened 1 h ago"],
+      ["python/peps", "opened 1 d ago"],
+      ["a/never"],
+    ]);
+    expect(document.activeElement).toBe(rowOf(gcmon.name));
+    expect(screen.queryByRole("navigation", { name: "Sidebar" })).toBeNull();
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(document.title).toBe("Home · Tsugiki 1.2.3");
+  });
+
+  it("opens from Go to Home in the palette, whose rows there open a Repository or add one", async () => {
+    render(Page);
+    await screen.findByRole("button", { name: gcmon.name });
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Go to Home" }));
+    await vi.waitFor(() => {
+      expect(homeHeading()).toBeTruthy();
+    });
+
+    await ctrlShiftP();
+    const listed = rowTexts();
+    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+
+    expect(listed).toContain("Open Settings");
+    expect(listed).not.toContain("Go to Home");
+    expect(listed.slice(-4)).toEqual([
+      "Repository: some-maintainer/gcmon",
+      "Repository: python/peps",
+      "Repository: a/never",
+      "Add repository…",
+    ]);
+    // Quick open searches one Repository, so the Home page has none.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(homeHeading()).toBeTruthy();
+  });
+
+  it("goes back to the Repository the user came from on Enter on its row, Esc or Alt+←, with no switch", async () => {
+    await goHome();
+    // A browser clicks the focused row on Enter, which jsdom leaves to the test.
+    await fireEvent.keyDown(document.activeElement as Element, { key: "Enter" });
+    await fireEvent.click(document.activeElement as Element);
+    expect(await screen.findByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+    expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
+
+    await ctrlR();
+    await fireEvent.click(screen.getByRole("option", { name: "Home" }));
+    await vi.waitFor(() => {
+      expect(homeHeading()).toBeTruthy();
+    });
+    await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(await screen.findByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+
+    await ctrlR();
+    await fireEvent.click(screen.getByRole("option", { name: "Home" }));
+    await vi.waitFor(() => {
+      expect(homeHeading()).toBeTruthy();
+    });
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowLeft", altKey: true });
+    expect(await screen.findByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+    expect(homeHeading()).toBeNull();
+    expect(core.openRepository).not.toHaveBeenCalled();
+  });
+
+  it("opens the Repository under the cursor on Enter, after ↑ ↓ move it", async () => {
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
+    await goHome();
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(rowOf(peps.name));
+    expect(rowOf(peps.name).getAttribute("aria-current")).toBe("true");
+
+    // Nothing holds the focus after a click beside the rows, and Enter still opens the row under the cursor.
+    (document.activeElement as HTMLElement).blur();
+    await fireEvent.keyDown(document.body, { key: "Enter" });
+
+    expect(core.openRepository).toHaveBeenCalledWith(peps.name);
+    expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
+    expect(homeHeading()).toBeNull();
+  });
+
+  it("opens a Repository on a click on its row", async () => {
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
+    await goHome();
+    await fireEvent.click(rowOf(peps.name));
+    expect(await screen.findByRole("button", { name: peps.name })).toBeTruthy();
+    expect(homeHeading()).toBeNull();
+  });
+
+  it("stays and says why when the core refuses the switch", async () => {
+    core.openRepository.mockResolvedValue({
+      status: "error",
+      error: { kind: "internal", message: "no disk" },
+    });
+    await goHome();
+    await fireEvent.click(rowOf(peps.name));
+    expect(await screen.findByText("Tsugiki couldn't switch to python/peps: no disk")).toBeTruthy();
+    expect(homeHeading()).toBeTruthy();
+  });
+
+  it("has the picker on Ctrl+R, with Home marked and the Repository the user came from picked", async () => {
+    await goHome();
+    await ctrlR();
+    expect(screen.getAllByRole("option").map(spaced)).toEqual([
+      "Home open",
+      "some-maintainer/gcmon",
+      "python/peps",
+      "a/never",
+      "Add repository…",
+    ]);
+    expect(screen.getByRole("option", { selected: true }).textContent).toBe(gcmon.name);
+
+    await fireEvent.keyDown(screen.getByRole("combobox", { name: "Repository" }), { key: "Enter" });
+    expect(await screen.findByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+    expect(core.openRepository).not.toHaveBeenCalled();
+  });
+
+  it("keeps its keys under a dialog: Esc closes the dialog and leaves the page on show", async () => {
+    await goHome();
+    await fireEvent.click(screen.getByRole("button", { name: "Add repository…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add repository" });
+    await fireEvent.keyDown(within(dialog).getByRole("textbox", { name: "Repository" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(homeHeading()).toBeTruthy();
+  });
+
+  it("goes back to the open Repository when Add repository finds Tsugiki has it", async () => {
+    core.checkRepository.mockResolvedValue({ status: "ok", data: { kind: "held", name: gcmon.name } });
+    await goHome();
+    await fireEvent.click(screen.getByRole("button", { name: "Add repository…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add repository" });
+    await fireEvent.input(within(dialog).getByRole("textbox", { name: "Repository" }), {
+      target: { value: gcmon.name },
+    });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Check" }));
+    await fireEvent.click(await within(dialog).findByRole("button", { name: "Switch to it" }));
+    expect(await screen.findByRole("navigation", { name: "Sidebar" })).toBeTruthy();
+    expect(core.openRepository).not.toHaveBeenCalled();
+  });
+});
+
 describe("a chord", () => {
   const chord = () => screen.queryByText("Ctrl+K");
 
@@ -1685,6 +1877,34 @@ describe("a chord", () => {
 
     expect(chord()).toBeNull();
     expect(document.activeElement).not.toBe(row);
+  });
+
+  it("hands a chord of Go Back to the Repository's screen, as Go Back is the page's only on the Home page", async () => {
+    listOnePr();
+    core.workbench.mockResolvedValue(
+      workbenchPage([
+        listedIssue(7, { title: "It crashes" }),
+        { kind: "standalone_pr", ...pr, backports: [], attention: null },
+      ]),
+    );
+    core.openIssue.mockResolvedValue(done);
+    core.issue.mockResolvedValue(ok(null));
+    const remapped = structuredClone(SETTINGS);
+    remapped.settings.keys = { go_back: "ctrl+k g" };
+    core.settings.mockResolvedValue(remapped);
+    render(Page);
+    await fireEvent.click(await screen.findByRole("button", { name: "#7 It crashes" }));
+    await screen.findByRole("region", { name: "Issue view" });
+    await fireEvent.click(screen.getByRole("button", { name: "#70 gh-7: Fix the crash" }));
+    await screen.findByRole("region", { name: "PR view" });
+    await vi.waitFor(() => {
+      expect(actionOn("ctrl+k g")).toBe("go_back");
+    });
+
+    await ctrlK();
+    await fireEvent.keyDown(document.body, { key: "g", code: "KeyG" });
+
+    expect(await screen.findByRole("region", { name: "Issue view" })).toBeTruthy();
   });
 
   it("hands Ctrl+K Z to the Repository's screen, which shows only the Detail pane", async () => {

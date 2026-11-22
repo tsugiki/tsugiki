@@ -201,6 +201,12 @@ export const KEYMAP = [
     "context": "anywhere"
   },
   {
+    "action": "go_home",
+    "title": "Go to Home",
+    "key": null,
+    "context": "anywhere"
+  },
+  {
     "action": "reset_layout",
     "title": "Reset Layout",
     "key": null,

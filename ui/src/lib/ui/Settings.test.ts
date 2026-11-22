@@ -10,7 +10,7 @@ import {
   type Settings as Values,
 } from "$lib/state/settings.svelte";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
-import { defaultSettings, NO_SERVERS, ok, refused, repositoryCheck } from "$lib/testing/fixtures";
+import { defaultSettings, NO_SERVERS, ok, openOn, refused, repositoryCheck } from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import { LIGHT_SIDE } from "$lib/testing/state";
 import Settings from "./Settings.svelte";
@@ -1130,11 +1130,7 @@ describe("Settings › Repositories", () => {
   const addButton = () => within(repositoriesPage()).getByRole("button", { name: "Add repository…" });
   const newproj = repositoryCheck("some-maintainer/newproj");
   /** What the window opens on once Add repository… has added some-maintainer/newproj. */
-  const addedHome = {
-    screen: "repository",
-    repository: newproj.repository,
-    others: ["some-maintainer/gcmon", "python/cpython"],
-  } as const;
+  const addedHome = openOn(newproj.repository, ["some-maintainer/gcmon", "python/cpython"]);
   const addDialog = () => screen.queryByRole("dialog", { name: "Add repository" });
   /** Opens Add repository… from the page. */
   const openAdd = async () => {

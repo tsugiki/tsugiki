@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { beforeEach, expect, it, vi } from "vitest";
-import { repositoryCheck } from "$lib/testing/fixtures";
+import { openOn, repositoryCheck } from "$lib/testing/fixtures";
 import AddRepository from "./AddRepository.svelte";
 
 const core = vi.hoisted(() => ({
@@ -13,7 +13,7 @@ vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
 const check = repositoryCheck();
 
-const home = { screen: "repository", repository: check.repository, others: [] as string[] } as const;
+const home = openOn(check.repository);
 
 const button = (name: string) => screen.getByRole<HTMLButtonElement>("button", { name });
 

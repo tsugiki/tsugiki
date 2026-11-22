@@ -19,3 +19,11 @@ export function elapsed(since: string, now: Date): Elapsed {
   if (minutes < MINUTES_IN_DAY) return { unit: "hour", count: Math.floor(minutes / MINUTES_IN_HOUR) };
   return { unit: "day", count: Math.floor(minutes / MINUTES_IN_DAY) };
 }
+
+const AGO_UNITS = { minute: "min", hour: "h", day: "d" } as const;
+
+/** The time from `since` to `now` in words: "just now", "3 min ago", "2 h ago" or "4 d ago". */
+export function agoWords(since: string, now: Date): string {
+  const time = elapsed(since, now);
+  return time.unit === "now" ? "just now" : `${String(time.count)} ${AGO_UNITS[time.unit]} ago`;
+}

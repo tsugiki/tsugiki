@@ -403,6 +403,7 @@ const DOCUMENTED: &[(&str, &[Action])] = &[
     ("Back / forward", &[Action::GoBack, Action::GoForward]),
     ("Open on GitHub", &[Action::OpenOnGithub]),
     ("Switch Repository", &[Action::SwitchRepository]),
+    ("Go to the Home page", &[Action::GoHome]),
     ("Reset the layout", &[Action::ResetLayout]),
     (
         "Archive, the row under the cursor or the Detail pane's item, by focus",

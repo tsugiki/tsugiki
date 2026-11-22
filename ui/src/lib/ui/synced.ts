@@ -2,23 +2,17 @@
 // Repositories syncing, and for a mirror's clone and what keeps one from starting.
 import { counted } from "$lib/state/counted";
 import type { Cloning, MirrorProblem, RepositoryMirror, SyncActivity } from "$lib/state/status.svelte";
-import { elapsed } from "./time";
+import { agoWords } from "./time";
 
 type OpenSync = NonNullable<SyncActivity["open"]>;
 
 /** How far a clone has got once GitHub has started sending. */
 type CloneUnderWay = Exclude<Cloning["progress"], { stage: "starting" }>;
 
-const SYNCED_UNITS = { minute: "min", hour: "h", day: "d" } as const;
-
 /** The time a Repository last synced, for the status bar and the Repository's page in Settings: "Synced
  * just now", "Synced 3 min ago", or not yet. */
 export function syncedWords(at: string | null, now: Date): string {
-  if (at === null) return "Not synced yet";
-  const time = elapsed(at, now);
-  return time.unit === "now"
-    ? "Synced just now"
-    : `Synced ${String(time.count)} ${SYNCED_UNITS[time.unit]} ago`;
+  return at === null ? "Not synced yet" : `Synced ${agoWords(at, now)}`;
 }
 
 const PART_WORDS = {

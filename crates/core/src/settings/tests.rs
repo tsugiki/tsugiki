@@ -79,8 +79,52 @@ fn opened_with(names: &[&str], conventions: Conventions, filters: Vec<Filter>) -
             filters,
             read_only: false,
         },
-        others: names[1..].iter().map(|name| repository(name)).collect(),
+        opened_at: None,
+        others: (names[1..].iter())
+            .map(|name| Opened {
+                name: repository(name),
+                opened_at: None,
+            })
+            .collect(),
     }
+}
+
+/// `home` with no time of opening, for a test of the order alone.
+fn untimed(home: &Home) -> Home {
+    match home.clone() {
+        Home::Repository {
+            repository, others, ..
+        } => Home::Repository {
+            repository,
+            opened_at: None,
+            others: (others.into_iter())
+                .map(|one| Opened {
+                    opened_at: None,
+                    ..one
+                })
+                .collect(),
+        },
+        onboarding @ Home::Onboarding { .. } => onboarding,
+    }
+}
+
+/// When `home` says each Repository was opened, in its order.
+fn times(home: &Home) -> Vec<(String, Option<OffsetDateTime>)> {
+    let Home::Repository {
+        repository,
+        opened_at,
+        others,
+    } = home
+    else {
+        return Vec::new();
+    };
+    let others = others
+        .iter()
+        .map(|one| (one.name.to_string(), one.opened_at));
+    [(repository.name.to_string(), *opened_at)]
+        .into_iter()
+        .chain(others)
+        .collect()
 }
 
 /// Separate data and settings folders, as an installed Tsugiki on Windows has, and the folder around
@@ -2714,7 +2758,7 @@ fn the_owner_saves_an_addition_and_answers_with_what_the_files_say() {
 
     assert!(text.contains("python/cpython"), "{text}");
     assert_eq!(
-        saved.home,
+        untimed(&saved.home),
         opened(&["python/cpython"], Conventions::Cpython)
     );
     assert_eq!(saved.loaded.settings.repositories.len(), 1);
@@ -3549,7 +3593,10 @@ fn adding_a_repository_saves_it_with_its_conventions() {
         .unwrap();
     let text = fs::read_to_string(folders.settings_file()).unwrap();
 
-    assert_eq!(home, opened(&["python/cpython"], Conventions::Cpython));
+    assert_eq!(
+        untimed(&home),
+        opened(&["python/cpython"], Conventions::Cpython)
+    );
     assert_eq!(
         text,
         "[[repositories]]\nname = \"python/cpython\"\nconventions = \"cpython\"\n
@@ -3585,7 +3632,7 @@ visible = false
     let after = fs::read_to_string(folders.settings_file()).unwrap();
 
     assert_eq!(
-        home,
+        untimed(&home),
         opened(
             &["some-maintainer/gcmon", "python/cpython"],
             Conventions::Github
@@ -3691,7 +3738,7 @@ fn adding_a_repository_twice_keeps_one_and_opens_it() {
 
     assert_eq!(after, before);
     assert_eq!(
-        home,
+        untimed(&home),
         opened(&["python/cpython", "a/b"], Conventions::Cpython)
     );
 }
@@ -3723,7 +3770,10 @@ fn adding_puts_the_repository_first_in_recent_with_the_time() {
 "
     );
     assert!(!settings.contains(RECENT), "{settings}");
-    assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
+    assert_eq!(
+        untimed(&home),
+        opened(&["a/first", "a/second"], Conventions::Github)
+    );
 }
 
 #[test]
@@ -3735,7 +3785,7 @@ fn a_normal_launch_reopens_the_head_of_recent() {
     let reopened = SettingsFiles::load(folders).home();
 
     assert_eq!(
-        reopened,
+        untimed(&reopened),
         opened(&["a/second", "a/first"], Conventions::Github)
     );
 }
@@ -3750,7 +3800,7 @@ fn a_launch_skips_a_name_the_settings_no_longer_hold() {
     let home = SettingsFiles::load(folders).home();
 
     assert_eq!(
-        home,
+        untimed(&home),
         opened_by_hand(&["a/second", "a/first"], Conventions::Github)
     );
 }
@@ -3778,11 +3828,61 @@ fn the_home_lists_the_repositories_most_recently_opened_first_then_the_others() 
 
     // The settings no longer hold a/gone, and a/never and a/later were never opened on this machine.
     assert_eq!(
-        home,
+        untimed(&home),
         opened_by_hand(
             &["a/first", "a/third", "a/second", "a/never", "a/later"],
             Conventions::Github
         )
+    );
+}
+
+#[test]
+fn the_home_says_when_each_repository_was_opened_by_its_first_entry_in_recent() {
+    let (folders, _root) = temp_folders("recent-times");
+    hold_only(&folders, &["a/first", "a/second", "a/third", "a/never"]);
+    let mine = "recent = [
+    { name = \"A/First\", opened_at = 2026-11-10T09:00:00Z },
+    { name = \"a/second\", opened_at = 2026-11-09T10:30:00+02:00 },
+    { name = \"a/third\", opened_at = 2026-11-08T09:00:00 },
+    { name = \"a/first\", opened_at = 2026-11-01T09:00:00Z },
+]
+";
+    fs::write(folders.machine_file(), mine).unwrap();
+
+    let home = SettingsFiles::load(folders).home();
+
+    // A time with no offset could be any moment, and a/never was never opened on this machine.
+    assert_eq!(
+        times(&home),
+        [
+            ("a/first".to_owned(), Some(moment("2026-11-10T09:00:00Z"))),
+            ("a/second".to_owned(), Some(moment("2026-11-09T08:30:00Z"))),
+            ("a/third".to_owned(), None),
+            ("a/never".to_owned(), None),
+        ]
+    );
+}
+
+#[test]
+fn opening_a_repository_gives_it_the_time_and_keeps_the_others() {
+    let (folders, _root) = temp_folders("recent-open-time");
+    let mut files = SettingsFiles::load(folders);
+    add_all(
+        &mut files,
+        &["a/first", "a/second"],
+        moment("2026-11-10T09:00:00Z"),
+    );
+
+    let home = files
+        .open_repository(&repository("a/first"), moment("2026-11-10T12:00:00Z"))
+        .unwrap();
+
+    assert_eq!(
+        times(&home),
+        [
+            ("a/first".to_owned(), Some(moment("2026-11-10T12:00:00Z"))),
+            ("a/second".to_owned(), Some(moment("2026-11-10T10:00:00Z"))),
+        ]
     );
 }
 
@@ -3796,7 +3896,7 @@ fn with_no_name_in_recent_left_a_launch_opens_the_first_repository() {
     let home = SettingsFiles::load(folders).home();
 
     assert_eq!(
-        home,
+        untimed(&home),
         opened_by_hand(&["a/first", "a/second"], Conventions::Github)
     );
 }
@@ -3820,6 +3920,7 @@ fn an_entry_in_recent_it_cant_read_is_passed_over_and_kept() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
+        // Neither has a time: one has none Tsugiki can read, and the other isn't in `recent`.
         (home, problems),
         (
             opened_by_hand(&["a/second", "a/first"], Conventions::Github),
@@ -3854,6 +3955,7 @@ fn a_last_repository_from_0_2_0_reopens_and_the_next_add_turns_it_into_recent() 
     add_all(&mut files, &["a/new"], moment("2026-11-10T09:00:00Z"));
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
+    // 0.2.0 kept no time.
     assert_eq!(
         reopened,
         opened_by_hand(&["a/old", "a/first"], Conventions::Github)
@@ -3916,7 +4018,7 @@ list = 500
 "
     );
     assert_eq!(
-        reopened,
+        untimed(&reopened),
         opened_by_hand(&["a/old", "a/first"], Conventions::Github)
     );
 }
@@ -3934,7 +4036,7 @@ fn a_last_repository_written_by_0_2_0_after_recent_gives_way_to_the_list() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
-        reopened,
+        untimed(&reopened),
         opened_by_hand(&["a/one", "a/old"], Conventions::Github)
     );
     assert_eq!(machine, "recent = [\n    { name = \"a/one\" },\n]\n");
@@ -3953,7 +4055,7 @@ fn a_recent_that_isnt_a_list_gives_way_to_a_last_repository() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
-        reopened,
+        untimed(&reopened),
         opened_by_hand(&["a/old", "a/first"], Conventions::Github)
     );
     assert!(
@@ -3982,7 +4084,7 @@ fn a_recent_written_as_tables_keeps_its_entries() {
     let machine = fs::read_to_string(folders.machine_file()).unwrap();
 
     assert_eq!(
-        reopened,
+        untimed(&reopened),
         opened_by_hand(&["a/one", "a/two"], Conventions::Github)
     );
     assert!(
@@ -4135,7 +4237,10 @@ fn opening_a_repository_puts_it_first_in_recent_and_the_next_launch_opens_it() {
     let after = fs::read_to_string(folders.settings_file()).unwrap();
     let relaunched = SettingsFiles::load(folders).home();
 
-    assert_eq!(home, opened(&["a/first", "a/second"], Conventions::Github));
+    assert_eq!(
+        untimed(&home),
+        opened(&["a/first", "a/second"], Conventions::Github)
+    );
     assert_eq!(relaunched, home);
     // Under the name the settings hold, and with the mirror answers as they were.
     assert_eq!(
@@ -4169,7 +4274,7 @@ fn opening_a_repository_the_settings_dont_hold_is_refused_and_changes_nothing() 
     assert_eq!(refused.message, "Tsugiki doesn't have a/gone.");
     assert_eq!(after, machine);
     assert_eq!(
-        files.home(),
+        untimed(&files.home()),
         opened(&["a/second", "a/first"], Conventions::Github)
     );
 }
@@ -4221,7 +4326,7 @@ fn the_owner_opens_a_repository_and_answers_with_what_the_files_say() {
     let saved = owner.open_repository(repository("a/first")).unwrap();
 
     assert_eq!(
-        saved.home,
+        untimed(&saved.home),
         opened(&["a/first", "a/second"], Conventions::Github)
     );
     // In the view by the time the owner answers.
@@ -4255,7 +4360,7 @@ fn the_owners_check_reads_the_files_again_so_a_repository_taken_out_by_hand_isnt
     );
     // What the owner read is in the view too, so the picker's list loses the name.
     assert_eq!(
-        owner.view().home,
+        untimed(&owner.view().home),
         opened_by_hand(&["a/first"], Conventions::Github)
     );
 }

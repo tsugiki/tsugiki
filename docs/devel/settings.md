@@ -66,9 +66,28 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   the window Tsugiki holds. They change as soon as a sync saves new ones, a first sync included, and before
   a sync has counted them they don't show. The last sync says "Not synced yet" before the first one
   finishes, moves on each minute, and changes when a sync of that Repository finishes, open or not. Each
-  part waits for the core's answer, and the line shows once one has come. The page says "Nothing to set here
-  yet." under the header for now: its groups come later, in this order: Conventions, First sync, Filters,
-  Muted authors, On this machine, then Reset cache and Remove repository.
+  part waits for the core's answer, and the line shows once one has come. The page's groups follow the
+  header in this order: Conventions, First sync, Filters, Muted authors, On this machine, then Reset cache
+  and Remove repository. Only Filters is built so far.
+- A Repository's Filters group lists each Filter on a line of its own, in the order `settings.toml` gives
+  and the Sidebar shows: its name and its search, each edited in place, ↑ and ↓, off at either end, and
+  Delete. Add filter adds a Filter with a blank name and search at the end and puts the focus in its name. A
+  Filter with a blank name or search turns its line red, and Apply stays off until it has both, with a line
+  beside it naming the Repository, on any page. The lines wait for the files and are off while Apply saves.
+  Apply writes the Repository's `filters` in the form the file uses: blocks of their own, or the inline list
+  the user wrote, keeping the user's comments. A Filter the page read keeps its table, with each key and
+  comment on it, `on_workbench` among them, through a new name, a new search or a move, and its name and
+  search change in place. A Filter Add filter added is written with its name and search alone, so it is off
+  the Workbench. A Repository the file holds without `filters` gets the Filters it reads as written out
+  first, as the switch writes them. No Filters left writes `filters = []`, since a Repository without the
+  key reads as having the starters, and the comments above the first block go above it; blocks put in place
+  of a `filters = []` take the comments around and inside it. Apply refuses, naming the cause, and saves
+  nothing then: two Filters with one search, on the page or in the file, as the page shows only the first; a
+  Repository the file names twice in two cases; and Filters whose names and searches a hand edit changed
+  while the dialog was open. Filters the file already holds as Apply would write them, as after an Apply
+  whose answer the window missed, stay as they are. The Sidebar shows the Filters once Apply has saved
+  them, as after a hand edit, and a new search loads its items as one added by hand does; Cancel leaves the
+  file and the Sidebar as they were. The page has no "On the Workbench" switch yet (#1017).
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps
   ([keyboard.md](keyboard.md)).
 - Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle
@@ -108,7 +127,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   `filters` reads as having the two starter Filters, both off. Of two Filters with the same `query`, Tsugiki
   reads the first. The switch in the Filter's view saves it at once, without Apply, on the first Filter with
   that search, and writes the Filters of a Repository the file holds without them first. A Repository's page
-  gets the switch with its Filters (#535).
+  gets the switch beside each of its Filters (#1017).
 - `read_only = true` in a `[[repositories]]` table of `settings.toml` makes the Repository **Read-only** by
   the user's choice, whatever the token can do, and Tsugiki sends no write there
   ([token.md](token.md)). A Repository without it can write, and Tsugiki writes the key only when it is

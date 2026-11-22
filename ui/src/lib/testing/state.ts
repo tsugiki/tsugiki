@@ -11,6 +11,10 @@ import type { Channel } from "../data/channel";
 import { done } from "./fixtures";
 import { HitCode } from "../state/hit-code.svelte";
 import type { Peek } from "../state/peek";
+import type { DarkQuery } from "../state/theme.svelte";
+
+/** The system on its light side, which says nothing when it changes, for a `ThemeState`. */
+export const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;
 
 /** Catches the listener the state registers for a Repository's changes, so a test can say one changed as
  * the core would, and which items. The test mocks `$lib/data/bindings` with a `changed` event. */

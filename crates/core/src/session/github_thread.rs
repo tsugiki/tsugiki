@@ -28,7 +28,7 @@ use crate::settings::SettingsView;
 use crate::status::{Change, FailedRead, ItemUnread, LastSync, ReadFailure, Status, StatusBoard};
 use crate::store::{ConversationSaved, HeadKept, Store};
 use crate::sync::{Progress, Syncs};
-use crate::token::read_token;
+use crate::token::TokenReads;
 
 use super::on_screen::OnScreen;
 use super::read_only::{ThreadParts, WriteJudge};
@@ -80,11 +80,13 @@ pub(super) enum TokenRead {
 }
 
 /// GitHub access with no token yet, which reads the token again when asked, what hears of each read while
-/// it is out, until the client takes it, and the queue whose clicks a read covers.
+/// it is out, until the client takes it, the queue whose clicks a read covers, and the reads so far, so
+/// the log says once why each minute's read finds none.
 pub(super) struct Unconnected<'a> {
     access: GitHubAccess,
     announce: RefCell<AnnounceInFlight>,
     refreshes: &'a Refreshes,
+    reads: TokenReads,
 }
 
 /// Connects at the thread's start, as [`Unconnected::connect`] says.
@@ -100,6 +102,7 @@ pub(super) fn connect<'a>(
         access,
         announce: RefCell::new(announce),
         refreshes,
+        reads: TokenReads::default(),
     };
     unconnected.connect(board, store, TokenRead::Start)
 }
@@ -111,7 +114,7 @@ impl Unconnected<'_> {
     /// the status bar says "Connecting…" meanwhile, with who was signed in last time. A read that finds no
     /// token covers each click that came while it was out.
     fn connect(
-        self,
+        mut self,
         board: &mut StatusBoard,
         store: &Store,
         read: TokenRead,
@@ -123,7 +126,8 @@ impl Unconnected<'_> {
             TokenRead::Due => {}
         }
         let from = self.access.token_from;
-        let token = in_flight::announced(&self.announce, Asking::Token, || read_token(from));
+        let reads = &mut self.reads;
+        let token = in_flight::announced(&self.announce, Asking::Token, || reads.read(from));
         // Before the board hears the answer, so a click once the status bar says it asks again (#987). A
         // click that came while a read that found a token was out asks GitHub, as it would have before.
         if token.is_err() {

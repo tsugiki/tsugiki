@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { defaultSettings, NO_SERVERS, ok } from "$lib/testing/fixtures";
 import type { Home } from "./home.svelte";
 import { SettingsDialog } from "./settings-dialog.svelte";
+import { LIGHT_SIDE } from "$lib/testing/state";
 import { SettingsState } from "./settings.svelte";
-import { type DarkQuery, ThemeState } from "./theme.svelte";
+import { ThemeState } from "./theme.svelte";
 
 const core = vi.hoisted(() => ({
   rereadSettings: vi.fn(),
@@ -12,8 +13,6 @@ const core = vi.hoisted(() => ({
   settings: vi.fn(),
 }));
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
-
-const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;
 
 /** What the window opens on once Add repository has added some-maintainer/gcmon. */
 const addedGcmon: Home = {
@@ -60,6 +59,7 @@ describe("SettingsDialog", () => {
     dialog.added({ screen: "onboarding", token: "gh" });
 
     expect(dialog.repositories).toEqual(["python/cpython", "some-maintainer/gcmon"]);
+    expect(dialog.filters.page("some-maintainer/gcmon")?.rows).toEqual([]);
     expect(dialog.changed).toBe(false);
     await vi.waitFor(() => {
       expect(core.onThisMachine).toHaveBeenCalledTimes(3);
@@ -87,5 +87,43 @@ describe("SettingsDialog", () => {
     await first;
 
     expect(dialog.onThisMachine("python/cpython")?.mirror).toEqual({ kind: "measured", mb: 2 });
+  });
+
+  it("saves the Filters a Repository's page changed, and won't save one with a blank name or search", async () => {
+    const cpython = {
+      name: "python/cpython",
+      conventions: "cpython" as const,
+      filters: [{ name: "Bugs", query: "label:bug", on_workbench: true }],
+    };
+    const files = { settings: defaultSettings({ repositories: [cpython] }), language_servers: NO_SERVERS };
+    core.rereadSettings.mockResolvedValue(ok({ ...files, problems: [] }));
+    core.applySettings.mockResolvedValue(ok({ ...files, problems: [] }));
+    const dialog = new SettingsDialog(new SettingsState(), new ThemeState(LIGHT_SIDE));
+    await dialog.open();
+    const page = dialog.filters.page("python/cpython");
+
+    page?.add();
+    expect(dialog.unsaveable).toBe("Give each Filter of python/cpython a name and a search.");
+    expect(await dialog.apply()).toBe(false);
+    expect(core.applySettings).not.toHaveBeenCalled();
+    page?.rows.forEach((row) => {
+      row.name ||= "Mine";
+      row.query ||= "author:@me";
+    });
+
+    expect(dialog.unsaveable).toBeUndefined();
+    expect(await dialog.apply()).toBe(true);
+    expect(core.applySettings).toHaveBeenCalledWith({
+      filters: [
+        {
+          repository: "python/cpython",
+          read: cpython.filters,
+          filters: [
+            { name: "Bugs", query: "label:bug", was: "label:bug" },
+            { name: "Mine", query: "author:@me", was: null },
+          ],
+        },
+      ],
+    });
   });
 });

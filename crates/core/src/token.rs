@@ -1,6 +1,8 @@
 //! Reads the GitHub token through `tsugiki-token`, the crate that holds it (ADR 0019). The token never
 //! reaches the webview (ADR 0005), and nothing in the core can read its string.
 
+use std::io;
+
 use tsugiki_token::{GH_TIMEOUT, NoToken};
 pub use tsugiki_token::{GhOutput, Token, TokenFrom, TokenKind, WriteScope};
 
@@ -13,45 +15,96 @@ const ASKS_AGAIN: &str =
     "Tsugiki asks again each minute, and at once when you click an open Repository's sync status.";
 const GH_TOKEN_INSTEAD: &str = "To skip `gh`, set `GH_TOKEN` to a token and restart Tsugiki.";
 
-/// Takes the token from `GH_TOKEN` or asks `gh` for it, and hands the logger a copy to hide. Without one,
-/// the log says why, and the user reads what happened, what Tsugiki does next and what they can do.
+/// Takes the token from `GH_TOKEN` or asks `gh` for it, as [`TokenReads::read`] says, for a caller that
+/// reads it once.
 pub fn read_token(from: TokenFrom) -> Result<Token, Error> {
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the one caller clippy.toml allows, so every token is hidden in the log"
-    )]
-    let token = Token::find(from);
-    match token {
-        Ok(token) => {
-            logfile::hide(token.clone());
-            Ok(token)
+    TokenReads::default().read(from)
+}
+
+/// Reads of the token, one after another, which remember why the last one found none, so a read that
+/// fails the same way each minute logs its cause once. A caller that reads more than once keeps one.
+#[derive(Debug, Default)]
+pub struct TokenReads {
+    /// The cause of the last read's failure, when it found no token.
+    last_failure: Option<Failure>,
+}
+
+/// The cause of a read that found no token, as far as telling one failure from the next goes. A `gh` the
+/// system couldn't run is told apart by the system's reason, which [`NoToken`] holds as an [`io::Error`]
+/// that can't be compared, so this keeps its kind and its words, which hold the OS's code when there is
+/// one: two errors of one kind can say different things.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Failure {
+    CantRun { kind: io::ErrorKind, says: String },
+    TimedOut,
+    Failed,
+    PrintedNothing,
+}
+
+impl Failure {
+    fn of(no_token: &NoToken) -> Self {
+        match no_token {
+            NoToken::GhMissing(cause) => Self::CantRun {
+                kind: cause.kind(),
+                says: cause.to_string(),
+            },
+            NoToken::GhTimedOut => Self::TimedOut,
+            NoToken::GhFailed => Self::Failed,
+            NoToken::GhPrintedNothing => Self::PrintedNothing,
         }
-        Err(no_token) => {
-            let message = match no_token {
-                NoToken::GhMissing(cause) => {
-                    log::warn!("Tsugiki can't run gh: {cause}");
-                    sign_in()
+    }
+}
+
+impl TokenReads {
+    /// Takes the token from `GH_TOKEN` or asks `gh` for it, and hands the logger a copy to hide. Without
+    /// one, the log says why, unless the last read failed the same way, and the user reads what happened,
+    /// what Tsugiki does next and what they can do.
+    pub fn read(&mut self, from: TokenFrom) -> Result<Token, Error> {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the one caller clippy.toml allows, so every token is hidden in the log"
+        )]
+        let token = Token::find(from);
+        match token {
+            Ok(token) => {
+                self.last_failure = None;
+                logfile::hide(token.clone());
+                Ok(token)
+            }
+            Err(no_token) => {
+                let failure = Failure::of(&no_token);
+                let (warning, message) = explain(no_token);
+                if self.last_failure.as_ref() != Some(&failure) {
+                    log::warn!("{warning}");
                 }
-                NoToken::GhTimedOut => {
-                    let seconds = GH_TIMEOUT.as_secs();
-                    log::warn!("gh didn't answer within {seconds} s, so Tsugiki stopped it");
-                    format!(
-                        "Tsugiki asked `gh auth token` for your token, and `gh` didn't answer within \
-                         {seconds} s. A keychain or credential manager waiting on a prompt is a common \
-                         cause. {ASKS_AGAIN} {GH_TOKEN_INSTEAD}"
-                    )
-                }
-                NoToken::GhFailed => {
-                    log::warn!("gh failed when asked for its token");
-                    sign_in()
-                }
-                NoToken::GhPrintedNothing => {
-                    log::warn!("gh printed no token when asked for its token");
-                    sign_in()
-                }
-            };
-            Err(Error::new(ErrorKind::Unauthorized, &message))
+                self.last_failure = Some(failure);
+                Err(Error::new(ErrorKind::Unauthorized, &message))
+            }
         }
+    }
+}
+
+/// The log's warning for a read that found no token, and the status bar's words for it.
+fn explain(no_token: NoToken) -> (String, String) {
+    match no_token {
+        NoToken::GhMissing(cause) => (format!("Tsugiki can't run gh: {cause}"), sign_in()),
+        NoToken::GhTimedOut => {
+            let seconds = GH_TIMEOUT.as_secs();
+            let message = format!(
+                "Tsugiki asked `gh auth token` for your token, and `gh` didn't answer within {seconds} \
+                 s. A keychain or credential manager waiting on a prompt is a common cause. {ASKS_AGAIN} \
+                 {GH_TOKEN_INSTEAD}"
+            );
+            (
+                format!("gh didn't answer within {seconds} s, so Tsugiki stopped it"),
+                message,
+            )
+        }
+        NoToken::GhFailed => ("gh failed when asked for its token".to_owned(), sign_in()),
+        NoToken::GhPrintedNothing => (
+            "gh printed no token when asked for its token".to_owned(),
+            sign_in(),
+        ),
     }
 }
 

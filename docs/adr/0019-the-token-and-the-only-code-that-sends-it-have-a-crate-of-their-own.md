@@ -27,9 +27,9 @@ The crate holds:
   same rules.
 
 The core keeps the GraphQL client, the queries and the parsing of replies. It implements its `Transport`
-trait for `Https`, so its test doubles stay as they are, and it still hands `&Token` to them. Its `read_token`
-is the only caller of `Token::find`: it logs why gh gave no token, shows the sign-in message, and gives the
-logger a copy of the token.
+trait for `Https`, so its test doubles stay as they are, and it still hands `&Token` to them. Its
+`TokenReads::read`, which `read_token` wraps, is the only caller of `Token::find`: it logs why gh gave no
+token, shows the sign-in message, and gives the logger a copy of the token.
 
 ## Considered Options
 
@@ -51,7 +51,7 @@ logger a copy of the token.
 - `tsugiki-core` no longer depends on `ureq` or `rustls`. `cargo tree -i ureq` shows that only
   `tsugiki-token` links an HTTP client, and `cargo machete` notices if the core takes one up again.
 - `clippy.toml` sends the network and `gh` to `crates/token/src/live.rs`, and `git` to the core's
-  `github/live.rs`. A `disallowed-methods` entry keeps `Token::find` inside `read_token`.
+  `github/live.rs`. A `disallowed-methods` entry keeps `Token::find` inside `TokenReads::read`.
 - `crates/token/src/lib.rs` keeps the 100% coverage gate
   ([ADR 0009](0009-testing-and-full-coverage.md)). `live.rs` is left out of it, as the core's was. The
   smoke test runs its HTTP client and its read of `GH_TOKEN`, but it sets `GH_TOKEN`, so no automated check

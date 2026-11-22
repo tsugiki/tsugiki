@@ -32,9 +32,8 @@ pub(super) fn forget_other_kinds(
 ) -> rusqlite::Result<Vec<RepositoryName>> {
     let mut statement = connection
         .prepare("DELETE FROM read_only WHERE token_kind <> :kind RETURNING repository")?;
-    let forgot = statement.query_map(named_params! { ":kind": kind_column(kind) }, |row| {
-        row.get(0)
-    })?;
+    let named = named_params! { ":kind": kind_column(kind) };
+    let forgot = statement.query_map(named, repository_of)?;
     forgot.collect()
 }
 
@@ -47,8 +46,13 @@ pub(super) fn forget_other_tokens(
     let mut statement = connection.prepare(FORGET_OTHER_TOKENS)?;
     let (kind, expires) = token_columns(token);
     let named = named_params! { ":kind": kind, ":expires": expires };
-    let forgot = statement.query_map(named, |row| row.get(0))?;
+    let forgot = statement.query_map(named, repository_of)?;
     forgot.collect()
+}
+
+/// The Repository a row's first column names.
+fn repository_of(row: &rusqlite::Row<'_>) -> rusqlite::Result<RepositoryName> {
+    row.get(0)
 }
 
 /// Marks `repository` as one `token` can't write to, and gives whether it had no mark before.
@@ -79,7 +83,7 @@ pub(super) fn forget_unlisted(
     let transaction = connection.transaction()?;
     let marked = {
         let mut statement = transaction.prepare("SELECT repository FROM read_only")?;
-        let rows = statement.query_map([], |row| row.get::<_, RepositoryName>(0))?;
+        let rows = statement.query_map([], repository_of)?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
     let unlisted: Vec<RepositoryName> = marked

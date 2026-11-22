@@ -117,9 +117,11 @@ fn a_failed_read_logs_its_cause_once_until_the_cause_changes(path: &Path) {
     };
 
     assert_eq!(logged(NO_GH, 3, cant_run), 1);
-    assert_eq!(logged(SLOW_GH, 2, stopped), 1);
     // The system refusing to run `gh` is another cause than a `gh` it can't find.
     assert_eq!(logged(gh_alone(gh_refused), 1, cant_run), 1);
+    // So is a refusal that says something else.
+    assert_eq!(logged(gh_alone(gh_refused_by_policy), 2, cant_run), 1);
+    assert_eq!(logged(SLOW_GH, 2, stopped), 1);
     assert_eq!(logged(NO_GH, 2, cant_run), 1);
 
     let token = gh_alone(gh_prints_a_token_of_no_known_shape);
@@ -130,18 +132,37 @@ fn a_failed_read_logs_its_cause_once_until_the_cause_changes(path: &Path) {
 /// The lines the log at `path` gains while `reads` reads the token from `from` as many `times` as it says.
 /// Another line goes before each read, as the app's other threads log meanwhile, so the logger's skip of a
 /// line that repeats the one before it can't hide a repeat.
+#[expect(
+    clippy::panic,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
 fn log_of_reads(path: &Path, reads: &mut TokenReads, from: TokenFrom, times: usize) -> String {
     let before = log_at(path).len();
     for _ in 0..times {
         log::warn!("Meanwhile, another thread's line");
         let _found = reads.read(from);
     }
-    log_at(path).split_off(before)
+    let log = log_at(path);
+    let Some(gained) = log.get(before..) else {
+        panic!(
+            "the log shrank from {before} bytes to {}: it rolled over to tsugiki.log.1",
+            log.len()
+        );
+    };
+    gained.to_owned()
 }
 
 /// The answer of a `gh` the system refuses to run.
 fn gh_refused() -> io::Result<GhOutput> {
     Err(io::Error::from(io::ErrorKind::PermissionDenied))
+}
+
+/// The answer of a `gh` the system refuses to run, in other words.
+fn gh_refused_by_policy() -> io::Result<GhOutput> {
+    Err(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "a policy blocks gh",
+    ))
 }
 
 /// A write whose selection the token crate refuses leaves the reason in the log, and says nothing was sent.

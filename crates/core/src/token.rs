@@ -31,13 +31,11 @@ pub struct TokenReads {
 
 /// The cause of a read that found no token, as far as telling one failure from the next goes. A `gh` the
 /// system couldn't run is told apart by the system's reason, which [`NoToken`] holds as an [`io::Error`]
-/// that can't be compared.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// that can't be compared, so this keeps its kind and its words, which hold the OS's code when there is
+/// one: two errors of one kind can say different things.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Failure {
-    CantRun {
-        kind: io::ErrorKind,
-        os_error: Option<i32>,
-    },
+    CantRun { kind: io::ErrorKind, says: String },
     TimedOut,
     Failed,
     PrintedNothing,
@@ -48,7 +46,7 @@ impl Failure {
         match no_token {
             NoToken::GhMissing(cause) => Self::CantRun {
                 kind: cause.kind(),
-                os_error: cause.raw_os_error(),
+                says: cause.to_string(),
             },
             NoToken::GhTimedOut => Self::TimedOut,
             NoToken::GhFailed => Self::Failed,
@@ -76,7 +74,7 @@ impl TokenReads {
             Err(no_token) => {
                 let failure = Failure::of(&no_token);
                 let (warning, message) = explain(no_token);
-                if self.last_failure != Some(failure) {
+                if self.last_failure.as_ref() != Some(&failure) {
                     log::warn!("{warning}");
                 }
                 self.last_failure = Some(failure);

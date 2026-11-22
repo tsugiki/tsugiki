@@ -28,6 +28,9 @@ features: two features that both edit one store are one lane.
 - Three tickets per wave, each from a different lane.
 - No ticket in the same wave as a ticket it depends on. A chain inside one wave takes about as long as the
   chain in a row, and the squash merge makes the second branch conflict in every file both touched.
+- Read each ticket's acceptance criteria for state that another ticket of the wave adds, and count it as a
+  dependency though the tracker names no blocker, since the build can't meet those criteria before the
+  other ticket merges.
 - Pair a big ticket, such as a new crate or a language server, with two that don't wait on it. The wave
   ends at its slowest PR.
 - Put the ticket that edits the most shared files in the earliest wave it can go in, so later tickets build

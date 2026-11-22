@@ -50,7 +50,7 @@ describe("token-crate", () => {
   it("finds nothing wrong with the real manifest", () => {
     // Vitest runs from `ui/`, as scope.test.ts does.
     const manifest = readFileSync("../crates/token/Cargo.toml", "utf8");
-    expect(dependencies(manifest)).toEqual(["rustls", "ureq", "url"]);
+    expect(dependencies(manifest)).toEqual(["rustls", "serde", "serde_json", "ureq", "url"]);
     expect(problems(manifest)).toEqual([]);
   });
 });

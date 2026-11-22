@@ -9,7 +9,7 @@ const SIGN_IN: &str = "Tsugiki reads your token from the GitHub CLI, and found n
 
 #[test]
 fn the_token_is_what_gh_printed() {
-    let token = read_token(gh_alone(|_| gh_prints("gho_example\n"))).unwrap();
+    let token = read_token(gh_alone(|| gh_prints("gho_example\n"))).unwrap();
     assert_eq!(token.hide_in("Bearer gho_example", "***"), "Bearer ***");
 }
 
@@ -35,7 +35,7 @@ fn when_gh_doesnt_answer_in_time_tsugiki_says_so_that_it_asks_again_and_how_to_s
 
 #[test]
 fn when_gh_is_signed_out_tsugiki_says_how_to_sign_in() {
-    let signed_out = gh_alone(|_| {
+    let signed_out = gh_alone(|| {
         Ok(GhOutput {
             success: false,
             stdout: String::new(),
@@ -48,7 +48,7 @@ fn when_gh_is_signed_out_tsugiki_says_how_to_sign_in() {
 
 #[test]
 fn an_empty_answer_from_gh_is_not_a_token() {
-    let error = read_token(gh_alone(|_| gh_prints(" \n"))).unwrap_err();
+    let error = read_token(gh_alone(|| gh_prints(" \n"))).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unauthorized);
     assert_eq!(error.message, SIGN_IN);
 }

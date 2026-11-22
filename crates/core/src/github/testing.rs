@@ -290,7 +290,7 @@ pub fn signed_in_as(login: &str) -> Result<Reply, Unreachable> {
 }
 
 /// gh, signed in.
-fn signed_in_gh(_: &[&str]) -> std::io::Result<GhOutput> {
+fn signed_in_gh() -> std::io::Result<GhOutput> {
     gh_prints("gho_example")
 }
 

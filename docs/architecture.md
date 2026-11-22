@@ -13,8 +13,9 @@ Tsugiki is a Tauri app with five crates and a webview
   diff and every rule the screens show. It has no Tauri and no webview, and plain `cargo test` tests it.
 - `crates/token` (`tsugiki-token`) holds the GitHub token, `gh` and the only HTTP client, and hides tokens
   in text ([ADR 0019](adr/0019-the-token-and-the-only-code-that-sends-it-have-a-crate-of-their-own.md)).
-  Nothing outside it can read the token's string. Its [README](../crates/token/README.md) says what it does
-  for readers who don't read Rust.
+  Nothing outside it can read the token's string, and its client sends a GraphQL body only when it reads
+  ([ADR 0025](adr/0025-tsugiki-token-lets-through-reads-and-the-writes-it-lists.md)). Its
+  [README](../crates/token/README.md) says what it does for readers who don't read Rust.
 - `crates/lsp` (`tsugiki-lsp`) talks to a language server over its standard streams, for Go to definition
   (ADR 0020). It knows nothing of PRs, Mirrors or the database: the core says which server to start, which
   documents to open and what to ask. One thread owns each server, one writes to it, two more read its

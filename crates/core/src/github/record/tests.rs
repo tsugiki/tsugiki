@@ -13,7 +13,7 @@ const REQUEST: Request<'static> = Request {
 };
 
 fn token() -> Token {
-    read_token(gh_alone(|_| gh_prints("secret-token-value"))).unwrap()
+    read_token(gh_alone(|| gh_prints("secret-token-value"))).unwrap()
 }
 
 fn temp_dir(name: &str) -> TempPath {

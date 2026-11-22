@@ -19,7 +19,8 @@ pub enum ErrorKind {
     },
     NotFound,
     Conflict,
-    /// GitHub took the request and answered with an error about it. A failed status is `Internal`.
+    /// GitHub took the request and answered with an error about it, or `tsugiki-token` refused to send it
+    /// (ADR 0025). Asking again fails the same way. A failed status is `Internal`.
     QueryRefused,
     Internal,
 }

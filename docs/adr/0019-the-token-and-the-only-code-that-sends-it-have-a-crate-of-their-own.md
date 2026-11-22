@@ -61,6 +61,8 @@ logger a copy of the token.
   retries, domain types, UI text and logging belong in the core. `just lint` checks the crate's direct
   dependencies against a list (`ureq`, `rustls`, `url`, and `keyring` once the personal access token comes),
   so a new one needs a reviewed change to that list.
+  [ADR 0025](0025-tsugiki-token-lets-through-reads-and-the-writes-it-lists.md) adds a clause, the JSON the
+  crate checks before it sends, and `serde` and `serde_json` to the list.
 - The crate stays in the workspace until 1.0. Publishing it is worth asking again once its API settles.
 - A request that needs another network rule, such as following a redirect to download a file, is the reason
   to split the client from the token.

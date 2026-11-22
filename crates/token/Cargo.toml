@@ -7,9 +7,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# Only these three, by rule (ADR 0019): `just lint` fails on any other. The README says why.
+# Only these five, by rule (ADR 0019 and ADR 0025): `just lint` fails on any other. The README says why.
 [dependencies]
 rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 ureq.workspace = true
 url.workspace = true
 

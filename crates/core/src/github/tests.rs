@@ -37,6 +37,17 @@ fn github_says_who_the_user_is() {
 }
 
 #[test]
+#[should_panic(expected = "Op isn't a read")]
+fn a_test_that_sends_a_query_the_token_crate_refuses_fails() {
+    let request = Request {
+        operation: "Op",
+        query: "query Op { mutations: viewer { login } }".into(),
+        variables: Value::Null,
+    };
+    drop(github(answered(200, "{}")).post(&request));
+}
+
+#[test]
 fn no_connection_means_offline() {
     assert_eq!(
         error_of(Canned(Err(Unreachable::Offline))).kind,

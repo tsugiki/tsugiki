@@ -35,6 +35,12 @@ pub struct FilterName(String);
 
 never_blank!(FilterName, "A Filter's name");
 
+impl FilterName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// A Filter's search as the user wrote it, without the Repository. It also names the Filter's results, so
 /// renaming a Filter keeps them and editing its search replaces them at the next sync. It reaches the UI as a
 /// plain string.

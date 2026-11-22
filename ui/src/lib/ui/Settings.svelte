@@ -127,7 +127,7 @@
     </nav>
     <section aria-label={title}>
       {#if "repository" in dialog.shown}
-        <RepositoryPage repository={dialog.shown.repository} />
+        <RepositoryPage {dialog} repository={dialog.shown.repository} />
       {:else if dialog.shown.page === "General"}
         <GeneralPage {dialog} />
       {:else if dialog.shown.page === "Repositories"}
@@ -149,12 +149,18 @@
     </section>
   </div>
   <footer>
-    {#if dialog.problem !== undefined}
+    <!-- The reason Apply is off comes first: it holds now, and a problem from the last try waits behind
+         it. A screen reader says the reason when it comes, as it says the problem. -->
+    {#if dialog.unsaveable !== undefined}
+      <p role="status">{dialog.unsaveable}</p>
+    {:else if dialog.problem !== undefined}
       <p role="alert">{dialog.problem}</p>
     {/if}
     <button disabled={dialog.applying} onclick={cancel}>Cancel</button>
-    <button class="primary" disabled={dialog.applying} onclick={() => void apply()}
-      >{dialog.changed ? "Apply" : "OK"}</button
+    <button
+      class="primary"
+      disabled={dialog.applying || dialog.unsaveable !== undefined}
+      onclick={() => void apply()}>{dialog.changed ? "Apply" : "OK"}</button
     >
   </footer>
 </Dialog>

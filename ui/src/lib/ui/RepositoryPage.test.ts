@@ -1,9 +1,13 @@
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { SvelteDate } from "svelte/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RepositoryState } from "$lib/state/repository-state.svelte";
 import type { RepositorySync } from "$lib/state/repository-sync.svelte";
+import { SettingsDialog } from "$lib/state/settings-dialog.svelte";
+import { SettingsState } from "$lib/state/settings.svelte";
+import { ThemeState } from "$lib/state/theme.svelte";
 import { ok, refused } from "$lib/testing/fixtures";
+import { LIGHT_SIDE } from "$lib/testing/state";
 import RepositoryPage from "./RepositoryPage.svelte";
 
 const core = vi.hoisted(() => ({ repositoryState: vi.fn(), repositorySync: vi.fn() }));
@@ -50,6 +54,11 @@ const catchSyncs = () => catchAll(listen.syncs, "repository-sync-changed");
 /** The line under the Repository's name, or nothing while it shows none. */
 const facts = () => document.querySelector(".facts")?.textContent ?? null;
 
+/** A Settings dialog that hasn't read the files. */
+const unread = () => new SettingsDialog(new SettingsState(), new ThemeState(LIGHT_SIDE));
+/** The page of `repository` in `dialog`. */
+const show = (repository: string, dialog = unread()) => render(RepositoryPage, { dialog, repository });
+
 describe("a Repository's page in Settings", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -65,7 +74,7 @@ describe("a Repository's page in Settings", () => {
   it("heads its page with its name, Can write, its open Issues and PRs and its last sync", async () => {
     catchChanged();
     catchSyncs();
-    render(RepositoryPage, { repository: "python/cpython" });
+    show("python/cpython");
 
     expect(screen.getByRole("heading", { name: "python/cpython" })).toBeTruthy();
     await vi.waitFor(() => {
@@ -79,7 +88,7 @@ describe("a Repository's page in Settings", () => {
     const changed = catchChanged();
     catchSyncs();
     core.repositoryState.mockResolvedValue(ok(readOnly));
-    render(RepositoryPage, { repository: "python/cpython" });
+    show("python/cpython");
 
     await vi.waitFor(() => {
       expect(facts()).toBe(
@@ -98,7 +107,7 @@ describe("a Repository's page in Settings", () => {
     catchChanged();
     catchSyncs();
     core.repositorySync.mockResolvedValue(ok({ last_sync: null, open: null }));
-    render(RepositoryPage, { repository: "python/cpython" });
+    show("python/cpython");
 
     await vi.waitFor(() => {
       expect(facts()).toBe("Can write · Not synced yet");
@@ -110,7 +119,7 @@ describe("a Repository's page in Settings", () => {
     catchSyncs();
     core.repositoryState.mockResolvedValue(refused("The database is locked."));
     core.repositorySync.mockResolvedValue(refused("The database is locked."));
-    render(RepositoryPage, { repository: "python/cpython" });
+    show("python/cpython");
 
     await vi.waitFor(() => {
       expect(core.repositorySync).toHaveBeenCalled();
@@ -123,7 +132,7 @@ describe("a Repository's page in Settings", () => {
     const changed = catchChanged();
     const syncs = catchSyncs();
     core.repositorySync.mockResolvedValue(ok({ last_sync: null, open: null }));
-    render(RepositoryPage, { repository: "python/cpython" });
+    show("python/cpython");
     await vi.waitFor(() => {
       expect(facts()).toBe("Can write · Not synced yet");
     });
@@ -146,7 +155,7 @@ describe("a Repository's page in Settings", () => {
   it("moves its last sync on while the page shows, and asks again when a sync of its Repository finishes", async () => {
     catchChanged();
     const syncs = catchSyncs();
-    render(RepositoryPage, { repository: "python/cpython" });
+    show("python/cpython");
     await vi.waitFor(() => {
       expect(facts()).toContain("Synced 2 min ago");
     });
@@ -170,7 +179,7 @@ describe("a Repository's page in Settings", () => {
   it("asks about the Repository it shows after a switch, and stops listening and ticking when it goes", async () => {
     const changed = catchChanged();
     const syncs = catchSyncs();
-    const { rerender, unmount } = render(RepositoryPage, { repository: "python/cpython" });
+    const { rerender, unmount } = show("python/cpython");
     await vi.waitFor(() => {
       expect(facts()).toContain("Synced");
     });
@@ -188,5 +197,130 @@ describe("a Repository's page in Settings", () => {
     expect(changed.stop).toHaveBeenCalledTimes(2);
     expect(syncs.stop).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("a Repository's Filters in Settings", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    for (const on of Object.values(listen)) on.mockResolvedValue(() => {});
+    core.repositoryState.mockResolvedValue(ok(writable));
+    core.repositorySync.mockResolvedValue(ok(synced));
+  });
+
+  /** A dialog that has read python/cpython's Bugs and Docs Filters. */
+  const read = () => {
+    const dialog = unread();
+    dialog.filters.take([
+      {
+        name: "python/cpython",
+        filters: [
+          { name: "Bugs", query: "label:bug", on_workbench: true },
+          { name: "Docs", query: "label:docs", on_workbench: false },
+        ],
+      },
+    ]);
+    return dialog;
+  };
+  const filter = (at: number) => screen.getByRole("group", { name: `Filter ${at}` });
+  const field = (at: number, name: "Name" | "Search") =>
+    within(filter(at)).getByRole<HTMLInputElement>("textbox", { name });
+  const press = (at: number, name: string) => {
+    fireEvent.click(within(filter(at)).getByRole("button", { name }));
+  };
+  /** Each Filter's name and search, as the page shows them. */
+  const shown = () =>
+    screen.queryAllByRole("group").map((group) => {
+      const [name, search] = within(group).getAllByRole<HTMLInputElement>("textbox");
+      return [name?.value, search?.value];
+    });
+
+  it("shows no Filters before the dialog has read the files", () => {
+    show("python/cpython");
+    expect(screen.getByRole("heading", { name: /^Filters/ })).toBeTruthy();
+    expect(shown()).toEqual([]);
+    expect(screen.queryByRole("button", { name: "Add filter" })).toBeNull();
+  });
+
+  it("lists each Filter's name and search, and moves one up or down but not past either end", async () => {
+    show("python/cpython", read());
+    expect(shown()).toEqual([
+      ["Bugs", "label:bug"],
+      ["Docs", "label:docs"],
+    ]);
+    expect(within(filter(1)).getByRole("button", { name: "Move up" }).hasAttribute("disabled")).toBe(true);
+    expect(within(filter(2)).getByRole("button", { name: "Move down" }).hasAttribute("disabled")).toBe(true);
+
+    press(1, "Move down");
+    await vi.waitFor(() => {
+      expect(shown()).toEqual([
+        ["Docs", "label:docs"],
+        ["Bugs", "label:bug"],
+      ]);
+    });
+    press(2, "Move up");
+    await vi.waitFor(() => {
+      expect(shown()[0]).toEqual(["Bugs", "label:bug"]);
+    });
+  });
+
+  it("edits a name and a search in place, deletes a Filter, and turns a row with a blank one red", async () => {
+    const dialog = read();
+    show("python/cpython", dialog);
+
+    await fireEvent.input(field(1, "Name"), { target: { value: "Bug reports" } });
+    await fireEvent.input(field(2, "Search"), { target: { value: "" } });
+    expect(filter(2).classList.contains("blank")).toBe(true);
+    expect(field(2, "Search").getAttribute("aria-invalid")).toBe("true");
+    expect(field(2, "Name").getAttribute("aria-invalid")).toBe("false");
+    expect(dialog.unsaveable).toBeDefined();
+    press(2, "Delete");
+
+    await vi.waitFor(() => {
+      expect(shown()).toEqual([["Bug reports", "label:bug"]]);
+    });
+    expect(filter(1).classList.contains("blank")).toBe(false);
+    expect(dialog.filters.changes).toEqual([
+      {
+        repository: "python/cpython",
+        read: [
+          { name: "Bugs", query: "label:bug", on_workbench: true },
+          { name: "Docs", query: "label:docs", on_workbench: false },
+        ],
+        filters: [{ name: "Bug reports", query: "label:bug", was: "label:bug" }],
+      },
+    ]);
+  });
+
+  it("adds a Filter with a blank name and search, red, with the focus in its name", async () => {
+    const dialog = read();
+    show("python/cpython", dialog);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add filter" }));
+
+    await vi.waitFor(() => {
+      expect(document.activeElement).toBe(field(3, "Name"));
+    });
+    expect(filter(3).classList.contains("blank")).toBe(true);
+    await fireEvent.input(field(3, "Name"), { target: { value: "Mine" } });
+    await fireEvent.input(field(3, "Search"), { target: { value: "author:@me" } });
+    expect(filter(3).classList.contains("blank")).toBe(false);
+    expect(dialog.unsaveable).toBeUndefined();
+  });
+
+  it("turns the Filters off while Apply saves", async () => {
+    const dialog = read();
+    show("python/cpython", dialog);
+
+    dialog.applying = true;
+
+    await vi.waitFor(() => {
+      expect(field(1, "Name").hasAttribute("disabled")).toBe(true);
+    });
+    for (const button of within(filter(1)).getAllByRole("button")) {
+      expect(button.hasAttribute("disabled")).toBe(true);
+    }
+    expect(field(2, "Search").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Add filter" }).hasAttribute("disabled")).toBe(true);
   });
 });

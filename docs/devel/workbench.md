@@ -80,9 +80,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   ([#489](https://github.com/tsugiki/tsugiki/issues/489)): each one the Workbench shows, in the Workbench's
   order, and the Archived ones too, each in its place, marked Archived as a Filter's view marks it. A Muted
   one stays hidden, as on the Workbench. ★ or `Ctrl+K P` on a row there unpins the Issue, and the row leaves
-  the view, with the cursor and the Detail pane moving on to the next item as on Archive. With no pins, the
-  view says how to pin and names the key as the user bound it. "View: Pinned Issues" in the command palette
-  opens it.
+  the view, with the cursor and the Detail pane moving on to the next item as on Archive. With no pin to
+  show, as when the user has none or each one is Muted, the view says so and how to pin, naming the key as
+  the user bound it. "View: Pinned Issues" in the command palette opens it.
 - Each Issue lists its **Matched PRs** first, followed by its other PRs that are open or that **Need
   attention**.
 - **Needs attention** means work waiting on the user:

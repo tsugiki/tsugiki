@@ -195,7 +195,7 @@ test("the Sidebar's Pinned issues lists the pins, and an unpin takes the row awa
   await emitFromCore(page, "changed", { repository: repository.name, items: [7] });
 
   await expect(
-    page.getByText(/^Nothing pinned\. (Ctrl|Cmd)\+K P pins the Issue under the cursor/),
+    page.getByText(/^No Pinned issue to show\. (Ctrl|Cmd)\+K P pins the Issue under the cursor/),
   ).toBeVisible();
 });
 

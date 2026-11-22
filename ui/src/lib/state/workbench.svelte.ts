@@ -96,6 +96,10 @@ export const treeRows = (entries: TreeEntry[]): WorkbenchRow[] =>
 /** A line of the list: where the cursor stops, and the title it shows. */
 type Line = { stop: Stop; title: string };
 
+/** What takes an item off the list that the cursor waits on: an unpin, which takes an Archived pin out of the
+ * Pinned issues though they list it marked hidden (#489), or another mark. */
+type Leaving = "unpin" | "mark";
+
 /** The key of view `view`, which keeps its own unfolded Issues. */
 const keyOf = (view: SidebarView) => (view.kind === "filter" ? `filter ${view.query}` : view.kind);
 
@@ -182,10 +186,10 @@ export class WorkbenchState {
   /** The line the list's keys act on. A re-query leaves it in place (ADR 0008). Only `#put` and a landing
    * write it, so a finish's wait sees each move (#982). */
   #cursor = $state<Stop>();
-  /** The numbers of the items the user archived or unarchived whose answer hasn't placed the cursor yet.
-   * Only `#placeCursor` reads it, so it needn't be reactive. */
+  /** The numbers of the items the user archived or unarchived whose answer hasn't placed the cursor yet,
+   * each with what takes it off. Only `#placeCursor` reads it, so it needn't be reactive. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
-  #leaving = new Set<number>();
+  #leaving = new Map<number, Leaving>();
   /** The item `finish` waits for the cursor to leave, as the list drew it when the first mark on it was
    * made, how many marks on it wait for the core's reply, and whether one of them did what it was asked
    * (#982). Only the cursor's moves and `#placeCursor` read it, so it needn't be reactive. */
@@ -556,7 +560,7 @@ export class WorkbenchState {
    * there lands on the item after it, as for a pin in the Inbox. Says what went wrong, if anything did. */
   async unpin(number: number) {
     const leaves = this.pinTakesOut({ number, pinned: true });
-    return this.#leave(leaves, commands.unpin(this.#repository, number));
+    return this.#leave(leaves, commands.unpin(this.#repository, number), "unpin");
   }
 
   /** Unarchives the item `key` names. Once the item leaves the list, as it leaves the Archived view (#491),
@@ -573,8 +577,8 @@ export class WorkbenchState {
 
   /** Waits for `marking`, a mark that takes the item `key` names off the list, if it names one, which then
    * lands the cursor on the item after it. Says what went wrong, if anything did. */
-  async #leave(key: ItemKey | undefined, marking: Parameters<typeof problemIn>[0]) {
-    if (key) this.#leaving.add(key.number);
+  async #leave(key: ItemKey | undefined, marking: Parameters<typeof problemIn>[0], by: Leaving = "mark") {
+    if (key) this.#leaving.set(key.number, by);
     const problem = await problemIn(marking);
     if (key && problem !== undefined) this.#leaving.delete(key.number);
     return problem;
@@ -669,13 +673,14 @@ export class WorkbenchState {
     // An archive waits for the answer that takes its item off the list, as one that a sync asked for can
     // land before the archive's own, with the item still listed. An item the list doesn't hold waits no
     // more, and neither does one it holds marked hidden outside the Archived view, as a Filter's view keeps
-    // an Archived or Muted item (#824). The Pinned issues list an Archived pin marked hidden too, until an
-    // unpin takes it out (#489).
-    const shownHidden = this.#shown.kind === "archived" || this.#shown.kind === "pinned";
-    const leaving = [...this.#leaving];
-    for (const number of leaving) {
+    // an Archived or Muted item (#824). The Pinned issues list an Archived pin marked hidden too, so there
+    // only an unpin, which takes the pin out, waits on a hidden row (#489).
+    const kind = this.#shown.kind;
+    const leaving = [...this.#leaving.keys()];
+    for (const [number, by] of this.#leaving) {
       const listed = this.#everything.find((item) => item.number === number);
-      const kept = listed?.hidden != null && !shownHidden;
+      const waits = kind === "archived" || (kind === "pinned" && by === "unpin");
+      const kept = listed?.hidden != null && !waits;
       if (!listed || kept) this.#leaving.delete(number);
     }
     const cursor = this.cursor;

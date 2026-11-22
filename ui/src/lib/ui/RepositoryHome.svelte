@@ -93,12 +93,13 @@
     stale_reviews: "No Review of yours is stale.",
     archived: "Nothing archived. E archives the item under the cursor.",
     inbox: "Nothing open here yet. The first sync lists the open Issues and PRs as it finds them.",
-    /** Names the key that pins as the user bound it, or none while it has none (#489). */
+    /** Names the key that pins as the user bound it, or none while it has none (#489). The words hold too
+     * when each pin is Muted, which the view leaves out. */
     get pinned() {
       const key = actionLabel("pin", currentOs());
       return key === null
-        ? "Nothing pinned. ☆ on an Issue's row in another list pins it."
-        : `Nothing pinned. ${key} pins the Issue under the cursor in another list, and so does ☆ on its row.`;
+        ? "No Pinned issue to show. ☆ on an Issue's row in another list pins it."
+        : `No Pinned issue to show. ${key} pins the Issue under the cursor in another list, and so does ☆ on its row.`;
     },
   };
 

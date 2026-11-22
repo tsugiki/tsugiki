@@ -1902,6 +1902,34 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
+  it("forgets an archive in the Pinned issues, which keep listing the pin Archived", async () => {
+    const { send } = catchChanged();
+    const landed = vi.fn();
+    vi.mocked(commands.archive).mockResolvedValue(done);
+    vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([5, 6].map(item)));
+    const state = new WorkbenchState("python/cpython", { landed });
+    await state.load();
+    await state.select({ kind: "pinned" });
+    state.moveCursor(1);
+    const reload = async (...listed: ListedItem[]) => {
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage(listed));
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.items).toEqual(listed);
+      });
+    };
+
+    await state.archive({ key: item(5).key, mark: item(5).seen.mark });
+    await reload({ ...item(5), hidden: "archived" }, item(6));
+    const kept = state.underCursor?.number;
+    // Another window unpins it, which takes it out for a reason the archive didn't wait on.
+    await reload(item(6));
+
+    expect(kept).toBe(5);
+    expect([state.underCursor, landed.mock.calls.length]).toEqual([undefined, 0]);
+    state.stop();
+  });
+
   it("reads the first page again when the Inbox is selected anew, however far it read before", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer(9));

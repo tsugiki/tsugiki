@@ -3498,13 +3498,13 @@ it("offers the palette Pinned Issues, which shows the list with that view, and n
   expect(core.workbench).toHaveBeenLastCalledWith("python/cpython", { kind: "pinned" });
   expect(screen.getByRole("button", { name: /^Pinned issues/ }).getAttribute("aria-current")).toBe("true");
   const said =
-    "Nothing pinned. Ctrl+K P pins the Issue under the cursor in another list, and so does ☆ on its row.";
+    "No Pinned issue to show. Ctrl+K P pins the Issue under the cursor in another list, and so does ☆ on its row.";
   expect(await screen.findByText(said)).toBeTruthy();
   remapKeys({ pin: "ctrl+k s" });
   expect(await screen.findByText(said.replace("Ctrl+K P", "Ctrl+K S"))).toBeTruthy();
   remapKeys({ pin: "" });
   expect(
-    await screen.findByText("Nothing pinned. ☆ on an Issue's row in another list pins it."),
+    await screen.findByText("No Pinned issue to show. ☆ on an Issue's row in another list pins it."),
   ).toBeTruthy();
   remapKeys({});
 });

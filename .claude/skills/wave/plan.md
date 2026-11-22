@@ -8,6 +8,11 @@ each ticket's open blockers with the `gh api .../dependencies/blocked_by` comman
 step 1. Note each ticket blocked from outside the milestone: no wave can start it, so it stays out of the
 plan.
 
+Read each ticket's body for state that another open ticket adds. Where the tracker doesn't name that ticket
+as a blocker, add it, since the lanes, the waves and `just tree` see only blockers:
+`gh api -X POST repos/tsugiki/tsugiki/issues/<n>/dependencies/blocked_by -F issue_id=<id>`, where `<id>` is
+the blocker's `gh api repos/tsugiki/tsugiki/issues/<m> --jq .id`, not its number.
+
 ### 2. List the files each ticket edits
 
 Read each ticket, its `area:*` files in `docs/devel/` and `docs/architecture.md`, and name the files you

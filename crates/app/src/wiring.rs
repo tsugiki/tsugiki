@@ -24,8 +24,8 @@ use crate::{
     Changed, CloningChanged, FailedHeads, HeadsFetchFailed, HeadsFetched, HourPointsChanged,
     InFlightChanged, LanguageServersChanged, LastSyncChanged, MirrorProblemChanged,
     MirrorQuestionChanged, MirrorStatesChanged, MirrorsHeld, MirrorsHeldChanged, NewVersionFound,
-    PickPath, Picker, PointsBackChanged, ReadFailed, StatusChanged, SyncActivityChanged,
-    TextSearchChanged,
+    PickPath, Picker, PointsBackChanged, ReadFailed, RepositorySyncChanged, StatusChanged,
+    SyncActivityChanged, TextSearchChanged,
 };
 
 /// How often the open Repository refreshes: a refresh costs a few points, and this is about 60 points an
@@ -116,6 +116,7 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
     let mut in_flight_state = WindowState::manage(app, None, "the request in flight");
     let changes_handle = app.clone();
     let failed_reads_handle = app.clone();
+    let repository_syncs_handle = app.clone();
     StatusBoard::new(Box::new(move |status| {
         following.follow(status);
         status_state.set(status.clone(), StatusChanged);
@@ -131,6 +132,14 @@ fn status_board<R: Runtime>(app: &AppHandle<R>, following: MirrorRequests) -> St
         sync_state.set(Some(last_sync.clone()), |_| {
             LastSyncChanged(last_sync.clone())
         });
+    }))
+    // The page asks for the last sync and the counts once it listens, so a window that starts late has
+    // missed nothing.
+    .with_repository_syncs(Box::new(move |repository| {
+        let event = RepositorySyncChanged {
+            repository: repository.clone(),
+        };
+        log_if_unsent(event.emit(&repository_syncs_handle));
     }))
     .with_sync_activity(Box::new(move |activity| {
         activity_state.set(activity.cloned(), SyncActivityChanged);

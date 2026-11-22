@@ -74,6 +74,7 @@ struct Wired {
     workbenches: Receiver<Value>,
     failed_reads: Receiver<Value>,
     last_syncs: Receiver<Value>,
+    repository_syncs: Receiver<Value>,
     activities: Receiver<Value>,
     points: Receiver<Value>,
     points_back: Receiver<Value>,
@@ -131,6 +132,7 @@ impl Wired {
         let workbenches = hear(&app, "changed");
         let failed_reads = hear(&app, "read-failed");
         let last_syncs = hear(&app, "last-sync-changed");
+        let repository_syncs = hear(&app, "repository-sync-changed");
         let activities = hear(&app, "sync-activity-changed");
         let points = hear(&app, "hour-points-changed");
         let points_back = hear(&app, "points-back-changed");
@@ -156,6 +158,7 @@ impl Wired {
             workbenches,
             failed_reads,
             last_syncs,
+            repository_syncs,
             activities,
             points,
             points_back,
@@ -888,6 +891,19 @@ fn a_repository_s_state_says_offline_once_github_cant_be_reached() {
     );
 }
 
+#[test]
+fn a_repository_no_sync_has_reached_has_no_last_sync_or_counts_and_a_bad_name_is_refused() {
+    let (folders, _root) = temp_folders("wired-repository-sync");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let synced = wired.ask("repository_sync", json!({ "repository": CPYTHON }));
+    let refused = wired.ask("repository_sync", json!({ "repository": "cpython" }));
+    drop(wired.stop());
+
+    assert_eq!(synced, Ok(json!({ "last_sync": null, "open": null })));
+    assert!(refused.is_err(), "{refused:?}");
+}
+
 /// What the smoke test's first check does through the window: Offline from the start, a refresh, then
 /// "Connecting…" until GitHub fails again.
 #[test]
@@ -1598,6 +1614,9 @@ fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
     let workbench = workbench_after_sync(&wired);
     let never = wired.last_syncs.recv_timeout(PLENTY).unwrap();
     let first = wired.last_syncs.recv_timeout(PLENTY).unwrap();
+    let recorded: Vec<Value> = (0..2)
+        .map(|_| wired.repository_syncs.recv_timeout(PLENTY).unwrap())
+        .collect();
     drop(wired.stop());
     let number = first_issue(&workbench)["number"].as_u64().unwrap();
 
@@ -1615,6 +1634,9 @@ fn a_later_start_refreshes_shows_the_change_and_a_click_asks_again() {
 
     assert_eq!(never, json!({ "repository": CPYTHON, "at": null }));
     assert_eq!(first["repository"], CPYTHON);
+    // Its page in Settings hears of the count the sync saved, then of its end.
+    let named = json!({ "repository": CPYTHON });
+    assert_eq!(recorded, [named.clone(), named]);
     assert_eq!(shown, first, "a later start says when the last sync was");
     assert_eq!(changed, json!({ "repository": CPYTHON, "items": [number] }));
     assert_eq!(first_issue(&after)["title"], "A new title");

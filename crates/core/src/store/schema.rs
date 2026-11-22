@@ -46,7 +46,7 @@ impl Diagram {
     fn heading(self) -> &'static str {
         match self {
             Self::PullRequests => "PRs",
-            Self::Issues => "Issues, their timelines and the viewer",
+            Self::Issues => "Issues, their timelines, the viewer and the open counts",
             Self::Filters => "Filters",
             Self::UserAndSync => "Last seen, Marked unseen and the sync's place",
         }
@@ -76,6 +76,7 @@ const TABLES: &[(&str, Diagram)] = &[
     ("last_checks", Diagram::PullRequests),
     ("stale_reviews", Diagram::PullRequests),
     ("viewer", Diagram::Issues),
+    ("open_items", Diagram::Issues),
     ("issues", Diagram::Issues),
     ("issue_assignees", Diagram::Issues),
     ("issue_labels", Diagram::Issues),

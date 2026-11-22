@@ -100,7 +100,7 @@ fn a_poll_asks_for_each_list_and_narrows_each_filter_to_the_same_time() {
         sent["filter1"],
         "repo:python/cpython (author:@me) updated:>=2026-11-04T10:00:00Z"
     );
-    assert_eq!(answer.open_items, 12);
+    assert_eq!(answer.open, OpenItems { issues: 7, prs: 5 });
     assert_eq!(answer.filters.len(), 2);
     assert_eq!(answer.filters[1].0, filter("author:@me"));
 }
@@ -476,7 +476,7 @@ fn the_recorded_poll_reads_as_a_poll() {
         .poll_repository(&cpython(), &poll_of(&START, &START, &filters))
         .unwrap();
 
-    assert!(answer.open_items > 0);
+    assert!(answer.open.total() > 0);
     assert_eq!(answer.filters.len(), 2);
     assert!(answer.issues.iter().any(|issue| !issue.labels.is_empty()));
 }

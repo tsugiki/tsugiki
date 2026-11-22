@@ -197,6 +197,10 @@ pub(super) const MIGRATIONS: &[Migration] = &[
     },
     Migration {
         version: 43,
+        sql: super::open_items::SCHEMA,
+    },
+    Migration {
+        version: 44,
         sql: super::activity::PINNED,
     },
 ];

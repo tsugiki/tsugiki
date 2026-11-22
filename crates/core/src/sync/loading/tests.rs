@@ -4,7 +4,7 @@ use time::{Duration, OffsetDateTime};
 use crate::github::testing::{dated, pull_request_answer, signed_in_as};
 use crate::github::{Reply, Unreachable};
 use crate::login::Login;
-use crate::repository::{FoundRepository, RepositoryCounts};
+use crate::repository::{FoundRepository, OpenItems, RepositoryCounts};
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
 use crate::status::SyncPart;
 use crate::store::FirstSyncPlace;
@@ -1218,6 +1218,33 @@ fn a_large_repository_reads_only_the_window() {
         queue_operations(&harness),
         ["CheckRepository", "WindowIssues", "WindowPullRequests"]
     );
+    harness.finish();
+}
+
+#[test]
+fn a_first_sync_keeps_what_github_counted_open_before_it_finishes_and_tells_its_page() {
+    let (_, replies) = small_repository();
+    let harness = Harness::scripted("queue-small-open-items", replies);
+    let mut syncs = syncing();
+
+    let mut told = None;
+    while !harness
+        .asked
+        .try_iter()
+        .any(|(name, _)| name == "CheckRepository")
+    {
+        told = syncs.step(&harness.github, &harness.db.store).unwrap();
+    }
+    let counted = harness.db.reader.repository_sync(&cpython()).unwrap();
+    drop(run_to_the_end(&mut syncs, &harness));
+    let finished = harness.db.reader.repository_sync(&cpython()).unwrap();
+
+    let open = Some(OpenItems { issues: 2, prs: 2 });
+    // Only its page in Settings shows the count, so no other screen hears of it.
+    assert_eq!(told, Some(Progress::Recorded(cpython())));
+    assert_eq!((counted.last_sync, counted.open), (None, open));
+    assert!(finished.last_sync.is_some());
+    assert_eq!(finished.open, open);
     harness.finish();
 }
 

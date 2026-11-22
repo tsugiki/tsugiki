@@ -267,6 +267,11 @@ export const commands = {
 	 */
 	repositoryState: (repository: string) => typedError<RepositoryState, Error_Serialize>(__TAURI_INVOKE("repository_state", { repository })),
 	/**
+	 *  The last sync of `repository` and its open Issues and PRs as GitHub last counted them, for its page in
+	 *  Settings (#534). This waits on the database and never on GitHub.
+	 */
+	repositorySync: (repository: string) => typedError<RepositorySync_Serialize, Error_Serialize>(__TAURI_INVOKE("repository_sync", { repository })),
+	/**
 	 *  The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
 	 *  on GitHub (ADR 0018).
 	 */
@@ -388,6 +393,7 @@ export const events = {
 	newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
 	pointsBackChanged: makeEvent<PointsBackChanged_Serialize, PointsBackChanged_Deserialize>("points-back-changed"),
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
+	repositorySyncChanged: makeEvent<RepositorySyncChanged, RepositorySyncChanged>("repository-sync-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
 	textSearchChanged: makeEvent<TextSearchChanged, TextSearchChanged>("text-search-changed"),
@@ -2373,6 +2379,12 @@ export type OnThisMachine_Serialize = {
  */
 export type OnWorkbench = boolean;
 
+/**  The counts of Issues and PRs GitHub found open in a Repository. */
+export type OpenItems = {
+	issues: number,
+	prs: number,
+};
+
 /**  How far the open Repository's sync has got. */
 export type OpenSync = OpenSync_Serialize | OpenSync_Deserialize;
 
@@ -2979,6 +2991,42 @@ export type RepositoryState = {
 	/**  Each reason Tsugiki can't write to the Repository, once, in a fixed order. None, when it can. */
 	read_only: ReadOnly[],
 	connection: Connection,
+};
+
+/**
+ *  A Repository's last sync and its open Issues and PRs as GitHub last counted them, open or not, for its
+ *  page in Settings (#534).
+ */
+export type RepositorySync = RepositorySync_Serialize | RepositorySync_Deserialize;
+
+/**
+ *  Sent when a Repository's last sync or its count of open items changes, whether it's open or not, so its
+ *  page in Settings can say (#534).
+ */
+export type RepositorySyncChanged = {
+	repository: RepositoryName,
+};
+
+/**
+ *  A Repository's last sync and its open Issues and PRs as GitHub last counted them, open or not, for its
+ *  page in Settings (#534).
+ */
+export type RepositorySync_Deserialize = {
+	/**  The moment its last sync finished, or nothing until its first sync finishes. */
+	last_sync: string | null,
+	/**  The Issues and PRs GitHub last counted open there, or nothing until a sync has counted them. */
+	open?: OpenItems | null,
+};
+
+/**
+ *  A Repository's last sync and its open Issues and PRs as GitHub last counted them, open or not, for its
+ *  page in Settings (#534).
+ */
+export type RepositorySync_Serialize = {
+	/**  The moment its last sync finished, or nothing until its first sync finishes. */
+	last_sync: string | null,
+	/**  The Issues and PRs GitHub last counted open there, or nothing until a sync has counted them. */
+	open: OpenItems | null,
 };
 
 /**  Whether someone marked a thread resolved. */

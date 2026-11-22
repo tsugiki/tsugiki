@@ -24,7 +24,7 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{CiState, LatestReview, NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
-use crate::repository::RepositoryName;
+use crate::repository::{OpenItems, RepositoryName};
 
 const REFRESH_REPOSITORY: &str = "RefreshRepository";
 const PROBE_PULL_REQUESTS: &str = "ProbePullRequests";
@@ -118,7 +118,7 @@ pub struct ChangedPr {
 #[derive(Debug, PartialEq, Eq)]
 pub struct PollAnswer {
     /// The open Issues and PRs, which say whether this Repository counts as small.
-    pub open_items: u32,
+    pub open: OpenItems,
     pub issues: Vec<IssueFacts>,
     pub issue_activity: Vec<ItemActivity>,
     pub next_issues: ListPlace,
@@ -366,7 +366,10 @@ impl GitHub {
         let polled_issues = polled.issues.nodes.into_iter().flatten();
         let (issues, issue_activity) = polled_issues.map(Into::into).unzip();
         Ok(PollAnswer {
-            open_items: polled.open_issues.total_count + polled.open_prs.total_count,
+            open: OpenItems {
+                issues: polled.open_issues.total_count,
+                prs: polled.open_prs.total_count,
+            },
             issues,
             issue_activity,
             next_issues,

@@ -259,7 +259,8 @@ struct Leads {
 
 /// The result of one step.
 enum Step {
-    /// It only moved on to the next phase, and asked GitHub for nothing.
+    /// It asked GitHub for nothing and changed nothing a screen shows: it moved on to the next phase, or
+    /// found the count of open items it was to save already saved.
     Moved,
     /// It asked GitHub, and the store didn't change.
     Searched,
@@ -267,6 +268,9 @@ enum Step {
     Saved {
         touched: Vec<u32>,
     },
+    /// It saved a new count of the open Issues and PRs and nothing else, which no screen of the Repository
+    /// shows, only its page in Settings (#534).
+    Recounted,
     Finished,
 }
 
@@ -598,7 +602,7 @@ impl UserWorkSync {
                 return self.advance(github, store, settings);
             }
         }
-        if let (Kind::First(first_sync), Step::Searched | Step::Saved { .. }) =
+        if let (Kind::First(first_sync), Step::Searched | Step::Saved { .. } | Step::Recounted) =
             (&mut self.kind, &step)
         {
             first_sync.pages += 1;

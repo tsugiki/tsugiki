@@ -43,6 +43,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   newest first, with the PRs that changed in the window, and for a small one its open items from before the
   window. The status bar shows its progress. An interrupted sync resumes where it stopped. Widening the window
   loads only the added days; narrowing it deletes nothing.
+- A first sync and each refresh ask GitHub how many Issues and PRs the Repository has open, and the database
+  keeps the latest answer for the Repository's page in Settings ([settings.md](settings.md)). A refresh
+  saves it after the Issues the poll changed. An answer that differs from the one kept tells that page
+  alone, and no screen of the Repository asks again; the same answer again writes nothing and tells
+  nothing. The page also hears when a sync of its Repository finishes, open or not.
 - A GraphQL answer says what it cost, and Tsugiki sums those costs since the hour began, whichever job
   asked: a sync, opening an Issue or a PR, the checks, asking who is signed in, the size the Mirror worker
   asks before a clone. The sum starts again when

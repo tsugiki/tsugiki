@@ -500,24 +500,29 @@ fn after_a_switch_the_timer_refreshes_only_the_repository_opened_last() {
 }
 
 #[test]
-fn only_the_open_repository_says_its_sync_finished() {
+fn only_the_open_repository_tells_the_status_bar_its_sync_finished_and_the_other_tells_its_page() {
     let peps = RepositoryName::parse("python/peps").unwrap();
     let mut replies = searches_finding(&[]);
     replies.extend(searches_finding(&[]));
     let harness = Harness::new("finished", replies);
     let mut syncs = Syncs::default();
-    syncs.add_listed(plain(peps));
+    syncs.add_listed(plain(peps.clone()));
     syncs.add_listed(plain(cpython()));
 
     let mut finished = Vec::new();
+    let mut peps_finished = None;
     while syncs.ready_at().is_some() {
+        let had_synced = harness.db.store.sync_state(&peps).unwrap().is_some();
         let progress = syncs.step(&harness.github, &harness.db.store).unwrap();
-        if let Some(Progress::Finished(last_sync)) = progress {
+        if !had_synced && harness.db.store.sync_state(&peps).unwrap().is_some() {
+            peps_finished = Some(progress);
+        } else if let Some(Progress::Finished(last_sync)) = progress {
             finished.push(last_sync.repository);
         }
     }
 
     assert_eq!(finished, [cpython()]);
+    assert_eq!(peps_finished, Some(Some(Progress::Recorded(peps))));
     harness.finish();
 }
 

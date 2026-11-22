@@ -11,7 +11,8 @@ type CloneUnderWay = Exclude<Cloning["progress"], { stage: "starting" }>;
 
 const SYNCED_UNITS = { minute: "min", hour: "h", day: "d" } as const;
 
-/** When the open Repository last synced: "Synced just now", "Synced 3 min ago", or not yet. */
+/** The time a Repository last synced, for the status bar and the Repository's page in Settings: "Synced
+ * just now", "Synced 3 min ago", or not yet. */
 export function syncedWords(at: string | null, now: Date): string {
   if (at === null) return "Not synced yet";
   const time = elapsed(at, now);

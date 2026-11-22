@@ -169,9 +169,10 @@ pub(super) struct Harness {
 impl Harness {
     pub(super) fn new(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
         let (script, asked) = Scripted::new(replies);
+        let db = OpenStore::new(&format!("sync-{name}"));
         Self {
             github: github(EmptyWindow(script)),
-            db: OpenStore::new(&format!("sync-{name}")),
+            db,
             asked,
         }
     }
@@ -253,7 +254,7 @@ pub(super) fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<Reposi
 pub(super) fn announced(progress: Option<Progress>) -> Option<RepositoryName> {
     match progress? {
         Progress::Changed(change) => Some(change.repository),
-        Progress::Finished(_) => None,
+        Progress::Finished(_) | Progress::Recorded(_) => None,
     }
 }
 

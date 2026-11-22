@@ -10,6 +10,7 @@ export function overviewLine(repository: RepositorySettings, machine: OnThisMach
   if (machine?.source?.kind === "borrow") parts.push("borrows from a clone");
   if (machine?.mirror.kind === "missing") parts.push("no mirror yet");
   if (machine?.mirror.kind === "measured") parts.push(`mirror ${mirrorSize(machine.mirror.mb)}`);
+  if (machine?.mirror.kind === "unreadable") parts.push("can't measure the mirror");
   return parts.join(" · ");
 }
 

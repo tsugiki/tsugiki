@@ -1,6 +1,6 @@
 <!-- Settings › Repositories (docs/devel/settings.md, #533): each Repository on a line of its own, which opens
      its page, and Add repository… under them. Each time the page shows, it asks the core again what each
-     Repository has on this machine. -->
+     Repository has on this machine, once the dialog has read the files. -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { SettingsDialog } from "$lib/state/settings-dialog.svelte";
@@ -33,7 +33,9 @@
 {#if dialog.machineProblem !== undefined}
   <p class="problem">{dialog.machineProblem}</p>
 {/if}
-<button class="add" onclick={onadd}>Add repository…</button>
+<!-- Off until the dialog has read the files, as its other controls are, so Cancel has them to keep the
+     Repository it adds in. -->
+<button class="add" disabled={dialog.current === undefined} onclick={onadd}>Add repository…</button>
 
 <style>
   ul {

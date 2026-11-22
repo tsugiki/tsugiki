@@ -327,7 +327,8 @@
   /** Opens what Add repository has added, from the Home page or from Settings › Repositories. */
   const added = (next: Home) => {
     home.added(next);
-    // The core read the files again to add this, so a problem the user has since fixed can go.
+    // The core read the files again to add this, so a problem the user has since fixed can go. Settings
+    // holds this load back while it's open, and loads again as it closes.
     void settings.load();
   };
   /** Switches to `name`, which Add repository found Tsugiki has already, unless it's the one open. */

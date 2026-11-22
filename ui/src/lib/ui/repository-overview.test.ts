@@ -38,4 +38,10 @@ describe("a Repository's line on Settings › Repositories", () => {
     );
     expect(overviewLine(repository(1), machine(null, { kind: "missing" }))).toBe("1 Filter · no mirror yet");
   });
+
+  it("gives no size for a mirror the core can't read", () => {
+    expect(overviewLine(repository(1), machine(null, { kind: "unreadable" }))).toBe(
+      "1 Filter · can't measure the mirror",
+    );
+  });
 });

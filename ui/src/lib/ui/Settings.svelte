@@ -57,7 +57,7 @@
      * it, with what the window shows now. */
     onadded: (home: Home) => void;
     /** Runs when the user asks to switch to `name`, a Repository Tsugiki has already, from Add
-     * repository…. */
+     * repository…, once the dialog has closed as Cancel closes it. */
     onswitch: (name: string) => void;
     onclose: () => void;
   } = $props();
@@ -169,7 +169,9 @@
       onadded(home);
     }}
     onswitch={(name) => {
+      // The user asked to go to that Repository, so the dialog goes too, as Cancel takes it.
       adding = false;
+      cancel();
       onswitch(name);
     }}
   />

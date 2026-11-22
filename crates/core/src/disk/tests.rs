@@ -35,7 +35,16 @@ fn a_mirror_is_measured_and_one_not_cloned_yet_is_missing() {
         FolderSize::of(&root.join("not-cloned.git")),
         FolderSize::Missing
     );
-    assert_eq!(FolderSize::of(&pack), FolderSize::Missing);
+}
+
+#[test]
+fn a_mirror_that_cant_be_read_as_a_folder_has_no_size() {
+    let root = temp_path("disk-unreadable");
+    fs::create_dir_all(&root).unwrap();
+    let mirror = root.join("mirror.git");
+    fs::write(&mirror, vec![b'x'; MB * 3]).unwrap();
+
+    assert_eq!(FolderSize::of(&mirror), FolderSize::Unreadable);
 }
 
 #[test]

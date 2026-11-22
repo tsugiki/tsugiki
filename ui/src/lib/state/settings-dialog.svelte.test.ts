@@ -5,7 +5,12 @@ import { SettingsDialog } from "./settings-dialog.svelte";
 import { SettingsState } from "./settings.svelte";
 import { type DarkQuery, ThemeState } from "./theme.svelte";
 
-const core = vi.hoisted(() => ({ rereadSettings: vi.fn(), applySettings: vi.fn(), onThisMachine: vi.fn() }));
+const core = vi.hoisted(() => ({
+  rereadSettings: vi.fn(),
+  applySettings: vi.fn(),
+  onThisMachine: vi.fn(),
+  settings: vi.fn(),
+}));
 vi.mock("$lib/data/bindings", () => ({ commands: core }));
 
 const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;
@@ -20,6 +25,7 @@ const addedGcmon: Home = {
 describe("SettingsDialog", () => {
   it("changes nothing before the core has said what the settings are", async () => {
     core.onThisMachine.mockResolvedValue(ok([]));
+    core.settings.mockReturnValue(new Promise(() => {}));
     const settings = new SettingsState();
     const theme = new ThemeState(LIGHT_SIDE);
     const dialog = new SettingsDialog(settings, theme);
@@ -37,11 +43,12 @@ describe("SettingsDialog", () => {
     expect(settings.settings).toBeUndefined();
   });
 
-  it("lists a Repository Add repository added once, and Cancel keeps it", async () => {
+  it("lists a Repository Add repository added once, Cancel keeps it, and the settings load as it closes", async () => {
     core.onThisMachine.mockResolvedValue(ok([]));
     const cpython = { name: "python/cpython", conventions: "cpython" as const, filters: [] };
     const files = { settings: defaultSettings({ repositories: [cpython] }), language_servers: NO_SERVERS };
     core.rereadSettings.mockResolvedValue(ok({ ...files, problems: [] }));
+    core.settings.mockReturnValue(new Promise(() => {}));
     const settings = new SettingsState();
     const dialog = new SettingsDialog(settings, new ThemeState(LIGHT_SIDE));
     await dialog.open();
@@ -52,12 +59,16 @@ describe("SettingsDialog", () => {
 
     expect(dialog.repositories).toEqual(["python/cpython", "some-maintainer/gcmon"]);
     expect(dialog.changed).toBe(false);
-    expect(core.onThisMachine).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => {
+      expect(core.onThisMachine).toHaveBeenCalledTimes(3);
+    });
+    expect(core.settings).not.toHaveBeenCalled();
     dialog.cancel();
     expect(settings.settings?.repositories.map((repository) => repository.name)).toEqual([
       "python/cpython",
       "some-maintainer/gcmon",
     ]);
+    expect(core.settings).toHaveBeenCalledOnce();
   });
 
   it("takes what the newest ask measured, though an older answer comes after it", async () => {

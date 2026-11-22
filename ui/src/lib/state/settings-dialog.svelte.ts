@@ -67,6 +67,11 @@ export class SettingsDialog {
   machineProblem = $state<string>();
   /** How many times the dialog asked what the Repositories have on this machine. */
   #measures = 0;
+  /** The read of the files as the dialog opens, which a measure waits for, so the core measures the
+   * Repositories the files list now. */
+  #reading: Promise<unknown> = Promise.resolve();
+  /** Whether Add repository… added a Repository while the dialog was open. */
+  #added = false;
 
   /** The dialog previews on `settings`, and its `[appearance]` on `theme`, so a load mustn't replace the
    * settings until it closes. It opens on `shown`. */
@@ -123,10 +128,11 @@ export class SettingsDialog {
     return this.#machine?.find((repository) => repository.repository === name);
   }
 
-  /** Asks the core what each Repository has on this machine, which it measures off the window's thread. An
-   * answer to an older ask gives way to a newer one's. */
+  /** Asks the core what each Repository has on this machine, which it measures off the window's thread, once
+   * the dialog has read the files. An answer to an older ask gives way to a newer one's. */
   async measure() {
     const asked = ++this.#measures;
+    await this.#reading;
     const answer = await ask(commands.onThisMachine());
     if (asked !== this.#measures) return;
     if (answer.status === "error") {
@@ -140,6 +146,7 @@ export class SettingsDialog {
   /** Lists the Repository the add dialog added, which the core has saved and opened, as `home` says, so
    * Cancel keeps it, and measures again. */
   added(home: Home) {
+    this.#added = true;
     if (home.screen === "repository") {
       const repository = $state.snapshot(home.repository);
       for (const settings of [this.#before?.settings, this.#settings.settings]) {
@@ -153,7 +160,9 @@ export class SettingsDialog {
   /** Reads both files again, so a hand edit made since start-up shows and takes effect (ADR 0014), and says
    * whether it did. If the core can't, the dialog says why and its controls stay off. */
   async open(): Promise<boolean> {
-    const answer = await ask(commands.rereadSettings());
+    const reading = ask(commands.rereadSettings());
+    this.#reading = reading;
+    const answer = await reading;
     if (answer.status === "error") {
       this.problem = `Tsugiki can't read the settings files again: ${answer.error.message}`;
       return false;
@@ -281,10 +290,13 @@ export class SettingsDialog {
   }
 
   /** Lets loads replace the settings again, and puts the theme in force back on the window, unless Apply
-   * made the dialog's the theme in force. */
+   * made the dialog's the theme in force. Once Add repository… has added a Repository, it loads the
+   * settings: the core read the files again to add it, so a problem the user has fixed since goes from the
+   * status bar, which the loads the dialog held back would have done. */
   #close(): true {
     this.#settings.preview(false);
     void this.#theme.endPreview();
+    if (this.#added) void this.#settings.load();
     return true;
   }
 }

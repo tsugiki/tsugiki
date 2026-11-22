@@ -11,6 +11,7 @@ import {
 } from "$lib/state/settings.svelte";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
 import { defaultSettings, NO_SERVERS, ok, refused, repositoryCheck } from "$lib/testing/fixtures";
+import { nextTask } from "$lib/testing/helpers";
 import Settings from "./Settings.svelte";
 
 const core = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const core = vi.hoisted(() => ({
   previewThemes: vi.fn(),
   turnWindow: vi.fn(),
   onThisMachine: vi.fn(),
+  settings: vi.fn(),
   checkRepository: vi.fn(),
   addRepository: vi.fn(),
 }));
@@ -1205,6 +1207,13 @@ describe("Settings › Repositories", () => {
   it("adds a Repository with Add repository… over the dialog, lists it, and keeps it on Cancel", async () => {
     core.checkRepository.mockResolvedValue(ok({ kind: "new", check: newproj }));
     core.addRepository.mockResolvedValue(ok(addedHome));
+    // The file had a problem as the dialog read it, which the user mended before the add read it again.
+    const problem = "settings.toml, line 3: expected a value";
+    core.rereadSettings.mockResolvedValue(ok(loaded(settingsWith(), [problem])));
+    const withNewproj = settingsWith((settings) => {
+      settings.repositories.push(newproj.repository);
+    });
+    core.settings.mockResolvedValue(loaded(withNewproj));
     await openAdd();
     const adding = addDialog();
     expect(adding).toBeTruthy();
@@ -1225,8 +1234,12 @@ describe("Settings › Repositories", () => {
       ["some-maintainer/newproj", "0 Filters"],
     ]);
     expect(within(nav()).getByRole("button", { name: "some-maintainer/newproj" })).toBeTruthy();
-    expect(core.onThisMachine).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => {
+      expect(core.onThisMachine).toHaveBeenCalledTimes(2);
+    });
     expect(button("OK")).toBeTruthy();
+
+    expect(state.problems).toEqual([problem]);
 
     await fireEvent.click(button("Cancel"));
     expect(state.settings?.repositories.map((repository) => repository.name)).toEqual([
@@ -1234,6 +1247,10 @@ describe("Settings › Repositories", () => {
       "python/cpython",
       "some-maintainer/newproj",
     ]);
+    await vi.waitFor(() => {
+      expect(state.problems).toEqual([]);
+    });
+    expect(core.settings).toHaveBeenCalledOnce();
   });
 
   it("closes only Add repository… on Esc, and the dialog under it on the next", async () => {
@@ -1252,19 +1269,55 @@ describe("Settings › Repositories", () => {
     expect(onclose).toHaveBeenCalledOnce();
   });
 
-  it("closes Add repository… with its Cancel, and hands on Switch to it", async () => {
+  it("closes Add repository… with its Cancel, and leaves Settings open", async () => {
     await openAdd();
     await fireEvent.click(within(addDialog() as HTMLElement).getByRole("button", { name: "Cancel" }));
     expect(addDialog()).toBeNull();
     expect(dialog()).toBeTruthy();
+  });
 
+  it("closes as Cancel does on Switch to it, putting a change back, and hands on the name", async () => {
+    const onclose = vi.fn();
+    await opened(onclose);
+    await fireEvent.click(statusBarBox());
+    expect(state.statusBarVisible).toBe(false);
+    await go("Repositories");
     core.checkRepository.mockResolvedValue(ok({ kind: "held", name: "python/cpython" }));
     await fireEvent.click(addButton());
     await fireEvent.click(button("Check"));
+
     await fireEvent.click(await screen.findByRole("button", { name: "Switch to it" }));
 
+    expect(onclose).toHaveBeenCalledOnce();
     expect(onswitch).toHaveBeenCalledExactlyOnceWith("python/cpython");
+    expect(onclose.mock.invocationCallOrder[0]).toBeLessThan(onswitch.mock.invocationCallOrder[0] ?? 0);
+    expect(state.statusBarVisible).toBe(true);
     expect(addDialog()).toBeNull();
     expect(onadded).not.toHaveBeenCalled();
+    expect(core.applySettings).not.toHaveBeenCalled();
+  });
+
+  it("measures the Repositories only once the dialog has read the files", async () => {
+    const reading = Promise.withResolvers<unknown>();
+    core.rereadSettings.mockReturnValue(reading.promise);
+    render(Settings, props());
+    await go("Repositories");
+    await nextTask();
+    expect(core.onThisMachine).not.toHaveBeenCalled();
+    expect(addButton().hasAttribute("disabled")).toBe(true);
+
+    reading.resolve(ok(loaded(settingsWith())));
+    await vi.waitFor(() => {
+      expect(core.onThisMachine).toHaveBeenCalledOnce();
+    });
+    expect(addButton().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps Add repository… off when the dialog can't read the files", async () => {
+    core.rereadSettings.mockResolvedValue(refused("settings.toml can't be read"));
+    render(Settings, props());
+    await go("Repositories");
+    await screen.findByRole("alert");
+    expect(addButton().hasAttribute("disabled")).toBe(true);
   });
 });

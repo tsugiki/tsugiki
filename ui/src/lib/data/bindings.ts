@@ -1122,7 +1122,9 @@ export type FolderSize =
 /**  There is no folder, as before a Mirror's first clone has finished. */
 { kind: "missing" } | 
 /**  Its files take `mb` whole megabytes. */
-{ kind: "measured"; mb: number };
+{ kind: "measured"; mb: number } | 
+/**  Something is there, but it can't be read as a folder, so its size is unknown. */
+{ kind: "unreadable" };
 
 /**  What a search found, in the order the rows come. */
 export type Found = {

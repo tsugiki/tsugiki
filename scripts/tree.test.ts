@@ -194,12 +194,58 @@ describe("blockerLines", () => {
     ]);
   });
 
-  it("prints each ticket named as its own tree, though it blocks another one named", () => {
+  it("draws one tree per ticket named, each with all of its blockers, once per number named", () => {
     expect(blockerLines([ticket(1), ticket(2, [1])], [2, 1, 2])).toEqual([
-      "#2 Ticket 2 (2)  [also #1]",
+      "#2 Ticket 2 (2)",
+      "└─ #1 Ticket 1 (1)",
       "#1 Ticket 1 (1)",
       "max depth: 2",
     ]);
+  });
+
+  it("draws a blocker of two tickets named in each tree", () => {
+    const tickets = [ticket(1, [2, 3]), ticket(2, [4]), ticket(3, [4]), ticket(4)];
+    expect(blockerLines(tickets, [1, 2])).toEqual([
+      "#1 Ticket 1 (3)",
+      "├─ #2 Ticket 2 (2)",
+      "│  └─ #4 Ticket 4 (1)",
+      "└─ #3 Ticket 3 (2)  [also #4]",
+      "#2 Ticket 2 (2)",
+      "└─ #4 Ticket 4 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("walks a ticket in a cycle from itself, though another ticket named reached it first", () => {
+    // 9 is blocked by 1; 1 and 2 block each other, and 5 blocks 1.
+    const tickets = [ticket(9, [1]), ticket(1, [2, 5]), ticket(2, [1]), ticket(5)];
+    expect(blockerLines(tickets, [9, 2])).toEqual([
+      "#9 Ticket 9 (3)",
+      "└─ #1 Ticket 1 (2)",
+      "   ├─ #2 Ticket 2 (1)  [also #1]",
+      "   └─ #5 Ticket 5 (1)",
+      "#2 Ticket 2 (3)",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   └─ #5 Ticket 5 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("keeps a blocker on its longer chain when a shorter one reaches it later", () => {
+    // 1 blocks 2, one step from 10, and 4, three steps away through 3; the walk meets 4's chain first.
+    const tickets = [ticket(10, [2, 3]), ticket(3, [4]), ticket(4, [1]), ticket(2, [1]), ticket(1)];
+    expect(blockerLines(tickets, [10])).toEqual([
+      "#10 Ticket 10 (4)",
+      "├─ #2 Ticket 2 (2)  [also #1]",
+      "└─ #3 Ticket 3 (3)",
+      "   └─ #4 Ticket 4 (2)",
+      "      └─ #1 Ticket 1 (1)",
+      "max depth: 4",
+    ]);
+  });
+
+  it("prints nothing when no ticket is named", () => {
+    expect(blockerLines([ticket(1)], [])).toEqual([]);
   });
 
   it("breaks a tie by number, though one of the two tickets runs deeper", () => {

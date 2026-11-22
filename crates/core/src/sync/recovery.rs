@@ -130,6 +130,18 @@ struct Ended {
     refresh_under_way: Option<bool>,
     /// Each thing the window heard, which may name no item, as for the Sidebar.
     told_the_window: Vec<Vec<u32>>,
+    /// Each thing the Repository's page in Settings and the status bar heard, in order.
+    told_of_syncs: Vec<SyncNews>,
+}
+
+/// What a step told of the open Repository's syncs, without the time a sync finished, which differs from run
+/// to run.
+#[derive(Debug, PartialEq, Eq)]
+enum SyncNews {
+    /// A new count of its open items.
+    Recorded,
+    /// The end of its sync.
+    Finished,
 }
 
 /// A run's end, with the failures on the way there.
@@ -160,6 +172,7 @@ fn run(
     let mut syncs = Syncs::default();
     syncs.add_listed(settings.clone());
     let mut told_the_window = Vec::new();
+    let mut told_of_syncs = Vec::new();
     let mut steps = 0;
     let mut sync_steps = 0;
     let mut problems = Vec::new();
@@ -174,7 +187,9 @@ fn run(
         }
         match syncs.step(&harness.github, store) {
             Ok(Some(Progress::Changed(change))) => told_the_window.push(change.items),
-            Ok(_) => {}
+            Ok(Some(Progress::Recorded(_))) => told_of_syncs.push(SyncNews::Recorded),
+            Ok(Some(Progress::Finished(_))) => told_of_syncs.push(SyncNews::Finished),
+            Ok(None) => {}
             Err(failure) => {
                 syncs.after_failure(&failure, Instant::now());
                 problems.push(failure.problem.message);
@@ -192,6 +207,7 @@ fn run(
         check: state.as_ref().map(|state| state.check.clone()),
         refresh_under_way: state.map(|state| state.refresh_under_way),
         told_the_window,
+        told_of_syncs,
     };
     Run {
         ended,
@@ -301,6 +317,15 @@ fn run_clean(scenario: &Scenario) -> Clean {
     assert_eq!(
         clean.problems, [""; 0],
         "the scenario has to work with no failure"
+    );
+    // Each run that fails then has to tell of a new count once, if the scenario brings one, then of the end.
+    assert!(
+        matches!(
+            clean.ended.told_of_syncs[..],
+            [SyncNews::Finished] | [SyncNews::Recorded, SyncNews::Finished]
+        ),
+        "{:?}",
+        clean.ended.told_of_syncs
     );
     let posts = collected(&posts);
     let checks = collected(&checks);

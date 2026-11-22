@@ -253,7 +253,8 @@ struct Leads {
 
 /// The result of one step.
 enum Step {
-    /// It only moved on to the next phase, and asked GitHub for nothing.
+    /// It asked GitHub for nothing and changed nothing a screen shows: it moved on to the next phase, or
+    /// found the count of open items it was to save already saved.
     Moved,
     /// It asked GitHub, and the store didn't change.
     Searched,

@@ -2,6 +2,7 @@
 //! `Transport` for `Https` that calls these is in `live.rs`, because it reaches the network.
 
 use std::fmt;
+use std::sync::OnceLock;
 
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -41,8 +42,10 @@ pub(super) fn reply(operation: &str, sent: Result<Answer, NotSent>) -> Result<Re
 }
 
 /// The time in `GitHub-Authentication-Token-Expiration`, which GitHub writes as `2026-12-01 09:30:00 UTC`,
-/// or with an offset such as `+0100` in place of `UTC`. Anything else is no time, and the log says so.
+/// or with an offset such as `+0100` in place of `UTC`. Anything else is no time, and the log says so once a
+/// run, as each answer brings the header again.
 fn expiration(text: &str) -> Option<OffsetDateTime> {
+    static WARNED: OnceLock<()> = OnceLock::new();
     let parsed = text.split_once(' ').and_then(|(date, rest)| {
         let (clock, zone) = rest.split_once(' ')?;
         let offset = match zone {
@@ -54,7 +57,7 @@ fn expiration(text: &str) -> Option<OffsetDateTime> {
         };
         OffsetDateTime::parse(&format!("{date}T{clock}{offset}"), &Rfc3339).ok()
     });
-    if parsed.is_none() {
+    if parsed.is_none() && WARNED.set(()).is_ok() {
         log::warn!("GitHub named a token expiry Tsugiki can't read: {text}");
     }
     parsed

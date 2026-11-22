@@ -18,57 +18,65 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// What the token's scopes said of the Repositories the settings list.
-pub enum TokenJudged {
-    /// The scopes said nothing, as a fine-grained token's answers name none. The marks of this token stay.
-    Silent,
-    /// The scopes reach every listed Repository but these.
-    CantWrite(Vec<RepositoryName>),
+/// Forgets the marks of each token of another kind than `kind`, and gives the Repositories they were on.
+pub(super) fn forget_other_kinds(
+    connection: &Connection,
+    kind: TokenKind,
+) -> rusqlite::Result<Vec<RepositoryName>> {
+    let mut statement = connection
+        .prepare("DELETE FROM read_only WHERE token_kind <> :kind RETURNING repository")?;
+    let forgot = statement.query_map(named_params! { ":kind": kind_column(kind) }, |row| {
+        row.get(0)
+    })?;
+    forgot.collect()
 }
 
-/// Keeps what the scopes of `token` said, as `judged`, and gives the Repositories of `listed` whose mark
-/// changed. The marks of any other token go first: a token of another kind or expiry is another token.
-pub(super) fn judge(
+/// Forgets the marks of each token but `token`, as a token of another kind or expiry is another token, and
+/// gives the Repositories they were on.
+pub(super) fn forget_other_tokens(
+    connection: &Connection,
+    token: TokenSeen,
+) -> rusqlite::Result<Vec<RepositoryName>> {
+    let mut statement = connection.prepare(
+        "DELETE FROM read_only WHERE token_kind <> :kind OR token_expires_at IS NOT :expires
+         RETURNING repository",
+    )?;
+    let (kind, expires) = token_columns(token);
+    let named = named_params! { ":kind": kind, ":expires": expires };
+    let forgot = statement.query_map(named, |row| row.get(0))?;
+    forgot.collect()
+}
+
+/// Marks `repository` as one `token` can't write to, and gives whether it had no mark before.
+pub(super) fn mark(
     connection: &mut Connection,
     token: TokenSeen,
-    listed: &[RepositoryName],
-    judged: &TokenJudged,
-) -> rusqlite::Result<Vec<RepositoryName>> {
+    repository: &RepositoryName,
+) -> rusqlite::Result<bool> {
     let transaction = connection.transaction()?;
-    let before = listed
-        .iter()
-        .map(|repository| marked(&transaction, repository))
-        .collect::<rusqlite::Result<Vec<bool>>>()?;
-    let (kind, expires) = (
-        kind_column(token.kind),
-        token.expires.map(|at| at.unix_timestamp()),
-    );
+    let before = marked(&transaction, repository)?;
+    let (kind, expires) = token_columns(token);
     transaction
         .execute(
-            "DELETE FROM read_only WHERE token_kind <> :kind OR token_expires_at IS NOT :expires",
-            named_params! { ":kind": kind, ":expires": expires },
+            "INSERT OR REPLACE INTO read_only (repository, token_kind, token_expires_at)
+             VALUES (:repository, :kind, :expires)",
+            named_params! { ":repository": repository, ":kind": kind, ":expires": expires },
         )
         .map(drop)?;
-    if let TokenJudged::CantWrite(repositories) = judged {
-        transaction.execute("DELETE FROM read_only", []).map(drop)?;
-        for repository in repositories {
-            transaction
-                .execute(
-                    "INSERT OR IGNORE INTO read_only (repository, token_kind, token_expires_at)
-                     VALUES (:repository, :kind, :expires)",
-                    named_params! { ":repository": repository, ":kind": kind, ":expires": expires },
-                )
-                .map(drop)?;
-        }
-    }
-    let mut changed = Vec::new();
-    for (repository, was) in listed.iter().zip(before) {
-        if marked(&transaction, repository)? != was {
-            changed.push(repository.clone());
-        }
-    }
     transaction.commit()?;
-    Ok(changed)
+    Ok(!before)
+}
+
+/// Clears `repository`'s mark, and gives whether it had one.
+pub(super) fn clear(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<bool> {
+    let cleared = connection.execute(
+        "DELETE FROM read_only WHERE repository = :repository",
+        named_params! { ":repository": repository },
+    )?;
+    Ok(cleared > 0)
 }
 
 /// Whether the store marks `repository` as one the token can't write to.
@@ -80,6 +88,14 @@ pub(super) fn marked(
     let asked = named_params! { ":repository": repository };
     let found = connection.query_row(query, asked, |_| Ok(())).optional()?;
     Ok(found.is_some())
+}
+
+/// What the `token_kind` and `token_expires_at` columns hold of `token`.
+fn token_columns(token: TokenSeen) -> (&'static str, Option<i64>) {
+    (
+        kind_column(token.kind),
+        token.expires.map(|at| at.unix_timestamp()),
+    )
 }
 
 /// How the `token_kind` column spells `kind`.

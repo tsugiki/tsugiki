@@ -53,13 +53,13 @@ use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::read_only::TokenSeen;
 use crate::repository::RepositoryName;
+use crate::token::TokenKind;
 use columns::Items;
 pub use columns::Numbers;
 pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use pr_links::Updates;
 pub use pull_request_content::{ConversationSaved, HeadKept};
-pub use read_only::TokenJudged;
 pub use sync_state::{ChangeCheck, FirstSyncPlace, OVERLAP, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -738,16 +738,43 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Keeps what the scopes of `token` said of the Repositories the settings list, as `judged`, and gives
-    /// those of `listed` whose Read-only mark changed. The marks of any other token go (#398).
-    pub fn judge_read_only(
+    /// Forgets the Read-only marks of each token of another kind than `kind`, which Tsugiki knows before
+    /// GitHub first answers, and gives the Repositories they were on (#398).
+    pub fn forget_read_only_of_other_kinds(
+        &self,
+        kind: TokenKind,
+    ) -> Result<Vec<RepositoryName>, Error> {
+        let saved = self.call(move |connection| read_only::forget_other_kinds(connection, kind))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Forgets the Read-only marks of each token but `token`, and gives the Repositories they were on
+    /// (#398).
+    pub fn forget_read_only_of_other_tokens(
         &self,
         token: TokenSeen,
-        listed: Vec<RepositoryName>,
-        judged: TokenJudged,
     ) -> Result<Vec<RepositoryName>, Error> {
         let saved =
-            self.call(move |connection| read_only::judge(connection, token, &listed, &judged))?;
+            self.call(move |connection| read_only::forget_other_tokens(connection, token))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Marks `repository` Read-only, as `token` can't write to it, and gives whether it wasn't before
+    /// (#398).
+    pub fn mark_read_only(
+        &self,
+        token: TokenSeen,
+        repository: &RepositoryName,
+    ) -> Result<bool, Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| read_only::mark(connection, token, &repository))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// Clears `repository`'s Read-only mark, and gives whether it had one (#398).
+    pub fn clear_read_only(&self, repository: &RepositoryName) -> Result<bool, Error> {
+        let repository = repository.clone();
+        let saved = self.call(move |connection| read_only::clear(connection, &repository))?;
         saved.map_err(saying(CANT_WRITE))
     }
 

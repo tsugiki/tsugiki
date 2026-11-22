@@ -19,87 +19,56 @@ fn fine_grained(seconds: i64) -> TokenSeen {
     }
 }
 
-fn both() -> Vec<RepositoryName> {
-    vec![cpython(), gcmon()]
-}
-
 #[test]
-fn the_scopes_mark_the_repositories_they_dont_reach_and_say_which_changed() {
+fn a_mark_and_its_clearing_each_say_whether_they_changed_it() {
     let db = OpenStore::new("read-only-marks");
-    let judged = TokenJudged::CantWrite(vec![gcmon()]);
-    let changed = db.store.judge_read_only(GH, both(), judged).unwrap();
-    assert_eq!(changed, [gcmon()]);
+    let first = db.store.mark_read_only(GH, &gcmon()).unwrap();
+    let again = db.store.mark_read_only(GH, &gcmon()).unwrap();
     assert_eq!(db.read_only_marks(), (false, true));
-
-    let judged = TokenJudged::CantWrite(vec![cpython(), gcmon()]);
-    let changed = db.store.judge_read_only(GH, both(), judged).unwrap();
-    assert_eq!(changed, [cpython()]);
-
-    let changed = db
-        .store
-        .judge_read_only(GH, both(), TokenJudged::CantWrite(vec![]))
-        .unwrap();
-    assert_eq!(changed, both());
+    let cleared = db.store.clear_read_only(&gcmon()).unwrap();
+    let unmarked = db.store.clear_read_only(&cpython()).unwrap();
     assert_eq!(db.read_only_marks(), (false, false));
     db.close();
+
+    assert_eq!((first, again), (true, false));
+    assert_eq!((cleared, unmarked), (true, false));
 }
 
 #[test]
-fn silent_scopes_keep_the_token_s_own_marks() {
-    let db = OpenStore::new("read-only-silent");
-    let token = fine_grained(2_000_000_000);
-    let marked = (db.store)
-        .judge_read_only(token, both(), TokenJudged::CantWrite(vec![cpython()]))
-        .unwrap();
-    assert_eq!(marked, [cpython()]);
-    let changed = db
-        .store
-        .judge_read_only(token, both(), TokenJudged::Silent)
-        .unwrap();
-    assert_eq!(changed, []);
-    assert_eq!(db.read_only_marks(), (true, false));
-    db.close();
-}
-
-#[test]
-fn another_token_clears_the_marks() {
+fn another_token_forgets_the_marks_and_says_where_they_were() {
     let db = OpenStore::new("read-only-another-token");
     let first = fine_grained(2_000_000_000);
-    let marked = (db.store)
-        .judge_read_only(first, both(), TokenJudged::CantWrite(vec![cpython()]))
-        .unwrap();
-    assert_eq!(marked, [cpython()]);
+    assert!(db.store.mark_read_only(first, &cpython()).unwrap());
+    let same = db.store.forget_read_only_of_other_tokens(first).unwrap();
     // The same kind with another expiry is another token.
     let renewed = fine_grained(2_100_000_000);
-    let changed = db
-        .store
-        .judge_read_only(renewed, both(), TokenJudged::Silent)
-        .unwrap();
-    assert_eq!(changed, [cpython()]);
-    assert_eq!(db.read_only_marks(), (false, false));
+    let forgot = db.store.forget_read_only_of_other_tokens(renewed).unwrap();
+    let kept = db.read_only_marks();
 
-    let marked = (db.store)
-        .judge_read_only(renewed, both(), TokenJudged::CantWrite(vec![gcmon()]))
-        .unwrap();
-    assert_eq!(marked, [gcmon()]);
-    let changed = db
+    assert!(db.store.mark_read_only(renewed, &gcmon()).unwrap());
+    let same_kind = db
         .store
-        .judge_read_only(GH, both(), TokenJudged::Silent)
+        .forget_read_only_of_other_kinds(TokenKind::FineGrained)
         .unwrap();
-    assert_eq!(changed, [gcmon()]);
+    let other_kind = db
+        .store
+        .forget_read_only_of_other_kinds(TokenKind::Classic)
+        .unwrap();
     assert_eq!(db.read_only_marks(), (false, false));
     db.close();
+
+    assert_eq!(same, []);
+    assert_eq!(forgot, [cpython()]);
+    assert_eq!(kept, (false, false));
+    assert_eq!(same_kind, []);
+    assert_eq!(other_kind, [gcmon()]);
 }
 
 #[test]
 fn a_mark_survives_a_restart() {
     let (path, folder) = temp_database("read-only-restart");
     let store = Store::open(&path).unwrap();
-    let judged = TokenJudged::CantWrite(vec![cpython()]);
-    assert_eq!(
-        store.judge_read_only(GH, both(), judged).unwrap(),
-        [cpython()]
-    );
+    assert!(store.mark_read_only(GH, &cpython()).unwrap());
     store.close();
 
     let db = OpenStore::of(path, folder);

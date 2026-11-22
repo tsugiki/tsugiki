@@ -18,7 +18,6 @@ use crate::read_only::{ReadOnly, TokenSeen};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::SettingsFiles;
 use crate::status::{ItemUnread, Status};
-use crate::store::TokenJudged;
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings, gcmon, listing, one_folder, temp_path};
 use crate::token::TokenKind;
@@ -96,7 +95,6 @@ impl Setup {
     }
 }
 
-/// The language servers' thread, with no server to start and no Lookup checkout.
 /// The status board's copy of `status`, with the gate open, and its writer.
 fn shown(status: Status) -> (LatestWriter<Shown>, LatestReader<Shown>) {
     latest::channel(Shown {
@@ -127,11 +125,7 @@ fn a_repository_s_state_says_whether_the_token_can_write_there_and_whether_githu
         kind: TokenKind::Classic,
         expires: None,
     };
-    let judged = TokenJudged::CantWrite(vec![gcmon()]);
-    let marked = (db.store)
-        .judge_read_only(token, vec![cpython(), gcmon()], judged)
-        .unwrap();
-    assert_eq!(marked, [gcmon()]);
+    assert!(db.store.mark_read_only(token, &gcmon()).unwrap());
 
     let writable = calls.repository_state(&cpython()).unwrap();
     let read_only = calls.repository_state(&gcmon()).unwrap();
@@ -150,6 +144,7 @@ fn a_repository_s_state_says_whether_the_token_can_write_there_and_whether_githu
     assert_eq!(offline, RepositoryState::new([], Connection::Offline));
 }
 
+/// The language servers' thread, with no server to start and no Lookup checkout.
 fn no_servers() -> Definitions {
     Definitions::start(Sources {
         checkout: Box::new(|_| None),

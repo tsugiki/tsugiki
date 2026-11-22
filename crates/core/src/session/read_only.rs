@@ -2,89 +2,140 @@
 //! with each answer, reads included (#398), and the news for the window when it changes a Repository's
 //! mark. The window hears of the connection from the status.
 
+use std::time::{Duration, Instant};
+
 use crate::error::{Error, ErrorKind};
 use crate::github::GitHub;
 use crate::github::in_flight::Asking;
 use crate::read_only::{TokenSeen, token_cant_write};
 use crate::repository::{RepositoryName, Visibility};
-use crate::status::{Change, Status, StatusBoard};
-use crate::store::{Store, TokenJudged};
-use crate::token::WriteScope;
+use crate::status::{Change, StatusBoard};
+use crate::store::Store;
+use crate::token::{TokenKind, WriteScope};
 
-/// What the GitHub thread last judged and told, so an answer that changes nothing asks nothing of GitHub or
-/// the store, and the window hears only what changed.
-#[derive(Default)]
+/// What the GitHub thread has judged and saved, so a turn that brings nothing new asks nothing of GitHub or
+/// the store, and the window hears only what changed. Each Repository is judged and saved on its own, so
+/// one whose visibility GitHub can't answer now holds up no other.
 pub(super) struct WriteJudge {
-    /// What the store keeps the marks from: the token, its scopes and the Repositories the settings list.
-    judged: Option<Judgement>,
+    /// How long Tsugiki waits to ask GitHub a Repository's visibility again after GitHub couldn't answer.
+    retry: Duration,
+    /// The kind of token whose marks alone the store keeps, once it has forgotten the others'.
+    kind: Option<TokenKind>,
+    /// The token, as GitHub's answers name it, whose marks alone the store keeps.
+    token: Option<TokenSeen>,
+    /// The scope the Repositories in `judged` were judged by.
+    scope: Option<WriteScope>,
+    /// The Repositories judged for `token` and `scope`, saved or not: a save that failed waits for another
+    /// token or scope rather than trying again each turn.
+    judged: Vec<RepositoryName>,
     /// Each Repository's visibility as GitHub answered this run, which a token that writes to public
     /// repositories alone needs.
     visibility: Vec<(RepositoryName, Visibility)>,
+    /// When Tsugiki may ask GitHub a visibility again, after a question it couldn't answer.
+    ask_after: Option<Instant>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct Judgement {
-    token: TokenSeen,
-    scopes: Option<WriteScope>,
-    listed: Vec<RepositoryName>,
+/// The parts of the GitHub thread the judge works with: the window to tell, the store of the marks, and
+/// GitHub, whose last answer names the token's scopes.
+pub(super) struct ThreadParts<'a> {
+    pub(super) board: &'a mut StatusBoard,
+    pub(super) store: &'a Store,
+    pub(super) github: &'a GitHub,
 }
 
 impl WriteJudge {
-    /// Follows what GitHub's last answer said of the token, after a turn of the GitHub thread, and gives
-    /// each of `listed`, the Repositories the settings list, whose mark changed, for [`tell`]. A question of
-    /// a Repository's visibility that GitHub can't answer now waits for the next turn.
-    pub(super) fn follow(
-        &mut self,
-        store: &Store,
-        github: &GitHub,
-        listed: Vec<RepositoryName>,
-    ) -> Result<Vec<RepositoryName>, Error> {
-        let Some(grant) = github.grant() else {
-            return Ok(vec![]);
-        };
-        let judgement = Judgement {
-            token: TokenSeen {
-                kind: github.token_kind(),
-                expires: grant.expires,
-            },
-            scopes: grant.scopes,
-            listed,
-        };
-        if self.judged.as_ref() == Some(&judgement) {
-            return Ok(vec![]);
+    /// A judge that asks GitHub a visibility again `retry` after GitHub couldn't answer one.
+    pub(super) const fn new(retry: Duration) -> Self {
+        Self {
+            retry,
+            kind: None,
+            token: None,
+            scope: None,
+            judged: Vec::new(),
+            visibility: Vec::new(),
+            ask_after: None,
         }
-        let judged = match judgement.scopes {
-            None => TokenJudged::Silent,
-            Some(scope) => {
-                let mut cant = Vec::new();
-                for repository in &judgement.listed {
-                    let Some(cant_write) = self.judge(github, scope, repository) else {
-                        return Ok(vec![]);
-                    };
-                    if cant_write {
-                        cant.push(repository.clone());
-                    }
-                }
-                TokenJudged::CantWrite(cant)
-            }
-        };
-        let changed = store.judge_read_only(judgement.token, judgement.listed.clone(), judged)?;
-        self.judged = Some(judgement);
-        Ok(changed)
     }
 
-    /// Whether a token whose scopes reach `scope` can't write to `repository`, asking GitHub its visibility
-    /// when only that can tell. Nothing, when GitHub can't answer now.
-    fn judge(
+    /// Follows what GitHub's last answer said of the token, after a turn of the GitHub thread, and judges
+    /// each of `listed`, the Repositories the settings list, not yet judged for that token and scope. The
+    /// marks of another token go first, whether or not GitHub can answer now. Each Repository whose mark
+    /// changed hears a change that names no item, so its screens read its state again.
+    pub(super) fn follow(&mut self, parts: ThreadParts<'_>, listed: &[RepositoryName]) {
+        let ThreadParts {
+            board,
+            store,
+            github,
+        } = parts;
+        let kind = github.token_kind();
+        if self.kind != Some(kind) {
+            self.kind = Some(kind);
+            tell(board, store.forget_read_only_of_other_kinds(kind));
+        }
+        let Some(grant) = github.grant() else {
+            return;
+        };
+        let token = TokenSeen {
+            kind,
+            expires: grant.expires,
+        };
+        if self.token != Some(token) {
+            self.token = Some(token);
+            self.judged.clear();
+            tell(board, store.forget_read_only_of_other_tokens(token));
+        }
+        // Only an OAuth or a classic token's scopes say what it may write. GitHub can name scopes, none
+        // among them, for a token of another kind, which scopes don't limit.
+        let scope = match kind {
+            TokenKind::OAuth | TokenKind::Classic => grant.scopes,
+            TokenKind::FineGrained | TokenKind::Other => None,
+        };
+        let Some(scope) = scope else {
+            return;
+        };
+        if self.scope != Some(scope) {
+            self.scope = Some(scope);
+            self.judged.clear();
+        }
+        for repository in listed {
+            if self.judged.iter().any(|judged| judged.is_same(repository)) {
+                continue;
+            }
+            let judged = match token_cant_write(scope, self.visibility_of(repository)) {
+                Some(cant_write) => Some(cant_write),
+                None if self.may_ask(board, github) => self.ask(github, scope, repository),
+                None => None,
+            };
+            let Some(cant_write) = judged else {
+                continue;
+            };
+            let saved = if cant_write {
+                store.mark_read_only(token, repository)
+            } else {
+                store.clear_read_only(repository)
+            };
+            let changed =
+                saved.map(|changed| changed.then(|| repository.clone()).into_iter().collect());
+            tell(board, changed);
+            self.judged.push(repository.clone());
+        }
+    }
+
+    /// Whether GitHub may be asked a visibility now: not offline, not while the rate limit holds every
+    /// request, and not for `retry` after a question GitHub couldn't answer.
+    fn may_ask(&self, board: &StatusBoard, github: &GitHub) -> bool {
+        let waiting = self.ask_after.is_some_and(|after| Instant::now() < after);
+        !waiting && !board.is_offline() && github.points_back().is_none()
+    }
+
+    /// Whether a token whose scopes reach `scope` can't write to `repository`, from the visibility GitHub
+    /// names. Nothing, when GitHub can't answer now.
+    fn ask(
         &mut self,
         github: &GitHub,
         scope: WriteScope,
         repository: &RepositoryName,
     ) -> Option<bool> {
-        let known = self.visibility_of(repository);
-        if let Some(judged) = token_cant_write(scope, known) {
-            return Some(judged);
-        }
         let asked = Asking::Visibility {
             repository: repository.clone(),
         };
@@ -92,7 +143,10 @@ impl WriteJudge {
             Ok(visibility) => visibility,
             // A public repository shows itself to any token, so one this token can't see is private.
             Err(problem) if matches!(problem.kind, ErrorKind::NotFound) => Visibility::Private,
-            Err(problem) if problem.kind.speaks_for_all_of_github() => return None,
+            Err(problem) if problem.kind.speaks_for_all_of_github() => {
+                self.ask_after = Some(Instant::now() + self.retry);
+                return None;
+            }
             // Asking again would fail the same way, so the token is judged able to write there, and a
             // write GitHub refuses says otherwise.
             Err(problem) => {
@@ -115,10 +169,11 @@ impl WriteJudge {
     }
 }
 
-/// Tells the window of each Repository whose mark `followed` changed, with a change that names no item, so
-/// its screens read its state again, or that the store failed.
-pub(super) fn tell(board: &mut StatusBoard, followed: Result<Vec<RepositoryName>, Error>) {
-    match followed {
+/// Tells the window of each Repository whose mark `saved` changed, with a change that names no item, so its
+/// screens read its state again. A save that failed goes to the log: the status says what GitHub answers,
+/// and a mark Tsugiki couldn't save takes nothing from what it shows.
+fn tell(board: &mut StatusBoard, saved: Result<Vec<RepositoryName>, Error>) {
+    match saved {
         Ok(changed) => {
             for repository in changed {
                 board.changed(&Change {
@@ -127,7 +182,10 @@ pub(super) fn tell(board: &mut StatusBoard, followed: Result<Vec<RepositoryName>
                 });
             }
         }
-        Err(problem) => board.set(Status::Problem { problem }),
+        Err(problem) => log::warn!(
+            "Tsugiki couldn't save which Repositories the token can't write to: {}",
+            problem.message
+        ),
     }
 }
 

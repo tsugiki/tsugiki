@@ -43,11 +43,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A token that can't write to a Repository makes it **Read-only**, which being offline doesn't
   ([sync.md](sync.md)). GitHub names a classic token's scopes in a header of each answer, reads included: a
   token without `repo` or `public_repo` can't write anywhere, and one with `public_repo` alone can't write
-  to a private Repository, which Tsugiki asks GitHub once a run. A fine-grained token sends no scopes. The
-  database keeps each Repository's mark with the token's kind and expiry, never the token, so the mark
-  outlasts a restart and goes when the token changes. Tsugiki sends no write to a Read-only Repository. Its
-  Issue and PR views say "Read-only: your token can't write to python/cpython" atop, and the status bar
-  says "Read-only" on the left, after who is signed in, and opens the Account page. The composer stays
+  to a private Repository, which Tsugiki asks GitHub once a run. Only an OAuth or a classic token's scopes
+  count: a fine-grained token sends none, and the scopes of another kind don't limit it. The database keeps
+  each Repository's mark with the token's kind and expiry, never the token, so the mark outlasts a restart
+  and goes as soon as Tsugiki sees another token. The Issue and PR views of a Read-only Repository say
+  "Read-only: your token can't write to python/cpython" atop, and the status bar says "Read-only" on the
+  left, after who is signed in.
+- Later tickets build on the mark. Settings › Account lists the Read-only Repositories, and the status bar's
+  Read-only opens it (#434). Tsugiki sends no write to a Read-only Repository (#914). The composer stays
   usable: it offers "Copy and open on GitHub" instead of sending, and Submit review is disabled with the
   reason. With a fine-grained token Tsugiki finds out on the first refused write, keeping the text that was
-  being sent.
+  being sent (#733).

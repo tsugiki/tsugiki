@@ -31,7 +31,7 @@ use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 
 use super::on_screen::OnScreen;
-use super::read_only::{self, WriteJudge};
+use super::read_only::{ThreadParts, WriteJudge};
 use super::{Intervals, stopped_checking, unstored};
 
 /// What the GitHub thread is asked. The session passes it each demand on GitHub, and the Mirror worker asks
@@ -515,9 +515,17 @@ pub(super) fn watch(
     };
     board.hour_points(github.hour_points());
     board.points_back(github.points_back());
-    let mut writes = WriteJudge::default();
-    read_only::tell(board, writes.follow(store, &github, refreshes.listed()));
     let intervals = refreshes.intervals;
+    // A visibility GitHub couldn't answer waits as long as the next status check, which shows it back.
+    let mut writes = WriteJudge::new(intervals.status);
+    writes.follow(
+        ThreadParts {
+            board,
+            store,
+            github: &github,
+        },
+        &refreshes.listed(),
+    );
     let mut due = Due::starting_at(Instant::now(), intervals);
     loop {
         match refreshes.next_turn(&github, &mut syncs, due) {
@@ -622,7 +630,14 @@ pub(super) fn watch(
         // Whichever turn asked GitHub, a sync, a read of what's on screen or the status, counts.
         board.hour_points(github.hour_points());
         board.points_back(github.points_back());
-        read_only::tell(board, writes.follow(store, &github, refreshes.listed()));
+        writes.follow(
+            ThreadParts {
+                board,
+                store,
+                github: &github,
+            },
+            &refreshes.listed(),
+        );
     }
 }
 

@@ -2872,6 +2872,8 @@ fn a_closing_a_pin_held_back_archives_its_issue_at_the_unpin_with_no_step_of_a_s
     let settings = filtering(&["a"]);
     drop(run(&mut refreshing(settings.clone()), &harness));
     let kept = archived(&harness);
+    // An `is:open` Filter drops the closed Issue, which the pin alone holds then.
+    stored_filter(&harness, "a", &[]);
 
     unpinning(&harness, &settings, 1);
 

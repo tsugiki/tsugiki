@@ -22,7 +22,7 @@ mod schema;
 mod sync_state;
 
 pub use activity::{
-    Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, PinId, PinTree, Seeing, Unpinning,
+    Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, PinId, PinTree, Seeing,
 };
 
 use pull_requests::FirstSave;
@@ -647,7 +647,7 @@ impl Store {
     }
 
     /// The Issues and PRs of `repository` a save found closed that the store held open, whose closing the
-    /// sync hasn't judged yet (#820).
+    /// sync hasn't judged yet (#820), but for a Pinned issue's, which waits for its unpin (#488).
     pub fn closings(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| activity::closings(connection, &repository))?;
@@ -747,16 +747,17 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Keeps `unpinning` (#488), put away `now` if it archives the Issue, as `activity::unpin` says.
+    /// Unpins Issue `number` (#488), and archives it, put away `now`, where its pin held back its closing,
+    /// as `activity::unpin` says.
     pub fn unpin(
         &self,
         repository: &RepositoryName,
-        unpinning: Unpinning,
+        number: u32,
         now: OffsetDateTime,
     ) -> Result<(), Error> {
         let repository = repository.clone();
         let unpin = move |connection: &mut Connection| {
-            activity::unpin(connection, &repository, &unpinning, now)
+            activity::unpin(connection, &repository, number, now)
         };
         let saved = self.call(unpin)?;
         saved.map_err(saying(CANT_WRITE))

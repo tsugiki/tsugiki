@@ -390,14 +390,11 @@ fn an_item_that_reopens_leaves_archived_and_its_closing_goes() {
         &store,
         issue_and_pr((IssueState::Closed, PrState::Closed), now),
     );
-    let judged = Judged {
-        archived: vec![
-            ItemKey::Issue { number: 1 },
-            ItemKey::PullRequest { number: 2 },
-        ],
-        closings: BTreeSet::new(),
-    };
-    store.archive_closed(&repository, judged, now).unwrap();
+    let keys = [
+        ItemKey::Issue { number: 1 },
+        ItemKey::PullRequest { number: 2 },
+    ];
+    archived_on_closing(&store, &keys, now);
     // A closing of Issue 1 the sync never judged.
     save_both(
         &store,
@@ -966,45 +963,148 @@ fn a_pin_on_a_number_the_store_knows_names_no_issue_does_nothing_and_saving_one_
     assert_eq!(dropped, BTreeSet::new());
 }
 
+/// Issue `number` of CPython as a save finds it closed.
+fn closed_issue(number: u32) -> IssueFacts {
+    IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue_facts(number)
+    }
+}
+
+/// The Archived items of CPython.
+fn archived_keys(store: &Store) -> Vec<ItemKey> {
+    let archived = store.work_facts(&cpython()).unwrap().activity.archived;
+    archived.into_keys().collect()
+}
+
 #[test]
-fn an_unpin_archives_as_judged_only_an_issue_whose_closing_the_store_still_keeps() {
+fn an_unpin_archives_a_closed_issue_whose_closing_its_pin_held_back() {
     let (path, _folder) = temp_database("activity-unpin-closed");
     let repository = cpython();
     let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
-    let issues = vec![issue_facts(1), issue_facts(2), issue_facts(3)];
+    let issues = vec![
+        issue_facts(1),
+        issue_facts(2),
+        issue_facts(3),
+        issue_facts(4),
+    ];
     store.save_issues(&repository, issues).unwrap();
-    for number in [1, 2] {
+    store
+        .save_issues(&repository, vec![closed_issue(5)])
+        .unwrap();
+    for number in [1, 2, 3, 5] {
         store.pin(&repository, number).unwrap();
     }
-    let closed = IssueFacts {
-        state: Some(IssueState::Closed),
-        ..issue_facts(1)
-    };
-    store.save_issues(&repository, vec![closed]).unwrap();
-    let kept = store.closings(&repository).unwrap();
-    let judging = |number| Unpinning {
-        number,
-        judged: Judged {
-            archived: vec![ItemKey::Issue { number }],
-            closings: BTreeSet::from([number]),
-        },
-    };
+    store
+        .save_issues(&repository, vec![closed_issue(1), closed_issue(4)])
+        .unwrap();
+    // The sync leaves a Pinned issue's closing for the unpin.
+    let to_judge = store.closings(&repository).unwrap();
 
-    for number in [1, 2, 3] {
-        store.unpin(&repository, judging(number), now).unwrap();
+    for number in [1, 2, 3, 5] {
+        store.unpin(&repository, number, now).unwrap();
     }
-    let archived = store.work_facts(&repository).unwrap().activity.archived;
+    let archived = archived_keys(&store);
     let closings = store.closings(&repository).unwrap();
 
     store.close();
-    // Issue 2 never closed, and nobody pinned Issue 3.
-    assert_eq!(kept, BTreeSet::from([1]));
-    assert_eq!(
-        archived.into_keys().collect::<Vec<_>>(),
-        [ItemKey::Issue { number: 1 }]
-    );
-    assert_eq!(closings, BTreeSet::new());
+    // Issues 2 and 3 stayed open, Tsugiki first saw Issue 5 closed, and nobody pinned Issue 4.
+    assert_eq!(to_judge, BTreeSet::from([4]));
+    assert_eq!(archived, [ItemKey::Issue { number: 1 }]);
+    assert_eq!(closings, BTreeSet::from([4]));
+}
+
+#[test]
+fn a_pin_made_while_the_sync_judges_a_closing_keeps_the_issue_out_of_archived_until_the_unpin() {
+    let (path, _folder) = temp_database("activity-pin-while-judging");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    store
+        .save_issues(&repository, vec![issue_facts(1)])
+        .unwrap();
+    store
+        .save_issues(&repository, vec![closed_issue(1)])
+        .unwrap();
+    // The sync judged the closing by facts it read before the pin.
+    let judged = Judged {
+        archived: vec![ItemKey::Issue { number: 1 }],
+        closings: BTreeSet::from([1]),
+    };
+    store.pin(&repository, 1).unwrap();
+    // A pin made again keeps the closing kept during the first.
+    store
+        .save_issues(&repository, vec![issue_facts(1)])
+        .unwrap();
+    store
+        .save_issues(&repository, vec![closed_issue(1)])
+        .unwrap();
+    store.pin(&repository, 1).unwrap();
+
+    store.archive_closed(&repository, judged, now).unwrap();
+    let pinned_through = archived_keys(&store);
+    store.unpin(&repository, 1, now).unwrap();
+    let unpinned = archived_keys(&store);
+
+    store.close();
+    assert_eq!(pinned_through, []);
+    assert_eq!(unpinned, [ItemKey::Issue { number: 1 }]);
+}
+
+#[test]
+fn the_sync_archives_nothing_whose_closing_an_unpin_used() {
+    let (path, _folder) = temp_database("activity-unpin-used");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    store
+        .save_issues(&repository, vec![issue_facts(1)])
+        .unwrap();
+    store.pin(&repository, 1).unwrap();
+    store
+        .save_issues(&repository, vec![closed_issue(1)])
+        .unwrap();
+    // The sync judged the closing by facts it read after the unpin dropped the pin.
+    let judged = Judged {
+        archived: vec![ItemKey::Issue { number: 1 }],
+        closings: BTreeSet::from([1]),
+    };
+    store.unpin(&repository, 1, now).unwrap();
+    store
+        .unarchive(&repository, ItemKey::Issue { number: 1 })
+        .unwrap();
+
+    store.archive_closed(&repository, judged, now).unwrap();
+    let archived = archived_keys(&store);
+
+    store.close();
+    assert_eq!(archived, []);
+}
+
+#[test]
+fn a_pin_forgets_a_closing_the_sync_hasnt_judged_so_the_unpin_leaves_the_issue_as_it_is() {
+    let (path, _folder) = temp_database("activity-pin-forgets-closing");
+    let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
+    let store = Store::open(&path).unwrap();
+    store
+        .save_issues(&repository, vec![issue_facts(1)])
+        .unwrap();
+    store
+        .save_issues(&repository, vec![closed_issue(1)])
+        .unwrap();
+    let before = store.closings(&repository).unwrap();
+
+    store.pin(&repository, 1).unwrap();
+    store.unpin(&repository, 1, now).unwrap();
+    let archived = archived_keys(&store);
+    let after = store.closings(&repository).unwrap();
+
+    store.close();
+    assert_eq!(before, BTreeSet::from([1]));
+    assert_eq!(archived, []);
+    assert_eq!(after, BTreeSet::new());
 }
 
 #[test]

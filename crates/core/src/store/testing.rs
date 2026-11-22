@@ -49,9 +49,16 @@ pub(super) fn migrated_database(name: &str) -> (PathBuf, TempPath) {
 
 /// Archives the items of CPython that `keys` name as a sync does when it sees them close, put away `now`.
 pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDateTime) {
+    let closed = keys.to_vec();
+    let keep = move |connection: &mut Connection| {
+        let closed_on =
+            |key| activity::follow_state(connection, &cpython(), key, activity::StateMove::Closed);
+        closed.into_iter().try_for_each(closed_on)
+    };
+    store.call(keep).unwrap().unwrap();
     let judged = Judged {
         archived: keys.to_vec(),
-        closings: BTreeSet::new(),
+        closings: keys.iter().map(|key| key.number()).collect(),
     };
     store.archive_closed(&cpython(), judged, now).unwrap();
 }
@@ -71,15 +78,10 @@ pub(crate) fn pins_to_read(store: &Store, repository: &RepositoryName) -> BTreeM
     to_read.collect()
 }
 
-/// Unpins Issue `number` of `repository`, where the store keeps no closing of it (#488).
+/// Unpins Issue `number` of `repository` (#488).
 pub(crate) fn unpin(store: &Store, repository: &RepositoryName, number: u32) {
-    let judged = Judged {
-        archived: Vec::new(),
-        closings: BTreeSet::new(),
-    };
-    let unpinning = Unpinning { number, judged };
     store
-        .unpin(repository, unpinning, OffsetDateTime::now_utc())
+        .unpin(repository, number, OffsetDateTime::now_utc())
         .unwrap();
 }
 

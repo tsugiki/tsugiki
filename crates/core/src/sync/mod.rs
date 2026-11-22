@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
-use crate::facts::WorkFacts;
 use crate::facts::issues::ListedPr;
 use crate::facts::pull_requests::{NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
@@ -283,7 +282,8 @@ impl Step {
 }
 
 /// Archives each item of `repository` whose closing `step` saved (#820), under its `settings`, as
-/// `archived_by_closing` judges it, and forgets the closings. Only a step that saved can have closed one.
+/// `archived_by_closing` judges it, and forgets the closings. Only a step that saved can have closed one. A
+/// Pinned issue's closing stays for its unpin (#488).
 /// A failure leaves the closings to the next step that saves.
 fn archive_closings(
     store: &Store,
@@ -298,22 +298,9 @@ fn archive_closings(
         return Ok(());
     }
     let facts = store.work_facts(repository)?;
-    let judged = judge_closings(facts, settings, closings);
-    store.archive_closed(repository, judged, OffsetDateTime::now_utc())
-}
-
-/// The judgment of `closings` by `facts`, under the Repository's `settings` (#820): the items their closing
-/// archives, as `archived_by_closing` judges them, and the closings judged. The closing of a Pinned issue
-/// stays unjudged, for its unpin to judge (#488).
-pub(crate) fn judge_closings(
-    facts: WorkFacts,
-    settings: &RepositorySettings,
-    mut closings: BTreeSet<u32>,
-) -> Judged {
-    let pinned = facts.activity.pinned.clone();
     let archived = archived_by_closing(facts, settings, &closings);
-    closings.retain(|number| !pinned.contains(number));
-    Judged { archived, closings }
+    let judged = Judged { archived, closings };
+    store.archive_closed(repository, judged, OffsetDateTime::now_utc())
 }
 
 /// Brings back to the Inbox each Archived Issue of `repository` that a PR `step` saved opened on (#823),

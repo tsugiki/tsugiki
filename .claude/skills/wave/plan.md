@@ -8,6 +8,11 @@ each ticket's open blockers with the `gh api .../dependencies/blocked_by` comman
 step 1. Note each ticket blocked from outside the milestone: no wave can start it, so it stays out of the
 plan.
 
+Read each ticket's body for state that another open ticket adds. Where the tracker doesn't name that ticket
+as a blocker, add it, since the lanes, the waves and `just tree` see only blockers:
+`gh api -X POST repos/tsugiki/tsugiki/issues/<n>/dependencies/blocked_by -F issue_id=<id>`, where `<id>` is
+the blocker's `gh api repos/tsugiki/tsugiki/issues/<m> --jq .id`, not its number.
+
 ### 2. List the files each ticket edits
 
 Read each ticket, its `area:*` files in `docs/devel/` and `docs/architecture.md`, and name the files you
@@ -28,9 +33,6 @@ features: two features that both edit one store are one lane.
 - Three tickets per wave, each from a different lane.
 - No ticket in the same wave as a ticket it depends on. A chain inside one wave takes about as long as the
   chain in a row, and the squash merge makes the second branch conflict in every file both touched.
-- Read each ticket's acceptance criteria for state that another ticket of the wave adds, and count it as a
-  dependency though the tracker names no blocker, since the build can't meet those criteria before the
-  other ticket merges.
 - Pair a big ticket, such as a new crate or a language server, with two that don't wait on it. The wave
   ends at its slowest PR.
 - Put the ticket that edits the most shared files in the earliest wave it can go in, so later tickets build

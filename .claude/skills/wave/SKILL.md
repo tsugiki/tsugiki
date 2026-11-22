@@ -44,7 +44,7 @@ and `gh api -X PATCH repos/tsugiki/tsugiki/milestones/<number> -F description=@<
 ### 1. Check the wave
 
 Take the tickets from wave N's row in `## Waves`. For each, check that it's open and list its open blockers
-with `just tree <n>`.
+with `just tree --up <n>`.
 
 A ticket blocked by a ticket outside the wave can't start. Offer the user a ready ticket from a later wave
 for its **slot**, one that shares no lane with the other siblings. A ticket blocked by a sibling starts on a

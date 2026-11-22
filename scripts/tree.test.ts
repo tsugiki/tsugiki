@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type TreeTicket, ticketsFromPages, treeLines } from "./tree.ts";
+import { blockerLines, type TreeTicket, ticketsFromPages, treeLines } from "./tree.ts";
 
 function ticket(number: number, openBlockers: number[] = [], more: Partial<TreeTicket> = {}): TreeTicket {
   const title = `Ticket ${String(number)}`;
@@ -135,6 +135,162 @@ describe("treeLines", () => {
 
   it("prints nothing when no ticket is open", () => {
     expect(treeLines([], [])).toEqual([]);
+  });
+});
+
+describe("blockerLines", () => {
+  it("draws a chain of blockers upward, each ticket's open blockers under it", () => {
+    const tickets = [ticket(1, [], { milestone: "0.3.3" }), ticket(2, [1]), ticket(3, [2])];
+    expect(blockerLines(tickets, [3])).toEqual([
+      "#3 Ticket 3 (3)",
+      "└─ #2 Ticket 2 (2)",
+      "   └─ #1 [0.3.3] Ticket 1 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("prints a blocker of two tickets once, on the longest chain from the ticket named", () => {
+    // 2 blocks 4 and 3, and 3 blocks 4, so 2 goes under 3 and 4 names it.
+    expect(blockerLines([ticket(1), ticket(2, [1]), ticket(3, [2]), ticket(4, [2, 3])], [4])).toEqual([
+      "#4 Ticket 4 (4)  [also #2]",
+      "└─ #3 Ticket 3 (3)",
+      "   └─ #2 Ticket 2 (2)",
+      "      └─ #1 Ticket 1 (1)",
+      "max depth: 4",
+    ]);
+  });
+
+  it("puts a blocker under the lower number of two tickets as far from the one named", () => {
+    expect(blockerLines([ticket(1), ticket(2, [1]), ticket(3, [1]), ticket(4, [3, 2])], [4])).toEqual([
+      "#4 Ticket 4 (3)",
+      "├─ #2 Ticket 2 (2)",
+      "│  └─ #1 Ticket 1 (1)",
+      "└─ #3 Ticket 3 (2)  [also #1]",
+      "max depth: 3",
+    ]);
+  });
+
+  it("orders a ticket's blockers by depth, then number", () => {
+    const tickets = [ticket(5, [2, 4, 1]), ticket(2, [3]), ticket(3), ticket(4), ticket(1)];
+    expect(blockerLines(tickets, [5])).toEqual([
+      "#5 Ticket 5 (3)",
+      "├─ #1 Ticket 1 (1)",
+      "├─ #4 Ticket 4 (1)",
+      "└─ #2 Ticket 2 (2)",
+      "   └─ #3 Ticket 3 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("prints a ticket with no open blocker alone", () => {
+    expect(blockerLines([ticket(1), ticket(2, [1])], [1])).toEqual(["#1 Ticket 1 (1)", "max depth: 1"]);
+  });
+
+  it("stars a blocker GitHub didn't list and one in another repository", () => {
+    const tickets = [ticket(2, [50], { blockersElsewhere: ["other/repo#3"] })];
+    expect(blockerLines(tickets, [2])).toEqual([
+      "#2 Ticket 2 (2)  [also #50*, other/repo#3*]",
+      "max depth: 2",
+    ]);
+  });
+
+  it("draws one tree per ticket named, each with all of its blockers, once per number named", () => {
+    expect(blockerLines([ticket(1), ticket(2, [1])], [2, 1, 2])).toEqual([
+      "#2 Ticket 2 (2)",
+      "└─ #1 Ticket 1 (1)",
+      "#1 Ticket 1 (1)",
+      "max depth: 2",
+    ]);
+  });
+
+  it("draws a blocker of two tickets named in each tree", () => {
+    const tickets = [ticket(1, [2, 3]), ticket(2, [4]), ticket(3, [4]), ticket(4)];
+    expect(blockerLines(tickets, [1, 2])).toEqual([
+      "#1 Ticket 1 (3)",
+      "├─ #2 Ticket 2 (2)",
+      "│  └─ #4 Ticket 4 (1)",
+      "└─ #3 Ticket 3 (2)  [also #4]",
+      "#2 Ticket 2 (2)",
+      "└─ #4 Ticket 4 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("walks a ticket in a cycle from itself, though another ticket named reached it first", () => {
+    // 9 is blocked by 1; 1 and 2 block each other, and 5 blocks 1.
+    const tickets = [ticket(9, [1]), ticket(1, [2, 5]), ticket(2, [1]), ticket(5)];
+    expect(blockerLines(tickets, [9, 2])).toEqual([
+      "#9 Ticket 9 (3)",
+      "└─ #1 Ticket 1 (2)",
+      "   ├─ #2 Ticket 2 (1)  [also #1]",
+      "   └─ #5 Ticket 5 (1)",
+      "#2 Ticket 2 (3)",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   └─ #5 Ticket 5 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("keeps a blocker on its longer chain when a shorter one reaches it later", () => {
+    // 1 blocks 2, one step from 10, and 4, three steps away through 3; the walk meets 4's chain first.
+    const tickets = [ticket(10, [2, 3]), ticket(3, [4]), ticket(4, [1]), ticket(2, [1]), ticket(1)];
+    expect(blockerLines(tickets, [10])).toEqual([
+      "#10 Ticket 10 (4)",
+      "├─ #2 Ticket 2 (2)  [also #1]",
+      "└─ #3 Ticket 3 (3)",
+      "   └─ #4 Ticket 4 (2)",
+      "      └─ #1 Ticket 1 (1)",
+      "max depth: 4",
+    ]);
+  });
+
+  it("prints nothing when no ticket is named", () => {
+    expect(blockerLines([ticket(1)], [])).toEqual([]);
+  });
+
+  it("breaks a tie by number, though one of the two tickets runs deeper", () => {
+    // 1 blocks 2 and 3, both one step from 10, and 3 runs deeper through 5 and 6.
+    const tickets = [
+      ticket(10, [2, 3]),
+      ticket(2, [1]),
+      ticket(3, [1, 5]),
+      ticket(5, [6]),
+      ticket(6),
+      ticket(1),
+    ];
+    expect(blockerLines(tickets, [10])).toEqual([
+      "#10 Ticket 10 (4)",
+      "├─ #2 Ticket 2 (2)",
+      "│  └─ #1 Ticket 1 (1)",
+      "└─ #3 Ticket 3 (3)  [also #1]",
+      "   └─ #5 Ticket 5 (2)",
+      "      └─ #6 Ticket 6 (1)",
+      "max depth: 4",
+    ]);
+  });
+
+  it("walks up from the ticket named, dropping the blocker that closes a cycle and still naming it", () => {
+    const tickets = [ticket(1, [2]), ticket(2, [1])];
+    expect(blockerLines(tickets, [1])).toEqual([
+      "#1 Ticket 1 (2)",
+      "└─ #2 Ticket 2 (1)  [also #1]",
+      "max depth: 2",
+    ]);
+    expect(blockerLines(tickets, [2])).toEqual([
+      "#2 Ticket 2 (2)",
+      "└─ #1 Ticket 1 (1)  [also #2]",
+      "max depth: 2",
+    ]);
+  });
+
+  it("keeps the blockers of a ticket in a cycle, whichever ticket of it is named", () => {
+    // 1 and 2 block each other, and 5 blocks 1. treeLines' walk from the lowest number drops 2 → 1.
+    expect(blockerLines([ticket(1, [2, 5]), ticket(2, [1]), ticket(5)], [2])).toEqual([
+      "#2 Ticket 2 (3)",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   └─ #5 Ticket 5 (1)",
+      "max depth: 3",
+    ]);
   });
 });
 

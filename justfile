@@ -52,7 +52,7 @@ release:
 next:
     node scripts/next.ts
 
-# Draw the open tickets below each ticket named as a tree of blockers, or every open ticket with none named
+# Draw the open tickets below each ticket named as a tree of blockers (all with none named), or --up above
 tree *tickets:
     node scripts/print-tree.ts {{tickets}}
 

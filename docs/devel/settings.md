@@ -80,12 +80,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   search change in place. A Filter Add filter added is written with its name and search alone, so it is off
   the Workbench. A Repository the file holds without `filters` gets the Filters it reads as written out
   first, as the switch writes them. No Filters left writes `filters = []`, since a Repository without the
-  key reads as having the starters, and blocks put in place of a `filters = []` take the comment above it.
-  A second Filter with the search of one before it, which Tsugiki never read, goes. Apply refuses two
-  Filters with one search, naming it, and Filters a hand edit changed while the dialog was open, naming the
-  Repository, and saves nothing then. The Sidebar shows the Filters once Apply has saved them, as after a
-  hand edit, and a new search loads its items as one added by hand does; Cancel leaves the file and the
-  Sidebar as they were. The page has no "On the Workbench" switch yet (#1017).
+  key reads as having the starters, and the comments above the first block go above it; blocks put in place
+  of a `filters = []` take the comments around and inside it. Apply refuses, naming the cause, and saves
+  nothing then: two Filters with one search, on the page or in the file, as the page shows only the first; a
+  Repository the file names twice in two cases; and Filters whose names and searches a hand edit changed
+  while the dialog was open. Filters the file already holds as Apply would write them, as after an Apply
+  whose answer the window missed, stay as they are. The Sidebar shows the Filters once Apply has saved
+  them, as after a hand edit, and a new search loads its items as one added by hand does; Cancel leaves the
+  file and the Sidebar as they were. The page has no "On the Workbench" switch yet (#1017).
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps
   ([keyboard.md](keyboard.md)).
 - Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle

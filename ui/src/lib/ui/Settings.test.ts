@@ -1385,7 +1385,7 @@ describe("Settings › a Repository's Filters", () => {
     // On another page too, the footer says why Apply is off.
     await go("General");
     const why = "Give each Filter of python/cpython a name and a search.";
-    expect(within(dialog()).getByText(why)).toBeTruthy();
+    expect(within(dialog()).getByRole("status").textContent).toBe(why);
     expect(button("Apply").hasAttribute("disabled")).toBe(true);
     await go("python/cpython");
     await fireEvent.input(field(3, "Search"), { target: { value: "is:open" } });

@@ -1935,37 +1935,61 @@ impl TomlEdit<'_, Settings> {
     }
 
     /// Makes the Filters of the Repository `change` names the ones it lists, as `put_filters` says. It
-    /// refuses two Filters with one search, as the settings would read only the first, Filters the file no
-    /// longer says as the page read them, which a hand edit made while the dialog was open changed, and a
-    /// Repository the file doesn't hold.
+    /// refuses two Filters with one search, in the change or in the file, as the settings read only the
+    /// first, a Repository the file names twice in two cases, and a Repository the file doesn't hold. It
+    /// refuses Filters whose names and searches, table by table, are neither those the page read nor those
+    /// it leaves: a hand edit made while the dialog was open changed them. Filters that say what the page
+    /// leaves already, as after an Apply whose answer the window missed, it leaves be.
     fn put_filters(&mut self, change: &RepositoryFilters) -> Result<(), Error> {
         let filters = &change.filters;
-        let repeated = filters.iter().enumerate().find_map(|(at, filter)| {
-            (filters.iter().take(at))
-                .any(|earlier| earlier.query == filter.query)
-                .then_some(&filter.query)
-        });
-        if let Some(query) = repeated {
-            let message = format!(
-                "Two Filters of {} search {}: give each a search of its own.",
-                change.repository,
-                query.as_str()
-            );
+        let name = &change.repository;
+        let said = |name: &FilterName, query: &FilterQuery| {
+            (name.as_str().to_owned(), query.as_str().to_owned())
+        };
+        let left: Vec<(String, String)> = (filters.iter())
+            .map(|filter| said(&filter.name, &filter.query))
+            .collect();
+        if let Some(query) = repeated_search(&left) {
+            let message =
+                format!("Two Filters of {name} search {query}: give each a search of its own.");
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
-        let held =
-            (self.values.repositories.iter()).find(|one| one.name.is_same(&change.repository));
-        if let Some(held) = held
-            && held.filters != change.read
+        // The settings take a name in any case as one Repository, and the file the first that names it.
+        let first = (self.values.repositories.iter()).find(|one| one.name.is_same(name));
+        if let Some(first) = first
+            && first.name.to_string() != name.to_string()
         {
             let message = format!(
-                "The Filters of {} changed in settings.toml while Settings was open. Cancel, then open \
-                 Settings again to edit them.",
-                change.repository
+                "settings.toml names {name} twice, first as {}, and Settings saves only the Filters of \
+                 the first. Take one out of the file, then open Settings again.",
+                first.name
             );
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
-        put_filters(self.repository_with_filters(&change.repository)?, filters);
+        let repository = self.repository_with_filters(name)?;
+        let in_file = names_and_searches(repository.get_mut(FILTERS));
+        // The page shows only the first, so writing its Filters would take out one it never showed.
+        if let Some(query) = repeated_search(&in_file) {
+            let message = format!(
+                "settings.toml holds two Filters of {name} that search {query}, and Settings shows only \
+                 the first. Take one out of the file, then open Settings again."
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        if in_file == left {
+            return Ok(());
+        }
+        let read: Vec<(String, String)> = (change.read.iter())
+            .map(|filter| said(&filter.name, &filter.query))
+            .collect();
+        if in_file != read {
+            let message = format!(
+                "The Filters of {name} changed in settings.toml while Settings was open. Cancel, then open \
+                 Settings again to edit them."
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        put_filters(repository, filters);
         Ok(())
     }
 }
@@ -2016,54 +2040,108 @@ fn searches(filter: &dyn TableLike, query: &FilterQuery) -> bool {
 /// Makes the `filters` of `repository` the Filters `edits` lists, in their order, in the form the file
 /// already uses for them (#535). A Filter the page read keeps its table, with each key and comment the user
 /// wrote, and its name and search change in place. One Add filter added gets a table with its name and
-/// search. A table no Filter keeps goes, and with it a second Filter with the search of one before it, which
-/// the settings never read.
+/// search. A table no Filter keeps goes.
 ///
 /// An inline list the user wrote stays inline. Otherwise the Filters take blocks of their own, as `append`
 /// writes them, which a Repository written inline writes as an inline list. With no Filters left it writes
-/// `filters = []`, as a Repository without the key reads as having the starters. Blocks put in place of a
-/// `filters = []` take the comment above it.
+/// `filters = []`, as a Repository without the key reads as having the starters. Going from blocks to
+/// `filters = []` or back, the comments on the form that goes move to the form that comes, as
+/// `comment_lines` gathers them and `put_comments` writes them.
 fn put_filters(repository: &mut dyn TableLike, edits: &[EditedFilter]) {
     match repository.get_mut(FILTERS) {
         Some(Item::Value(Value::Array(list))) if !list.is_empty() => {
             put_inline_filters(list, edits);
         }
         Some(blocks) if blocks.is_array_of_tables() => {
-            let old = mem::take(blocks).into_array_of_tables().ok();
-            let filters = block_filters(old.into_iter().flatten().collect(), edits);
-            let filters = if filters.is_empty() {
-                Item::Value(Value::Array(Array::new()))
-            } else {
-                Item::ArrayOfTables(filters)
-            };
+            let old: Vec<Table> = (mem::take(blocks).into_array_of_tables().ok())
+                .into_iter()
+                .flatten()
+                .collect();
+            // Above the first block, where a comment on the list goes; one above a later block is its own.
+            let first = old.first().map(Table::decor);
+            let comments =
+                comment_lines([first.and_then(Decor::prefix), first.and_then(Decor::suffix)]);
+            let filters = block_filters(old, edits);
             // Over the key, which keeps its place among the table's keys and gets the spacing of one.
-            #[expect(
-                unused_results,
-                reason = "the blocks it gives back were taken out above"
-            )]
-            repository.insert(FILTERS, filters);
-        }
-        // `filters = []`, which stays as the user wrote it while no Filter comes.
-        _ => {
-            let filters = block_filters(Vec::new(), edits);
-            if !filters.is_empty() {
-                let comment = (repository.key(FILTERS))
-                    .and_then(|key| key.leaf_decor().prefix())
-                    .and_then(RawString::as_str)
-                    .filter(|prefix| prefix.contains('#'))
-                    .map(|prefix| format!("\n{}", prefix.trim_start()));
-                // Not in place: `insert` writes the blocks as an inline list in a Repository written inline.
-                #[expect(unused_results, reason = "the list it replaces held no Filter")]
-                repository.insert(FILTERS, Item::ArrayOfTables(filters));
-                let first = (repository.get_mut(FILTERS))
-                    .and_then(Item::as_array_of_tables_mut)
-                    .and_then(|blocks| blocks.get_mut(0));
-                if let (Some(first), Some(comment)) = (first, comment) {
-                    first.decor_mut().set_prefix(comment);
+            if filters.is_empty() {
+                #[expect(unused_results, reason = "the blocks were taken out above")]
+                repository.insert(FILTERS, Item::Value(Value::Array(Array::new())));
+                if let Some(mut key) = repository.key_mut(FILTERS) {
+                    put_comments(key.leaf_decor_mut(), "", &comments);
                 }
+            } else {
+                #[expect(unused_results, reason = "the blocks were taken out above")]
+                repository.insert(FILTERS, Item::ArrayOfTables(filters));
+            }
+        }
+        // `filters = []`. With no Filter to write it already says what Apply leaves, so
+        // `TomlEdit::put_filters` stops before it gets here, and the list stays as the user wrote it.
+        _ => {
+            debug_assert!(!edits.is_empty(), "`filters = []` already holds no Filter");
+            let key = repository.key(FILTERS).map(Key::leaf_decor);
+            let list = repository.get(FILTERS).and_then(Item::as_array);
+            let comments = comment_lines([
+                key.and_then(Decor::prefix),
+                key.and_then(Decor::suffix),
+                list.map(Array::decor).and_then(Decor::prefix),
+                list.map(Array::trailing),
+                list.map(Array::decor).and_then(Decor::suffix),
+            ]);
+            let filters = block_filters(Vec::new(), edits);
+            // Over the key: `insert` writes the blocks as an inline list in a Repository written inline.
+            #[expect(unused_results, reason = "the list it replaces held no Filter")]
+            repository.insert(FILTERS, Item::ArrayOfTables(filters));
+            let first = (repository.get_mut(FILTERS))
+                .and_then(Item::as_array_of_tables_mut)
+                .and_then(|blocks| blocks.get_mut(0));
+            if let Some(first) = first {
+                put_comments(first.decor_mut(), "\n", &comments);
             }
         }
     }
+}
+
+/// Each comment line of `spaces`, the space around and inside what the form that goes writes, in the file's
+/// order, each without the space before it.
+fn comment_lines<'a>(spaces: impl IntoIterator<Item = Option<&'a RawString>>) -> Vec<String> {
+    (spaces.into_iter())
+        .flatten()
+        .filter_map(RawString::as_str)
+        .flat_map(str::lines)
+        .map(str::trim)
+        .filter(|line| line.starts_with('#'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Writes `comments` as the lines above what `decor` dresses, after `before`, unless there are none.
+fn put_comments(decor: &mut Decor, before: &str, comments: &[String]) {
+    if !comments.is_empty() {
+        let lines = comments
+            .iter()
+            .fold(before.to_owned(), |text, line| text + line + "\n");
+        decor.set_prefix(lines);
+    }
+}
+
+/// The first search of `filters`, each a name and a search, that one before it has, if any.
+fn repeated_search(filters: &[(String, String)]) -> Option<&str> {
+    filters.iter().enumerate().find_map(|(at, (_, query))| {
+        (filters.iter().take(at))
+            .any(|(_, earlier)| earlier == query)
+            .then_some(query.as_str())
+    })
+}
+
+/// The name and the search of each Filter of `filters`, in their order, as the file writes them.
+fn names_and_searches(filters: Option<&mut Item>) -> Vec<(String, String)> {
+    let text = |filter: &dyn TableLike, key: &str| {
+        let text = filter.get(key).and_then(Item::as_str).unwrap_or_default();
+        text.trim().to_owned()
+    };
+    (filters.map(tables_of).unwrap_or_default().into_iter())
+        .map(|filter| (text(&*filter, NAME), text(&*filter, QUERY)))
+        .collect()
 }
 
 /// The Filters `edits` lists as blocks, each keeping the block of `blocks` it was, if any. The blocks take

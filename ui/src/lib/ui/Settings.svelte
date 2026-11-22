@@ -150,9 +150,9 @@
   </div>
   <footer>
     <!-- The reason Apply is off comes first: it holds now, and a problem from the last try waits behind
-         it. -->
+         it. A screen reader says the reason when it comes, as it says the problem. -->
     {#if dialog.unsaveable !== undefined}
-      <p>{dialog.unsaveable}</p>
+      <p role="status">{dialog.unsaveable}</p>
     {:else if dialog.problem !== undefined}
       <p role="alert">{dialog.problem}</p>
     {/if}

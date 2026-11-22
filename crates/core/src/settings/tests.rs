@@ -1523,11 +1523,11 @@ fn apply_with_no_filters_left_says_so_and_adding_one_to_none_writes_a_block() {
 
     assert_eq!(
         emptied,
-        "[[repositories]]\nname = \"a/b\"\nfilters = []\n\n[appearance]\ntheme = \"system\"\n"
+        "[[repositories]]\nname = \"a/b\"\n# Mine.\nfilters = []\n\n[appearance]\ntheme = \"system\"\n"
     );
     assert_eq!(
         added,
-        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Mine\"\n\
+        "[[repositories]]\nname = \"a/b\"\n\n# Mine.\n[[repositories.filters]]\nname = \"Mine\"\n\
          query = \"author:@me\"\n\n[appearance]\ntheme = \"system\"\n"
     );
 }
@@ -1671,26 +1671,45 @@ fn apply_with_a_repository_written_inline_and_no_filters_left_writes_them_inline
 }
 
 #[test]
-fn apply_drops_a_second_filter_with_a_search_the_first_has_which_the_settings_never_read() {
-    let before = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
+fn apply_refuses_filters_settings_shows_only_some_of_and_saves_nothing() {
+    let second = "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
                   query = \"label:bug\"\n\n[[repositories.filters]]\nname = \"Bugs again\"\n\
                   query = \"label:bug\"\non_workbench = true\n";
-    let (mut files, folders, _root) = settings_saying("filters-second", before);
-
-    files
-        .apply(filters_of(
-            &files.loaded().settings,
+    let twice =
+        "[[repositories]]\nname = \"a/b\"\nfilters = []\n\n[[repositories]]\nname = \"A/B\"\n";
+    let cases = [
+        (
+            "filters-second",
+            second,
             "a/b",
-            vec![edited("Bugs", "label:bug is:open", Some("label:bug"))],
-        ))
-        .unwrap();
-    let after = fs::read_to_string(folders.settings_file()).unwrap();
+            "settings.toml holds two Filters of a/b that search label:bug, and Settings shows only the \
+             first. Take one out of the file, then open Settings again.",
+        ),
+        (
+            "filters-twice",
+            twice,
+            "A/B",
+            "settings.toml names A/B twice, first as a/b, and Settings saves only the Filters of the \
+             first. Take one out of the file, then open Settings again.",
+        ),
+    ];
 
-    assert_eq!(
-        after,
-        "[[repositories]]\nname = \"a/b\"\n\n[[repositories.filters]]\nname = \"Bugs\"\n\
-         query = \"label:bug is:open\"\n"
-    );
+    for (folder, before, name, message) in cases {
+        let (mut files, folders, _root) = settings_saying(folder, before);
+        let refused = files
+            .apply(filters_of(
+                &files.loaded().settings,
+                name,
+                vec![edited("Bugs", "label:bug is:open", Some("label:bug"))],
+            ))
+            .unwrap_err();
+
+        assert_eq!(
+            (refused.kind, refused.message.as_str()),
+            (ErrorKind::Conflict, message)
+        );
+        assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+    }
 }
 
 #[test]
@@ -1739,29 +1758,95 @@ filters = [
 }
 
 #[test]
-fn apply_keeps_a_filters_list_left_empty_as_written_and_puts_its_comment_above_the_first_block() {
-    let before =
-        "[[repositories]]\nname = \"a/b\"\n# None for now.\nfilters = []\nread_only = true\n";
+fn apply_keeps_a_filters_list_left_empty_as_written_and_moves_its_comments_to_the_blocks_and_back()
+{
+    let before = "[[repositories]]\nname = \"a/b\"\n# None for now.\nfilters = [\n  # Not even Mine.\n] \
+                  # Yet.\nread_only = true\n";
     let (mut files, folders, _root) = settings_saying("filters-empty-comment", before);
+    let mine = || vec![edited("Mine", "author:@me", None)];
 
     files
         .apply(filters_of(&files.loaded().settings, "a/b", Vec::new()))
         .unwrap();
     let left = fs::read_to_string(folders.settings_file()).unwrap();
     files
-        .apply(filters_of(
-            &files.loaded().settings,
-            "a/b",
-            vec![edited("Mine", "author:@me", None)],
-        ))
+        .apply(filters_of(&files.loaded().settings, "a/b", mine()))
         .unwrap();
     let added = fs::read_to_string(folders.settings_file()).unwrap();
+    files
+        .apply(filters_of(&files.loaded().settings, "a/b", Vec::new()))
+        .unwrap();
+    let deleted = fs::read_to_string(folders.settings_file()).unwrap();
+    files
+        .apply(filters_of(&files.loaded().settings, "a/b", mine()))
+        .unwrap();
+    let added_again = fs::read_to_string(folders.settings_file()).unwrap();
 
     assert_eq!(left, before);
     assert_eq!(
         added,
-        "[[repositories]]\nname = \"a/b\"\nread_only = true\n\n# None for now.\n[[repositories.filters]]\n\
-         name = \"Mine\"\nquery = \"author:@me\"\n"
+        "[[repositories]]\nname = \"a/b\"\nread_only = true\n\n# None for now.\n# Not even Mine.\n# Yet.\n\
+         [[repositories.filters]]\nname = \"Mine\"\nquery = \"author:@me\"\n"
+    );
+    assert_eq!(
+        deleted,
+        "[[repositories]]\nname = \"a/b\"\nread_only = true\n# None for now.\n# Not even Mine.\n# Yet.\n\
+         filters = []\n"
+    );
+    assert_eq!(added_again, added);
+}
+
+#[test]
+fn apply_again_after_its_answer_was_lost_leaves_the_filters_it_saved_be() {
+    let (mut files, folders, _root) = settings_saying("filters-again", TWO_FILTERS);
+    let read = files.loaded().settings.clone();
+    let change = || {
+        filters_of(
+            &read,
+            "a/b",
+            vec![
+                edited("Docs", "label:docs", Some("label:docs")),
+                edited("Bug reports", "label:bug is:open", Some("label:bug")),
+            ],
+        )
+    };
+
+    files.apply(change()).unwrap();
+    let saved = fs::read_to_string(folders.settings_file()).unwrap();
+    files.apply(change()).unwrap();
+
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), saved);
+    assert_eq!(
+        read_filters(&files),
+        [
+            ("Docs".to_owned(), "label:docs".to_owned(), false),
+            (
+                "Bug reports".to_owned(),
+                "label:bug is:open".to_owned(),
+                true
+            ),
+        ]
+    );
+}
+
+#[test]
+fn apply_keeps_a_switch_turned_by_hand_while_the_dialog_was_open() {
+    let (mut files, folders, _root) = settings_saying("filters-hand-switch", TWO_FILTERS);
+    let read = files.loaded().settings.clone();
+    let switched = TWO_FILTERS.replace("on_workbench = true", "on_workbench = false");
+    fs::write(folders.settings_file(), &switched).unwrap();
+
+    files
+        .apply(filters_of(
+            &read,
+            "a/b",
+            vec![edited("Bug reports", "label:bug", Some("label:bug"))],
+        ))
+        .unwrap();
+
+    assert_eq!(
+        read_filters(&files),
+        [("Bug reports".to_owned(), "label:bug".to_owned(), false)]
     );
 }
 
@@ -1775,7 +1860,7 @@ fn apply_refuses_filters_a_hand_edit_changed_while_the_dialog_was_open_and_saves
             "[appearance]",
             "[[repositories.filters]]\nname = \"Mine\"\nquery = \"author:@me\"\n\n[appearance]",
         ),
-        TWO_FILTERS.replace("on_workbench = true", "on_workbench = false"),
+        TWO_FILTERS.replace("\"Docs\"", "\"Documents\""),
     ];
 
     for edited_by_hand in hand_edits {

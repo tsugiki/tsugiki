@@ -77,11 +77,11 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Repository and the items they hide, with Unmute author).
 - The Sidebar's **Pinned issues**, below the Filters, opens a view of the Pinned issues
   ([#489](https://github.com/tsugiki/tsugiki/issues/489)): each one the Workbench shows, in the Workbench's
-  order, and an Archived one in its place, marked Archived as a Filter's view marks it, so every pin the user
-  can unpin is there. A Muted one stays hidden, as on the Workbench. ★ or `Ctrl+K P` on a row there unpins the
-  Issue, and the row leaves the view, with the cursor and the Detail pane moving on to the next item as on
-  Archive. With no pins, the view says how to pin and names the key as the user bound it. "View: Pinned
-  Issues" in the command palette opens it.
+  order, and the Archived ones too, each in its place, marked Archived as a Filter's view marks it. A Muted
+  one stays hidden, as on the Workbench. ★ or `Ctrl+K P` on a row there unpins the Issue, and the row leaves
+  the view, with the cursor and the Detail pane moving on to the next item as on Archive. So they do on the
+  Workbench, for an Issue only its pin held there. With no pins, the view says how to pin and names the key
+  as the user bound it. "View: Pinned Issues" in the command palette opens it.
 - Each Issue lists its **Matched PRs** first, followed by its other PRs that are open or that **Need
   attention**.
 - **Needs attention** means work waiting on the user:

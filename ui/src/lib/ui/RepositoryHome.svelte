@@ -722,13 +722,11 @@
   }
 
   /** Pins the Issue `pin` names, or unpins it if the user pinned it. A pin or unpin that takes the Detail
-   * pane's Issue out of the view on show, a pin the Inbox or Archived and an unpin the Pinned issues (#489),
-   * opens the next item as Archive does (#982). */
-  async function togglePin(pin: Pin) {
-    const { number, pinned } = pin;
-    const leaves = workbench.pinTakesOut(pin);
+   * pane's Issue out of the view on show, as a pin takes it out of the Inbox and an unpin out of the Pinned
+   * issues (#489), opens the next item as Archive does (#982). */
+  async function togglePin({ number, pinned }: Pin) {
     const marking = (opened: WorkbenchState) => (pinned ? opened.unpin(number) : opened.pin(number));
-    await finish(leaves && hidingOnDetail({ key: leaves }), marking);
+    await finish(hidingOnDetail({ key: { kind: "issue", number } }), marking);
   }
 
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */

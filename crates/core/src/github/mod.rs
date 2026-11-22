@@ -123,13 +123,20 @@ pub trait Transport: Send {
     }
 
     /// Sends `write`, its payload asked for `selection` (ADR 0025). A transport that doesn't write, as the
-    /// tests' that only read, counts as unreachable here.
+    /// tests' that only read, counts as unreachable here. In tests each double checks the selection as
+    /// `Https` would, until the client sends writes and checks them beside `assert_read`.
+    #[cfg_attr(
+        not(any(test, feature = "testing")),
+        expect(unused_variables, reason = "only tests check a selection here")
+    )]
     fn write(
         &self,
         _token: &Token,
-        _write: &Write,
-        _selection: Selection<'_>,
+        write: &Write,
+        selection: Selection<'_>,
     ) -> Result<Reply, Unreachable> {
+        #[cfg(any(test, feature = "testing"))]
+        https::assert_write(write, selection);
         Err(Unreachable::Offline)
     }
 }

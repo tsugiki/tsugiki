@@ -669,13 +669,28 @@ fn a_scripted_transport_answers_a_write_and_notes_its_operation_and_input() {
 }
 
 #[test]
-#[should_panic(expected = "AddComment's selection would be refused")]
 fn a_write_whose_selection_the_token_crate_would_refuse_fails_the_test_whatever_answers_it() {
     let quoted = Selection {
         payload: r#"{ comment(x: "}") { id } }"#,
         fragments: "",
     };
-    drop(Canned(reply_ok("{}")).write(&super::testing::token(), &a_comment(), quoted));
+    let transports: [Box<dyn Transport>; 3] = [
+        Box::new(Canned(reply_ok("{}"))),
+        Box::new(Scripted::new(vec![reply_ok("{}")]).0),
+        Box::new(Panicking),
+    ];
+    let token = super::testing::token();
+    for transport in transports {
+        let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            transport.write(&token, &a_comment(), quoted)
+        }));
+        let panic = written.unwrap_err();
+        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(
+            message.contains("AddComment's selection would be refused"),
+            "{message}"
+        );
+    }
 }
 
 #[test]

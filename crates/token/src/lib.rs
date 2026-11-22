@@ -297,8 +297,8 @@ fn checked_read(body: &str) -> Result<String, NotARead> {
 }
 
 /// GitHub's ID for a node, such as an Issue or a PR, which a read asks for it by and a write names it by.
-/// Outside tests one comes only from parsing GitHub's answer, and leaves only as JSON, as a variable, so
-/// no ID can change a query or a mutation.
+/// Only tests can build one from text: elsewhere one comes from parsing JSON, such as GitHub's answer or what
+/// the Store saved. It reaches a query or a mutation only as a variable, so no ID can change their text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct NodeId(String);

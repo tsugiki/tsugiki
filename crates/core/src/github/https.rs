@@ -37,10 +37,12 @@ pub(super) fn assert_write(write: &Write, selection: Selection<'_>) {
     );
 }
 
-/// The query of `write` with `selection`, as `Https` would send it, for a stand-in that answers in its
-/// place. A selection `tsugiki-token` refuses fails as from `Https`, and the log says why.
+/// The query of `write` with `selection`, as `Https` would send it, for a transport that names or checks a
+/// recording by it. A selection `tsugiki-token` refuses fails as from `Https`, and the log says why.
 pub(super) fn write_query(write: &Write, selection: Selection<'_>) -> Result<String, Unreachable> {
-    (write.query(selection)).map_err(|refused| unreachable(&write.operation(), refused.into()))
+    write
+        .query(selection)
+        .map_err(|refused| unreachable(&write.operation(), refused.into()))
 }
 
 /// A GraphQL answer to `operation`, with the headers the client reads parsed.
@@ -75,7 +77,10 @@ fn unreachable(asked: &dyn fmt::Display, failure: NotSent) -> Unreachable {
     let (cause, unreachable) = match failure {
         NotSent::Offline(cause) => (cause, Unreachable::Offline),
         NotSent::CertificateDates(cause) => (cause, Unreachable::CertificateDates),
-        NotSent::Refused(cause) => (cause, Unreachable::Refused),
+        NotSent::Refused(cause) => {
+            log::warn!("Tsugiki refused to send {asked} to GitHub: {cause}");
+            return Unreachable::Refused;
+        }
     };
     log::warn!("A request to GitHub for {asked} failed: {cause}");
     unreachable

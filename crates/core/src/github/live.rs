@@ -20,7 +20,9 @@ use tsugiki_token::Https;
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
-use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable, https};
+use super::{
+    ConditionalGet, ConditionalReply, Reply, Request, Selection, Transport, Unreachable, https,
+};
 use crate::token::Token;
 
 /// GitHub through the token crate's client. `https.rs` builds what it sends and reads what comes back.
@@ -37,6 +39,16 @@ impl Transport for Https {
     ) -> Result<ConditionalReply, Unreachable> {
         let sent = self.get_rest(token, request.path, request.etag);
         https::conditional_reply(request.path, sent)
+    }
+
+    fn write(
+        &self,
+        token: &Token,
+        write: &super::Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        let sent = self.post_write(token, write, selection);
+        https::reply(write.operation(), sent)
     }
 }
 

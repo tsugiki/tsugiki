@@ -9,7 +9,9 @@ use serde_json::{Value, json};
 use tsugiki_token::hide_token_shapes;
 
 use super::activity::{APP_NAME_END, WEB_COMMITTER};
-use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
+use super::{
+    ConditionalGet, ConditionalReply, Reply, Request, Selection, Transport, Unreachable, Write,
+};
 use crate::conventions::{CPYTHON_BACKPORT_APP, CPYTHON_BOT_ACCOUNTS};
 use crate::token::Token;
 
@@ -272,17 +274,45 @@ impl Transport for Recorder {
         self.inner.get(token, request)
     }
 
-    #[expect(
-        clippy::expect_used,
-        clippy::unwrap_in_result,
-        reason = "a dev tool: a recording it can't write should stop it, and a failed request isn't one"
-    )]
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.inner.post(token, request)?;
+        self.record(token, request, &reply);
+        Ok(reply)
+    }
+
+    /// Passes the write on, and records its answer by its operation as a read's. A selection the token
+    /// crate refuses goes nowhere, as from `Https`.
+    fn write(
+        &self,
+        token: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        let query = write
+            .query(selection)
+            .map_err(|_refused| Unreachable::Refused)?;
+        let reply = self.inner.write(token, write, selection)?;
+        let sent = Request {
+            operation: write.operation(),
+            query: query.into(),
+            variables: write.variables(),
+        };
+        self.record(token, &sent, &reply);
+        Ok(reply)
+    }
+}
+
+impl Recorder {
+    /// Writes `reply`, GitHub's good answer to `request`, to `<dir>/<operation>.json`, scrubbed.
+    #[expect(
+        clippy::expect_used,
+        reason = "a dev tool: a recording it can't write should stop it, and a failed request isn't one"
+    )]
+    fn record(&self, token: &Token, request: &Request<'_>, reply: &Reply) {
         let text = scrub(&reply.body, token);
         let mut body = serde_json::from_str(&text).unwrap_or(Value::String(text));
         if reply.status != 200 || body.get("errors").is_some() {
-            return Ok(reply);
+            return;
         }
         keep_only_what_is_read(&mut body);
         let mut stand_ins = self.stand_ins.borrow_mut();
@@ -302,7 +332,6 @@ impl Transport for Recorder {
         std::fs::create_dir_all(&self.dir).expect("create the fixtures folder");
         let path = self.dir.join(format!("{}.json", request.operation));
         std::fs::write(path, pretty + "\n").expect("write the recording");
-        Ok(reply)
     }
 }
 

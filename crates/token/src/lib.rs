@@ -1,8 +1,8 @@
 //! Where Tsugiki's GitHub token comes from, the one place it goes, and how a secret is hidden (ADR 0019).
 //!
 //! Nothing outside this crate can read a [`Token`]'s string. It leaves only in the `Authorization` header
-//! of a request that [`Https`] sends to `api.github.com`, and that request can only read (ADR 0025). The
-//! README says this for someone who doesn't read Rust.
+//! of a request that [`Https`] sends to `api.github.com`, and that request can only read, or make one of the
+//! writes [`Write`] lists (ADR 0025). The README says this for someone who doesn't read Rust.
 
 #![forbid(unsafe_code)]
 
@@ -31,8 +31,11 @@ const REST_ROOT: &str = "https://api.github.com";
 /// How GitHub's tokens start. [`Token::hide_in`] covers the token in use whatever its shape.
 const TOKEN_PREFIXES: [&str; 6] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"];
 /// The keyword each GraphQL operation that writes starts with. [`checked_read`] refuses a query that holds it
-/// anywhere.
+/// anywhere, and [`checked_selection`] a selection.
 const MUTATION: &str = "mutation";
+/// The characters [`checked_selection`] refuses besides `mutation`: `"` starts a string and `#` a comment,
+/// inside which a brace wouldn't count.
+const NOT_IN_A_SELECTION: [char; 2] = ['"', '#'];
 /// What `RestPath::parse` refuses: each could make the rest of an address name another host, or part of
 /// one.
 const NOT_IN_A_PATH: [char; 4] = ['@', '?', '#', '\\'];
@@ -293,6 +296,185 @@ fn checked_read(body: &str) -> Result<String, NotARead> {
     serde_json::to_string(&request).map_err(NotARead::unparsed)
 }
 
+/// GitHub's ID for a node, such as an Issue or a PR, which a read asks for it by and a write names it by.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NodeId(String);
+
+impl NodeId {
+    /// The ID GitHub spells `id`. A write sends it as a variable, so no ID can change the mutation.
+    pub fn new(id: String) -> Self {
+        Self(id)
+    }
+
+    /// The ID as GitHub spells it.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// A write to GitHub that [`Https::post_write`] may send: one variant per mutation, each with typed inputs.
+/// The crate holds each mutation's text, so nothing outside it can send a mutation that isn't listed here,
+/// and the README has a row for each.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Write {
+    /// `addComment`: a comment on an Issue, or on a PR's Conversation, which `subject` names.
+    AddComment { subject: NodeId, body: String },
+}
+
+/// The fixed text of a mutation, from which [`mutation_query`] writes its operation.
+struct Mutation {
+    /// The operation's name, which the core's log and recordings name the write by.
+    operation: &'static str,
+    /// The type of the mutation's one argument, `input`.
+    input: &'static str,
+    /// The field of GitHub's `Mutation` type it calls.
+    field: &'static str,
+}
+
+const ADD_COMMENT: Mutation = Mutation {
+    operation: "AddComment",
+    input: "AddCommentInput",
+    field: "addComment",
+};
+
+impl Write {
+    /// The name of the write's operation, by which the core logs the write and finds its recording.
+    pub fn operation(&self) -> &'static str {
+        self.mutation().operation
+    }
+
+    /// The write's variables, its one `input` built from the typed inputs.
+    pub fn variables(&self) -> Value {
+        match self {
+            Self::AddComment { subject, body } => {
+                serde_json::json!({ "input": { "subjectId": subject, "body": body } })
+            }
+        }
+    }
+
+    /// The GraphQL document this write sends with `selection`, if [`checked_selection`] lets the selection
+    /// through. Only [`Https::post_write`] sends it: [`Https::post_graphql`] refuses it, as it holds
+    /// `mutation`.
+    pub fn query(&self, selection: Selection<'_>) -> Result<String, BadSelection> {
+        checked_selection(selection)?;
+        Ok(mutation_query(self.mutation(), selection))
+    }
+
+    fn mutation(&self) -> &'static Mutation {
+        match self {
+            Self::AddComment { .. } => &ADD_COMMENT,
+        }
+    }
+}
+
+/// The part of a write the core supplies: the selection set of the mutation's payload, and the fragment
+/// definitions it spreads. A write's answer then parses as a read's does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Selection<'a> {
+    /// One selection set, from its `{` to the `}` that closes it: `{ commentEdge { node { ...C } } }`.
+    pub payload: &'a str,
+    /// The fragments `payload` spreads, such as `fragment C on IssueComment { id }`, or nothing.
+    pub fragments: &'a str,
+}
+
+/// The reason [`checked_selection`] refused a write's selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BadSelection {
+    /// The selection holds `mutation`, the keyword a write starts with.
+    Mutation,
+    /// The selection holds `"` or `#`, which start a string or a comment, inside which a brace wouldn't
+    /// count.
+    StringOrComment,
+    /// The payload isn't one selection set: it doesn't start with `{`, or the `}` that closes that `{`
+    /// comes before its end, or is missing. Text after that `}` would sit beside the mutation's field.
+    PayloadBraces,
+    /// A `}` in the fragments closes a `{` they didn't open, or a `{` stays open.
+    FragmentBraces,
+}
+
+impl fmt::Display for BadSelection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mutation => write!(f, "a write's selection holds `{MUTATION}`"),
+            Self::StringOrComment => write!(f, "a write's selection holds `\"` or `#`"),
+            Self::PayloadBraces => write!(f, "a write's payload isn't one selection set"),
+            Self::FragmentBraces => write!(f, "the braces of a write's fragments don't pair up"),
+        }
+    }
+}
+
+/// The [`Unreachable`] that [`Https::post_write`] answers for a selection it won't send.
+impl From<BadSelection> for Unreachable {
+    fn from(refused: BadSelection) -> Self {
+        Self::Refused(refused.to_string())
+    }
+}
+
+/// Refuses a selection that could add to the write: one that holds `mutation`, `"` or `#`, a payload that
+/// isn't one selection set, or fragments whose braces don't pair up. Without strings or comments each brace
+/// counts, so a payload that closes its own `{` only at its end stays inside the mutation's one field, and
+/// can't put a second field beside it. Fragments come after the operation has closed, where no field writes.
+fn checked_selection(selection: Selection<'_>) -> Result<(), BadSelection> {
+    let Selection { payload, fragments } = selection;
+    if payload.contains(MUTATION) || fragments.contains(MUTATION) {
+        return Err(BadSelection::Mutation);
+    }
+    if payload.contains(NOT_IN_A_SELECTION) || fragments.contains(NOT_IN_A_SELECTION) {
+        return Err(BadSelection::StringOrComment);
+    }
+    if !is_one_selection_set(payload.trim()) {
+        return Err(BadSelection::PayloadBraces);
+    }
+    let pair_up = brace_levels(fragments).all(|level| level >= 0)
+        && brace_levels(fragments).last().unwrap_or(0) == 0;
+    if !pair_up {
+        return Err(BadSelection::FragmentBraces);
+    }
+    Ok(())
+}
+
+/// Whether `text` starts with `{` and the `}` that closes it is its last byte.
+fn is_one_selection_set(text: &str) -> bool {
+    let closed_at = brace_levels(text).position(|level| level <= 0);
+    text.starts_with('{') && closed_at == text.len().checked_sub(1)
+}
+
+/// The level of `text`'s braces after each of its bytes, from 0 before the first: one more after each `{`,
+/// one fewer after each `}`.
+fn brace_levels(text: &str) -> impl Iterator<Item = isize> {
+    text.bytes().scan(0, |level, byte| {
+        match byte {
+            b'{' => *level += 1,
+            b'}' => *level -= 1,
+            _ => {}
+        }
+        Some(*level)
+    })
+}
+
+/// The operation of `mutation`, which asks the payload for `selection`.
+fn mutation_query(mutation: &Mutation, selection: Selection<'_>) -> String {
+    let Mutation {
+        operation,
+        input,
+        field,
+    } = mutation;
+    let Selection { payload, fragments } = selection;
+    let query = format!(
+        "{MUTATION} {operation}($input: {input}!) {{ {field}(input: $input) {} }} {}",
+        payload.trim(),
+        fragments.trim()
+    );
+    query.trim_end().to_owned()
+}
+
+/// The JSON body of `write` with `selection`, as [`Https::post_write`] sends it.
+fn write_body(write: &Write, selection: Selection<'_>) -> Result<String, BadSelection> {
+    let query = write.query(selection)?;
+    Ok(serde_json::json!({ "query": query, "variables": write.variables() }).to_string())
+}
+
 /// What GitHub answered, as text. The core parses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reply {
@@ -316,7 +498,7 @@ pub enum Unreachable {
     /// way, a certificate that failed for a reason other than its dates among them.
     Offline(String),
     /// The crate refused to send the request, which would fail the same way each time it was asked: a
-    /// GraphQL body that isn't a read.
+    /// GraphQL body that isn't a read, or a write's selection that could add to the write.
     Refused(String),
     /// GitHub's certificate isn't valid at this computer's date and time. The clock may be wrong, or the
     /// certificate may have expired, and the check can't tell which.

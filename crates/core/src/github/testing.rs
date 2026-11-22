@@ -10,6 +10,7 @@
 use tsugiki_token::testing::{gh_alone, gh_prints};
 
 use super::*;
+use crate::facts::pull_requests::NodeId;
 use crate::token::GhOutput;
 
 /// The points field of an answer's data: one point of 1,000 spent, with plenty left, so nothing pauses, in an
@@ -40,13 +41,17 @@ impl Transport for Canned {
     fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
         self.0.clone()
     }
+
+    fn write(&self, _: &Token, _: &Write, _: Selection<'_>) -> Result<Reply, Unreachable> {
+        self.0.clone()
+    }
 }
 
 pub fn answered(status: u16, body: &str) -> Canned {
     Canned(replied(status, body))
 }
 
-/// Answers from a list, in order, and records each operation and its variables for the test.
+/// Answers reads and writes from a list, in order, and records each operation and its variables for the test.
 pub struct Scripted {
     replies: std::cell::RefCell<std::collections::VecDeque<Result<Reply, Unreachable>>>,
     asked: std::sync::mpsc::Sender<(String, Value)>,
@@ -62,19 +67,44 @@ impl Scripted {
     }
 }
 
-impl Transport for Scripted {
-    fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+impl Scripted {
+    /// Notes that `operation` was asked with `variables`, and gives the next reply.
+    fn answer(&self, operation: &str, variables: Value) -> Result<Reply, Unreachable> {
         #[expect(
             clippy::let_underscore_must_use,
             reason = "a test that has dropped the receiver doesn't check what was asked"
         )]
-        let _ = (self.asked).send((request.operation.to_owned(), request.variables.clone()));
+        let _ = (self.asked).send((operation.to_owned(), variables));
         self.replies
             .borrow_mut()
             .pop_front()
             .unwrap_or(Err(Unreachable::Offline))
     }
 }
+
+impl Transport for Scripted {
+    fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
+        self.answer(request.operation, request.variables.clone())
+    }
+
+    fn write(&self, _: &Token, write: &Write, _: Selection<'_>) -> Result<Reply, Unreachable> {
+        self.answer(write.operation(), write.variables())
+    }
+}
+
+/// A comment that says "Thanks" on the Issue whose ID is `I_1`.
+pub fn a_comment() -> Write {
+    Write::AddComment {
+        subject: NodeId::new("I_1".to_owned()),
+        body: "Thanks".to_owned(),
+    }
+}
+
+/// A write's selection that asks for the ID of the comment it made.
+pub const COMMENT_ID: Selection<'static> = Selection {
+    payload: "{ commentEdge { node { id } } }",
+    fragments: "",
+};
 
 /// GitHub's reply with `status` and `body`, and no time or reset.
 pub fn replied(status: u16, body: &str) -> Result<Reply, Unreachable> {

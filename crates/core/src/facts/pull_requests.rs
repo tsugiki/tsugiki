@@ -13,25 +13,9 @@ use crate::login::Login;
 #[cfg(test)]
 mod tests;
 
-/// GitHub's ID for an item, which a fetch asks for it by.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct NodeId(String);
-
-impl NodeId {
-    /// The ID as GitHub spells it, which only `github` sends back.
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-#[cfg(test)]
-impl NodeId {
-    /// The ID GitHub spells `id`.
-    pub(crate) fn new(id: String) -> Self {
-        Self(id)
-    }
-}
+/// GitHub's ID for an item, which a fetch asks for it by and a write names it by. The token crate owns it,
+/// as `Write`'s variants take it.
+pub use tsugiki_token::NodeId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

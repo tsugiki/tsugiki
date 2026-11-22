@@ -13,6 +13,7 @@ it("holds what the core says the window opens on", async () => {
   vi.mocked(commands.home).mockResolvedValue({ screen: "onboarding", token: "gh" });
   const state = new HomeState();
   expect(state.current).toBeUndefined();
+  expect(state.page).toBe(false);
   await state.load();
   expect(state.current).toEqual({ screen: "onboarding", token: "gh" });
 });
@@ -133,9 +134,27 @@ it("shows the Home page only over an open Repository, and leaves it for that one
   expect(state.page).toBe(false);
 
   state.current = openOn(cpython);
+  state.leave();
+  expect(state.page).toBe(false);
   state.goHome();
   expect(state.page).toBe(true);
   state.leave();
+  expect(state.page).toBe(false);
+  expect(state.current).toEqual(openOn(cpython));
+});
+
+it("shows the Repository's screen, not the Home page, for each new answer of the core", async () => {
+  vi.mocked(commands.home).mockResolvedValueOnce({ screen: "onboarding", token: "gh" });
+  const state = new HomeState();
+  state.current = openOn(cpython);
+  state.goHome();
+  await state.load();
+  expect(state.page).toBe(false);
+
+  state.current = openOn(cpython);
+  state.goHome();
+  vi.mocked(commands.home).mockResolvedValueOnce(openOn(cpython));
+  await state.load();
   expect(state.page).toBe(false);
 });
 
@@ -144,12 +163,13 @@ it("leaves the Home page for the Repository a switch or an add opens, and stays 
     status: "error",
     error: { kind: "internal", message: "machine.toml, line 1: expected a value" },
   });
-  vi.mocked(commands.home).mockResolvedValue(openOn(cpython, ["python/peps"]));
+  vi.mocked(commands.home).mockResolvedValue(openOn(cpython));
   const state = new HomeState();
   state.current = openOn(cpython, ["python/peps"]);
   state.goHome();
   await state.open("python/peps");
   expect(state.page).toBe(true);
+  expect(state.current).toEqual(openOn(cpython));
 
   vi.mocked(commands.openRepository).mockResolvedValueOnce(ok(openOn(peps, ["python/cpython"])));
   await state.open("python/peps");

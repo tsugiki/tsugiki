@@ -1752,6 +1752,14 @@ describe("the Home page", () => {
     expect(homeHeading()).toBeTruthy();
   });
 
+  it("keeps Add repository… in its palette out of the history, as the Repository rows beside it", async () => {
+    await goHome();
+    await ctrlShiftP();
+    await fireEvent.click(screen.getByRole("option", { name: "Add repository…" }));
+    expect(await screen.findByRole("dialog", { name: "Add repository" })).toBeTruthy();
+    expect(core.rememberCommand).not.toHaveBeenCalled();
+  });
+
   it("goes back to the Repository the user came from on Enter on its row, Esc or Alt+←, with no switch", async () => {
     await goHome();
     // A browser clicks the focused row on Enter, which jsdom leaves to the test.
@@ -1815,6 +1823,29 @@ describe("the Home page", () => {
     await fireEvent.click(rowOf(peps.name));
     expect(await screen.findByText("Tsugiki couldn't switch to python/peps: no disk")).toBeTruthy();
     expect(homeHeading()).toBeTruthy();
+  });
+
+  it("keeps the cursor on a row when a refused switch finds the last row's Repository gone", async () => {
+    core.openRepository.mockResolvedValueOnce({
+      status: "error",
+      error: { kind: "not_found", message: "Tsugiki doesn't have a/never." },
+    });
+    await goHome();
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    await fireEvent.keyDown(document.activeElement as Element, { key: "ArrowDown" });
+    core.home.mockResolvedValue(openOn(gcmon, [{ name: peps.name, opened_at: hoursAgo(26) }], hoursAgo(1)));
+    await fireEvent.click(rowOf("a/never"));
+    await vi.waitFor(() => {
+      expect(repositoryRows()).toEqual([
+        ["some-maintainer/gcmon", "opened 1 h ago"],
+        ["python/peps", "opened 1 d ago"],
+      ]);
+    });
+
+    expect(rowOf(peps.name).getAttribute("aria-current")).toBe("true");
+    core.openRepository.mockResolvedValue({ status: "ok", data: pepsHome });
+    await fireEvent.keyDown(document.body, { key: "Enter" });
+    expect(core.openRepository).toHaveBeenLastCalledWith(peps.name);
   });
 
   it("has the picker on Ctrl+R, with Home marked and the Repository the user came from picked", async () => {
@@ -2457,6 +2488,14 @@ describe("the key list", () => {
     });
     await question();
     expect(titles()).toContain("Open DevTools");
+  });
+
+  it("lists Go Back on a Repository's screen, which runs it through its history", async () => {
+    core.home.mockResolvedValue(gcmonHome);
+    render(Page);
+    await screen.findByRole("button", { name: gcmon.name });
+    await question();
+    expect(titles()).toContain("Go Back");
   });
 
   it("leaves Open DevTools out of a release", async () => {

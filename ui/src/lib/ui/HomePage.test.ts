@@ -63,6 +63,30 @@ it("opens the row under the cursor on Enter with nothing focused, but not on a h
   expect(onopen).toHaveBeenCalledWith("python/peps");
 });
 
+it("opens a focused row once on a held Enter, whose repeats the browser would click again", async () => {
+  shown();
+  const row = rows()[0] as Element;
+  // A press dispatched with its default left alone is one the browser clicks the button on.
+  expect(await fireEvent.keyDown(row, { key: "Enter" })).toBe(true);
+  expect(await fireEvent.keyDown(row, { key: "Enter", repeat: true })).toBe(false);
+});
+
+it("keeps the cursor on its row as the rows change, and where a row that leaves was", async () => {
+  const { rerender } = shown();
+  rows()[2]?.focus();
+  await rerender({ rows: [ROWS[0], ROWS[2]] as Opened[] });
+  expect(current()?.textContent).toContain("a/never");
+
+  await rerender({ rows: ROWS });
+  rows()[1]?.focus();
+  await rerender({ rows: [ROWS[0], ROWS[2]] as Opened[] });
+  expect(current()?.textContent).toContain("a/never");
+
+  rows()[1]?.focus();
+  await rerender({ rows: [ROWS[0]] as Opened[] });
+  expect(current()?.textContent).toContain("python/cpython");
+});
+
 it("moves the cursor to a row that takes the focus, and opens a row on a click", async () => {
   const { onopen } = shown();
   rows()[2]?.focus();

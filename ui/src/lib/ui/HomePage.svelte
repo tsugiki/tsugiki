@@ -36,8 +36,15 @@
     rows.map((row) => (row.opened_at === null ? null : `opened ${agoWords(row.opened_at, now)}`)),
   );
   const os = currentOs();
-  /** The row under the cursor, which Enter opens: the top one as the page opens, so Enter goes back. */
-  let cursor = $state(0);
+  /** The row the cursor last went to, by its name and where it was. */
+  let picked = $state<{ name?: string; at: number }>({ at: 0 });
+  /** The row under the cursor, which Enter opens: the top one as the page opens, so Enter goes back. It
+   * follows its row by name as the rows change, and on a row that leaves, as one a failed switch finds gone,
+   * it stays where the row was, on the last row at most. */
+  const cursor = $derived.by(() => {
+    const at = rows.findIndex((row) => row.name === picked.name);
+    return at === -1 ? Math.min(picked.at, rows.length - 1) : at;
+  });
   const buttons: HTMLButtonElement[] = $state([]);
 
   // The top row takes the focus as the page opens, so ↑ ↓ and Enter work at once.
@@ -45,10 +52,9 @@
     buttons[0]?.focus();
   });
 
-  /** Moves the cursor `by` rows, and the focus with it. */
+  /** Moves the cursor `by` rows, as the focus moves and takes the cursor with it. */
   function move(by: 1 | -1) {
-    cursor = Math.max(0, Math.min(cursor + by, rows.length - 1));
-    buttons[cursor]?.focus();
+    buttons[Math.max(0, Math.min(cursor + by, rows.length - 1))]?.focus();
   }
 
   /** The page's own keys. Enter on a row's button clicks it, so Enter here opens the row under the cursor
@@ -59,7 +65,9 @@
     if (key === "arrowdown" || key === "arrowup") {
       e.preventDefault();
       move(key === "arrowdown" ? 1 : -1);
-    } else if (key === "enter" && e.target === document.body) {
+    } else if (key === "enter" && (e.repeat || e.target === document.body)) {
+      // Each opening is a switch, and a held key isn't more than one, so a repeat opens nothing, and the
+      // browser doesn't click the focused row again either.
       e.preventDefault();
       const row = rows[cursor];
       if (row && !e.repeat) onopen(row.name);
@@ -93,7 +101,7 @@
             onopen(row.name);
           }}
           onfocus={() => {
-            cursor = at;
+            picked = { name: row.name, at };
           }}
         >
           <span class="name mono">{row.name}</span>

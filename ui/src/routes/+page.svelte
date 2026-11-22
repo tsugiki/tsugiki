@@ -268,15 +268,24 @@
       },
     ],
   ]);
-  /** Whether `action` can run now, as far as the page says: its `when`, if it is the page's and has one. */
-  const pageCanRun = (action: Action) => PAGE_ACTIONS.get(action)?.when?.() !== false;
+  /**
+   * Who runs `action` here, for its key, its chord, the `?` list and the palette alike: the page, while the
+   * action is the page's and its `when` lets it, or else the Repository's screen on show, which runs the
+   * actions that aren't the page's and those of the page's it has too, as Go Back runs through the screen's
+   * history. Undefined where nobody does, as on the Home page, which has no screen under it.
+   */
+  function runnerOf(action: Action): "page" | Screen | undefined {
+    const page = PAGE_ACTIONS.get(action);
+    if (page !== undefined && page.when?.() !== false) return "page";
+    return page === undefined || repositoryHome?.owns(action) ? repositoryHome : undefined;
+  }
   /** Where a press on `target` went: the Repository's screen says, and elsewhere no pane has it. */
   const keyTargetOf = (target: EventTarget | null) => keyTarget(target, repositoryHome?.paneOf);
   const pageBindings: Bindings = Object.fromEntries(
     [...PAGE_ACTIONS].map(([action, { run }]) => [
       action,
       (e: KeyboardEvent) => {
-        if (pageCanRun(action)) run(keyTargetOf(e.target));
+        if (runnerOf(action) === "page") run(keyTargetOf(e.target));
       },
     ]),
   );
@@ -289,9 +298,9 @@
    * where it starts, and a key of one press only where no chord's wait takes it and no text box keeps it.
    */
   function keysAt(at: KeyTarget): KeysHere {
-    const onScreen = repositoryHome?.keysHere(at) ?? {
-      views: [],
-      works: (action: Action) => PAGE_ACTIONS.has(action),
+    const runs = (action: Action) => {
+      const runner = runnerOf(action);
+      return runner === "page" || (runner !== undefined && runner.keysHere(at).works(action));
     };
     const reaches = (key: string, action: Action) => {
       if (!isChord(key)) {
@@ -301,25 +310,21 @@
       const run = chordStartAt(chordFirst(key), at.textBox);
       return run === runAll || (run === runPage && PAGE_ACTIONS.has(action));
     };
-    const works = (row: Row) =>
-      row.key !== null &&
-      reaches(row.key, row.action) &&
-      onScreen.works(row.action) &&
-      pageCanRun(row.action);
+    const works = (row: Row) => row.key !== null && reaches(row.key, row.action) && runs(row.action);
     return {
-      views: onScreen.views,
+      views: repositoryHome?.keysHere(at).views ?? [],
       actions: new Set(keyTable().flatMap((row) => (works(row) ? [row.action] : []))),
     };
   }
   const runPage: ChordRun = (action, e) => {
     pageBindings[action]?.(e);
   };
-  /** Runs the page's action if it can run now, and the screen's otherwise: Go Back is the Home page's, and
-   * the screen's on a Repository's screen. */
+  /** Runs `action` by whoever runs it here, as `runnerOf` says: Go Back is the Home page's, and the screen's
+   * on a Repository's screen. */
   const runAll: ChordRun = (action, e) => {
-    const page = pageBindings[action];
-    if (page && pageCanRun(action)) page(e);
-    else repositoryHome?.runChord(action, e);
+    const runner = runnerOf(action);
+    if (runner === "page") runPage(action, e);
+    else runner?.runChord(action, e);
   };
   /**
    * What a chord that `first` starts runs, on a press in a text box if `textBox` says so, or null where none
@@ -382,7 +387,8 @@
   const mirrorNoteOf = (name: string) =>
     mirrorNote(name, status.mirrorStates.find((mirror) => mirror.repository === name)?.state);
   /** The row that opens Add repository, in the picker and in the Home page's palette. */
-  const addRow: PaletteCommand = { title: "Add repository…", run: openAdd };
+  // Like the Repository rows beside it, it stays out of the palette's recent commands.
+  const addRow: PaletteCommand = { title: "Add repository…", history: false, run: openAdd };
   /** The picker's rows: Home, the open Repository, named `open`, the others, then Add repository…. The row
    * of what shows is marked open, and opening it again leaves it on show. */
   const pickerRows = (open: string): PaletteCommand[] => [
@@ -436,7 +442,8 @@
     if (home.current?.screen === "onboarding" || home.error) hud.skipStartup();
   });
   /** The open Repository's screen, which adds its own commands to the palette. */
-  let repositoryHome = $state<ReturnType<typeof RepositoryHome>>();
+  type Screen = ReturnType<typeof RepositoryHome>;
+  let repositoryHome = $state<Screen>();
   /** Quick open's row for `item`: its number and title, with what it is and its state beside them. It keeps
    * out of the palette's history, which holds commands. */
   const foundRow = (item: QuickOpenItem): PaletteCommand => ({
@@ -509,7 +516,7 @@
    * which runs what its key runs `at` the focus as the palette opened (#555). */
   const pageRow = ({ action, title }: Row, at: KeyTarget): PaletteAction | undefined => {
     const page = PAGE_ACTIONS.get(action);
-    if (page === undefined || page.palette === false || !pageCanRun(action)) return undefined;
+    if (page === undefined || page.palette === false || runnerOf(action) !== "page") return undefined;
     return {
       ...(page.palette?.() ?? { title }),
       action,

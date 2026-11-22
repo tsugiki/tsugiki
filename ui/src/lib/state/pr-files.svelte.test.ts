@@ -1917,7 +1917,6 @@ it("switches to one file at a time on the file at the top, and back, for as long
 it("says which file is on screen, as the rail's tree marks it: at the top of all files, or the one on show", async () => {
   const files = await loaded({ ...changed(), news: [newsEntry("Misc/NEWS.d/next/x.rst")] });
 
-  expect(files.onScreen).toBe(0);
   files.scrolled(-2);
   expect(files.onScreen).toBeUndefined();
   files.scrolled(files.layout.placeOfRow(20) ?? -1);
@@ -1927,6 +1926,27 @@ it("says which file is on screen, as the rail's tree marks it: at the top of all
   expect(files.onScreen).toBe(0);
   files.nextFile(-1);
   expect(files.onScreen).toBeUndefined();
+});
+
+it("keeps the file the tree went to on screen while its header shows, though it can't reach the top", async () => {
+  const files = await loaded(changed());
+  // Before the tab says where it is, as before it was ever drawn, the tree doesn't know.
+  const unseen = files.onScreen;
+  files.goToFile(1);
+  const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
+
+  // A short file at the end of the diff leaves the top of the tab in the file before it.
+  files.scrolled(header - 5, header + 3);
+  const landed = files.onScreen;
+  files.scrolled(header - 5, header - 1);
+  const scrolledOff = files.onScreen;
+  files.scrolled(header - 5, header + 3);
+  const back = files.onScreen;
+  // Any other move ends it.
+  files.showFile(0);
+  files.scrolled(header - 5, header + 3);
+
+  expect([unseen, landed, scrolledOff, back, files.onScreen]).toEqual([undefined, 1, 0, 1, 0]);
 });
 
 it("goes to a file from the rail's tree from its top, opened, and leaves the focus where it is", async () => {

@@ -25,15 +25,19 @@ it("shows each folder open before what it holds, and each file with its diff's f
   expect(last?.kind === "file" && last.file.path).toBe("README.rst");
 });
 
-it("says why there is no tree while the diff isn't ready, and nothing once it is", () => {
+it("says why there are no rows: the diff isn't ready, changes no file, or the filter keeps none", () => {
   const { files, tree: state } = tree(undefined);
 
-  expect(state.unready).toBe("Reading the diff…");
+  expect(state.note).toBe("Reading the diff…");
   expect(state.rows).toEqual([]);
   files.view = null;
-  expect(state.unready).toBe("Tsugiki doesn't hold this PR.");
+  expect(state.note).toBe("Tsugiki doesn't hold this PR.");
+  files.view = { ...diff(), files: [], tree: { rows: [], folded: false } };
+  expect(state.note).toBe("This PR changes no files.");
   files.view = diff();
-  expect(state.unready).toBeUndefined();
+  expect(state.note).toBeUndefined();
+  state.type("nothing");
+  expect(state.note).toBe("No file's path holds “nothing”.");
 });
 
 it("starts every folder folded past a few hundred files, and → and ← unfold and fold the one under the cursor", () => {
@@ -116,6 +120,12 @@ it("marks the file on screen, or the folded folder it sits in, and nothing while
   expect(state.current).toBe(1);
   state.type("README");
   expect(state.current).toBeUndefined();
+  // Nor the folded folder it sits in, which shows for the files the filter keeps.
+  files.onScreen = 1;
+  state.type("test_r");
+  state.moveTo(1);
+  state.fold();
+  expect([shown(state), state.current]).toEqual([["▾ Lib", "▸ test"], undefined]);
   // A file past the tree's, as from an older diff, is nowhere in it.
   state.type("");
   files.onScreen = 9;
@@ -138,4 +148,28 @@ it("keeps the cursor where the user put it until another file comes on screen, w
   expect(state.cursor).toBe(1);
   files.onScreen = 0;
   expect(state.cursor).toBe(0);
+});
+
+it("follows the file on screen once the user scrolls back from the file they opened to the one before", () => {
+  const { files, tree: state } = tree(diff());
+  files.onScreen = 0;
+  state.moveTo(4);
+
+  expect(state.pick()).toBe(2);
+  files.onScreen = 2;
+  files.onScreen = 0;
+  expect(state.cursor).toBe(1);
+});
+
+it("keeps the cursor where the user put it while the file on screen is one the filter hides", () => {
+  const { files, tree: state } = tree(diff());
+  files.onScreen = 1;
+  state.type("test_");
+  state.moveTo(1);
+
+  files.onScreen = 0;
+  const hidden = state.cursor;
+  files.onScreen = 2;
+
+  expect([hidden, state.cursor]).toEqual([1, 3]);
 });

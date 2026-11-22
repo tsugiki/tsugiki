@@ -55,7 +55,7 @@ it("reads the PR's diff and shows its files as a tree, each file with its counts
   expect(texts()).toEqual(["▾Lib", "ast.py21+12−3", "old.py1+1−0", "▾Python", "gen.c.hGeneratedbinary"]);
   const titles = (selector: string) =>
     [...list().querySelectorAll<HTMLElement>(selector)].map((each) => each.title);
-  expect(titles(".note-count")).toEqual(["2 review threads", "1 draft", "1 review thread"]);
+  expect(titles(".rail-count")).toEqual(["2 review threads", "1 draft", "1 review thread"]);
   expect(items().map((item) => item.title)).toEqual([
     "Lib",
     "Lib/ast.py",
@@ -68,17 +68,17 @@ it("reads the PR's diff and shows its files as a tree, each file with its counts
   expect(items()[0]?.getAttribute("aria-expanded")).toBe("true");
 });
 
-it("says why it has no tree while the diff isn't ready, and that the filter keeps no file", async () => {
+it("says why it has no tree: the diff isn't ready, changes no file, or the filter keeps none", async () => {
   const { files } = drawn(undefined);
 
   expect(screen.getByText("Reading the diff…")).toBeDefined();
   expect(screen.queryByRole("tree")).toBeNull();
-  // A diff that changes no file says nothing.
   files.view = readyFiles(0);
   await tick();
-  expect(document.querySelector(".note")).toBeNull();
+  expect(screen.getByText("This PR changes no files.")).toBeDefined();
   files.view = treedFiles();
   await tick();
+  expect(document.querySelector(".rail-note")).toBeNull();
   await fireEvent.input(box(), { target: { value: "spam" } });
 
   expect(screen.getByText("No file's path holds “spam”.")).toBeDefined();

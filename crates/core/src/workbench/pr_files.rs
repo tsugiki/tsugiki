@@ -305,7 +305,6 @@ impl DiffSources<'_> {
     }
 }
 
-/// What the Files tab shows of the diff `open`.
 /// The diff `open` as the Files tab shows it, with what each file holds of the threads in `notes`, by its
 /// place: none while the threads are held back.
 fn shown(open: &OpenDiff, notes: &[FileNotes]) -> ShownDiff {

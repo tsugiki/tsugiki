@@ -85,9 +85,11 @@
     diff.need(first, last);
   });
 
-  // The tab goes to the file after the one at the top, and shows that one alone as it switches.
+  // The tab goes to the file after the one at the top, and shows that one alone as it switches. The rail's
+  // tree marks the file on screen.
   $effect(() => {
-    diff.scrolled(Math.floor((scrollTop - newsHeight) / ROW));
+    const below = scrollTop - newsHeight;
+    diff.scrolled(Math.floor(below / ROW), Math.floor((below + height) / ROW) - 1);
   });
 
   /** The layout the rows were last drawn from, which a new layout starts from. */

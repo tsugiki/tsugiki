@@ -64,10 +64,10 @@
 {#snippet drawn(index: number)}
   {@const row = rows[index] as ShownRow}
   <!-- prettier-ignore -->
-  {#if row.kind === "folder"}<span class="chevron" aria-hidden="true">{row.folded ? "▸" : "▾"}</span><span class="name">{row.row.name}</span>{:else}<span class="chevron" aria-hidden="true"></span><span class="name">{row.row.name}</span>{#if row.file.generated}<span class="tag">Generated</span>{/if}{#if row.row.threads > 0}<span class="note-count" title={many(row.row.threads, "review thread")}>{row.row.threads}</span>{/if}{#if row.row.drafts > 0}<span class="note-count draft" title={many(row.row.drafts, "draft")}>{row.row.drafts}</span>{/if}<span class="counts">{#each counts(row.file.change) as count (count)}<span>{count}</span>{/each}</span>{/if}
+  {#if row.kind === "folder"}<span class="rail-chevron" aria-hidden="true">{row.folded ? "▸" : "▾"}</span><span class="rail-text">{row.row.name}</span>{:else}<span class="rail-chevron" aria-hidden="true"></span><span class="rail-text">{row.row.name}</span>{#if row.file.generated}<span class="rail-aside">Generated</span>{/if}{#if row.row.threads > 0}<span class="rail-aside rail-count" title={many(row.row.threads, "review thread")}>{row.row.threads}</span>{/if}{#if row.row.drafts > 0}<span class="rail-aside rail-count draft" title={many(row.row.drafts, "draft")}>{row.row.drafts}</span>{/if}<span class="rail-aside counts">{#each counts(row.file.change) as count (count)}<span>{count}</span>{/each}</span>{/if}
 {/snippet}
 
-<div class="files">
+<div class="rail-tab">
   <div class="rail-box">
     <input
       type="text"
@@ -81,12 +81,9 @@
       onkeydown={onboxkeydown}
     />
   </div>
-  {#if tree.unready !== undefined}
-    <p class="note" aria-live="polite">{tree.unready}</p>
-  {:else if rows.length === 0 && tree.filter !== ""}
-    <p class="note" aria-live="polite">{`No file's path holds “${tree.filter}”.`}</p>
-  {/if}
-  {#if rows.length > 0}
+  {#if tree.note !== undefined}
+    <p class="rail-note" aria-live="polite">{tree.note}</p>
+  {:else}
     <RailList
       bind:this={list}
       label="Changed files"
@@ -111,42 +108,8 @@
 </div>
 
 <style>
-  /* Fills the rail's pane: the box stays put, and the tree scrolls under it. */
-  .files {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-
   .rail-box {
     margin-bottom: 4px;
-  }
-
-  .note {
-    margin: 4px 8px;
-    font-size: 12px;
-    color: var(--fg-muted);
-    overflow-wrap: anywhere;
-  }
-
-  .chevron {
-    flex: none;
-    width: 12px;
-  }
-
-  .name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .tag,
-  .counts,
-  .note-count {
-    flex: none;
-    font-size: 11px;
-    color: var(--fg-muted);
   }
 
   .counts {
@@ -154,14 +117,8 @@
     gap: 4px;
   }
 
-  .note-count {
-    padding: 0 6px;
-    border-radius: 8px;
-    background: color-mix(in srgb, currentColor 12%, transparent);
-  }
-
   /* The theme's attention colour, for the drafts only the user sees, as a draft in the Files tab has. */
-  .note-count.draft {
+  .draft {
     color: var(--attention);
     border: 1px solid var(--attention);
     background: none;

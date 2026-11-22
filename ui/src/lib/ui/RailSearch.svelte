@@ -106,18 +106,18 @@
 {#snippet drawn(index: number)}
   {@const row = rows[index] as SearchRow}
   {#if row.kind === "file"}
-    <span class="chevron" aria-hidden="true">{row.folded ? "▸" : "▾"}</span>
-    <span class="path" title={row.file.path}>{row.file.path}</span>
-    {#if row.file.generated}<span class="tag">Generated</span>{/if}
-    <span class="count">{row.matches}</span>
+    <span class="rail-chevron" aria-hidden="true">{row.folded ? "▸" : "▾"}</span>
+    <span class="rail-text" title={row.file.path}>{row.file.path}</span>
+    {#if row.file.generated}<span class="rail-aside">Generated</span>{/if}
+    <span class="rail-aside rail-count">{row.matches}</span>
   {:else}
-    <span class="number">{row.hit.line}</span>
+    <span class="rail-aside number">{row.hit.line}</span>
     <!-- prettier-ignore -->
-    <span class="text mono">{#each pieces(row.hit) as piece, at (at)}{#if piece.match}<mark>{piece.text}</mark>{:else}{piece.text}{/if}{/each}</span>
+    <span class="rail-text mono">{#each pieces(row.hit) as piece, at (at)}{#if piece.match}<mark>{piece.text}</mark>{:else}{piece.text}{/if}{/each}</span>
   {/if}
 {/snippet}
 
-<div class="search">
+<div class="rail-tab">
   <div class="rail-box">
     <input
       type="text"
@@ -150,7 +150,7 @@
       >
     {/each}
   </div>
-  <p class={["summary", search.troubled && "troubled"]} aria-live="polite">{search.summary}</p>
+  <p class={["rail-note", "summary", search.troubled && "troubled"]} aria-live="polite">{search.summary}</p>
   {#if rows.length > 0}
     <RailList
       bind:this={list}
@@ -176,13 +176,6 @@
 </div>
 
 <style>
-  /* Fills the rail's pane: the box and the line stay put, and the results scroll under them. */
-  .search {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-
   .option {
     all: unset;
     cursor: pointer;
@@ -210,55 +203,18 @@
     outline: 1px solid var(--focus-border);
   }
 
+  /* The line keeps its place while it is empty, so the results don't jump as it fills. */
   .summary {
     min-height: 18px;
-    margin: 4px 8px;
-    font-size: 12px;
-    color: var(--fg-muted);
-    overflow-wrap: anywhere;
   }
 
   .summary.troubled {
     color: var(--danger);
   }
 
-  .chevron {
-    flex: none;
-    width: 12px;
-  }
-
-  .path,
-  .text {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .path {
-    flex: 1;
-  }
-
-  .tag,
-  .count,
-  .number {
-    flex: none;
-    font-size: 11px;
-    color: var(--fg-muted);
-  }
-
-  .count {
-    padding: 0 6px;
-    border-radius: 8px;
-    background: color-mix(in srgb, currentColor 12%, transparent);
-  }
-
   .number {
     min-width: 3ch;
     text-align: right;
-  }
-
-  .text {
-    flex: 1;
   }
 
   mark {

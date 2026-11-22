@@ -596,8 +596,8 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
   page,
 }) => {
   await page.setViewportSize({ width: 1400, height: 700 });
-  const paths = ["Doc/whatsnew.rst", "Lib/ast.py", "Lib/os.py"];
-  const sizes = [40, 98, 40];
+  const paths = ["Doc/whatsnew.rst", "Lib/ast.py", "Lib/os.py", "setup.py"];
+  const sizes = [40, 98, 40, 3];
   const starts = sizes.map((_, at) => sizes.slice(0, at).reduce((sum, size) => sum + size + 2, 0));
   await mockCore(page, {
     themes: ok(themes),
@@ -618,6 +618,7 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
               folderRow("Lib", "Lib", 0, 5),
               fileRow(1, "ast.py", 1, { threads: 2 }),
               fileRow(2, "os.py", 1),
+              fileRow(3, "setup.py", 0),
             ],
             folded: false,
           },
@@ -646,6 +647,7 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
     "▾Lib",
     "ast.py2+98−0",
     "os.py+40−0",
+    "setup.py+3−0",
   ]);
   // A click on a file goes to its header on the Files tab, and marks it.
   await tree.getByRole("treeitem", { name: /os\.py/ }).click();
@@ -659,20 +661,28 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
   await page.keyboard.press("Alt+PageUp");
   await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
   await expect(current).toHaveText("ast.py2+98−0");
+  // A short file at the end is marked, though its header can't reach the top, which shows the file before.
+  await tree.getByRole("treeitem", { name: /setup\.py/ }).click();
+  await expect.poll(() => headerBelowTop(diff, "setup.py")).toBeGreaterThan(100);
+  await expect(current).toHaveText("setup.py+3−0");
+  await diff.focus();
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
+  await expect(current).toHaveText("ast.py2+98−0");
 
   // ↓ ↑ move, ← folds, and Enter opens a file, one file at a time showing it alone.
   await page.keyboard.press("ControlOrMeta+k");
   await page.keyboard.press("o");
   const bar = pane.getByRole("navigation", { name: "File on show" });
-  await expect(bar).toContainText("2 of 3");
+  await expect(bar).toContainText("2 of 4");
   await tree.focus();
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowLeft");
-  await expect(tree.getByRole("treeitem")).toHaveText(["▾Doc", "whatsnew.rst+40−0", "▸Lib"]);
+  await expect(tree.getByRole("treeitem")).toHaveText(["▾Doc", "whatsnew.rst+40−0", "▸Lib", "setup.py+3−0"]);
   await expect(current).toHaveText("▸Lib");
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("Enter");
-  await expect(bar).toContainText("1 of 3");
+  await expect(bar).toContainText("1 of 4");
   await expect(current).toHaveText("whatsnew.rst+40−0");
   await expect(tree).toBeFocused();
 

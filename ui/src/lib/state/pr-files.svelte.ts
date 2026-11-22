@@ -351,9 +351,15 @@ export class PrFilesState {
   #change: number | undefined;
   /** The page the user last moved to, which the tab shows one file at a time. */
   #page = $state<Page>();
-  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Only the
-   * rail's tree draws from it, through `onScreen`. */
-  #top = $state(0);
+  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Nothing
+   * draws from it. */
+  #top = 0;
+  /** The places at the top of the tab and the last it shows whole, once the tab has said where it is, which
+   * the rail's tree draws from through `onScreen`. */
+  #seen = $state.raw<{ top: number; bottom: number }>();
+  /** The file the rail's tree went to last, until another move: it is the file on screen while its header
+   * shows, though a short file near the end of the diff can't scroll its header to the top. */
+  #picked = $state<number>();
   /** What the search found in the diff `view` shows, and the files of that diff. The matches are many and
    * don't change, so they aren't deeply reactive. */
   #found = $state.raw<{ found: Found; files: DiffFile[] }>();
@@ -708,10 +714,11 @@ export class PrFilesState {
     this.#moveTo(view.files, row);
   }
 
-  /** Notes that place `place` is at the top of the tab, below 0 inside the NEWS entries, as the user
-   * scrolls. */
-  scrolled(place: number) {
+  /** Notes that place `place` is at the top of the tab, below 0 inside the NEWS entries, and `bottom` the
+   * last place it shows whole, as the user scrolls. */
+  scrolled(place: number, bottom = place) {
     this.#top = place;
+    this.#seen = { top: place, bottom };
   }
 
   /** The page on show while the tab shows one file at a time: the one the user last moved to, or the first
@@ -767,12 +774,26 @@ export class PrFilesState {
     this.#show({ kind: "file", file });
   }
 
-  /** The file on screen, by its place among the diff's files, which the rail's tree highlights (#604): the
-   * one on show one file at a time, or else the one at the top of the tab. Nothing while the NEWS entries
-   * or the threads on files no longer in the diff are there. */
+  /** The file on screen, by its place among the diff's files, which the rail's tree marks (#604): the one
+   * on show one file at a time, or else the one the tree went to while its header shows, or else the one
+   * at the top of the tab. Nothing while the NEWS entries or the threads on files no longer in the diff are
+   * there, nor before the tab has said where it is. */
   get onScreen(): number | undefined {
-    const page = this.mode === "one" ? this.shown : this.#atTop();
+    const page = this.mode === "one" ? this.shown : this.#seenPage();
     return page?.kind === "file" ? page.file : undefined;
+  }
+
+  /** With all the files, the page `onScreen` names. */
+  #seenPage(): Page | undefined {
+    const seen = this.#seen;
+    if (seen === undefined) return undefined;
+    const picked = this.#picked;
+    if (picked !== undefined) {
+      const page = { kind: "file", file: picked } as const;
+      const header = this.layout.headerOf(page);
+      if (header !== undefined && header >= seen.top && header <= seen.bottom) return page;
+    }
+    return seen.top < 0 ? undefined : this.layout.pageAt(seen.top);
   }
 
   /** Goes to the file at `file` among the diff's files from its top, as a click on it in the rail's tree
@@ -784,6 +805,7 @@ export class PrFilesState {
     this.#dropPeek();
     if (this.collapsed(file)) this.toggle(file);
     this.showFile(file);
+    this.#picked = file;
   }
 
   /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
@@ -934,6 +956,8 @@ export class PrFilesState {
    * so a move within the file doesn't lay out the whole file again. */
   #turnTo(page: Page) {
     if (!samePage(this.#page, page)) this.#page = page;
+    // A move of any kind ends the tree's, which goes to its file after it.
+    this.#picked = undefined;
   }
 
   /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so,

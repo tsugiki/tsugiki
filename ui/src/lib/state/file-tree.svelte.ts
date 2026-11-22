@@ -66,10 +66,13 @@ export class FileTreeState {
     return { tree: view.tree, files: view.files, rowOf };
   });
 
-  /** Why there is no tree yet, while the diff isn't ready. */
-  get unready(): string | undefined {
+  /** The line in place of the rows while there are none: why there is no tree yet, that the PR changes no
+   * files, or that the filter keeps none. */
+  get note(): string | undefined {
     const diff = searchDiff(this.#files);
-    return diff.kind === "ready" ? undefined : UNREADY[diff.kind];
+    if (diff.kind !== "ready") return UNREADY[diff.kind];
+    if (this.rows.length > 0) return undefined;
+    return this.filter === "" ? "This PR changes no files." : `No file's path holds “${this.filter}”.`;
   }
 
   /** The folds the user chose that apply now: those since the filter's text, while it holds any. */
@@ -106,26 +109,33 @@ export class FileTreeState {
 
   /** With a filter, how many files it keeps among the tree's rows before each row, and before the end, so
    * the rows from one place to another keep a file if the counts there differ. Nothing without one. */
-  #kept({ tree, files }: Tree): number[] | undefined {
-    const filter = this.filter.toLowerCase();
-    if (filter === "") return undefined;
+  #kept({ tree }: Tree): number[] | undefined {
+    if (this.filter === "") return undefined;
     const kept = [0];
     let count = 0;
     for (const row of tree.rows) {
-      if (row.kind === "file" && files[row.file]?.path.toLowerCase().includes(filter)) count += 1;
+      if (row.kind === "file" && this.#keeps(row.file)) count += 1;
       kept.push(count);
     }
     return kept;
+  }
+
+  /** Whether the filter keeps the file at `file` among the diff's files: its path holds the filter's text,
+   * whatever the case. */
+  #keeps(file: number): boolean {
+    const path = this.#tree?.files[file]?.path ?? "";
+    return path.toLowerCase().includes(this.filter.toLowerCase());
   }
 
   /** The row of the file on screen in the Files tab, or of the folded folder it sits in. Nothing while no
    * file is on screen, or the filter hides it. */
   readonly current: number | undefined = $derived.by(() => {
     const file = this.#files.onScreen;
-    const target = file === undefined ? undefined : this.#tree?.rowOf[file];
+    const target = file === undefined || !this.#keeps(file) ? undefined : this.#tree?.rowOf[file];
     if (target === undefined) return undefined;
     const rows = this.rows;
-    // The last row that shows at or before the file's: the file's own, or a folded folder that holds it.
+    // The last row that shows at or before the file's: the file's own, or else the folded folder that hides
+    // it, as every folder the file sits in shows while the filter keeps the file.
     let low = 0;
     let high = rows.length;
     while (low < high) {
@@ -133,20 +143,18 @@ export class FileTreeState {
       if ((rows[middle] as ShownRow).at <= target) low = middle + 1;
       else high = middle;
     }
-    const row = rows[low - 1];
-    const holds = row?.kind === "folder" && row.folded && row.row.end > target;
-    return row?.at === target || holds ? low - 1 : undefined;
+    return low - 1;
   });
 
   /** The row the cursor is on, which ↑ and ↓ move: the one the user put it on, until another file comes on
-   * screen, and then the row of that file. The first, while neither shows. */
+   * screen that the tree marks, and then the marked row. The first, while neither shows. */
   readonly cursor: number = $derived.by(() => {
     const chosen = this.#cursorKey;
-    if (chosen !== undefined && chosen.screen === this.#files.onScreen) {
-      const at = this.rows.findIndex((row) => sameKey(keyOf(row), chosen.key));
-      if (at !== -1) return at;
-    }
-    return this.current ?? 0;
+    const current = this.current;
+    const at = chosen === undefined ? -1 : this.rows.findIndex((row) => sameKey(keyOf(row), chosen.key));
+    const stays = chosen?.screen === this.#files.onScreen || current === undefined;
+    if (at !== -1 && stays) return at;
+    return current ?? 0;
   });
 
   /** Puts the cursor on row `index`, held within the rows. */
@@ -178,10 +186,14 @@ export class FileTreeState {
   }
 
   /** Enter or a click on the row under the cursor: a file's place among the diff's files, to open, or else
-   * the folder's fold flips. */
+   * the folder's fold flips. The file it opens is the one on screen next, which the cursor stays on until
+   * another comes on screen. */
   pick(): number | undefined {
     const row = this.rows[this.cursor];
-    if (row?.kind === "file") return row.row.file;
+    if (row?.kind === "file") {
+      this.#cursorKey = { key: keyOf(row), screen: row.row.file };
+      return row.row.file;
+    }
     if (row !== undefined) this.#folds.set(row.row.path, !row.folded);
     return undefined;
   }

@@ -11,7 +11,6 @@ import { PrViewState } from "$lib/state/pr-view.svelte";
 import type { MuteAuthor } from "$lib/state/workbench.svelte";
 import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
-import { answeringMarks } from "$lib/testing/state";
 import RepositoryHome from "./RepositoryHome.svelte";
 
 /** What the page asks the screen for the palette's rows, from the screen's own exports. */
@@ -27,19 +26,6 @@ function paletteRow(screen: PaletteScreen, action: Action, target: EventTarget |
   return row && screen.paletteRow(row, keyTarget(target, screen.paneOf));
 }
 
-/** The Mark Unseen the window sends for `number`, unarchiving `archived`. */
-const unseen = (number: number, archived: object | null) => ({ kind: "unseen", number, archived });
-
-/** The Archive or Mute the window sends for `item`, with its Mark Seen. */
-const hiding = (kind: "archive" | "mute", item: { key: object; seen: { mark: unknown } }) => ({
-  kind,
-  key: item.key,
-  mark: item.seen.mark,
-});
-
-/** The Mute author the window sends for `author`. */
-const muteAuthor = (author: string) => ({ kind: "mute_author", author });
-
 const core = vi.hoisted(() => ({
   workbench: vi.fn(),
   inbox: vi.fn(),
@@ -51,8 +37,6 @@ const core = vi.hoisted(() => ({
   showItem: vi.fn(),
   closeItem: vi.fn(),
   markSeen: vi.fn(),
-  markAnswered: vi.fn(),
-  // What the core answers each kind of mark the window waits on, which `markAnswered` sends on its channel.
   markUnseen: vi.fn(),
   archive: vi.fn(),
   keepArchived: vi.fn(),
@@ -98,10 +82,16 @@ vi.mock("$lib/data/bindings", async () => {
       showItem: core.showItem,
       closeItem: core.closeItem,
       markSeen: core.markSeen,
-      markAnswered: core.markAnswered,
+      markUnseen: core.markUnseen,
+      archive: core.archive,
       keepArchived: core.keepArchived,
+      unarchive: core.unarchive,
+      mute: core.mute,
       unmute: core.unmute,
+      muteAuthor: core.muteAuthor,
       unmuteAuthor: core.unmuteAuthor,
+      pin: core.pin,
+      unpin: core.unpin,
       putFilterOnWorkbench: core.putFilterOnWorkbench,
       switchShowMuted: core.switchShowMuted,
       openOnGithub: core.openOnGithub,
@@ -203,17 +193,6 @@ beforeEach(() => {
   core.unmuteAuthor.mockResolvedValue(done);
   core.pin.mockResolvedValue(done);
   core.unpin.mockResolvedValue(done);
-  // Each kind of mark the window waits on answers from its own mock.
-  const marks = {
-    unseen: core.markUnseen,
-    archive: core.archive,
-    unarchive: core.unarchive,
-    mute: core.mute,
-    mute_author: core.muteAuthor,
-    pin: core.pin,
-    unpin: core.unpin,
-  };
-  core.markAnswered.mockImplementation(answeringMarks(marks));
   core.issue.mockResolvedValue({
     status: "ok",
     data: {
@@ -2096,7 +2075,7 @@ it("marks the line under the cursor on Q and Shift+Q, and the Detail pane's item
     ["python/cpython", row.seen.mark],
     ["python/cpython", laterMark],
   ]);
-  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", unseen(160662, null));
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, null);
 });
 
 /** A window on three Standalone PRs that Need attention, #5, #6 and #8, the cursor on #5 and #5 on show, in
@@ -2960,14 +2939,13 @@ it("archives on E the item that holds the line under the cursor, and the cursor 
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
-  // The core has archived it by the time it replies.
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
 
   await fireEvent.keyDown(treeRow, { key: "e" });
   await fireEvent.keyDown(treeRow, { key: "e", repeat: true });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   changed("python/cpython", issue.seen.mark.numbers);
 
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("archive", issue));
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
     expect(landed.getAttribute("aria-current")).toBe("true");
@@ -2983,7 +2961,7 @@ it("archives on E with the list hidden the item of the PR on show, and nothing o
   await fireEvent.keyDown(window, { key: "b", code: "KeyB", ctrlKey: true, altKey: true });
 
   await press("e");
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("archive", issue));
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
   core.archive.mockClear();
   cleanup();
   await listing();
@@ -3002,7 +2980,7 @@ it("archives on E the Issue on show while the Detail pane holds the focus", asyn
 
   await fireEvent.keyDown(view, { key: "e" });
 
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("archive", issue));
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
 });
 
 it("archives nothing on E in the Detail pane before the Issue's view arrives", async () => {
@@ -3022,7 +3000,7 @@ it("archives the Issue on show from its button, opens the next item, and Alt+←
   await fireEvent.click(issueRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
-  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("archive", issue));
+  expect(core.archive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
   const shown = await core.issue.mock.results[0]?.value;
   core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "archived" } });
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
@@ -3031,10 +3009,7 @@ it("archives the Issue on show from its button, opens the next item, and Alt+←
   await press("ArrowLeft", { altKey: true });
   await fireEvent.click(await screen.findByRole("button", { name: "Unarchive" }));
 
-  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", {
-    kind: "unarchive",
-    key: issue.key,
-  });
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
   const list = within(issueList() as HTMLElement);
   expect(list.queryByRole("button", { name: "#112564 GIL drop during collection" })).toBeNull();
 });
@@ -3101,8 +3076,8 @@ it("pins and unpins an Issue from the ★ on its row, which a Standalone PR's ro
   const unpin = screen.getByRole("button", { name: "Unpin #7" });
   await fireEvent.click(unpin);
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "pin", number: 112564 });
-  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "unpin", number: 7 });
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", 112564);
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", 7);
   expect([screen.getByRole("button", { name: "Pin #112564" }).textContent, unpin.textContent]).toEqual([
     "☆",
     "★",
@@ -3118,7 +3093,7 @@ it("pins on Ctrl+K P and the palette the Issue that holds the line under the cur
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
 
   component.runChord("pin", chordEnd());
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "pin", number: issue.number });
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
   expect(paletteRow(component, "pin")?.title).toBe("Pin or Unpin");
   prRow.focus();
   await fireEvent.keyDown(prRow, { key: "ArrowDown" });
@@ -3153,17 +3128,14 @@ it("unpins on Ctrl+K P with the list hidden the Issue the PR on show came from, 
   await toggleList();
 
   component.runChord("pin", chordEnd());
-  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", {
-    kind: "unpin",
-    number: issue.number,
-  });
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
   await toggleList();
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
   const view = await screen.findByRole("region", { name: "Issue view" });
   await screen.findByRole("button", { name: "☆ Pin" });
   paletteRow(component, "pin", view)?.run();
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "pin", number: issue.number });
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
 });
 
 it("pins on Ctrl+K P in the Detail pane the Issue on show before its view arrives, from the list's row", async () => {
@@ -3174,7 +3146,7 @@ it("pins on Ctrl+K P in the Detail pane the Issue on show before its view arrive
 
   paletteRow(component, "pin", view)?.run();
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "pin", number: issue.number });
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
 });
 
 it("pins nothing on Ctrl+K P with the list hidden on a Standalone PR, or with nothing open", async () => {
@@ -3200,14 +3172,13 @@ it("mutes on M the item that holds the line under the cursor, and the cursor lan
   treeRow.focus();
   await fireEvent.keyDown(treeRow, { key: "ArrowDown" });
   await fireEvent.keyDown(treeRow, { key: "ArrowUp" });
-  // The core has muted it by the time it replies.
-  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
 
   await fireEvent.keyDown(treeRow, { key: "m" });
   await fireEvent.keyDown(treeRow, { key: "m", repeat: true });
+  core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
   changed("python/cpython", issue.seen.mark.numbers);
 
-  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("mute", issue));
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
     expect(landed.getAttribute("aria-current")).toBe("true");
@@ -3223,7 +3194,7 @@ it("mutes on M with the list hidden the item of the PR on show", async () => {
 
   await press("m");
 
-  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("mute", issue));
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
 });
 
 it("mutes the Issue on show from its button, the list follows, and back on the Issue the button reads Unmute", async () => {
@@ -3232,7 +3203,7 @@ it("mutes the Issue on show from its button, the list follows, and back on the I
   await fireEvent.click(issueRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mute" }));
-  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", hiding("mute", issue));
+  expect(core.mute).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key, issue.seen.mark);
   const shown = await core.issue.mock.results[0]?.value;
   core.issue.mockResolvedValue({ ...shown, data: { ...shown.data, hidden: "muted" } });
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null }]));
@@ -3283,10 +3254,10 @@ it("mutes from the palette the author of the line under the cursor, a PR's autho
   const onIssue = paletteRow(component, "mute_author", treeRow);
 
   expect(onPr?.title).toBe("Mute Author");
-  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", muteAuthor("some-author"));
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "some-author");
   expect(onIssue?.title).toBe("Mute Author");
   onIssue?.run();
-  expect(core.muteAuthor).toHaveBeenLastCalledWith("python/cpython", muteAuthor("issue-author"));
+  expect(core.muteAuthor).toHaveBeenLastCalledWith("python/cpython", "issue-author");
 });
 
 it("lands the cursor on the next row once Mute author takes the item under it away", async () => {
@@ -3371,7 +3342,7 @@ it("mutes the author of the Issue on show from its button, the list follows, and
   await fireEvent.click(issueRow);
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mute issue-author" }));
-  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", muteAuthor("issue-author"));
+  expect(core.muteAuthor).toHaveBeenCalledExactlyOnceWith("python/cpython", "issue-author");
   const shown = await core.issue.mock.results[0]?.value;
   const unmute: MuteAuthor = { kind: "unmute", login: "issue-author" };
   core.issue.mockResolvedValue({
@@ -3455,10 +3426,7 @@ it("lists the Archived view with Unarchive on each row and no switch of order", 
   expect(screen.queryByRole("button", { name: /⇅/ })).toBeNull();
   const titles = component.paletteCommands().map((command) => command.title);
   expect(titles.filter((title) => title.startsWith("Sort by"))).toEqual([]);
-  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", {
-    kind: "unarchive",
-    key: standalone.key,
-  });
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", standalone.key);
 });
 
 it("unarchives on E in the Archived view the item that holds the line under the cursor, which lands on the next row", async () => {
@@ -3469,10 +3437,7 @@ it("unarchives on E in the Archived view the item that holds the line under the 
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
   changed("python/cpython", [112564]);
 
-  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", {
-    kind: "unarchive",
-    key: issue.key,
-  });
+  expect(core.unarchive).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.key);
   expect(core.archive).not.toHaveBeenCalled();
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
@@ -3488,7 +3453,7 @@ it("marks a line of the Archived view unseen on Shift+Q, which unarchives the it
   core.workbench.mockResolvedValue(workbenchPage([{ ...standalone, attention: null, hidden: "archived" }]));
   changed("python/cpython", [160662, 112564]);
 
-  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", unseen(160662, issue.key));
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, issue.key);
   expect(core.unarchive).not.toHaveBeenCalled();
   const landed = await screen.findByRole("button", { name: "#5 Alone" });
   await vi.waitFor(() => {
@@ -3564,10 +3529,7 @@ it("opens the next item once the Issue on show, unpinned from its view, leaves t
   core.workbench.mockResolvedValue(workbenchPage([{ ...kept, attention: null }]));
   changed("python/cpython", [issue.number]);
 
-  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", {
-    kind: "unpin",
-    number: issue.number,
-  });
+  expect(core.unpin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
   await vi.waitFor(() => {
     expect(core.issue.mock.calls.at(-1)?.[1]).toBe(7);
   });
@@ -3584,7 +3546,7 @@ it("offers Mark Unseen in the header of an item with nothing new, and the button
 
   await fireEvent.click(await screen.findByRole("button", { name: "Mark Unseen" }));
 
-  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", unseen(5, null));
+  expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 5, null);
   expect(core.markSeen).not.toHaveBeenCalled();
 });
 
@@ -3672,7 +3634,7 @@ it("marks from the palette what Q and Shift+Q mark where the focus was: the line
 
   expect(nothing).toBeUndefined();
   await vi.waitFor(() => {
-    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", unseen(160662, null));
+    expect(core.markUnseen).toHaveBeenCalledExactlyOnceWith("python/cpython", 160662, null);
   });
   expect(core.markSeen.mock.calls).toEqual([
     ["python/cpython", row.seen.mark],
@@ -5222,7 +5184,7 @@ it("opens the next item once the Issue on show, pinned from its view, leaves the
   core.inbox.mockResolvedValue(pageOf([{ ...standalone, attention: null }]));
   changed("python/cpython", [issue.number]);
 
-  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", { kind: "pin", number: issue.number });
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 

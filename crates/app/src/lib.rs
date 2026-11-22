@@ -17,10 +17,9 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 pub use startup::run;
 use tauri::State;
-use tauri::ipc::Channel;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 use tsugiki_core::build::Build;
-use tsugiki_core::calls::{AnsweredMark, Calls, ItemFetch, MarkReply, PrFiles};
+use tsugiki_core::calls::{Calls, ItemFetch, PrFiles};
 use tsugiki_core::definitions::{
     Answer, Code, DiffEnd, HitFile, HitLines, Lookup, OnIndex, OnWaiting, ServerName, ServerRow,
     Ticket,
@@ -295,46 +294,32 @@ fn mark_seen(repository: &str, mark: SeenMark, calls: State<'_, Calls>) -> Resul
     Ok(())
 }
 
-/// What the channel of a mark that can take its item off the window's list hears once the session has done
-/// what the mark asks (#489), shaped as a command's answer is: the store kept it, or why it couldn't, which
-/// the status bar says too.
-#[derive(Serialize, Type)]
-#[serde(tag = "status", rename_all = "snake_case")]
-enum MarkKept {
-    Ok,
-    Error { error: Error },
-}
-
-/// Mark Unseen, Archive, Unarchive, Mute, Mute author, Pin or Unpin, as `mark` says, on an item of
-/// `repository` or its author: a mark that can take its item off the window's list (#489). It hands the
-/// mark to the core on this thread, so marks reach the core in the order the window sent them, and returns
-/// at once. `kept` hears once the store has kept it, or why it couldn't, so each read the window asks after
-/// that shows it. The `changed` event comes with the mark, and can arrive before `kept` hears.
+/// Mark Unseen on Issue or PR `number`, which unarchives `archived`, the item that holds it, when the window
+/// draws that Archived (#491). Returns at once.
 #[tauri::command]
 #[specta::specta]
-fn mark_answered(
+fn mark_unseen(
     repository: &str,
-    mark: AnsweredMark,
-    kept: Channel<MarkKept>,
+    number: u32,
+    archived: Option<ItemKey>,
     calls: State<'_, Calls>,
 ) -> Result<(), Error> {
-    calls.mark_answered(RepositoryName::parse(repository)?, mark, kept_on(kept));
+    calls.mark_unseen(RepositoryName::parse(repository)?, number, archived);
     Ok(())
 }
 
-/// The reply that hands the session's answer to a mark on to `kept`.
-fn kept_on(kept: Channel<MarkKept>) -> MarkReply {
-    MarkReply::new(move |result| {
-        let heard = match result {
-            Ok(()) => MarkKept::Ok,
-            Err(error) => MarkKept::Error { error },
-        };
-        #[expect(
-            clippy::let_underscore_must_use,
-            reason = "this fails only if the window has stopped listening, and then nobody wants to hear it"
-        )]
-        let _ = kept.send(heard);
-    })
+/// Archive on the item `item` names, with the Mark Seen the window drew for it in `mark` (#490). Returns at
+/// once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn archive(
+    repository: &str,
+    item: ItemKey,
+    mark: SeenMark,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.archive(RepositoryName::parse(repository)?, item, mark);
+    Ok(())
 }
 
 /// Mark Seen with `mark` on the item `item` names, which the window draws Archived: it stays Archived, in
@@ -351,6 +336,28 @@ fn keep_archived(
     Ok(())
 }
 
+/// Unarchives the item `item` names, and returns at once.
+#[tauri::command]
+#[specta::specta]
+fn unarchive(repository: &str, item: ItemKey, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.unarchive(RepositoryName::parse(repository)?, item);
+    Ok(())
+}
+
+/// Mute on the item `item` names, with the Mark Seen the window drew for it in `mark` (#492). Returns at
+/// once, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn mute(
+    repository: &str,
+    item: ItemKey,
+    mark: SeenMark,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.mute(RepositoryName::parse(repository)?, item, mark);
+    Ok(())
+}
+
 /// Unmutes the item `item` names, and returns at once.
 #[tauri::command]
 #[specta::specta]
@@ -359,11 +366,36 @@ fn unmute(repository: &str, item: ItemKey, calls: State<'_, Calls>) -> Result<()
     Ok(())
 }
 
+/// Mute author on `author` in `repository` (#494). Returns at once: the core marks their open items seen in
+/// the background, and the `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn mute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.mute_author(RepositoryName::parse(repository)?, author);
+    Ok(())
+}
+
 /// Unmutes `author` in `repository`, and returns at once.
 #[tauri::command]
 #[specta::specta]
 fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Result<(), Error> {
     calls.unmute_author(RepositoryName::parse(repository)?, author);
+    Ok(())
+}
+
+/// Pins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn pin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.pin(RepositoryName::parse(repository)?, number);
+    Ok(())
+}
+
+/// Unpins Issue `number` of `repository` (#488), and returns at once. The `changed` event follows.
+#[tauri::command]
+#[specta::specta]
+fn unpin(repository: &str, number: u32, calls: State<'_, Calls>) -> Result<(), Error> {
+    calls.unpin(RepositoryName::parse(repository)?, number);
     Ok(())
 }
 
@@ -1067,10 +1099,16 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             window_shown,
             window_loaded,
             mark_seen,
-            mark_answered,
+            mark_unseen,
+            archive,
             keep_archived,
+            unarchive,
+            mute,
             unmute,
+            mute_author,
             unmute_author,
+            pin,
+            unpin,
             slow_commands::switch_show_muted,
             settings,
             slow_commands::themes,

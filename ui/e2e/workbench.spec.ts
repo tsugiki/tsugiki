@@ -171,7 +171,7 @@ test("the Sidebar's Pinned issues lists the pins, and an unpin takes the row awa
     pinned: true,
   };
   const more = { count: 1, filters: [mine], pinned: 1 };
-  await mockCore(page, { home, workbench: workbenchPage([asked, kept], more) });
+  await mockCore(page, { home, workbench: workbenchPage([asked, kept], more), unpin: done });
   await page.goto("/");
   const sidebar = page.getByRole("navigation", { name: "Sidebar" });
 

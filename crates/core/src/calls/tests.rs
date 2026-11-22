@@ -84,7 +84,6 @@ impl Setup {
                 | SessionMessage::Refresh
                 | SessionMessage::SettingsChanged(..)
                 | SessionMessage::Mark(_)
-                | SessionMessage::MarkAnswered { .. }
                 | SessionMessage::Patched(..)
                 | SessionMessage::Saved(_) => None,
             })
@@ -214,7 +213,6 @@ fn synced_and_saved(messages: &Receiver<SessionMessage>) -> Vec<String> {
             | SessionMessage::ShowMuted { .. }
             | SessionMessage::Refresh
             | SessionMessage::Mark(_)
-            | SessionMessage::MarkAnswered { .. }
             | SessionMessage::Patched(..)
             | SessionMessage::Saved(_) => None,
         })

@@ -202,14 +202,49 @@ describe("blockerLines", () => {
     ]);
   });
 
-  it("drops the blocker that closes a cycle, as treeLines does, and still names it", () => {
+  it("breaks a tie by number, though one of the two tickets runs deeper", () => {
+    // 1 blocks 2 and 3, both one step from 10, and 3 runs deeper through 5 and 6.
+    const tickets = [
+      ticket(10, [2, 3]),
+      ticket(2, [1]),
+      ticket(3, [1, 5]),
+      ticket(5, [6]),
+      ticket(6),
+      ticket(1),
+    ];
+    expect(blockerLines(tickets, [10])).toEqual([
+      "#10 Ticket 10 (4)",
+      "├─ #2 Ticket 2 (2)",
+      "│  └─ #1 Ticket 1 (1)",
+      "└─ #3 Ticket 3 (3)  [also #1]",
+      "   └─ #5 Ticket 5 (2)",
+      "      └─ #6 Ticket 6 (1)",
+      "max depth: 4",
+    ]);
+  });
+
+  it("walks up from the ticket named, dropping the blocker that closes a cycle and still naming it", () => {
     const tickets = [ticket(1, [2]), ticket(2, [1])];
     expect(blockerLines(tickets, [1])).toEqual([
       "#1 Ticket 1 (2)",
       "└─ #2 Ticket 2 (1)  [also #1]",
       "max depth: 2",
     ]);
-    expect(blockerLines(tickets, [2])).toEqual(["#2 Ticket 2 (1)  [also #1*]", "max depth: 1"]);
+    expect(blockerLines(tickets, [2])).toEqual([
+      "#2 Ticket 2 (2)",
+      "└─ #1 Ticket 1 (1)  [also #2]",
+      "max depth: 2",
+    ]);
+  });
+
+  it("keeps the blockers of a ticket in a cycle, whichever ticket of it is named", () => {
+    // 1 and 2 block each other, and 5 blocks 1. treeLines' walk from the lowest number drops 2 → 1.
+    expect(blockerLines([ticket(1, [2, 5]), ticket(2, [1]), ticket(5)], [2])).toEqual([
+      "#2 Ticket 2 (3)",
+      "└─ #1 Ticket 1 (2)  [also #2]",
+      "   └─ #5 Ticket 5 (1)",
+      "max depth: 3",
+    ]);
   });
 });
 

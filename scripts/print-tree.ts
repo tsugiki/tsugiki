@@ -7,11 +7,11 @@ import { execFileSync } from "node:child_process";
 import { stop } from "./run.ts";
 import { blockerLines, QUERY, ticketsFromPages, treeLines } from "./tree.ts";
 
-const up = process.argv[2] === "--up";
-const args = process.argv.slice(up ? 3 : 2);
+const up = process.argv.includes("--up");
+const args = process.argv.slice(2).filter((arg) => arg !== "--up");
 const bad = args.filter((arg) => !/^\d+$/.test(arg));
 if (bad.length > 0) {
-  stop(`just tree takes ticket numbers, after --up to list their blockers, not ${bad.join(", ")}`);
+  stop(`just tree takes ticket numbers and --up, not ${bad.join(", ")}`);
 }
 if (up && args.length === 0) {
   stop("just tree --up takes the ticket numbers whose blockers it lists");

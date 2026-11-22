@@ -1,6 +1,8 @@
 // The layout of `just tree`: the open tickets below some tickets, as a tree of their blockers, so you can see
 // how deep a chain runs and where to cut it so more of its tickets can be built at once. A ticket prints
-// under the open blocker on its longest chain, and its other open blockers follow it in `[also #N]`.
+// under the open blocker on its longest chain, and its other open blockers follow it in `[also #N]`. With
+// `--up` it draws the other way: the open blockers above some tickets, each blocker under the ticket it
+// blocks on its longest chain from the ticket named.
 import { BLOCKED_BY, type BlockedBy, cutWarning, type OpenBlockers, openBlockers } from "./blockers.ts";
 
 /** An open issue, with its open blockers. */
@@ -56,51 +58,9 @@ export function ticketsFromPages(reply: string): { tickets: TreeTicket[]; warnin
   return { tickets, warning: cutWarning(repositories.flatMap((repository) => repository.issues.nodes)) };
 }
 
-/** The open tickets by number, each one's depth, and the open blockers each one hangs from. */
-interface Chains {
-  byNumber: Map<number, TreeTicket>;
-  depth: (number: number) => number;
-  /** Each ticket's open blockers in `tickets`, less the one that would close a cycle, in order of number. */
-  kept: Map<number, number[]>;
-}
-
-function chains(tickets: TreeTicket[]): Chains {
-  const byNumber = new Map(tickets.map((ticket) => [ticket.number, ticket]));
-
-  // Each ticket's depth: 1 plus the depth of its deepest open blocker, in the trees or not. A blocker in
-  // another repository, or one GitHub didn't list as an open issue here, has no blockers we know of, so it
-  // counts 1. GitHub's docs don't say it refuses a cycle of blockers, so a walk from the lowest number drops
-  // the blocker that would close one. The tree hangs from the blockers `kept`, and `[also]` still names the
-  // dropped one.
-  const kept = new Map<number, number[]>();
-  const depths = new Map<number, number>();
-  const walking = new Set<number>();
-  const walk = (ticket: TreeTicket): number => {
-    const known = depths.get(ticket.number);
-    if (known !== undefined) {
-      return known;
-    }
-    walking.add(ticket.number);
-    const blockers = [...ticket.openBlockers]
-      .sort((a, b) => a - b)
-      .flatMap((number) => {
-        const blocker = byNumber.get(number);
-        return blocker !== undefined && !walking.has(number) ? [blocker] : [];
-      });
-    const outside = ticket.blockersElsewhere.length > 0 || ticket.openBlockers.some((n) => !byNumber.has(n));
-    const result = 1 + Math.max(outside ? 1 : 0, ...blockers.map(walk));
-    walking.delete(ticket.number);
-    kept.set(
-      ticket.number,
-      blockers.map((blocker) => blocker.number),
-    );
-    depths.set(ticket.number, result);
-    return result;
-  };
-  for (const ticket of [...tickets].sort((a, b) => a.number - b.number)) {
-    walk(ticket);
-  }
-  return { byNumber, depth: (number) => depths.get(number) as number, kept };
+/** Whether a ticket has an open blocker whose own blockers we don't know, so it counts 1 to the depth. */
+function blockedOutside(ticket: TreeTicket, byNumber: Map<number, TreeTicket>): boolean {
+  return ticket.blockersElsewhere.length > 0 || ticket.openBlockers.some((n) => !byNumber.has(n));
 }
 
 /**
@@ -148,7 +108,41 @@ function drawTrees(
  * with none named, one for each ticket with no open blocker. Each ticket named must be in `tickets`.
  */
 export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
-  const { byNumber, depth, kept } = chains(tickets);
+  const byNumber = new Map(tickets.map((ticket) => [ticket.number, ticket]));
+
+  // Each ticket's depth: 1 plus the depth of its deepest open blocker, in the trees or not. A blocker in
+  // another repository, or one GitHub didn't list as an open issue here, has no blockers we know of, so it
+  // counts 1. GitHub's docs don't say it refuses a cycle of blockers, so a walk from the lowest number drops
+  // the blocker that would close one. The tree hangs from the blockers `kept`, and `[also]` still names the
+  // dropped one.
+  const kept = new Map<number, number[]>();
+  const depths = new Map<number, number>();
+  const walking = new Set<number>();
+  const walk = (ticket: TreeTicket): number => {
+    const known = depths.get(ticket.number);
+    if (known !== undefined) {
+      return known;
+    }
+    walking.add(ticket.number);
+    const blockers = [...ticket.openBlockers]
+      .sort((a, b) => a - b)
+      .flatMap((number) => {
+        const blocker = byNumber.get(number);
+        return blocker !== undefined && !walking.has(number) ? [blocker] : [];
+      });
+    const result = 1 + Math.max(blockedOutside(ticket, byNumber) ? 1 : 0, ...blockers.map(walk));
+    walking.delete(ticket.number);
+    kept.set(
+      ticket.number,
+      blockers.map((blocker) => blocker.number),
+    );
+    depths.set(ticket.number, result);
+    return result;
+  };
+  for (const ticket of [...tickets].sort((a, b) => a.number - b.number)) {
+    walk(ticket);
+  }
+  const depth = (number: number): number => depths.get(number) as number;
   const dependents = new Map<number, number[]>();
   for (const [number, blockers] of kept) {
     for (const blocker of blockers) {
@@ -195,30 +189,57 @@ export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
  * with each ticket's open blockers under it. Each ticket named must be in `tickets`.
  */
 export function blockerLines(tickets: TreeTicket[], named: number[]): string[] {
-  const { byNumber, depth, kept } = chains(tickets);
+  const byNumber = new Map(tickets.map((ticket) => [ticket.number, ticket]));
+  const ticketOf = (number: number): TreeTicket => byNumber.get(number) as TreeTicket;
   const roots = [...new Set(named)];
   const isRoot = new Set(roots);
-  // `kept` holds each ticket in `tickets`, which holds each root and each blocker `kept` names.
-  const blockers = (number: number): number[] => kept.get(number) as number[];
-  const above = new Set(roots);
-  for (const number of above) {
-    for (const blocker of blockers(number)) {
-      above.add(blocker);
+
+  // A walk up from the tickets named reaches each open blocker here. A blocker still on the walk's path
+  // would close a cycle, so the walk doesn't follow it, and `[also]` names it. `climb` keeps the rest, and
+  // `order` lists each ticket after its blockers.
+  const climb = new Map<number, number[]>();
+  const order: number[] = [];
+  const walking = new Set<number>();
+  const visit = (number: number): void => {
+    walking.add(number);
+    const next = ticketOf(number)
+      .openBlockers.filter((blocker) => byNumber.has(blocker) && !walking.has(blocker))
+      .sort((a, b) => a - b);
+    climb.set(number, next);
+    for (const blocker of next) {
+      if (!climb.has(blocker)) {
+        visit(blocker);
+      }
+    }
+    walking.delete(number);
+    order.push(number);
+  };
+  for (const root of roots) {
+    if (!climb.has(root)) {
+      visit(root);
     }
   }
 
+  // Each ticket's depth: 1 plus the depth of its deepest blocker the walk kept, as `treeLines` counts it.
+  const depths = new Map<number, number>();
+  for (const number of order) {
+    const below = (climb.get(number) as number[]).map((blocker) => depths.get(blocker) as number);
+    depths.set(number, 1 + Math.max(blockedOutside(ticketOf(number), byNumber) ? 1 : 0, ...below));
+  }
+  const depth = (number: number): number => depths.get(number) as number;
+
   // Each blocker goes under the ticket it blocks that sits furthest from a root, the lowest number on a tie,
-  // so the tree shows its longest chain. A blocker is shallower than each ticket `kept` hangs it from, so
-  // going from the deepest ticket down reaches each blocker after every ticket it blocks.
+  // so the tree shows its longest chain. `order` reversed reaches each blocker after every ticket it blocks.
   const distance = new Map(roots.map((root) => [root, 0]));
   const parent = new Map<number, number>();
-  const fromDeepest = [...above].sort((a, b) => depth(b) - depth(a) || a - b);
-  for (const number of fromDeepest) {
-    // A root starts at 0, and each other ticket here took its distance from a deeper one that blocks it.
-    const reach = distance.get(number) as number;
-    for (const blocker of blockers(number)) {
-      if (!isRoot.has(blocker) && reach + 1 > (distance.get(blocker) ?? -1)) {
-        distance.set(blocker, reach + 1);
+  for (const number of [...order].reverse()) {
+    const reach = (distance.get(number) as number) + 1;
+    for (const blocker of climb.get(number) as number[]) {
+      const best = distance.get(blocker);
+      const nearer = best === undefined || reach > best;
+      const tied = reach === best && number < (parent.get(blocker) as number);
+      if (!isRoot.has(blocker) && (nearer || tied)) {
+        distance.set(blocker, reach);
         parent.set(blocker, number);
       }
     }
@@ -228,10 +249,10 @@ export function blockerLines(tickets: TreeTicket[], named: number[]): string[] {
     children.set(number, [...(children.get(number) ?? []), blocker]);
   }
 
+  const drawn = new Set(order);
   return drawTrees(roots, children, depth, (number) => {
-    const ticket = byNumber.get(number) as TreeTicket;
     const under = new Set(children.get(number) ?? []);
-    const others = ticket.openBlockers.filter((blocker) => !under.has(blocker));
-    return lineOf(ticket, depth(number), others, above);
+    const others = ticketOf(number).openBlockers.filter((blocker) => !under.has(blocker));
+    return lineOf(ticketOf(number), depth(number), others, drawn);
   });
 }

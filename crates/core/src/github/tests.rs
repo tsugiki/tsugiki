@@ -1,5 +1,6 @@
 use super::testing::{
-    Canned, RATE_LIMIT, Scripted, answer, answered, dated, github, reply_ok, signed_in_as,
+    COMMENT_ID, Canned, RATE_LIMIT, Scripted, a_comment, answer, answered, dated, github, reply_ok,
+    signed_in_as,
 };
 use super::*;
 use crate::github::in_flight::InFlight;
@@ -647,6 +648,48 @@ impl Transport for Panicking {
     )]
     fn post(&self, _: &Token, _: &Request<'_>) -> Result<Reply, Unreachable> {
         panic!("the network code broke");
+    }
+}
+
+#[test]
+fn a_transport_that_only_reads_counts_a_write_as_unreachable() {
+    let written = Panicking.write(&super::testing::token(), &a_comment(), COMMENT_ID);
+    assert_eq!(written.unwrap_err(), Unreachable::Offline);
+}
+
+#[test]
+fn a_scripted_transport_answers_a_write_and_notes_its_operation_and_input() {
+    let (scripted, asked) = Scripted::new(vec![reply_ok("{}")]);
+
+    let written = scripted.write(&super::testing::token(), &a_comment(), COMMENT_ID);
+
+    assert_eq!(written.unwrap().body, "{}");
+    let input = json!({ "input": { "subjectId": "I_1", "body": "Thanks" } });
+    assert_eq!(asked.recv().unwrap(), ("AddComment".to_owned(), input));
+}
+
+#[test]
+fn a_write_whose_selection_the_token_crate_would_refuse_fails_the_test_whatever_answers_it() {
+    let quoted = Selection {
+        payload: r#"{ comment(x: "}") { id } }"#,
+        fragments: "",
+    };
+    let transports: [Box<dyn Transport>; 3] = [
+        Box::new(Canned(reply_ok("{}"))),
+        Box::new(Scripted::new(vec![reply_ok("{}")]).0),
+        Box::new(Panicking),
+    ];
+    let token = super::testing::token();
+    for transport in transports {
+        let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            transport.write(&token, &a_comment(), quoted)
+        }));
+        let panic = written.unwrap_err();
+        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(
+            message.contains("AddComment's selection would be refused"),
+            "{message}"
+        );
     }
 }
 

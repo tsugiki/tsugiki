@@ -18,8 +18,8 @@ use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
 use crate::{
-    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, checked_read,
-    unreachable,
+    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Selection, Token, Unreachable, Write,
+    checked_read, unreachable, write_body,
 };
 
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
@@ -61,6 +61,23 @@ impl Https {
     /// isn't a read reaches no network.
     pub fn post_graphql(&self, token: &Token, body: &str) -> Result<Reply, Unreachable> {
         let body = checked_read(body)?;
+        self.send_graphql(token, body)
+    }
+
+    /// Sends `write`, its payload asked for `selection`, with `token`. The crate writes the mutation, and a
+    /// selection that could add to it reaches no network.
+    pub fn post_write(
+        &self,
+        token: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        let body = write_body(write, selection)?;
+        self.send_graphql(token, body)
+    }
+
+    /// Sends `body`, which `post_graphql` or `post_write` checked, to GitHub's GraphQL endpoint.
+    fn send_graphql(&self, token: &Token, body: String) -> Result<Reply, Unreachable> {
         let response = self
             .agent
             .post(GRAPHQL)

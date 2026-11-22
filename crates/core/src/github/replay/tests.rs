@@ -1,5 +1,5 @@
 use super::*;
-use crate::github::testing::token;
+use crate::github::testing::{COMMENT_ID, a_comment, token};
 use crate::github::{Request, Transport};
 
 fn fixture(name: &str, contents: &str) -> crate::testing::TempPath {
@@ -86,6 +86,21 @@ fn a_changed_query_needs_a_new_recording() {
     // Caught rather than `should_panic`, so the test passes with its folder removed.
     let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         replayer.post(&token, &request)
+    }))
+    .unwrap_err();
+    let message = panic.downcast_ref::<String>().unwrap();
+    assert!(message.contains("record it again"), "{message}");
+}
+
+#[test]
+fn a_write_that_asks_for_another_selection_needs_a_new_recording() {
+    let recorded = r#"{"query":"mutation AddComment { old }","status":200,"reset":null,"body":{}}"#;
+    let dir = fixture("stale-write", recorded);
+    std::fs::rename(dir.join("Op.json"), dir.join("AddComment.json")).unwrap();
+    let replayer = Replayer::new(dir.to_path_buf());
+    let token = token();
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        replayer.write(&token, &a_comment(), COMMENT_ID)
     }))
     .unwrap_err();
     let message = panic.downcast_ref::<String>().unwrap();

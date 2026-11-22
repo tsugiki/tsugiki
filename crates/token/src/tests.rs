@@ -325,3 +325,151 @@ fn a_refused_body_is_refused_not_offline_and_says_why() {
         Err(Unreachable::Refused(NotARead::Mutation.to_string()))
     );
 }
+
+/// A comment on the Issue whose ID is `I_1`, with text that the selection may not hold.
+fn a_comment() -> Write {
+    Write::AddComment {
+        subject: NodeId::new("I_1".to_owned()),
+        body: "Looks good \"to me\" # } mutation".to_owned(),
+    }
+}
+
+/// A selection whose payload is `payload`, with one fragment it may spread.
+fn asking(payload: &str) -> Selection<'_> {
+    Selection {
+        payload,
+        fragments: "fragment C on IssueComment { id author { login } }",
+    }
+}
+
+#[test]
+fn add_comment_composes_add_comment_with_the_cores_selection() {
+    let selection = asking(" { commentEdge { node { ...C } } }\n");
+    let body: Value = serde_json::from_str(&write_body(&a_comment(), selection).unwrap()).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "query": "mutation AddComment($input: AddCommentInput!) { addComment(input: $input) \
+                      { commentEdge { node { ...C } } } } \
+                      fragment C on IssueComment { id author { login } }",
+            "variables": {
+                "input": { "subjectId": "I_1", "body": "Looks good \"to me\" # } mutation" },
+            },
+        })
+    );
+    assert_eq!(a_comment().operation(), "AddComment");
+}
+
+#[test]
+fn a_selection_with_no_fragments_goes_out() {
+    let selection = Selection {
+        payload: "{ clientMutationId }",
+        fragments: "",
+    };
+    assert_eq!(
+        a_comment().query(selection).unwrap(),
+        "mutation AddComment($input: AddCommentInput!) { addComment(input: $input) \
+         { clientMutationId } }"
+    );
+}
+
+#[test]
+fn a_selection_that_holds_mutation_a_quote_or_a_comment_is_refused() {
+    let in_fragments = |fragments| Selection {
+        payload: "{ clientMutationId }",
+        fragments,
+    };
+    let cases = [
+        (
+            asking("{ mutationId: clientMutationId }"),
+            BadSelection::Mutation,
+        ),
+        (
+            in_fragments("fragment mutationFields on IssueComment { id }"),
+            BadSelection::Mutation,
+        ),
+        (
+            asking(r#"{ comment(x: "}") { id } }"#),
+            BadSelection::StringOrComment,
+        ),
+        (
+            asking("{ clientMutationId # }\n }"),
+            BadSelection::StringOrComment,
+        ),
+        (
+            in_fragments("# }\nfragment C on IssueComment { id }"),
+            BadSelection::StringOrComment,
+        ),
+    ];
+    for (selection, refused) in cases {
+        assert_eq!(
+            write_body(&a_comment(), selection),
+            Err(refused),
+            "{selection:?}"
+        );
+    }
+}
+
+#[test]
+fn a_payload_that_closes_before_its_end_or_never_is_refused() {
+    let second_field = "deleteRef(input: { refId: 1 }) { clientMutationId }";
+    for payload in [
+        format!("{{ clientMutationId }} {second_field}"),
+        format!("{{ clientMutationId }} }} {second_field} {{"),
+        "{ clientMutationId } }".to_owned(),
+        "{ commentEdge { node { id } }".to_owned(),
+        "clientMutationId".to_owned(),
+        "} clientMutationId {".to_owned(),
+        String::new(),
+    ] {
+        assert_eq!(
+            write_body(&a_comment(), asking(&payload)),
+            Err(BadSelection::PayloadBraces),
+            "{payload}"
+        );
+    }
+}
+
+#[test]
+fn fragments_whose_braces_dont_pair_up_are_refused() {
+    for fragments in [
+        "fragment C on IssueComment { id } }",
+        "} fragment C on IssueComment { id {",
+        "fragment C on IssueComment { id",
+    ] {
+        let selection = Selection {
+            payload: "{ commentEdge { node { ...C } } }",
+            fragments,
+        };
+        assert_eq!(
+            write_body(&a_comment(), selection),
+            Err(BadSelection::FragmentBraces),
+            "{fragments}"
+        );
+    }
+}
+
+#[test]
+fn a_refused_selection_is_refused_not_offline_and_says_why() {
+    let refused = write_body(&a_comment(), asking("{ a } b")).map_err(Unreachable::from);
+    assert_eq!(
+        refused,
+        Err(Unreachable::Refused(
+            BadSelection::PayloadBraces.to_string()
+        ))
+    );
+    for (refused, says) in [
+        (BadSelection::Mutation, "`mutation`"),
+        (BadSelection::StringOrComment, "`#`"),
+        (BadSelection::PayloadBraces, "one selection set"),
+        (BadSelection::FragmentBraces, "fragments"),
+    ] {
+        assert!(refused.to_string().contains(says), "{refused:?}");
+    }
+}
+
+#[test]
+fn a_write_doesnt_pass_as_a_read() {
+    let body = write_body(&a_comment(), asking("{ clientMutationId }")).unwrap();
+    assert_eq!(checked_read(&body), Err(NotARead::Mutation));
+}

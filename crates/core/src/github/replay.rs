@@ -1,11 +1,11 @@
 //! Answers GraphQL requests from recorded JSON, in place of the network (ADR 0009).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Reply, Request, Transport, Unreachable};
+use super::{Reply, Request, Selection, Transport, Unreachable, Write, https};
 use crate::token::Token;
 
 /// One recorded exchange, in `<operation>.json`.
@@ -50,16 +50,8 @@ fn without_numbers(query: &str) -> String {
 }
 
 impl Transport for Replayer {
-    #[expect(
-        clippy::expect_used,
-        clippy::panic_in_result_fn,
-        clippy::unwrap_in_result,
-        reason = "a test helper: a missing or stale recording should fail the test"
-    )]
     fn post(&self, _: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        let path = self.dir.join(format!("{}.json", request.operation));
-        let text = std::fs::read_to_string(&path).expect("no recording for this operation");
-        let recording: Recording = serde_json::from_str(&text).expect("an unreadable recording");
+        let (path, recording) = self.recording(request.operation);
         // A sync also reads Issues by number, and each read's query holds its numbers. No recording holds
         // those, so a replay answers that they aren't there. A query that asks for something else still has
         // to match.
@@ -75,20 +67,51 @@ impl Transport for Replayer {
                 body: NO_ISSUES.to_owned(),
             });
         }
+        Ok(recording.answer(&path, &request.query))
+    }
+
+    /// Answers a write from the recording named after its operation, as `Https` sends it: a selection the
+    /// token crate refuses is refused here too.
+    fn write(
+        &self,
+        _: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        let query = https::write_query(write, selection)?;
+        let (path, recording) = self.recording(write.operation());
+        Ok(recording.answer(&path, &query))
+    }
+}
+
+impl Replayer {
+    /// The recording of `operation`, and where it is.
+    #[expect(
+        clippy::expect_used,
+        reason = "a test helper: a missing or unreadable recording should fail the test"
+    )]
+    fn recording(&self, operation: &str) -> (PathBuf, Recording) {
+        let path = self.dir.join(format!("{operation}.json"));
+        let text = std::fs::read_to_string(&path).expect("no recording for this operation");
+        let recording = serde_json::from_str(&text).expect("an unreadable recording");
+        (path, recording)
+    }
+}
+
+impl Recording {
+    /// The recorded answer, to `query`, which the recording at `path` must have been made of.
+    fn answer(self, path: &Path, query: &str) -> Reply {
         assert_eq!(
-            recording.query, request.query,
+            self.query, query,
             "the query changed since {path:?} was recorded: record it again"
         );
-        let body = recording
-            .body
-            .as_str()
-            .map_or_else(|| recording.body.to_string(), ToOwned::to_owned);
-        Ok(Reply {
-            status: recording.status,
-            reset: recording.reset,
+        let body = (self.body.as_str()).map_or_else(|| self.body.to_string(), ToOwned::to_owned);
+        Reply {
+            status: self.status,
+            reset: self.reset,
             date: None,
             body,
-        })
+        }
     }
 }
 

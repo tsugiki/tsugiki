@@ -43,7 +43,7 @@ use crate::token::Token;
 use crate::workbench::{ListedItem, Workbench, WorkbenchItem, WorkbenchView};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -2570,7 +2570,7 @@ fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unp
         "{unpinned:?}"
     );
     assert_eq!(owed, [8, 9].into());
-    assert_eq!(left, BTreeMap::new());
+    assert_eq!(left, BTreeSet::new());
 }
 
 #[test]

@@ -21,7 +21,7 @@ mod read_only;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, Seeing};
+pub use activity::{Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, PinId, Seeing};
 
 use pull_requests::FirstSave;
 
@@ -738,20 +738,14 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Pins Issue `number` (#488) at `now`, as `activity::pin` says.
-    pub fn pin(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-        now: OffsetDateTime,
-    ) -> Result<(), Error> {
+    /// Pins Issue `number` (#488), as `activity::pin` says.
+    pub fn pin(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved =
-            self.call(move |connection| activity::pin(connection, &repository, number, now))?;
+        let saved = self.call(move |connection| activity::pin(connection, &repository, number))?;
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Unpins Issue `number` (#488).
+    /// Unpins Issue `number` (#488), as `activity::unpin` says.
     pub fn unpin(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
         let repository = repository.clone();
         let saved =
@@ -759,14 +753,39 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The Pinned issues of `repository`, each with the moment the user pinned it (#488).
-    pub fn pinned(
-        &self,
-        repository: &RepositoryName,
-    ) -> Result<BTreeMap<u32, OffsetDateTime>, Error> {
+    /// Drops the pins of `numbers`, which a fetch found name no Issue of `repository` (#488).
+    pub fn drop_pins(&self, repository: &RepositoryName, numbers: Vec<u32>) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::drop_pins(connection, &repository, &numbers))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
+    /// The Pinned issues of `repository` (#488).
+    pub fn pinned(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| activity::pinned(connection, &repository))?;
         read.map_err(saying(CANT_READ))
+    }
+
+    /// The pins of `repository` whose Issues' trees no sync has read since the pin (#488).
+    pub fn pins_to_read(&self, repository: &RepositoryName) -> Result<BTreeMap<u32, PinId>, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| activity::pins_to_read(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// Keeps that a sync read the trees of the Issues `read` pins (#488), as `activity::read_pin_trees`
+    /// says.
+    pub fn read_pin_trees(
+        &self,
+        repository: &RepositoryName,
+        read: BTreeMap<u32, PinId>,
+    ) -> Result<(), Error> {
+        let repository = repository.clone();
+        let saved =
+            self.call(move |connection| activity::read_pin_trees(connection, &repository, &read))?;
+        saved.map_err(saying(CANT_WRITE))
     }
 
     /// Forgets the Read-only marks of each token of another kind than `kind`, which Tsugiki knows before

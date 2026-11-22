@@ -5,6 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rusqlite::{OptionalExtension, Row, Transaction, named_params};
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::Connection;
@@ -15,6 +16,7 @@ use crate::facts::activity::{
     Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, MutedAuthor, PutAway,
     ShowMuted,
 };
+use crate::facts::issues::IssueState;
 use crate::facts::patch_ids::StaleFinding;
 use crate::login::Login;
 use crate::repository::RepositoryName;
@@ -120,15 +122,17 @@ pub(super) const SHOW_MUTED: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// The user's Pinned issues (#488), each with the moment the user pinned it. A sync after that moment reads
-/// the Issue's whole tree, as for the user's own Issues.
+/// The user's Pinned issues (#488), each with whether a sync has read its whole tree since the pin, as for
+/// the user's own Issues. Each pin has an id of its own, never used again, so a pin made again after an
+/// unpin is another.
 pub(super) const PINNED: &str = "
     CREATE TABLE pinned (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         repository TEXT NOT NULL COLLATE NOCASE,
         number INTEGER NOT NULL,
-        at INTEGER NOT NULL,
-        PRIMARY KEY (repository, number)
-    ) WITHOUT ROWID;
+        tree_read INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (repository, number)
+    );
 ";
 
 /// The Issues and PRs a save found closed that the store held open (#820), until the sync judges whether
@@ -606,49 +610,138 @@ pub(super) fn show_muted(
     Ok(found.map_or(ShowMuted::Off, |()| ShowMuted::On))
 }
 
-/// Pins Issue `number` (#488) at `now`, unless the user pinned it already, which keeps the moment of that
-/// pin. A pin keeps the Issue on the Workbench, so it unarchives the Issue too, and it takes the Issue out of
-/// the Inbox as Archive and Mute do, where a PR opening on it had brought it back (#823).
+/// One pin of an Issue (#488). A pin made again after an unpin is another, so a sync that read the tree of
+/// the first one leaves the second to read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PinId(i64);
+
+/// Pins Issue `number` (#488), unless the user pinned it already, or the number names a PR or no Issue, as
+/// the store knows. A pin keeps the Issue on the Workbench, so it unarchives the Issue too, and it takes the
+/// Issue out of the Inbox as Archive and Mute do, where a PR opening on it had brought it back (#823).
 pub(super) fn pin(
     connection: &mut Connection,
     repository: &RepositoryName,
     number: u32,
-    now: OffsetDateTime,
 ) -> rusqlite::Result<()> {
     let transaction = connection.transaction()?;
-    transaction
-        .execute(
-            "INSERT OR IGNORE INTO pinned (repository, number, at) VALUES (:repository, :number, :at)",
-            named_params! { ":repository": repository, ":number": number, ":at": now.unix_timestamp() },
-        )
-        .map(drop)?;
-    let key = ItemKey::Issue { number };
-    unarchive(&transaction, repository, key)?;
-    forget_brought_back(&transaction, repository, key)?;
+    let asked = named_params! { ":repository": repository, ":number": number };
+    let insert = "INSERT OR IGNORE INTO pinned (repository, number)
+                  SELECT :repository, :number
+                  WHERE NOT EXISTS (SELECT 1 FROM pull_requests
+                                    WHERE repository = :repository AND number = :number)
+                    AND NOT EXISTS (SELECT 1 FROM issueless_numbers
+                                    WHERE repository = :repository AND number = :number)";
+    transaction.execute(insert, asked).map(drop)?;
+    let query = "SELECT 1 FROM pinned WHERE repository = :repository AND number = :number";
+    let pinned = transaction.query_row(query, asked, |_| Ok(())).optional()?;
+    if pinned.is_some() {
+        let key = ItemKey::Issue { number };
+        unarchive(&transaction, repository, key)?;
+        forget_brought_back(&transaction, repository, key)?;
+    }
     transaction.commit()
 }
 
-/// Unpins Issue `number` (#488).
+/// Unpins Issue `number` (#488). A closed Issue the pin kept from Archived has its closing judged again at
+/// the next step of a sync that saves, which archives it if Reach still holds it, as a Filter's find (#820).
 pub(super) fn unpin(
-    connection: &Connection,
+    connection: &mut Connection,
     repository: &RepositoryName,
     number: u32,
 ) -> rusqlite::Result<()> {
-    connection
-        .execute(
-            "DELETE FROM pinned WHERE repository = :repository AND number = :number",
-            named_params! { ":repository": repository, ":number": number },
-        )
-        .map(drop)
+    let transaction = connection.transaction()?;
+    let asked = named_params! { ":repository": repository, ":number": number };
+    let deleted = transaction.execute(
+        "DELETE FROM pinned WHERE repository = :repository AND number = :number",
+        asked,
+    )?;
+    if deleted > 0 {
+        let closed = "INSERT OR IGNORE INTO closings (repository, number)
+                      SELECT repository, number FROM issues
+                      WHERE repository = :repository AND number = :number
+                        AND state IS NOT NULL AND state <> :open";
+        let values = named_params! {
+            ":repository": repository, ":number": number, ":open": IssueState::Open,
+        };
+        transaction.execute(closed, values).map(drop)?;
+    }
+    transaction.commit()
 }
 
-/// The Pinned issues of `repository`, each with the moment the user pinned it (#488).
+/// Drops the pins of `numbers`, which a fetch found name no Issue of `repository` (#488).
+pub(super) fn drop_pins(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    numbers: &[u32],
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    drop_pins_in(&transaction, repository, numbers)?;
+    transaction.commit()
+}
+
+/// Drops the pins of `numbers` inside a transaction that saves more.
+pub(super) fn drop_pins_in(
+    connection: &Connection,
+    repository: &RepositoryName,
+    numbers: &[u32],
+) -> rusqlite::Result<()> {
+    let sql = "DELETE FROM pinned WHERE repository = :repository AND number = :number";
+    for number in numbers {
+        let asked = named_params! { ":repository": repository, ":number": number };
+        connection.execute(sql, asked).map(drop)?;
+    }
+    Ok(())
+}
+
+/// The Pinned issues of `repository` (#488).
 pub(super) fn pinned(
     connection: &Connection,
     repository: &RepositoryName,
-) -> rusqlite::Result<BTreeMap<u32, OffsetDateTime>> {
-    let query = "SELECT number, at FROM pinned WHERE repository = :repository";
-    moments(connection, query, repository, Items::All)
+) -> rusqlite::Result<BTreeSet<u32>> {
+    pinned_of(connection, repository, Items::All)
+}
+
+/// The Pinned issues of `items` (#488).
+fn pinned_of(
+    connection: &Connection,
+    repository: &RepositoryName,
+    items: Items<'_>,
+) -> rusqlite::Result<BTreeSet<u32>> {
+    let condition = items.condition("number");
+    let query = format!("SELECT number FROM pinned WHERE repository = :repository {condition}");
+    let mut statement = connection.prepare(&query)?;
+    let asked = items.with(vec![(":repository", repository)]);
+    let rows = statement.query_map(asked.as_slice(), |row| row.get("number"))?;
+    rows.collect()
+}
+
+/// The pins of `repository` whose Issues' trees no sync has read since the user pinned them (#488).
+pub(super) fn pins_to_read(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<BTreeMap<u32, PinId>> {
+    let query = "SELECT number, id FROM pinned WHERE repository = :repository AND NOT tree_read";
+    let mut statement = connection.prepare(query)?;
+    let asked = named_params! { ":repository": repository };
+    let rows = statement.query_map(asked, |row| Ok((row.get("number")?, PinId(row.get("id")?))))?;
+    rows.collect()
+}
+
+/// Keeps that a sync read the trees of the Issues `read` pins (#488). A pin the user has since dropped, or
+/// made again, keeps its own state.
+pub(super) fn read_pin_trees(
+    connection: &mut Connection,
+    repository: &RepositoryName,
+    read: &BTreeMap<u32, PinId>,
+) -> rusqlite::Result<()> {
+    let transaction = connection.transaction()?;
+    let sql = "UPDATE pinned SET tree_read = 1
+               WHERE repository = :repository AND number = :number AND id = :id";
+    for (number, PinId(id)) in read {
+        let asked = named_params! { ":repository": repository, ":number": number, ":id": id };
+        transaction.execute(sql, asked).map(drop)?;
+    }
+    transaction.commit()
 }
 
 /// The Muted authors of `repository`, by login.
@@ -1110,8 +1203,6 @@ pub(super) fn read_facts_of(
     );
     let marked_unseen =
         format!("SELECT number, at FROM marked_unseen WHERE repository = :repository {condition}");
-    let pinned =
-        format!("SELECT number, at FROM pinned WHERE repository = :repository {condition}");
     let ci_finished = format!(
         "SELECT number, ci_finished_at AS at FROM pull_requests
          WHERE repository = :repository AND ci_finished_at IS NOT NULL {condition}"
@@ -1124,7 +1215,7 @@ pub(super) fn read_facts_of(
         archived: archived(connection, repository, items)?,
         muted: muted(connection, repository, items)?,
         muted_authors: muted_authors(connection, repository)?,
-        pinned: moments(connection, &pinned, repository, items)?,
+        pinned: pinned_of(connection, repository, items)?,
         events: listed_events(connection, repository, (first_sync, viewer), items)?,
         ci_finished: moments(connection, &ci_finished, repository, items)?,
         failed_checks: failed_checks::read(connection, repository, items)?,

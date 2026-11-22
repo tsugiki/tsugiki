@@ -51,7 +51,7 @@ pub(crate) fn in_own_right(
         .filter(|pr| reasons(pr, viewer).iter().any(holds))
         .map(|pr| pr.number);
     let mut own = matched(&repository.filters, &facts.filters);
-    own.extend(facts.activity.pinned.keys());
+    own.extend(&facts.activity.pinned);
     own.extend(reasoned);
     own.extend(causes.waiting());
     own

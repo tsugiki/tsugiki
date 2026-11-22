@@ -533,11 +533,18 @@ export class WorkbenchState {
     return problemIn(commands.unmuteAuthor(this.#repository, login));
   }
 
-  /** Pins Issue `number` (#488), which then stays on the Workbench and leaves the Inbox. A cursor on its line
-   * in the Inbox lands on the item after it. Says what went wrong, if anything did. */
+  /** Pins Issue `number` (#488), which then stays on the Workbench, leaves the Inbox, and leaves Archived as
+   * the pin unarchives it. A cursor on any of its lines there lands on the item after it, as for Unarchive
+   * (#491). Says what went wrong, if anything did. */
   async pin(number: number) {
-    const leaves = this.#shown.kind === "inbox" ? ({ kind: "issue", number } as const) : undefined;
-    return this.#leave(leaves, commands.pin(this.#repository, number));
+    return this.#leave(this.pinTakesOut(number), commands.pin(this.#repository, number));
+  }
+
+  /** The key of Issue `number`, while the list shows a view that a pin takes it out of: the Inbox, or
+   * Archived. Any other view keeps listing it. */
+  pinTakesOut(number: number): ItemKey | undefined {
+    const kind = this.#shown.kind;
+    return kind === "inbox" || kind === "archived" ? { kind: "issue", number } : undefined;
   }
 
   /** Unpins Issue `number` (#488). Says what went wrong, if anything did. */

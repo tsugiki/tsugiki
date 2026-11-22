@@ -691,17 +691,18 @@
   }
 
   /** The Issue the Detail pane shows, or the Issue that holds the PR on show: of those its view names, the
-   * one the PR opened from, or else the first, and before the view arrives the Issue that holds its line in
-   * the list (#488). Nothing on a Standalone PR. */
+   * one the PR opened from, or else the first. Before the view arrives, the Issue that holds its line in the
+   * list (#488). Nothing on a Standalone PR. */
   function detailPin(): Pin | undefined {
+    const line = detailLine();
+    const listed = line && workbench.pinOf(line);
     if (detail instanceof IssueViewState) {
       const view = detail.view;
-      return view ? { number: view.number, pinned: view.pinned } : undefined;
+      return view ? { number: view.number, pinned: view.pinned } : listed;
     }
     const issues = detail?.view?.issues ?? [];
     const from = detail?.issue;
-    const line = detailLine();
-    return issues.find((issue) => issue.number === from) ?? issues[0] ?? (line && workbench.pinOf(line));
+    return issues.find((issue) => issue.number === from) ?? issues[0] ?? listed;
   }
 
   /** What `Ctrl+K P` does for a press `at` (#488): it pins the Issue that holds the line under the cursor,
@@ -713,9 +714,12 @@
     return pin && (() => void togglePin(pin));
   }
 
-  /** Pins the Issue `pin` names, or unpins it if the user pinned it. */
+  /** Pins the Issue `pin` names, or unpins it if the user pinned it. A pin that takes the Detail pane's Issue
+   * out of the view on show, the Inbox or Archived, opens the next item as Archive does (#982). */
   async function togglePin({ number, pinned }: Pin) {
-    await sayMarkProblem((opened) => (pinned ? opened.unpin(number) : opened.pin(number)));
+    const leaves = pinned ? undefined : workbench.pinTakesOut(number);
+    const marking = (opened: WorkbenchState) => (pinned ? opened.unpin(number) : opened.pin(number));
+    await finish(leaves && hidingOnDetail({ key: leaves }), marking);
   }
 
   /** Archive on `archived`. Once the item leaves the list, a cursor on it lands on the row after it. */
@@ -728,9 +732,9 @@
     await finish(hidingOnDetail(muted), (opened) => opened.mute(muted));
   }
 
-  /** The number of the item that Archive or Mute on `hiding` takes off the list, while the list holds the
+  /** The number of the item that Archive, Mute or Pin on `key` takes off the list, while the list holds the
    * Detail pane's line in that item, which needs no view to have arrived (#982). */
-  function hidingOnDetail({ key }: Hiding): number | undefined {
+  function hidingOnDetail({ key }: Pick<Hiding, "key">): number | undefined {
     const line = detailLine();
     const shown = line && workbench.hidingBy(line)?.key;
     return shown?.kind === key.kind && shown.number === key.number ? key.number : undefined;

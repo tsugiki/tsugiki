@@ -124,11 +124,10 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         author: Login,
     },
-    /// Pin on Issue `number`, at `at` (#488).
+    /// Pin on Issue `number` (#488).
     Pinned {
         repository: RepositoryName,
         number: u32,
-        at: OffsetDateTime,
     },
     Unpinned {
         repository: RepositoryName,
@@ -521,12 +520,7 @@ impl Fetching {
 
     /// Pins Issue `number` of `repository` (#488): it stays on the Workbench until the user unpins it.
     pub fn pin(&self, repository: RepositoryName, number: u32) {
-        let at = OffsetDateTime::now_utc();
-        let pinned = Marked::Pinned {
-            repository,
-            number,
-            at,
-        };
+        let pinned = Marked::Pinned { repository, number };
         self.to_session(SessionMessage::Mark(pinned));
     }
 

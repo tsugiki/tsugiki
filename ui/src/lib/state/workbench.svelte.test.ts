@@ -1789,7 +1789,7 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
-  it("lands the cursor after an Issue pinned in the Inbox once it leaves, and waits for none to leave the Workbench", async () => {
+  it("lands the cursor after an Issue pinned in the Inbox or Archived once it leaves, and waits for none to leave the Workbench", async () => {
     const { send } = catchChanged();
     vi.mocked(commands.pin).mockResolvedValue(done);
     vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6));
@@ -1806,7 +1806,20 @@ describe("WorkbenchState's Inbox", () => {
     expect(state.cursor?.number).toBe(2);
     expect(commands.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", 3);
 
+    // A pin unarchives its Issue, which leaves the Archived view as on Unarchive.
+    vi.mocked(commands.workbench).mockResolvedValue(answer(7, 8));
+    await state.select({ kind: "archived" });
+    state.moveCursor(1);
+    await state.pin(7);
+    vi.mocked(commands.workbench).mockResolvedValue(answer(8));
+    send("python/cpython");
+    await vi.waitFor(() => {
+      expect(numbers(state)).toEqual([8]);
+    });
+    expect(state.cursor?.number).toBe(8);
+
     // The Workbench keeps a Pinned issue, so one that leaves it left for another reason.
+    vi.mocked(commands.workbench).mockResolvedValue(answer(5, 6));
     await state.select(whole);
     state.moveCursor(1);
     await state.pin(5);

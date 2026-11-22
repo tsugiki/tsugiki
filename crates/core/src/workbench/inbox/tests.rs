@@ -376,9 +376,9 @@ fn a_pin_takes_an_issue_out_until_unpinned() {
         vec![issue_at(1, ago(2)), issue_at(2, ago(4))],
     );
     let store = &world.db.store;
-    store.pin(&cpython(), 1, now()).unwrap();
+    store.pin(&cpython(), 1).unwrap();
     // Only an Issue takes a pin, so a pin on a Standalone PR's number pins nothing in the Inbox.
-    store.pin(&cpython(), 20, now()).unwrap();
+    store.pin(&cpython(), 20).unwrap();
 
     let pinned = read(&world, InboxPage::Latest);
     store.unpin(&cpython(), 1).unwrap();

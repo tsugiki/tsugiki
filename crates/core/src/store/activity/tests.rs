@@ -891,17 +891,15 @@ fn an_open_issue_a_pr_brought_back_leaves_the_mark_when_it_closes() {
 }
 
 #[test]
-fn a_pin_survives_a_restart_per_repository_and_keeps_the_moment_of_the_first_pin() {
+fn a_pin_survives_a_restart_per_repository_until_unpinned() {
     let (path, _folder) = temp_database("activity-pinned");
     let repository = cpython();
     let elsewhere = RepositoryName::parse("python/mypy").unwrap();
-    let first = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap() - Duration::days(1);
-    let later = first + Duration::hours(1);
     let store = Store::open(&path).unwrap();
-    store.pin(&repository, 7, first).unwrap();
-    store.pin(&repository, 7, later).unwrap();
-    store.pin(&repository, 8, later).unwrap();
-    store.pin(&elsewhere, 9, later).unwrap();
+    store.pin(&repository, 7).unwrap();
+    store.pin(&repository, 7).unwrap();
+    store.pin(&repository, 8).unwrap();
+    store.pin(&elsewhere, 9).unwrap();
     store.close();
 
     let store = Store::open(&path).unwrap();
@@ -913,11 +911,84 @@ fn a_pin_survives_a_restart_per_repository_and_keeps_the_moment_of_the_first_pin
     let in_another = store.pinned(&elsewhere).unwrap();
 
     store.close();
-    let both = BTreeMap::from([(7, first), (8, later)]);
-    assert_eq!(restarted.unwrap(), both);
-    assert_eq!(in_facts, both);
-    assert_eq!(after, BTreeMap::from([(7, first)]));
-    assert_eq!(in_another, BTreeMap::from([(9, later)]));
+    assert_eq!(restarted.unwrap(), BTreeSet::from([7, 8]));
+    assert_eq!(in_facts, BTreeSet::from([7, 8]));
+    assert_eq!(after, BTreeSet::from([7]));
+    assert_eq!(in_another, BTreeSet::from([9]));
+}
+
+#[test]
+fn a_pin_waits_for_a_sync_to_read_its_tree_and_a_pin_made_again_waits_anew() {
+    let (path, _folder) = temp_database("activity-pin-trees");
+    let repository = cpython();
+    let store = Store::open(&path).unwrap();
+    store.pin(&repository, 7).unwrap();
+    store.pin(&repository, 8).unwrap();
+    let taken = store.pins_to_read(&repository).unwrap();
+    // The user pins Issue 8 again while the sync reads the trees it took.
+    store.unpin(&repository, 8).unwrap();
+    store.pin(&repository, 8).unwrap();
+
+    store.read_pin_trees(&repository, taken.clone()).unwrap();
+    let left = store.pins_to_read(&repository).unwrap();
+
+    store.close();
+    assert_eq!(taken.keys().copied().collect::<Vec<_>>(), [7, 8]);
+    assert_eq!(left.keys().copied().collect::<Vec<_>>(), [8]);
+    assert_ne!(left.get(&8), taken.get(&8));
+}
+
+#[test]
+fn a_pin_on_a_number_the_store_knows_names_no_issue_does_nothing_and_saving_one_issueless_drops_its_pin()
+ {
+    let (path, _folder) = temp_database("activity-pin-refused");
+    let repository = cpython();
+    let store = Store::open(&path).unwrap();
+    store
+        .save_pull_requests(&repository, vec![pr_facts(11)])
+        .unwrap();
+    store
+        .save_issues_and_issueless(&repository, (vec![], vec![]), vec![12])
+        .unwrap();
+    store.pin(&repository, 13).unwrap();
+
+    store.pin(&repository, 11).unwrap();
+    store.pin(&repository, 12).unwrap();
+    let refused = store.pinned(&repository).unwrap();
+    store
+        .save_issues_and_issueless(&repository, (vec![], vec![]), vec![13])
+        .unwrap();
+    let dropped = store.pinned(&repository).unwrap();
+
+    store.close();
+    assert_eq!(refused, BTreeSet::from([13]));
+    assert_eq!(dropped, BTreeSet::new());
+}
+
+#[test]
+fn an_unpinned_closed_issue_has_its_closing_judged_again() {
+    let (path, _folder) = temp_database("activity-unpin-closed");
+    let repository = cpython();
+    let store = Store::open(&path).unwrap();
+    let closed = IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue_facts(1)
+    };
+    store
+        .save_issues(&repository, vec![closed, issue_facts(2)])
+        .unwrap();
+    for number in [1, 2, 3] {
+        store.pin(&repository, number).unwrap();
+    }
+
+    for number in [1, 2, 3, 4] {
+        store.unpin(&repository, number).unwrap();
+    }
+    let closings = store.closings(&repository).unwrap();
+
+    store.close();
+    // Issue 2 is open, Tsugiki holds no Issue 3, and nobody pinned Issue 4.
+    assert_eq!(closings, BTreeSet::from([1]));
 }
 
 #[test]
@@ -936,8 +1007,8 @@ fn a_pin_unarchives_its_issue_and_takes_it_out_of_the_inbox_a_pr_brought_it_back
     };
     store.bring_back(&repository, opened).unwrap();
 
-    store.pin(&repository, 2, now).unwrap();
-    store.pin(&repository, 3, now).unwrap();
+    store.pin(&repository, 2).unwrap();
+    store.pin(&repository, 3).unwrap();
     let read = store.call(move |connection| brought_back(connection, &cpython()));
     let archived = (store.work_facts(&repository).unwrap().activity).archived;
 

@@ -952,12 +952,8 @@ pub(crate) fn keep_mark(
             let saved = store.unmute_author(&repository, &author);
             (saved, Change { repository, items })
         }
-        Marked::Pinned {
-            repository,
-            number,
-            at,
-        } => {
-            let saved = store.pin(&repository, number, at);
+        Marked::Pinned { repository, number } => {
+            let saved = store.pin(&repository, number);
             let items = vec![number];
             (saved, Change { repository, items })
         }

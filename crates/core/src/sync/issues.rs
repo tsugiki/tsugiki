@@ -27,11 +27,28 @@ pub(super) fn fetch_issues(
         .fetch_issues(link.repository, numbers, FETCH_BATCH)?;
     let numbered = batch.issues.iter().map(|issue| issue.number);
     let found: Vec<u32> = numbered.collect();
-    link.store
-        .save_fetched_issues(link.repository, batch.issues, batch.activity)?;
+    // A number GitHub has no Issue under, a PR's, a transferred or a deleted Issue's, keeps no pin, so no
+    // sync asks about it again (#488). One GitHub refused alone waits for the next sync.
+    let not_found = |number: &&u32| {
+        !found.contains(number)
+            && !batch.issueless.contains(number)
+            && !batch.refused.contains(number)
+    };
+    let asked = numbers.iter().take(batch.asked_for);
+    let gone: Vec<u32> = asked.filter(not_found).copied().collect();
+    let issueless = batch.issueless;
+    link.store.save_issues_and_issueless(
+        link.repository,
+        (batch.issues, batch.activity),
+        issueless.clone(),
+    )?;
+    if !gone.is_empty() {
+        link.store.drop_pins(link.repository, gone.clone())?;
+    }
     shown.extend(found.iter().copied());
     drop(numbers.drain(..batch.asked_for));
-    Ok((Step::Saved { touched: found }, None))
+    let touched = found.into_iter().chain(issueless).chain(gone).collect();
+    Ok((Step::Saved { touched }, None))
 }
 
 /// Fetches the Issues a tree's PRs name, for their rows only, and then the tree is done.

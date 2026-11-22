@@ -305,9 +305,10 @@ erDiagram
         TEXT repository PK
     }
     pinned {
-        TEXT repository PK
-        INTEGER number PK
-        INTEGER at
+        INTEGER id PK
+        TEXT repository
+        INTEGER number
+        INTEGER tree_read
     }
     read_only {
         TEXT repository PK

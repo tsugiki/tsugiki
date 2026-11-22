@@ -18,7 +18,7 @@ mod trees;
 pub use queue::{Progress, Syncs};
 pub use searches::WORK_SEARCHES;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -35,7 +35,7 @@ use crate::login::Login;
 use crate::repository::{RepositoryName, WINDOW_DAYS};
 use crate::repository_settings::RepositorySettings;
 use crate::status::{LastSync, LoadProgress, SyncPart};
-use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Opened, Store, SyncState};
+use crate::store::{ChangeCheck, FirstSyncPlace, Judged, Opened, PinId, Store, SyncState};
 use crate::work::{archived_by_closing, opened_on};
 use batches::fetch;
 use filters::{FilterWalk, walk_filters};
@@ -60,6 +60,8 @@ struct UserWorkSync {
     phase: Phase,
     /// The PRs this run has asked GitHub for, so it asks for each once.
     fetched: BTreeSet<u32>,
+    /// The pins whose Issues' trees this run reads, which it marks read as it finishes (#488).
+    pin_trees: BTreeMap<u32, PinId>,
     /// The time this sync began by GitHub's clock: what changes after this waits for the next one. Its first
     /// step sets it, or a saved first sync's place.
     started_at: OffsetDateTime,
@@ -185,6 +187,7 @@ struct PlaceToSave<'a> {
     owner: &'a PlaceOwner,
     place: &'a Resumable,
     fetched: &'a BTreeSet<u32>,
+    pin_trees: &'a BTreeMap<u32, PinId>,
     started_at: OffsetDateTime,
     pages: u32,
 }
@@ -195,6 +198,9 @@ struct SavedPlace {
     owner: PlaceOwner,
     place: Resumable,
     fetched: BTreeSet<u32>,
+    /// None in a place an older Tsugiki saved.
+    #[serde(default)]
+    pin_trees: BTreeMap<u32, PinId>,
     started_at: OffsetDateTime,
     pages: u32,
 }
@@ -342,6 +348,7 @@ impl UserWorkSync {
             filters,
             phase: Phase::Starting,
             fetched: BTreeSet::new(),
+            pin_trees: BTreeMap::new(),
             started_at: OffsetDateTime::now_utc(),
             check: ChangeCheck::Skipped,
             kind: Kind::Refresh,
@@ -414,6 +421,7 @@ impl UserWorkSync {
             owner: &first_sync.owner,
             place,
             fetched: &self.fetched,
+            pin_trees: &self.pin_trees,
             started_at: self.started_at,
             pages: first_sync.pages,
         };
@@ -441,6 +449,7 @@ impl UserWorkSync {
         });
         self.phase = saved.place.into();
         self.fetched = saved.fetched;
+        self.pin_trees = saved.pin_trees;
         self.started_at = saved.started_at;
         Ok(())
     }
@@ -549,7 +558,9 @@ impl UserWorkSync {
                 cursor,
                 found,
             }) => search(&link, next_search, cursor, found)?,
-            Phase::Resumable(Resumable::SearchingFilters(walk)) => walk_filters(&link, walk)?,
+            Phase::Resumable(Resumable::SearchingFilters(walk)) => {
+                walk_filters(&link, walk, &mut self.pin_trees)?
+            }
             Phase::Resumable(Resumable::Fetching(batches)) => fetch(&link, batches, fetched)?,
             Phase::Resumable(Resumable::FetchingOrigins { why, leads }) => {
                 fetch_origin(&link, *why, leads, fetched)?
@@ -597,7 +608,17 @@ impl UserWorkSync {
     /// Saves that this sync finished, and says when. The store keeps whole seconds, so the window hears what
     /// a later start reads back. Only a refresh, which read ahead what the store owed, has it forget those
     /// reads. One a Filter switch owed during a first sync waits for the next refresh (#900).
+    /// It marks read the trees of the pins it read (#488), and a failure to leaves them for the next sync.
     fn finish(&self, store: &Store) -> Result<LastSync, Error> {
+        if !self.pin_trees.is_empty()
+            && let Err(problem) = store.read_pin_trees(&self.repository, self.pin_trees.clone())
+        {
+            log::warn!(
+                "Tsugiki couldn't keep that it read the Pinned issues of {}: {}",
+                self.repository,
+                problem.message
+            );
+        }
         let now = OffsetDateTime::now_utc();
         let finished_at = now.replace_nanosecond(0).unwrap_or(now);
         let state = SyncState {

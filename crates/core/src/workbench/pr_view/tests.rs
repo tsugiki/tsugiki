@@ -77,11 +77,7 @@ fn a_pr_names_each_issue_that_holds_it_and_whether_it_is_pinned() {
         ..stranger()
     };
     world.has(vec![both, alone], vec![issue(1), issue(3)]);
-    world
-        .db
-        .store
-        .pin(&cpython(), 3, OffsetDateTime::now_utc())
-        .unwrap();
+    world.db.store.pin(&cpython(), 3).unwrap();
 
     let holding = view(&world, 5).unwrap().issues;
     let standalone = view(&world, 6).unwrap().issues;

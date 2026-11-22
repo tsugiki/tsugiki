@@ -202,7 +202,7 @@ impl Causes {
             muted_authors: (facts.activity.muted_authors.iter())
                 .map(|muted| muted.login.clone())
                 .collect(),
-            pinned: facts.activity.pinned.keys().copied().collect(),
+            pinned: facts.activity.pinned.clone(),
             viewer: Some(viewer.clone()),
             acknowledged: facts.activity.acknowledged.clone(),
         }

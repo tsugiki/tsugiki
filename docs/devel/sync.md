@@ -28,8 +28,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     Archived Issue back to the Inbox ([workbench.md](workbench.md), #823). GitHub's poll gives no time a PR
     opened, so an old PR the cache lacks that changes counts as one that opened.
   - A refresh counts the Pinned issues as the user's work, beside the Filters' finds: it fetches each one
-    the database lacks, reads the tree of each one pinned since the last refresh, and the poll saves each
-    one that changed and reads its tree (#488).
+    the database lacks, and the poll saves each one that changed and reads its tree (#488). The database
+    keeps whether a sync has read each pin's tree. A sync reads the trees of the pins none has read, and
+    marks them read as it finishes, so one interrupted reads them again, and a pin made after it took them
+    waits for the next. A fetch that shows a pin's number names no Issue drops the pin.
   - The user can always refresh by hand.
 - The first sync of a Repository depends on its size ([ADR
   0015](../adr/0015-github-sync-serial-graphql-in-tiers-the-users-work-first.md)). A small one (up to 500 open

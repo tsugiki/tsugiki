@@ -3138,6 +3138,17 @@ it("unpins on Ctrl+K P with the list hidden the Issue the PR on show came from, 
   expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
 });
 
+it("pins on Ctrl+K P in the Detail pane the Issue on show before its view arrives, from the list's row", async () => {
+  core.issue.mockReturnValue(new Promise(() => {}));
+  const { component, issueRow } = await listing();
+  await fireEvent.click(issueRow);
+  const view = await screen.findByRole("region", { name: "Issue view" });
+
+  paletteRow(component, "pin", view)?.run();
+
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+});
+
 it("pins nothing on Ctrl+K P with the list hidden on a Standalone PR, or with nothing open", async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
   const { component, prRow } = await listing();
@@ -5098,6 +5109,22 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
   expect(core.switchShowMuted).toHaveBeenCalledExactlyOnceWith("python/cpython", "off");
   expect(waited).toEqual({ checked: true, disabled: true });
   expect(show.disabled).toBe(false);
+});
+
+it("opens the next item once the Issue on show, pinned from its view, leaves the Inbox", async () => {
+  const changed = catchEveryListener();
+  core.workbench.mockResolvedValue(workbenchPage([]));
+  core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }, { ...standalone, attention: null }]));
+  render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
+  await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
+  await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));
+
+  await fireEvent.click(await screen.findByRole("button", { name: "☆ Pin" }));
+  core.inbox.mockResolvedValue(pageOf([{ ...standalone, attention: null }]));
+  changed("python/cpython", [issue.number]);
+
+  expect(core.pin).toHaveBeenCalledExactlyOnceWith("python/cpython", issue.number);
+  expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
 it("says why the core refused a change to Show muted", async () => {

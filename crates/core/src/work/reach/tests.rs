@@ -632,10 +632,9 @@ fn closing_leaves_a_muted_item_as_it_is_an_ask_in_its_tree_or_not() {
     assert_eq!(archived, []);
 }
 
-/// `facts` with Issues `numbers` pinned an hour ago (#488).
+/// `facts` with Issues `numbers` pinned (#488).
 fn pinning(mut facts: WorkFacts, numbers: &[u32]) -> WorkFacts {
-    let pinned = numbers.iter().map(|number| (*number, hours_ago(1)));
-    facts.activity.pinned.extend(pinned);
+    facts.activity.pinned.extend(numbers);
     facts
 }
 

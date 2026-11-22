@@ -110,9 +110,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   holds the line under the cursor, a PR's line in its tree too. In the Detail pane, or with the Issue list
   hidden, they act on the Issue on show, or with a PR on show on the Issue it opened from, or else the first
   Issue whose tree holds it. Only Issues take a pin, so on a Standalone PR, or with nothing open, they do
-  nothing. Pinning an Archived Issue unarchives it, and pinning takes the Issue out of the Inbox. A Pinned
-  issue the user mutes stays hidden while Muted. Tsugiki keeps the pins per Repository, with the moment of
-  the first pin.
+  nothing, and the core refuses a number it knows is a PR's. Pinning an Archived Issue unarchives it, and
+  pinning takes the Issue out of the Inbox; with the Inbox or Archived on show, the cursor and the Detail
+  pane move on to the next item, as on Archive. A Pinned issue the user mutes stays hidden while Muted.
+  Unpinning a closed Issue judges its closing again at the next step of a sync that saves, so it goes to
+  Archived if a Filter still reaches it. A pin whose number a fetch shows names no Issue, a PR's, a
+  transferred or a deleted Issue's, goes. Tsugiki keeps the pins per Repository.
 - Hiding, all kept in Tsugiki only:
   - **Archive** puts an item away until something new needs attention there: an Issue, a Standalone PR or
     a Standalone Backport. It marks the item seen as Mark Seen does, across an Issue's whole tree, so a

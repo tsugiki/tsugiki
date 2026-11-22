@@ -1058,7 +1058,10 @@ fn read_only_round_trips_through_settings_toml_and_a_repository_without_it_can_w
 
 #[test]
 fn adding_a_repository_that_can_write_leaves_read_only_out_of_the_file() {
-    let (written, read) = added("added-writable", &RepositorySettings::new(repository("a/b")));
+    let (written, read) = added(
+        "added-writable",
+        &RepositorySettings::new(repository("a/b")),
+    );
 
     assert!(!written.contains("read_only"), "{written}");
     assert!(!read.read_only);

@@ -64,7 +64,10 @@ fn a_refusal_says_when_it_lifts_though_the_floor_holds_longer() {
 
     let gate = Gate::default().refused(Some(refused_at), NOW);
 
-    assert_eq!(gate.holds_until(Some(below), NOW), Some((reset, Hold::Floor)));
+    assert_eq!(
+        gate.holds_until(Some(below), NOW),
+        Some((reset, Hold::Floor))
+    );
     assert_eq!(gate.refused_until(NOW), Some(refused_at));
     assert_eq!(gate.refused_until(refused_at), None);
     assert_eq!(Gate::default().refused_until(NOW), None);

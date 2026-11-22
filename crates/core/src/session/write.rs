@@ -42,7 +42,10 @@ pub(crate) fn read_only_reasons(
 /// text stays in the composer with the reason. So does an item whose ID the store doesn't hold yet.
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "the first write, #393's comment, goes through this")
+    expect(
+        dead_code,
+        reason = "the first write, #393's comment, goes through this"
+    )
 )]
 pub(crate) fn send<D: DeserializeOwned>(
     github: &GitHub,

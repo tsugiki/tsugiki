@@ -51,10 +51,7 @@ fn the_users_choice_comes_before_the_token_and_each_reaches_the_window_by_name()
     clippy::disallowed_methods,
     reason = "the tests of the one constructor, which name the reasons themselves"
 )]
-fn writable(
-    item: Option<&str>,
-    reasons: &[ReadOnly],
-) -> Result<WritableRepository, Unwritable> {
+fn writable(item: Option<&str>, reasons: &[ReadOnly]) -> Result<WritableRepository, Unwritable> {
     let subject = item.map(|id| NodeId::new(id.to_owned()));
     WritableRepository::new(crate::testing::cpython(), subject, reasons.to_vec())
 }
@@ -70,8 +67,14 @@ fn a_read_item_of_a_repository_no_reason_holds_is_writable() {
 fn a_repository_a_reason_holds_gives_the_first_reason_whatever_tsugiki_read_of_the_item() {
     for item in [Some("I_1"), None] {
         let refused = |reasons: &[ReadOnly]| writable(item, reasons).unwrap_err();
-        assert_eq!(refused(&[ReadOnly::Chosen]), Unwritable::ReadOnly(ReadOnly::Chosen));
-        assert_eq!(refused(&[ReadOnly::Token]), Unwritable::ReadOnly(ReadOnly::Token));
+        assert_eq!(
+            refused(&[ReadOnly::Chosen]),
+            Unwritable::ReadOnly(ReadOnly::Chosen)
+        );
+        assert_eq!(
+            refused(&[ReadOnly::Token]),
+            Unwritable::ReadOnly(ReadOnly::Token)
+        );
         let both = refused(&[ReadOnly::Token, ReadOnly::Chosen]);
         assert_eq!(both, Unwritable::ReadOnly(ReadOnly::Chosen));
     }

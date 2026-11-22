@@ -146,7 +146,8 @@ fn comment_in(row: &Row<'_>) -> rusqlite::Result<IssueComment> {
     })
 }
 
-const SELECT_BODY: &str = "SELECT node_id, body_html, earlier_comments, opened_at FROM issue_content
+const SELECT_BODY: &str =
+    "SELECT node_id, body_html, earlier_comments, opened_at FROM issue_content
      WHERE repository = :repository AND number = :number";
 const SELECT_COMMENTS: &str =
     "SELECT database_id, author, created_at, body_html, hidden FROM issue_comments
@@ -186,7 +187,8 @@ pub(super) fn node_id(
     repository: &RepositoryName,
     number: u32,
 ) -> rusqlite::Result<Option<NodeId>> {
-    let query = "SELECT node_id FROM issue_content WHERE repository = :repository AND number = :number";
+    let query =
+        "SELECT node_id FROM issue_content WHERE repository = :repository AND number = :number";
     let asked = named_params! { ":repository": repository, ":number": number };
     let found: Option<Option<NodeColumn>> = connection
         .query_row(query, asked, |row| row.get(0))

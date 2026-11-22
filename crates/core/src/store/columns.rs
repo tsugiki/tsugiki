@@ -52,14 +52,21 @@ impl FromSql for UnixMillis {
 }
 
 /// GitHub's ID of a node in a column, as text. Outside tests a `NodeId` comes only from parsing JSON, so the
-/// store keeps the string it serializes to, and parses it back the same way.
+/// store keeps the string it serializes to, and parses it back the same way. Neither way fails for an ID,
+/// which is a string both ways, so each passes an error on through named functions, not closures that never
+/// run.
 pub(super) struct NodeColumn(pub(super) NodeId);
+
+/// The cause a conversion error of rusqlite's carries.
+type Cause = Box<dyn std::error::Error + Send + Sync>;
 
 impl ToSql for NodeColumn {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-        let text = serde_json::to_value(&self.0).and_then(serde_json::from_value::<String>);
-        let text = text.map_err(|cause| rusqlite::Error::ToSqlConversionFailure(Box::new(cause)))?;
-        Ok(ToSqlOutput::from(text))
+        serde_json::to_value(&self.0)
+            .and_then(serde_json::from_value::<String>)
+            .map(ToSqlOutput::from)
+            .map_err(Cause::from)
+            .map_err(rusqlite::Error::ToSqlConversionFailure)
     }
 }
 
@@ -68,7 +75,8 @@ impl FromSql for NodeColumn {
         let text = serde_json::Value::String(value.as_str()?.to_owned());
         serde_json::from_value(text)
             .map(Self)
-            .map_err(|cause| FromSqlError::Other(Box::new(cause)))
+            .map_err(Cause::from)
+            .map_err(FromSqlError::Other)
     }
 }
 

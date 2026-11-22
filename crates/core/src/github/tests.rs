@@ -1,6 +1,6 @@
 use super::testing::{
-    COMMENT_ID, Canned, RATE_LIMIT, Scripted, answer, answered, dated, github, reply_ok, signed_in_as,
-    thanks, writable,
+    COMMENT_ID, Canned, RATE_LIMIT, Scripted, answer, answered, dated, github, reply_ok,
+    signed_in_as, thanks, writable,
 };
 use super::*;
 use crate::github::in_flight::InFlight;
@@ -750,7 +750,11 @@ fn a_write_while_github_refuses_requests_asks_nothing_though_the_floor_holds_lon
     ]);
     let github = github(script);
     drop(github.viewer().unwrap());
-    drop(github.write::<Value>(writable(), thanks(), COMMENT_ID).unwrap_err());
+    drop(
+        github
+            .write::<Value>(writable(), thanks(), COMMENT_ID)
+            .unwrap_err(),
+    );
     let held = github.viewer().unwrap_err();
     assert_eq!(held.message, HELD, "the floor holds past the refusal");
     asked.try_iter().for_each(drop);

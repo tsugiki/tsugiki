@@ -63,7 +63,7 @@ fn chosen_read_only(repository: RepositoryName) -> RepositorySettings {
 
 #[test]
 fn a_write_to_a_repository_the_user_chose_read_only_for_since_the_control_showed_says_why_and_sends_nothing()
-{
+ {
     let db = has_read_both("write-chosen-read-only");
     let (github, asked) = answering_once();
     let (mut settings, view) = latest::channel(listing(vec![RepositorySettings::new(cpython())]));
@@ -91,7 +91,12 @@ fn a_write_to_a_repository_the_store_marks_read_only_for_the_token_says_why_and_
     assert!(db.store.mark_read_only(token, &cpython()).unwrap());
     let (github, asked) = answering_once();
 
-    let sent = send::<Value>(&github, &listed(vec![]), &db.reader, thanks_to(cpython(), 7));
+    let sent = send::<Value>(
+        &github,
+        &listed(vec![]),
+        &db.reader,
+        thanks_to(cpython(), 7),
+    );
 
     let problem = sent.unwrap_err();
     assert_eq!(problem.kind, ErrorKind::WriteRefused);
@@ -126,7 +131,12 @@ fn a_write_to_an_item_the_store_has_no_id_for_says_to_open_it_again_and_sends_no
 
     for number in [8, 9] {
         let (github, asked) = answering_once();
-        let sent = send::<Value>(&github, &listed(vec![]), &db.reader, thanks_to(cpython(), number));
+        let sent = send::<Value>(
+            &github,
+            &listed(vec![]),
+            &db.reader,
+            thanks_to(cpython(), number),
+        );
 
         let problem = sent.unwrap_err();
         assert_eq!(problem.kind, ErrorKind::Conflict);

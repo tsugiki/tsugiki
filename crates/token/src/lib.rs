@@ -297,19 +297,17 @@ fn checked_read(body: &str) -> Result<String, NotARead> {
 }
 
 /// GitHub's ID for a node, such as an Issue or a PR, which a read asks for it by and a write names it by.
+/// Outside tests one comes only from parsing GitHub's answer, and leaves only as JSON, as a variable, so
+/// no ID can change a query or a mutation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct NodeId(String);
 
+#[cfg(any(test, feature = "testing"))]
 impl NodeId {
-    /// The ID GitHub spells `id`. A write sends it as a variable, so no ID can change the mutation.
+    /// The ID GitHub spells `id`.
     pub fn new(id: String) -> Self {
         Self(id)
-    }
-
-    /// The ID as GitHub spells it.
-    pub fn as_str(&self) -> &str {
-        &self.0
     }
 }
 

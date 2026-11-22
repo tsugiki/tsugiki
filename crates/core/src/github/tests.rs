@@ -669,6 +669,16 @@ fn a_scripted_transport_answers_a_write_and_notes_its_operation_and_input() {
 }
 
 #[test]
+#[should_panic(expected = "AddComment's selection would be refused")]
+fn a_write_whose_selection_the_token_crate_would_refuse_fails_the_test_whatever_answers_it() {
+    let quoted = Selection {
+        payload: r#"{ comment(x: "}") { id } }"#,
+        fragments: "",
+    };
+    drop(Canned(reply_ok("{}")).write(&super::testing::token(), &a_comment(), quoted));
+}
+
+#[test]
 fn a_request_that_panics_ends_and_gives_back_what_was_asked_before() {
     let mut github = github(Panicking);
     let (announce, heard) = super::testing::in_flight_heard();

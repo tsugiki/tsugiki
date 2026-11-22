@@ -6,7 +6,7 @@ use std::fmt;
 use tsugiki_token::{Reply as Answer, RestPath, Unreachable as NotSent};
 
 use super::clock::http_date;
-use super::{ConditionalReply, Reply, Request, Unreachable};
+use super::{ConditionalReply, Reply, Request, Selection, Unreachable, Write};
 
 /// `request` as the JSON body that GitHub's GraphQL endpoint takes.
 pub(super) fn graphql_body(request: &Request<'_>) -> String {
@@ -21,6 +21,26 @@ pub(super) fn graphql_body(request: &Request<'_>) -> String {
 pub(super) fn assert_read(request: &Request<'_>) {
     let refusal = tsugiki_token::testing::refusal(&graphql_body(request));
     assert_eq!(refusal, None, "{} isn't a read", request.operation);
+}
+
+/// Fails the test that sends `write` if `tsugiki-token` would refuse `selection`, as `assert_read` does a
+/// read. The test doubles that answer a write run it, so a selection that only `Https` would refuse fails a
+/// test before the app.
+#[cfg(any(test, feature = "testing"))]
+pub(super) fn assert_write(write: &Write, selection: Selection<'_>) {
+    let refusal = write.query(selection).err();
+    assert_eq!(
+        refusal,
+        None,
+        "{}'s selection would be refused",
+        write.operation()
+    );
+}
+
+/// The query of `write` with `selection`, as `Https` would send it, for a stand-in that answers in its
+/// place. A selection `tsugiki-token` refuses fails as from `Https`, and the log says why.
+pub(super) fn write_query(write: &Write, selection: Selection<'_>) -> Result<String, Unreachable> {
+    (write.query(selection)).map_err(|refused| unreachable(&write.operation(), refused.into()))
 }
 
 /// A GraphQL answer to `operation`, with the headers the client reads parsed.

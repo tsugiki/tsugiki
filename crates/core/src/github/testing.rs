@@ -42,7 +42,13 @@ impl Transport for Canned {
         self.0.clone()
     }
 
-    fn write(&self, _: &Token, _: &Write, _: Selection<'_>) -> Result<Reply, Unreachable> {
+    fn write(
+        &self,
+        _: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        https::assert_write(write, selection);
         self.0.clone()
     }
 }
@@ -87,7 +93,13 @@ impl Transport for Scripted {
         self.answer(request.operation, request.variables.clone())
     }
 
-    fn write(&self, _: &Token, write: &Write, _: Selection<'_>) -> Result<Reply, Unreachable> {
+    fn write(
+        &self,
+        _: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        https::assert_write(write, selection);
         self.answer(write.operation(), write.variables())
     }
 }

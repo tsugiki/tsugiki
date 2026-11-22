@@ -11,6 +11,7 @@ use tsugiki_token::hide_token_shapes;
 use super::activity::{APP_NAME_END, WEB_COMMITTER};
 use super::{
     ConditionalGet, ConditionalReply, Reply, Request, Selection, Transport, Unreachable, Write,
+    https,
 };
 use crate::conventions::{CPYTHON_BACKPORT_APP, CPYTHON_BOT_ACCOUNTS};
 use crate::token::Token;
@@ -276,7 +277,11 @@ impl Transport for Recorder {
 
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.inner.post(token, request)?;
-        self.record(token, request, &reply);
+        let asked = Asked {
+            operation: request.operation,
+            query: &request.query,
+        };
+        self.record(token, asked, &reply);
         Ok(reply)
     }
 
@@ -288,27 +293,30 @@ impl Transport for Recorder {
         write: &Write,
         selection: Selection<'_>,
     ) -> Result<Reply, Unreachable> {
-        let query = write
-            .query(selection)
-            .map_err(|_refused| Unreachable::Refused)?;
+        let query = https::write_query(write, selection)?;
         let reply = self.inner.write(token, write, selection)?;
-        let sent = Request {
+        let asked = Asked {
             operation: write.operation(),
-            query: query.into(),
-            variables: write.variables(),
+            query: &query,
         };
-        self.record(token, &sent, &reply);
+        self.record(token, asked, &reply);
         Ok(reply)
     }
 }
 
+/// What a recording is named after and holds of the request: its operation and its query.
+struct Asked<'a> {
+    operation: &'a str,
+    query: &'a str,
+}
+
 impl Recorder {
-    /// Writes `reply`, GitHub's good answer to `request`, to `<dir>/<operation>.json`, scrubbed.
+    /// Writes `reply`, GitHub's good answer to what was `asked`, to `<dir>/<operation>.json`, scrubbed.
     #[expect(
         clippy::expect_used,
         reason = "a dev tool: a recording it can't write should stop it, and a failed request isn't one"
     )]
-    fn record(&self, token: &Token, request: &Request<'_>, reply: &Reply) {
+    fn record(&self, token: &Token, asked: Asked<'_>, reply: &Reply) {
         let text = scrub(&reply.body, token);
         let mut body = serde_json::from_str(&text).unwrap_or(Value::String(text));
         if reply.status != 200 || body.get("errors").is_some() {
@@ -322,7 +330,7 @@ impl Recorder {
         stand_ins.replace_logins(&mut body);
         stand_ins.replace_in_strings(&mut body);
         let recording = json!({
-            "query": request.query,
+            "query": asked.query,
             "status": reply.status,
             "reset": reply.reset,
             "body": body,
@@ -330,7 +338,7 @@ impl Recorder {
         let pretty =
             serde_json::to_string_pretty(&recording).expect("JSON values always serialize");
         std::fs::create_dir_all(&self.dir).expect("create the fixtures folder");
-        let path = self.dir.join(format!("{}.json", request.operation));
+        let path = self.dir.join(format!("{}.json", asked.operation));
         std::fs::write(path, pretty + "\n").expect("write the recording");
     }
 }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Reply, Request, Selection, Transport, Unreachable, Write};
+use super::{Reply, Request, Selection, Transport, Unreachable, Write, https};
 use crate::token::Token;
 
 /// One recorded exchange, in `<operation>.json`.
@@ -78,9 +78,7 @@ impl Transport for Replayer {
         write: &Write,
         selection: Selection<'_>,
     ) -> Result<Reply, Unreachable> {
-        let query = write
-            .query(selection)
-            .map_err(|_refused| Unreachable::Refused)?;
+        let query = https::write_query(write, selection)?;
         let (path, recording) = self.recording(write.operation());
         Ok(recording.answer(&path, &query))
     }

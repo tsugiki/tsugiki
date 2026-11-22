@@ -9,6 +9,7 @@ import {
   type SettingsChanges_Deserialize,
 } from "$lib/data/bindings";
 import { type Answer, ask } from "./answer";
+import { FilterEdits } from "./filter-edits.svelte";
 import type { Home } from "./home.svelte";
 import type { LanguageServerSettings, LoadedSettings, Settings, SettingsState } from "./settings.svelte";
 import { isMode, SIDE_KEYS, type ThemeKind, type ThemeState, themePick } from "./theme.svelte";
@@ -72,6 +73,9 @@ export class SettingsDialog {
   #reading: Promise<unknown> = Promise.resolve();
   /** Whether Add repository… added a Repository while the dialog was open. */
   #added = false;
+  /** The Filters each Repository's page edits, which Apply saves, and which the window shows only once
+   * saved, as the core reads each Filter's items (#535). */
+  readonly filters = new FilterEdits();
 
   /** The dialog previews on `settings`, and its `[appearance]` on `theme`, so a load mustn't replace the
    * settings until it closes. It opens on `shown`. */
@@ -100,17 +104,25 @@ export class SettingsDialog {
     const same = (now: unknown, then: unknown) => JSON.stringify(now) === JSON.stringify(then);
     const differs = (table: Edited) => !same(current[table], before.settings[table]);
     const appearance = appearanceChanges(current.appearance, before.settings.appearance);
+    const filters = this.filters.changes;
     return {
       ...(differs("status_bar") && { status_bar: current.status_bar }),
       ...(differs("releases") && { releases: current.releases }),
       ...(appearance && { appearance }),
       ...(!same(servers, before.servers) && { language_servers: servers }),
+      ...(filters.length > 0 && { filters }),
     };
   }
 
   /** Whether anything changed, so the button reads Apply, not OK. */
   get changed(): boolean {
     return Object.keys(this.changes).length > 0;
+  }
+
+  /** Whether a change can't be saved as it stands, as a Filter with a blank name or search, which keeps
+   * Apply off. */
+  get unsaveable(): boolean {
+    return this.filters.blank;
   }
 
   /** The names of the Repositories, each with a page under Repositories. */
@@ -153,6 +165,7 @@ export class SettingsDialog {
         const listed = settings?.repositories.some((one) => one.name === repository.name) ?? true;
         if (!listed) settings?.repositories.push(structuredClone(repository));
       }
+      if (this.#before !== undefined) this.filters.add(repository);
     }
     void this.measure();
   }
@@ -246,7 +259,7 @@ export class SettingsDialog {
    * doesn't go back to the theme from before. If the window has none to show, it waits for them, and one
    * that can't get them keeps the dialog open with why. */
   async apply(): Promise<boolean> {
-    if (this.applying) return false;
+    if (this.applying || this.unsaveable) return false;
     const changes = $state.snapshot(this.changes);
     if (Object.keys(changes).length === 0) return this.#close();
     // The values Apply saves, whose themes the window keeps: the rows are off until it's done.
@@ -286,6 +299,7 @@ export class SettingsDialog {
       settings: structuredClone(loaded.settings),
       servers: structuredClone(loaded.language_servers),
     };
+    this.filters.take(loaded.settings.repositories);
     this.#settings.take(loaded);
   }
 

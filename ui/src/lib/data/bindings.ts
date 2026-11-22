@@ -992,6 +992,38 @@ export type DiffThreads_Serialize =
  */
 { kind: "held_back"; newer: string; count: number };
 
+/**
+ *  A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
+ *  which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
+ *  it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
+ *  gets with its name and search alone, so it is off the Workbench (#819).
+ */
+export type EditedFilter = EditedFilter_Serialize | EditedFilter_Deserialize;
+
+/**
+ *  A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
+ *  which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
+ *  it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
+ *  gets with its name and search alone, so it is off the Workbench (#819).
+ */
+export type EditedFilter_Deserialize = {
+	name: FilterName,
+	query: FilterQuery,
+	was?: FilterQuery | null,
+};
+
+/**
+ *  A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
+ *  which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
+ *  it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
+ *  gets with its name and search alone, so it is off the Workbench (#819).
+ */
+export type EditedFilter_Serialize = {
+	name: FilterName,
+	query: FilterQuery,
+	was: FilterQuery | null,
+};
+
 /**  Whether a search has ended, and how. */
 export type End = 
 /**  It still reads files, so more may come. */
@@ -2900,6 +2932,21 @@ export type RepositoryCheck_Serialize = {
 	mirror: MirrorCost,
 };
 
+/**  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535). */
+export type RepositoryFilters = RepositoryFilters_Serialize | RepositoryFilters_Deserialize;
+
+/**  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535). */
+export type RepositoryFilters_Deserialize = {
+	repository: RepositoryName,
+	filters: EditedFilter_Deserialize[],
+};
+
+/**  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535). */
+export type RepositoryFilters_Serialize = {
+	repository: RepositoryName,
+	filters: EditedFilter_Serialize[],
+};
+
 /**
  *  A Repository added by hand may leave its Conventions and its Filters out. Then it gets the Conventions
  *  adding it would give it, and the starter Filters each switched off, as a Repository added before Filters
@@ -3429,6 +3476,8 @@ export type SettingsChanges_Deserialize = {
 	appearance?: AppearanceChanges_Deserialize | null,
 	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
 	language_servers?: LanguageServerSettings_Deserialize | null,
+	/**  The Filters of each Repository whose page changed them (#535). */
+	filters?: RepositoryFilters_Deserialize[],
 };
 
 /**
@@ -3442,6 +3491,8 @@ export type SettingsChanges_Serialize = {
 	appearance: AppearanceChanges_Serialize | null,
 	/**  `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683). */
 	language_servers: LanguageServerSettings_Serialize | null,
+	/**  The Filters of each Repository whose page changed them (#535). */
+	filters: RepositoryFilters_Serialize[],
 };
 
 /**  What `settings.toml` holds. A value the file leaves out takes its default. */

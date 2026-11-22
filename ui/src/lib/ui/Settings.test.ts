@@ -12,6 +12,7 @@ import {
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
 import { defaultSettings, NO_SERVERS, ok, refused, repositoryCheck } from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
+import { LIGHT_SIDE } from "$lib/testing/state";
 import Settings from "./Settings.svelte";
 
 const core = vi.hoisted(() => ({
@@ -126,8 +127,6 @@ const THEMES: Themes = {
   },
   problems: [],
 };
-/** Windows on its light side, which says nothing when it changes. */
-const LIGHT_SIDE = { matches: false, addEventListener: () => {} } as unknown as DarkQuery;
 /** The themes the core works out for `appearance`, as `preview_themes` does for names the themes have: a
  * theme the themes hold is named, and anything else follows the system. */
 const previewOf = (appearance: Values["appearance"]) => {
@@ -1356,5 +1355,82 @@ describe("Settings › Repositories", () => {
     await go("Repositories");
     await screen.findByRole("alert");
     expect(addButton().hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("Settings › a Repository's Filters", () => {
+  const files = settingsWith((settings) => {
+    settings.repositories[1]?.filters.push(
+      { name: "Bugs", query: "label:bug", on_workbench: true },
+      { name: "Docs", query: "label:docs", on_workbench: false },
+    );
+  });
+  const page = () => screen.getByRole("region", { name: "python/cpython" });
+  const filter = (at: number) => within(page()).getByRole("group", { name: `Filter ${at}` });
+  const field = (at: number, name: "Name" | "Search") => within(filter(at)).getByRole("textbox", { name });
+  /** The dialog on python/cpython's page, once it has read the files. */
+  const onPage = async (onclose = () => {}) => {
+    core.rereadSettings.mockResolvedValue(ok(loaded(files)));
+    await opened(onclose);
+    await go("python/cpython");
+  };
+
+  it("saves each change to the Filters on Apply, and keeps Apply off while a Filter is blank", async () => {
+    const onclose = vi.fn();
+    await onPage(onclose);
+
+    await fireEvent.input(field(1, "Name"), { target: { value: "Bug reports" } });
+    await fireEvent.click(within(filter(2)).getByRole("button", { name: "Move up" }));
+    await fireEvent.click(within(page()).getByRole("button", { name: "Add filter" }));
+    expect(button("Apply").hasAttribute("disabled")).toBe(true);
+    await fireEvent.input(field(3, "Search"), { target: { value: "is:open" } });
+    await fireEvent.input(field(3, "Name"), { target: { value: "Open" } });
+    await fireEvent.click(button("Apply"));
+
+    expect(core.applySettings).toHaveBeenCalledWith({
+      filters: [
+        {
+          repository: "python/cpython",
+          filters: [
+            { name: "Docs", query: "label:docs", was: "label:docs" },
+            { name: "Bug reports", query: "label:bug", was: "label:bug" },
+            { name: "Open", query: "is:open", was: null },
+          ],
+        },
+      ],
+    });
+    await vi.waitFor(() => {
+      expect(onclose).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("saves nothing on Cancel", async () => {
+    const onclose = vi.fn();
+    await onPage(onclose);
+
+    await fireEvent.click(within(filter(1)).getByRole("button", { name: "Delete" }));
+    expect(button("Apply")).toBeTruthy();
+    await fireEvent.click(button("Cancel"));
+
+    expect(onclose).toHaveBeenCalledOnce();
+    expect(core.applySettings).not.toHaveBeenCalled();
+    expect(state.settings).toEqual(files);
+  });
+
+  it("keeps the Filters as the user left them, and says why, when the core refuses them", async () => {
+    core.applySettings.mockResolvedValue(
+      refused("Two Filters of python/cpython search label:bug: give each a search of its own."),
+    );
+    await onPage();
+
+    await fireEvent.input(field(2, "Search"), { target: { value: "label:bug" } });
+    await fireEvent.click(button("Apply"));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Tsugiki can't save the settings: Two Filters of python/cpython search label:bug: give each a search of " +
+        "its own.",
+    );
+    expect(field(2, "Search")).toHaveProperty("value", "label:bug");
+    expect(button("Apply").hasAttribute("disabled")).toBe(false);
   });
 });

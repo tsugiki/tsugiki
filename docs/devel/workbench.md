@@ -31,9 +31,10 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   Mute below says. The Filter's count leaves out its Archived and Muted items, and a Filter switched on
   brings none of them onto the Workbench. Reach stays as Mute and Archive below say.
 - Adding a Repository, Maintained or not, creates two starter Filters, ordinary ones the user can edit or
-  delete: "Mine" (`is:open author:@me`), switched on, and "Involved" (`is:open involves:@me -author:@me`),
-  switched off. Repositories added before the switch keep their Filters, switched off, and so does a
-  Repository whose settings leave its Filters out: it reads as having both starters, switched off.
+  delete on the Repository's page in Settings ([settings.md](settings.md)): "Mine" (`is:open author:@me`),
+  switched on, and "Involved" (`is:open involves:@me -author:@me`), switched off. Repositories added before
+  the switch keep their Filters, switched off, and so does a Repository whose settings leave its Filters
+  out: it reads as having both starters, switched off.
 - Clicking a person's name opens a temporary `author:<login>` Filter. It lists their Issues and the Issues
   their PRs fix. It stays in the Sidebar, marked unsaved, until the user saves it as a Filter or closes it.
 - The **Inbox** lists every open item of the Repository the user hasn't triaged: each open Issue with its PRs

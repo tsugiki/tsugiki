@@ -127,7 +127,7 @@
     </nav>
     <section aria-label={title}>
       {#if "repository" in dialog.shown}
-        <RepositoryPage repository={dialog.shown.repository} />
+        <RepositoryPage {dialog} repository={dialog.shown.repository} />
       {:else if dialog.shown.page === "General"}
         <GeneralPage {dialog} />
       {:else if dialog.shown.page === "Repositories"}
@@ -153,7 +153,7 @@
       <p role="alert">{dialog.problem}</p>
     {/if}
     <button disabled={dialog.applying} onclick={cancel}>Cancel</button>
-    <button class="primary" disabled={dialog.applying} onclick={() => void apply()}
+    <button class="primary" disabled={dialog.applying || dialog.unsaveable} onclick={() => void apply()}
       >{dialog.changed ? "Apply" : "OK"}</button
     >
   </footer>

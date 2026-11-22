@@ -18,12 +18,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use time::{OffsetDateTime, UtcOffset};
 use toml_edit::{
-    Array, ArrayOfTables, Datetime, DocumentMut, InlineTable, Item, Key, RawString, Table,
+    Array, ArrayOfTables, Datetime, Decor, DocumentMut, InlineTable, Item, Key, RawString, Table,
     TableLike, Value,
 };
 
 use crate::error::{Error, ErrorKind};
-use crate::filters::{FilterQuery, OnWorkbench};
+use crate::filters::{FilterName, FilterQuery, OnWorkbench};
 use crate::folders::Folders;
 use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
@@ -40,6 +40,7 @@ mod saving;
 
 const REPOSITORIES: &str = "repositories";
 const FILTERS: &str = "filters";
+const QUERY: &str = "query";
 const RECENT: &str = "recent";
 /// The keys of an entry in `recent`.
 const NAME: &str = "name";
@@ -150,6 +151,26 @@ pub struct SettingsChanges {
     pub appearance: Option<AppearanceChanges>,
     /// `[language_servers]` in `machine.toml`, which Settings › Advanced edits (#683).
     pub language_servers: Option<LanguageServerSettings>,
+    /// The Filters of each Repository whose page changed them (#535).
+    pub filters: Vec<RepositoryFilters>,
+}
+
+/// The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+pub struct RepositoryFilters {
+    pub repository: RepositoryName,
+    pub filters: Vec<EditedFilter>,
+}
+
+/// A Filter as a Repository's page leaves it. `was` is the search it had when the dialog read the files,
+/// which finds its table in the file, so each key the page doesn't show, such as `on_workbench`, stays with
+/// it through a new name, a new search or a move. It is none for a Filter Add filter added, which the file
+/// gets with its name and search alone, so it is off the Workbench (#819).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
+pub struct EditedFilter {
+    pub name: FilterName,
+    pub query: FilterQuery,
+    pub was: Option<FilterQuery>,
 }
 
 impl SettingsChanges {
@@ -1024,18 +1045,34 @@ impl SettingsFiles {
     /// `settings.toml` might hold work the user hasn't finished. So does an `[appearance]` or `[diff]` value
     /// Tsugiki can't read.
     pub fn write(&mut self, settings: &Settings) -> Result<(), Error> {
+        self.save_settings(Some(settings), &[])
+    }
+
+    /// Saves the tables of `settings` that the Settings window edits, if it is given, and the Filters each
+    /// of `filters` gives its Repository, in one save, as `write` saves `settings` alone. A Filters-only save
+    /// merges no other table, so an `[appearance]` or `[diff]` value Tsugiki can't read doesn't refuse it.
+    fn save_settings(
+        &mut self,
+        settings: Option<&Settings>,
+        filters: &[RepositoryFilters],
+    ) -> Result<(), Error> {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
-        // A key Tsugiki read as its default would be saved as the default, over what the user wrote.
-        if let Some(problem) = unread_problems(&path, &edit.before).first() {
-            return Err(refused(problem));
+        if let Some(settings) = settings {
+            // A key Tsugiki read as its default would be saved as the default, over what the user wrote.
+            if let Some(problem) = unread_problems(&path, &edit.before).first() {
+                return Err(refused(problem));
+            }
+            merge(
+                edit.document.as_table_mut(),
+                without_hand_edits(as_document(settings)).as_table(),
+                without_hand_edits(as_document(&Settings::default())).as_table(),
+            );
         }
-        merge(
-            edit.document.as_table_mut(),
-            without_hand_edits(as_document(settings)).as_table(),
-            without_hand_edits(as_document(&Settings::default())).as_table(),
-        );
+        for change in filters {
+            edit.put_filters(change)?;
+        }
         edit.save()?;
         self.reload();
         Ok(())
@@ -1052,8 +1089,9 @@ impl SettingsFiles {
         let servers = (changes.language_servers.as_ref())
             .map(|servers| Self::language_servers_edit(&machine, servers))
             .transpose()?;
-        if let Some(settings) = changes.made_to(self.loaded.settings.clone())? {
-            self.write(&settings)?;
+        let settings = changes.made_to(self.loaded.settings.clone())?;
+        if settings.is_some() || !changes.filters.is_empty() {
+            self.save_settings(settings.as_ref(), &changes.filters)?;
         }
         if let Some(edit) = servers {
             edit.save()?;
@@ -1281,17 +1319,7 @@ impl SettingsFiles {
         let machine = self.machine_to_edit()?;
         let path = settings_file(&self.folders, &machine);
         let mut edit = TomlEdit::<Settings>::open(&path)?;
-        let held = (edit.values.repositories.iter())
-            .find(|one| one.name.is_same(name))
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorKind::NotFound,
-                    &format!("Tsugiki doesn't have {name}."),
-                )
-            })?;
-        let written = as_document(held).remove(FILTERS);
-        let switched = (edit.document.get_mut(REPOSITORIES))
-            .and_then(|repositories| filters_in_file(repositories, name, written))
+        let switched = (edit.repository_with_filters(name)?.get_mut(FILTERS))
             .is_some_and(|filters| switch_filter(filters, query, on));
         if !switched {
             let message = format!("{name} has no Filter that searches {}.", query.as_str());
@@ -1469,8 +1497,10 @@ impl SettingsOwner {
                         finishing: _finishing,
                     } => break,
                 };
-                // Only the Sidebar's switch saves a Repository's settings from the window. Every other change
-                // reloads the files, and so takes in a hand edit to them.
+                // Only the Sidebar's switch saves a Repository's settings from a window that asks again by
+                // itself. Every other change reloads the files, and so takes in a hand edit to them. The
+                // Filters an Apply saves (#535) reach the Sidebar as a hand edit's do, as Settings doesn't
+                // ask the Workbench again.
                 let by = match change {
                     Change::OnWorkbench { .. } => SavedBy::Window,
                     Change::Add { .. }
@@ -1877,6 +1907,51 @@ impl TomlEdit<'_, Settings> {
             written_inline.push(table.into_inline_table());
         }
     }
+
+    /// The table of the Repository `name`, the first in the file that names it. A table without `filters`
+    /// gets the Filters the settings read it as written out first, as `repository_in_file` says. It refuses
+    /// a Repository the file doesn't hold.
+    fn repository_with_filters(
+        &mut self,
+        name: &RepositoryName,
+    ) -> Result<&mut dyn TableLike, Error> {
+        let written = (self.values.repositories.iter())
+            .find(|one| one.name.is_same(name))
+            .map(|held| as_document(held).remove(FILTERS));
+        let repository = match (self.document.get_mut(REPOSITORIES), written) {
+            (Some(repositories), Some(written)) => repository_in_file(repositories, name, written),
+            _ => None,
+        };
+        match repository {
+            Some(repository) => Ok(repository),
+            None => Err(Error::new(
+                ErrorKind::NotFound,
+                &format!("Tsugiki doesn't have {name}."),
+            )),
+        }
+    }
+
+    /// Makes the Filters of the Repository `change` names the ones it lists, as `put_filters` says. It
+    /// refuses two Filters with one search, as the settings would read only the first, and a Repository the
+    /// file doesn't hold.
+    fn put_filters(&mut self, change: &RepositoryFilters) -> Result<(), Error> {
+        let filters = &change.filters;
+        let repeated = filters.iter().enumerate().find_map(|(at, filter)| {
+            (filters.iter().take(at))
+                .any(|earlier| earlier.query == filter.query)
+                .then_some(&filter.query)
+        });
+        if let Some(query) = repeated {
+            let message = format!(
+                "Two Filters of {} search {}: give each a search of its own.",
+                change.repository,
+                query.as_str()
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        put_filters(self.repository_with_filters(&change.repository)?, filters);
+        Ok(())
+    }
 }
 
 /// A Filter takes a block of its own, because the user edits these by hand (ADR 0014).
@@ -1891,14 +1966,14 @@ fn with_filters_as_tables(mut repository: Table) -> Table {
     repository
 }
 
-/// The `filters` of the first table of `repositories` that names `name`. A table without them gets `written`
-/// first, the Filters the settings read it as: in blocks of their own, or as an inline list in a Repository
-/// written inline, as `append` writes them.
-fn filters_in_file<'a>(
+/// The first table of `repositories` that names `name`. A table without `filters` gets `written` first, the
+/// Filters the settings read it as: in blocks of their own, or as an inline list in a Repository written
+/// inline, as `append` writes them.
+fn repository_in_file<'a>(
     repositories: &'a mut Item,
     name: &RepositoryName,
     written: Option<Item>,
-) -> Option<&'a mut Item> {
+) -> Option<&'a mut dyn TableLike> {
     let names_it = |table: &&mut dyn TableLike| {
         (table.get(NAME).and_then(Item::as_str))
             .and_then(|text| RepositoryName::parse(text).ok())
@@ -1914,17 +1989,112 @@ fn filters_in_file<'a>(
         #[expect(unused_results, reason = "the table has no `filters` to give back")]
         repository.insert(FILTERS, blocks);
     }
-    repository.get_mut(FILTERS)
+    Some(repository)
+}
+
+/// Whether the Filter `filter` searches `query`, as the settings read its search.
+fn searches(filter: &dyn TableLike, query: &FilterQuery) -> bool {
+    (filter.get(QUERY).and_then(Item::as_str)).is_some_and(|text| text.trim() == query.as_str())
+}
+
+/// Makes the `filters` of `repository` the Filters `edits` lists, in their order, in the form the file
+/// already uses for them (#535). A Filter the page read keeps its table, with each key and comment the user
+/// wrote, and its name and search change in place. One Add filter added gets a table with its name and
+/// search. A table no Filter keeps goes, and with it a second Filter with the search of one before it, which
+/// the settings never read.
+///
+/// An inline list the user wrote stays inline. Otherwise the Filters take blocks of their own, as `append`
+/// writes them, which a Repository written inline writes as an inline list. With no Filters left it writes
+/// `filters = []`, as a Repository without the key reads as having the starters.
+fn put_filters(repository: &mut dyn TableLike, edits: &[EditedFilter]) {
+    match repository.get_mut(FILTERS) {
+        Some(Item::Value(Value::Array(list))) if !list.is_empty() => {
+            put_inline_filters(list, edits)
+        }
+        _ => {
+            let blocks = (repository.remove(FILTERS))
+                .and_then(|list| list.into_array_of_tables().ok())
+                .map_or_else(Vec::new, |blocks| blocks.into_iter().collect());
+            let filters = block_filters(blocks, edits);
+            let filters = if filters.is_empty() {
+                Item::Value(Value::Array(Array::new()))
+            } else {
+                Item::ArrayOfTables(filters)
+            };
+            #[expect(unused_results, reason = "the table's `filters` were taken out above")]
+            repository.insert(FILTERS, filters);
+        }
+    }
+}
+
+/// The Filters `edits` lists as blocks, each keeping the block of `blocks` it was, if any. The blocks take
+/// the places in the file the old ones held, in their new order, as the file lists its tables by place.
+fn block_filters(blocks: Vec<Table>, edits: &[EditedFilter]) -> ArrayOfTables {
+    let places: Vec<Option<isize>> = blocks.iter().map(Table::position).collect();
+    let mut kept: Vec<Option<Table>> = blocks.into_iter().map(Some).collect();
+    let mut filters = ArrayOfTables::new();
+    for (at, edit) in edits.iter().enumerate() {
+        let mut filter = claim(&mut kept, edit).unwrap_or_default();
+        put_name_and_search(&mut filter, edit);
+        // A block past the old ones' places follows the block before it.
+        filter.set_position(places.get(at).copied().flatten());
+        filters.push(filter);
+    }
+    filters
+}
+
+/// Makes `list` the Filters `edits` lists, each keeping the inline table of `list` it was, if any. Each
+/// takes the spacing of the one at its place, and one past the old ones that of the last.
+fn put_inline_filters(list: &mut Array, edits: &[EditedFilter]) {
+    let spacing: Vec<Decor> = list.iter().map(|filter| filter.decor().clone()).collect();
+    let mut kept: Vec<Option<InlineTable>> = (list.iter())
+        .map(|filter| filter.as_inline_table().cloned())
+        .collect();
+    list.clear();
+    for (at, edit) in edits.iter().enumerate() {
+        let filter = match claim(&mut kept, edit) {
+            Some(mut filter) => {
+                put_name_and_search(&mut filter, edit);
+                filter
+            }
+            None => {
+                let mut added = InlineTable::new();
+                put_name_and_search(&mut added, edit);
+                added.fmt();
+                added
+            }
+        };
+        let mut filter = Value::InlineTable(filter);
+        *filter.decor_mut() = (spacing.get(at).or(spacing.last()).cloned()).unwrap_or_default();
+        list.push_formatted(filter);
+    }
+}
+
+/// The table of `tables` that `edit` was, taken out so no other Filter takes it, or none for a Filter Add
+/// filter added or one whose table a hand edit took out while the dialog was open.
+fn claim<T: TableLike>(tables: &mut [Option<T>], edit: &EditedFilter) -> Option<T> {
+    let was = edit.was.as_ref()?;
+    (tables.iter_mut())
+        .find(|table| table.as_ref().is_some_and(|table| searches(table, was)))?
+        .take()
+}
+
+/// Gives `filter` the name and search of `edit`, leaving each as the user quoted it while it says that.
+fn put_name_and_search(filter: &mut dyn TableLike, edit: &EditedFilter) {
+    for (key, text) in [(NAME, edit.name.as_str()), (QUERY, edit.query.as_str())] {
+        if filter.get(key).and_then(Item::as_str).map(str::trim) != Some(text) {
+            merge_value(filter, key, &toml_edit::value(text), None);
+        }
+    }
 }
 
 /// Sets `on_workbench` on the first Filter of `filters` that searches `query`, the one the settings read,
 /// keeping a comment the user wrote on it, and says whether there was one. A Filter switched off says so,
 /// so a hand edit finds the key.
 fn switch_filter(filters: &mut Item, query: &FilterQuery, on: OnWorkbench) -> bool {
-    let searching = tables_of(filters).into_iter().find(|filter| {
-        (filter.get("query").and_then(Item::as_str))
-            .is_some_and(|text| text.trim() == query.as_str())
-    });
+    let searching = tables_of(filters)
+        .into_iter()
+        .find(|filter| searches(*filter, query));
     let Some(filter) = searching else {
         return false;
     };

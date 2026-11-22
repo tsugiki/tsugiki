@@ -51,7 +51,7 @@ fn a_line_says_when_how_bad_where_and_what() {
 #[test]
 fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
     let (folder, logger) = temp_logger("in-use");
-    let token = read_token(gh_alone(|_| gh_prints("0123456789abcdef")));
+    let token = read_token(gh_alone(|| gh_prints("0123456789abcdef")));
     logger.send(Message::Hide(token.unwrap()));
     say(
         &logger,
@@ -69,8 +69,8 @@ fn a_token_in_use_never_reaches_the_file_whatever_its_shape() {
 #[test]
 fn a_token_read_again_is_kept_once() {
     let read = |from: TokenFrom| read_token(from).unwrap();
-    let token = || read(gh_alone(|_| gh_prints("0123456789abcdef")));
-    let other = read(gh_alone(|_| gh_prints("fedcba9876543210")));
+    let token = || read(gh_alone(|| gh_prints("0123456789abcdef")));
+    let other = read(gh_alone(|| gh_prints("fedcba9876543210")));
     let mut hidden = Vec::new();
 
     remember(&mut hidden, token());

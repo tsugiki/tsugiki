@@ -18,7 +18,8 @@ use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
 use crate::{
-    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable,
+    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, checked_read,
+    unreachable,
 };
 
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
@@ -55,8 +56,11 @@ impl Https {
         }
     }
 
-    /// Sends `body`, a GraphQL request as JSON, with `token`.
-    pub fn post_graphql(&self, token: &Token, body: String) -> Result<Reply, Unreachable> {
+    /// Sends `body`, a GraphQL request as JSON, with `token`, if it can only read. GitHub gets the request as
+    /// [`checked_read`] wrote it again: the shadowing leaves the text it was handed out of reach. A body that
+    /// isn't a read reaches no network.
+    pub fn post_graphql(&self, token: &Token, body: &str) -> Result<Reply, Unreachable> {
+        let body = checked_read(body)?;
         let response = self
             .agent
             .post(GRAPHQL)
@@ -157,11 +161,11 @@ pub(crate) fn read_env() -> Option<String> {
     std::env::var(GH_TOKEN).ok()
 }
 
-/// Runs `gh`.
-pub(crate) fn run_gh(args: &[&str]) -> io::Result<GhOutput> {
+/// Runs `gh auth token --hostname github.com`, the only command Tsugiki runs `gh` for.
+pub(crate) fn gh_auth_token() -> io::Result<GhOutput> {
     let mut outcome = Err(io::Error::from(io::ErrorKind::NotFound));
     for program in GH_PROGRAMS {
-        outcome = run_program(program, args);
+        outcome = run_program(program, &["auth", "token", "--hostname", "github.com"]);
         if !matches!(&outcome, Err(error) if error.kind() == io::ErrorKind::NotFound) {
             break;
         }

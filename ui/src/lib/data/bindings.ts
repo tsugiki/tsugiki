@@ -982,7 +982,10 @@ export type ErrorKind_Deserialize = { kind: "offline" } |
  *  if known.
  */
 resets_at?: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
-/**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
+/**
+ *  GitHub took the request and answered with an error about it, or `tsugiki-token` refused to send it
+ *  (ADR 0025). Asking again fails the same way. A failed status is `Internal`.
+ */
 { kind: "query_refused" } | { kind: "internal" };
 
 /**  What the UI can do something about. */
@@ -994,7 +997,10 @@ export type ErrorKind_Serialize = { kind: "offline" } |
  *  if known.
  */
 resets_at: number | null } | { kind: "not_found" } | { kind: "conflict" } | 
-/**  GitHub took the request and answered with an error about it. A failed status is `Internal`. */
+/**
+ *  GitHub took the request and answered with an error about it, or `tsugiki-token` refused to send it
+ *  (ADR 0025). Asking again fails the same way. A failed status is `Internal`.
+ */
 { kind: "query_refused" } | { kind: "internal" };
 
 /**  A failure in plain words. Details go only to a local log, with tokens scrubbed. */

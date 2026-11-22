@@ -4,7 +4,12 @@
 
 use std::io;
 
-use crate::{GhOutput, ReadEnv, RunGh, TokenFrom};
+use crate::{GhAuthToken, GhOutput, ReadEnv, TokenFrom, checked_read};
+
+/// The reason `Https::post_graphql` would give for refusing `body`, or nothing when it would send it.
+pub fn refusal(body: &str) -> Option<String> {
+    checked_read(body).err().as_ref().map(ToString::to_string)
+}
 
 /// What a gh that worked and printed `stdout` gives.
 pub fn gh_prints(stdout: &str) -> io::Result<GhOutput> {
@@ -20,7 +25,7 @@ pub(crate) fn nothing_set() -> Option<String> {
 }
 
 /// A machine with no `GH_TOKEN`, so the token comes from `gh`.
-pub const fn gh_alone(gh: RunGh) -> TokenFrom {
+pub const fn gh_alone(gh: GhAuthToken) -> TokenFrom {
     TokenFrom {
         env: nothing_set,
         gh,
@@ -28,7 +33,7 @@ pub const fn gh_alone(gh: RunGh) -> TokenFrom {
 }
 
 /// What running a `gh` that isn't installed gives.
-fn gh_not_found(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_not_found() -> io::Result<GhOutput> {
     Err(io::Error::from(io::ErrorKind::NotFound))
 }
 
@@ -36,7 +41,7 @@ fn gh_not_found(_: &[&str]) -> io::Result<GhOutput> {
 pub const NO_GH: TokenFrom = gh_alone(gh_not_found);
 
 /// The error a `gh` that didn't answer in time gives.
-fn gh_timed_out(_: &[&str]) -> io::Result<GhOutput> {
+fn gh_timed_out() -> io::Result<GhOutput> {
     Err(io::Error::from(io::ErrorKind::TimedOut))
 }
 

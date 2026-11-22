@@ -77,7 +77,7 @@ pub struct ConditionalReply {
     pub date: Option<OffsetDateTime>,
 }
 
-/// GitHub couldn't be reached at all.
+/// The request didn't reach GitHub.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unreachable {
     /// No network, no answer in time, or a connection that failed some other way, a certificate that failed
@@ -86,6 +86,9 @@ pub enum Unreachable {
     /// GitHub's certificate isn't valid at this computer's date and time. The clock may be wrong, or the
     /// certificate may have expired, and the check can't tell which.
     CertificateDates,
+    /// `tsugiki-token` wouldn't send the request, as a GraphQL body that isn't a read (ADR 0025). Asking
+    /// again fails the same way, so it fails as a query GitHub refused does, and not as an outage.
+    Refused,
 }
 
 impl From<Unreachable> for Error {
@@ -95,6 +98,10 @@ impl From<Unreachable> for Error {
             Unreachable::CertificateDates => Error::new(
                 ErrorKind::CertificateDates,
                 "GitHub's certificate isn't valid by this computer's clock. Check the date and time.",
+            ),
+            Unreachable::Refused => Error::new(
+                ErrorKind::QueryRefused,
+                "Tsugiki refused to send a request to GitHub. The log says why.",
             ),
         }
     }
@@ -309,6 +316,8 @@ impl GitHub {
 
     /// Sends `request` if the gate lets it through, and sets GitHub's clock by the reply's `Date`.
     fn post(&self, request: &Request<'_>) -> Result<Reply, Error> {
+        #[cfg(any(test, feature = "testing"))]
+        https::assert_read(request);
         self.pass_gate()?;
         let reply = self.in_flight(|| self.transport.post(&self.token, request))?;
         if reply.status == 200 {

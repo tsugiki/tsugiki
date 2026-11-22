@@ -8,23 +8,13 @@ use std::time::Duration;
 use rustls::pki_types::UnixTime;
 
 use super::*;
-use crate::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, nothing_set};
+use crate::testing::{NO_GH, SLOW_GH, gh_alone, gh_prints, nothing_set, refusal};
 
 fn example() -> Token {
-    Token::find(gh_alone(|_| gh_prints("gho_example\n"))).unwrap()
+    Token::find(gh_alone(|| gh_prints("gho_example\n"))).unwrap()
 }
 
-const GH_NEVER_RUNS: RunGh = |_| panic!("gh ran although GH_TOKEN holds a token");
-
-#[test]
-fn the_token_comes_from_gh_auth_token_for_github_com() {
-    let token = Token::find(gh_alone(|args| {
-        assert_eq!(args, ["auth", "token", "--hostname", "github.com"]);
-        gh_prints("gho_example\n")
-    }))
-    .unwrap();
-    assert_eq!(token.bearer(), "Bearer gho_example");
-}
+const GH_NEVER_RUNS: GhAuthToken = || panic!("gh ran although GH_TOKEN holds a token");
 
 #[test]
 fn gh_token_set_gives_its_token_and_runs_no_gh() {
@@ -46,7 +36,7 @@ fn without_gh_token_or_with_it_empty_the_token_comes_from_gh() {
     for env in unset_or_empty {
         let token = Token::find(TokenFrom {
             env,
-            gh: |_| gh_prints("gho_example\n"),
+            gh: || gh_prints("gho_example\n"),
         })
         .unwrap();
         assert_eq!(token.bearer(), "Bearer gho_example");
@@ -82,7 +72,7 @@ fn gh_that_doesnt_answer_in_time_gives_no_token_and_says_so() {
 
 #[test]
 fn gh_that_fails_gives_no_token() {
-    let failed = Token::find(gh_alone(|_| {
+    let failed = Token::find(gh_alone(|| {
         Ok(GhOutput {
             success: false,
             stdout: "gho_example".to_owned(),
@@ -93,7 +83,7 @@ fn gh_that_fails_gives_no_token() {
 
 #[test]
 fn an_empty_answer_from_gh_is_not_a_token() {
-    let empty = Token::find(gh_alone(|_| gh_prints(" \n")));
+    let empty = Token::find(gh_alone(|| gh_prints(" \n")));
     assert!(matches!(empty, Err(NoToken::GhPrintedNothing)));
 }
 
@@ -106,7 +96,7 @@ fn printing_a_token_doesnt_show_it() {
 
 #[test]
 fn a_token_is_hidden_wherever_it_appears() {
-    let token = Token::find(gh_alone(|_| gh_prints("0123456789abcdef"))).unwrap();
+    let token = Token::find(gh_alone(|| gh_prints("0123456789abcdef"))).unwrap();
     assert_eq!(
         token.hide_in("Bearer 0123456789abcdef, again 0123456789abcdef", "[token]"),
         "Bearer [token], again [token]"
@@ -255,4 +245,83 @@ fn any_other_failure_is_offline() {
     for cause in causes {
         assert_eq!(unreachable(&cause), Unreachable::Offline(cause.to_string()));
     }
+}
+
+/// A GraphQL body of `query` with no variables.
+fn body_of(query: &str) -> String {
+    serde_json::json!({ "query": query, "variables": null }).to_string()
+}
+
+#[test]
+fn a_read_goes_out_as_the_crate_writes_it_again() {
+    let body = r#"{ "variables" : { "n" : 3 }, "query" : "query Op($n: Int!) { a(n: $n) }" }"#;
+    assert_eq!(
+        checked_read(body).unwrap(),
+        r#"{"query":"query Op($n: Int!) { a(n: $n) }","variables":{"n":3}}"#
+    );
+}
+
+#[test]
+fn a_query_that_holds_mutation_anywhere_is_refused() {
+    let write = "mutation { deleteRef(input: { refId: \"R\" }) { clientMutationId } }";
+    let queries = [
+        write.to_owned(),
+        format!("query A {{ viewer {{ login }} }} {write}"),
+        "query { viewer { login } # mutation\n }".to_owned(),
+        "query { search(query: \"mutation\", type: ISSUE, first: 1) { issueCount } }".to_owned(),
+        "query { mutations: viewer { login } }".to_owned(),
+    ];
+    for query in queries {
+        assert_eq!(
+            checked_read(&body_of(&query)),
+            Err(NotARead::Mutation),
+            "{query}"
+        );
+    }
+}
+
+#[test]
+fn a_body_with_another_key_or_a_key_twice_is_refused() {
+    let read = "query { viewer { login } }";
+    let bodies = [
+        format!(r#"{{"query":"{read}","variables":null,"operationName":"Op"}}"#),
+        // Variables written as `null, "query": "mutation …"` by a builder that pastes them in.
+        format!(r#"{{"query":"{read}","variables":null, "query": "mutation {{ a }}"}}"#),
+        format!(r#"{{"query":"{read}","variables":null,"variables":{{}}}}"#),
+        format!(r#"{{"query":"{read}","variables":null}}{{"query":"mutation {{ a }}"}}"#),
+        format!(r#"{{"query":"{read}"}}"#),
+        "[]".to_owned(),
+    ];
+    for body in bodies {
+        assert!(
+            matches!(checked_read(&body), Err(NotARead::Unparsed(_))),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn a_key_twice_inside_the_variables_goes_out_once() {
+    let body = r#"{"query":"query Op($n: Int!) { a(n: $n) }","variables":{"n":1,"n":2}}"#;
+    let sent = checked_read(body).unwrap();
+    assert_eq!(sent.matches(r#""n""#).count(), 1, "{sent}");
+    assert!(sent.contains(r#""n":2"#), "{sent}");
+}
+
+#[test]
+fn a_refusal_says_why() {
+    let mutation = refusal(&body_of("mutation { a }")).unwrap();
+    assert!(mutation.contains("`mutation`"), "{mutation}");
+    let unparsed = refusal(r#"{"query":"","variables":null,"extra":1}"#).unwrap();
+    assert!(unparsed.contains("unknown field `extra`"), "{unparsed}");
+    assert_eq!(refusal(&body_of("query { viewer { login } }")), None);
+}
+
+#[test]
+fn a_refused_body_is_refused_not_offline_and_says_why() {
+    let refused = checked_read(&body_of("mutation { a }")).map_err(Unreachable::from);
+    assert_eq!(
+        refused,
+        Err(Unreachable::Refused(NotARead::Mutation.to_string()))
+    );
 }

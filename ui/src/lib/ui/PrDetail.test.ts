@@ -379,6 +379,32 @@ it("says why it can't show the PR", async () => {
   expect(screen.getByRole("alert").textContent).toContain("Tsugiki can't show this PR: no database");
 });
 
+it("says atop the view that the token can't write to a Read-only Repository, and nothing otherwise", async () => {
+  core.pullRequest.mockResolvedValue(ok(null));
+  const panes = new PanesState();
+  const state = new PrViewState("python/cpython", 11, 10, panes);
+  await state.load();
+  const props = {
+    repository: "python/cpython",
+    pr: state,
+    panes,
+    now: NOW,
+    onback: vi.fn(),
+    onmark: vi.fn(),
+  };
+  const words = "Read-only: your token can't write to python/cpython";
+  const { rerender } = render(PrDetail, {
+    ...props,
+    repositoryState: { read_only: ["token"], connection: "online" },
+  });
+  state.stop();
+
+  const pane = screen.getByRole("region", { name: "PR view" });
+  expect(pane.querySelector("p")?.textContent).toBe(words);
+  await rerender({ ...props, repositoryState: { read_only: [], connection: "online" } });
+  expect(screen.queryByText(words)).toBeNull();
+});
+
 it("offers Mark Seen in its header while the PR has New activity, and Mark Unseen once it has none", async () => {
   const onmark = vi.fn();
   await shown(view, 10, vi.fn(), onmark);

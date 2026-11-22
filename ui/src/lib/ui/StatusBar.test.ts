@@ -78,8 +78,31 @@ describe("StatusBar", () => {
 
   it("says offline and tints the bar", () => {
     render(StatusBar, { status: { state: "offline" } });
-    expect(bar().textContent).toContain("Offline: read-only");
+    expect(bar().textContent?.trim()).toBe("Offline");
     expect(bar().classList.contains("offline")).toBe(true);
+  });
+
+  it("says the open Repository is Read-only after who is signed in", () => {
+    render(StatusBar, { status: { state: "online", login: "octocat" }, readOnly: true });
+    expect(bar().textContent?.trim()).toBe("octocat · Read-only");
+    expect(bar().classList.contains("offline")).toBe(false);
+  });
+
+  it("says Read-only apart from Offline", () => {
+    render(StatusBar, { status: { state: "offline_as", last_login: "octocat" }, readOnly: true });
+    expect(bar().textContent?.trim()).toBe("octocat · Offline · Read-only");
+  });
+
+  it("leaves Read-only out of a problem's words, and out of a hidden bar", () => {
+    const problem = { kind: "unauthorized", message: "Run `gh auth login`." } as const;
+    const { unmount } = render(StatusBar, { status: { state: "problem", problem }, readOnly: true });
+    expect(bar().textContent?.trim()).toBe("Run `gh auth login`.");
+    unmount();
+    const unread = render(StatusBar, { status: undefined, error: "no core", readOnly: true });
+    expect(bar().textContent?.trim()).toBe("Tsugiki can't read its status: no core");
+    unread.unmount();
+    render(StatusBar, { status: { state: "online", login: "octocat" }, readOnly: true, visible: false });
+    expect(bar().textContent?.trim()).toBe("");
   });
 
   it("shows who it was last time while it connects", () => {
@@ -90,7 +113,7 @@ describe("StatusBar", () => {
 
   it("shows who it was last time while offline, and tints the bar", () => {
     render(StatusBar, { status: { state: "offline_as", last_login: "octocat" } });
-    expect(bar().textContent?.trim()).toBe("octocat · Offline: read-only");
+    expect(bar().textContent?.trim()).toBe("octocat · Offline");
     expect(bar().classList.contains("offline")).toBe(true);
   });
 
@@ -141,12 +164,12 @@ describe("StatusBar", () => {
 
     it("comes back to say Tsugiki is offline", () => {
       render(StatusBar, { status: { state: "offline" }, visible: false });
-      expect(bar().textContent?.trim()).toBe("Offline: read-only");
+      expect(bar().textContent?.trim()).toBe("Offline");
     });
 
     it("comes back to say who it was last time while offline", () => {
       render(StatusBar, { status: { state: "offline_as", last_login: "octocat" }, visible: false });
-      expect(bar().textContent?.trim()).toBe("octocat · Offline: read-only");
+      expect(bar().textContent?.trim()).toBe("octocat · Offline");
     });
 
     // A Refresh while offline would otherwise empty the bar until GitHub answers or the ask fails.
@@ -189,7 +212,7 @@ describe("StatusBar", () => {
       const status = { state: "offline" } as const;
       render(StatusBar, { status, problems: ["machine.toml, line 1: bad", "settings.toml, line 3: bad"] });
       expect(bar().textContent?.trim()).toBe(
-        "Offline: read-only · machine.toml, line 1: bad · settings.toml, line 3: bad",
+        "Offline · machine.toml, line 1: bad · settings.toml, line 3: bad",
       );
     });
   });
@@ -620,6 +643,7 @@ describe("StatusBar's request in flight", () => {
       [{ kind: "fetch", repository, number: 8 }, "fetch of python/cpython#8"],
       [{ kind: "check", repository }, "check of python/cpython"],
       [{ kind: "size", repository }, "size of python/cpython"],
+      [{ kind: "visibility", repository }, "visibility of python/cpython"],
     ] as const;
     const { rerender } = render(StatusBar, { status: online });
     for (const [kind, words] of asked) {
@@ -648,7 +672,7 @@ describe("StatusBar's request in flight", () => {
     const { rerender } = render(StatusBar, { status: online, inFlight: refresh });
     await rerender({ status: { state: "offline" }, inFlight: null });
     expect(waiting()).toBeNull();
-    expect(bar().textContent).toContain("Offline: read-only");
+    expect(bar().textContent).toContain("Offline");
   });
 
   it("starts its count again for the next request", async () => {

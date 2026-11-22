@@ -31,6 +31,7 @@ use crate::sync::{Progress, Syncs};
 use crate::token::read_token;
 
 use super::on_screen::OnScreen;
+use super::read_only::{self, WriteJudge};
 use super::{Intervals, stopped_checking, unstored};
 
 /// What the GitHub thread is asked. The session passes it each demand on GitHub, and the Mirror worker asks
@@ -251,6 +252,17 @@ impl Refreshes {
             done_copy: RefCell::new(done_copy),
         };
         (refreshes, copy)
+    }
+
+    /// The Repositories the settings list, in their order.
+    fn listed(&self) -> Vec<RepositoryName> {
+        self.settings.read(|view| {
+            let repositories = &view.loaded.settings.repositories;
+            repositories
+                .iter()
+                .map(|repository| repository.name.clone())
+                .collect()
+        })
     }
 
     /// A refresh the user asked for is done, so the session passes the next one on.
@@ -503,6 +515,8 @@ pub(super) fn watch(
     };
     board.hour_points(github.hour_points());
     board.points_back(github.points_back());
+    let mut writes = WriteJudge::default();
+    read_only::tell(board, writes.follow(store, &github, refreshes.listed()));
     let intervals = refreshes.intervals;
     let mut due = Due::starting_at(Instant::now(), intervals);
     loop {
@@ -608,6 +622,7 @@ pub(super) fn watch(
         // Whichever turn asked GitHub, a sync, a read of what's on screen or the status, counts.
         board.hour_points(github.hour_points());
         board.points_back(github.points_back());
+        read_only::tell(board, writes.follow(store, &github, refreshes.listed()));
     }
 }
 

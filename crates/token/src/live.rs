@@ -18,8 +18,8 @@ use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
 use crate::{
-    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, checked_read,
-    unreachable,
+    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, WriteScope,
+    checked_read, unreachable,
 };
 
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
@@ -146,6 +146,8 @@ fn headers(response: &Response<Body>) -> Reply {
         date: header("date"),
         ratelimit_reset: header("x-ratelimit-reset"),
         etag: header("etag"),
+        scopes: header("x-oauth-scopes").map(|scopes| WriteScope::from_header(&scopes)),
+        token_expiration: header("github-authentication-token-expiration"),
     }
 }
 

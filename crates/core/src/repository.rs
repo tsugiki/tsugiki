@@ -158,5 +158,12 @@ pub struct FoundRepository {
     pub counts: RepositoryCounts,
 }
 
+/// Whether a Repository is public, as GitHub answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    Public,
+    Private,
+}
+
 #[cfg(test)]
 mod tests;

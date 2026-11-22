@@ -258,6 +258,11 @@ export const commands = {
 	 */
 	issue: (repository: string, number: number) => typedError<IssueView_Serialize | null, Error_Serialize>(__TAURI_INVOKE("issue", { repository, number })),
 	/**
+	 *  The state of `repository`, which each write control reads: why Tsugiki can't write there, if it can't,
+	 *  and whether GitHub can be reached (#398). This waits on the database and never on GitHub.
+	 */
+	repositoryState: (repository: string) => typedError<RepositoryState, Error_Serialize>(__TAURI_INVOKE("repository_state", { repository })),
+	/**
 	 *  The PR view of PR `number`, or nothing if Tsugiki doesn't hold it. This waits on the database and never
 	 *  on GitHub (ADR 0018).
 	 */
@@ -532,7 +537,12 @@ export type Asking =
 /**  Add repository's check of a Repository. */
 { kind: "check"; repository: RepositoryName } | 
 /**  The size of a Repository, which the Mirror worker asks before a clone. */
-{ kind: "size"; repository: RepositoryName };
+{ kind: "size"; repository: RepositoryName } | 
+/**
+ *  Whether a Repository is private, which Tsugiki asks when the token writes to public repositories
+ *  alone.
+ */
+{ kind: "visibility"; repository: RepositoryName };
 
 /**  The reasons an item Needs attention, and since when. */
 export type Attention = Attention_Serialize | Attention_Deserialize;
@@ -726,6 +736,14 @@ export type Comment_Serialize = {
 	/**  The reason it is hidden on GitHub. Nothing, for a comment that isn't. */
 	hidden: HiddenReason | null,
 };
+
+/**  Whether GitHub can be reached now. */
+export type Connection = "online" | 
+/**
+ *  GitHub can't be reached, or hasn't answered since it couldn't be. What waits on GitHub goes once it
+ *  answers.
+ */
+"offline";
 
 /**
  *  How a Repository's PRs name their Issues and Backports (ADR 0011). Each link rule in `links/rules.rs`
@@ -2776,6 +2794,11 @@ export type ReadFailure =
  */
 "other";
 
+/**  Why Tsugiki can't write to a Repository, whatever the connection. */
+export type ReadOnly = 
+/**  The token can't write there: its scopes don't reach the Repository. */
+"token";
+
 /**  The background refreshes that ran while the window drew frames. */
 export type Refreshes = {
 	count: number,
@@ -2903,6 +2926,16 @@ export type RepositorySize =
 "small" | 
 /**  What was updated in the window. */
 "large";
+
+/**
+ *  A Repository's state, which each write control reads: why Tsugiki can't write there, if it can't, and
+ *  whether GitHub can be reached.
+ */
+export type RepositoryState = {
+	/**  Each reason Tsugiki can't write to the Repository, once, in a fixed order. None, when it can. */
+	read_only: ReadOnly[],
+	connection: Connection,
+};
 
 /**  Whether someone marked a thread resolved. */
 export type Resolution = "open" | "resolved";

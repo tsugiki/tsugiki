@@ -70,6 +70,7 @@ fn the_primary_rate_limit_says_when_it_resets() {
         reset: Some(reset),
         date: None,
         body: r#"{"message":"API rate limit exceeded for user"}"#.to_owned(),
+        grant: Grant::default(),
     })));
     assert_eq!(error.kind, limited_until(Some(reset)));
 }
@@ -81,6 +82,7 @@ fn a_secondary_rate_limit_holds_a_minute_not_until_the_hours_reset() {
         reset: Some(seconds_from_now(3000)),
         date: None,
         body: r#"{"message":"You have exceeded a secondary rate limit."}"#.to_owned(),
+        grant: Grant::default(),
     })));
     assert!((59..=61).contains(&seconds_left(&error)), "{error:?}");
 }
@@ -110,6 +112,7 @@ fn a_graphql_rate_limit_is_a_rate_limit() {
         reset: Some(reset),
         date: None,
         body: body.to_owned(),
+        grant: Grant::default(),
     })));
     assert_eq!(error.kind, limited_until(Some(reset)));
 }
@@ -125,6 +128,7 @@ fn a_rate_limit_says_its_reset_by_this_computers_clock() {
             reset: Some(reset),
             date: None,
             body: body.to_owned(),
+            grant: Grant::default(),
         };
         let (transport, _asked) = Scripted::new(vec![
             dated(signed_in_as("someone"), github_now),
@@ -147,6 +151,7 @@ fn a_request_while_the_rate_limit_holds_asks_nothing_and_says_when_it_can() {
         reset: Some(reset),
         date: None,
         body: String::new(),
+        grant: Grant::default(),
     };
     let (transport, asked) = Scripted::new(vec![Ok(refused)]);
     let github = github(transport);
@@ -447,6 +452,7 @@ fn a_reply_github_didnt_send_leaves_its_clock() {
         reset: None,
         date: Some(ahead),
         body: "Blocked by your company's proxy".to_owned(),
+        grant: Grant::default(),
     };
     let github = github(Canned(Ok(proxy)));
 

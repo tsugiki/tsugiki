@@ -115,6 +115,12 @@ const LAYERS: &[Layer] = &[
               may do in it.",
     },
     Layer {
+        module: "read_only",
+        uses: &["repository", "token"],
+        why: "Judges from the token's scopes and a Repository's visibility whether Tsugiki can write there, \
+              and holds the Repository's state that each write control reads.",
+    },
+    Layer {
         module: "mirror_source",
         uses: &["repository"],
         why: "Names where each Repository's mirror gets its objects, which `settings` keeps and `mirror` \
@@ -217,11 +223,14 @@ const LAYERS: &[Layer] = &[
             "github",
             "links",
             "login",
+            "read_only",
             "repository",
+            "token",
         ],
         why: "Saves the facts `github` parses and the Mirror worker reads, in the types of `facts`, so no \
               second copy of each type drifts from the first. A refresh's ETags come from `github`. It keeps \
-              the numbers each PR names under each Conventions, which `links` works out as the PR is saved.",
+              the numbers each PR names under each Conventions, which `links` works out as the PR is saved, \
+              and the Read-only marks with the kind and expiry of the token they were judged for.",
     },
     Layer {
         module: "activity",
@@ -390,6 +399,7 @@ const LAYERS: &[Layer] = &[
             "login",
             "mirror",
             "patch_ids",
+            "read_only",
             "repository",
             "repository_settings",
             "settings",
@@ -404,7 +414,8 @@ const LAYERS: &[Layer] = &[
               sends it. It hands the Mirror worker the heads and commits `work` picks through `fetching`, \
               which it builds on the requests `mirror` gives. Mute author asks `workbench` which items of \
               the `login` it mutes the window lists, to mark them seen. Each Repository's settings come \
-              from the view `settings` shares through `latest`.",
+              from the view `settings` shares through `latest`. The GitHub thread has `read_only` judge \
+              from the token's scopes which Repositories it can't write to.",
     },
     Layer {
         module: "calls",
@@ -421,6 +432,7 @@ const LAYERS: &[Layer] = &[
             "login",
             "mirror",
             "mirror_source",
+            "read_only",
             "repository",
             "repository_settings",
             "session",
@@ -431,7 +443,9 @@ const LAYERS: &[Layer] = &[
             "workbench",
         ],
         why: "The handle the app calls the core through, made from the `session`'s queues and its `store` \
-              reader. Each screen's call reads through a view model in `workbench`, queues through \
+              reader. A Repository's state comes from `read_only`, with its mark from the `store` and the \
+              connection from the `status` copy. Each screen's call reads through a view model in \
+              `workbench`, queues through \
               `fetching` what the read found missing, and holds the job in an answer that waits for its \
               data, or names the `status` failure of the read that would have brought it. Only a \
               Repository `settings` lists gets a clone, read through `latest` when the read finds no \
@@ -453,7 +467,14 @@ struct Cycle {
 const CYCLES: &[Cycle] = &[];
 
 /// The functional core: these modules take facts and return values.
-const FUNCTIONAL_CORE: &[&str] = &["activity", "facts", "links", "mirror_queue", "work"];
+const FUNCTIONAL_CORE: &[&str] = &[
+    "activity",
+    "facts",
+    "links",
+    "mirror_queue",
+    "read_only",
+    "work",
+];
 
 /// The imperative shell, which the functional core may not use: the database, `github`'s client, the
 /// Mirrors, the values threads share, the waits on their messages, the requests for data, and the threads

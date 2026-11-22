@@ -304,6 +304,11 @@ erDiagram
     show_muted {
         TEXT repository PK
     }
+    read_only {
+        TEXT repository PK
+        TEXT token_kind
+        INTEGER token_expires_at "nullable"
+    }
     closings {
         TEXT repository PK
         INTEGER number PK

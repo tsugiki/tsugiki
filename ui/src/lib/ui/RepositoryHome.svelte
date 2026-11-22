@@ -21,6 +21,7 @@
   import { DiffViewChoice, type FilesMode, type PrFilesState } from "$lib/state/pr-files.svelte";
   import { PrViewState } from "$lib/state/pr-view.svelte";
   import type { ChangedFiles } from "$lib/state/quick-open.svelte";
+  import type { RepositoryState } from "$lib/state/repository-state.svelte";
   import type { TextSearchState } from "$lib/state/text-search.svelte";
   import { RAIL_ORDER, RAIL_TABS, type RailTabId } from "$lib/state/rail.svelte";
   import { Visits } from "$lib/state/visits.svelte";
@@ -100,6 +101,7 @@
     keysActive = true,
     diffFiles = "all",
     diffPeek = "inline",
+    repositoryState,
   }: {
     name: string;
     /** Opens the Repository picker, from the Repository's name atop the Sidebar. */
@@ -111,6 +113,8 @@
     diffFiles?: FilesMode;
     /** The place each Definition peek opens in, as `[diff] peek` says at the time. */
     diffPeek?: PeekLayout;
+    /** The Repository's state, which its Issue and PR views say atop while it is Read-only (#398). */
+    repositoryState?: RepositoryState | undefined;
   } = $props();
 
   // A window can stay open between syncs, so "3h ago" moves on by itself.
@@ -1586,6 +1590,7 @@
     {#key issue}
       <IssueDetail
         repository={name}
+        {repositoryState}
         {issue}
         {now}
         focusable={panes.hidden("list") || focusedView === issue}
@@ -1605,6 +1610,7 @@
     {#key pr}
       <PrDetail
         repository={name}
+        {repositoryState}
         {pr}
         {panes}
         {now}

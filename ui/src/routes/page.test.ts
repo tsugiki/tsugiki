@@ -53,6 +53,7 @@ const core = vi.hoisted(() => ({
   pullRequestRows: vi.fn(),
   pullRequestSpans: vi.fn(),
   mirrorsHeld: vi.fn(),
+  repositoryState: vi.fn(),
 }));
 
 /** What `settings.toml` says unless a test says otherwise: the defaults. */
@@ -79,7 +80,14 @@ const THEMES = {
 
 /** The listener for the mirrors' states, so a test can send it what the core would. */
 const mirrorStates = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
-const statuses = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
+/** The listeners for the status, so a test can send them what the core would. */
+const statuses = vi.hoisted(() => {
+  const listeners = new Set<(event: { payload: unknown }) => void>();
+  const changed = (payload: unknown) => {
+    for (const listener of listeners) listener({ payload });
+  };
+  return { listeners, changed };
+});
 /** The listener for the time GitHub's points come back, so a test can say the rate limit's gate holds. */
 const pointsBack = vi.hoisted(() => ({ changed: vi.fn<(payload: unknown) => void>() }));
 
@@ -106,11 +114,12 @@ vi.mock("$lib/data/bindings", async () => {
     events: {
       ...prFilesEvents(() => async () => () => {}),
       statusChanged: {
+        // The status bar listens, and so does the open Repository's state.
         listen: async (callback: (event: { payload: unknown }) => void) => {
-          statuses.changed.mockImplementation((payload) => {
-            callback({ payload });
-          });
-          return () => {};
+          statuses.listeners.add(callback);
+          return () => {
+            statuses.listeners.delete(callback);
+          };
         },
       },
       lastSyncChanged: { listen: async () => () => {} },
@@ -167,6 +176,8 @@ const ctrlK = () => fireEvent.keyDown(document.body, { key: "k", code: "KeyK", c
 beforeEach(() => {
   // The tests share one document, so each starts with no title of its own.
   document.title = "";
+  statuses.listeners.clear();
+  core.repositoryState.mockResolvedValue({ status: "ok", data: { read_only: [], connection: "online" } });
   core.about.mockResolvedValue({ name: "Tsugiki", version: "1.2.3", build: "release", source_ref: "v1.2.3" });
   core.openDevtools.mockResolvedValue({ status: "ok", data: null });
   core.home.mockResolvedValue(onboarding);
@@ -300,6 +311,32 @@ it("reopens the Repository the core names, and the window title names it", async
   render(Page);
   expect(await screen.findByRole("button", { name: gcmon.name })).toBeTruthy();
   expect(document.title).toBe("some-maintainer/gcmon · Tsugiki 1.2.3");
+});
+
+it("says a Read-only Repository is so in the status bar and atop its Issue view, until the core says otherwise", async () => {
+  const state = (read_only: "token"[]) => ({ status: "ok", data: { read_only, connection: "online" } });
+  core.home.mockResolvedValue(gcmonHome);
+  core.workbench.mockResolvedValue(oneIssue);
+  core.openIssue.mockResolvedValue({ status: "ok", data: null });
+  core.issue.mockResolvedValue({ status: "ok", data: null });
+  core.repositoryState.mockResolvedValue(state(["token"]));
+  render(Page);
+  await fireEvent.click(await screen.findByRole("button", { name: "#7 It crashes" }));
+
+  const words = "Read-only: your token can't write to some-maintainer/gcmon";
+  expect(await screen.findByText(words)).toBeTruthy();
+  await vi.waitFor(() => {
+    expect(screen.getByRole("status").textContent?.trim()).toBe("octocat · Read-only");
+  });
+  expect(core.repositoryState).toHaveBeenCalledWith("some-maintainer/gcmon");
+
+  // The status can say Tsugiki went offline or came back, so the state is asked for again.
+  core.repositoryState.mockResolvedValue(state([]));
+  statuses.changed({ state: "online", login: "octocat" });
+  await vi.waitFor(() => {
+    expect(screen.queryByText(words)).toBeNull();
+  });
+  expect(screen.getByRole("status").textContent?.trim()).toBe("octocat");
 });
 
 it("says so when the core can't say what to open", async () => {

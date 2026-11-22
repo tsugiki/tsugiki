@@ -40,8 +40,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   without syncing, and the status bar says so with Try again; the Account page offers gh or a new token. A
   machine with no token, such as a new one or a portable folder brought there, says "No token on this
   machine".
-- A token that can't write to a Repository makes it Read-only too, as being offline does
-  ([sync.md](sync.md)). The status bar says so on the left and
-  opens the Account page. The composer stays usable: it offers "Copy and open on GitHub" instead of sending,
-  and Submit review is disabled with the reason. With a fine-grained token Tsugiki finds out on the first
-  refused write, keeping the text that was being sent.
+- A token that can't write to a Repository makes it **Read-only**, which being offline doesn't
+  ([sync.md](sync.md)). GitHub names a classic token's scopes in a header of each answer, reads included: a
+  token without `repo` or `public_repo` can't write anywhere, and one with `public_repo` alone can't write
+  to a private Repository, which Tsugiki asks GitHub once a run. A fine-grained token sends no scopes. The
+  database keeps each Repository's mark with the token's kind and expiry, never the token, so the mark
+  outlasts a restart and goes when the token changes. Tsugiki sends no write to a Read-only Repository. Its
+  Issue and PR views say "Read-only: your token can't write to python/cpython" atop, and the status bar
+  says "Read-only" on the left, after who is signed in, and opens the Account page. The composer stays
+  usable: it offers "Copy and open on GitHub" instead of sending, and Submit review is disabled with the
+  reason. With a fine-grained token Tsugiki finds out on the first refused write, keeping the text that was
+  being sent.

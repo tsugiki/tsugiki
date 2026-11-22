@@ -19,6 +19,7 @@
     QuickOpenState,
   } from "$lib/state/quick-open.svelte";
   import { RecentCommands } from "$lib/state/recent-commands.svelte";
+  import { RepositoryStateView } from "$lib/state/repository-state.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import { settingsAsk } from "$lib/state/settings-ask.svelte";
   import { SettingsState } from "$lib/state/settings.svelte";
@@ -360,6 +361,18 @@
     ...switchRows("", mirrorNoteOf),
     { title: "Add repository…", run: openAdd },
   ];
+  /** The open Repository's state, which its Issue and PR views and the status bar say while it is Read-only
+   * (#398). Another Repository has its own, so a switch starts a new one and stops the last. */
+  let repositoryState = $state<RepositoryStateView>();
+  $effect(() => {
+    if (openName === undefined) return;
+    const view = new RepositoryStateView(openName);
+    repositoryState = view;
+    void view.load();
+    return () => {
+      view.stop();
+    };
+  });
   /** The open Repository's last sync. After a switch the core tells of the new one's a moment later, and
    * until then the status bar shows no last sync. */
   const lastSync = $derived(
@@ -488,6 +501,7 @@
       {keysActive}
       diffFiles={settings.diffFiles}
       diffPeek={settings.diffPeek}
+      repositoryState={repositoryState?.state}
     />
   {:else if home.error}
     <!-- One expression: Svelte compiles `{a} {b}` with `?? ""` branches that no test can reach. -->
@@ -516,6 +530,7 @@
   mirrorProblem={status.mirrorProblem}
   mirrorQuestion={status.mirrorQuestion}
   newVersion={status.newVersion}
+  readOnly={openName !== undefined && (repositoryState?.state?.read_only.length ?? 0) > 0}
   chord={chord.first}
   onrefresh={() => void status.refresh()}
   oncheckagain={() => void status.checkMirrorsAgain()}

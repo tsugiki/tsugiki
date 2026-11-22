@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Reply, Request, Transport, Unreachable};
+use super::{Grant, Reply, Request, Transport, Unreachable};
 use crate::token::Token;
 
 /// One recorded exchange, in `<operation>.json`.
@@ -73,6 +73,7 @@ impl Transport for Replayer {
                 reset: None,
                 date: None,
                 body: NO_ISSUES.to_owned(),
+                grant: Grant::default(),
             });
         }
         assert_eq!(
@@ -88,6 +89,7 @@ impl Transport for Replayer {
             reset: recording.reset,
             date: None,
             body,
+            grant: Grant::default(),
         })
     }
 }

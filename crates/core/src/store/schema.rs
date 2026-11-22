@@ -92,6 +92,7 @@ const TABLES: &[(&str, Diagram)] = &[
     ("muted", Diagram::UserAndSync),
     ("muted_authors", Diagram::UserAndSync),
     ("show_muted", Diagram::UserAndSync),
+    ("read_only", Diagram::UserAndSync),
     ("closings", Diagram::UserAndSync),
     ("openings", Diagram::UserAndSync),
     ("brought_back", Diagram::UserAndSync),

@@ -15,6 +15,7 @@ mod patch_ids;
 mod pr_links;
 mod pull_request_content;
 mod pull_requests;
+mod read_only;
 /// Draws the schema in `docs/schema.md` and keeps it current. Only its tests use it.
 #[cfg(test)]
 mod schema;
@@ -50,6 +51,7 @@ use crate::facts::pull_requests::{PrLinks, PrState, PullRequestFacts, ReviewedCo
 use crate::facts::{CommitSha, WorkFacts};
 use crate::filters::FilterQuery;
 use crate::login::Login;
+use crate::read_only::TokenSeen;
 use crate::repository::RepositoryName;
 use columns::Items;
 pub use columns::Numbers;
@@ -57,6 +59,7 @@ pub use filters::NarrowedResults;
 use migrate::{MIGRATIONS, Migration};
 pub use pr_links::Updates;
 pub use pull_request_content::{ConversationSaved, HeadKept};
+pub use read_only::TokenJudged;
 pub use sync_state::{ChangeCheck, FirstSyncPlace, OVERLAP, SyncState};
 
 /// The database connection, which only `store` may hold. Code here names it through this alias, so
@@ -735,6 +738,19 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
+    /// Keeps what the scopes of `token` said of the Repositories the settings list, as `judged`, and gives
+    /// those of `listed` whose Read-only mark changed. The marks of any other token go (#398).
+    pub fn judge_read_only(
+        &self,
+        token: TokenSeen,
+        listed: Vec<RepositoryName>,
+        judged: TokenJudged,
+    ) -> Result<Vec<RepositoryName>, Error> {
+        let saved =
+            self.call(move |connection| read_only::judge(connection, token, &listed, &judged))?;
+        saved.map_err(saying(CANT_WRITE))
+    }
+
     /// Turns `repository`'s "Show muted" to `show` (#825).
     pub fn switch_show_muted(
         &self,
@@ -1086,6 +1102,13 @@ impl StoreReader {
             };
             Ok(Some((pr, snapshot.pull_request_content(number)?)))
         })
+    }
+
+    /// Whether the store marks `repository` as one the token can't write to (#398).
+    pub fn token_cant_write(&self, repository: &RepositoryName) -> Result<bool, Error> {
+        let repository = repository.clone();
+        let read = self.call(move |connection| read_only::marked(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
     }
 
     /// The number, title, state and last update of each Issue and PR of `repository`, in no order.

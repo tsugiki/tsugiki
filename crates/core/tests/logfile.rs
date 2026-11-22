@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::github::{GitHub, GitHubAccess, Reply, Request, Transport, Unreachable};
+use tsugiki_core::github::{GitHub, GitHubAccess, Grant, Reply, Request, Transport, Unreachable};
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::SettingsView;
@@ -41,6 +41,7 @@ impl Transport for Proxy {
             reset: None,
             date: None,
             body: "Blocked by your company's proxy".to_owned(),
+            grant: Grant::default(),
         })
     }
 }

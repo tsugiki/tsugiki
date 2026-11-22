@@ -45,6 +45,7 @@
     mirrorProblem = null,
     mirrorQuestion = null,
     newVersion = null,
+    readOnly = false,
     chord = null,
     onrefresh = () => {},
     oncheckagain = () => {},
@@ -69,6 +70,8 @@
     mirrorQuestion?: string | null;
     /** A version newer than the running one, whose release page a click opens. */
     newVersion?: NewVersion | null;
+    /** Whether the open Repository is Read-only, which the status says after who is signed in (#398). */
+    readOnly?: boolean;
     /** The first key of the chord whose second key Tsugiki waits for. */
     chord?: string | null;
     onrefresh?: () => void;
@@ -98,6 +101,8 @@
   const showStatus = $derived(
     visible || offline || reconnecting || status?.state === "problem" || Boolean(error),
   );
+  // A problem or an unread status says nothing of the open Repository, so Read-only waits for a status.
+  const readOnlyShown = $derived(readOnly && showStatus && !error && status?.state !== "problem");
   // With no sync to pause, the bar still says why nothing asks GitHub, as a read or a fetch points here.
   const paused = $derived(
     pausedWords(syncActivity) ?? (pointsBack === null ? null : pointsBackWords(pointsBack.at)),
@@ -106,9 +111,11 @@
   const mirror = $derived(mirrorWords(mirrorProblem));
   const needsGit = $derived(mirrorProblem?.kind === "no_git" || mirrorProblem?.kind === "old_git");
   const showRelease = $derived(newVersion !== null && visible);
+  // What follows the status: Read-only first, as it says more of the open Repository, then the problems.
   // The browser's problem goes with the button that met it.
-  const listedProblems = $derived(
+  const listed = $derived(
     [
+      readOnlyShown ? "Read-only" : undefined,
       ...problems,
       paused,
       mirror,
@@ -119,7 +126,7 @@
       .join(" · "),
   );
   /** Whether anything shows before the question's line, which then needs a " · " before it. */
-  const beforeQuestion = $derived(showStatus || Boolean(listedProblems));
+  const beforeQuestion = $derived(showStatus || Boolean(listed));
   // A sync of the Repository open before the window switched says nothing about the one open now.
   const syncing = $derived(
     syncActivity?.open?.repository === lastSync?.repository ? syncingWords(syncActivity) : null,
@@ -138,16 +145,16 @@
 <div class="bar">
   <!-- Always in the page, because screen readers only announce changes in a live region that already
        exists. -->
-  <footer role="status" class:offline class:empty={!showStatus && !listedProblems && mirrorQuestion === null}>
+  <footer role="status" class:offline class:empty={!showStatus && !listed && mirrorQuestion === null}>
     {#if showStatus}
       {#if error}
         Tsugiki can't read its status: {error}
       {:else if status?.state === "problem"}
         {status.problem.message}
       {:else if status?.state === "offline"}
-        Offline: read-only
+        Offline
       {:else if status?.state === "offline_as"}
-        {`${status.last_login} · Offline: read-only`}
+        {`${status.last_login} · Offline`}
       {:else if status?.state === "online"}
         {status.login}
       {:else if status?.state === "connecting_as" || status?.state === "reconnecting_as"}
@@ -156,7 +163,7 @@
         Connecting…
       {/if}
     {/if}
-    <span>{showStatus && listedProblems ? `· ${listedProblems}` : listedProblems}</span>
+    <span>{showStatus && listed ? `· ${listed}` : listed}</span>
     <!-- Hiding the bar can't hide the question the Files tab waits for. -->
     {#if mirrorQuestion !== null}
       {@const repository = mirrorQuestion}

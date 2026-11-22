@@ -1,7 +1,7 @@
 use super::*;
-use crate::github::RestPath;
 use crate::github::replay::Replayer;
 use crate::github::testing::Canned;
+use crate::github::{Grant, RestPath};
 use crate::testing::TempPath;
 use crate::token::read_token;
 use tsugiki_token::testing::{gh_alone, gh_prints};
@@ -26,6 +26,7 @@ fn reply(body: &str) -> Reply {
         reset: Some(9),
         date: None,
         body: body.to_owned(),
+        grant: Grant::default(),
     }
 }
 
@@ -52,6 +53,7 @@ fn a_failed_answer_leaves_the_recording_alone() {
             reset: None,
             date: None,
             body: body.to_owned(),
+            grant: Grant::default(),
         };
         let recorder = Recorder::new(Box::new(Canned(Ok(answer))), dir.to_path_buf());
         assert_eq!(recorder.post(&token(), &REQUEST).unwrap().status, status);

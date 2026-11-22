@@ -38,6 +38,9 @@ pub enum Asking {
     Check { repository: RepositoryName },
     /// The size of a Repository, which the Mirror worker asks before a clone.
     Size { repository: RepositoryName },
+    /// Whether a Repository is private, which Tsugiki asks when the token writes to public repositories
+    /// alone.
+    Visibility { repository: RepositoryName },
 }
 
 /// What the GitHub thread waits on: what it asks, and when it asked, by this computer's clock, from which

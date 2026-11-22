@@ -111,7 +111,15 @@ if (status !== 0) {
   const fresh = statSync(LCOV, { throwIfNoEntry: false });
   if (fresh !== undefined && fresh.mtimeMs >= started) {
     printGaps();
-    console.error("Coverage is below 100%. A `?` or a closure alone on a line needs its own covered line.");
+    console.error(
+      [
+        "Coverage is below 100%. A `?` or a closure alone on a line needs its own covered line.",
+        "If the lines listed above don't make up the gap, look for a closure whose `})?;` sits on a line of",
+        "its own: the gate can count that line unrun although the closure ran, and the list skips a `?`. Put",
+        "the `?` on the line of the call it ends by passing a named function, as",
+        "`statement.query_map(asked, event_in)?` does in `crates/core/src/store/activity.rs`.",
+      ].join("\n"),
+    );
   } else {
     console.error("A test failed, so there is no new coverage report.");
   }

@@ -78,7 +78,8 @@ fmt:
 # Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs
 check: lint doc-width dupes svelte-check vitest rust-gates release-check e2e
 
-# The fastest gates go first. The Vitest and Rust tests run in full: their coverage gates count every file.
+# The fastest gates go first. The Vitest and Rust tests run in full: their coverage gates count every file,
+# so a change can fail them in a file it never touched.
 # Like `check`, it skips Clippy and `rust-coverage` on a branch that changes only `ui/` and docs. It leaves
 # out the rest of `check`: ESLint, token-deps, pre-commit, deny, machete, release-check and e2e.
 # Run the gates a first push most often fails on, one at a time, and stop at the first that fails

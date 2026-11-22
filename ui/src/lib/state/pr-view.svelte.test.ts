@@ -231,6 +231,17 @@ describe("PrViewState", () => {
     state.stop();
   });
 
+  it("goes to a file the rail's tree opens on the Files tab, from the Conversation", () => {
+    const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
+    const gone = vi.spyOn(state.files, "goToFile").mockReturnValue();
+
+    state.goToFile(2);
+
+    expect(state.tab).toBe("files");
+    expect(gone).toHaveBeenCalledWith(2);
+    state.stop();
+  });
+
   it("asks the Files tab for the diff again when the rail's Search finds no checkout of it", async () => {
     const state = new PrViewState("python/cpython", 11, undefined, new PanesState());
     const asked = vi.spyOn(state.files, "ask").mockResolvedValue();

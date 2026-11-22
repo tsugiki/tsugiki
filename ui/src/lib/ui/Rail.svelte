@@ -1,6 +1,6 @@
 <!--
   The rail on the right of the PR view, beside the Conversation and Files tabs (#603). It holds a pane for
-  each of its tabs (#727): Files for now, which the tree of the PR's changed files fills (#604). A row of
+  each of its tabs (#727): Files, the tree of the PR's changed files (#604), and Search (#686). A row of
   tabs at its top picks the pane, once it has two tabs or more. Its edge sits inside it, on its left. × in
   its corner closes it, and Esc in it hands the focus back to what it sits beside.
 -->

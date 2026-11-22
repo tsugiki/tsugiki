@@ -9,6 +9,7 @@ import {
   type ThreadLine_Serialize,
 } from "$lib/data/bindings";
 import { DetailState } from "./detail-view.svelte";
+import { FileTreeState } from "./file-tree.svelte";
 import type { FileView } from "./file-view.svelte";
 import { hud } from "./hud.svelte";
 import type { PanesState } from "./panes.svelte";
@@ -33,6 +34,8 @@ export class PrViewState extends DetailState<PrView> {
   readonly files: PrFilesState;
   /** The rail's Search, whose query and toggles stay while the view lasts (#686). */
   readonly search: TextSearchState;
+  /** The rail's tree of the changed files, whose folds and filter stay while the view lasts (#604). */
+  readonly tree: FileTreeState;
   /** A PR opens on its Conversation. */
   #tab = $state<PrTab>("conversation");
   #filesLoaded = false;
@@ -59,6 +62,7 @@ export class PrViewState extends DetailState<PrView> {
     this.issue = issue;
     this.files = new PrFilesState(repository, number, panes, hud, choice, mode, fileViewMoved, peekLayout);
     this.search = new TextSearchState(repository, () => this.files.ask());
+    this.tree = new FileTreeState(this.files);
   }
 
   /** Hands the Files tab the user's Review, which marks and collapses its files while it's a Stale review
@@ -101,6 +105,13 @@ export class PrViewState extends DetailState<PrView> {
   openFile(path: string) {
     this.tab = "files";
     this.files.openPath(path);
+  }
+
+  /** Goes to the file at `file` among the diff's files in the Files tab, from its top, as a click on it in
+   * the rail's tree does (#604). */
+  goToFile(file: number) {
+    this.tab = "files";
+    this.files.goToFile(file);
   }
 
   /** The line of the list the user opened this PR from. A PR that fixes two Issues has a line under each. */

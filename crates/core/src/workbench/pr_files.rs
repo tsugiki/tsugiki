@@ -11,8 +11,8 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::diff::{
-    self, Against, Chunk, DiffEnd, DiffFile, DiffOf, DiffRow, Diffs, FileLines, Found, HeadLine,
-    Held, Highlighter, NewsEntry, OpenDiff, PrAt, Start,
+    self, Against, Chunk, DiffEnd, DiffFile, DiffOf, DiffRow, Diffs, FileLines, FileNotes,
+    FileTree, Found, HeadLine, Held, Highlighter, NewsEntry, OpenDiff, PrAt, Start,
 };
 use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
@@ -36,6 +36,8 @@ pub struct ShownDiff {
     #[specta(type = String)]
     pub base: CommitSha,
     pub files: Vec<DiffFile>,
+    /// The files as a tree of folders, which the rail's Files pane draws (#604).
+    pub tree: FileTree,
     pub rows: u32,
     /// The PR's NEWS entries, rendered above the rows.
     pub news: Vec<NewsEntry>,
@@ -135,12 +137,15 @@ impl DiffSources<'_> {
         };
         let start = start(&pr);
         let target = Against::Branch(&pr.target_branch, &start);
-        let held = |open: &OpenDiff| FilesRead::Held {
-            diff: shown(open),
-            threads: (content.as_ref())
+        let held = |open: &OpenDiff| {
+            let threads: Vec<DiffThread> = (content.as_ref())
                 .filter(|content| content.head.as_ref() == Some(&open.pr.head))
                 .map(|content| threads::place(&open.diff, content.threads()))
-                .unwrap_or_default(),
+                .unwrap_or_default();
+            FilesRead::Held {
+                diff: shown(open, &threads::notes(open.diff.files(), &threads)),
+                threads,
+            }
         };
         // The diff on show is in the mirror, so asking git again would only cost a moment.
         if let Some(open) = self.diffs.shown(&at, target) {
@@ -160,7 +165,7 @@ impl DiffSources<'_> {
                     let open = self.diffs.get_or_read(&at, target, read)?;
                     let count = (content.as_ref()).map_or(0, |content| content.threads().count());
                     Ok::<_, Error>(OlderDiff {
-                        diff: shown(&open),
+                        diff: shown(&open, &[]),
                         threads: u32::try_from(count).unwrap_or(u32::MAX),
                     })
                 });
@@ -301,11 +306,15 @@ impl DiffSources<'_> {
 }
 
 /// What the Files tab shows of the diff `open`.
-fn shown(open: &OpenDiff) -> ShownDiff {
+/// The diff `open` as the Files tab shows it, with what each file holds of the threads in `notes`, by its
+/// place: none while the threads are held back.
+fn shown(open: &OpenDiff, notes: &[FileNotes]) -> ShownDiff {
+    let files = open.diff.files();
     ShownDiff {
         head: open.pr.head.clone(),
         base: open.base.clone(),
-        files: open.diff.files().to_vec(),
+        tree: FileTree::new(files.iter().map(|file| file.path.as_str()), notes),
+        files: files.to_vec(),
         rows: open.diff.row_count(),
         news: open.news.clone(),
     }

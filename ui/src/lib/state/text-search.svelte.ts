@@ -20,6 +20,7 @@ import { ask } from "./answer";
 import { counted } from "./counted";
 import { type DiffEnds, diffKey } from "./diff-ends";
 import type { PrFilesState } from "./pr-files.svelte";
+import { rowWithin } from "./rail.svelte";
 
 export type { FileHits, LineHit, SearchState };
 
@@ -236,7 +237,7 @@ export class TextSearchState {
 
   /** Puts the cursor on row `index`, held within the rows. */
   moveTo(index: number) {
-    const row = this.rows[Math.min(Math.max(index, 0), this.rows.length - 1)];
+    const row = rowWithin(this.rows, index);
     if (row !== undefined) this.#cursorKey = { path: row.file.path, line: lineOf(row) };
   }
 

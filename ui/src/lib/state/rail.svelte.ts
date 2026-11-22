@@ -39,6 +39,11 @@ export function railTabLabel({ name, count }: RailTab): string {
   return count === undefined ? name : `${name} · ${String(count)}`;
 }
 
+/** The row at `index` among the rows of a tab's list, held within them: the first before them, the last past
+ * them, as the cursor moves. */
+export const rowWithin = <T>(rows: readonly T[], index: number): T | undefined =>
+  rows[Math.min(Math.max(index, 0), rows.length - 1)];
+
 /** The tab that Home, End, ← or → in the tab row moves to. */
 export type RailStep = "first" | "previous" | "next" | "last";
 

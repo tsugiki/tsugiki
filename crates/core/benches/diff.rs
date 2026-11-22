@@ -1,7 +1,7 @@
 //! A PR's diff as the Files tab reads it: parsing what `git diff` printed, and the chunks the webview asks
 //! for (ADR 0001). The diff's first rows have 1 s, and a jump into a file 100 ms (ADR 0017).
 
-use tsugiki_core::diff::Diff;
+use tsugiki_core::diff::{Diff, FileTree};
 
 fn main() {
     divan::main();
@@ -34,6 +34,22 @@ fn chunk(bencher: divan::Bencher<'_, '_>) {
     assert!(diff.row_count() > 140_000, "{} rows", diff.row_count());
     let start = diff.row_count() / 2;
     bencher.bench(|| serde_json::to_string(diff.rows(start..start + CHUNK)));
+}
+
+/// The tree of the diff's files that the rail's Files pane draws, turned into the JSON the webview receives
+/// with the file list (#604).
+#[expect(
+    clippy::expect_used,
+    reason = "a benchmark that timed an empty diff would measure nothing the user waits for"
+)]
+#[divan::bench]
+fn tree(bencher: divan::Bencher<'_, '_>) {
+    let (numstat, patch) = printed();
+    let diff = Diff::parse(&numstat, &patch).expect("the printed diff parses");
+    bencher.bench(|| {
+        let tree = FileTree::new(diff.files().iter().map(|file| file.path.as_str()), &[]);
+        serde_json::to_string(&tree)
+    });
 }
 
 /// What `git diff --numstat -z` and `git diff` print for `FILES` files of `HUNKS` hunks each: each hunk swaps

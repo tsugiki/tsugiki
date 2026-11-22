@@ -5,9 +5,10 @@
 use serde::Serialize;
 use specta::Type;
 
-use crate::diff::{Diff, DiffFile, DiffRow};
+use crate::diff::{Diff, DiffFile, DiffRow, FileNotes};
 use crate::facts::pull_request_content::{
-    Anchor, CodeRow, DiffHunk, Resolution, Side, Subject, ThreadComment, ThreadId, ThreadLine,
+    Anchor, CodeRow, DiffHunk, Resolution, Side, Subject, Submission, ThreadComment, ThreadId,
+    ThreadLine,
 };
 use crate::highlight::{Language, Parsed, Span};
 
@@ -92,6 +93,34 @@ pub(super) fn place<'a>(
         .collect();
     placed.sort_by(|(one, _), (other, _)| one.cmp(other));
     placed.into_iter().map(|(_, thread)| thread).collect()
+}
+
+/// What each of `files` holds of `threads`, which `place` placed among them, by the file's place: the
+/// threads others can read, and the drafts of the user's Pending review. A thread on a file the diff no
+/// longer holds counts on none.
+pub(super) fn notes(files: &[DiffFile], threads: &[DiffThread]) -> Vec<FileNotes> {
+    let mut notes = vec![FileNotes::default(); files.len()];
+    for thread in threads {
+        let file = match &thread.at {
+            Placement::Row { row } => files.iter().rposition(|file| file.row <= *row),
+            Placement::File { file }
+            | Placement::Outdated { file, .. }
+            | Placement::Outside { file, .. } => usize::try_from(*file).ok(),
+            Placement::Gone { .. } => None,
+        };
+        let Some(held) = file.and_then(|file| notes.get_mut(file)) else {
+            continue;
+        };
+        let pending = |comment: &&ThreadComment| comment.submission == Submission::Pending;
+        let drafts = thread.comments.iter().filter(pending).count();
+        held.drafts = held
+            .drafts
+            .saturating_add(u32::try_from(drafts).unwrap_or(u32::MAX));
+        if drafts < thread.comments.len() {
+            held.threads = held.threads.saturating_add(1);
+        }
+    }
+    notes
 }
 
 /// Where Files shows `thread`, and where that comes among the others. A thread names its file as it is at

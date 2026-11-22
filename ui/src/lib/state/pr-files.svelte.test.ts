@@ -1914,6 +1914,43 @@ it("switches to one file at a time on the file at the top, and back, for as long
   expect([files.mode, files.shown, files.layout.count]).toEqual(["all", undefined, 21]);
 });
 
+it("says which file is on screen, as the rail's tree marks it: at the top of all files, or the one on show", async () => {
+  const files = await loaded({ ...changed(), news: [newsEntry("Misc/NEWS.d/next/x.rst")] });
+
+  expect(files.onScreen).toBe(0);
+  files.scrolled(-2);
+  expect(files.onScreen).toBeUndefined();
+  files.scrolled(files.layout.placeOfRow(20) ?? -1);
+  expect(files.onScreen).toBe(1);
+  files.toggleMode();
+  files.nextFile(-1);
+  expect(files.onScreen).toBe(0);
+  files.nextFile(-1);
+  expect(files.onScreen).toBeUndefined();
+});
+
+it("goes to a file from the rail's tree from its top, opened, and leaves the focus where it is", async () => {
+  const files = await oneAtATime(changed());
+  const all = await loaded(changed());
+  all.openFileView(
+    new FileView({ kind: "repository", path: "Lib/eggs.py", side: "head", commit: "abc" }, 4, {
+      retry: () => {},
+    } as unknown as HitCode),
+  );
+
+  files.goToFile(1);
+  all.goToFile(0);
+
+  expect([files.shown, files.jump, files.collapsed(1), files.onScreen]).toEqual([
+    { kind: "file", file: 1 },
+    { page: { kind: "file", file: 1 } },
+    false,
+    1,
+  ]);
+  expect(files.diffWantsFocus).toBe(false);
+  expect([all.fileView, all.jump]).toEqual([undefined, { page: { kind: "file", file: 0 } }]);
+});
+
 it("shows the mode it is asked for, keeping the place, and leaves the mode on show as it is", async () => {
   const files = await loaded(changed());
   files.scrolled(files.layout.placeOfRow(20) ?? -1);

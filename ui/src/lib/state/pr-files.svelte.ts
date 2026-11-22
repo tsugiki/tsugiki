@@ -351,9 +351,9 @@ export class PrFilesState {
   #change: number | undefined;
   /** The page the user last moved to, which the tab shows one file at a time. */
   #page = $state<Page>();
-  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Nothing
-   * draws from it. */
-  #top = 0;
+  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Only the
+   * rail's tree draws from it, through `onScreen`. */
+  #top = $state(0);
   /** What the search found in the diff `view` shows, and the files of that diff. The matches are many and
    * don't change, so they aren't deeply reactive. */
   #found = $state.raw<{ found: Found; files: DiffFile[] }>();
@@ -762,9 +762,28 @@ export class PrFilesState {
     return view?.state === "ready" ? view.files.map((file) => file.path) : [];
   }
 
-  /** Goes to the file at `file` among the diff's files, as the tree will. */
+  /** Goes to the file at `file` among the diff's files. */
   showFile(file: number) {
     this.#show({ kind: "file", file });
+  }
+
+  /** The file on screen, by its place among the diff's files, which the rail's tree highlights (#604): the
+   * one on show one file at a time, or else the one at the top of the tab. Nothing while the NEWS entries
+   * or the threads on files no longer in the diff are there. */
+  get onScreen(): number | undefined {
+    const page = this.mode === "one" ? this.shown : this.#atTop();
+    return page?.kind === "file" ? page.file : undefined;
+  }
+
+  /** Goes to the file at `file` among the diff's files from its top, as a click on it in the rail's tree
+   * does (#604): one file at a time it shows that file, and with all the files it scrolls to its header,
+   * opening the file if it is collapsed. The file view over the tab closes, as Back does, and its peek with
+   * it, so the tab shows the file. */
+  goToFile(file: number) {
+    if (this.#fileView !== undefined) this.closeFileView();
+    this.#dropPeek();
+    if (this.collapsed(file)) this.toggle(file);
+    this.showFile(file);
   }
 
   /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
@@ -783,8 +802,7 @@ export class PrFilesState {
       this.#say(`The diff on show doesn't change ${path}.`, NOTICE_MS);
       return;
     }
-    if (this.collapsed(file)) this.toggle(file);
-    this.showFile(file);
+    this.goToFile(file);
     this.diffWantsFocus = true;
   }
 

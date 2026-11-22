@@ -11,6 +11,10 @@ export const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
 export const keydown = (init: KeyboardEventInit) =>
   new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
 
+/** Presses `key` on the element that has the focus, as the user does. */
+export const pressOnFocus = (key: string) =>
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key });
+
 /** Clicks `element` with the caret `offset` characters into its text, where Chromium leaves a collapsed
  * selection after a click; jsdom lays nothing out to find the caret from. */
 export const clickAt = async (element: Element, offset: number, init: MouseEventInit = {}) => {

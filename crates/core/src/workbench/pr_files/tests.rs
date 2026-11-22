@@ -4,8 +4,8 @@ use tsugiki_test_git::{git, run_git};
 
 use super::testing::World;
 use super::*;
-use crate::diff::MirrorDiff;
 use crate::diff::testing::Mirrored;
+use crate::diff::{MirrorDiff, TreeRow};
 use crate::facts::pull_request_content::{Side, Subject, ThreadCommentId};
 
 impl World {
@@ -210,6 +210,7 @@ fn a_moved_head_shows_the_diff_before_with_its_threads_held_back_until_the_newer
         diff: ShownDiff {
             head: older,
             base: whole.base,
+            tree: tree_of(whole.diff.files()),
             files: whole.diff.files().to_vec(),
             rows: whole.diff.row_count(),
             news: whole.news,
@@ -314,6 +315,7 @@ fn a_head_in_the_mirror_shows_its_files_and_each_chunk_of_rows() {
         diff: ShownDiff {
             head,
             base: read.base,
+            tree: tree_of(whole.files()),
             files: whole.files().to_vec(),
             rows: whole.row_count(),
             news: read.news,
@@ -376,8 +378,19 @@ fn a_thread_tsugiki_read_in_the_conversation_sits_under_its_line() {
         };
         serde_json::to_value(threads).unwrap()
     };
-    let placed = threads(world.read());
+    let read = world.read();
+    let Some(FilesRead::Held { diff, .. }) = &read else {
+        panic!("no diff held in {read:?}");
+    };
+    let counted: u32 = (diff.tree.rows.iter())
+        .map(|row| match row {
+            TreeRow::File { threads, .. } => *threads,
+            TreeRow::Folder { .. } => 0,
+        })
+        .sum();
+    let placed = threads(read);
 
+    assert_eq!(counted, 2, "the tree counts each thread on its file");
     assert_eq!(
         (placed[0]["id"].clone(), placed[0]["at"].clone()),
         (
@@ -566,6 +579,7 @@ fn a_pr_moved_to_another_branch_shows_its_diff_against_that_branch() {
             head: head.clone(),
             base: head,
             files: Vec::new(),
+            tree: FileTree::default(),
             rows: 0,
             news: Vec::new(),
         },
@@ -598,12 +612,18 @@ fn ready(head: CommitSha, read: MirrorDiff) -> FilesRead {
         diff: ShownDiff {
             head,
             base: read.base,
+            tree: tree_of(read.diff.files()),
             files: read.diff.files().to_vec(),
             rows: read.diff.row_count(),
             news: read.news,
         },
         threads: Vec::new(),
     }
+}
+
+/// The tree of `files` as the Files tab gets it with no threads.
+fn tree_of(files: &[DiffFile]) -> FileTree {
+    FileTree::new(files.iter().map(|file| file.path.as_str()), &[])
 }
 
 /// Whether `read` found a diff the Mirror holds, which changes no file.

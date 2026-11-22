@@ -50,6 +50,22 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   - Esc in the rail gives the focus to the diff, or the file view over it, or the Conversation, and leaves
     the rail open. Closing the rail with the focus in it does the same, and from the Conversation, which the
     whole pane scrolls again, gives the focus to the button of the rail's tab that showed.
+  - Files ([#604](https://github.com/tsugiki/tsugiki/issues/604)) shows the PR's changed files as a tree of
+    folders, as github.com does, in the order of the Files tab. A folder that holds only one folder joins
+    it into one row, as `Lib/test`. Each file's row shows its name, its +/− counts, how many review
+    threads others can read and how many drafts of the user's Pending review it holds, and a Generated
+    file's row is greyed. The core builds the tree with the PR's file list, and the window only draws it.
+    The tab reads the PR's diff on either of the PR's tabs.
+  - A click or Enter on a file goes to it in the Files tab, from the Conversation too: to its header with
+    all the files, opened if it was collapsed, or one file at a time, to that file in place of the one on
+    show. The focus stays in the tree. The file on screen in the Files tab is marked in the tree as the
+    diff scrolls, or the folded folder it sits in, and the tree scrolls to keep it in view.
+  - A box at the top filters the tree to the files whose path holds what the user types, whatever the
+    case, with the folders they sit in unfolded. ↓ in the box goes to the tree, where ↑ ↓ move through
+    the rows, ← folds a folder or goes to the folder above, → unfolds it or goes into it, and Enter opens a
+    file or flips a folder. Past 300 files every folder starts folded, and the tree draws only the rows on
+    screen. The folds and the filter stay while the PR's view lasts. Viewed, as GitHub marks a file, comes
+    with [#582](https://github.com/tsugiki/tsugiki/issues/582).
   - Search ([#686](https://github.com/tsugiki/tsugiki/issues/686)) searches the PR's code at the head of
     the diff the Files tab shows, as the core's text search does ([definitions.md](definitions.md)).
     `Ctrl+Shift+F` and "View: Search in the Rail" open the rail on it with the focus in its query box,

@@ -5114,7 +5114,12 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
 it("opens the next item once the Issue on show, pinned from its view, leaves the Inbox", async () => {
   const changed = catchEveryListener();
   core.workbench.mockResolvedValue(workbenchPage([]));
-  core.inbox.mockResolvedValue(pageOf([{ ...issue, attention: null }, { ...standalone, attention: null }]));
+  core.inbox.mockResolvedValue(
+    pageOf([
+      { ...issue, attention: null },
+      { ...standalone, attention: null },
+    ]),
+  );
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await fireEvent.click(await screen.findByRole("button", { name: "Inbox" }));
   await fireEvent.click(await screen.findByRole("button", { name: "#112564 GIL drop during collection" }));

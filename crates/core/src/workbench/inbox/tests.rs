@@ -4,9 +4,10 @@ use super::*;
 use crate::facts::activity::{Activity, ActivityKind, ItemActivity, ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
-use crate::store::testing::{OpenStore, archived_on_closing};
-use crate::store::{Archiving, AuthorMuting, Muting, Opened};
+use crate::store::testing::{OpenStore, archived_on_closing, seeing};
+use crate::store::{Archiving, AuthorMuting, Flagging, Muting, Opened};
 use crate::testing::{cpython, cpython_settings, me};
+use crate::work::Why;
 use crate::workbench::testing::{
     BOT, ViewWorld, assigned_issue, backport, fixing, issue, mine, outline_of, own, stranger,
 };
@@ -389,17 +390,26 @@ impl ViewWorld {
         self.db.store.mute_author(&cpython(), muting, at).unwrap();
     }
 
-    /// Someone asked the user, as `kind` says, about Issue or PR `number` at `at`.
-    fn asked(&self, number: u32, kind: ActivityKind, at: OffsetDateTime) {
-        let events = vec![Activity {
-            kind,
+    /// Each event, one that names the user as its kind says, happened on Issue or PR `number` at its moment.
+    fn happened(&self, number: u32, events: &[(ActivityKind, OffsetDateTime)]) {
+        let named = |(kind, at): &(ActivityKind, OffsetDateTime)| Activity {
+            kind: kind.clone(),
             who: me(),
-            at,
-        }];
+            at: *at,
+        };
+        let events = events.iter().map(named).collect();
         let activity = vec![ItemActivity { number, events }];
         let store = &self.db.store;
         store
             .save_fetched_pull_requests(&cpython(), vec![], activity)
+            .unwrap();
+    }
+
+    /// Mark Unseen on Issue or PR `number`, two hours ago.
+    fn marked_unseen(&self, number: u32) {
+        let store = &self.db.store;
+        store
+            .mark_unseen(&cpython(), Flagging::on(number), ago(2))
             .unwrap();
     }
 
@@ -548,11 +558,11 @@ fn an_ask_after_the_mute_shows_a_muted_authors_row_with_show_muted_off_and_one_f
     );
     world.mute_author_at("some-author", ago(10));
     world.mute_author_at("issue-author", ago(10));
-    world.asked(1, ActivityKind::Assigned, ago(8));
-    world.asked(12, ActivityKind::ReviewRequested, ago(7));
-    world.asked(20, ActivityKind::ReviewRequested, ago(6));
+    world.happened(1, &[(ActivityKind::Assigned, ago(8))]);
+    world.happened(12, &[(ActivityKind::ReviewRequested, ago(7))]);
+    world.happened(20, &[(ActivityKind::ReviewRequested, ago(6))]);
     // This one stood at the mute, which acknowledged it.
-    world.asked(21, ActivityKind::ReviewRequested, ago(11));
+    world.happened(21, &[(ActivityKind::ReviewRequested, ago(11))]);
 
     let latest = read(&world, InboxPage::Latest);
     world.finish();
@@ -589,6 +599,102 @@ fn an_item_needs_attention_for_the_rows_show_muted_leaves() {
     assert_eq!(outline(&hidden), [("issue", 1, vec![11])]);
     assert_eq!(hidden.items[0].attention, None);
     assert!(shown.items[0].attention.is_some());
+}
+
+#[test]
+fn a_muted_authors_row_an_ask_keeps_needs_attention_for_the_ask_alone() {
+    let world = ViewWorld::new("inbox-muted-ask-attention");
+    let requested = PullRequestFacts {
+        review_requests: vec![me()],
+        ..pr_at(10, Some(1), ago(1))
+    };
+    world.has(vec![requested], vec![issue_at(1, ago(3))]);
+    world.mute_author_at("some-author", ago(10));
+    world.happened(10, &[(ActivityKind::ReviewRequested, ago(5))]);
+    world.marked_unseen(10);
+
+    let latest = read(&world, InboxPage::Latest);
+    world.show_muted(ShowMuted::On);
+    let shown = read(&world, InboxPage::Latest);
+    world.finish();
+
+    let why = |inbox: &Inbox| {
+        let attention = inbox.items[0].attention.as_ref();
+        attention.map(|attention| attention.why.clone())
+    };
+    assert_eq!(outline(&latest), [("issue", 1, vec![10])]);
+    assert_eq!(why(&latest), Some(vec![Why::ReviewRequested]));
+    assert_eq!(
+        why(&shown),
+        Some(vec![Why::MarkedUnseen, Why::ReviewRequested]),
+        "the flag counts on an item no Muted author wrote, once Show muted shows all its rows"
+    );
+}
+
+#[test]
+fn mark_seen_acknowledges_the_ask_that_kept_a_muted_authors_row_which_then_goes() {
+    let world = ViewWorld::new("inbox-muted-ask-seen");
+    let requested = PullRequestFacts {
+        review_requests: vec![me()],
+        ..pr_at(10, Some(1), ago(1))
+    };
+    world.has(
+        vec![requested, by("other-author", pr_at(11, Some(1), ago(2)))],
+        vec![issue_at(1, ago(3))],
+    );
+    world.mute_author_at("some-author", ago(10));
+    world.happened(10, &[(ActivityKind::ReviewRequested, ago(5))]);
+
+    let asked = read(&world, InboxPage::Latest);
+    let store = &world.db.store;
+    let marked = seeing(vec![1, 10, 11], Some(ago(0)));
+    store.mark_seen(&cpython(), marked).unwrap();
+    let seen = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&asked), [("issue", 1, vec![10, 11])]);
+    assert_eq!(
+        outline(&seen),
+        [("issue", 1, vec![11])],
+        "the request still stands, and a Muted item leaves the Workbench too once marked seen"
+    );
+}
+
+#[test]
+fn an_archived_issue_stays_out_when_only_a_muted_authors_pr_under_it_moved() {
+    let world = ViewWorld::new("inbox-muted-archived");
+    world.has(
+        vec![
+            pr_at(10, Some(1), ago(1)),
+            by("other-author", pr_at(11, Some(2), ago(1))),
+        ],
+        vec![issue_at(1, ago(6)), issue_at(2, ago(6))],
+    );
+    world.mute_author_at("some-author", ago(5));
+    for (issue, pr) in [(1, 10), (2, 11)] {
+        let archiving = Archiving {
+            key: ItemKey::Issue { number: issue },
+            numbers: vec![issue, pr],
+            up_to: Some(ago(4)),
+            put_away: PutAway::Now,
+            findings: vec![],
+        };
+        let store = &world.db.store;
+        store.archive(&cpython(), archiving, ago(4)).unwrap();
+        world.marked_unseen(pr);
+    }
+
+    let hidden = read(&world, InboxPage::Latest);
+    world.show_muted(ShowMuted::On);
+    let shown = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&hidden), [("issue", 2, vec![11])]);
+    assert_eq!(
+        outline(&shown),
+        [("issue", 2, vec![11]), ("issue", 1, vec![10])],
+        "the Muted author's PR brings its Issue back once it shows"
+    );
 }
 
 #[test]

@@ -4984,8 +4984,8 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
   const show = screen.getByRole("checkbox", { name: "Show muted" }) as HTMLInputElement;
   expect(show.checked).toBe(true);
   await fireEvent.click(show);
-  // The box waits for the answer read after the save.
-  const waited = { checked: show.checked, busy: show.getAttribute("aria-busy") };
+  // The box waits for the answer read after the save, and takes no second click meanwhile.
+  const waited = { checked: show.checked, disabled: show.disabled };
   core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }], null, "off"));
   saving.resolve(done);
 
@@ -4994,8 +4994,8 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
   });
   expect(greyed).toEqual(["112564#160662", "#5"]);
   expect(core.switchShowMuted).toHaveBeenCalledExactlyOnceWith("python/cpython", "off");
-  expect(waited).toEqual({ checked: true, busy: "true" });
-  expect(show.getAttribute("aria-busy")).toBe("false");
+  expect(waited).toEqual({ checked: true, disabled: true });
+  expect(show.disabled).toBe(false);
 });
 
 it("says why the core refused a change to Show muted", async () => {

@@ -33,6 +33,18 @@ use crate::work::SeenMark;
 pub(crate) const NOT_CONNECTED: &str =
     "Tsugiki isn't connected to GitHub. The status bar says why.";
 
+/// Sends `to` the message `asking` makes around a reply channel, and waits for its answer. A thread that has
+/// stopped, or drops the message with its reply, answers that Tsugiki isn't connected.
+pub(crate) fn answered<M, T>(
+    to: &Sender<M>,
+    asking: impl FnOnce(Sender<Result<T, Error>>) -> M,
+) -> Result<T, Error> {
+    let (reply, answer) = mpsc::channel();
+    (to.send(asking(reply)).ok())
+        .and_then(|()| answer.recv().ok())
+        .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
+}
+
 /// What the rules want of a Repository's Mirror, worked out each time a sync step saves the Repository's
 /// facts. Each part is the whole set, and replaces the last one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -499,7 +511,7 @@ impl Fetching {
         repository: RepositoryName,
         show: ShowMuted,
     ) -> Result<(), Error> {
-        self.answered(|reply| SessionMessage::ShowMuted {
+        answered(&self.session, |reply| SessionMessage::ShowMuted {
             repository,
             show,
             reply,
@@ -529,19 +541,7 @@ impl Fetching {
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
     /// error, and has already shown why on the status bar.
     pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
-        self.answered(|reply| SessionMessage::Check { name, reply })
-    }
-
-    /// Sends the session the message `asking` makes around a reply channel, and waits for its answer. A
-    /// session that has stopped, or drops the message with its reply, answers that it isn't connected.
-    fn answered<T>(
-        &self,
-        asking: impl FnOnce(Sender<Result<T, Error>>) -> SessionMessage,
-    ) -> Result<T, Error> {
-        let (reply, answer) = mpsc::channel();
-        (self.session.send(asking(reply)).ok())
-            .and_then(|()| answer.recv().ok())
-            .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
+        answered(&self.session, |reply| SessionMessage::Check { name, reply })
     }
 
     /// What keeps the per-file patch-ids the Mirror worker read of commits in a Repository, and the commits

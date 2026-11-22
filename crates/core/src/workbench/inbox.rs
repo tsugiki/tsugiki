@@ -32,12 +32,11 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use time::{Duration, OffsetDateTime};
 
+use super::attention::summed;
 use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
-use super::{
-    Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, attention_in, candidates,
-};
+use super::{Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
@@ -47,7 +46,7 @@ use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader, Updates};
-use crate::work::Causes;
+use crate::work::{Cause, Causes};
 
 /// How far back from now the first page reaches.
 const LATEST: Duration = Duration::days(2);
@@ -165,7 +164,10 @@ impl Inbox {
         // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
         // A Muted author's item stays for "Show muted" to judge, unless one of those takes it out too.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
-            .map(|item| ListedItem::of(&causes, item))
+            .filter_map(|item| match show {
+                ShowMuted::On => Some(ListedItem::of(&causes, item)),
+                ShowMuted::Off => ListedItem::without_muted_authors(&causes, item),
+            })
             .filter(|listed| match listed.hidden {
                 None => true,
                 Some(Hidden::Archived | Hidden::Muted) => false,
@@ -174,10 +176,6 @@ impl Inbox {
                     !causes.is_muted_on_its_own(key)
                         && !causes.is_archived(key, &listed.item.numbers())
                 }
-            })
-            .filter_map(|listed| match show {
-                ShowMuted::On => Some(listed),
-                ShowMuted::Off => listed.without_muted_authors(&causes),
             })
             .collect();
         let place_of =
@@ -192,28 +190,52 @@ impl Inbox {
 }
 
 impl ListedItem {
-    /// The item with each row a Muted author wrote gone, or nothing once no row is left, as `causes` judge
-    /// them. A Review request or an assignment to the user that started after the mute shows a row anyway,
-    /// as it brings back a Muted item (#817), and one in the tree of a Muted author's item shows the whole
-    /// item, as on the Workbench. A row stays while a row under it does: an Issue over its PRs, a PR over its
-    /// Backports. The item keeps its place, and Needs attention for the rows left.
-    fn without_muted_authors(self, causes: &Causes) -> Option<Self> {
-        let asked = |key: ItemKey, numbers: &[u32]| !causes.fresh_asks(key, numbers).is_empty();
-        if causes.is_by_muted_author(self.key) && asked(self.key, &self.item.numbers()) {
-            return Some(self);
+    /// `item` with each row a Muted author wrote gone, or nothing once no row is left, and what `causes`
+    /// judge of the rows left. A Muted author's row stays while a Review request or an assignment to the user
+    /// that started after the mute stands on it, the rule that brings a Muted item back to the Workbench
+    /// (#817), and goes once Mark Seen acknowledges that ask, as the Muted item leaves the Workbench then. An
+    /// ask anywhere in the tree of a Muted author's own item keeps the whole item, which the Workbench lists.
+    /// A row stays while a row under it does: an Issue over its PRs, a PR over its Backports. Archive and
+    /// attention are judged over the rows left, where a Muted author's row counts only for its fresh asks.
+    /// The item keeps its place and its Mark Seen, which cover its whole tree.
+    fn without_muted_authors(causes: &Causes, item: WorkbenchItem) -> Option<Self> {
+        let key = item.key();
+        let fresh = |key: ItemKey, numbers: &[u32]| causes.fresh_asks(key, numbers);
+        if causes.is_by_muted_author(key) && !fresh(key, &item.numbers()).is_empty() {
+            return Some(Self::of(causes, item));
         }
-        let hides = |key: ItemKey| causes.is_by_muted_author(key) && !asked(key, &[key.number()]);
-        let item = self.item.without(&hides)?;
-        let attention = attention_in(causes, self.hidden, &item);
+        let hides =
+            |key: ItemKey| causes.is_by_muted_author(key) && fresh(key, &[key.number()]).is_empty();
+        let item = item.without(&hides)?;
+        let asked: Vec<Cause> = (item.keys().into_iter())
+            .filter(|&key| causes.is_by_muted_author(key))
+            .flat_map(|key| fresh(key, &[key.number()]))
+            .collect();
+        let others = (item.keys().into_iter())
+            .filter(|&key| !causes.is_by_muted_author(key))
+            .flat_map(|key| causes.on(key.number()));
         Some(Self {
+            attention: summed(asked.iter().chain(others)),
+            hidden: Hidden::of(causes, key, &item.numbers()),
+            key,
             item,
-            attention,
-            ..self
         })
     }
 }
 
 impl WorkbenchItem {
+    /// The key of each row the item shows: its Issue, if it has one, then each PR.
+    fn keys(&self) -> Vec<ItemKey> {
+        let issue = match self {
+            Self::Issue(issue) => Some(ItemKey::Issue {
+                number: issue.number,
+            }),
+            Self::StandalonePr(_) | Self::StandaloneBackport(_) => None,
+        };
+        let prs = (self.rows().into_iter()).map(|row| ItemKey::PullRequest { number: row.number });
+        issue.into_iter().chain(prs).collect()
+    }
+
     fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
         match self {
             Self::Issue(mut issue) => {

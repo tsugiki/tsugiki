@@ -5,6 +5,7 @@
 use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
+use tsugiki_token::NodeId;
 
 use crate::repository::{RepositoryName, Visibility};
 use crate::token::{TokenKind, WriteScope};
@@ -52,33 +53,58 @@ impl RepositoryState {
     }
 }
 
-/// A Repository Tsugiki may write to as a write goes out. Only [`WritableRepository::new`] makes one, and
-/// only when no reason holds the Repository Read-only, so a write that gets past a write control still
-/// can't reach a Read-only Repository. It isn't `Clone`, so none outlives the write it was made for.
+/// A Repository Tsugiki may write to, with the item in it that one write goes to. Only
+/// [`WritableRepository::new`] makes one, as the write goes out, and only when no reason holds the
+/// Repository Read-only, so a write that gets past a write control still can't reach a Read-only
+/// Repository. It holds the item's ID, read for its number in that Repository, so no write can pair it with
+/// another Repository's item. It isn't `Clone`, and the client's write takes it by value, so it serves one
+/// write.
 #[derive(Debug)]
 pub struct WritableRepository {
     repository: RepositoryName,
+    subject: NodeId,
+}
+
+/// The reason no [`WritableRepository`] could be made for a write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unwritable {
+    /// The Repository is Read-only, for this reason first, in the order [`RepositoryState`] lists them.
+    ReadOnly(ReadOnly),
+    /// Tsugiki holds no ID for the item: it hasn't read it, or it read it before it asked for IDs.
+    Unread,
 }
 
 impl WritableRepository {
-    /// `repository`, writable, when none of `reasons` holds it Read-only, or else the first reason, in the
-    /// order [`RepositoryState`] lists them. The caller works the reasons out for each write, from the
-    /// settings and the store, so a mark that changed since a control showed Send counts.
+    /// `repository`, writable, with `subject`, the ID of the item the write goes to, when none of `reasons`
+    /// holds it Read-only and the ID is known. A reason comes first, so a Read-only Repository says so
+    /// whatever Tsugiki holds of the item.
+    ///
+    /// `clippy.toml` refuses a call to this outside `session::write`, which works out the reasons from the
+    /// settings in force and the store on each write, so a mark that changed since a control showed Send
+    /// counts. A test of what a write does once it may go calls it too, and says so.
     pub fn new(
-        repository: &RepositoryName,
+        repository: RepositoryName,
+        subject: Option<NodeId>,
         reasons: impl IntoIterator<Item = ReadOnly>,
-    ) -> Result<Self, ReadOnly> {
-        match reasons.into_iter().min() {
-            Some(reason) => Err(reason),
-            None => Ok(Self {
-                repository: repository.clone(),
-            }),
+    ) -> Result<Self, Unwritable> {
+        if let Some(reason) = reasons.into_iter().min() {
+            return Err(Unwritable::ReadOnly(reason));
         }
+        let subject = subject.ok_or(Unwritable::Unread)?;
+        Ok(Self {
+            repository,
+            subject,
+        })
     }
 
-    /// The Repository a write may go to.
+    /// The Repository the write goes to.
     pub fn repository(&self) -> &RepositoryName {
         &self.repository
+    }
+
+    /// GitHub's ID of the item the write goes to.
+    pub fn subject(&self) -> &NodeId {
+        &self.subject
     }
 }
 

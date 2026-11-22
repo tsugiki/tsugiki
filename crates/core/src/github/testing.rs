@@ -103,9 +103,21 @@ impl Transport for Scripted {
     }
 }
 
-/// `python/cpython`, which no reason holds Read-only.
+/// `python/cpython`, writable, with the Issue whose ID is `I_1`, which [`a_comment`] goes to.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "for a test of what a write does once it may go, whatever the settings and the store say"
+)]
 pub fn writable() -> WritableRepository {
-    WritableRepository::new(&crate::testing::cpython(), []).unwrap()
+    let subject = Some(NodeId::new("I_1".to_owned()));
+    WritableRepository::new(crate::testing::cpython(), subject, []).unwrap()
+}
+
+/// A comment that says "Thanks", which is [`a_comment`] once it reaches the Issue [`writable`] holds.
+pub fn thanks() -> ToItem {
+    ToItem::AddComment {
+        body: "Thanks".to_owned(),
+    }
 }
 
 /// A comment that says "Thanks" on the Issue whose ID is `I_1`.

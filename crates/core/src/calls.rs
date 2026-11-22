@@ -29,10 +29,11 @@ use crate::latest::LatestReader;
 use crate::login::Login;
 use crate::mirror::{CloneRefusal, LookupAt};
 use crate::mirror_source::MirrorSource;
-use crate::read_only::{Connection, ReadOnly, RepositoryState};
+use crate::read_only::{Connection, RepositoryState};
 use crate::repository::RepositoryName;
 use crate::repository_settings::{MirrorCost, NameCheck, RepositorySettings};
 use crate::session::Session;
+use crate::session::write::read_only_reasons;
 use crate::settings::{Home, LoadedSettings, SettingsChanges, SettingsOwner, SettingsView};
 use crate::status::{ItemUnread, Shown};
 use crate::store::StoreReader;
@@ -182,17 +183,13 @@ impl Calls {
     /// there, if it can't, and whether GitHub can be reached (#398). It can't when the user chose Read-only
     /// for it in the settings, or the store marks it as one the token can't write to (#914).
     pub fn repository_state(&self, repository: &RepositoryName) -> Result<RepositoryState, Error> {
-        let chosen = self.repository(repository.clone()).chosen_read_only();
-        let token = self
-            .reader
-            .token_cant_write(repository)?
-            .then_some(ReadOnly::Token);
+        let reasons = read_only_reasons(&self.repository(repository.clone()), &self.reader)?;
         let connection = if self.shown.read(|shown| shown.status.is_offline()) {
             Connection::Offline
         } else {
             Connection::Online
         };
-        Ok(RepositoryState::new([chosen, token].into_iter().flatten(), connection))
+        Ok(RepositoryState::new(reasons, connection))
     }
 
     /// The Issues and PRs of `repository` that quick open finds for what the user `typed`.

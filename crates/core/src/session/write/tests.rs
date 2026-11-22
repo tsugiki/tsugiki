@@ -4,10 +4,12 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::facts::issue_content::IssueContent;
-use crate::github::testing::{COMMENT_ID, RATE_LIMIT, Scripted, answer, github};
+use crate::facts::pull_requests::NodeId;
+use crate::github::testing::{COMMENT_ID, RATE_LIMIT, Scripted, answer, github, thanks};
+use crate::latest;
 use crate::read_only::TokenSeen;
 use crate::store::testing::OpenStore;
-use crate::testing::{cpython, empty_conversation, gcmon};
+use crate::testing::{cpython, empty_conversation, gcmon, listed, listing};
 use crate::token::TokenKind;
 
 /// GitHub's answer to a comment it made.
@@ -42,17 +44,16 @@ fn has_read_both(name: &str) -> OpenStore {
 }
 
 /// "Thanks" to item `number` of `repository`.
-fn thanks(repository: &RepositorySettings, number: u32) -> ItemWrite<'_> {
+fn thanks_to(repository: RepositoryName, number: u32) -> ItemWrite<'static> {
     ItemWrite {
         repository,
         number,
-        write: ToItem::AddComment {
-            body: "Thanks".to_owned(),
-        },
+        write: thanks(),
         selection: COMMENT_ID,
     }
 }
 
+/// `repository`'s settings once the user chose Read-only for it.
 fn chosen_read_only(repository: RepositoryName) -> RepositorySettings {
     RepositorySettings {
         read_only: true,
@@ -61,11 +62,14 @@ fn chosen_read_only(repository: RepositoryName) -> RepositorySettings {
 }
 
 #[test]
-fn a_write_to_a_repository_the_user_chose_read_only_for_says_why_and_sends_nothing() {
+fn a_write_to_a_repository_the_user_chose_read_only_for_since_the_control_showed_says_why_and_sends_nothing()
+{
     let db = has_read_both("write-chosen-read-only");
     let (github, asked) = answering_once();
+    let (mut settings, view) = latest::channel(listing(vec![RepositorySettings::new(cpython())]));
+    settings.set(&listing(vec![chosen_read_only(cpython())]));
 
-    let sent = send::<Value>(&github, &db.store, thanks(&chosen_read_only(cpython()), 7));
+    let sent = send::<Value>(&github, &view, &db.reader, thanks_to(cpython(), 7));
 
     let problem = sent.unwrap_err();
     assert_eq!(problem.kind, ErrorKind::WriteRefused);
@@ -87,8 +91,7 @@ fn a_write_to_a_repository_the_store_marks_read_only_for_the_token_says_why_and_
     assert!(db.store.mark_read_only(token, &cpython()).unwrap());
     let (github, asked) = answering_once();
 
-    let cpython = RepositorySettings::new(cpython());
-    let sent = send::<Value>(&github, &db.store, thanks(&cpython, 7));
+    let sent = send::<Value>(&github, &listed(vec![]), &db.reader, thanks_to(cpython(), 7));
 
     let problem = sent.unwrap_err();
     assert_eq!(problem.kind, ErrorKind::WriteRefused);
@@ -104,9 +107,9 @@ fn a_write_to_a_repository_the_store_marks_read_only_for_the_token_says_why_and_
 fn a_write_to_a_writable_repository_names_the_item_by_the_id_its_last_read_gave_there() {
     let db = has_read_both("write-writable");
     let (github, asked) = answering_once();
+    let settings = listed(vec![chosen_read_only(cpython())]);
 
-    let gcmon = RepositorySettings::new(gcmon());
-    let answered: Value = send(&github, &db.store, thanks(&gcmon, 7)).unwrap();
+    let answered: Value = send(&github, &settings, &db.reader, thanks_to(gcmon(), 7)).unwrap();
 
     assert_eq!(answered["addComment"], comment_made()["addComment"]);
     let input = json!({ "input": { "subjectId": "I_gcmon", "body": "Thanks" } });
@@ -115,23 +118,24 @@ fn a_write_to_a_writable_repository_names_the_item_by_the_id_its_last_read_gave_
 }
 
 #[test]
-fn a_write_to_an_item_the_store_has_no_id_for_says_so_and_sends_nothing() {
+fn a_write_to_an_item_the_store_has_no_id_for_says_to_open_it_again_and_sends_nothing() {
     let db = has_read_both("write-unread");
     db.store
         .save_issue_content(&cpython(), 8, read_with(None))
         .unwrap();
-    let cpython = RepositorySettings::new(cpython());
 
     for number in [8, 9] {
         let (github, asked) = answering_once();
-        let sent = send::<Value>(&github, &db.store, thanks(&cpython, number));
+        let sent = send::<Value>(&github, &listed(vec![]), &db.reader, thanks_to(cpython(), number));
 
         let problem = sent.unwrap_err();
-        assert_eq!(problem.kind, ErrorKind::NotFound);
-        assert!(
-            problem.message.contains(&format!("#{number} of python/cpython")),
-            "{}",
-            problem.message
+        assert_eq!(problem.kind, ErrorKind::Conflict);
+        assert_eq!(
+            problem.message,
+            format!(
+                "Tsugiki sent nothing, as it hasn't read #{number} of python/cpython from GitHub yet. \
+                 Open it again, and send once it has."
+            )
         );
         assert!(asked.try_recv().is_err());
     }

@@ -1064,7 +1064,7 @@ fn adding_a_repository_that_can_write_leaves_read_only_out_of_the_file() {
     assert!(!read.read_only);
 }
 
-/// What `settings.toml` says once Tsugiki adds `repository` to a file with none, and what it then reads.
+/// The text of `settings.toml` once Tsugiki adds `repository` to a file with none, and what it then reads.
 fn added(name: &str, repository: &RepositorySettings) -> (String, RepositorySettings) {
     let (folders, _root) = temp_folders(name);
     let mut files = SettingsFiles::load(folders.clone());

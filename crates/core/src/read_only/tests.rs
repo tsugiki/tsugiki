@@ -46,20 +46,40 @@ fn the_users_choice_comes_before_the_token_and_each_reaches_the_window_by_name()
     );
 }
 
-#[test]
-fn a_repository_no_reason_holds_is_writable() {
-    let writable = WritableRepository::new(&crate::testing::cpython(), []).unwrap();
-    assert_eq!(writable.repository(), &crate::testing::cpython());
+/// `item`'s write to CPython's Issue `I_1` when `reasons` hold, or why it can't go.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the tests of the one constructor, which name the reasons themselves"
+)]
+fn writable(
+    item: Option<&str>,
+    reasons: &[ReadOnly],
+) -> Result<WritableRepository, Unwritable> {
+    let subject = item.map(|id| NodeId::new(id.to_owned()));
+    WritableRepository::new(crate::testing::cpython(), subject, reasons.to_vec())
 }
 
 #[test]
-fn a_repository_a_reason_holds_gives_the_first_reason_and_isnt_writable() {
-    let cpython = crate::testing::cpython();
-    let refused = |reasons: &[ReadOnly]| WritableRepository::new(&cpython, reasons.to_vec());
-    assert_eq!(refused(&[ReadOnly::Chosen]).unwrap_err(), ReadOnly::Chosen);
-    assert_eq!(refused(&[ReadOnly::Token]).unwrap_err(), ReadOnly::Token);
-    let both = refused(&[ReadOnly::Token, ReadOnly::Chosen]);
-    assert_eq!(both.unwrap_err(), ReadOnly::Chosen);
+fn a_read_item_of_a_repository_no_reason_holds_is_writable() {
+    let writable = writable(Some("I_1"), &[]).unwrap();
+    assert_eq!(writable.repository(), &crate::testing::cpython());
+    assert_eq!(writable.subject(), &NodeId::new("I_1".to_owned()));
+}
+
+#[test]
+fn a_repository_a_reason_holds_gives_the_first_reason_whatever_tsugiki_read_of_the_item() {
+    for item in [Some("I_1"), None] {
+        let refused = |reasons: &[ReadOnly]| writable(item, reasons).unwrap_err();
+        assert_eq!(refused(&[ReadOnly::Chosen]), Unwritable::ReadOnly(ReadOnly::Chosen));
+        assert_eq!(refused(&[ReadOnly::Token]), Unwritable::ReadOnly(ReadOnly::Token));
+        let both = refused(&[ReadOnly::Token, ReadOnly::Chosen]);
+        assert_eq!(both, Unwritable::ReadOnly(ReadOnly::Chosen));
+    }
+}
+
+#[test]
+fn an_item_tsugiki_holds_no_id_for_isnt_writable() {
+    assert_eq!(writable(None, &[]).unwrap_err(), Unwritable::Unread);
 }
 
 #[test]

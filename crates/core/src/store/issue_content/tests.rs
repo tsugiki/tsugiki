@@ -85,7 +85,7 @@ fn an_items_id_comes_from_its_last_read_in_its_own_repository() {
         .save_issue_content(&cpython(), 2, kept_from_before)
         .unwrap();
 
-    let id = |repository: &RepositoryName, number| db.store.node_id(repository, number).unwrap();
+    let id = |repository: &RepositoryName, number| db.reader.node_id(repository, number).unwrap();
     let named = |id: &str| Some(NodeId::new(id.to_owned()));
 
     assert_eq!(id(&cpython(), 1), named("I_<p>One</p>"));

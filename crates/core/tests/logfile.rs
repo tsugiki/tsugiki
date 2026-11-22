@@ -109,9 +109,15 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
     clippy::unwrap_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test of the transport, which a write reaches once it may go; this file builds without the \
+              core's `testing` helpers"
+)]
 fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) {
+    let subject = NodeId::new("I_1".to_owned());
     let comment = Write::AddComment {
-        subject: NodeId::new("I_1".to_owned()),
+        subject: subject.clone(),
         body: "Thanks".to_owned(),
     };
     let second_field = Selection {
@@ -120,7 +126,7 @@ fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) 
     };
     let no_recordings = path.with_file_name("no recordings");
     let cpython = RepositoryName::parse("python/cpython").unwrap();
-    let writable = WritableRepository::new(&cpython, []).unwrap();
+    let writable = WritableRepository::new(cpython, Some(subject), []).unwrap();
     let refused = Replayer::new(no_recordings).write(token, &writable, (&comment, second_field));
     assert_eq!(refused.unwrap_err(), Unreachable::Refused);
     log::logger().flush();

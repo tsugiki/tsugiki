@@ -788,27 +788,6 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Whether the store marks `repository` as one the token can't write to, as a write is about to go
-    /// out (#914).
-    pub fn token_cant_write(&self, repository: &RepositoryName) -> Result<bool, Error> {
-        let repository = repository.clone();
-        let read = self.call(move |connection| read_only::marked(connection, &repository))?;
-        read.map_err(saying(CANT_READ))
-    }
-
-    /// GitHub's ID of Issue or PR `number` of `repository`, which a write names it by, from its last read.
-    /// Nothing, before Tsugiki has read it (#914).
-    pub fn node_id(
-        &self,
-        repository: &RepositoryName,
-        number: u32,
-    ) -> Result<Option<NodeId>, Error> {
-        let repository = repository.clone();
-        let read =
-            self.call(move |connection| issue_content::node_id(connection, &repository, number))?;
-        read.map_err(saying(CANT_READ))
-    }
-
     /// Turns `repository`'s "Show muted" to `show` (#825).
     pub fn switch_show_muted(
         &self,
@@ -1166,6 +1145,19 @@ impl StoreReader {
     pub fn token_cant_write(&self, repository: &RepositoryName) -> Result<bool, Error> {
         let repository = repository.clone();
         let read = self.call(move |connection| read_only::marked(connection, &repository))?;
+        read.map_err(saying(CANT_READ))
+    }
+
+    /// GitHub's ID of Issue or PR `number` of `repository`, which a write names it by, from its last read.
+    /// Nothing, before Tsugiki has read it (#914).
+    pub fn node_id(
+        &self,
+        repository: &RepositoryName,
+        number: u32,
+    ) -> Result<Option<NodeId>, Error> {
+        let repository = repository.clone();
+        let read =
+            self.call(move |connection| issue_content::node_id(connection, &repository, number))?;
         read.map_err(saying(CANT_READ))
     }
 

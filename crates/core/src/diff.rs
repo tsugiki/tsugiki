@@ -846,11 +846,13 @@ impl Diffs {
 }
 
 pub use find::{Found, MOST_MATCHES, Match};
+pub use tree::{FileNotes, FileTree, TreeRow};
 
 mod find;
 mod highlighter;
 mod news;
 mod patch_ids;
+mod tree;
 
 #[cfg(test)]
 pub(crate) mod testing;

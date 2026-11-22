@@ -19,6 +19,7 @@
   import { prIcon } from "./octicons";
   import PaneEdge from "./PaneEdge.svelte";
   import Rail from "./Rail.svelte";
+  import RailFiles from "./RailFiles.svelte";
   import RailSearch from "./RailSearch.svelte";
   import ReadOnlyNote from "./ReadOnlyNote.svelte";
   import StateIcon from "./StateIcon.svelte";
@@ -131,8 +132,8 @@
   }
 </script>
 
-<!-- The rail's Files tab, which the tree of the PR's changed files fills (#604). -->
-{#snippet filesPane()}{/snippet}
+<!-- The rail's Files tab: the tree of the PR's changed files (#604). -->
+{#snippet filesPane()}<RailFiles {pr} />{/snippet}
 
 <!-- The rail's Search tab, over the PR's code (#686). -->
 {#snippet searchPane()}<RailSearch {pr} />{/snippet}

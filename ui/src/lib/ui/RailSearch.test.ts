@@ -9,6 +9,7 @@ import {
   TextSearchState,
 } from "$lib/state/text-search.svelte";
 import { ok } from "$lib/testing/fixtures";
+import { pressOnFocus } from "$lib/testing/helpers";
 import RailSearch from "./RailSearch.svelte";
 
 const core = vi.hoisted(() => ({
@@ -195,33 +196,32 @@ it("goes from the box to the list on ↓, where the keys move, fold, unfold and 
   );
   const heard = vi.fn();
   window.addEventListener("keydown", heard);
-  const press = (key: string) => fireEvent.keyDown(document.activeElement as HTMLElement, { key });
   box().focus();
 
-  await press("a");
-  await press("ArrowDown");
+  await pressOnFocus("a");
+  await pressOnFocus("ArrowDown");
   const inList = document.activeElement === tree();
-  await press("ArrowDown");
-  await press("ArrowDown");
+  await pressOnFocus("ArrowDown");
+  await pressOnFocus("ArrowDown");
   const second = cursorText();
-  await press("Enter");
-  await press("ArrowLeft");
-  await press("ArrowLeft");
+  await pressOnFocus("Enter");
+  await pressOnFocus("ArrowLeft");
+  await pressOnFocus("ArrowLeft");
   const folded = items().length;
-  await press("ArrowRight");
-  await press("ArrowRight");
+  await pressOnFocus("ArrowRight");
+  await pressOnFocus("ArrowRight");
   const intoFile = cursorText();
-  await press("End");
+  await pressOnFocus("End");
   const last = cursorText();
-  await press("Home");
-  await press("PageDown");
+  await pressOnFocus("Home");
+  await pressOnFocus("PageDown");
   const paged = cursorText();
-  await press("PageUp");
-  await press("ArrowUp");
-  await press("Enter");
+  await pressOnFocus("PageUp");
+  await pressOnFocus("ArrowUp");
+  await pressOnFocus("Enter");
   const foldedByEnter = items().length;
-  await press("x");
-  await press("Shift");
+  await pressOnFocus("x");
+  await pressOnFocus("Shift");
   window.removeEventListener("keydown", heard);
 
   expect([inList, second, folded, intoFile, last, paged, foldedByEnter]).toEqual([

@@ -7,6 +7,8 @@ import {
   diffFile,
   diffThread,
   done,
+  fileRow,
+  folderRow,
   loadedSettings,
   ok,
   readyFiles,
@@ -588,4 +590,128 @@ test("a stale PR says what changed since the Review over both tabs, and Review c
   await page.keyboard.press("j");
   await page.keyboard.press("Alt+PageUp");
   await expect(diff).toContainText("first of Doc/whatsnew.rst");
+});
+
+test("the rail's tree jumps to a file from either tab, marks the file on screen as the diff scrolls, and filters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 700 });
+  const paths = ["Doc/whatsnew.rst", "Lib/ast.py", "Lib/os.py", "setup.py"];
+  const sizes = [40, 98, 40, 3];
+  const starts = sizes.map((_, at) => sizes.slice(0, at).reduce((sum, size) => sum + size + 2, 0));
+  await mockCore(page, {
+    themes: ok(themes),
+    home,
+    workbench: workbenchPage([issue]),
+    openPullRequest: done,
+    pullRequest: ok(view),
+    pullRequestFiles: ok(
+      readyFiles(
+        sizes.reduce((sum, size) => sum + size + 2, 0),
+        {
+          ...heads,
+          files: paths.map((path, at) => newFile(path, starts[at] ?? 0, sizes[at] ?? 0)),
+          tree: {
+            rows: [
+              folderRow("Doc", "Doc", 0, 2),
+              fileRow(0, "whatsnew.rst", 1),
+              folderRow("Lib", "Lib", 0, 5),
+              fileRow(1, "ast.py", 1, { threads: 2 }),
+              fileRow(2, "os.py", 1),
+              fileRow(3, "setup.py", 0),
+            ],
+            folded: false,
+          },
+        },
+      ),
+    ),
+    pullRequestRows: ok(paths.flatMap((path, at) => fileRows(path, sizes[at] ?? 0, `first of ${path}`))),
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "#7 Issue 7" })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const pane = page.getByRole("region", { name: "PR view" });
+  await expect(pane).toContainText("The fix");
+
+  // The rail opens on the Conversation, where the tree reads the diff.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("f");
+  const rail = pane.getByRole("complementary", { name: "Rail" });
+  const tree = rail.getByRole("tree", { name: "Changed files" });
+  await expect(tree.getByRole("treeitem")).toHaveText([
+    "▾Doc",
+    "whatsnew.rst+40−0",
+    "▾Lib",
+    "ast.py2+98−0",
+    "os.py+40−0",
+    "setup.py+3−0",
+  ]);
+  // A click on a file goes to its header on the Files tab, and marks it.
+  await tree.getByRole("treeitem", { name: /os\.py/ }).click();
+  const diff = pane.getByRole("region", { name: "Diff" });
+  await expect(pane.locator("#pr-tab-files")).toHaveAttribute("aria-selected", "true");
+  await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
+  const current = tree.locator('[aria-current="true"]');
+  await expect(current).toHaveText("os.py+40−0");
+  // The mark follows the diff as it scrolls.
+  await diff.focus();
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
+  await expect(current).toHaveText("ast.py2+98−0");
+  // A short file at the end is marked, though its header can't reach the top, which shows the file before.
+  await tree.getByRole("treeitem", { name: /setup\.py/ }).click();
+  await expect.poll(() => headerBelowTop(diff, "setup.py")).toBeGreaterThan(100);
+  await expect(current).toHaveText("setup.py+3−0");
+  // Side by side and back, and one file at a time and back, leave the tab at that file.
+  await diff.focus();
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  await page.keyboard.press("ControlOrMeta+Alt+u");
+  const bar = pane.getByRole("navigation", { name: "File on show" });
+  for (let round = 0; round < 2; round += 1) {
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("o");
+    await expect(bar).toContainText("4 of 4");
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.keyboard.press("o");
+    await expect(bar).toBeHidden();
+    await expect(current).toHaveText("setup.py+3−0");
+  }
+  // The file before goes on from the file marked.
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
+  await expect(current).toHaveText("os.py+40−0");
+  // The next file is the short one again, past which there is none, and the file before goes back.
+  await page.keyboard.press("Alt+PageDown");
+  await expect.poll(() => headerBelowTop(diff, "setup.py")).toBeGreaterThan(100);
+  await expect(current).toHaveText("setup.py+3−0");
+  await page.keyboard.press("Alt+PageDown");
+  await expect(current).toHaveText("setup.py+3−0");
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
+  await expect(current).toHaveText("os.py+40−0");
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
+  await expect(current).toHaveText("ast.py2+98−0");
+
+  // ↓ ↑ move, ← folds, and Enter opens a file, one file at a time showing it alone.
+  await page.keyboard.press("ControlOrMeta+k");
+  await page.keyboard.press("o");
+  await expect(bar).toContainText("2 of 4");
+  await tree.focus();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowLeft");
+  await expect(tree.getByRole("treeitem")).toHaveText(["▾Doc", "whatsnew.rst+40−0", "▸Lib", "setup.py+3−0"]);
+  await expect(current).toHaveText("▸Lib");
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
+  await expect(bar).toContainText("1 of 4");
+  await expect(current).toHaveText("whatsnew.rst+40−0");
+  await expect(tree).toBeFocused();
+
+  // The filter narrows the tree to the paths that hold what the user types, its folders open.
+  await rail.getByRole("textbox", { name: "Filter the changed files" }).fill("os");
+  await expect(tree.getByRole("treeitem")).toHaveText(["▾Lib", "os.py+40−0"]);
 });

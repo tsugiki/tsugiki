@@ -316,3 +316,28 @@ fn a_thread_of_only_hidden_comments_counts_as_resolved() {
         .collect();
     assert_eq!(marks, [(Resolution::Resolved, 0), (Resolution::Open, 3)]);
 }
+
+#[test]
+fn each_file_counts_the_threads_others_read_and_the_users_drafts_wherever_they_sit_on_it() {
+    let draft = || ThreadComment {
+        submission: Submission::Pending,
+        ..comment(None)
+    };
+    let mut replied = thread("draft reply", "Lib/ast.py", Side::Right, 2);
+    replied.comments.push(draft());
+    let mut started = thread("draft thread", "Lib/new.py", Side::Right, 5);
+    started.comments = vec![draft(), draft()];
+    let threads = [
+        replied,
+        outdated("outdated", "Lib/ast.py"),
+        started,
+        on_the_file("whole", "Lib/new.py"),
+        thread("gone", "Lib/re.py", Side::Right, 1),
+    ];
+    let diff = diff();
+
+    let notes = notes(diff.files(), &placed(&diff, &threads));
+
+    let held = |threads, drafts| FileNotes { threads, drafts };
+    assert_eq!(notes, [held(2, 1), held(1, 2)]);
+}

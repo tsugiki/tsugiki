@@ -1075,6 +1075,17 @@ export type FileHits = {
 	lines: LineHit[],
 };
 
+/**
+ *  A PR's changed files as a tree of folders: its rows in the order they show unfolded, each folder before
+ *  what it holds. Files and folders keep the order of the diff's files, so the tree reads down as the Files
+ *  tab does.
+ */
+export type FileTree = {
+	rows: TreeRow[],
+	/**  Whether its folders start folded, as they do past a few hundred files. */
+	folded: boolean,
+};
+
 /**  A saved GitHub search, as `settings.toml` holds it. */
 export type Filter = Filter_Serialize | Filter_Deserialize;
 
@@ -3393,6 +3404,8 @@ export type ShownDiff_Deserialize = {
 	 */
 	base: string,
 	files: DiffFile_Deserialize[],
+	/**  The files as a tree of folders, which the rail's Files pane draws (#604). */
+	tree: FileTree,
 	rows: number,
 	/**  The PR's NEWS entries, rendered above the rows. */
 	news: NewsEntry_Deserialize[],
@@ -3408,6 +3421,8 @@ export type ShownDiff_Serialize = {
 	 */
 	base: string,
 	files: DiffFile_Serialize[],
+	/**  The files as a tree of folders, which the rail's Files pane draws (#604). */
+	tree: FileTree,
 	rows: number,
 	/**  The PR's NEWS entries, rendered above the rows. */
 	news: NewsEntry_Serialize[],
@@ -3841,6 +3856,32 @@ export type TreeEntry_Serialize = {
 {
 	kind: "backport",
 } & BackportRow_Serialize;
+
+/**  A row of the tree: a folder, or a file of the diff. */
+export type TreeRow = 
+/**
+ *  A folder, joined with the folders inside it while each holds only one, as GitHub joins them:
+ *  `Lib/test`.
+ */
+{ kind: "folder"; 
+/**  Its path from the Repository's top, which names it while the folds change. */
+path: string; 
+/**  What its row shows: its name, and those of the folders joined to it. */
+name: string; 
+/**  How many folders it sits in. */
+depth: number; 
+/**  The row after the last one it holds. */
+end: number } | 
+/**  A file of the diff. */
+{ kind: "file"; 
+/**  Its place among the diff's files. */
+file: number; name: string; 
+/**  How many folders it sits in. */
+depth: number; 
+/**  The review threads on it that others can read. */
+threads: number; 
+/**  The drafts of the user's Pending review on it, which only they see. */
+drafts: number };
 
 /**
  *  The reason PR heads aren't in a mirror once the worker stopped fetching them, for a Files tab waiting for

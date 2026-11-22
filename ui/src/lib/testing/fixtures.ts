@@ -15,6 +15,7 @@ import type {
   ShowMuted,
   Themes,
   ThemeView,
+  TreeRow,
   WorkbenchRow_Serialize as WorkbenchRow,
 } from "../data/bindings";
 
@@ -157,11 +158,63 @@ export const readyFiles = (rows: number, more: Partial<Omit<ReadyFiles, "state">
   head: "abc",
   base: "base",
   files: [],
+  tree: { rows: [], folded: false },
   rows,
   news: [],
   threads: { kind: "shown", threads: [] },
   ...more,
 });
+
+/** A row of the rail's tree for the folder at `path`, which shows `name`, sits `depth` folders down and
+ * holds the rows up to `end`. */
+export const folderRow = (path: string, name: string, depth: number, end: number): TreeRow => ({
+  kind: "folder",
+  path,
+  name,
+  depth,
+  end,
+});
+
+/** A row of the rail's tree for the file at `file` among the diff's files, named `name`, `depth` folders
+ * down, with no thread or draft unless `notes` says so. */
+export const fileRow = (
+  file: number,
+  name: string,
+  depth: number,
+  notes: { threads?: number; drafts?: number } = {},
+): TreeRow => ({ kind: "file", file, name, depth, threads: 0, drafts: 0, ...notes });
+
+/** A ready diff of four files, three of them in `Lib/`, their headers at the diff's rows 0, 10, 20 and 30,
+ * with the tree the core sends with it, its folders folded if `folded` says the tree starts so.
+ *
+ * | Tree row | What |
+ * |---|---|
+ * | 0 | `Lib`, which holds rows 1 to 4 |
+ * | 1 | `Lib/ast.py`, file 0 |
+ * | 2 | `Lib/test`, which holds rows 3 and 4 |
+ * | 3, 4 | `Lib/test/test_ast.py` and `Lib/test/test_re.py`, files 1 and 2 |
+ * | 5 | `README.rst`, file 3 |
+ */
+export const treedFiles = (folded = false): ReadyFiles =>
+  readyFiles(40, {
+    files: [
+      diffFile("Lib/ast.py", 0),
+      diffFile("Lib/test/test_ast.py", 10),
+      diffFile("Lib/test/test_re.py", 20),
+      diffFile("README.rst", 30),
+    ],
+    tree: {
+      rows: [
+        folderRow("Lib", "Lib", 0, 5),
+        fileRow(0, "ast.py", 1),
+        folderRow("Lib/test", "test", 1, 5),
+        fileRow(1, "test_ast.py", 2),
+        fileRow(2, "test_re.py", 2),
+        fileRow(3, "README.rst", 0),
+      ],
+      folded,
+    },
+  });
 
 /** Review thread `id` under row `at` of the diff, or at `at` when it isn't a number, with `comments` comments
  * by some-reviewer. */

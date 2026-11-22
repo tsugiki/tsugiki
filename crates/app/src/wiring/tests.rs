@@ -2121,9 +2121,13 @@ fn opening_a_pr_fetches_its_head_first_and_its_files_tab_then_reads_its_diff_in_
         "rest": null,
         "pairs": [{ "row": 2, "removed": 0, "added": 1 }]
     });
+    let tree = json!({
+        "rows": [{ "kind": "file", "file": 0, "name": "NEWS", "depth": 0, "threads": 0, "drafts": 0 }],
+        "folded": false
+    });
     assert_eq!(
         ready,
-        json!({ "state": "ready", "head": commit, "base": base, "files": [news], "rows": 3, "news": [], "threads": { "kind": "shown", "threads": [] } })
+        json!({ "state": "ready", "head": commit, "base": base, "files": [news], "tree": tree, "rows": 3, "news": [], "threads": { "kind": "shown", "threads": [] } })
     );
     assert!(CommitSha::parse(&base).is_some_and(|base| base.as_str() != commit));
     assert_eq!(

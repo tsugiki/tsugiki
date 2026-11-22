@@ -106,6 +106,75 @@ samp,
   outline: 1px solid var(--focus-border);
 }
 
+/* The box at the top of one of the rail's tabs, as Files filters and Search queries, which can hold toggles
+   beside its text. */
+.rail-box {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 8px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.rail-box:focus-within {
+  border-color: var(--focus-border);
+}
+
+.rail-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  padding: 2px 4px;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+}
+
+/* A tab of the rail that fills its pane: the box and its notes stay put, and the list scrolls under them. */
+.rail-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* A line under a rail tab's box, such as why there is nothing to list. */
+.rail-note {
+  margin: 4px 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The pieces of a rail list's row: the fold chevron, the text, which takes the room left, and the small
+   muted things after it, of which a count sits in a chip. */
+.rail-chevron {
+  flex: none;
+  width: 12px;
+}
+
+.rail-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail-aside {
+  flex: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+.rail-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
 /* Prose inside something in the code font, such as a review thread in the diff. */
 .sans {
   font-family: var(--sans);

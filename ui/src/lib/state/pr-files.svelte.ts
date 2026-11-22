@@ -15,6 +15,7 @@
 // switches the PR on show (#605). While the user's Review is a Stale review, each file says whether it
 // changed since, and those it left unchanged start collapsed too (#387). A click or a double-click picks a
 // word on a line of code, for Go to definition (#437).
+import { untrack } from "svelte";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { Channel } from "$lib/data/channel";
 import {
@@ -168,6 +169,12 @@ type Goal =
 /** A lookup's question: the peek that shows its answer, before it has one, and the word's place as the core
  * takes it: the file's path at the peek's side, the line and the word's column. */
 type Asked = { peek: Omit<Peek, "lookup" | "layout">; path: string; line: number; column: number };
+
+/** Which page the tab is at with all the files: the page a move went to, with the place the tab landed on
+ * once it says so and whether that is as far as the tab scrolls, while the user leaves the top there, even
+ * for a short file near the end whose header can't reach the top; or else the page at the top, as the user
+ * scrolled it. */
+type TabAt = { kind: "landed"; page: Page; place: number | undefined; end: boolean } | { kind: "scrolled" };
 
 /** The lookup of the word `pick` picked in the code of a file at `place`, for a peek under `at` that names
  * the peeks of `trail` before it: in the peek's code (#447), or in the file view's (#457). */
@@ -351,9 +358,15 @@ export class PrFilesState {
   #change: number | undefined;
   /** The page the user last moved to, which the tab shows one file at a time. */
   #page = $state<Page>();
-  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Nothing
-   * draws from it. */
-  #top = 0;
+  /** The place at the top of the tab, below 0 inside the NEWS entries, once the tab has said where it is. */
+  #top = $state<number>();
+  /** Which page the tab is at with all the files, which the next and the previous file, the switch to one
+   * file at a time and the rail's tree go on from. */
+  #tabAt = $state.raw<TabAt>({ kind: "scrolled" });
+  /** How many times the file on screen has changed, by its path. */
+  #screenChanges = $state(0);
+  /** The path of the file on screen as `#screenChanges` last counted it. */
+  #screenPath: string | undefined;
   /** What the search found in the diff `view` shows, and the files of that diff. The matches are many and
    * don't change, so they aren't deeply reactive. */
   #found = $state.raw<{ found: Found; files: DiffFile[] }>();
@@ -571,12 +584,15 @@ export class PrFilesState {
       this.#pick = undefined;
       this.#dropPeek();
       this.marked = undefined;
+      // The page a move went to has its place among the pages before.
+      this.#tabAt = { kind: "scrolled" };
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
     this.view = answer;
     // The newer diff shows the same file, wherever it lists it.
     if (anew && this.#page !== undefined) this.#page = this.pages.carried(this.#page, pagesBefore);
+    this.#noteScreen();
     // A thread on a line no hunk shows opens the lines around it, once.
     for (const thread of this.threads) {
       if (thread.at.kind !== "outside" || before.some((shown) => shown.id === thread.id)) continue;
@@ -708,10 +724,19 @@ export class PrFilesState {
     this.#moveTo(view.files, row);
   }
 
-  /** Notes that place `place` is at the top of the tab, below 0 inside the NEWS entries, as the user
-   * scrolls. */
-  scrolled(place: number) {
+  /** Notes that place `place` is at the top of the tab, below 0 inside the NEWS entries, with `end` whether
+   * the tab is scrolled as far as it goes, as the user scrolls, or as `landing`, where a move to a page
+   * scrolled the tab. The tab stays at the page a move went to while the top stays where it landed, or
+   * while the tab stays at its end if it landed there, as a short file near the end does, whatever the
+   * layout changes at the top. A row that keeps its place as a layout changes above it moves the top, so
+   * a move that landed short of the end leaves the tab at the page at the top, its header there. */
+  scrolled(place: number, { end = false, landing = false } = {}) {
     this.#top = place;
+    const at = this.#tabAt;
+    if (at.kind === "landed" && landing) this.#tabAt = { ...at, place, end };
+    else if (at.kind === "landed" && at.place !== undefined && at.place !== place && !(at.end && end))
+      this.#tabAt = { kind: "scrolled" };
+    this.#noteScreen();
   }
 
   /** The page on show while the tab shows one file at a time: the one the user last moved to, or the first
@@ -722,22 +747,32 @@ export class PrFilesState {
     return page !== undefined && this.pages.has(page) ? page : this.pages.first;
   }
 
-  /** The page on show, or with all the files, the page at the top of the tab. */
+  /** The page on show, or with all the files, the page the tab is at, the first before the tab has said
+   * where it is. */
   #atTop(): Page | undefined {
-    if (this.mode === "one") return this.shown;
-    const page = this.#top < 0 ? ({ kind: "news" } as const) : this.layout.pageAt(this.#top);
-    return page ?? this.pages.first;
+    return (this.mode === "one" ? this.shown : this.#allAt()) ?? this.pages.first;
   }
 
-  /** Switches between all the files and one at a time. The file at the top of the tab becomes the one on
-   * show, and the tab keeps the place as it switches back. */
+  /** With all the files, the page the tab is at: the one a move went to while the top stays where it
+   * landed, or else the page at the top. Nothing before the tab has said where it is. */
+  #allAt(): Page | undefined {
+    const at = this.#tabAt;
+    if (at.kind === "landed") return at.page;
+    const top = this.#top;
+    if (top === undefined) return undefined;
+    return top < 0 ? { kind: "news" } : this.layout.pageAt(top);
+  }
+
+  /** Switches between all the files and one at a time. The page the tab is at becomes the one on show, and
+   * the tab keeps the place as it switches back. */
   toggleMode() {
     if (this.mode === "one") {
       this.mode = "all";
-      return;
+    } else {
+      this.#page = this.#atTop();
+      this.mode = "one";
     }
-    this.#page = this.#atTop();
-    this.mode = "one";
+    this.#noteScreen();
   }
 
   /** Switches to `mode` as `toggleMode` does, keeping the place, or does nothing while it is on show. */
@@ -762,9 +797,35 @@ export class PrFilesState {
     return view?.state === "ready" ? view.files.map((file) => file.path) : [];
   }
 
-  /** Goes to the file at `file` among the diff's files, as the tree will. */
+  /** Goes to the file at `file` among the diff's files. */
   showFile(file: number) {
     this.#show({ kind: "file", file });
+  }
+
+  /** The file on screen, by its place among the diff's files, which the rail's tree marks (#604): the one
+   * on show one file at a time, or else the page the tab is at. Nothing while the NEWS entries or the
+   * threads on files no longer in the diff are there, nor before the tab has said where it is. */
+  get onScreen(): number | undefined {
+    const page = this.mode === "one" ? this.shown : this.#allAt();
+    return page?.kind === "file" ? page.file : undefined;
+  }
+
+  /** How many times the file on screen has changed, by its path, as a move, a scroll, a switch between all
+   * the files and one at a time, or a newer diff changed it. The rail's tree holds its cursor while this
+   * stays as it was. */
+  get screenChanges(): number {
+    return this.#screenChanges;
+  }
+
+  /** Goes to the file at `file` among the diff's files from its top, as a click on it in the rail's tree
+   * does (#604): one file at a time it shows that file, and with all the files it scrolls to its header,
+   * opening the file if it is collapsed. The file view over the tab closes, as Back does, and its peek with
+   * it, so the tab shows the file. */
+  goToFile(file: number) {
+    if (this.#fileView !== undefined) this.closeFileView();
+    this.#dropPeek();
+    if (this.collapsed(file)) this.toggle(file);
+    this.showFile(file);
   }
 
   /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
@@ -783,8 +844,7 @@ export class PrFilesState {
       this.#say(`The diff on show doesn't change ${path}.`, NOTICE_MS);
       return;
     }
-    if (this.collapsed(file)) this.toggle(file);
-    this.showFile(file);
+    this.goToFile(file);
     this.diffWantsFocus = true;
   }
 
@@ -794,11 +854,11 @@ export class PrFilesState {
     if (page !== undefined) this.#show(page);
   }
 
-  /** Shows `page` from its top, and F7 and F8 go on from there. */
+  /** Shows `page` from its top, and F7 and F8 go on from there, as the tab is at that page. */
   #show(page: Page) {
     const view = this.view;
     if (view?.state !== "ready" || !this.pages.has(page)) return;
-    this.#turnTo(page);
+    this.#turnTo(page, { kind: "landed", page, place: undefined, end: false });
     this.#change = page.kind === "file" ? view.files[page.file]?.row : undefined;
     const first = this.threads.findIndex((thread) => rank(pageOf(thread, view.files)) >= rank(page));
     this.#current = undefined;
@@ -914,8 +974,25 @@ export class PrFilesState {
 
   /** Makes `page` the one shown one file at a time. The same page as before leaves the layout as it is,
    * so a move within the file doesn't lay out the whole file again. */
-  #turnTo(page: Page) {
+  #turnTo(page: Page, at: TabAt = { kind: "scrolled" }) {
     if (!samePage(this.#page, page)) this.#page = page;
+    // A move to a thread, a change or a match lands in the page, not at it, so the top says where the tab
+    // is. A move to the page itself says so in `at`.
+    this.#tabAt = at;
+    this.#noteScreen();
+  }
+
+  /** Counts a change of the file on screen, by its path, after a move, a scroll, a switch or a newer diff.
+   * It reads nothing for the effect it runs in, as the tab's report of a scroll does. */
+  #noteScreen() {
+    untrack(() => {
+      const file = this.onScreen;
+      const view = this.view;
+      const path = file === undefined || view?.state !== "ready" ? undefined : view.files[file]?.path;
+      if (path === this.#screenPath) return;
+      this.#screenPath = path;
+      this.#screenChanges += 1;
+    });
   }
 
   /** Whether the file at `file` among the diff's files shows only its header: a Generated file starts so,

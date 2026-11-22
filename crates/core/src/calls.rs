@@ -16,6 +16,7 @@ use crate::definitions::{
     server_log,
 };
 use crate::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter};
+use crate::disk::FolderSize;
 use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::activity::{ItemKey, ShowMuted};
@@ -502,6 +503,32 @@ impl Calls {
     pub fn check_mirrors_again(&self) {
         self.fetching.check_mirrors_again();
     }
+
+    /// What each Repository the settings list has on this machine, in their order, for Settings ›
+    /// Repositories (#533). It measures each Mirror on the disk, so the window asks off its own thread.
+    pub fn on_this_machine(&self) -> Result<Vec<OnThisMachine>, Error> {
+        Ok(on_this_machine(&self.settings.view(), self.folders()?))
+    }
+}
+
+/// What a Repository has on this machine, which `machine.toml` and the disk hold.
+#[derive(Debug, PartialEq, Eq, Serialize, Type)]
+pub struct OnThisMachine {
+    pub repository: RepositoryName,
+    /// Where its Mirror gets its objects, or nothing if the user hasn't said.
+    pub source: Option<MirrorSource>,
+    pub mirror: FolderSize,
+}
+
+/// What each Repository `view` lists has on this machine, with its Mirror where `folders` keeps it.
+fn on_this_machine(view: &SettingsView, folders: &Folders) -> Vec<OnThisMachine> {
+    (view.loaded.settings.repositories.iter())
+        .map(|repository| OnThisMachine {
+            repository: repository.name.clone(),
+            source: view.mirror_sources.get(&repository.name).cloned(),
+            mirror: FolderSize::of(&folders.mirror(&repository.name)),
+        })
+        .collect()
 }
 
 /// What the Files tab shows.

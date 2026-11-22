@@ -1101,6 +1101,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::save_theme,
             slow_commands::reread_settings,
             slow_commands::apply_settings,
+            slow_commands::on_this_machine,
             slow_commands::workbench,
             slow_commands::inbox,
             slow_commands::issue,

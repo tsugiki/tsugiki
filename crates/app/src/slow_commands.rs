@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tauri::State;
 use tauri::async_runtime::spawn_blocking;
 use tauri::ipc::Channel;
-use tsugiki_core::calls::{Calls, ItemFetch, PrFiles};
+use tsugiki_core::calls::{Calls, ItemFetch, OnThisMachine, PrFiles};
 use tsugiki_core::definitions::{Answer, Index, ServerName, Waiting};
 use tsugiki_core::diff::{DiffRow, HeadLine};
 use tsugiki_core::error::{Error, ErrorKind};
@@ -248,6 +248,14 @@ pub(crate) fn save_theme(pick: ThemePick, owner: State<'_, SettingsOwner>) -> Re
 #[specta::specta]
 pub(crate) fn reread_settings(calls: State<'_, Calls>) -> Result<LoadedSettings, Error> {
     calls.reread_settings()
+}
+
+/// What each Repository has on this machine, for Settings › Repositories (#533). This measures each mirror
+/// on the disk.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn on_this_machine(calls: State<'_, Calls>) -> Result<Vec<OnThisMachine>, Error> {
+    calls.on_this_machine()
 }
 
 /// Saves the tables the Settings dialog's Apply changed to `settings.toml`, and the language servers to

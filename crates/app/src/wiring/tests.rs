@@ -245,6 +245,7 @@ fn with_no_folders_every_command_that_needs_them_says_so_in_the_cores_form() {
         json!({ "repository": "a/b", "number": 1 }),
     );
     let layout = wired.ask("save_pane_layout", json!({ "layout": { "sidebar": 240 } }));
+    let machine = wired.ask("on_this_machine", json!({}));
     drop(wired.stop());
 
     let checking = checking.unwrap_err();
@@ -261,6 +262,7 @@ fn with_no_folders_every_command_that_needs_them_says_so_in_the_cores_form() {
     assert_eq!(reading.unwrap_err()["kind"], "internal");
     assert_eq!(files.unwrap_err()["message"], no_folders().message);
     assert_eq!(layout.unwrap_err()["message"], no_folders().message);
+    assert_eq!(machine.unwrap_err()["message"], no_folders().message);
 }
 
 #[test]
@@ -596,6 +598,24 @@ fn settings_reads_a_hand_edit_as_it_opens_and_apply_lasts_through_a_restart() {
         file,
         "[releases]\ncheck = false\n\n[status_bar]\nvisible = false\n"
     );
+}
+
+/// Settings › Repositories hears what each Repository has on this machine (#533).
+#[test]
+fn settings_hears_where_each_mirror_gets_its_objects_and_how_much_of_the_disk_it_takes() {
+    let (folders, _root) = temp_folders("wired-on-this-machine");
+    let wired = Wired::start(Ok(folders), no_network());
+    drop(wired.ask("add_repository", add_cpython()).unwrap());
+
+    let found = wired.ask("on_this_machine", json!({}));
+    drop(wired.stop());
+
+    let cpython = json!({
+        "repository": CPYTHON,
+        "source": { "kind": "download" },
+        "mirror": { "kind": "missing" },
+    });
+    assert_eq!(found, Ok(json!([cpython])));
 }
 
 /// Conventions edited by hand regroup a Repository's PRs with no change to the store (ADR 0011), so the

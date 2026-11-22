@@ -13,11 +13,12 @@ use crate::fetching::testing::{handle_with_headless, named};
 use crate::fetching::{Fetched, Headless, Item, NoHead, SessionMessage};
 use crate::latest::{self, LatestWriter};
 use crate::mirror::HeardRequests;
+use crate::mirror_source::MirrorSources;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::SettingsFiles;
 use crate::status::ItemUnread;
 use crate::store::testing::OpenStore;
-use crate::testing::listing;
+use crate::testing::{cpython, cpython_settings, gcmon, listing, one_folder, temp_path};
 use crate::workbench::pr_files::testing::World;
 
 /// PR 7's world, settings that list its Repository, and the queues and language servers its calls ask,
@@ -545,4 +546,31 @@ fn opening_a_pr_whose_head_tsugiki_doesnt_know_reads_its_conversation_once() {
     assert_eq!(calls.conversations_read(), [7]);
     assert_eq!(calls.heard.asked(), ["python/cpython awaits #7"]);
     calls.finish();
+}
+
+#[test]
+fn each_repository_says_where_its_mirror_gets_its_objects_and_how_much_of_the_disk_it_takes() {
+    let root = temp_path("calls-on-this-machine");
+    let folders = one_folder(&root);
+    let mirror = folders.mirror(&cpython());
+    fs::create_dir_all(&mirror).unwrap();
+    fs::write(mirror.join("pack"), vec![b'x'; 3 << 20]).unwrap();
+    let clone = PathBuf::from("/src/cpython");
+    let borrow = MirrorSource::Borrow { folder: clone };
+    let mut view = listing(vec![cpython_settings(), RepositorySettings::new(gcmon())]);
+    view.mirror_sources = MirrorSources::new(vec![(cpython(), borrow.clone())]);
+
+    let found = on_this_machine(&view, &folders);
+
+    let borrowing = OnThisMachine {
+        repository: cpython(),
+        source: Some(borrow),
+        mirror: FolderSize::Measured { mb: 3 },
+    };
+    let unasked = OnThisMachine {
+        repository: gcmon(),
+        source: None,
+        mirror: FolderSize::Missing,
+    };
+    assert_eq!(found, [borrowing, unasked]);
 }

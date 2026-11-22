@@ -4,9 +4,12 @@ import {
   type AppearanceChanges_Deserialize,
   type AppearanceSettings,
   commands,
+  type OnThisMachine_Serialize,
+  type RepositorySettings_Serialize,
   type SettingsChanges_Deserialize,
 } from "$lib/data/bindings";
 import { type Answer, ask } from "./answer";
+import type { Home } from "./home.svelte";
 import type { LanguageServerSettings, LoadedSettings, Settings, SettingsState } from "./settings.svelte";
 import { isMode, SIDE_KEYS, type ThemeKind, type ThemeState, themePick } from "./theme.svelte";
 
@@ -18,6 +21,10 @@ export type Shown = { page: SettingsPage } | { repository: string };
 /** Where a setting is stored, which its row says (ADR 0014): `settings.toml`, `machine.toml`, the database or
  * the OS keychain. */
 export type StoredIn = "settings" | "machine" | "database" | "keychain";
+/** A Repository as `settings.toml` holds it. */
+export type RepositorySettings = RepositorySettings_Serialize;
+/** What a Repository has on this machine: where its mirror gets its objects, and the mirror's size (#533). */
+export type OnThisMachine = OnThisMachine_Serialize;
 /** The tables of `settings.toml` the dialog edits. */
 type Edited = "status_bar" | "releases";
 
@@ -54,6 +61,17 @@ export class SettingsDialog {
   problem = $state<string>();
   /** Whether Apply's save is on its way, which Cancel can't take back. */
   applying = $state(false);
+  /** What each Repository has on this machine, as the core last measured it. */
+  #machine = $state.raw<OnThisMachine[]>();
+  /** Why the core couldn't say what the Repositories have on this machine, until it next can. */
+  machineProblem = $state<string>();
+  /** How many times the dialog asked what the Repositories have on this machine. */
+  #measures = 0;
+  /** The read of the files as the dialog opens, which a measure waits for, so the core measures the
+   * Repositories the files list now. */
+  #reading: Promise<unknown> = Promise.resolve();
+  /** Whether Add repository… added a Repository while the dialog was open. */
+  #added = false;
 
   /** The dialog previews on `settings`, and its `[appearance]` on `theme`, so a load mustn't replace the
    * settings until it closes. It opens on `shown`. */
@@ -97,13 +115,54 @@ export class SettingsDialog {
 
   /** The names of the Repositories, each with a page under Repositories. */
   get repositories(): string[] {
-    return this.#settings.settings?.repositories.map((repository) => repository.name) ?? [];
+    return this.listed.map((repository) => repository.name);
+  }
+
+  /** The Repositories the settings list, in their order, which Settings › Repositories shows (#533). */
+  get listed(): RepositorySettings[] {
+    return this.#settings.settings?.repositories ?? [];
+  }
+
+  /** What Repository `name` has on this machine, once the core has measured it. */
+  onThisMachine(name: string): OnThisMachine | undefined {
+    return this.#machine?.find((repository) => repository.repository === name);
+  }
+
+  /** Asks the core what each Repository has on this machine, which it measures off the window's thread, once
+   * the dialog has read the files. An answer to an older ask gives way to a newer one's. */
+  async measure() {
+    const asked = ++this.#measures;
+    await this.#reading;
+    const answer = await ask(commands.onThisMachine());
+    if (asked !== this.#measures) return;
+    if (answer.status === "error") {
+      this.machineProblem = `Tsugiki can't measure the mirrors: ${answer.error.message}`;
+      return;
+    }
+    this.machineProblem = undefined;
+    this.#machine = answer.data;
+  }
+
+  /** Lists the Repository the add dialog added, which the core has saved and opened, as `home` says, so
+   * Cancel keeps it, and measures again. */
+  added(home: Home) {
+    this.#added = true;
+    if (home.screen === "repository") {
+      const repository = $state.snapshot(home.repository);
+      for (const settings of [this.#before?.settings, this.#settings.settings]) {
+        const listed = settings?.repositories.some((one) => one.name === repository.name) ?? true;
+        if (!listed) settings?.repositories.push(structuredClone(repository));
+      }
+    }
+    void this.measure();
   }
 
   /** Reads both files again, so a hand edit made since start-up shows and takes effect (ADR 0014), and says
    * whether it did. If the core can't, the dialog says why and its controls stay off. */
   async open(): Promise<boolean> {
-    const answer = await ask(commands.rereadSettings());
+    const reading = ask(commands.rereadSettings());
+    this.#reading = reading;
+    const answer = await reading;
     if (answer.status === "error") {
       this.problem = `Tsugiki can't read the settings files again: ${answer.error.message}`;
       return false;
@@ -231,10 +290,13 @@ export class SettingsDialog {
   }
 
   /** Lets loads replace the settings again, and puts the theme in force back on the window, unless Apply
-   * made the dialog's the theme in force. */
+   * made the dialog's the theme in force. Once Add repository… has added a Repository, it loads the
+   * settings: the core read the files again to add it, so a problem the user has fixed since goes from the
+   * status bar, which the loads the dialog held back would have done. */
   #close(): true {
     this.#settings.preview(false);
     void this.#theme.endPreview();
+    if (this.#added) void this.#settings.load();
     return true;
   }
 }

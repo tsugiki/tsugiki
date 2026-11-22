@@ -237,6 +237,11 @@ export const commands = {
 	 */
 	applySettings: (changes: SettingsChanges_Deserialize) => typedError<LoadedSettings_Serialize, Error_Serialize>(__TAURI_INVOKE("apply_settings", { changes })),
 	/**
+	 *  What each Repository has on this machine, for Settings › Repositories (#533). This measures each mirror
+	 *  on the disk.
+	 */
+	onThisMachine: () => typedError<OnThisMachine_Serialize[], Error_Serialize>(__TAURI_INVOKE("on_this_machine")),
+	/**
 	 *  The rows of a view of a Repository's Workbench, with what its Sidebar shows, in the order `machine.toml`
 	 *  keeps for the list (#592). This waits on the database and never on GitHub (ADR 0018).
 	 */
@@ -1117,6 +1122,15 @@ export type Filter_Serialize = {
 	/**  A Filter the file writes without it is off the Workbench. */
 	on_workbench: OnWorkbench,
 };
+
+/**  How much of the disk a folder takes. */
+export type FolderSize = 
+/**  There is no folder, as before a Mirror's first clone has finished. */
+{ kind: "missing" } | 
+/**  Its files take `mb` whole megabytes. */
+{ kind: "measured"; mb: number } | 
+/**  Something is there, but it, or a folder inside it, can't be read as a folder, so its size is unknown. */
+{ kind: "unreadable" };
 
 /**  What a search found, in the order the rows come. */
 export type Found = {
@@ -2283,6 +2297,25 @@ export type NewsLink = {
 
 /**  A run of a paragraph's text, all shown one way. */
 export type NewsPiece = { kind: "text"; text: string } | { kind: "emphasis"; text: string } | { kind: "strong"; text: string } | { kind: "code"; text: string } | { kind: "link"; text: string; to: LinkTo };
+
+/**  What a Repository has on this machine, which `machine.toml` and the disk hold. */
+export type OnThisMachine = OnThisMachine_Serialize | OnThisMachine_Deserialize;
+
+/**  What a Repository has on this machine, which `machine.toml` and the disk hold. */
+export type OnThisMachine_Deserialize = {
+	repository: RepositoryName,
+	/**  Where its Mirror gets its objects, or nothing if the user hasn't said. */
+	source?: MirrorSource | null,
+	mirror: FolderSize,
+};
+
+/**  What a Repository has on this machine, which `machine.toml` and the disk hold. */
+export type OnThisMachine_Serialize = {
+	repository: RepositoryName,
+	/**  Where its Mirror gets its objects, or nothing if the user hasn't said. */
+	source: MirrorSource | null,
+	mirror: FolderSize,
+};
 
 /**
  *  Whether a Filter's items go on the Workbench, and so into Reach (#819). One off it is a view the user

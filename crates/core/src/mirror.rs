@@ -15,6 +15,7 @@ use serde::Serialize;
 use specta::Type;
 use time::OffsetDateTime;
 
+use crate::disk::megabytes;
 use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
 use crate::facts::patch_ids::{FilePatch, PatchesOf};
@@ -1975,11 +1976,6 @@ fn git_version(said: &str) -> Option<(u32, u32)> {
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
     Some((major, minor))
-}
-
-/// `bytes` in whole megabytes, at most `u32::MAX`, which the window shows as it is.
-fn megabytes(bytes: u64) -> u32 {
-    u32::try_from(bytes >> 20).unwrap_or(u32::MAX)
 }
 
 /// The arguments of a `git fetch` into `mirror` of the refspecs on its input, with `extra` options. A mirror

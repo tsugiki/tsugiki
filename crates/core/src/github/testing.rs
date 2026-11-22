@@ -103,12 +103,14 @@ impl Transport for Scripted {
     }
 }
 
-/// `python/cpython`, writable, with the Issue whose ID is `I_1`, which [`a_comment`] goes to.
+/// `python/cpython`, writable, with the Issue whose ID is `I_1`, which [`a_comment`] goes to. Only the core's
+/// own tests get one, so no other crate holds a `WritableRepository` that no settings or store vouched for.
+#[cfg(test)]
 #[expect(
     clippy::disallowed_methods,
     reason = "for a test of what a write does once it may go, whatever the settings and the store say"
 )]
-pub fn writable() -> WritableRepository {
+pub(crate) fn writable() -> WritableRepository {
     let subject = Some(NodeId::new("I_1".to_owned()));
     WritableRepository::new(crate::testing::cpython(), subject, []).unwrap()
 }

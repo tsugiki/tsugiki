@@ -400,8 +400,9 @@ impl GitHub {
         let write = write.on(writable.subject().clone());
         #[cfg(any(test, feature = "testing"))]
         https::assert_write(&write, selection);
-        if let Some((back, Hold::Refused)) = self.gate_holds() {
-            return Err(rate_limited(Some(back), RATE_LIMITED));
+        let clock = self.clock.get();
+        if let Some(until) = self.gate.get().refused_until(clock.now()) {
+            return Err(rate_limited(Some(clock.local(until)), RATE_LIMITED));
         }
         let sent = (&write, selection);
         let reply = self.in_flight(|| self.transport.write(&self.token, &writable, sent))?;

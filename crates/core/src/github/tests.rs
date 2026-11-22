@@ -733,6 +733,38 @@ fn a_write_while_github_refuses_requests_asks_nothing_and_says_when_it_can() {
 }
 
 #[test]
+fn a_write_while_github_refuses_requests_asks_nothing_though_the_floor_holds_longer() {
+    let reset = seconds_from_now(1200);
+    let refused = Reply {
+        status: 429,
+        reset: Some(reset),
+        date: None,
+        body: String::new(),
+        grant: Grant::default(),
+    };
+    let made = json!({ "addComment": { "commentEdge": { "node": { "id": "IC_1" } } } });
+    let (script, asked) = Scripted::new(vec![
+        viewer_costing(1, 4800),
+        Ok(refused),
+        answer(made, RATE_LIMIT),
+    ]);
+    let github = github(script);
+    drop(github.viewer().unwrap());
+    drop(github.write::<Value>(writable(), thanks(), COMMENT_ID).unwrap_err());
+    let held = github.viewer().unwrap_err();
+    assert_eq!(held.message, HELD, "the floor holds past the refusal");
+    asked.try_iter().for_each(drop);
+
+    let error = github
+        .write::<Value>(writable(), thanks(), COMMENT_ID)
+        .unwrap_err();
+
+    assert_eq!(error.kind, limited_until(Some(reset)));
+    assert_eq!(error.message, RATE_LIMITED);
+    assert_eq!(asked.try_iter().count(), 0);
+}
+
+#[test]
 fn a_write_whose_selection_the_token_crate_would_refuse_fails_the_test_whatever_answers_it() {
     let quoted = Selection {
         payload: r#"{ comment(x: "}") { id } }"#,

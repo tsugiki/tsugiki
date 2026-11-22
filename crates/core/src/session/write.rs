@@ -58,7 +58,12 @@ pub(crate) fn send<D: DeserializeOwned>(
     } = item_write;
     let in_force = settings.read(|view| view.repository(repository.clone()));
     let reasons = read_only_reasons(&in_force, reader)?;
-    let subject = reader.node_id(&repository, number)?;
+    // A Read-only Repository says so before the store is asked for the item, so a failed read can't hide it.
+    let subject = if reasons.is_empty() {
+        reader.node_id(&repository, number)?
+    } else {
+        None
+    };
     #[expect(
         clippy::disallowed_methods,
         reason = "the one caller clippy.toml allows, with the reasons read from the settings in force and the \

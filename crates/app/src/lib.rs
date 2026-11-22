@@ -970,6 +970,13 @@ struct ReadFailed(FailedRead);
 #[derive(Clone, Serialize, Type, Event)]
 struct LastSyncChanged(LastSync);
 
+/// Sent when a Repository's last sync or its count of open items changes, whether it's open or not, so its
+/// page in Settings can say (#534).
+#[derive(Clone, Serialize, Type, Event)]
+struct RepositorySyncChanged {
+    repository: RepositoryName,
+}
+
 /// Sent when what the queue of syncs is doing changes, so the status bar can say.
 #[derive(Clone, Serialize, Type, Event)]
 struct SyncActivityChanged(Option<SyncActivity>);
@@ -1111,6 +1118,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             slow_commands::inbox,
             slow_commands::issue,
             slow_commands::repository_state,
+            slow_commands::repository_sync,
             slow_commands::pull_request,
             slow_commands::pull_request_files,
             slow_commands::pull_request_rows,
@@ -1137,6 +1145,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             Changed,
             ReadFailed,
             LastSyncChanged,
+            RepositorySyncChanged,
             SyncActivityChanged,
             HourPointsChanged,
             PointsBackChanged,

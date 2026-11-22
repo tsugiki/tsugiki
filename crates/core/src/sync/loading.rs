@@ -361,8 +361,13 @@ pub(super) fn load(
 fn count(link: &Link<'_>, loading: &mut Loading) -> Result<Step, Error> {
     let today = link.github.clock().now().date();
     let found = link.github.check_repository(link.repository, today)?;
+    let recounted = (link.store).save_open_items(link.repository, found.counts.open_items())?;
     loading.lists = Some(lists_for(found.counts.size()));
-    Ok(Step::Searched)
+    Ok(if recounted {
+        Step::Recounted
+    } else {
+        Step::Searched
+    })
 }
 
 fn read_long(

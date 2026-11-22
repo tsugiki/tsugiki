@@ -4,6 +4,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
 
@@ -141,13 +142,47 @@ pub struct RepositoryCounts {
 impl RepositoryCounts {
     /// Its open Issues and PRs together.
     pub fn open(&self) -> u32 {
-        self.open_issues.saturating_add(self.open_prs)
+        self.open_items().total()
+    }
+
+    /// Its open Issues and PRs, apart.
+    pub fn open_items(&self) -> OpenItems {
+        OpenItems {
+            issues: self.open_issues,
+            prs: self.open_prs,
+        }
     }
 
     /// The first sync these counts call for.
     pub fn size(&self) -> RepositorySize {
         RepositorySize::of(self.open())
     }
+}
+
+/// The counts of Issues and PRs GitHub found open in a Repository.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct OpenItems {
+    pub issues: u32,
+    pub prs: u32,
+}
+
+impl OpenItems {
+    /// The open Issues and PRs together.
+    pub fn total(self) -> u32 {
+        self.issues.saturating_add(self.prs)
+    }
+}
+
+/// A Repository's last sync and its open Issues and PRs as GitHub last counted them, open or not, for its
+/// page in Settings (#534).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+pub struct RepositorySync {
+    /// The moment its last sync finished, or nothing until its first sync finishes.
+    #[serde(with = "time::serde::rfc3339::option")]
+    #[specta(type = Option<String>)]
+    pub last_sync: Option<OffsetDateTime>,
+    /// The Issues and PRs GitHub last counted open there, or nothing until a sync has counted them.
+    pub open: Option<OpenItems>,
 }
 
 /// What GitHub says about a Repository the user asked about: its name as GitHub spells it, and what it

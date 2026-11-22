@@ -24,6 +24,7 @@
   import KeyboardPage from "./KeyboardPage.svelte";
   import Dialog from "./Dialog.svelte";
   import RepositoriesPage from "./RepositoriesPage.svelte";
+  import RepositoryPage from "./RepositoryPage.svelte";
 
   let {
     settings,
@@ -126,8 +127,7 @@
     </nav>
     <section aria-label={title}>
       {#if "repository" in dialog.shown}
-        <h3 class="mono">{dialog.shown.repository}</h3>
-        <p class="empty">Nothing to set here yet.</p>
+        <RepositoryPage repository={dialog.shown.repository} />
       {:else if dialog.shown.page === "General"}
         <GeneralPage {dialog} />
       {:else if dialog.shown.page === "Repositories"}

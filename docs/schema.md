@@ -182,13 +182,18 @@ erDiagram
     file_patch_ids }o--|| patched_commits : "repository, commit_sha, target_branch"
 ```
 
-### Issues, their timelines and the viewer
+### Issues, their timelines, the viewer and the open counts
 
 ```mermaid
 erDiagram
     viewer {
         INTEGER id PK
         TEXT login
+    }
+    open_items {
+        TEXT repository PK
+        INTEGER issues
+        INTEGER prs
     }
     issues {
         TEXT repository PK

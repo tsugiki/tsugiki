@@ -234,15 +234,17 @@ impl Shown {
 }
 
 /// Holds the status and announces each change, so the app can pass it on as an event. It also announces when
-/// a Repository's stored facts change, so an open screen can ask again, and when a sync of the open
-/// Repository finishes (ADR 0008). The GitHub thread owns it, so nothing here needs a lock, and the session
-/// tells the window of its own changes through a clone of `changes`.
+/// a Repository's stored facts change, so an open screen can ask again, when a sync of the open
+/// Repository finishes, and when any Repository's last sync or count of open items changes (ADR 0008). The
+/// GitHub thread owns it, so nothing here needs a lock, and the session tells the window of its own changes
+/// through a clone of `changes`.
 pub struct StatusBoard {
     current: Status,
     announce: Box<dyn FnMut(&Status) + Send>,
     announce_change: Changes,
     announce_failed_read: Box<dyn FnMut(&FailedRead) + Send>,
     announce_last_sync: Box<dyn FnMut(&LastSync) + Send>,
+    announce_repository_sync: Box<dyn FnMut(&RepositoryName) + Send>,
     sync_activity: Option<SyncActivity>,
     announce_sync_activity: AnnounceActivity,
     hour_points: Option<HourPoints>,
@@ -263,6 +265,7 @@ impl StatusBoard {
             announce_change: Changes(Arc::new(|_| {})),
             announce_failed_read: Box::new(|_| {}),
             announce_last_sync: Box::new(|_| {}),
+            announce_repository_sync: Box::new(|_| {}),
             sync_activity: None,
             announce_sync_activity: Box::new(|_| {}),
             hour_points: None,
@@ -305,6 +308,17 @@ impl StatusBoard {
     #[must_use]
     pub fn with_last_syncs(mut self, announce: Box<dyn FnMut(&LastSync) + Send>) -> Self {
         self.announce_last_sync = announce;
+        self
+    }
+
+    /// Also tells `announce` of each Repository, open or not, whose last sync or count of open items
+    /// changed, which its page in Settings shows (#534).
+    #[must_use]
+    pub fn with_repository_syncs(
+        mut self,
+        announce: Box<dyn FnMut(&RepositoryName) + Send>,
+    ) -> Self {
+        self.announce_repository_sync = announce;
         self
     }
 
@@ -396,6 +410,10 @@ impl StatusBoard {
 
     pub(crate) fn last_sync(&mut self, last_sync: &LastSync) {
         (self.announce_last_sync)(last_sync);
+    }
+
+    pub(crate) fn repository_sync_changed(&mut self, repository: &RepositoryName) {
+        (self.announce_repository_sync)(repository);
     }
 
     /// Whether the status says GitHub can't be reached, or hasn't answered since it couldn't be.

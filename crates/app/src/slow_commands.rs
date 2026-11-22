@@ -24,6 +24,7 @@ use tsugiki_core::highlight::Span;
 use tsugiki_core::mirror::CloneRefusal;
 use tsugiki_core::mirror_source::MirrorSource;
 use tsugiki_core::read_only::RepositoryState;
+use tsugiki_core::repository::{RepositoryName, RepositorySync};
 use tsugiki_core::repository_settings::{MirrorCost, NameCheck};
 use tsugiki_core::settings::{
     AppearanceSettings, CommandId, Home, LoadedSettings, PaneLayout, SettingsChanges, SettingsOwner,
@@ -318,6 +319,17 @@ pub(crate) fn repository_state(
     calls: State<'_, Calls>,
 ) -> Result<RepositoryState, Error> {
     crate::read_repository_state(repository, &calls)
+}
+
+/// The last sync of `repository` and its open Issues and PRs as GitHub last counted them, for its page in
+/// Settings (#534). This waits on the database and never on GitHub.
+#[tauri::command(async)]
+#[specta::specta]
+pub(crate) fn repository_sync(
+    repository: &str,
+    calls: State<'_, Calls>,
+) -> Result<RepositorySync, Error> {
+    calls.repository_sync(&RepositoryName::parse(repository)?)
 }
 
 /// Tells the core the user opened a PR, and returns once git has said whether the mirror holds its head.

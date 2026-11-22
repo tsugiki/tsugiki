@@ -21,7 +21,7 @@ use crate::github::pull_requests::PrFetch;
 use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest};
 use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
-use crate::repository::RepositorySize;
+use crate::repository::{OpenItems, RepositorySize};
 use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, OVERLAP, SyncState};
 use crate::work::{conversations_to_read, reasons};
@@ -51,6 +51,8 @@ pub(super) struct Poll {
     moved_issues: BTreeSet<u32>,
     /// The items the searches merged so far found.
     hits: BTreeMap<u32, FilterHit>,
+    /// The open items the last page counted, which the poll saves once it has read every page (#534).
+    count: Option<OpenItems>,
 }
 
 impl Poll {
@@ -76,6 +78,7 @@ impl Default for Poll {
             changed_prs: Vec::new(),
             moved_issues: BTreeSet::new(),
             hits: BTreeMap::new(),
+            count: None,
         }
     }
 }
@@ -158,9 +161,10 @@ pub(super) fn check_list(
     Ok((Step::Moved, Some(next)))
 }
 
-/// Reads the next page of what changed, then merges each search that answered, and moves on after the last.
-/// Each step saves one thing and tells the window of it, so a save that fails holds back no news. A failed
-/// step keeps its place in `poll`, so the next try picks up after the part that worked.
+/// Reads the next page of what changed, then saves the open items the last page counted, then merges each
+/// search that answered, and moves on after the last. Each step saves one thing and tells the window of it,
+/// so a save that fails holds back no news. A failed step keeps its place in `poll`, so the next try picks
+/// up after the part that worked.
 pub(super) fn poll(
     link: &Link<'_>,
     poll: &mut Poll,
@@ -168,6 +172,16 @@ pub(super) fn poll(
 ) -> Result<Moved, Error> {
     if !poll.has_read_everything() {
         return Ok((read_page(link, poll, check)?, None));
+    }
+    if let Some(open) = poll.count {
+        let recounted = (link.store).save_open_items(link.repository, open)?;
+        poll.count = None;
+        let step = if recounted {
+            Step::Recounted
+        } else {
+            Step::Moved
+        };
+        return Ok((step, None));
     }
     if let Some(merged) = merge_next_answer(link, poll)? {
         return Ok((Step::saved_if_any(merged), None));
@@ -199,6 +213,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         Err(problem) => return Err(problem),
     };
     let touched = save_moved_issues(link, (answer.issues, answer.issue_activity), poll)?;
+    poll.count = Some(answer.open);
     poll.in_request.clear();
     poll.answers.extend(answer.filters);
     let settled = answer
@@ -209,7 +224,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
     poll.changed_prs.extend(answer.pull_requests);
     poll.issues = answer.next_issues;
     poll.pull_requests = answer.next_pull_requests;
-    *check = match (RepositorySize::of(answer.open_items), poll.tag.clone()) {
+    *check = match (RepositorySize::of(answer.open.total()), poll.tag.clone()) {
         (RepositorySize::Large, _) => ChangeCheck::Skipped,
         (RepositorySize::Small, None) => ChangeCheck::Untagged,
         (RepositorySize::Small, Some(tag)) => ChangeCheck::Tagged(tag),

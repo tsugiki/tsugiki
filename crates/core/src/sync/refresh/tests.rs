@@ -12,7 +12,7 @@ use crate::github::testing::{
     pull_request_answer, replied, reply_ok, signed_in_as,
 };
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
-use crate::repository::RepositoryName;
+use crate::repository::{OpenItems, RepositoryName};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::status::Change;
@@ -65,6 +65,12 @@ fn after_a_sync(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness
     harness.db.store.remember_login(&me()).unwrap();
     harness
 }
+
+/// The open items `polled` answers with.
+const POLLED_OPEN: OpenItems = OpenItems {
+    issues: 9_000,
+    prs: 0,
+};
 
 fn synced(harness: &Harness, check: ChangeCheck) {
     let state = SyncState {
@@ -188,7 +194,7 @@ fn issue_hit(number: u32) -> Value {
 
 /// An answer to a poll of a large Repository. `searches` holds one answer for each field `f<position>`.
 fn polled(issues: &Value, prs: &Value, searches: &[Value]) -> Result<Reply, Unreachable> {
-    polled_with_open(9_000, issues, prs, searches)
+    polled_with_open(POLLED_OPEN.issues, issues, prs, searches)
 }
 
 fn polled_with_open(
@@ -429,6 +435,36 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
     assert_eq!(asked[0].1["since"], "2026-11-04T09:58:00Z");
     assert_eq!(changes, []);
     harness.finish();
+}
+
+#[test]
+fn a_refresh_keeps_a_new_count_of_the_open_items_and_tells_only_its_page() {
+    let harness = after_a_sync("poll-open-items", vec![quiet_poll(), quiet_poll()]);
+    let held = OpenItems { issues: 1, prs: 1 };
+    assert!(harness.db.store.save_open_items(&cpython(), held).unwrap());
+    let mut syncs = refreshing(filtering(&[]));
+
+    let told = run_telling(&mut syncs, &harness);
+    let counted = harness.db.reader.repository_sync(&cpython()).unwrap();
+    syncs.refresh_open(&harness.db.store);
+    let told_again = run_telling(&mut syncs, &harness);
+
+    assert_eq!(counted.open, Some(POLLED_OPEN));
+    assert!(counted.last_sync > Some(moment(LAST_SYNC)));
+    // Only the page shows the count, so the Workbench hears nothing and asks nothing again.
+    assert_eq!(told, [Progress::Recorded(cpython())]);
+    assert_eq!(told_again, [], "the same count is no news");
+    harness.finish();
+}
+
+/// What each step of the syncs told the rest of the app until none is ready, but the end of each sync.
+fn run_telling(syncs: &mut Syncs, harness: &Harness) -> Vec<Progress> {
+    let mut told = Vec::new();
+    while syncs.ready_at().is_some() {
+        let progress = syncs.step(&harness.github, &harness.db.store).unwrap();
+        told.extend(progress.filter(|told| !matches!(told, Progress::Finished(_))));
+    }
+    told
 }
 
 /// Saves Issue `number` with no state, as the migration that added states left the Issues saved before it.
@@ -972,11 +1008,10 @@ fn a_probe_with_many_prs_runs_in_batches_and_pauses_at_the_floor() {
     }
     let mut syncs = refreshing(filtering(&[]));
 
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    // Up to the probe's second batch, whose answer meets the floor.
+    for _ in 0..6 {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
     let paused = syncs.ready_at().unwrap();
 
     assert_eq!(

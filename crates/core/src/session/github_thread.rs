@@ -617,7 +617,13 @@ pub(super) fn watch(
                     }
                     board.changed(&change);
                 }
-                Ok(Some(Progress::Finished(last_sync))) => board.last_sync(&last_sync),
+                Ok(Some(Progress::Finished(last_sync))) => {
+                    board.repository_sync_changed(&last_sync.repository);
+                    board.last_sync(&last_sync);
+                }
+                Ok(Some(Progress::Recorded(repository))) => {
+                    board.repository_sync_changed(&repository)
+                }
                 Ok(None) => {}
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
                 Err(failure) => {

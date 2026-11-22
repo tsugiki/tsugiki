@@ -31,6 +31,9 @@ pub enum Progress {
     Changed(Change),
     /// The open Repository's sync finished.
     Finished(LastSync),
+    /// What the Repository's page in Settings shows of its syncs changed, and nothing its other screens show:
+    /// a sync saved a new count of its open items, or the sync of a Repository not open finished (#534).
+    Recorded(RepositoryName),
 }
 
 /// A step that failed: the problem, for the status bar, and the work it holds back.
@@ -107,20 +110,23 @@ enum Turn {
     Sync(RepositoryName),
 }
 
-/// A step that didn't finish its sync.
-struct Stepped {
-    /// The Issues and PRs it saved, if it saved any.
-    touched: Option<Vec<u32>>,
+/// What a step that didn't finish its sync saved.
+enum Stepped {
+    Nothing,
+    /// Stored facts, with the Issues and PRs they touched.
+    Facts(Vec<u32>),
+    /// A new count of the open items, and nothing else.
+    Count,
 }
 
 /// The step as [`Stepped`], or nothing for one that finished its sync.
 fn unfinished(step: Step) -> Option<Stepped> {
-    let touched = match step {
+    Some(match step {
         Step::Finished => return None,
-        Step::Moved | Step::Searched => None,
-        Step::Saved { touched } => Some(touched),
-    };
-    Some(Stepped { touched })
+        Step::Moved | Step::Searched => Stepped::Nothing,
+        Step::Saved { touched } => Stepped::Facts(touched),
+        Step::Recounted => Stepped::Count,
+    })
 }
 
 /// The syncs still to run, one step at a time. Repositories take turns, so a big first sync doesn't keep
@@ -502,7 +508,11 @@ impl Syncs {
                 Ok(finished) => {
                     self.queue_fill(&finished.repository);
                     self.open_went_last = is_open;
-                    return Ok(is_open.then_some(Progress::Finished(finished)));
+                    return Ok(Some(if is_open {
+                        Progress::Finished(finished)
+                    } else {
+                        Progress::Recorded(finished.repository)
+                    }));
                 }
                 Err(problem) => return Err(self.put_back(at, queued, problem)),
             },
@@ -593,9 +603,11 @@ impl Syncs {
         github: &GitHub,
     ) -> Option<Progress> {
         self.not_before = github.points_back().map(instant_of).map(points_hold);
-        stepped
-            .touched
-            .map(|items| Progress::Changed(Change { repository, items }))
+        match stepped {
+            Stepped::Nothing => None,
+            Stepped::Facts(items) => Some(Progress::Changed(Change { repository, items })),
+            Stepped::Count => Some(Progress::Recorded(repository)),
+        }
     }
 }
 
@@ -603,7 +615,7 @@ impl Syncs {
 fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Stepped, Error> {
     let Some(numbers) = &mut fill.numbers else {
         fill.numbers = Some(store.issues_without_state(&fill.repository)?);
-        return Ok(Stepped { touched: None });
+        return Ok(Stepped::Nothing);
     };
     let link = Link {
         github,
@@ -616,9 +628,8 @@ fn fill_step(fill: &mut StateFill, github: &GitHub, store: &Store) -> Result<Ste
         repository: fill.repository.clone(),
     };
     let saved = github.asking(asked, || fetch_issue_batch(&link, numbers))?;
-    Ok(Stepped {
-        touched: (!saved.touched.is_empty()).then_some(saved.touched),
-    })
+    let touched = Some(saved.touched).filter(|touched| !touched.is_empty());
+    Ok(touched.map_or(Stepped::Nothing, Stepped::Facts))
 }
 
 /// The wait after `problem`: for the rate limit, until GitHub's points come back, as its gate says, and

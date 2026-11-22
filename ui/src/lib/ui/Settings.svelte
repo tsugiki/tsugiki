@@ -1,10 +1,12 @@
 <!-- The Settings dialog (docs/devel/settings.md), laid out as variant B of the Settings prototype on
      `prototype/app-shell`: the pages in a column on the left, each Repository's under Repositories, the open
      one on the right, and Cancel and Apply under them. `SettingsDialog` decides what each does. It opens on
-     General, or on Advanced at a language server's row, as the Definition peek's link asks (#683). -->
+     General, or on Advanced at a language server's row, as the Definition peek's link asks (#683). Settings ›
+     Repositories opens Add repository… over it (#533). -->
 <script lang="ts">
   import { untrack } from "svelte";
   import type { About } from "$lib/state/about.svelte";
+  import type { Home } from "$lib/state/home.svelte";
   import type { ServerName } from "$lib/state/server-words";
   import type { SettingsState } from "$lib/state/settings.svelte";
   import {
@@ -16,10 +18,12 @@
   import type { Status } from "$lib/state/status.svelte";
   import type { ThemeState } from "$lib/state/theme.svelte";
   import AccountPage from "./AccountPage.svelte";
+  import AddRepository from "./AddRepository.svelte";
   import AdvancedPage from "./AdvancedPage.svelte";
   import GeneralPage from "./GeneralPage.svelte";
   import KeyboardPage from "./KeyboardPage.svelte";
   import Dialog from "./Dialog.svelte";
+  import RepositoriesPage from "./RepositoriesPage.svelte";
 
   let {
     settings,
@@ -29,6 +33,8 @@
     repository,
     at,
     onreread,
+    onadded,
+    onswitch,
     onclose,
   }: {
     /** The settings in force, which the dialog previews its changes on. */
@@ -47,8 +53,17 @@
     /** Runs once the dialog has read the files again, so the rest of the window takes what they say now,
      * such as a theme edited by hand. */
     onreread: () => void;
+    /** Runs once Add repository…, on Settings › Repositories, has added a Repository and the core has opened
+     * it, with what the window shows now. */
+    onadded: (home: Home) => void;
+    /** Runs when the user asks to switch to `name`, a Repository Tsugiki has already, from Add
+     * repository…. */
+    onswitch: (name: string) => void;
     onclose: () => void;
   } = $props();
+
+  /** Whether Add repository… is open over the dialog. */
+  let adding = $state(false);
 
   const dialog = new SettingsDialog(
     untrack(() => settings),
@@ -115,6 +130,13 @@
         <p class="empty">Nothing to set here yet.</p>
       {:else if dialog.shown.page === "General"}
         <GeneralPage {dialog} />
+      {:else if dialog.shown.page === "Repositories"}
+        <RepositoriesPage
+          {dialog}
+          onadd={() => {
+            adding = true;
+          }}
+        />
       {:else if dialog.shown.page === "Account"}
         <AccountPage {status} {about} />
       {:else if dialog.shown.page === "Keyboard"}
@@ -136,6 +158,22 @@
     >
   </footer>
 </Dialog>
+{#if adding}
+  <AddRepository
+    onclose={() => {
+      adding = false;
+    }}
+    onadded={(home) => {
+      adding = false;
+      dialog.added(home);
+      onadded(home);
+    }}
+    onswitch={(name) => {
+      adding = false;
+      onswitch(name);
+    }}
+  />
+{/if}
 
 <style>
   header {

@@ -1,6 +1,12 @@
 <!-- A modal dialog, or the command palette: a box on the scrim, which draws `children`. Esc and a press
      outside the box run `onclose`, Tab and Shift+Tab stay inside it, and it gives the focus back as it goes.
-     window.css styles the box. -->
+     window.css styles the box. A dialog can open one of its own over itself, as Settings opens Add
+     repository (#533): Esc then closes only the one on top. -->
+<script module lang="ts">
+  /** The dialogs open, the one on top last. */
+  const open: object[] = [];
+</script>
+
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { closeOnPress, keepFocusIn, takeFocus } from "./focus";
@@ -31,8 +37,17 @@
     children: Snippet;
   } = $props();
 
+  /** This dialog, among those open. */
+  const me = {};
+  $effect(() => {
+    open.push(me);
+    return () => {
+      open.splice(open.indexOf(me), 1);
+    };
+  });
+
   function closeOnEscape(e: KeyboardEvent) {
-    if (e.key === "Escape") onclose();
+    if (e.key === "Escape" && open.at(-1) === me) onclose();
   }
 </script>
 

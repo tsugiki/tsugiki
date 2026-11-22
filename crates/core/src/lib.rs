@@ -9,6 +9,7 @@ pub mod conventions;
 pub(crate) mod deadline;
 pub mod definitions;
 pub mod diff;
+pub mod disk;
 pub mod error;
 pub mod facts;
 pub(crate) mod fetching;

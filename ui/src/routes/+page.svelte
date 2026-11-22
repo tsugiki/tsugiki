@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { AboutState, openDevtools } from "$lib/state/about.svelte";
-  import { HomeState } from "$lib/state/home.svelte";
+  import { type Home, HomeState } from "$lib/state/home.svelte";
   import {
     type Action,
     chordFirst,
@@ -324,6 +324,16 @@
   const switchTo = (name: string) => {
     void home.open(name).then(() => settings.load());
   };
+  /** Opens what Add repository has added, from the Home page or from Settings › Repositories. */
+  const added = (next: Home) => {
+    home.added(next);
+    // The core read the files again to add this, so a problem the user has since fixed can go.
+    void settings.load();
+  };
+  /** Switches to `name`, which Add repository found Tsugiki has already, unless it's the one open. */
+  const switchFromAdd = (name: string) => {
+    if (name !== openName) switchTo(name);
+  };
   /** A row that switches to each Repository but the open one, titled `prefix` and its name, with the note
    * `noteOf` gives it. They come most recently opened first, as `others` does, so the palette's history
    * leaves them out. */
@@ -526,14 +536,12 @@
       addOpen = false;
     }}
     onadded={(next) => {
-      home.added(next);
       addOpen = false;
-      // The core read the files again to add this, so a problem the user has since fixed can go.
-      void settings.load();
+      added(next);
     }}
     onswitch={(name) => {
       addOpen = false;
-      if (name !== openName) switchTo(name);
+      switchFromAdd(name);
     }}
   />
 {/if}
@@ -583,6 +591,8 @@
     about={about.about}
     repository={openName}
     at={settingsAt}
+    onadded={added}
+    onswitch={switchFromAdd}
     onclose={() => {
       settingsOpen = false;
     }}

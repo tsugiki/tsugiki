@@ -46,7 +46,14 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   off and say why. Status bar has Show the status bar, and says that problems and being
   offline still show when it's off. Updates has Check for new versions (`[releases] check`), the one setting
   that still needs a restart, so it says "Takes effect at the next start" under its row. Both live in
-  `settings.toml`. Repositories, each Repository's page and Sync say "Nothing to set here yet." for now.
+  `settings.toml`. Each Repository's page and Sync say "Nothing to set here yet." for now.
+- Repositories lists each Repository on a line of its own, in the order `settings.toml` gives: its number of
+  Filters, "borrows from a clone" when `machine.toml` says its mirror borrows objects, and the size of its
+  mirror on the disk, or "no mirror yet" before the first clone ends. The core measures the mirrors each
+  time the page shows, on a thread apart from the window's. A line opens the Repository's page. Add
+  repository… under the list opens the add dialog over Settings, and Esc closes only that dialog. A
+  Repository it adds is saved at once and opened, as from the Home page, and lists on the page and in the
+  left column; Cancel keeps it.
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps
   ([keyboard.md](keyboard.md)).
 - Advanced has a Language servers group with a row each for ty, clangd and rust-analyzer, then the idle

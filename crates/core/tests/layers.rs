@@ -137,6 +137,11 @@ const LAYERS: &[Layer] = &[
         why: "Asks GitHub Releases for a newer Tsugiki, and links to its release page.",
     },
     Layer {
+        module: "disk",
+        uses: &[],
+        why: "Measures how much of the disk a folder takes, and knows nothing of what the folder holds.",
+    },
+    Layer {
         module: "folders",
         uses: &["build", "error", "repository"],
         why: "Finds where this build keeps its files, a mirror folder for each Repository among them.",
@@ -249,6 +254,7 @@ const LAYERS: &[Layer] = &[
         module: "mirror",
         uses: &[
             "diff",
+            "disk",
             "error",
             "facts",
             "folders",
@@ -261,7 +267,8 @@ const LAYERS: &[Layer] = &[
             "status",
         ],
         why: "Clones and fetches PR heads into this build's folders, and says how on the status board. It \
-              asks a Repository's size before a clone through the session, which holds the token. It reads \
+              asks a Repository's size before a clone through the session, which holds the token, and says \
+              what the disk lacks in the megabytes `disk` counts in. It reads \
               the patch-ids of the commits it keeps through `diff`, and runs the jobs in the order \
               `mirror_queue` picks. Its requests read a copy of the clones that wait for an answer.",
     },
@@ -404,6 +411,7 @@ const LAYERS: &[Layer] = &[
         uses: &[
             "definitions",
             "diff",
+            "disk",
             "error",
             "facts",
             "fetching",

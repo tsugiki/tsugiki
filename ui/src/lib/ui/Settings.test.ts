@@ -10,7 +10,7 @@ import {
   type Settings as Values,
 } from "$lib/state/settings.svelte";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
-import { defaultSettings, NO_SERVERS, ok, refused } from "$lib/testing/fixtures";
+import { defaultSettings, NO_SERVERS, ok, refused, repositoryCheck } from "$lib/testing/fixtures";
 import Settings from "./Settings.svelte";
 
 const core = vi.hoisted(() => ({
@@ -23,6 +23,9 @@ const core = vi.hoisted(() => ({
   themes: vi.fn(),
   previewThemes: vi.fn(),
   turnWindow: vi.fn(),
+  onThisMachine: vi.fn(),
+  checkRepository: vi.fn(),
+  addRepository: vi.fn(),
 }));
 /** The listener for the servers' rows, so a test can send it what the core would, and its stop. */
 const rowsHeard = vi.hoisted(() => ({
@@ -136,12 +139,16 @@ let state: SettingsState;
 let theme: ThemeState;
 /** The dialog's props, with the status online and this release's About. */
 const onreread = vi.fn();
+const onadded = vi.fn();
+const onswitch = vi.fn();
 const props = (onclose = () => {}): ComponentProps<typeof Settings> => ({
   settings: state,
   theme,
   status: online,
   about,
   onreread,
+  onadded,
+  onswitch,
   onclose,
 });
 const dialog = () => screen.getByRole("dialog", { name: "Settings" });
@@ -175,6 +182,7 @@ beforeEach(async () => {
   core.themes.mockImplementation(async () => ok(structuredClone(THEMES)));
   core.previewThemes.mockImplementation(async (appearance: Values["appearance"]) => previewOf(appearance));
   core.turnWindow.mockResolvedValue(null);
+  core.onThisMachine.mockResolvedValue(ok([]));
   state = new SettingsState();
   state.take(loaded(settingsWith()));
   theme = new ThemeState(LIGHT_SIDE);
@@ -215,13 +223,15 @@ describe("the Settings dialog", () => {
 
   it("shows the page picked in its left column", async () => {
     render(Settings, props());
-    for (const page of ["Repositories", "Sync"]) {
-      await go(page);
-      expect(within(nav()).getByRole("button", { name: page }).getAttribute("aria-current")).toBe("page");
-      expect(
-        within(screen.getByRole("region", { name: page })).getByText("Nothing to set here yet."),
-      ).toBeTruthy();
-    }
+    await go("Sync");
+    expect(within(nav()).getByRole("button", { name: "Sync" }).getAttribute("aria-current")).toBe("page");
+    expect(
+      within(screen.getByRole("region", { name: "Sync" })).getByText("Nothing to set here yet."),
+    ).toBeTruthy();
+
+    await go("Repositories");
+    const repositories = screen.getByRole("region", { name: "Repositories" });
+    expect(within(repositories).getByRole("button", { name: "Add repository…" })).toBeTruthy();
 
     await go("Keyboard");
     const keyboard = screen.getByRole("region", { name: "Keyboard" });
@@ -1096,5 +1106,165 @@ describe("Settings › Account", () => {
     await onAccount();
     await fireEvent.click(screen.getByRole("link", { name: "README" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Error: no browser");
+  });
+});
+
+describe("Settings › Repositories", () => {
+  const repositoriesPage = () => screen.getByRole("region", { name: "Repositories" });
+  /** Each Repository's row on the page: its name and its line. */
+  const rows = () =>
+    within(repositoriesPage())
+      .queryAllByRole("listitem")
+      .map((row) => Array.from(row.querySelectorAll("span:not([aria-hidden])"), (span) => span.textContent));
+  const addButton = () => within(repositoriesPage()).getByRole("button", { name: "Add repository…" });
+  const newproj = repositoryCheck("some-maintainer/newproj");
+  /** What the window opens on once Add repository… has added some-maintainer/newproj. */
+  const addedHome = {
+    screen: "repository",
+    repository: newproj.repository,
+    others: ["some-maintainer/gcmon", "python/cpython"],
+  } as const;
+  const addDialog = () => screen.queryByRole("dialog", { name: "Add repository" });
+  /** Opens Add repository… from the page. */
+  const openAdd = async () => {
+    await opened();
+    await go("Repositories");
+    await fireEvent.click(addButton());
+  };
+
+  it("shows each Repository with its Filters, its clone and its mirror's size, and a row opens its page", async () => {
+    const filter = { name: "Mine", query: "author:@me", on_workbench: true };
+    const files = settingsWith((settings) => {
+      settings.repositories[1]?.filters.push(filter);
+    });
+    core.rereadSettings.mockResolvedValue(ok(loaded(files)));
+    core.onThisMachine.mockResolvedValue(
+      ok([
+        { repository: "some-maintainer/gcmon", source: null, mirror: { kind: "missing" } },
+        {
+          repository: "python/cpython",
+          source: { kind: "borrow", folder: "D:\\src\\cpython" },
+          mirror: { kind: "measured", mb: 1536 },
+        },
+      ]),
+    );
+    await opened();
+
+    await go("Repositories");
+
+    await vi.waitFor(() => {
+      expect(rows()).toEqual([
+        ["some-maintainer/gcmon", "0 Filters · no mirror yet"],
+        ["python/cpython", "1 Filter · borrows from a clone · mirror 1.5 GB"],
+      ]);
+    });
+    await fireEvent.click(within(repositoriesPage()).getByRole("button", { name: /^python\/cpython/ }));
+    expect(screen.getByRole("heading", { name: "python/cpython" })).toBeTruthy();
+    expect(within(nav()).getByRole("button", { name: "python/cpython" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+  });
+
+  it("asks the core again each time the page shows", async () => {
+    await opened();
+    await go("Repositories");
+    await go("General");
+    await go("Repositories");
+    expect(core.onThisMachine).toHaveBeenCalledTimes(2);
+  });
+
+  it("lists the Repositories without their mirrors when the core can't measure them, and says why", async () => {
+    core.onThisMachine.mockResolvedValue(refused("Tsugiki can't find its folders."));
+    await opened();
+
+    await go("Repositories");
+
+    expect(
+      await within(repositoriesPage()).findByText(
+        "Tsugiki can't measure the mirrors: Tsugiki can't find its folders.",
+      ),
+    ).toBeTruthy();
+    expect(rows()).toEqual([
+      ["some-maintainer/gcmon", "0 Filters"],
+      ["python/cpython", "0 Filters"],
+    ]);
+  });
+
+  it("offers only Add repository… with no Repositories", async () => {
+    const none = settingsWith((settings) => {
+      settings.repositories = [];
+    });
+    core.rereadSettings.mockResolvedValue(ok(loaded(none)));
+    state.take(loaded(none));
+    await opened();
+    await go("Repositories");
+    expect(within(repositoriesPage()).queryByRole("list")).toBeNull();
+    expect(within(repositoriesPage()).getByRole("button", { name: "Add repository…" })).toBeTruthy();
+  });
+
+  it("adds a Repository with Add repository… over the dialog, lists it, and keeps it on Cancel", async () => {
+    core.checkRepository.mockResolvedValue(ok({ kind: "new", check: newproj }));
+    core.addRepository.mockResolvedValue(ok(addedHome));
+    await openAdd();
+    const adding = addDialog();
+    expect(adding).toBeTruthy();
+    expect(document.activeElement).toBe(within(adding as HTMLElement).getByRole("textbox"));
+
+    const input = screen.getByRole("textbox", { name: "Repository" });
+    await fireEvent.input(input, { target: { value: "some-maintainer/newproj" } });
+    await fireEvent.click(button("Check"));
+    await fireEvent.click(await screen.findByRole("button", { name: "Add" }));
+
+    await vi.waitFor(() => {
+      expect(onadded).toHaveBeenCalledExactlyOnceWith(addedHome);
+    });
+    expect(addDialog()).toBeNull();
+    expect(rows()).toEqual([
+      ["some-maintainer/gcmon", "0 Filters"],
+      ["python/cpython", "0 Filters"],
+      ["some-maintainer/newproj", "0 Filters"],
+    ]);
+    expect(within(nav()).getByRole("button", { name: "some-maintainer/newproj" })).toBeTruthy();
+    expect(core.onThisMachine).toHaveBeenCalledTimes(2);
+    expect(button("OK")).toBeTruthy();
+
+    await fireEvent.click(button("Cancel"));
+    expect(state.settings?.repositories.map((repository) => repository.name)).toEqual([
+      "some-maintainer/gcmon",
+      "python/cpython",
+      "some-maintainer/newproj",
+    ]);
+  });
+
+  it("closes only Add repository… on Esc, and the dialog under it on the next", async () => {
+    const onclose = vi.fn();
+    await opened(onclose);
+    await go("Repositories");
+    addButton().focus();
+    await fireEvent.click(addButton());
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(addDialog()).toBeNull();
+    expect(onclose).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(addButton());
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(onclose).toHaveBeenCalledOnce();
+  });
+
+  it("closes Add repository… with its Cancel, and hands on Switch to it", async () => {
+    await openAdd();
+    await fireEvent.click(within(addDialog() as HTMLElement).getByRole("button", { name: "Cancel" }));
+    expect(addDialog()).toBeNull();
+    expect(dialog()).toBeTruthy();
+
+    core.checkRepository.mockResolvedValue(ok({ kind: "held", name: "python/cpython" }));
+    await fireEvent.click(addButton());
+    await fireEvent.click(button("Check"));
+    await fireEvent.click(await screen.findByRole("button", { name: "Switch to it" }));
+
+    expect(onswitch).toHaveBeenCalledExactlyOnceWith("python/cpython");
+    expect(addDialog()).toBeNull();
+    expect(onadded).not.toHaveBeenCalled();
   });
 });

@@ -346,8 +346,9 @@ impl StatusBoard {
         let back = at.map(|at| PointsBack { at });
         if self.points_back != back {
             self.points_back = back;
-            (self.announce_points_back)(self.points_back.as_ref());
+            // The copy first, so the session reads the gate no later than the window hears it.
             self.copy_shown();
+            (self.announce_points_back)(self.points_back.as_ref());
         }
     }
 

@@ -176,11 +176,14 @@ fn below_the_floor_a_read_on_screen_asks_nothing_and_waits_on_github_with_the_st
 #[test]
 fn below_the_floor_a_fetch_of_an_unstored_item_asks_nothing_and_answers_offline() {
     let paused = Paused::start("gate-fetch", later(), Vec::new(), HOURLY);
+    // The session holds the gate once the window hears it, so the session answers, not the GitHub thread.
+    let back = paused.heard.points_back.recv_timeout(PLENTY).unwrap();
 
     let fetched = paused.session.fetching().fetch_unstored(gcmon(), 7);
     let asked = paused.asked();
     let heard = paused.stop();
 
+    assert!(back.is_some(), "{back:?}");
     assert_eq!(fetched, UNFETCHED_OFFLINE);
     assert_eq!(asked, Vec::<String>::new());
     assert_eq!(announced(&heard.statuses).last(), Some(&octocat()));

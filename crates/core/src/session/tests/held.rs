@@ -27,7 +27,7 @@ impl Transport for Hanging {
 /// A request to GitHub that hangs, as `Hanging` says, with what the test holds of it.
 struct Held {
     access: GitHubAccess,
-    /// Says each question that hangs.
+    /// Names each question asked once `before` runs out: those that hang, and those after the test lets go.
     asked: Receiver<String>,
     /// Lets the questions go once dropped.
     let_go: Sender<()>,
@@ -157,6 +157,40 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     let left: Vec<Heard> = heard.try_iter().collect();
     let asked_after: Vec<String> = held.asked.try_iter().collect();
     assert_eq!((left, asked_after), (vec![], vec![]));
+}
+
+#[test]
+fn a_fetch_passed_on_before_github_went_away_asks_nothing_and_answers_offline() {
+    let (folders, _folder) = temp_folders("held-fetch-raced");
+    let (board, changes) = changes_board();
+    let held = hanging(vec![signed_in()]);
+    let session = Session::start(board, Ok(folders), reaching(held.access), HOURLY);
+    let asked = session.fetching();
+    asked.sync(gcmon());
+    drop(held.asked.recv_timeout(PLENTY).unwrap());
+
+    // Online, so the session passes the fetch on, and the GitHub thread takes it after the step.
+    let answer = asked.fetch_unstored_later(Item {
+        repository: gcmon(),
+        number: 7,
+    });
+    // The session answers in order, so it has passed the fetch on once it tells of this mark. A fetch it
+    // refuses it answers at once, so no answer yet means the GitHub thread holds it.
+    asked.mark_unseen(gcmon(), 7, None);
+    drop(changes.recv_timeout(PLENTY).unwrap());
+    let before = answer.try_recv();
+    // The step fails, and the status says offline before the GitHub thread takes the fetch.
+    drop(held.let_go);
+    let fetched = answer.recv_timeout(PLENTY);
+    session.stop(PLENTY);
+
+    assert_eq!(before, Err(TryRecvError::Empty));
+    assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
+    let fetches = held
+        .asked
+        .try_iter()
+        .filter(|operation| operation == "FetchItem");
+    assert_eq!(fetches.count(), 0);
 }
 
 /// Asks the session for #7 of gcmon from a thread of its own, and waits for the answer. A session that

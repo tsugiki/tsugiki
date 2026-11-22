@@ -1,8 +1,9 @@
 // `just ship` pushes the branch and opens the PR, or says which PR the push updated. The branch's first
 // commit gives the PR its title and, without `just ship body.md`, its body.
-// `just ship --check` runs `just check` first, which writes to .temp/check.log, and prints only its outcome
-// and, on a failure, the failed recipe and the log's tail, so an agent reads a few lines of a long run.
-// Ship a PR without it and let CI run the gates, unless it changes the gates (AGENTS.md).
+// Before each push it runs `just quick`, the gates that take seconds, and `just ship --check` runs
+// `just check` instead. Either writes to .temp/<recipe>.log, and ship prints only its outcome and, on a
+// failure, the failed recipe and the log's tail, so an agent reads a few lines of a long run.
+// Ship a PR without `--check` and let CI run the gates, unless it changes the gates (AGENTS.md).
 // `just ship --release` is the only way it pushes a `release/` branch, since that push rehearses the release
 // on CI: ask the user first. It refuses unless the branch names Cargo.toml's version and `just release-check`
 // passes. A release PR that only sets the version ships with `just ship --release`, and CI runs the gates.
@@ -13,11 +14,9 @@ import { branchRefusal, failureSummary, shipArgs } from "./pr.ts";
 import { shipRefusal } from "./releasing.ts";
 import { attempt, run, stop } from "./run.ts";
 
-const LOG = ".temp/check.log";
-
 const args = shipArgs(process.argv.slice(2));
 if (args === undefined) stop("Usage: `just ship [--check] [--release] [body.md]`.");
-const { check, release, bodyFile } = args;
+const { gates, release, bodyFile } = args;
 
 const branch = run("git can't name the current branch.", "git", "branch", "--show-current");
 const refusal = branchRefusal(branch, release);
@@ -32,18 +31,17 @@ if (release) {
 }
 mkdirSync(".temp", { recursive: true });
 
-if (check) {
-  const started = Date.now();
-  const log = openSync(LOG, "w");
-  const result = spawnSync("just", ["check"], { stdio: ["ignore", log, log] });
-  closeSync(log);
-  const minutes = ((Date.now() - started) / 60_000).toFixed(1);
-  if (result.status !== 0) {
-    console.error(failureSummary(readFileSync(LOG, "utf8")));
-    stop(`\`just check\` failed after ${minutes} min; the whole log is in ${LOG}.`);
-  }
-  console.log(`\`just check\` passed in ${minutes} min.`);
+const logPath = `.temp/${gates}.log`;
+const started = Date.now();
+const log = openSync(logPath, "w");
+const result = spawnSync("just", [gates], { stdio: ["ignore", log, log] });
+closeSync(log);
+const minutes = ((Date.now() - started) / 60_000).toFixed(1);
+if (result.status !== 0) {
+  console.error(failureSummary(readFileSync(logPath, "utf8")));
+  stop(`\`just ${gates}\` failed after ${minutes} min; the whole log is in ${logPath}. Fix it and commit.`);
 }
+console.log(`\`just ${gates}\` passed in ${minutes} min.`);
 
 run(
   "git push failed. If you rewrote the branch, ask the user before a force push.",

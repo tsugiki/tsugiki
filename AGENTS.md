@@ -25,10 +25,11 @@ it runs. The Rust tests and the bindings check run inside `just coverage`, and `
 `just stale-bindings` run them without coverage. `just` lists the rest.
 
 While you work, run single test files, `just typecheck`, `just doc-width` and the tests of each crate the
-change touches. Then run `/code-review`, fix what it finds, and push with `just ship`, which pushes and opens
-the PR. Leave `just check` and `just coverage` to CI: it runs the gates `just check` runs, on the same
-scope, and macOS as well, and you wait for its result before the merge. If CI fails, fix the gate that
-failed, rerun only that gate, and push again.
+change touches. Then run `/code-review`, fix what it finds, and push with `just ship`, which runs
+`just quick`, pushes and opens the PR. Push each later commit and each merge of main with `just ship` too.
+Leave `just check` and `just coverage` to CI: it runs the gates `just check` runs, on the same scope, and
+macOS as well, and you wait for its result before the merge. If CI fails, fix the gate that failed, rerun
+only that gate, and push again.
 
 Before a push, read the diff for what only macOS's CI catches: a `C:/` path isn't absolute there, and a
 closure behind `cfg!(windows)` leaves a line macOS's coverage never runs. Once a branch is pushed, fix it with

@@ -35,7 +35,9 @@ use time::{Duration, OffsetDateTime};
 use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
-use super::{Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates};
+use super::{
+    Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, attention_in, candidates,
+};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
@@ -118,8 +120,9 @@ impl Inbox {
     }
 
     /// Reads `page` of `repository`'s Inbox, the first page reaching two days back from `now`. This waits on
-    /// the database and never on a sync (ADR 0018). A page whose items are all Archived gives way to the next
-    /// older one, so the window never gets an empty page with more to come.
+    /// the database and never on a sync (ADR 0018). A page with nothing left to list, as when Archive, Mute
+    /// and Show muted took out all it held, gives way to the next older one, so the window never gets an
+    /// empty page with more to come.
     pub(crate) fn read(
         reader: &StoreReader,
         repository: &RepositorySettings,
@@ -159,8 +162,6 @@ impl Inbox {
             &BTreeSet::new(),
             &causes,
         );
-        let asked = causes.asked();
-        let by_muted_author = |key| causes.is_by_muted_author(key);
         // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
         // A Muted author's item stays for "Show muted" to judge, unless one of those takes it out too.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
@@ -174,12 +175,9 @@ impl Inbox {
                         && !causes.is_archived(key, &listed.item.numbers())
                 }
             })
-            // A Review request or an assignment to the user in its tree shows the whole item anyway, as it
-            // brings back a Muted item (#817).
             .filter_map(|listed| match show {
                 ShowMuted::On => Some(listed),
-                ShowMuted::Off if listed.item.is_reached_by(&asked) => Some(listed),
-                ShowMuted::Off => listed.without(&by_muted_author),
+                ShowMuted::Off => listed.without_muted_authors(&causes),
             })
             .collect();
         let place_of =
@@ -194,12 +192,24 @@ impl Inbox {
 }
 
 impl ListedItem {
-    /// The item with each row `hides` takes out gone, or nothing once no row is left. A row stays while a
-    /// row under it does: an Issue over its PRs, a PR over its Backports. It keeps its place and what its
-    /// whole tree Needs attention for.
-    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
-        let item = self.item.without(hides)?;
-        Some(Self { item, ..self })
+    /// The item with each row a Muted author wrote gone, or nothing once no row is left, as `causes` judge
+    /// them. A Review request or an assignment to the user that started after the mute shows a row anyway,
+    /// as it brings back a Muted item (#817), and one in the tree of a Muted author's item shows the whole
+    /// item, as on the Workbench. A row stays while a row under it does: an Issue over its PRs, a PR over its
+    /// Backports. The item keeps its place, and Needs attention for the rows left.
+    fn without_muted_authors(self, causes: &Causes) -> Option<Self> {
+        let asked = |key: ItemKey, numbers: &[u32]| !causes.fresh_asks(key, numbers).is_empty();
+        if causes.is_by_muted_author(self.key) && asked(self.key, &self.item.numbers()) {
+            return Some(self);
+        }
+        let hides = |key: ItemKey| causes.is_by_muted_author(key) && !asked(key, &[key.number()]);
+        let item = self.item.without(&hides)?;
+        let attention = attention_in(causes, self.hidden, &item);
+        Some(Self {
+            item,
+            attention,
+            ..self
+        })
     }
 }
 

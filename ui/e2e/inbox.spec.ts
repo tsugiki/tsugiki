@@ -188,9 +188,9 @@ test("Show muted greys a Muted author's rows, and turning it off lists the Inbox
   await expect(line(2)).toHaveCSS("opacity", "0.55");
   await expect(line(3)).toHaveCSS("opacity", "1");
 
-  await show.uncheck();
+  // The core has saved the switch once it answers, and the Inbox read after that leaves the row out.
   await changeAnswer(page, "inbox", inboxPage([issue(3), issue(1)], null, "off"));
-  await emitFromCore(page, "changed", { repository: repository.name, items: [] });
+  await show.click();
 
   await expect(page.getByRole("button", { name: "#2 Issue 2" })).toHaveCount(0);
   await expect(show).not.toBeChecked();

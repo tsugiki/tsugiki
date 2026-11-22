@@ -165,9 +165,10 @@ export class WorkbenchState {
   switchProblem = $state<string>();
   /** A change to a Filter's "On the Workbench" is saving. */
   switching = $state(false);
-  /** The Inbox's "Show muted" (#825): as the user last set it, until the next answer about the Inbox says
-   * how the core holds it. */
+  /** The Inbox's "Show muted" (#825), as the last answer about the Inbox says the core holds it. */
   showMuted = $state<ShowMuted>("off");
+  /** A change to "Show muted" is saving. */
+  savingShowMuted = $state(false);
   /** The reason the core refused the last change to "Show muted", if it did. */
   showMutedProblem = $state<string>();
   /** The "On the Workbench" switch each Filter's search has, as the user last set it, while that waits to
@@ -588,14 +589,13 @@ export class WorkbenchState {
     await this.#ask();
   }
 
-  /** Turns the Inbox's "Show muted" to `show` (#825). The core saves it and says the Inbox changed, which
-   * asks again. A refusal asks again at once, so the switch goes back to what the core holds. */
+  /** Turns the Inbox's "Show muted" to `show` (#825), and asks again once the core has saved it, or says why
+   * it couldn't. `showMuted` changes only with that answer, or a later one. */
   async switchShowMuted(show: ShowMuted) {
-    this.showMuted = show;
-    // An answer to a question asked before the switch reads the Inbox as it was, so this has `#ask` drop it.
-    this.#lastQuestion += 1;
+    this.savingShowMuted = true;
     this.showMutedProblem = await problemIn(commands.switchShowMuted(this.#repository, show));
-    if (this.showMutedProblem !== undefined) await this.#ask();
+    this.savingShowMuted = false;
+    await this.#ask();
   }
 
   /** Moves the cursor down the list, or up it, stopping at each end. With none yet it starts at the top. */

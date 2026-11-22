@@ -2034,33 +2034,35 @@ describe("WorkbenchState's Inbox", () => {
     state.stop();
   });
 
-  it("switches Show muted at once, drops an answer read before, and takes the core's after", async () => {
+  it("holds Show muted as the answers say, and asks again once the core has saved a switch", async () => {
     const { send } = catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
-    paging({ latest: page([3]) });
+    paging({ latest: page([3]), all: page([3]) });
     const state = await showingInbox();
-    expect(state.showMuted).toBe("off");
-    const before = Promise.withResolvers<Page>();
-    paging({ all: before.promise });
-    send("python/cpython");
-    vi.mocked(commands.switchShowMuted).mockResolvedValue(done);
+    const saving = Promise.withResolvers<typeof done>();
+    vi.mocked(commands.switchShowMuted).mockReturnValue(saving.promise);
 
-    await state.switchShowMuted("on");
-    before.resolve(page([3]));
+    const switched = state.switchShowMuted("on");
+    // A change that lands while the switch saves reads the Inbox as the core holds it then.
+    send("python/cpython");
+    await nextTask();
+    expect(state.showMuted).toBe("off");
+    expect(state.savingShowMuted).toBe(true);
+    paging({ all: inboxPage([item(3), item(2)], null, "on") });
+    saving.resolve(done);
+    await switched;
     await nextTask();
 
     expect(commands.switchShowMuted).toHaveBeenCalledExactlyOnceWith("python/cpython", "on");
-    expect(state.showMuted).toBe("on");
-    paging({ all: inboxPage([item(3), item(2)], null, "on") });
-    send("python/cpython");
-    await nextTask();
     expect(numbers(state)).toEqual([3, 2]);
     expect(state.showMuted).toBe("on");
+    expect(state.savingShowMuted).toBe(false);
     expect(state.showMutedProblem).toBeUndefined();
+    expect(pagesAsked()).toEqual(["latest", "all", "all"]);
     state.stop();
   });
 
-  it("puts Show muted back as the core holds it when the core refuses the switch", async () => {
+  it("keeps Show muted as the core holds it when the core refuses the switch", async () => {
     catchChanged();
     vi.mocked(commands.workbench).mockResolvedValue(answer());
     paging({ latest: page([3]), all: page([3]) });

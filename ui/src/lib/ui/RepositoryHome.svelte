@@ -1522,7 +1522,13 @@
             <input
               type="checkbox"
               checked={workbench.showMuted === "on"}
-              onchange={(event) => void workbench.switchShowMuted(event.currentTarget.checked ? "on" : "off")}
+              aria-busy={workbench.savingShowMuted}
+              onchange={(event) => {
+                const show = event.currentTarget.checked ? "on" : "off";
+                // The box shows what the core holds, which the answer read after the save says.
+                event.currentTarget.checked = workbench.showMuted === "on";
+                void workbench.switchShowMuted(show);
+              }}
             />Show muted</label
           >
         {/if}

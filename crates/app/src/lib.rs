@@ -382,17 +382,9 @@ fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Re
     Ok(())
 }
 
-/// Turns "Show muted" on the Inbox of `repository` to `show` (#825). Returns at once, and the `changed`
-/// event follows.
-#[tauri::command]
-#[specta::specta]
-fn switch_show_muted(
-    repository: &str,
-    show: ShowMuted,
-    calls: State<'_, Calls>,
-) -> Result<(), Error> {
-    calls.switch_show_muted(RepositoryName::parse(repository)?, show);
-    Ok(())
+/// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.
+fn switch_show_muted_of(repository: &str, show: ShowMuted, calls: &Calls) -> Result<(), Error> {
+    calls.switch_show_muted(RepositoryName::parse(repository)?, show)
 }
 
 /// Tells the core another view hides the Issue or PR the user opened, and returns at once.
@@ -1087,7 +1079,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             unmute,
             mute_author,
             unmute_author,
-            switch_show_muted,
+            slow_commands::switch_show_muted,
             settings,
             slow_commands::themes,
             slow_commands::preview_themes,

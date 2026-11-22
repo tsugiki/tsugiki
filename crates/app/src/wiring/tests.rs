@@ -992,7 +992,7 @@ fn mute_author_and_unmute_author_tell_the_window() {
 }
 
 #[test]
-fn switch_show_muted_tells_the_window_and_the_inbox_says_it_stands() {
+fn switch_show_muted_answers_once_saved_and_the_inbox_read_next_says_it_stands() {
     let (folders, _root) = temp_folders("wired-show-muted");
     let wired = Wired::start(Ok(folders), no_network());
 
@@ -1000,7 +1000,6 @@ fn switch_show_muted_tells_the_window_and_the_inbox_says_it_stands() {
         "switch_show_muted",
         json!({ "repository": CPYTHON, "show": "on" }),
     );
-    let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
     let inbox = wired.ask(
         "inbox",
         json!({ "repository": CPYTHON, "page": { "kind": "latest" } }),
@@ -1009,12 +1008,16 @@ fn switch_show_muted_tells_the_window_and_the_inbox_says_it_stands() {
         "switch_show_muted",
         json!({ "repository": CPYTHON, "show": "maybe" }),
     );
+    let unnamed = wired.ask(
+        "switch_show_muted",
+        json!({ "repository": "no-slash", "show": "on" }),
+    );
     drop(wired.stop());
 
-    drop(switched.unwrap());
-    assert_eq!(changed, json!({ "repository": CPYTHON, "items": [] }));
+    assert_eq!(switched, Ok(Value::Null));
     assert_eq!(inbox.unwrap()["show_muted"], "on");
     assert!(refused.is_err(), "a switch that is neither on nor off");
+    assert!(unnamed.is_err(), "a Repository name that isn't one");
 }
 
 #[test]

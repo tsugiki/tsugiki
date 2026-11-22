@@ -52,11 +52,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     row under it does, so a Muted author's Issue stays as the header of a PR someone else wrote and goes
     with the last such PR, and a Muted author's PR stays over a Backport someone else wrote. A Muted
     author's PR under someone else's Issue hides only its own row. An item stays at the place its whole
-    tree gives it, hidden rows included. A Review request or an assignment to the user anywhere in an
-    item's tree shows the whole item anyway, as it brings back a Muted item. Turned on, the switch shows
-    those rows in their places. The Inbox greys each row a Muted author wrote that it shows. Tsugiki keeps
-    the switch per Repository on this machine, so it survives a restart, and an item muted on its own stays
-    out whatever it says.
+    tree gives it, hidden rows included, and Needs attention for the rows left, while Mark Seen on it
+    covers its whole tree. A Review request or an assignment to the user that started after the mute
+    shows a row anyway, as it brings back a Muted item: one on a PR shows that PR's row, and one anywhere
+    in a Muted author's Issue or Standalone PR shows the whole item. Turned on, the switch shows those
+    rows in their places. The Inbox greys each row a Muted author wrote that it shows. Tsugiki keeps the
+    switch per Repository on this machine, so it survives a restart, and an item muted on its own stays
+    out whatever it says. The checkbox shows the switch as the Inbox read after its save holds it.
 - Every row in every Issue list has an Issue or PR icon coloured by state.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how

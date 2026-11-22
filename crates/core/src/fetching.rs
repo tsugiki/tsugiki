@@ -112,11 +112,6 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         author: Login,
     },
-    /// "Show muted" on the Inbox of `repository` turned to `show` (#825).
-    ShowMuted {
-        repository: RepositoryName,
-        show: ShowMuted,
-    },
 }
 
 impl Marked {
@@ -147,8 +142,7 @@ impl Marked {
             Self::Seen { .. }
             | Self::Unseen { .. }
             | Self::Archived { .. }
-            | Self::Unarchived { .. }
-            | Self::ShowMuted { .. } => false,
+            | Self::Unarchived { .. } => false,
         }
     }
 
@@ -162,8 +156,7 @@ impl Marked {
             | Self::Muted { repository, .. }
             | Self::Unmuted { repository, .. }
             | Self::AuthorMuted { repository, .. }
-            | Self::AuthorUnmuted { repository, .. }
-            | Self::ShowMuted { repository, .. } => repository,
+            | Self::AuthorUnmuted { repository, .. } => repository,
         }
     }
 }
@@ -243,6 +236,13 @@ pub(crate) enum SessionMessage {
     FetchUnstored {
         item: Item,
         reply: Sender<ItemFetch>,
+    },
+    /// "Show muted" on the Inbox of `repository` turned to `show` (#825), which answers once the store has
+    /// kept it, or why it couldn't. The window then asks for the Inbox again.
+    ShowMuted {
+        repository: RepositoryName,
+        show: ShowMuted,
+        reply: Sender<Result<(), Error>>,
     },
 }
 
@@ -492,10 +492,18 @@ impl Fetching {
         self.to_session(SessionMessage::Mark(unmuted));
     }
 
-    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825).
-    pub fn switch_show_muted(&self, repository: RepositoryName, show: ShowMuted) {
-        let switched = Marked::ShowMuted { repository, show };
-        self.to_session(SessionMessage::Mark(switched));
+    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), and waits for the session to save
+    /// it. A session that has stopped, or has no database, answers that it isn't connected.
+    pub fn switch_show_muted(
+        &self,
+        repository: RepositoryName,
+        show: ShowMuted,
+    ) -> Result<(), Error> {
+        self.answered(|reply| SessionMessage::ShowMuted {
+            repository,
+            show,
+            reply,
+        })
     }
 
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.
@@ -521,10 +529,17 @@ impl Fetching {
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an
     /// error, and has already shown why on the status bar.
     pub fn check(&self, name: RepositoryName) -> Result<RepositoryCheck, Error> {
+        self.answered(|reply| SessionMessage::Check { name, reply })
+    }
+
+    /// Sends the session the message `asking` makes around a reply channel, and waits for its answer. A
+    /// session that has stopped, or drops the message with its reply, answers that it isn't connected.
+    fn answered<T>(
+        &self,
+        asking: impl FnOnce(Sender<Result<T, Error>>) -> SessionMessage,
+    ) -> Result<T, Error> {
         let (reply, answer) = mpsc::channel();
-        self.session
-            .send(SessionMessage::Check { name, reply })
-            .ok()
+        (self.session.send(asking(reply)).ok())
             .and_then(|()| answer.recv().ok())
             .unwrap_or_else(|| Err(Error::new(ErrorKind::Offline, NOT_CONNECTED)))
     }

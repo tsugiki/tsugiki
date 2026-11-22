@@ -2665,21 +2665,39 @@ fn mute_author_on_facts_the_store_cant_read_keeps_nothing_and_unmute_author_stil
 }
 
 #[test]
-fn show_muted_keeps_the_switch_and_tells_the_window_of_a_change_that_names_no_item() {
+fn show_muted_answers_once_the_store_kept_the_switch_or_why_it_couldnt() {
     let db = OpenStore::new("session-show-muted");
-    let switched = Marked::ShowMuted {
-        repository: gcmon(),
-        show: ShowMuted::On,
+    let (lossy, _calls) = db.store.failing_at_call(Some(0));
+    let (mirrors, _heard) = HeardRequests::new();
+    let (messages, incoming) = mpsc::channel();
+    let keeper = Keeper::new(
+        incoming,
+        sending(messages, mirrors),
+        listed(vec![cpython_gcmon()]),
+        telling(&mut quiet_board()).0,
+    );
+    let switch = |show| {
+        let (reply, answer) = mpsc::channel();
+        let message = SessionMessage::ShowMuted {
+            repository: gcmon(),
+            show,
+            reply,
+        };
+        (message, answer)
     };
 
-    let (saved, change) = keep_mark(&db.store, &cpython_gcmon(), switched);
+    let (on, saved) = switch(ShowMuted::On);
+    let took_on = keeper.take(&db.store, on);
+    let (off, lost) = switch(ShowMuted::Off);
+    let took_off = keeper.take(&lossy, off);
     let read = (db.reader).read_snapshot(&gcmon(), |snapshot| snapshot.show_muted());
 
+    // The lossy store's thread holds the store's queue open, which closing the store waits on.
+    drop(lossy);
     db.close();
-    assert!(saved.is_ok());
-    let items = Vec::new();
-    let repository = gcmon();
-    assert_eq!(change, Change { repository, items });
+    assert!(took_on.is_continue() && took_off.is_continue());
+    assert_eq!(saved.recv().unwrap(), Ok(()));
+    assert!(lost.recv().unwrap().is_err(), "the save went missing");
     assert_eq!(read.unwrap(), ShowMuted::On);
 }
 

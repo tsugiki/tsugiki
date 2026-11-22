@@ -4968,7 +4968,8 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
   ];
   core.workbench.mockResolvedValue(workbenchPage(items));
   core.inbox.mockResolvedValue(inboxPage(items, null, "on"));
-  core.switchShowMuted.mockResolvedValue(done);
+  const saving = Promise.withResolvers<typeof done>();
+  core.switchShowMuted.mockReturnValue(saving.promise);
   render(RepositoryHome, { name: "python/cpython", onpick: () => {}, onsettings: () => {} });
   await screen.findByRole("button", { name: "#5 Alone" });
   expect(screen.queryByRole("checkbox", { name: "Show muted" })).toBeNull();
@@ -4980,13 +4981,21 @@ it("switches Show muted atop the Inbox, which greys each row a Muted author wrot
   const greyed = [...(issueList()?.querySelectorAll(".greyed") ?? [])].map((line) =>
     line.getAttribute("data-row"),
   );
-  const show = screen.getByRole("checkbox", { name: "Show muted" });
-  expect((show as HTMLInputElement).checked).toBe(true);
+  const show = screen.getByRole("checkbox", { name: "Show muted" }) as HTMLInputElement;
+  expect(show.checked).toBe(true);
   await fireEvent.click(show);
+  // The box waits for the answer read after the save.
+  const waited = { checked: show.checked, busy: show.getAttribute("aria-busy") };
+  core.inbox.mockResolvedValue(inboxPage([{ ...issue, attention: null }], null, "off"));
+  saving.resolve(done);
 
+  await waitFor(() => {
+    expect(show.checked).toBe(false);
+  });
   expect(greyed).toEqual(["112564#160662", "#5"]);
   expect(core.switchShowMuted).toHaveBeenCalledExactlyOnceWith("python/cpython", "off");
-  expect((show as HTMLInputElement).checked).toBe(false);
+  expect(waited).toEqual({ checked: true, busy: "true" });
+  expect(show.getAttribute("aria-busy")).toBe("false");
 });
 
 it("says why the core refused a change to Show muted", async () => {

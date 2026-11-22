@@ -46,7 +46,8 @@ use crate::workbench::{Workbench, WorkbenchView};
 
 /// The handle the app calls the core through, which it keeps as Tauri's state. Each screen's call answers
 /// what the screen shows. An action returns once the core has queued it, but for the checks, which wait for
-/// GitHub or git, and those that save a settings file first. A clone is another handle on the same threads.
+/// GitHub or git, those that save a settings file first, and Show muted, which waits for the store. A clone
+/// is another handle on the same threads.
 #[derive(Clone)]
 pub struct Calls {
     fetching: Fetching,
@@ -433,9 +434,13 @@ impl Calls {
         self.fetching.unmute_author(repository, author);
     }
 
-    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825).
-    pub fn switch_show_muted(&self, repository: RepositoryName, show: ShowMuted) {
-        self.fetching.switch_show_muted(repository, show);
+    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825), once the store has kept it.
+    pub fn switch_show_muted(
+        &self,
+        repository: RepositoryName,
+        show: ShowMuted,
+    ) -> Result<(), Error> {
+        self.fetching.switch_show_muted(repository, show)
     }
 
     /// Says the Repository the user typed is one Tsugiki has, or else asks GitHub what adding it would load,

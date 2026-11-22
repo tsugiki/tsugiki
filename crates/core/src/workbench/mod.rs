@@ -235,16 +235,11 @@ impl Hidden {
 }
 
 impl ListedItem {
-    /// `item` with what `causes` judge of its tree. A Muted item Needs attention only for what
-    /// `Causes::fresh_asks` finds.
+    /// `item` with what `causes` judge of its tree.
     fn of(causes: &Causes, item: WorkbenchItem) -> Self {
         let key = item.key();
-        let numbers = item.numbers();
-        let hidden = Hidden::of(causes, key, &numbers);
-        let attention = match hidden {
-            Some(Hidden::Muted | Hidden::MutedAuthor) => summed(&causes.fresh_asks(key, &numbers)),
-            Some(Hidden::Archived) | None => attention_of(causes, &item),
-        };
+        let hidden = Hidden::of(causes, key, &item.numbers());
+        let attention = attention_in(causes, hidden, &item);
         Self {
             attention,
             hidden,
@@ -255,6 +250,21 @@ impl ListedItem {
 
     fn is_archived(&self) -> bool {
         self.hidden == Some(Hidden::Archived)
+    }
+}
+
+/// The attention of `item`, which `hidden` hides, over the rows it holds, as `causes` judge it. A Muted
+/// item Needs attention only for what `Causes::fresh_asks` finds.
+fn attention_in(
+    causes: &Causes,
+    hidden: Option<Hidden>,
+    item: &WorkbenchItem,
+) -> Option<Attention> {
+    match hidden {
+        Some(Hidden::Muted | Hidden::MutedAuthor) => {
+            summed(&causes.fresh_asks(item.key(), &item.numbers()))
+        }
+        Some(Hidden::Archived) | None => attention_of(causes, item),
     }
 }
 

@@ -131,8 +131,9 @@ export const commands = {
 	/**  Unmutes `author` in `repository`, and returns at once. */
 	unmuteAuthor: (repository: string, author: Login) => typedError<null, Error_Serialize>(__TAURI_INVOKE("unmute_author", { repository, author })),
 	/**
-	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825). Returns at once, and the `changed`
-	 *  event follows.
+	 *  Turns "Show muted" on the Inbox of `repository` to `show` (#825), and returns once the store has kept it,
+	 *  or says why it couldn't. The window then asks for the Inbox again. This waits on the session's thread
+	 *  and the database, and never on GitHub.
 	 */
 	switchShowMuted: (repository: string, show: ShowMuted) => typedError<null, Error_Serialize>(__TAURI_INVOKE("switch_show_muted", { repository, show })),
 	/**  The settings Tsugiki last read, and what was wrong with their files (ADR 0014). */

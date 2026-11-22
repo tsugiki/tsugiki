@@ -350,6 +350,17 @@ impl Keeper {
                 telling.to_github(GitHubMessage::Check { name, reply });
             }
             SessionMessage::Screen(moved) => telling.to_github(GitHubMessage::Screen(moved)),
+            SessionMessage::ShowMuted {
+                repository,
+                show,
+                reply,
+            } => {
+                #[expect(
+                    clippy::let_underscore_must_use,
+                    reason = "this fails only if the caller has gone, and nobody then shows the answer"
+                )]
+                let _ = reply.send(store.switch_show_muted(&repository, show));
+            }
         }
         ControlFlow::Continue(())
     }
@@ -931,12 +942,6 @@ pub(crate) fn keep_mark(
                 .map(|authored| authored.numbers)
                 .unwrap_or_default();
             let saved = store.unmute_author(&repository, &author);
-            (saved, Change { repository, items })
-        }
-        Marked::ShowMuted { repository, show } => {
-            // The switch changes which rows the Inbox lists, and no item, so the change names none.
-            let saved = store.switch_show_muted(&repository, show);
-            let items = Vec::new();
             (saved, Change { repository, items })
         }
     }

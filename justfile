@@ -75,8 +75,10 @@ fmt:
 # Run every test CI runs, once each, one at a time. The coverage gate runs the Rust tests and checks the
 # bindings, so `cargo-test` and `stale-bindings` stay out. It runs no doctests, and the workspace has none.
 # `smoke` isn't one: it opens a window and presses real keys.
-# Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs
-check: lint doc-width dupes svelte-check vitest rust-gates release-check e2e
+# Like CI, it skips the Rust gates on a branch that changes only `ui/` and docs, and the Playwright specs on
+# one that changes only scripts and docs
+check: lint doc-width dupes svelte-check vitest rust-gates release-check
+    node scripts/gates.ts e2e
 
 # The fastest gates go first. The Vitest and Rust tests run in full: their coverage gates count every file,
 # so a change can fail them in a file it never touched.
@@ -84,7 +86,7 @@ check: lint doc-width dupes svelte-check vitest rust-gates release-check e2e
 # out the rest of `check`: ESLint, token-deps, pre-commit, deny, machete, release-check and e2e.
 # Run the gates a first push most often fails on, one at a time, and stop at the first that fails
 preflight: quick svelte-check vitest
-    node scripts/rust-gates.ts clippy rust-coverage
+    node scripts/gates.ts clippy rust-coverage
 
 # `just ship` runs it before each push. Each of these failed CI on its own often enough to be worth seconds.
 # Run the gates that take seconds: Rust and Prettier formatting, line width and copied code
@@ -128,7 +130,7 @@ clippy:
 
 # Run Clippy, `rust-coverage`, `deny` and `machete`, unless the branch changes only `ui/` and docs
 rust-gates:
-    node scripts/rust-gates.ts
+    node scripts/gates.ts clippy rust-coverage deny machete
 
 # Run the Vitest and Rust tests, and check the generated bindings
 test: vitest cargo-test stale-bindings

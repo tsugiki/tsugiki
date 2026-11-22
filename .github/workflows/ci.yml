@@ -296,7 +296,7 @@ jobs:
   playwright:
     name: Playwright ${{ matrix.browser }} (windows-latest)
     needs: [changes]
-    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
+    if: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'e2e') }}
     runs-on: windows-latest
     timeout-minutes: 30
     strategy:
@@ -327,18 +327,21 @@ jobs:
 
   # What can differ on macOS, as steps of one job so a run needs one macOS runner. A failed check doesn't stop
   # the checks after it. As on Windows, Rust's coverage gate runs the tests and the bindings check. The Rust
-  # steps run when `jobs` lists `rust`, and the UI ones when it lists `ui`.
+  # steps run when `jobs` lists `rust`, the UI ones when it lists `ui`, and the Playwright ones when it lists
+  # `e2e`.
   macos:
     name: checks (macos-latest)
     needs: [changes]
     if: >-
       ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') ||
-      contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
+      contains(fromJSON(needs.changes.outputs.jobs), 'ui') ||
+      contains(fromJSON(needs.changes.outputs.jobs), 'e2e') }}
     runs-on: macos-latest
     timeout-minutes: 60
     env:
       RUST_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'rust') }}
       UI_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'ui') }}
+      E2E_STEPS: ${{ contains(fromJSON(needs.changes.outputs.jobs), 'e2e') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -360,7 +363,7 @@ jobs:
           key: macos
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - if: ${{ env.UI_STEPS == 'true' }}
+      - if: ${{ env.E2E_STEPS == 'true' }}
         run: npx playwright install webkit
       - name: clippy
         if: ${{ !cancelled() && env.RUST_STEPS == 'true' }}
@@ -389,10 +392,10 @@ jobs:
           flags: typescript
           name: typescript-macos-latest
       - name: Playwright webkit
-        if: ${{ !cancelled() && env.UI_STEPS == 'true' }}
+        if: ${{ !cancelled() && env.E2E_STEPS == 'true' }}
         run: npm run e2e -w ui -- --project=webkit
       - name: Keep the Playwright traces of a failed run
-        if: ${{ failure() && env.UI_STEPS == 'true' }}
+        if: ${{ failure() && env.E2E_STEPS == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-webkit-macos-latest
@@ -419,9 +422,9 @@ jobs:
       - macos
     runs-on: ubuntu-latest
     steps:
-      # A job may skip only when `changes` left out of `jobs` what it reads. The macOS and dupes jobs read
-      # both, and the jobs with no `if:` always run. A job this table doesn't name fails it, so a new one gets
-      # a line.
+      # A job may skip only when `changes` left out of `jobs` what it reads. The dupes job reads Rust and
+      # the UI, the macOS job those and Playwright, and the jobs with no `if:` always run. A job this table
+      # doesn't name fails it, so a new one gets a line.
       - name: Every job succeeded, or skipped because the change doesn't reach what it reads
         env:
           JOBS: ${{ needs.changes.outputs.jobs }}
@@ -435,8 +438,10 @@ jobs:
               changes | doc-width | pre-commit | release-check) reads='"always"' ;;
               rust | rust-coverage) reads='"rust"' ;;
               dependencies) reads='"dependencies"' ;;
-              ui | playwright) reads='"ui"' ;;
-              macos | dupes) reads='"rust", "ui"' ;;
+              ui) reads='"ui"' ;;
+              playwright) reads='"e2e"' ;;
+              dupes) reads='"rust", "ui"' ;;
+              macos) reads='"rust", "ui", "e2e"' ;;
               *) echo "CI passed doesn't know what $job reads"; exit 1 ;;
             esac
             listed=$(jq -r "[\"always\"] + . | any(.[]; IN($reads))" <<< "$JOBS")

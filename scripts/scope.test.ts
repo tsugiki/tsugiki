@@ -25,7 +25,7 @@ function unread(): string {
 }
 
 const RUST: Job[] = ["rust", "dependencies"];
-const UI: Job[] = ["ui"];
+const UI: Job[] = ["ui", "e2e"];
 
 /** Each file under `folder` whose name ends with one of `endings`. */
 function filesEnding(folder: string, ...endings: string[]): string[] {
@@ -65,10 +65,20 @@ describe("jobs", () => {
     expect(jobs(given, unread)).toEqual(expected);
   });
 
+  // No spec and no Playwright setting reads a script, so only the Playwright specs skip a change to one.
+  it.each([[["scripts/scope.ts"]], [["scripts/README.md", "scripts/ship.ts"]]])(
+    "runs everything but the Playwright specs for %j",
+    (given) => {
+      expect(jobs(given, unread)).toEqual(["rust", "dependencies", "ui"]);
+    },
+  );
+
   it.each([
+    [["package-lock.json"]],
+    [["package.json"]],
     [["ui/src/App.svelte", "package-lock.json"]],
     [["ui/src/App.svelte", ".github/workflows/ci.yml"]],
-    [["scripts/scope.ts"]],
+    [["scripts/scope.ts", "justfile"]],
     [["justfile"]],
     [["uix/a.ts"]],
     [["prototype/src/App.svelte"]],
@@ -145,7 +155,10 @@ describe("a release PR", () => {
       [...RUST, ...UI],
     ],
     [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", ".github/workflows/release.yml"], RUST],
-    [["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "scripts/release-check.ts"], EVERY_JOB],
+    [
+      ["CHANGELOG.md", "Cargo.lock", "Cargo.toml", "scripts/release-check.ts"],
+      [...RUST, "ui"],
+    ],
   ])("reads %j as more than a version", (given, expected) => {
     expect(jobs(given, unread)).toEqual(expected);
   });
@@ -330,7 +343,7 @@ describe("changedJobs", () => {
 
 describe("narrowed", () => {
   it("keeps the jobs whose inputs changed since the run that passed", () => {
-    expect(narrowed([...RUST, ...UI], ["ui"])).toEqual(UI);
+    expect(narrowed([...RUST, ...UI], ["ui", "e2e"])).toEqual(UI);
   });
 
   it("keeps none for a change since that run that touched only docs", () => {

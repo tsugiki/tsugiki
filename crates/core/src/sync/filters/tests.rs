@@ -4,6 +4,7 @@ use crate::github::testing::{filter_page, replied, reply_ok};
 use crate::github::{Reply, Request, Transport, Unreachable};
 use crate::repository_settings::RepositorySettings;
 use crate::store::Store;
+use crate::store::testing::pins_to_read;
 use crate::sync::Syncs;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
@@ -207,7 +208,7 @@ fn a_first_sync_fetches_each_pinned_issue_and_reads_its_whole_tree_with_the_user
     );
     assert_eq!(harness.issue_numbers(), [7, 8]);
     assert_eq!(harness.numbers(), [30]);
-    let left = harness.db.store.pins_to_read(&cpython()).unwrap();
+    let left = pins_to_read(&harness.db.store, &cpython());
     assert!(left.is_empty(), "the sync read both trees: {left:?}");
     harness.finish();
 }

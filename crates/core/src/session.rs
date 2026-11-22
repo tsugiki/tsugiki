@@ -35,9 +35,10 @@ use crate::repository_settings::{RepositorySettings, SavedBy, SettingsSave};
 use crate::settings::SettingsView;
 use crate::status::{Change, Changes, Shown, Status, StatusBoard};
 use crate::store::{
-    self, Archiving, AuthorMuting, Flagging, Muting, OpenReader, ReaderToOpen, Seeing, Store,
-    StoreReader,
+    self, Archiving, AuthorMuting, Flagging, Judged, Muting, OpenReader, ReaderToOpen, Seeing,
+    Store, StoreReader, Unpinning,
 };
+use crate::sync::judge_closings;
 use crate::work::{MirrorWork, ReachFrom, SeenMark, checks_to_keep, findings_to_keep, moved};
 use crate::workbench::{Authored, authored_by};
 use github_thread::{GitHubMessage, Refreshes};
@@ -959,11 +960,34 @@ pub(crate) fn keep_mark(
             (saved, Change { repository, items })
         }
         Marked::Unpinned { repository, number } => {
-            let saved = store.unpin(&repository, number);
+            let saved = unpin(store, (&repository, settings), number);
             let items = vec![number];
             (saved, Change { repository, items })
         }
     }
+}
+
+/// Unpins Issue `number` of `repository` (#488), and judges at once the closing its pin held back, with the
+/// Repository's `settings`, as a sync judges closings, by the stored facts with the pin gone.
+fn unpin(
+    store: &Store,
+    (repository, settings): (&RepositoryName, &RepositorySettings),
+    number: u32,
+) -> Result<(), Error> {
+    let mut closings = store.closings(repository)?;
+    closings.retain(|closed| *closed == number);
+    let judged = if closings.is_empty() {
+        Judged {
+            archived: Vec::new(),
+            closings,
+        }
+    } else {
+        let mut facts = store.work_facts(repository)?;
+        facts.activity.pinned.retain(|pinned| *pinned != number);
+        judge_closings(facts, settings, closings)
+    };
+    let unpinning = Unpinning { number, judged };
+    store.unpin(repository, unpinning, OffsetDateTime::now_utc())
 }
 
 /// What muting or unmuting `author` touches in the stored facts of the Repository `settings` name.

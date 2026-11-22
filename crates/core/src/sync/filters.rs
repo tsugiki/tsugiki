@@ -15,7 +15,7 @@ use crate::filters::FilterQuery;
 use crate::github::filters::{CreatedRange, FilterHit, FilterHitKind, FilterSearch};
 use crate::github::pull_requests::{PageRequest, PrFetch};
 use crate::repository::RepositoryName;
-use crate::store::{NarrowedResults, PinId};
+use crate::store::{NarrowedResults, PinId, PinTree};
 
 /// The most results GitHub lists for one search (ADR 0015).
 const SEARCH_CAP: u32 = 1000;
@@ -307,10 +307,9 @@ impl FilterWalk {
 /// The user's own PRs, and each item a Filter found that Tsugiki lacks or has an older copy of. An item it
 /// has as it is now only passes on what it points at, and so does a merged PR (ADR 0011). The Pinned issues
 /// count as the user's work (#488): the sync fetches each one Tsugiki lacks, and reads the tree of each one
-/// whose tree no sync has read since the pin, which `pin_trees` takes for the sync to mark read as it
-/// finishes. An open PR left out
-/// here still comes with its Issue's tree, which keeps its CI current: CI finishing doesn't change
-/// `updatedAt`.
+/// that no sync has read since the pin. `pin_trees` takes the pins it reads, for the sync to mark read as it
+/// finishes. An open PR left out here still comes with its Issue's tree, which keeps its CI current: CI
+/// finishing doesn't change `updatedAt`.
 fn fetch_what_is_missing(
     link: &Link<'_>,
     walk: &mut FilterWalk,
@@ -325,8 +324,7 @@ fn fetch_what_is_missing(
         .map(|issue| (issue.number, issue.updated_at))
         .collect();
     // The store's reads first, as a failed one leaves the walk as it was.
-    let pinned = link.store.pinned(link.repository)?;
-    let to_read = link.store.pins_to_read(link.repository)?;
+    let pins = link.store.pins(link.repository)?;
     let mut ids = std::mem::take(&mut walk.work);
     let mut asking: BTreeSet<NodeId> = ids.iter().cloned().collect();
     let mut leads = std::mem::take(&mut walk.leads);
@@ -354,14 +352,17 @@ fn fetch_what_is_missing(
             },
         }
     }
-    for number in pinned {
-        if !issues.contains_key(&number) {
-            leads.named.extend([number]);
-        } else if to_read.contains_key(&number) {
-            leads.held_issues.extend([number]);
+    for (number, tree) in pins {
+        match (issues.contains_key(&number), tree) {
+            (false, _) => leads.named.extend([number]),
+            (true, PinTree::ToRead(_)) => leads.held_issues.extend([number]),
+            (true, PinTree::Read) => {}
+        }
+        // The sync marks read the trees these leads read. A pin made after this read waits for the next.
+        if let PinTree::ToRead(pin) = tree {
+            pin_trees.extend([(number, pin)]);
         }
     }
-    pin_trees.extend(to_read);
     Ok(Resumable::Fetching(Batches {
         ids,
         why: PrFetch::Work,

@@ -21,7 +21,9 @@ mod read_only;
 mod schema;
 mod sync_state;
 
-pub use activity::{Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, PinId, Seeing};
+pub use activity::{
+    Archiving, AuthorMuting, Flagging, Judged, Muting, Opened, PinId, PinTree, Seeing, Unpinning,
+};
 
 use pull_requests::FirstSave;
 
@@ -745,11 +747,18 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Unpins Issue `number` (#488), as `activity::unpin` says.
-    pub fn unpin(&self, repository: &RepositoryName, number: u32) -> Result<(), Error> {
+    /// Keeps `unpinning` (#488), put away `now` if it archives the Issue, as `activity::unpin` says.
+    pub fn unpin(
+        &self,
+        repository: &RepositoryName,
+        unpinning: Unpinning,
+        now: OffsetDateTime,
+    ) -> Result<(), Error> {
         let repository = repository.clone();
-        let saved =
-            self.call(move |connection| activity::unpin(connection, &repository, number))?;
+        let unpin = move |connection: &mut Connection| {
+            activity::unpin(connection, &repository, &unpinning, now)
+        };
+        let saved = self.call(unpin)?;
         saved.map_err(saying(CANT_WRITE))
     }
 
@@ -761,17 +770,10 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// The Pinned issues of `repository` (#488).
-    pub fn pinned(&self, repository: &RepositoryName) -> Result<BTreeSet<u32>, Error> {
+    /// The Pinned issues of `repository` (#488), each with whether a sync has read its tree since the pin.
+    pub fn pins(&self, repository: &RepositoryName) -> Result<BTreeMap<u32, PinTree>, Error> {
         let repository = repository.clone();
-        let read = self.call(move |connection| activity::pinned(connection, &repository))?;
-        read.map_err(saying(CANT_READ))
-    }
-
-    /// The pins of `repository` whose Issues' trees no sync has read since the pin (#488).
-    pub fn pins_to_read(&self, repository: &RepositoryName) -> Result<BTreeMap<u32, PinId>, Error> {
-        let repository = repository.clone();
-        let read = self.call(move |connection| activity::pins_to_read(connection, &repository))?;
+        let read = self.call(move |connection| activity::pins(connection, &repository))?;
         read.map_err(saying(CANT_READ))
     }
 

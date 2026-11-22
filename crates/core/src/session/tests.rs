@@ -2561,7 +2561,7 @@ fn pin_hands_the_mirror_the_heads_of_an_issues_tree_and_owes_their_reads_and_unp
     session.stop(PLENTY);
     let store = Store::open(&folders.database()).unwrap();
     let owed = store.read_ahead_owed(&gcmon()).unwrap();
-    let left = store.pinned(&gcmon()).unwrap();
+    let left = crate::store::testing::pinned(&store, &gcmon());
 
     let heads = "some-maintainer/gcmon wants heads #8 at 4567def on main, #9 at 89abcde on main";
     assert!(pinned.contains(&heads.to_owned()), "{pinned:?}");

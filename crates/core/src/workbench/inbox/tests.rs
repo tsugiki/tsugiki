@@ -381,7 +381,7 @@ fn a_pin_takes_an_issue_out_until_unpinned() {
     store.pin(&cpython(), 20).unwrap();
 
     let pinned = read(&world, InboxPage::Latest);
-    store.unpin(&cpython(), 1).unwrap();
+    crate::store::testing::unpin(store, &cpython(), 1);
     let unpinned = read(&world, InboxPage::Latest);
     world.finish();
 

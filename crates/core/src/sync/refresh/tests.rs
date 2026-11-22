@@ -6,6 +6,7 @@ use crate::facts::filters::FilterProblem;
 use crate::facts::issues::IssueState;
 use crate::facts::labels::Label;
 use crate::facts::pull_requests::{CiState, ReviewState};
+use crate::fetching::Marked;
 use crate::filters::{Filter, OnWorkbench};
 use crate::github::testing::{
     answer, dated, erring, filter_page, github, not_found, page_info, pr_content,
@@ -14,9 +15,10 @@ use crate::github::testing::{
 use crate::github::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
 use crate::repository::RepositoryName;
 use crate::repository_settings::RepositorySettings;
+use crate::session::keep_mark;
 use crate::settings::ListOrder;
 use crate::status::Change;
-use crate::store::testing::seeing;
+use crate::store::testing::{pinned, pins_to_read, seeing};
 use crate::store::{Archiving, Muting, Store};
 use crate::sync::recovery::{Scenario, recovers_from_each_failure};
 use crate::sync::testing::{
@@ -2758,13 +2760,13 @@ fn a_refresh_reads_the_tree_of_each_pin_no_sync_read_and_fetches_an_issue_it_lac
     holding_issue(&harness, 2, LONG_BEFORE);
     let store = &harness.db.store;
     store.pin(&cpython(), 2).unwrap();
-    let read = store.pins_to_read(&cpython()).unwrap();
+    let read = pins_to_read(store, &cpython());
     store.read_pin_trees(&cpython(), read).unwrap();
     store.pin(&cpython(), 1).unwrap();
     store.pin(&cpython(), 3).unwrap();
 
     drop(run(&mut refreshing(filtering(&[])), &harness));
-    let left = store.pins_to_read(&cpython()).unwrap();
+    let left = pins_to_read(store, &cpython());
 
     assert!(left.is_empty(), "the refresh read the trees: {left:?}");
     // An earlier sync read Issue 2's tree, and nothing changed on it since.
@@ -2804,7 +2806,7 @@ fn a_refresh_leaves_unread_the_tree_of_a_pin_made_after_it_took_the_pins() {
     store.pin(&cpython(), 2).unwrap();
 
     drop(run(&mut syncs, &harness));
-    let left = store.pins_to_read(&cpython()).unwrap();
+    let left = pins_to_read(store, &cpython());
 
     assert_eq!(asked, ["RefreshRepository", "FetchCrossReferences"]);
     assert_eq!(harness.operations(), Vec::<String>::new());
@@ -2827,9 +2829,9 @@ fn a_refresh_drops_the_pin_of_a_number_that_turns_out_to_name_no_issue_and_asks_
 
     drop(run(&mut refreshing(filtering(&[])), &harness));
     drop(run(&mut refreshing(filtering(&[])), &harness));
-    let left = store.pinned(&cpython()).unwrap();
+    let left = pinned(store, &cpython());
     store.pin(&cpython(), 41).unwrap();
-    let refused = store.pinned(&cpython()).unwrap();
+    let refused = pinned(store, &cpython());
 
     assert_eq!(
         harness.operations(),
@@ -2840,38 +2842,80 @@ fn a_refresh_drops_the_pin_of_a_number_that_turns_out_to_name_no_issue_and_asks_
     harness.finish();
 }
 
+/// A refresh that sees Issue 1, which a Filter finds, close.
+fn issue_1_closing() -> Vec<Result<Reply, Unreachable>> {
+    let polled = polled(
+        &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
+        &list(&[], None),
+        &[search(&[issue_hit(1)], None)],
+    );
+    vec![polled, no_cross_references(RATE_LIMIT)]
+}
+
+/// Unpins Issue `number` of CPython as the user does, under the Repository's `settings`.
+fn unpinning(harness: &Harness, settings: &RepositorySettings, number: u32) {
+    let marked = Marked::Unpinned {
+        repository: cpython(),
+        number,
+    };
+    let (saved, change) = keep_mark(&harness.db.store, settings, marked);
+    saved.unwrap();
+    assert_eq!(change.items, [number]);
+}
+
 #[test]
-fn a_closed_issue_unpinned_while_a_filter_finds_it_archives_at_the_next_step_that_saves() {
-    let replies = vec![
-        polled(
-            &list(&[issue_in(1, AFTER_IT, "CLOSED")], None),
-            &list(&[], None),
-            &[search(&[issue_hit(1)], None)],
-        ),
-        no_cross_references(RATE_LIMIT),
-        polled(
-            &list(&[issue_in(2, AFTER_IT, "OPEN")], None),
-            &list(&[], None),
-            &[search(&[issue_hit(1)], None)],
-        ),
-        // The trees of Issue 1, which the Filter finds, and of Issue 2, which changed.
-        no_cross_references(RATE_LIMIT),
-        no_cross_references(RATE_LIMIT),
-    ];
-    let harness = after_a_sync("unpin-closed", replies);
+fn a_closing_a_pin_held_back_archives_its_issue_at_the_unpin_with_no_step_of_a_sync() {
+    let harness = after_a_sync("unpin-closed", issue_1_closing());
     holding_issue(&harness, 1, LONG_BEFORE);
-    holding_issue(&harness, 2, LONG_BEFORE);
     stored_filter(&harness, "a", &[1]);
     harness.db.store.pin(&cpython(), 1).unwrap();
     let settings = filtering(&["a"]);
     drop(run(&mut refreshing(settings.clone()), &harness));
     let kept = archived(&harness);
 
-    harness.db.store.unpin(&cpython(), 1).unwrap();
-    drop(run(&mut refreshing(settings), &harness));
+    unpinning(&harness, &settings, 1);
 
     assert_eq!(kept, []);
     assert_eq!(archived(&harness), [ItemKey::Issue { number: 1 }]);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_pinned_after_its_closing_archived_it_stays_on_the_workbench_at_the_unpin() {
+    let harness = after_a_sync("unpin-archived-before", issue_1_closing());
+    holding_issue(&harness, 1, LONG_BEFORE);
+    stored_filter(&harness, "a", &[1]);
+    let settings = filtering(&["a"]);
+    drop(run(&mut refreshing(settings.clone()), &harness));
+    let put_away = archived(&harness);
+    // The pin takes the Issue out of Archived, as an unarchive does.
+    harness.db.store.pin(&cpython(), 1).unwrap();
+
+    unpinning(&harness, &settings, 1);
+
+    assert_eq!(put_away, [ItemKey::Issue { number: 1 }]);
+    assert_eq!(archived(&harness), []);
+    harness.finish();
+}
+
+#[test]
+fn an_issue_tsugiki_first_saw_closed_stays_on_the_workbench_at_the_unpin() {
+    let harness = after_a_sync("unpin-first-closed", Vec::new());
+    let closed = IssueFacts {
+        state: Some(IssueState::Closed),
+        ..issue_facts(1)
+    };
+    harness
+        .db
+        .store
+        .save_issues(&cpython(), vec![closed])
+        .unwrap();
+    stored_filter(&harness, "a", &[1]);
+    harness.db.store.pin(&cpython(), 1).unwrap();
+
+    unpinning(&harness, &filtering(&["a"]), 1);
+
+    assert_eq!(archived(&harness), []);
     harness.finish();
 }
 

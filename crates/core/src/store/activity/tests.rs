@@ -5,7 +5,8 @@ use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::migrate::MIGRATIONS;
 use crate::store::testing::{
-    OpenStore, archived_on_closing, database_before, seeing, temp_database,
+    OpenStore, archived_on_closing, database_before, pinned, pins_to_read, seeing, temp_database,
+    unpin,
 };
 use crate::store::{ChangeCheck, Store, SyncState};
 use crate::testing::{cpython, issue_facts, pr_facts};
@@ -904,14 +905,14 @@ fn a_pin_survives_a_restart_per_repository_until_unpinned() {
 
     let store = Store::open(&path).unwrap();
     // Repository names ignore case, as GitHub's do.
-    let restarted = store.pinned(&RepositoryName::parse("Python/CPython").unwrap());
+    let restarted = pinned(&store, &RepositoryName::parse("Python/CPython").unwrap());
     let in_facts = store.work_facts(&repository).unwrap().activity.pinned;
-    store.unpin(&repository, 8).unwrap();
-    let after = store.pinned(&repository).unwrap();
-    let in_another = store.pinned(&elsewhere).unwrap();
+    unpin(&store, &repository, 8);
+    let after = pinned(&store, &repository);
+    let in_another = pinned(&store, &elsewhere);
 
     store.close();
-    assert_eq!(restarted.unwrap(), BTreeSet::from([7, 8]));
+    assert_eq!(restarted, BTreeSet::from([7, 8]));
     assert_eq!(in_facts, BTreeSet::from([7, 8]));
     assert_eq!(after, BTreeSet::from([7]));
     assert_eq!(in_another, BTreeSet::from([9]));
@@ -924,13 +925,13 @@ fn a_pin_waits_for_a_sync_to_read_its_tree_and_a_pin_made_again_waits_anew() {
     let store = Store::open(&path).unwrap();
     store.pin(&repository, 7).unwrap();
     store.pin(&repository, 8).unwrap();
-    let taken = store.pins_to_read(&repository).unwrap();
+    let taken = pins_to_read(&store, &repository);
     // The user pins Issue 8 again while the sync reads the trees it took.
-    store.unpin(&repository, 8).unwrap();
+    unpin(&store, &repository, 8);
     store.pin(&repository, 8).unwrap();
 
     store.read_pin_trees(&repository, taken.clone()).unwrap();
-    let left = store.pins_to_read(&repository).unwrap();
+    let left = pins_to_read(&store, &repository);
 
     store.close();
     assert_eq!(taken.keys().copied().collect::<Vec<_>>(), [7, 8]);
@@ -954,11 +955,11 @@ fn a_pin_on_a_number_the_store_knows_names_no_issue_does_nothing_and_saving_one_
 
     store.pin(&repository, 11).unwrap();
     store.pin(&repository, 12).unwrap();
-    let refused = store.pinned(&repository).unwrap();
+    let refused = pinned(&store, &repository);
     store
         .save_issues_and_issueless(&repository, (vec![], vec![]), vec![13])
         .unwrap();
-    let dropped = store.pinned(&repository).unwrap();
+    let dropped = pinned(&store, &repository);
 
     store.close();
     assert_eq!(refused, BTreeSet::from([13]));
@@ -966,29 +967,44 @@ fn a_pin_on_a_number_the_store_knows_names_no_issue_does_nothing_and_saving_one_
 }
 
 #[test]
-fn an_unpinned_closed_issue_has_its_closing_judged_again() {
+fn an_unpin_archives_as_judged_only_an_issue_whose_closing_the_store_still_keeps() {
     let (path, _folder) = temp_database("activity-unpin-closed");
     let repository = cpython();
+    let now = OffsetDateTime::now_utc().replace_nanosecond(0).unwrap();
     let store = Store::open(&path).unwrap();
+    let issues = vec![issue_facts(1), issue_facts(2), issue_facts(3)];
+    store.save_issues(&repository, issues).unwrap();
+    for number in [1, 2] {
+        store.pin(&repository, number).unwrap();
+    }
     let closed = IssueFacts {
         state: Some(IssueState::Closed),
         ..issue_facts(1)
     };
-    store
-        .save_issues(&repository, vec![closed, issue_facts(2)])
-        .unwrap();
-    for number in [1, 2, 3] {
-        store.pin(&repository, number).unwrap();
-    }
+    store.save_issues(&repository, vec![closed]).unwrap();
+    let kept = store.closings(&repository).unwrap();
+    let judging = |number| Unpinning {
+        number,
+        judged: Judged {
+            archived: vec![ItemKey::Issue { number }],
+            closings: BTreeSet::from([number]),
+        },
+    };
 
-    for number in [1, 2, 3, 4] {
-        store.unpin(&repository, number).unwrap();
+    for number in [1, 2, 3] {
+        store.unpin(&repository, judging(number), now).unwrap();
     }
+    let archived = store.work_facts(&repository).unwrap().activity.archived;
     let closings = store.closings(&repository).unwrap();
 
     store.close();
-    // Issue 2 is open, Tsugiki holds no Issue 3, and nobody pinned Issue 4.
-    assert_eq!(closings, BTreeSet::from([1]));
+    // Issue 2 never closed, and nobody pinned Issue 3.
+    assert_eq!(kept, BTreeSet::from([1]));
+    assert_eq!(
+        archived.into_keys().collect::<Vec<_>>(),
+        [ItemKey::Issue { number: 1 }]
+    );
+    assert_eq!(closings, BTreeSet::new());
 }
 
 #[test]

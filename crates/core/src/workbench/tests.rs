@@ -42,7 +42,7 @@ fn a_pinned_issue_no_filter_reaches_is_on_the_workbench_marked_pinned_until_unpi
     };
 
     let pinned = read();
-    store.unpin(&cpython(), 1).unwrap();
+    crate::store::testing::unpin(store, &cpython(), 1);
     let unpinned = read();
 
     world.finish();

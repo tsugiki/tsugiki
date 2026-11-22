@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
 use crate::error::{Error, ErrorKind};
+use crate::facts::WorkFacts;
 use crate::facts::issues::ListedPr;
 use crate::facts::pull_requests::{NodeId, PullRequestFacts};
 use crate::filters::FilterQuery;
@@ -297,9 +298,22 @@ fn archive_closings(
         return Ok(());
     }
     let facts = store.work_facts(repository)?;
-    let archived = archived_by_closing(facts, settings, &closings);
-    let judged = Judged { archived, closings };
+    let judged = judge_closings(facts, settings, closings);
     store.archive_closed(repository, judged, OffsetDateTime::now_utc())
+}
+
+/// The judgment of `closings` by `facts`, under the Repository's `settings` (#820): the items their closing
+/// archives, as `archived_by_closing` judges them, and the closings judged. The closing of a Pinned issue
+/// stays unjudged, for its unpin to judge (#488).
+pub(crate) fn judge_closings(
+    facts: WorkFacts,
+    settings: &RepositorySettings,
+    mut closings: BTreeSet<u32>,
+) -> Judged {
+    let pinned = facts.activity.pinned.clone();
+    let archived = archived_by_closing(facts, settings, &closings);
+    closings.retain(|number| !pinned.contains(number));
+    Judged { archived, closings }
 }
 
 /// Brings back to the Inbox each Archived Issue of `repository` that a PR `step` saved opened on (#823),

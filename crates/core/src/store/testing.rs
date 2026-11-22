@@ -56,6 +56,33 @@ pub(crate) fn archived_on_closing(store: &Store, keys: &[ItemKey], now: OffsetDa
     store.archive_closed(&cpython(), judged, now).unwrap();
 }
 
+/// The Pinned issues of `repository` (#488).
+pub(crate) fn pinned(store: &Store, repository: &RepositoryName) -> BTreeSet<u32> {
+    store.pins(repository).unwrap().into_keys().collect()
+}
+
+/// The pins of `repository` whose trees no sync has read since the pin (#488).
+pub(crate) fn pins_to_read(store: &Store, repository: &RepositoryName) -> BTreeMap<u32, PinId> {
+    let pins = store.pins(repository).unwrap().into_iter();
+    let to_read = pins.filter_map(|(number, tree)| match tree {
+        PinTree::ToRead(pin) => Some((number, pin)),
+        PinTree::Read => None,
+    });
+    to_read.collect()
+}
+
+/// Unpins Issue `number` of `repository`, where the store keeps no closing of it (#488).
+pub(crate) fn unpin(store: &Store, repository: &RepositoryName, number: u32) {
+    let judged = Judged {
+        archived: Vec::new(),
+        closings: BTreeSet::new(),
+    };
+    let unpinning = Unpinning { number, judged };
+    store
+        .unpin(repository, unpinning, OffsetDateTime::now_utc())
+        .unwrap();
+}
+
 /// Mark Seen on `numbers` up to `up_to`, with no Stale review drawn.
 pub(crate) fn seeing(numbers: Vec<u32>, up_to: Option<OffsetDateTime>) -> Seeing {
     Seeing {

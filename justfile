@@ -35,8 +35,8 @@ worktree-remove ticket:
     node scripts/worktree.ts remove {{quote(ticket)}}
 
 # `just ship body.md` takes the PR's body from a file
-# Push the branch and open its PR; `just ship --check` runs `just check` first, and `--release` ships a
-# release/ branch: ask first
+# `--check` runs `just check` in place of `just quick`, and `--release` ships a release/ branch: ask first.
+# Run `just quick`, then push the branch and open its PR
 ship *args:
     node scripts/ship.ts {{args}}
 
@@ -83,8 +83,12 @@ check: lint doc-width dupes svelte-check vitest rust-gates release-check e2e
 # Like `check`, it skips Clippy and `rust-coverage` on a branch that changes only `ui/` and docs. It leaves
 # out the rest of `check`: ESLint, token-deps, pre-commit, deny, machete, release-check and e2e.
 # Run the gates a first push most often fails on, one at a time, and stop at the first that fails
-preflight: rustfmt prettier doc-width dupes svelte-check vitest
+preflight: quick svelte-check vitest
     node scripts/rust-gates.ts clippy rust-coverage
+
+# `just ship` runs it before each push. Each of these failed CI on its own often enough to be worth seconds.
+# Run the gates that take seconds: Rust and Prettier formatting, line width and copied code
+quick: rustfmt prettier doc-width dupes
 
 # Check the formatting, lint with ESLint, and run the pre-commit hooks on the workflows and the spelling
 lint:

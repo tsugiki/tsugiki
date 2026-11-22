@@ -4,12 +4,12 @@ import { type Pr, branchRefusal, failureSummary, shipArgs, unmergedReason } from
 
 describe("shipArgs", () => {
   it.each([
-    [[], { check: false, release: false, bodyFile: undefined }],
-    [["--check"], { check: true, release: false, bodyFile: undefined }],
-    [["body.md"], { check: false, release: false, bodyFile: "body.md" }],
-    [["body.md", "--check"], { check: true, release: false, bodyFile: "body.md" }],
-    [["--release"], { check: false, release: true, bodyFile: undefined }],
-    [["--release", "--check", "body.md"], { check: true, release: true, bodyFile: "body.md" }],
+    [[], { gates: "quick", release: false, bodyFile: undefined }],
+    [["--check"], { gates: "check", release: false, bodyFile: undefined }],
+    [["body.md"], { gates: "quick", release: false, bodyFile: "body.md" }],
+    [["body.md", "--check"], { gates: "check", release: false, bodyFile: "body.md" }],
+    [["--release"], { gates: "quick", release: true, bodyFile: undefined }],
+    [["--release", "--check", "body.md"], { gates: "check", release: true, bodyFile: "body.md" }],
   ])("reads %j", (args, expected) => {
     expect(shipArgs(args)).toEqual(expected);
   });

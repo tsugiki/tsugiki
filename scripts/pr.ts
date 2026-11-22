@@ -3,9 +3,15 @@
 
 import { isReleaseBranch } from "./releasing.ts";
 
+/**
+ * The recipe `just ship` runs before it pushes: `quick` takes seconds, and `check`, which holds its gates,
+ * runs every gate CI runs.
+ */
+export type ShipGates = "quick" | "check";
+
 /** The options `just ship` was given. */
 export interface ShipArgs {
-  check: boolean;
+  gates: ShipGates;
   release: boolean;
   bodyFile: string | undefined;
 }
@@ -16,7 +22,11 @@ export function shipArgs(args: string[]): ShipArgs | undefined {
   if (bodyFile?.startsWith("-") || extra.length > 0) {
     return undefined;
   }
-  return { check: args.includes("--check"), release: args.includes("--release"), bodyFile };
+  return {
+    gates: args.includes("--check") ? "check" : "quick",
+    release: args.includes("--release"),
+    bodyFile,
+  };
 }
 
 /** The reason `just ship` won't push from `branch`, or `undefined` when it may. */

@@ -114,7 +114,7 @@ Done when the agent reports the review fixed and its gates passed, and the entry
 From the worktree, run `just ship .temp/pr-body.md`. It takes the PR's title from the branch's first commit
 and its body from the file the builder keeps. Report the PR and, once it finishes, CI's result to the user,
 and write the result into the log. If CI fails, send the failed gate's log to the agent; it fixes the gate
-and reruns only that gate, and you push again. A force push needs the user's say each time.
+and reruns only that gate, and you push again with `just ship`. A force push needs the user's say each time.
 
 The user merges each PR. Stop at the report.
 
@@ -129,7 +129,8 @@ Once the user says a PR merged, tell each sibling still open to merge `origin/ma
 conflicted, how hard each was, and each break the tests found with no conflict. Step 8 counts the lines with
 a conflict for the row's Conflicts.
 
-Once those tests pass, push: CI runs the full gates on the push. Ask for `just preflight` again only when a
+Once those tests pass, push with `just ship`, which runs `just quick` first: CI runs the full gates on the
+push. Ask for `just preflight` again only when a
 resolution rewrote code, a moderate or hard conflict, where a failed CI round trip costs more than the run.
 
 ### 7. Look for copies the siblings made

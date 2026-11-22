@@ -103,7 +103,7 @@ describe("SettingsDialog", () => {
     const page = dialog.filters.page("python/cpython");
 
     page?.add();
-    expect(dialog.unsaveable).toBe(true);
+    expect(dialog.unsaveable).toBe("Give each Filter of python/cpython a name and a search.");
     expect(await dialog.apply()).toBe(false);
     expect(core.applySettings).not.toHaveBeenCalled();
     page?.rows.forEach((row) => {
@@ -111,12 +111,13 @@ describe("SettingsDialog", () => {
       row.query ||= "author:@me";
     });
 
-    expect(dialog.unsaveable).toBe(false);
+    expect(dialog.unsaveable).toBeUndefined();
     expect(await dialog.apply()).toBe(true);
     expect(core.applySettings).toHaveBeenCalledWith({
       filters: [
         {
           repository: "python/cpython",
+          read: cpython.filters,
           filters: [
             { name: "Bugs", query: "label:bug", was: "label:bug" },
             { name: "Mine", query: "author:@me", was: null },

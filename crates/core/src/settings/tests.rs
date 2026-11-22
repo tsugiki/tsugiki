@@ -1332,11 +1332,13 @@ fn edited(name: &str, query_text: &str, was: Option<&str>) -> EditedFilter {
     }
 }
 
-/// Apply with the Filters of Repository `name` as `filters` lists them, and nothing else changed.
-fn filters_of(name: &str, filters: Vec<EditedFilter>) -> SettingsChanges {
+/// Apply with the Filters of Repository `name` as `filters` lists them, from those `read` gives it, and
+/// nothing else changed.
+fn filters_of(read: &Settings, name: &str, filters: Vec<EditedFilter>) -> SettingsChanges {
     SettingsChanges {
         filters: vec![RepositoryFilters {
             repository: repository(name),
+            read: read.repository(repository(name)).filters,
             filters,
         }],
         ..SettingsChanges::default()
@@ -1384,6 +1386,7 @@ fn apply_renames_a_filter_and_changes_a_search_in_place_keeping_its_keys_and_com
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![
                 edited("Bug reports", "label:bug", Some("label:bug")),
@@ -1414,6 +1417,7 @@ fn apply_moves_a_filter_with_its_keys_and_comments() {
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![
                 edited("Docs", "label:docs", Some("label:docs")),
@@ -1460,6 +1464,7 @@ fn apply_deletes_a_filter_and_adds_one_off_the_workbench() {
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![
                 edited("Bugs", "label:bug", Some("label:bug")),
@@ -1503,10 +1508,16 @@ theme = \"system\"
 fn apply_with_no_filters_left_says_so_and_adding_one_to_none_writes_a_block() {
     let (mut files, folders, _root) = settings_saying("filters-none", TWO_FILTERS);
 
-    files.apply(filters_of("a/b", Vec::new())).unwrap();
+    files
+        .apply(filters_of(&files.loaded().settings, "a/b", Vec::new()))
+        .unwrap();
     let emptied = fs::read_to_string(folders.settings_file()).unwrap();
     files
-        .apply(filters_of("a/b", vec![edited("Mine", "author:@me", None)]))
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited("Mine", "author:@me", None)],
+        ))
         .unwrap();
     let added = fs::read_to_string(folders.settings_file()).unwrap();
 
@@ -1529,6 +1540,7 @@ fn apply_on_a_repository_without_filters_keeps_the_starters_it_reads_as_in_the_f
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![
                 edited(
@@ -1560,6 +1572,7 @@ fn apply_keeps_filters_written_inline_inline() {
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![
                 edited("Docs", "label:docs", Some("label:docs")),
@@ -1601,6 +1614,7 @@ filters = [
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![
                 edited("Docs", "label:docs", Some("label:docs")),
@@ -1633,10 +1647,16 @@ fn apply_with_a_repository_written_inline_and_no_filters_left_writes_them_inline
         "repositories = [{ name = \"a/b\", filters = [{ name = \"Bugs\", query = \"label:bug\" }] }]\n",
     );
 
-    files.apply(filters_of("a/b", Vec::new())).unwrap();
+    files
+        .apply(filters_of(&files.loaded().settings, "a/b", Vec::new()))
+        .unwrap();
     let emptied = fs::read_to_string(folders.settings_file()).unwrap();
     files
-        .apply(filters_of("a/b", vec![edited("Mine", "author:@me", None)]))
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited("Mine", "author:@me", None)],
+        ))
         .unwrap();
     let added = fs::read_to_string(folders.settings_file()).unwrap();
 
@@ -1659,6 +1679,7 @@ fn apply_drops_a_second_filter_with_a_search_the_first_has_which_the_settings_ne
 
     files
         .apply(filters_of(
+            &files.loaded().settings,
             "a/b",
             vec![edited("Bugs", "label:bug is:open", Some("label:bug"))],
         ))
@@ -1673,6 +1694,110 @@ fn apply_drops_a_second_filter_with_a_search_the_first_has_which_the_settings_ne
 }
 
 #[test]
+fn a_comment_above_a_filter_in_an_inline_list_goes_where_the_filter_goes() {
+    let before = "\
+[[repositories]]
+name = \"a/b\"
+filters = [
+  # bugs I triage
+  { name = \"Bugs\", query = \"label:bug\" },
+  { name = \"Docs\", query = \"label:docs\" },
+]
+";
+    let docs = || edited("Docs", "label:docs", Some("label:docs"));
+    let (mut files, folders, _root) = settings_saying("filters-inline-comment", before);
+
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![docs(), edited("Bugs", "label:bug", Some("label:bug"))],
+        ))
+        .unwrap();
+    let moved = fs::read_to_string(folders.settings_file()).unwrap();
+    files
+        .apply(filters_of(&files.loaded().settings, "a/b", vec![docs()]))
+        .unwrap();
+    let deleted = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(
+        moved,
+        "\
+[[repositories]]
+name = \"a/b\"
+filters = [
+  { name = \"Docs\", query = \"label:docs\" },
+  # bugs I triage
+  { name = \"Bugs\", query = \"label:bug\" },
+]
+"
+    );
+    assert_eq!(
+        deleted,
+        "[[repositories]]\nname = \"a/b\"\nfilters = [\n  { name = \"Docs\", query = \"label:docs\" },\n]\n"
+    );
+}
+
+#[test]
+fn apply_keeps_a_filters_list_left_empty_as_written_and_puts_its_comment_above_the_first_block() {
+    let before =
+        "[[repositories]]\nname = \"a/b\"\n# None for now.\nfilters = []\nread_only = true\n";
+    let (mut files, folders, _root) = settings_saying("filters-empty-comment", before);
+
+    files
+        .apply(filters_of(&files.loaded().settings, "a/b", Vec::new()))
+        .unwrap();
+    let left = fs::read_to_string(folders.settings_file()).unwrap();
+    files
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited("Mine", "author:@me", None)],
+        ))
+        .unwrap();
+    let added = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(left, before);
+    assert_eq!(
+        added,
+        "[[repositories]]\nname = \"a/b\"\nread_only = true\n\n# None for now.\n[[repositories.filters]]\n\
+         name = \"Mine\"\nquery = \"author:@me\"\n"
+    );
+}
+
+#[test]
+fn apply_refuses_filters_a_hand_edit_changed_while_the_dialog_was_open_and_saves_nothing() {
+    let (mut files, folders, _root) = settings_saying("filters-hand-edit", TWO_FILTERS);
+    let read = files.loaded().settings.clone();
+    let rename = vec![edited("Bug reports", "label:bug", Some("label:bug"))];
+    let hand_edits = [
+        TWO_FILTERS.replace(
+            "[appearance]",
+            "[[repositories.filters]]\nname = \"Mine\"\nquery = \"author:@me\"\n\n[appearance]",
+        ),
+        TWO_FILTERS.replace("on_workbench = true", "on_workbench = false"),
+    ];
+
+    for edited_by_hand in hand_edits {
+        fs::write(folders.settings_file(), &edited_by_hand).unwrap();
+        let refused = files
+            .apply(filters_of(&read, "a/b", rename.clone()))
+            .unwrap_err();
+
+        assert_eq!(refused.kind, ErrorKind::Conflict);
+        assert_eq!(
+            refused.message,
+            "The Filters of a/b changed in settings.toml while Settings was open. Cancel, then open \
+             Settings again to edit them."
+        );
+        assert_eq!(
+            fs::read_to_string(folders.settings_file()).unwrap(),
+            edited_by_hand
+        );
+    }
+}
+
+#[test]
 fn apply_refuses_two_filters_with_one_search_or_a_repository_the_file_doesnt_hold_and_saves_nothing()
  {
     let (mut files, folders, _root) = settings_saying("filters-refused", TWO_FILTERS);
@@ -1681,6 +1806,7 @@ fn apply_refuses_two_filters_with_one_search_or_a_repository_the_file_doesnt_hol
         .apply(SettingsChanges {
             status_bar: Some(StatusBarSettings { visible: false }),
             ..filters_of(
+                &files.loaded().settings,
                 "a/b",
                 vec![
                     edited("Bugs", "label:bug", Some("label:bug")),
@@ -1690,7 +1816,11 @@ fn apply_refuses_two_filters_with_one_search_or_a_repository_the_file_doesnt_hol
         })
         .unwrap_err();
     let missing = files
-        .apply(filters_of("c/d", vec![edited("Bugs", "label:bug", None)]))
+        .apply(filters_of(
+            &files.loaded().settings,
+            "c/d",
+            vec![edited("Bugs", "label:bug", None)],
+        ))
         .unwrap_err();
 
     assert_eq!(twice.kind, ErrorKind::Conflict);
@@ -1714,7 +1844,11 @@ fn apply_of_filters_alone_saves_over_an_appearance_value_tsugiki_cant_read() {
     let mut files = SettingsFiles::load(folders.clone());
 
     files
-        .apply(filters_of("a/b", vec![edited("Mine", "author:@me", None)]))
+        .apply(filters_of(
+            &files.loaded().settings,
+            "a/b",
+            vec![edited("Mine", "author:@me", None)],
+        ))
         .unwrap();
     let after = fs::read_to_string(folders.settings_file()).unwrap();
 
@@ -1733,6 +1867,7 @@ fn the_owner_hands_the_session_the_filters_an_apply_saves_as_a_hand_edit() {
 
     let saved = owner
         .apply(filters_of(
+            &owner.view().loaded.settings,
             "a/b",
             vec![edited("Docs", "label:docs", Some("label:docs"))],
         ))

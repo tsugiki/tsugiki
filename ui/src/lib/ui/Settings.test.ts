@@ -1382,15 +1382,22 @@ describe("Settings › a Repository's Filters", () => {
     await fireEvent.input(field(1, "Name"), { target: { value: "Bug reports" } });
     await fireEvent.click(within(filter(2)).getByRole("button", { name: "Move up" }));
     await fireEvent.click(within(page()).getByRole("button", { name: "Add filter" }));
+    // On another page too, the footer says why Apply is off.
+    await go("General");
+    const why = "Give each Filter of python/cpython a name and a search.";
+    expect(within(dialog()).getByText(why)).toBeTruthy();
     expect(button("Apply").hasAttribute("disabled")).toBe(true);
+    await go("python/cpython");
     await fireEvent.input(field(3, "Search"), { target: { value: "is:open" } });
     await fireEvent.input(field(3, "Name"), { target: { value: "Open" } });
+    expect(within(dialog()).queryByText(why)).toBeNull();
     await fireEvent.click(button("Apply"));
 
     expect(core.applySettings).toHaveBeenCalledWith({
       filters: [
         {
           repository: "python/cpython",
+          read: files.repositories[1]?.filters,
           filters: [
             { name: "Docs", query: "label:docs", was: "label:docs" },
             { name: "Bug reports", query: "label:bug", was: "label:bug" },

@@ -72,16 +72,18 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 - A Repository's Filters group lists each Filter on a line of its own, in the order `settings.toml` gives
   and the Sidebar shows: its name and its search, each edited in place, ↑ and ↓, off at either end, and
   Delete. Add filter adds a Filter with a blank name and search at the end and puts the focus in its name. A
-  Filter with a blank name or search turns its line red, and Apply stays off until it has both. The lines
-  wait for the files and are off while Apply saves. Apply writes the Repository's `filters` in the form the
-  file uses: blocks of their own, or the inline list the user wrote, keeping the user's comments. A Filter
-  the page read keeps its table, with each key and comment on it, `on_workbench` among them, through a new
-  name, a new search or a move, and its name and search change in place. A Filter Add filter added is
-  written with its name and search alone, so it is off the Workbench. A Repository the file holds without
-  `filters` gets the Filters it reads as written out first, as the switch writes them. No Filters left
-  writes `filters = []`, since a Repository without the key reads as having the starters. A second Filter
-  with the search of one before it, which Tsugiki never read, goes. Apply refuses two Filters with one
-  search, naming it, and saves nothing. The Sidebar shows the Filters once Apply has saved them, as after a
+  Filter with a blank name or search turns its line red, and Apply stays off until it has both, with a line
+  beside it naming the Repository, on any page. The lines wait for the files and are off while Apply saves.
+  Apply writes the Repository's `filters` in the form the file uses: blocks of their own, or the inline list
+  the user wrote, keeping the user's comments. A Filter the page read keeps its table, with each key and
+  comment on it, `on_workbench` among them, through a new name, a new search or a move, and its name and
+  search change in place. A Filter Add filter added is written with its name and search alone, so it is off
+  the Workbench. A Repository the file holds without `filters` gets the Filters it reads as written out
+  first, as the switch writes them. No Filters left writes `filters = []`, since a Repository without the
+  key reads as having the starters, and blocks put in place of a `filters = []` take the comment above it.
+  A second Filter with the search of one before it, which Tsugiki never read, goes. Apply refuses two
+  Filters with one search, naming it, and Filters a hand edit changed while the dialog was open, naming the
+  Repository, and saves nothing then. The Sidebar shows the Filters once Apply has saved them, as after a
   hand edit, and a new search loads its items as one added by hand does; Cancel leaves the file and the
   Sidebar as they were. The page has no "On the Workbench" switch yet (#1017).
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps

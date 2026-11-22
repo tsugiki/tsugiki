@@ -149,12 +149,18 @@
     </section>
   </div>
   <footer>
-    {#if dialog.problem !== undefined}
+    <!-- The reason Apply is off comes first: it holds now, and a problem from the last try waits behind
+         it. -->
+    {#if dialog.unsaveable !== undefined}
+      <p>{dialog.unsaveable}</p>
+    {:else if dialog.problem !== undefined}
       <p role="alert">{dialog.problem}</p>
     {/if}
     <button disabled={dialog.applying} onclick={cancel}>Cancel</button>
-    <button class="primary" disabled={dialog.applying || dialog.unsaveable} onclick={() => void apply()}
-      >{dialog.changed ? "Apply" : "OK"}</button
+    <button
+      class="primary"
+      disabled={dialog.applying || dialog.unsaveable !== undefined}
+      onclick={() => void apply()}>{dialog.changed ? "Apply" : "OK"}</button
     >
   </footer>
 </Dialog>

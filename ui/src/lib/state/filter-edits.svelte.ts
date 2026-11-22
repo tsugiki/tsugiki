@@ -33,11 +33,14 @@ const saying = (filters: { was: string | null; name: string; query: string }[]) 
 /** The Filters of one Repository's page. */
 export class FilterPage {
   rows = $state<FilterRow[]>([]);
+  /** The Filters the files held, which Apply sends for the core to check the file holds them still. */
+  readonly read: Filter_Serialize[];
   /** The Filters the files held, as `saying` puts them. */
   readonly #held: string;
   #ids = 0;
 
   constructor(filters: Filter_Serialize[]) {
+    this.read = structuredClone(filters);
     this.rows = filters.map(({ name, query }) => this.#row(name, query, query));
     this.#held = saying(filters.map(({ name, query }) => ({ was: query, name, query })));
   }
@@ -100,15 +103,16 @@ export class FilterEdits {
     return this.#pages[repository];
   }
 
-  /** Whether any row has a blank name or search, which keeps Apply off. */
-  get blank(): boolean {
-    return Object.values(this.#pages).some((page) => page.blank);
+  /** The first Repository with a Filter whose name or search is blank, which keeps Apply off, if any. */
+  get blankIn(): string | undefined {
+    return Object.entries(this.#pages).find(([, page]) => page.blank)?.[0];
   }
 
-  /** The Filters of each Repository whose rows say other than the files did, which Apply saves. */
+  /** The Filters of each Repository whose rows say other than the files did, which Apply saves, with those
+   * the files held. */
   get changes(): RepositoryFilters_Deserialize[] {
     return Object.entries(this.#pages)
       .filter(([, page]) => page.changed)
-      .map(([repository, page]) => ({ repository, filters: page.edited }));
+      .map(([repository, page]) => ({ repository, read: page.read, filters: page.edited }));
   }
 }

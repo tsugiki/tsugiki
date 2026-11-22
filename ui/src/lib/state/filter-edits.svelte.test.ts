@@ -19,7 +19,7 @@ describe("FilterEdits", () => {
     const held = edits();
     expect(held.page("python/peps")).toBeUndefined();
     expect(held.changes).toEqual([]);
-    expect(held.blank).toBe(false);
+    expect(held.blankIn).toBeUndefined();
   });
 
   it("moves a Filter up and down, keeping the search each had in the files", () => {
@@ -32,6 +32,7 @@ describe("FilterEdits", () => {
     expect(held.changes).toEqual([
       {
         repository: "python/cpython",
+        read: [bugs, docs, mine],
         filters: [
           { name: "Mine", query: "author:@me", was: "author:@me" },
           { name: "Bugs", query: "label:bug", was: "label:bug" },
@@ -49,13 +50,13 @@ describe("FilterEdits", () => {
     const added = page?.rows.at(-1);
     expect(names(held)).toEqual(["Bugs", "Mine", ""]);
     expect(added?.was).toBeNull();
-    expect(held.blank).toBe(true);
+    expect(held.blankIn).toBe("python/cpython");
     if (added === undefined) throw new Error("no row added");
     added.name = "Open";
     added.query = "  ";
     expect(page?.rows.map(isBlank)).toEqual([false, false, true]);
     added.query = "is:open";
-    expect(held.blank).toBe(false);
+    expect(held.blankIn).toBeUndefined();
   });
 
   it("counts a name or search back as the files said it as no change, and saves them without spaces round them", () => {

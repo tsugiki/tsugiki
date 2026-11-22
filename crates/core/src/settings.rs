@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
+use std::mem;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -23,7 +24,7 @@ use toml_edit::{
 };
 
 use crate::error::{Error, ErrorKind};
-use crate::filters::{FilterName, FilterQuery, OnWorkbench};
+use crate::filters::{Filter, FilterName, FilterQuery, OnWorkbench};
 use crate::folders::Folders;
 use crate::keys::{Action, Remaps, Unread};
 use crate::latest::{self, LatestReader};
@@ -155,10 +156,12 @@ pub struct SettingsChanges {
     pub filters: Vec<RepositoryFilters>,
 }
 
-/// The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535).
+/// The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535), and those
+/// it read from the files, which Apply checks the file still holds, so it writes over no hand edit to them.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 pub struct RepositoryFilters {
     pub repository: RepositoryName,
+    pub read: Vec<Filter>,
     pub filters: Vec<EditedFilter>,
 }
 
@@ -1932,8 +1935,9 @@ impl TomlEdit<'_, Settings> {
     }
 
     /// Makes the Filters of the Repository `change` names the ones it lists, as `put_filters` says. It
-    /// refuses two Filters with one search, as the settings would read only the first, and a Repository the
-    /// file doesn't hold.
+    /// refuses two Filters with one search, as the settings would read only the first, Filters the file no
+    /// longer says as the page read them, which a hand edit made while the dialog was open changed, and a
+    /// Repository the file doesn't hold.
     fn put_filters(&mut self, change: &RepositoryFilters) -> Result<(), Error> {
         let filters = &change.filters;
         let repeated = filters.iter().enumerate().find_map(|(at, filter)| {
@@ -1946,6 +1950,18 @@ impl TomlEdit<'_, Settings> {
                 "Two Filters of {} search {}: give each a search of its own.",
                 change.repository,
                 query.as_str()
+            );
+            return Err(Error::new(ErrorKind::Conflict, &message));
+        }
+        let held =
+            (self.values.repositories.iter()).find(|one| one.name.is_same(&change.repository));
+        if let Some(held) = held
+            && held.filters != change.read
+        {
+            let message = format!(
+                "The Filters of {} changed in settings.toml while Settings was open. Cancel, then open \
+                 Settings again to edit them.",
+                change.repository
             );
             return Err(Error::new(ErrorKind::Conflict, &message));
         }
@@ -2005,24 +2021,47 @@ fn searches(filter: &dyn TableLike, query: &FilterQuery) -> bool {
 ///
 /// An inline list the user wrote stays inline. Otherwise the Filters take blocks of their own, as `append`
 /// writes them, which a Repository written inline writes as an inline list. With no Filters left it writes
-/// `filters = []`, as a Repository without the key reads as having the starters.
+/// `filters = []`, as a Repository without the key reads as having the starters. Blocks put in place of a
+/// `filters = []` take the comment above it.
 fn put_filters(repository: &mut dyn TableLike, edits: &[EditedFilter]) {
     match repository.get_mut(FILTERS) {
         Some(Item::Value(Value::Array(list))) if !list.is_empty() => {
-            put_inline_filters(list, edits)
+            put_inline_filters(list, edits);
         }
-        _ => {
-            let blocks = (repository.remove(FILTERS))
-                .and_then(|list| list.into_array_of_tables().ok())
-                .map_or_else(Vec::new, |blocks| blocks.into_iter().collect());
-            let filters = block_filters(blocks, edits);
+        Some(blocks) if blocks.is_array_of_tables() => {
+            let old = mem::take(blocks).into_array_of_tables().ok();
+            let filters = block_filters(old.into_iter().flatten().collect(), edits);
             let filters = if filters.is_empty() {
                 Item::Value(Value::Array(Array::new()))
             } else {
                 Item::ArrayOfTables(filters)
             };
-            #[expect(unused_results, reason = "the table's `filters` were taken out above")]
+            // Over the key, which keeps its place among the table's keys and gets the spacing of one.
+            #[expect(
+                unused_results,
+                reason = "the blocks it gives back were taken out above"
+            )]
             repository.insert(FILTERS, filters);
+        }
+        // `filters = []`, which stays as the user wrote it while no Filter comes.
+        _ => {
+            let filters = block_filters(Vec::new(), edits);
+            if !filters.is_empty() {
+                let comment = (repository.key(FILTERS))
+                    .and_then(|key| key.leaf_decor().prefix())
+                    .and_then(RawString::as_str)
+                    .filter(|prefix| prefix.contains('#'))
+                    .map(|prefix| format!("\n{}", prefix.trim_start()));
+                // Not in place: `insert` writes the blocks as an inline list in a Repository written inline.
+                #[expect(unused_results, reason = "the list it replaces held no Filter")]
+                repository.insert(FILTERS, Item::ArrayOfTables(filters));
+                let first = (repository.get_mut(FILTERS))
+                    .and_then(Item::as_array_of_tables_mut)
+                    .and_then(|blocks| blocks.get_mut(0));
+                if let (Some(first), Some(comment)) = (first, comment) {
+                    first.decor_mut().set_prefix(comment);
+                }
+            }
         }
     }
 }
@@ -2043,10 +2082,14 @@ fn block_filters(blocks: Vec<Table>, edits: &[EditedFilter]) -> ArrayOfTables {
     filters
 }
 
-/// Makes `list` the Filters `edits` lists, each keeping the inline table of `list` it was, if any. Each
-/// takes the spacing of the one at its place, and one past the old ones that of the last.
+/// Makes `list` the Filters `edits` lists, each keeping the inline table of `list` it was, if any. One with
+/// a comment above it keeps the comment and its spacing. Each other takes the spacing of the one at its
+/// place without its comment, and one past the old ones that of the last, so a list on one line stays tidy.
 fn put_inline_filters(list: &mut Array, edits: &[EditedFilter]) {
-    let spacing: Vec<Decor> = list.iter().map(|filter| filter.decor().clone()).collect();
+    let spacing: Vec<Decor> = list
+        .iter()
+        .map(|filter| without_comment(filter.decor()))
+        .collect();
     let mut kept: Vec<Option<InlineTable>> = (list.iter())
         .map(|filter| filter.as_inline_table().cloned())
         .collect();
@@ -2065,7 +2108,9 @@ fn put_inline_filters(list: &mut Array, edits: &[EditedFilter]) {
             }
         };
         let mut filter = Value::InlineTable(filter);
-        *filter.decor_mut() = (spacing.get(at).or(spacing.last()).cloned()).unwrap_or_default();
+        if !holds_comment(filter.decor()) {
+            *filter.decor_mut() = (spacing.get(at).or(spacing.last()).cloned()).unwrap_or_default();
+        }
         list.push_formatted(filter);
     }
 }
@@ -2443,10 +2488,28 @@ fn has_comment(file: &dyn TableLike, key: &str) -> bool {
     ]
     .into_iter()
     .flatten()
-    .flat_map(|decor| [decor.prefix(), decor.suffix()])
-    .flatten()
-    .filter_map(RawString::as_str)
-    .any(|text| text.contains('#'))
+    .any(holds_comment)
+}
+
+/// The spacing of `decor` without the comments in it: the line break and the indent of its prefix's last
+/// line, when it holds a comment.
+fn without_comment(decor: &Decor) -> Decor {
+    if !holds_comment(decor) {
+        return decor.clone();
+    }
+    let indent = (decor.prefix().and_then(RawString::as_str))
+        .and_then(|prefix| prefix.rsplit_once('\n'))
+        .map_or("", |(_, last)| last);
+    Decor::new(format!("\n{indent}"), "")
+}
+
+/// Whether the user wrote a comment before or after what `decor` dresses.
+fn holds_comment(decor: &Decor) -> bool {
+    [decor.prefix(), decor.suffix()]
+        .into_iter()
+        .flatten()
+        .filter_map(RawString::as_str)
+        .any(|text| text.contains('#'))
 }
 
 /// `toml_edit` writes `\n` and no byte order mark, and a file shouldn't change on every line because of that.

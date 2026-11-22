@@ -2932,18 +2932,29 @@ export type RepositoryCheck_Serialize = {
 	mirror: MirrorCost,
 };
 
-/**  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535). */
+/**
+ *  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535), and those
+ *  it read from the files, which Apply checks the file still holds, so it writes over no hand edit to them.
+ */
 export type RepositoryFilters = RepositoryFilters_Serialize | RepositoryFilters_Deserialize;
 
-/**  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535). */
+/**
+ *  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535), and those
+ *  it read from the files, which Apply checks the file still holds, so it writes over no hand edit to them.
+ */
 export type RepositoryFilters_Deserialize = {
 	repository: RepositoryName,
+	read: Filter_Deserialize[],
 	filters: EditedFilter_Deserialize[],
 };
 
-/**  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535). */
+/**
+ *  The Filters a Repository's page in Settings leaves, which Apply writes in their order (#535), and those
+ *  it read from the files, which Apply checks the file still holds, so it writes over no hand edit to them.
+ */
 export type RepositoryFilters_Serialize = {
 	repository: RepositoryName,
+	read: Filter_Serialize[],
 	filters: EditedFilter_Serialize[],
 };
 

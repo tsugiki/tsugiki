@@ -273,7 +273,7 @@ describe("a Repository's Filters in Settings", () => {
     expect(filter(2).classList.contains("blank")).toBe(true);
     expect(field(2, "Search").getAttribute("aria-invalid")).toBe("true");
     expect(field(2, "Name").getAttribute("aria-invalid")).toBe("false");
-    expect(dialog.unsaveable).toBe(true);
+    expect(dialog.unsaveable).toBeDefined();
     press(2, "Delete");
 
     await vi.waitFor(() => {
@@ -283,6 +283,10 @@ describe("a Repository's Filters in Settings", () => {
     expect(dialog.filters.changes).toEqual([
       {
         repository: "python/cpython",
+        read: [
+          { name: "Bugs", query: "label:bug", on_workbench: true },
+          { name: "Docs", query: "label:docs", on_workbench: false },
+        ],
         filters: [{ name: "Bug reports", query: "label:bug", was: "label:bug" }],
       },
     ]);
@@ -301,7 +305,7 @@ describe("a Repository's Filters in Settings", () => {
     await fireEvent.input(field(3, "Name"), { target: { value: "Mine" } });
     await fireEvent.input(field(3, "Search"), { target: { value: "author:@me" } });
     expect(filter(3).classList.contains("blank")).toBe(false);
-    expect(dialog.unsaveable).toBe(false);
+    expect(dialog.unsaveable).toBeUndefined();
   });
 
   it("turns the Filters off while Apply saves", async () => {

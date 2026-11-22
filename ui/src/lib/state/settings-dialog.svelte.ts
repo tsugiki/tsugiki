@@ -119,10 +119,11 @@ export class SettingsDialog {
     return Object.keys(this.changes).length > 0;
   }
 
-  /** Whether a change can't be saved as it stands, as a Filter with a blank name or search, which keeps
-   * Apply off. */
-  get unsaveable(): boolean {
-    return this.filters.blank;
+  /** The reason a change can't be saved as it stands, as a Filter with a blank name or search, which keeps
+   * Apply off, or nothing if each can. */
+  get unsaveable(): string | undefined {
+    const repository = this.filters.blankIn;
+    return repository === undefined ? undefined : `Give each Filter of ${repository} a name and a search.`;
   }
 
   /** The names of the Repositories, each with a page under Repositories. */
@@ -259,7 +260,7 @@ export class SettingsDialog {
    * doesn't go back to the theme from before. If the window has none to show, it waits for them, and one
    * that can't get them keeps the dialog open with why. */
   async apply(): Promise<boolean> {
-    if (this.applying || this.unsaveable) return false;
+    if (this.applying || this.unsaveable !== undefined) return false;
     const changes = $state.snapshot(this.changes);
     if (Object.keys(changes).length === 0) return this.#close();
     // The values Apply saves, whose themes the window keeps: the rows are off until it's done.

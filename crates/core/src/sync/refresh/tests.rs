@@ -58,14 +58,11 @@ fn query(text: &str) -> FilterQuery {
     text.to_owned().try_into().unwrap()
 }
 
-/// A harness whose Repository finished a sync at `LAST_SYNC`, which counted the open items `polled` answers
-/// with, and whose user is `octocat`.
+/// A harness whose Repository finished a sync at `LAST_SYNC`, and whose user is `octocat`.
 fn after_a_sync(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness {
     let harness = Harness::new(name, replies);
     synced(&harness, ChangeCheck::Skipped);
     harness.db.store.remember_login(&me()).unwrap();
-    let counted = harness.db.store.save_open_items(&cpython(), POLLED_OPEN);
-    assert!(counted.unwrap());
     harness
 }
 
@@ -441,23 +438,33 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
 }
 
 #[test]
-fn a_refresh_keeps_a_new_count_of_the_open_items_and_says_the_repository_changed() {
-    let harness = after_a_sync("poll-open-items", vec![quiet_poll()]);
+fn a_refresh_keeps_a_new_count_of_the_open_items_and_tells_only_its_page() {
+    let harness = after_a_sync("poll-open-items", vec![quiet_poll(), quiet_poll()]);
     let held = OpenItems { issues: 1, prs: 1 };
     assert!(harness.db.store.save_open_items(&cpython(), held).unwrap());
     let mut syncs = refreshing(filtering(&[]));
 
-    let changes = run(&mut syncs, &harness);
+    let told = run_telling(&mut syncs, &harness);
+    let counted = harness.db.reader.repository_sync(&cpython()).unwrap();
+    syncs.refresh_open(&harness.db.store);
+    let told_again = run_telling(&mut syncs, &harness);
 
-    let synced = harness.db.reader.repository_sync(&cpython()).unwrap();
-    assert_eq!(synced.open, Some(POLLED_OPEN));
-    assert!(synced.last_sync > Some(moment(LAST_SYNC)));
-    let named_none = Change {
-        repository: cpython(),
-        items: Vec::new(),
-    };
-    assert_eq!(changes, [named_none]);
+    assert_eq!(counted.open, Some(POLLED_OPEN));
+    assert!(counted.last_sync > Some(moment(LAST_SYNC)));
+    // Only the page shows the count, so the Workbench hears nothing and asks nothing again.
+    assert_eq!(told, [Progress::Recorded(cpython())]);
+    assert_eq!(told_again, [], "the same count is no news");
     harness.finish();
+}
+
+/// What each step of the syncs told the rest of the app until none is ready, but the end of each sync.
+fn run_telling(syncs: &mut Syncs, harness: &Harness) -> Vec<Progress> {
+    let mut told = Vec::new();
+    while syncs.ready_at().is_some() {
+        let progress = syncs.step(&harness.github, &harness.db.store).unwrap();
+        told.extend(progress.filter(|told| !matches!(told, Progress::Finished(_))));
+    }
+    told
 }
 
 /// Saves Issue `number` with no state, as the migration that added states left the Issues saved before it.
@@ -1001,11 +1008,10 @@ fn a_probe_with_many_prs_runs_in_batches_and_pauses_at_the_floor() {
     }
     let mut syncs = refreshing(filtering(&[]));
 
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
-    drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    // Up to the probe's second batch, whose answer meets the floor.
+    for _ in 0..6 {
+        drop(syncs.step(&harness.github, &harness.db.store).unwrap());
+    }
     let paused = syncs.ready_at().unwrap();
 
     assert_eq!(

@@ -51,8 +51,8 @@ pub(super) struct Poll {
     moved_issues: BTreeSet<u32>,
     /// The items the searches merged so far found.
     hits: BTreeMap<u32, FilterHit>,
-    /// A new count of the open items the poll saved, until the window hears of it (#534).
-    untold_count: Option<OpenItems>,
+    /// The open items the last page counted, which the poll saves once it has read every page (#534).
+    count: Option<OpenItems>,
 }
 
 impl Poll {
@@ -78,7 +78,7 @@ impl Default for Poll {
             changed_prs: Vec::new(),
             moved_issues: BTreeSet::new(),
             hits: BTreeMap::new(),
-            untold_count: None,
+            count: None,
         }
     }
 }
@@ -161,9 +161,10 @@ pub(super) fn check_list(
     Ok((Step::Moved, Some(next)))
 }
 
-/// Reads the next page of what changed, then merges each search that answered, and moves on after the last.
-/// Each step saves one thing and tells the window of it, so a save that fails holds back no news. A failed
-/// step keeps its place in `poll`, so the next try picks up after the part that worked.
+/// Reads the next page of what changed, then saves the open items the last page counted, then merges each
+/// search that answered, and moves on after the last. Each step saves one thing and tells the window of it,
+/// so a save that fails holds back no news. A failed step keeps its place in `poll`, so the next try picks
+/// up after the part that worked.
 pub(super) fn poll(
     link: &Link<'_>,
     poll: &mut Poll,
@@ -171,6 +172,16 @@ pub(super) fn poll(
 ) -> Result<Moved, Error> {
     if !poll.has_read_everything() {
         return Ok((read_page(link, poll, check)?, None));
+    }
+    if let Some(open) = poll.count {
+        let recounted = (link.store).save_open_items(link.repository, open)?;
+        poll.count = None;
+        let step = if recounted {
+            Step::Recounted
+        } else {
+            Step::Moved
+        };
+        return Ok((step, None));
     }
     if let Some(merged) = merge_next_answer(link, poll)? {
         return Ok((Step::saved_if_any(merged), None));
@@ -201,13 +212,8 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         }
         Err(problem) => return Err(problem),
     };
-    // The news of a new count waits in the poll for the step to end, so a save after it that fails, and the
-    // same step run again, which finds the count saved, don't lose it.
-    if (link.store).save_open_items(link.repository, answer.open)? {
-        poll.untold_count = Some(answer.open);
-    }
     let touched = save_moved_issues(link, (answer.issues, answer.issue_activity), poll)?;
-    let counted = poll.untold_count.take().is_some();
+    poll.count = Some(answer.open);
     poll.in_request.clear();
     poll.answers.extend(answer.filters);
     let settled = answer
@@ -223,12 +229,7 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         (RepositorySize::Small, None) => ChangeCheck::Untagged,
         (RepositorySize::Small, Some(tag)) => ChangeCheck::Tagged(tag),
     };
-    let step = Step::saved_if_any(touched);
-    Ok(if counted {
-        step.with_counts_saved()
-    } else {
-        step
-    })
+    Ok(Step::saved_if_any(touched))
 }
 
 /// Saves each Issue Tsugiki holds that this answer changes. An Issue it doesn't hold isn't on any screen, and

@@ -261,6 +261,9 @@ enum Step {
     Saved {
         touched: Vec<u32>,
     },
+    /// It saved a new count of the open Issues and PRs and nothing else, which no screen of the Repository
+    /// shows, only its page in Settings (#534).
+    Recounted,
     Finished,
 }
 
@@ -271,17 +274,6 @@ impl Step {
             Self::Searched
         } else {
             Self::Saved { touched }
-        }
-    }
-
-    /// This step, when it also saved a new count of the open Issues and PRs (#534). The Repository's page in
-    /// Settings shows the count, so the step says it saved even when nothing else changed, naming no item.
-    fn with_counts_saved(self) -> Self {
-        match self {
-            Self::Moved | Self::Searched => Self::Saved {
-                touched: Vec::new(),
-            },
-            Self::Saved { .. } | Self::Finished => self,
         }
     }
 }
@@ -597,7 +589,7 @@ impl UserWorkSync {
                 return self.advance(github, store, settings);
             }
         }
-        if let (Kind::First(first_sync), Step::Searched | Step::Saved { .. }) =
+        if let (Kind::First(first_sync), Step::Searched | Step::Saved { .. } | Step::Recounted) =
             (&mut self.kind, &step)
         {
             first_sync.pages += 1;

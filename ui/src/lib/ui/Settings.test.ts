@@ -53,7 +53,7 @@ vi.mock("$lib/data/bindings", () => ({
     // A Repository's page listens for what can change its header.
     changed: { listen: async () => () => {} },
     statusChanged: { listen: async () => () => {} },
-    lastSyncChanged: { listen: async () => () => {} },
+    repositorySyncChanged: { listen: async () => () => {} },
   },
 }));
 vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));

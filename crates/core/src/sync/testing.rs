@@ -10,7 +10,7 @@ use super::{Progress, Syncs};
 pub(super) use crate::github::testing::{RATE_LIMIT, fetched_nodes, pr_node, search_page};
 use crate::github::testing::{Scripted, answer, github, issue_node, page_info, reply_ok, token};
 use crate::github::{GitHub, Reply, Request, Transport, Unreachable};
-use crate::repository::{OpenItems, RepositoryCounts, RepositoryName};
+use crate::repository::{RepositoryCounts, RepositoryName};
 use crate::repository_settings::RepositorySettings;
 use crate::store::testing::OpenStore;
 pub(super) use crate::testing::cpython;
@@ -167,16 +167,9 @@ pub(super) struct Harness {
 }
 
 impl Harness {
-    /// The store holds the count `counted(LARGE)` answers with, so a first sync's count is no news to the
-    /// window. Most tests are about something else, and a test of the count gives another.
     pub(super) fn new(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Self {
         let (script, asked) = Scripted::new(replies);
         let db = OpenStore::new(&format!("sync-{name}"));
-        let counted = OpenItems {
-            issues: LARGE,
-            prs: 0,
-        };
-        assert!(db.store.save_open_items(&cpython(), counted).unwrap());
         Self {
             github: github(EmptyWindow(script)),
             db,
@@ -261,7 +254,7 @@ pub(super) fn run_to_the_end(syncs: &mut Syncs, harness: &Harness) -> Vec<Reposi
 pub(super) fn announced(progress: Option<Progress>) -> Option<RepositoryName> {
     match progress? {
         Progress::Changed(change) => Some(change.repository),
-        Progress::Finished(_) => None,
+        Progress::Finished(_) | Progress::Recorded(_) => None,
     }
 }
 

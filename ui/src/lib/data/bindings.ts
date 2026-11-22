@@ -389,6 +389,7 @@ export const events = {
 	newVersionFound: makeEvent<NewVersionFound, NewVersionFound>("new-version-found"),
 	pointsBackChanged: makeEvent<PointsBackChanged_Serialize, PointsBackChanged_Deserialize>("points-back-changed"),
 	readFailed: makeEvent<ReadFailed, ReadFailed>("read-failed"),
+	repositorySyncChanged: makeEvent<RepositorySyncChanged, RepositorySyncChanged>("repository-sync-changed"),
 	statusChanged: makeEvent<StatusChanged_Serialize, StatusChanged_Deserialize>("status-changed"),
 	syncActivityChanged: makeEvent<SyncActivityChanged_Serialize, SyncActivityChanged_Deserialize>("sync-activity-changed"),
 	textSearchChanged: makeEvent<TextSearchChanged, TextSearchChanged>("text-search-changed"),
@@ -2964,6 +2965,14 @@ export type RepositoryState = {
  *  page in Settings (#534).
  */
 export type RepositorySync = RepositorySync_Serialize | RepositorySync_Deserialize;
+
+/**
+ *  Sent when a Repository's last sync or its count of open items changes, whether it's open or not, so its
+ *  page in Settings can say (#534).
+ */
+export type RepositorySyncChanged = {
+	repository: RepositoryName,
+};
 
 /**
  *  A Repository's last sync and its open Issues and PRs as GitHub last counted them, open or not, for its

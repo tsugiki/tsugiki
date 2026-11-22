@@ -170,6 +170,9 @@ it("keeps the cursor where the user put it while the file on screen is one the f
   files.onScreen = 0;
   const hidden = state.cursor;
   files.onScreen = 2;
+  const followed = state.cursor;
+  // The row it followed the file to, not the one the user put it on.
+  files.onScreen = 0;
 
-  expect([hidden, state.cursor]).toEqual([1, 3]);
+  expect([hidden, followed, state.cursor]).toEqual([1, 3, 3]);
 });

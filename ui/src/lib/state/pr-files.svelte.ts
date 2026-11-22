@@ -351,14 +351,12 @@ export class PrFilesState {
   #change: number | undefined;
   /** The page the user last moved to, which the tab shows one file at a time. */
   #page = $state<Page>();
-  /** The place at the top of the tab, as the user scrolled it: below 0 inside the NEWS entries. Nothing
-   * draws from it. */
-  #top = 0;
-  /** The places at the top of the tab and the last it shows whole, once the tab has said where it is, which
-   * the rail's tree draws from through `onScreen`. */
+  /** The places at the top of the tab, below 0 inside the NEWS entries, and the last it shows whole, once
+   * the tab has said where it is. */
   #seen = $state.raw<{ top: number; bottom: number }>();
-  /** The file the rail's tree went to last, until another move: it is the file on screen while its header
-   * shows, though a short file near the end of the diff can't scroll its header to the top. */
+  /** The file `goToFile` went to last, for the rail's tree or quick open, until another move or diff: it is
+   * the file on screen while its header shows, though a short file near the end of the diff can't scroll
+   * its header to the top. */
   #picked = $state<number>();
   /** What the search found in the diff `view` shows, and the files of that diff. The matches are many and
    * don't change, so they aren't deeply reactive. */
@@ -577,6 +575,8 @@ export class PrFilesState {
       this.#pick = undefined;
       this.#dropPeek();
       this.marked = undefined;
+      // The file goToFile went to has its place among the files before.
+      this.#picked = undefined;
     }
     // The threads the tab showed with the same diff, whose lines it has opened.
     const before = anew ? [] : this.threads;
@@ -717,7 +717,6 @@ export class PrFilesState {
   /** Notes that place `place` is at the top of the tab, below 0 inside the NEWS entries, and `bottom` the
    * last place it shows whole, as the user scrolls. */
   scrolled(place: number, bottom = place) {
-    this.#top = place;
     this.#seen = { top: place, bottom };
   }
 
@@ -729,15 +728,28 @@ export class PrFilesState {
     return page !== undefined && this.pages.has(page) ? page : this.pages.first;
   }
 
-  /** The page on show, or with all the files, the page at the top of the tab. */
+  /** The page on show, or with all the files, the file `goToFile` went to while its header shows, or else
+   * the page at the top of the tab, the first before the tab has said where it is. */
   #atTop(): Page | undefined {
     if (this.mode === "one") return this.shown;
-    const page = this.#top < 0 ? ({ kind: "news" } as const) : this.layout.pageAt(this.#top);
+    const top = this.#seen?.top ?? 0;
+    const page = this.#pickedInView() ?? (top < 0 ? ({ kind: "news" } as const) : this.layout.pageAt(top));
     return page ?? this.pages.first;
   }
 
-  /** Switches between all the files and one at a time. The file at the top of the tab becomes the one on
-   * show, and the tab keeps the place as it switches back. */
+  /** The file `goToFile` went to, while the tab shows its header. */
+  #pickedInView(): Page | undefined {
+    const seen = this.#seen;
+    const picked = this.#picked;
+    if (seen === undefined || picked === undefined) return undefined;
+    const page = { kind: "file", file: picked } as const;
+    const header = this.layout.headerOf(page);
+    return header !== undefined && header >= seen.top && header <= seen.bottom ? page : undefined;
+  }
+
+  /** Switches between all the files and one at a time. The file at the top of the tab, or the one
+   * `goToFile` went to while its header shows, becomes the one on show, and the tab keeps the place as it
+   * switches back. */
   toggleMode() {
     if (this.mode === "one") {
       this.mode = "all";
@@ -775,25 +787,12 @@ export class PrFilesState {
   }
 
   /** The file on screen, by its place among the diff's files, which the rail's tree marks (#604): the one
-   * on show one file at a time, or else the one the tree went to while its header shows, or else the one
+   * on show one file at a time, or else the one `goToFile` went to while its header shows, or else the one
    * at the top of the tab. Nothing while the NEWS entries or the threads on files no longer in the diff are
    * there, nor before the tab has said where it is. */
   get onScreen(): number | undefined {
-    const page = this.mode === "one" ? this.shown : this.#seenPage();
+    const page = this.mode === "all" && this.#seen === undefined ? undefined : this.#atTop();
     return page?.kind === "file" ? page.file : undefined;
-  }
-
-  /** With all the files, the page `onScreen` names. */
-  #seenPage(): Page | undefined {
-    const seen = this.#seen;
-    if (seen === undefined) return undefined;
-    const picked = this.#picked;
-    if (picked !== undefined) {
-      const page = { kind: "file", file: picked } as const;
-      const header = this.layout.headerOf(page);
-      if (header !== undefined && header >= seen.top && header <= seen.bottom) return page;
-    }
-    return seen.top < 0 ? undefined : this.layout.pageAt(seen.top);
   }
 
   /** Goes to the file at `file` among the diff's files from its top, as a click on it in the rail's tree
@@ -804,8 +803,7 @@ export class PrFilesState {
     if (this.#fileView !== undefined) this.closeFileView();
     this.#dropPeek();
     if (this.collapsed(file)) this.toggle(file);
-    this.showFile(file);
-    this.#picked = file;
+    if (this.#show({ kind: "file", file })) this.#picked = file;
   }
 
   /** Opens the file at `path` from its top, as quick open does (#558): one file at a time it shows that
@@ -834,16 +832,18 @@ export class PrFilesState {
     if (page !== undefined) this.#show(page);
   }
 
-  /** Shows `page` from its top, and F7 and F8 go on from there. */
-  #show(page: Page) {
+  /** Shows `page` from its top, and F7 and F8 go on from there. False, with nothing moved, while there is no
+   * diff on show or it doesn't hold the page. */
+  #show(page: Page): boolean {
     const view = this.view;
-    if (view?.state !== "ready" || !this.pages.has(page)) return;
+    if (view?.state !== "ready" || !this.pages.has(page)) return false;
     this.#turnTo(page);
     this.#change = page.kind === "file" ? view.files[page.file]?.row : undefined;
     const first = this.threads.findIndex((thread) => rank(pageOf(thread, view.files)) >= rank(page));
     this.#current = undefined;
     this.#threadFrom = (first === -1 ? this.threads.length : first) - 0.5;
     this.jump = { page };
+    return true;
   }
 
   /** Shows the search, or gives its box focus again. */

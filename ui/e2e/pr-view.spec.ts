@@ -665,7 +665,11 @@ test("the rail's tree jumps to a file from either tab, marks the file on screen 
   await tree.getByRole("treeitem", { name: /setup\.py/ }).click();
   await expect.poll(() => headerBelowTop(diff, "setup.py")).toBeGreaterThan(100);
   await expect(current).toHaveText("setup.py+3−0");
+  // The file before goes on from the file marked.
   await diff.focus();
+  await page.keyboard.press("Alt+PageUp");
+  await expect.poll(() => headerBelowTop(diff, "Lib/os.py")).toBe(0);
+  await expect(current).toHaveText("os.py+40−0");
   await page.keyboard.press("Alt+PageUp");
   await expect.poll(() => headerBelowTop(diff, "Lib/ast.py")).toBe(0);
   await expect(current).toHaveText("ast.py2+98−0");

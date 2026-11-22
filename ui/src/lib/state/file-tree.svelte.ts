@@ -49,6 +49,9 @@ export class FileTreeState {
   /** The row the user put the cursor on, and the file on screen at the time: once another file comes on
    * screen, the cursor follows it. */
   #cursorKey = $state.raw<{ key: RowKey; screen: number | undefined }>();
+  /** The row the cursor was on last, however it got there, which it keeps while there is no file to
+   * follow. Not reactive: `cursor` notes it each time it works the row out, and `moveTo` as it moves. */
+  #lastKey: RowKey | undefined;
 
   /** The tree of the diff the Files tab, `files`, holds, and the file it has on screen. */
   constructor(files: TreeSource) {
@@ -147,20 +150,29 @@ export class FileTreeState {
   });
 
   /** The row the cursor is on, which ↑ and ↓ move: the one the user put it on, until another file comes on
-   * screen that the tree marks, and then the marked row. The first, while neither shows. */
+   * screen, and then the row the tree marks. While it marks none, as while the filter hides the file on
+   * screen, the row the cursor was on last, and the first while none of these shows. */
   readonly cursor: number = $derived.by(() => {
     const chosen = this.#cursorKey;
-    const current = this.current;
-    const at = chosen === undefined ? -1 : this.rows.findIndex((row) => sameKey(keyOf(row), chosen.key));
-    const stays = chosen?.screen === this.#files.onScreen || current === undefined;
-    if (at !== -1 && stays) return at;
-    return current ?? 0;
+    const held = chosen?.screen === this.#files.onScreen ? this.#find(chosen?.key) : -1;
+    const at = held === -1 ? (this.current ?? this.#find(this.#lastKey)) : held;
+    const cursor = Math.max(at, 0);
+    const row = this.rows[cursor];
+    if (row !== undefined) this.#lastKey = keyOf(row);
+    return cursor;
   });
+
+  /** Where the row `key` names shows among the rows, or -1 while it doesn't. */
+  #find(key: RowKey | undefined): number {
+    return key === undefined ? -1 : this.rows.findIndex((row) => sameKey(keyOf(row), key));
+  }
 
   /** Puts the cursor on row `index`, held within the rows. */
   moveTo(index: number) {
     const row = rowWithin(this.rows, index);
-    if (row !== undefined) this.#cursorKey = { key: keyOf(row), screen: this.#files.onScreen };
+    if (row === undefined) return;
+    this.#lastKey = keyOf(row);
+    this.#cursorKey = { key: this.#lastKey, screen: this.#files.onScreen };
   }
 
   /** ←: folds the open folder under the cursor, or moves the cursor to the folder that holds its row. */

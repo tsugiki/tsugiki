@@ -15,7 +15,7 @@ pub const FOLD_PAST: usize = 300;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
 pub struct FileTree {
     pub rows: Vec<TreeRow>,
-    /// Whether its folders start folded, as they do past 300 files.
+    /// Whether its folders start folded, as they do past a few hundred files.
     pub folded: bool,
 }
 

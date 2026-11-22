@@ -1949,6 +1949,28 @@ it("keeps the file the tree went to on screen while its header shows, though it 
   expect([unseen, landed, scrolledOff, back, files.onScreen]).toEqual([undefined, 1, 0, 1, 0]);
 });
 
+it("shows the file the tree went to alone, keeps it past a move it can't make, and drops it with the diff", async () => {
+  const files = await loaded(changed());
+  files.goToFile(1);
+  const header = files.layout.headerOf({ kind: "file", file: 1 }) ?? -1;
+  files.scrolled(header - 5, header + 3);
+
+  // A file the diff doesn't hold moves nothing.
+  files.goToFile(9);
+  const kept = files.onScreen;
+  files.toggleMode();
+  const alone = files.shown;
+  files.toggleMode();
+  // A newer diff lists its files in other places.
+  core.pullRequestFiles.mockResolvedValue(
+    ok(ready("def", 30, [diffFile("Lib/new.py", 0), diffFile("Lib/ast.py", 5), diffFile("Lib/os.py", 10)])),
+  );
+  await files.ask();
+  files.scrolled(0, 25);
+
+  expect([kept, alone, files.onScreen]).toEqual([1, { kind: "file", file: 1 }, 0]);
+});
+
 it("goes to a file from the rail's tree from its top, opened, and leaves the focus where it is", async () => {
   const files = await oneAtATime(changed());
   const all = await loaded(changed());

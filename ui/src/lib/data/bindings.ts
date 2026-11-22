@@ -1064,7 +1064,7 @@ export type FileHits = {
  */
 export type FileTree = {
 	rows: TreeRow[],
-	/**  Whether its folders start folded, as they do past 300 files. */
+	/**  Whether its folders start folded, as they do past a few hundred files. */
 	folded: boolean,
 };
 

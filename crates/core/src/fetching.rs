@@ -10,7 +10,7 @@
 //! handle sends it at once, and passes what needs GitHub on to the GitHub thread.
 
 use std::path::Path;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
@@ -491,15 +491,18 @@ impl Fetching {
     /// `ItemUnfetched::Offline`, and has already shown why on the status bar. So does one offline or below
     /// the rate limit's floor, at once, without waiting for the request under way.
     pub fn fetch_unstored(&self, repository: RepositoryName, number: u32) -> ItemFetch {
+        let answer = self.fetch_unstored_later(Item { repository, number });
+        answer.recv().unwrap_or(ItemFetch::Unfetched {
+            why: ItemUnfetched::Offline,
+        })
+    }
+
+    /// Asks the session for `item`, which the database lacks, without waiting: the answer comes on the
+    /// receiver. A session that has stopped drops the message with its reply, so the receiver gets none.
+    pub(crate) fn fetch_unstored_later(&self, item: Item) -> Receiver<ItemFetch> {
         let (reply, answer) = mpsc::channel();
-        let item = Item { repository, number };
-        self.session
-            .send(SessionMessage::FetchUnstored { item, reply })
-            .ok()
-            .and_then(|()| answer.recv().ok())
-            .unwrap_or(ItemFetch::Unfetched {
-                why: ItemUnfetched::Offline,
-            })
+        self.to_session(SessionMessage::FetchUnstored { item, reply });
+        answer
     }
 
     /// Asks GitHub what adding `name` would load. A session with no token or no database answers with an

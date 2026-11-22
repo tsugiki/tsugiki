@@ -1752,6 +1752,16 @@ describe("the Home page", () => {
     expect(homeHeading()).toBeTruthy();
   });
 
+  it("lists on ? the window's keys, Go Back among them, and none of the Repository's screen it hides", async () => {
+    await goHome();
+    await fireEvent.keyDown(document.activeElement as Element, { key: "?", code: "Slash", shiftKey: true });
+    const listed = within(await screen.findByRole("dialog", { name: "Keys" }))
+      .getAllByRole("definition")
+      .map((title) => title.textContent);
+    expect(listed).toEqual(expect.arrayContaining(["Go Back", "Switch Repository", "Open Settings"]));
+    expect(listed).not.toContain("Hide or Show the Sidebar");
+  });
+
   it("keeps Add repository… in its palette out of the history, as the Repository rows beside it", async () => {
     await goHome();
     await ctrlShiftP();

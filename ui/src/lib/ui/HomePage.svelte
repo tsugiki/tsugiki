@@ -36,14 +36,19 @@
     rows.map((row) => (row.opened_at === null ? null : `opened ${agoWords(row.opened_at, now)}`)),
   );
   const os = currentOs();
-  /** The row the cursor last went to, by its name and where it was. */
-  let picked = $state<{ name?: string; at: number }>({ at: 0 });
+  /** The name of the row the cursor last went to. */
+  let picked = $state<string>();
+  /** Where that row last stood. The template reads `cursor` on each change of the rows, so this follows a
+   * row that moves before it leaves. */
+  let lastAt = 0;
   /** The row under the cursor, which Enter opens: the top one as the page opens, so Enter goes back. It
    * follows its row by name as the rows change, and on a row that leaves, as one a failed switch finds gone,
-   * it stays where the row was, on the last row at most. */
+   * it stays where the row last stood, on the last row at most. */
   const cursor = $derived.by(() => {
-    const at = rows.findIndex((row) => row.name === picked.name);
-    return at === -1 ? Math.min(picked.at, rows.length - 1) : at;
+    const at = rows.findIndex((row) => row.name === picked);
+    if (at === -1) return Math.min(lastAt, rows.length - 1);
+    lastAt = at;
+    return at;
   });
   const buttons: HTMLButtonElement[] = $state([]);
 
@@ -101,7 +106,7 @@
             onopen(row.name);
           }}
           onfocus={() => {
-            picked = { name: row.name, at };
+            picked = row.name;
           }}
         >
           <span class="name mono">{row.name}</span>

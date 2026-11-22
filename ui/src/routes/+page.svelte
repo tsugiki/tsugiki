@@ -277,7 +277,7 @@
   function runnerOf(action: Action): "page" | Screen | undefined {
     const page = PAGE_ACTIONS.get(action);
     if (page !== undefined && page.when?.() !== false) return "page";
-    return page === undefined || repositoryHome?.owns(action) ? repositoryHome : undefined;
+    return page === undefined || repositoryHome?.owns(action) ? (repositoryHome ?? undefined) : undefined;
   }
   /** Where a press on `target` went: the Repository's screen says, and elsewhere no pane has it. */
   const keyTargetOf = (target: EventTarget | null) => keyTarget(target, repositoryHome?.paneOf);
@@ -443,7 +443,9 @@
   });
   /** The open Repository's screen, which adds its own commands to the palette. */
   type Screen = ReturnType<typeof RepositoryHome>;
-  let repositoryHome = $state<Screen>();
+  /** The Repository's screen on show: undefined before it first mounts, and null once it unmounts, as
+   * `bind:this` leaves it, while the Home page shows. */
+  let repositoryHome = $state<Screen | null>();
   /** Quick open's row for `item`: its number and title, with what it is and its state beside them. It keeps
    * out of the palette's history, which holds commands. */
   const foundRow = (item: QuickOpenItem): PaletteCommand => ({

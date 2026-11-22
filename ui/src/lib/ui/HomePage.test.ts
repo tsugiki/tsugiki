@@ -87,6 +87,19 @@ it("keeps the cursor on its row as the rows change, and where a row that leaves 
   expect(current()?.textContent).toContain("python/cpython");
 });
 
+it("leaves the cursor where a row last stood when it moves and then leaves", async () => {
+  const [cpython, peps, never] = ROWS as [Opened, Opened, Opened];
+  const last: Opened = { name: "a/last", opened_at: null };
+  const { rerender } = shown();
+  await rerender({ rows: [cpython, peps, never, last] });
+  rows()[3]?.focus();
+  await rerender({ rows: [cpython, last, peps, never] });
+  expect(current()?.textContent).toContain("a/last");
+
+  await rerender({ rows: [cpython, peps, never] });
+  expect(current()?.textContent).toContain("python/peps");
+});
+
 it("moves the cursor to a row that takes the focus, and opens a row on a click", async () => {
   const { onopen } = shown();
   rows()[2]?.focus();

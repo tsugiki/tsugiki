@@ -49,8 +49,10 @@ built at the same time.
 
 ## Waves
 
-1. #a, #c, #e
-2. ...
+| Wave | Tickets | Start | End | Wall-clock | Slowest build | Slowest review | Rounds | Waiting on merge | Conflicts |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | #a, #c, #e | | | | | | | | |
+| 2 | ... | | | | | | | | |
 
 ## Wave log
 ```

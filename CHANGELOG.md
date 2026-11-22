@@ -7,6 +7,52 @@ release's body, and fails without it
 
 ## WIP
 
+## Version 0.3.5 (2026-11-22)
+
+Quick open fetches an Issue or PR that Tsugiki lacks by its number, and the Detail pane opens the next item
+after Mark Seen, Archive or Mute. Requests to GitHub run on a thread of their own, so the user's marks no
+longer wait on them, and the status bar says which request Tsugiki waits on once GitHub is slow to answer.
+
+### Added
+
+- A number typed in quick open that names nothing Tsugiki holds lists one row, "Fetch #N from GitHub".
+  Enter on it shows the item loading in the Detail pane, which then opens it as an Issue view or a PR view,
+  whichever GitHub says #N is. A failed fetch says why and offers Open in browser. While GitHub can't be
+  reached, or the rate limit holds requests back, the row reads "Open #N in browser" and opens github.com
+  at once.
+- Once a request to GitHub goes 3 s without an answer, the status bar says what it asks and counts the
+  seconds until GitHub answers or the request fails, as in "Waiting for GitHub: refresh of python/cpython,
+  4 s". Its tooltip shows the whole text.
+- Tsugiki takes the token from `GH_TOKEN` when it is set, and runs `gh auth token` only when it isn't.
+
+### Changed
+
+- Mark Seen, Archive or Mute on the item the Detail pane shows opens the item the cursor moves on to, in
+  the Workbench, the Inbox and the other views, from the key, the command palette or the header's button
+  alike. With no item after it, the pane shows nothing open. `Alt+←` goes back to the marked item.
+- Tsugiki sends its requests to GitHub from a thread of their own, one at a time. A mark, a Mute, a change
+  to the settings and a Fetch #N while offline no longer wait for the request under way, which can take up
+  to 15 s to fail.
+- Once fewer than 500 of the hour's points are left, or once GitHub refused a request for its rate limit,
+  each request to GitHub waits for the reset, as the sync did. A read on screen held back fails as an
+  offline one does, Add repository's check says when the points come back, and the Mirror worker's size
+  check waits for the reset. The status bar says when the points come back, also when no sync waits.
+- A Refresh while offline shows Connecting… until GitHub answers. Further clicks while it waits ask
+  nothing more, and a click once the status bar says Offline again asks again.
+- After a read of the token that found none, because `gh` timed out, is missing or isn't signed in,
+  Tsugiki reads it again each minute, and at once on a click of an open Repository's sync status. Once it
+  has a token it connects, with no restart. To start without `gh`, set `GH_TOKEN` and restart Tsugiki.
+- The Sidebar shows Archived without a count, as it shows the Inbox: an Archived item can't Need attention.
+
+### Fixed
+
+- A merged PR on the Workbench whose Issue Tsugiki never fetched showed as a Standalone PR, and no refresh
+  fetched the Issue later. A refresh now fetches each Issue that a stored PR links to and Tsugiki lacks, so
+  the first refresh after the upgrade mends a database that has the gap.
+- A `gh auth token` that didn't answer within 30 s got the status bar's advice to install `gh` and sign
+  in. The status bar now says `gh` didn't answer in time, and names a waiting keychain or credential
+  manager prompt as a common cause.
+
 ## Version 0.3.4 (2026-11-21)
 
 Archive takes an item off the Workbench until something new there Needs attention, and Mute takes it off

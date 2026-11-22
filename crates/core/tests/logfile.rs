@@ -79,8 +79,7 @@ fn a_run_says_it_started_only_when_told_to(path: &Path) {
 fn a_token_from_gh_token_is_hidden_too(path: &Path) {
     let _token = read_token(gh_token(gh_token_holds_a_token_of_no_known_shape)).unwrap();
     log::warn!("GitHub refused {IN_GH_TOKEN} too");
-    log::logger().flush();
-    let file = fs::read_to_string(path).unwrap();
+    let file = log_at(path);
     assert!(!file.contains(IN_GH_TOKEN), "{file}");
     assert!(file.contains("GitHub refused [token] too"), "{file}");
 }
@@ -98,8 +97,7 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
         "{}",
         problem.message
     );
-    log::logger().flush();
-    let file = fs::read_to_string(path).unwrap();
+    let file = log_at(path);
     assert!(
         file.contains("gh didn't answer within 30 s, so Tsugiki stopped it"),
         "{file}"
@@ -107,37 +105,43 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
 }
 
 /// Reads that fail the same way log their cause once, as each minute's read does without `gh` (#1009). A
-/// read that fails another way logs its own, and so does a failed read after one that found a token. Another
-/// line goes before each read, as the app's other threads log meanwhile, so the logger's skip of a line
-/// that repeats the one before it can't hide a repeat.
+/// read that fails another way logs its own, and so does a failed read after one that found a token.
 fn a_failed_read_logs_its_cause_once_until_the_cause_changes(path: &Path) {
-    let count = |line: &str| lines_with(path, line);
-    let mut lines = 0;
-    let mut reads = TokenReads::default();
-    let mut found_a_token = |from: TokenFrom| {
-        lines += 1;
-        log::warn!("Meanwhile, another thread's line {lines}");
-        reads.read(from).is_ok()
-    };
     let cant_run = "Tsugiki can't run gh: ";
     let stopped = "gh didn't answer within 30 s, so Tsugiki stopped it";
-    let (cant_run_before, stopped_before) = (count(cant_run), count(stopped));
+    let mut reads = TokenReads::default();
+    let mut logged = |from: TokenFrom, times: usize, line: &str| {
+        log_of_reads(path, &mut reads, from, times)
+            .matches(line)
+            .count()
+    };
 
-    for _ in 0..3 {
-        assert!(!found_a_token(NO_GH));
+    assert_eq!(logged(NO_GH, 3, cant_run), 1);
+    assert_eq!(logged(SLOW_GH, 2, stopped), 1);
+    // The system refusing to run `gh` is another cause than a `gh` it can't find.
+    assert_eq!(logged(gh_alone(gh_refused), 1, cant_run), 1);
+    assert_eq!(logged(NO_GH, 2, cant_run), 1);
+
+    let token = gh_alone(gh_prints_a_token_of_no_known_shape);
+    assert_eq!(logged(token, 1, cant_run), 0);
+    assert_eq!(logged(NO_GH, 1, cant_run), 1);
+}
+
+/// The lines the log at `path` gains while `reads` reads the token from `from` as many `times` as it says.
+/// Another line goes before each read, as the app's other threads log meanwhile, so the logger's skip of a
+/// line that repeats the one before it can't hide a repeat.
+fn log_of_reads(path: &Path, reads: &mut TokenReads, from: TokenFrom, times: usize) -> String {
+    let before = log_at(path).len();
+    for _ in 0..times {
+        log::warn!("Meanwhile, another thread's line");
+        let _found = reads.read(from);
     }
-    assert_eq!(count(cant_run), cant_run_before + 1);
+    log_at(path).split_off(before)
+}
 
-    for _ in 0..2 {
-        assert!(!found_a_token(SLOW_GH));
-    }
-    assert_eq!(count(stopped), stopped_before + 1);
-    assert!(!found_a_token(NO_GH));
-    assert_eq!(count(cant_run), cant_run_before + 2);
-
-    assert!(found_a_token(gh_alone(gh_prints_a_token_of_no_known_shape)));
-    assert!(!found_a_token(NO_GH));
-    assert_eq!(count(cant_run), cant_run_before + 3);
+/// The answer of a `gh` the system refuses to run.
+fn gh_refused() -> io::Result<GhOutput> {
+    Err(io::Error::from(io::ErrorKind::PermissionDenied))
 }
 
 /// A write whose selection the token crate refuses leaves the reason in the log, and says nothing was sent.
@@ -165,8 +169,7 @@ fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) 
     let writable = WritableRepository::new(cpython, Some(subject), []).unwrap();
     let refused = Replayer::new(no_recordings).write(token, &writable, (&comment, second_field));
     assert_eq!(refused.unwrap_err(), Unreachable::Refused);
-    log::logger().flush();
-    let file = fs::read_to_string(path).unwrap();
+    let file = log_at(path);
     let says =
         "Tsugiki refused to send AddComment to GitHub: a write's payload isn't one selection set";
     assert!(file.contains(says), "{file}");
@@ -178,10 +181,7 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     let path = folder.join("tsugiki.log");
     logfile::start(path.clone());
     logfile::start(folder.join("a second start changes nothing.log"));
-    let read_after_flush = || {
-        log::logger().flush();
-        fs::read_to_string(&path).unwrap()
-    };
+    let read_after_flush = || log_at(&path);
 
     a_run_says_it_started_only_when_told_to(&path);
 
@@ -314,11 +314,16 @@ fn run_session(
 }
 
 /// The count of `line` in the log at `path`, once the logger has written what it was sent.
+fn lines_with(path: &Path, line: &str) -> usize {
+    log_at(path).matches(line).count()
+}
+
+/// The log at `path`, once the logger has written what it was sent.
 #[expect(
     clippy::unwrap_used,
     reason = "a test fails by panicking, and this helper sits outside any #[test] function"
 )]
-fn lines_with(path: &Path, line: &str) -> usize {
+fn log_at(path: &Path) -> String {
     log::logger().flush();
-    fs::read_to_string(path).unwrap().matches(line).count()
+    fs::read_to_string(path).unwrap()
 }

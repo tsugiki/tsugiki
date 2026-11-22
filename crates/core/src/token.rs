@@ -1,6 +1,8 @@
 //! Reads the GitHub token through `tsugiki-token`, the crate that holds it (ADR 0019). The token never
 //! reaches the webview (ADR 0005), and nothing in the core can read its string.
 
+use std::io;
+
 use tsugiki_token::{GH_TIMEOUT, NoToken};
 pub use tsugiki_token::{GhOutput, Token, TokenFrom, TokenKind, WriteScope};
 
@@ -20,11 +22,39 @@ pub fn read_token(from: TokenFrom) -> Result<Token, Error> {
 }
 
 /// Reads of the token, one after another, which remember why the last one found none, so a read that
-/// fails the same way each minute logs its cause once.
+/// fails the same way each minute logs its cause once. A caller that reads more than once keeps one.
 #[derive(Debug, Default)]
 pub struct TokenReads {
-    /// The log's warning for the last read, when that read found no token.
-    last_warning: Option<String>,
+    /// The cause of the last read's failure, when it found no token.
+    last_failure: Option<Failure>,
+}
+
+/// The cause of a read that found no token, as far as telling one failure from the next goes. A `gh` the
+/// system couldn't run is told apart by the system's reason, which [`NoToken`] holds as an [`io::Error`]
+/// that can't be compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Failure {
+    CantRun {
+        kind: io::ErrorKind,
+        os_error: Option<i32>,
+    },
+    TimedOut,
+    Failed,
+    PrintedNothing,
+}
+
+impl Failure {
+    fn of(no_token: &NoToken) -> Self {
+        match no_token {
+            NoToken::GhMissing(cause) => Self::CantRun {
+                kind: cause.kind(),
+                os_error: cause.raw_os_error(),
+            },
+            NoToken::GhTimedOut => Self::TimedOut,
+            NoToken::GhFailed => Self::Failed,
+            NoToken::GhPrintedNothing => Self::PrintedNothing,
+        }
+    }
 }
 
 impl TokenReads {
@@ -39,16 +69,17 @@ impl TokenReads {
         let token = Token::find(from);
         match token {
             Ok(token) => {
-                self.last_warning = None;
+                self.last_failure = None;
                 logfile::hide(token.clone());
                 Ok(token)
             }
             Err(no_token) => {
+                let failure = Failure::of(&no_token);
                 let (warning, message) = explain(no_token);
-                if self.last_warning.as_ref() != Some(&warning) {
+                if self.last_failure != Some(failure) {
                     log::warn!("{warning}");
                 }
-                self.last_warning = Some(warning);
+                self.last_failure = Some(failure);
                 Err(Error::new(ErrorKind::Unauthorized, &message))
             }
         }

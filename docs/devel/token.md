@@ -12,7 +12,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   no read. Once a read gives a token, Tsugiki connects as it does at start, with no restart, and reads the
   items on screen at once. A click says "Connecting…" until the read ends; the minute's read leaves the
   problem up until it has a token. The log gives a failed read's cause once, and again only when a read
-  fails another way or follows a read that found a token.
+  fails another way.
 - Without a token, the status bar says what happened, what Tsugiki does next and what the user can do. With
   no `gh`, or a `gh` that isn't signed in: install `gh` or run `gh auth login`, and Tsugiki asks again. A
   `gh` that doesn't answer within 30 s is installed and may be signed in, so Tsugiki stops it, and the

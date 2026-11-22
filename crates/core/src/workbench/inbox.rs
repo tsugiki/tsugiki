@@ -2,7 +2,8 @@
 //! state, grouped as the Workbench groups them, and every Standalone PR that has an open PR in its tree on
 //! its own, the latest update first. A closed Issue that a PR opening on it brought back (#823) is listed
 //! as an open one is. The window reads it a page at a time: the items updated in the last two days, then
-//! older batches. Reading it adds nothing to Reach.
+//! older batches. Reading it adds nothing to Reach. While the Repository's "Show muted" is off, the rows
+//! Muted authors wrote leave the pages, and the items stay at the places their whole trees give them (#825).
 //!
 //! An item's place is the latest update in it: the Issue's own or a PR's in its tree. A page walks the
 //! updates down from where it starts, the PRs' and the open Issues', a step at a time. Each step reads the
@@ -34,10 +35,11 @@ use time::{Duration, OffsetDateTime};
 use super::backports::plant;
 use super::links::placed;
 use super::trees::Trees;
-use super::{Hidden, ListedItem, candidates};
+use super::{Hidden, ListedItem, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates};
 use crate::conventions::Conventions;
 use crate::error::Error;
 use crate::facts::WorkFacts;
+use crate::facts::activity::{ItemKey, ShowMuted};
 use crate::facts::issues::{IssuePlace, IssueState};
 use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::login::Login;
@@ -100,6 +102,9 @@ pub struct Inbox {
     /// Where the next older page starts, or nothing once the cache holds nothing older. Past that, Load 30
     /// more days reads from GitHub (#469).
     pub older: Option<InboxCursor>,
+    /// Whether the page lists the rows Muted authors wrote, as the Repository's "Show muted" stood when it
+    /// was read (#825).
+    pub show_muted: ShowMuted,
 }
 
 impl Inbox {
@@ -124,15 +129,17 @@ impl Inbox {
         let settings = repository.clone();
         // One snapshot holds the pages it walks, so they fit together as the pages of one read do.
         let job = move |snapshot: &Snapshot<'_>| {
+            let show_muted = snapshot.show_muted()?;
             let mut page = page;
             loop {
                 let Some(read) = read_page(snapshot, settings.conventions, page, now)? else {
                     return Ok(Self {
                         items: Vec::new(),
                         older: None,
+                        show_muted,
                     });
                 };
-                let inbox = Self::listed(read, &settings);
+                let inbox = Self::listed(read, &settings, show_muted);
                 match (inbox.items.is_empty(), inbox.older) {
                     (true, Some(after)) => page = InboxPage::Older { after },
                     (false, _) | (true, None) => return Ok(inbox),
@@ -142,8 +149,9 @@ impl Inbox {
         reader.read_snapshot(&repository.name, job)
     }
 
-    /// The page `read` holds, Archived and Muted items left out.
-    fn listed(read: PageRead, repository: &RepositorySettings) -> Self {
+    /// The page `read` holds, Archived and Muted items left out, and the rows Muted authors wrote as `show`
+    /// says.
+    fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
             (read.facts, &read.links),
@@ -151,8 +159,10 @@ impl Inbox {
             &BTreeSet::new(),
             &causes,
         );
+        let asked = causes.asked();
+        let by_muted_author = |key| causes.is_by_muted_author(key);
         // Archive takes an item out until it comes back (#490), and Mute until the user unmutes it (#492).
-        // A Muted author's item stays, unless one of those takes it out too, until #825 leaves it out.
+        // A Muted author's item stays for "Show muted" to judge, unless one of those takes it out too.
         let mut items: Vec<ListedItem> = (grouped.into_iter())
             .map(|item| ListedItem::of(&causes, item))
             .filter(|listed| match listed.hidden {
@@ -164,6 +174,13 @@ impl Inbox {
                         && !causes.is_archived(key, &listed.item.numbers())
                 }
             })
+            // A Review request or an assignment to the user in its tree shows the whole item anyway, as it
+            // brings back a Muted item (#817).
+            .filter_map(|listed| match show {
+                ShowMuted::On => Some(listed),
+                ShowMuted::Off if listed.item.is_reached_by(&asked) => Some(listed),
+                ShowMuted::Off => listed.without(&by_muted_author),
+            })
             .collect();
         let place_of =
             |listed: &ListedItem| read.places.get(&listed.item.updated_at_and_number().1);
@@ -171,7 +188,65 @@ impl Inbox {
         Self {
             items,
             older: read.older,
+            show_muted: show,
         }
+    }
+}
+
+impl ListedItem {
+    /// The item with each row `hides` takes out gone, or nothing once no row is left. A row stays while a
+    /// row under it does: an Issue over its PRs, a PR over its Backports. It keeps its place and what its
+    /// whole tree Needs attention for.
+    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        let item = self.item.without(hides)?;
+        Some(Self { item, ..self })
+    }
+}
+
+impl WorkbenchItem {
+    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        match self {
+            Self::Issue(mut issue) => {
+                let entries = std::mem::take(&mut issue.pull_requests).into_iter();
+                issue.pull_requests = entries.filter_map(|entry| entry.without(hides)).collect();
+                let key = ItemKey::Issue {
+                    number: issue.number,
+                };
+                (!issue.pull_requests.is_empty() || !hides(key)).then_some(Self::Issue(issue))
+            }
+            Self::StandalonePr(tree) => tree.without(hides).map(Self::StandalonePr),
+            Self::StandaloneBackport(backport) => {
+                (!backport.row.hidden_by(hides)).then_some(Self::StandaloneBackport(backport))
+            }
+        }
+    }
+}
+
+impl TreeEntry {
+    fn without(self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        match self {
+            Self::Pr(tree) => tree.without(hides).map(Self::Pr),
+            Self::Backport(backport) => {
+                (!backport.row.hidden_by(hides)).then_some(Self::Backport(backport))
+            }
+        }
+    }
+}
+
+impl PrTree {
+    fn without(mut self, hides: &impl Fn(ItemKey) -> bool) -> Option<Self> {
+        self.backports
+            .retain(|backport| !backport.row.hidden_by(hides));
+        (!self.backports.is_empty() || !self.row.hidden_by(hides)).then_some(self)
+    }
+}
+
+impl WorkbenchRow {
+    /// Whether `hides` takes out this PR's row.
+    fn hidden_by(&self, hides: &impl Fn(ItemKey) -> bool) -> bool {
+        hides(ItemKey::PullRequest {
+            number: self.number,
+        })
     }
 }
 

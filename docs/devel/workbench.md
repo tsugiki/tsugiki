@@ -40,15 +40,23 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   under it, grouped as on the Workbench, and each Standalone PR on its own, the latest update first. It has
   no Issues or PRs switch, and no switch of order. Pin, Archive and Mute each take an item out, and so does
   the item closing, at the next refresh. A PR that opens on an Archived Issue brings the Issue back, closed
-  or not, as "A PR that opens on an Archived Issue" below says. **Muted authors**' items stay out unless
-  the user turns on "Show muted". It starts with the items updated in the last two days, and scrolling to
-  the end of the list reads
-  the next older batch from the cache. The window builds a row for each item of the batches read so far,
-  and the browser lays out and paints only the rows on screen, so the Inbox of a cache the size of
-  CPython's scrolls as a small one does. A change reads the batches on show again in one query, which
-  ends where they ended. It adds nothing to **Reach**. A search box takes GitHub
-  search syntax, and Save turns a search into a Filter. From it the user reads, comments on and pins Issues
-  and opens PRs. "View: Inbox" in the command palette opens it.
+  or not, as "A PR that opens on an Archived Issue" below says. It starts with the items updated in the
+  last two days, and scrolling to the end of the list reads the next older batch from the cache. The
+  window builds a row for each item of the batches read so far, and the browser lays out and paints only
+  the rows on screen, so the Inbox of a cache the size of CPython's scrolls as a small one does. A change
+  reads the batches on show again in one query, which ends where they ended. It adds nothing to
+  **Reach**. A search box takes GitHub search syntax, and Save turns a search into a Filter. From it the
+  user reads, comments on and pins Issues and opens PRs. "View: Inbox" in the command palette opens it.
+  - **Show muted** ([#825](https://github.com/tsugiki/tsugiki/issues/825)), a switch atop the list, starts
+    off and leaves out each row a **Muted author** wrote. It hides rows, not groups: a row stays while a
+    row under it does, so a Muted author's Issue stays as the header of a PR someone else wrote and goes
+    with the last such PR, and a Muted author's PR stays over a Backport someone else wrote. A Muted
+    author's PR under someone else's Issue hides only its own row. An item stays at the place its whole
+    tree gives it, hidden rows included. A Review request or an assignment to the user anywhere in an
+    item's tree shows the whole item anyway, as it brings back a Muted item. Turned on, the switch shows
+    those rows in their places. The Inbox greys each row a Muted author wrote that it shows. Tsugiki keeps
+    the switch per Repository on this machine, so it survives a restart, and an item muted on its own stays
+    out whatever it says.
 - Every row in every Issue list has an Issue or PR icon coloured by state.
 - The Sidebar shows counts the way a mail client shows unread counts. For the Workbench, the Filters switched
   on and the Pinned issues, the count is how many Issues Need attention. For a Filter switched off, it is how
@@ -159,8 +167,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     cleared stay cleared. A Review request or an assignment to the user brings one back as it brings back a
     Muted item. `Q`, `Shift+Q`, `E` and `M` do nothing on their items; Unmute author is the way back, and
     leaves an item the user muted on its own Muted. Their PRs inside another author's Issue stay as they
-    are. The Inbox lists their items until [#825](https://github.com/tsugiki/tsugiki/issues/825) leaves them
-    out.
+    are, apart from the Inbox, whose Show muted hides each row they wrote.
 
 ## Issue tree
 

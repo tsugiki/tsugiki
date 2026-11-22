@@ -13,6 +13,7 @@ use super::failed_checks;
 use super::patch_ids::acknowledge_in;
 use crate::facts::activity::{
     Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, MutedAuthor, PutAway,
+    ShowMuted,
 };
 use crate::facts::patch_ids::StaleFinding;
 use crate::login::Login;
@@ -108,6 +109,14 @@ pub(super) const MUTED_AUTHORS: &str = "
         login TEXT NOT NULL COLLATE NOCASE,
         at INTEGER NOT NULL,
         PRIMARY KEY (repository, login)
+    ) WITHOUT ROWID;
+";
+
+/// The Repositories whose Inbox shows the rows Muted authors wrote (#825): "Show muted" is on for each one
+/// listed, and off for the rest.
+pub(super) const SHOW_MUTED: &str = "
+    CREATE TABLE show_muted (
+        repository TEXT NOT NULL COLLATE NOCASE PRIMARY KEY
     ) WITHOUT ROWID;
 ";
 
@@ -559,6 +568,31 @@ pub(super) fn unmute_author(
             named_params! { ":repository": repository, ":login": author },
         )
         .map(drop)
+}
+
+/// Turns `repository`'s "Show muted" to `show` (#825).
+pub(super) fn switch_show_muted(
+    connection: &Connection,
+    repository: &RepositoryName,
+    show: ShowMuted,
+) -> rusqlite::Result<()> {
+    let query = match show {
+        ShowMuted::On => "INSERT OR IGNORE INTO show_muted (repository) VALUES (:repository)",
+        ShowMuted::Off => "DELETE FROM show_muted WHERE repository = :repository",
+    };
+    let asked = named_params! { ":repository": repository };
+    connection.execute(query, asked).map(drop)
+}
+
+/// `repository`'s "Show muted", off unless the user turned it on.
+pub(super) fn show_muted(
+    connection: &Connection,
+    repository: &RepositoryName,
+) -> rusqlite::Result<ShowMuted> {
+    let query = "SELECT 1 FROM show_muted WHERE repository = :repository";
+    let asked = named_params! { ":repository": repository };
+    let found = connection.query_row(query, asked, |_| Ok(())).optional()?;
+    Ok(found.map_or(ShowMuted::Off, |()| ShowMuted::On))
 }
 
 /// The Muted authors of `repository`, by login.

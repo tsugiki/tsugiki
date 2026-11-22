@@ -301,6 +301,9 @@ erDiagram
         TEXT login PK
         INTEGER at
     }
+    show_muted {
+        TEXT repository PK
+    }
     closings {
         TEXT repository PK
         INTEGER number PK

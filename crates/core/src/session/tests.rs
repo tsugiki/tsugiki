@@ -3,7 +3,7 @@ use super::*;
 use crate::conventions::Conventions;
 use crate::deadline::received_until;
 use crate::facts::CommitSha;
-use crate::facts::activity::{ActivityFacts, ItemKey};
+use crate::facts::activity::{ActivityFacts, ItemKey, ShowMuted};
 use crate::facts::filters::FilterResults;
 use crate::facts::issue_content::IssueContent;
 use crate::facts::issues::{IssueFacts, IssueState};
@@ -2662,6 +2662,25 @@ fn mute_author_on_facts_the_store_cant_read_keeps_nothing_and_unmute_author_stil
     );
     let activity = store.work_facts(&gcmon()).unwrap().activity;
     assert_eq!(activity.muted_authors, []);
+}
+
+#[test]
+fn show_muted_keeps_the_switch_and_tells_the_window_of_a_change_that_names_no_item() {
+    let db = OpenStore::new("session-show-muted");
+    let switched = Marked::ShowMuted {
+        repository: gcmon(),
+        show: ShowMuted::On,
+    };
+
+    let (saved, change) = keep_mark(&db.store, &cpython_gcmon(), switched);
+    let read = (db.reader).read_snapshot(&gcmon(), |snapshot| snapshot.show_muted());
+
+    db.close();
+    assert!(saved.is_ok());
+    let items = Vec::new();
+    let repository = gcmon();
+    assert_eq!(change, Change { repository, items });
+    assert_eq!(read.unwrap(), ShowMuted::On);
 }
 
 #[test]

@@ -933,6 +933,12 @@ pub(crate) fn keep_mark(
             let saved = store.unmute_author(&repository, &author);
             (saved, Change { repository, items })
         }
+        Marked::ShowMuted { repository, show } => {
+            // The switch changes which rows the Inbox lists, and no item, so the change names none.
+            let saved = store.switch_show_muted(&repository, show);
+            let items = Vec::new();
+            (saved, Change { repository, items })
+        }
     }
 }
 

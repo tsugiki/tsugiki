@@ -26,6 +26,7 @@
   import { Visits } from "$lib/state/visits.svelte";
   import { SvelteMap } from "svelte/reactivity";
   import {
+    byMutedAuthor,
     isMuted,
     sameStop,
     WorkbenchState,
@@ -898,6 +899,10 @@
    * update first, and Archived, the last archived first. */
   const ownOrder = () => workbench.selected.kind === "inbox" || workbench.selected.kind === "archived";
 
+  /** Whether the list greys the row of `row`: in the Inbox, each row a Muted author wrote that it shows
+   * (#825). */
+  const greyed = (row: { mute_author: MuteAuthor }) => workbench.shown.kind === "inbox" && byMutedAuthor(row);
+
   /** The commands this screen adds to the palette that run no action, which follow the actions. */
   export function paletteCommands(): PaletteAction[] {
     const sort: PaletteAction[] = ownOrder()
@@ -1275,7 +1280,7 @@
 <!-- A PR's or a Backport's row in an unfolded tree: its headline, and its facts under it. -->
 {#snippet pullRequest(row: WorkbenchRow, issue: number | undefined)}
   {@const stop: Stop = { number: row.number, kind: "pull_request", issue }}
-  <div class="row" data-row={lineName(stop)}>
+  <div class={["row", { greyed: greyed(row) }]} data-row={lineName(stop)}>
     <span class="headline">
       {@render line(stop, row, false, prIcon(row))}
     </span>
@@ -1313,7 +1318,7 @@
     issue: undefined,
   }}
   <li class={["item", { attention: item.attention !== null }]}>
-    <div class="row" data-row={lineName(stop)}>
+    <div class={["row", { greyed: greyed(item) }]} data-row={lineName(stop)}>
       <span class="people">{peopleOf(item)}</span>
       <span class="headline">
         {#if item.kind === "issue" && item.pull_requests.length > 0}
@@ -1391,6 +1396,9 @@
   {/if}
   {#if workbench.switchProblem}
     <p role="alert">{`Tsugiki couldn't save the Filter's switch: ${workbench.switchProblem}`}</p>
+  {/if}
+  {#if workbench.showMutedProblem}
+    <p role="alert">{`Tsugiki couldn't switch Show muted: ${workbench.showMutedProblem}`}</p>
   {/if}
   {#if workbench.olderError}
     <p role="alert">{`Tsugiki can't read the Inbox's older items: ${workbench.olderError}`}</p>
@@ -1500,16 +1508,22 @@
         <h2>{workbench.title}</h2>
         {#if workbench.selectedFilter}
           {@const filter = workbench.selectedFilter}
-          <label
-            class="on-workbench"
-            title="Its items go on the Workbench, and Tsugiki keeps them ready to open"
-          >
+          <label class="switch" title="Its items go on the Workbench, and Tsugiki keeps them ready to open">
             <input
               type="checkbox"
               checked={workbench.onWorkbench(filter)}
               aria-busy={workbench.switching}
               onchange={(event) => void workbench.putOnWorkbench(filter.query, event.currentTarget.checked)}
             />On the Workbench</label
+          >
+        {/if}
+        {#if workbench.selected.kind === "inbox"}
+          <label class="switch" title="Lists the items of the authors you muted, greyed">
+            <input
+              type="checkbox"
+              checked={workbench.showMuted === "on"}
+              onchange={(event) => void workbench.switchShowMuted(event.currentTarget.checked ? "on" : "off")}
+            />Show muted</label
           >
         {/if}
         {#if !ownOrder()}
@@ -1655,7 +1669,8 @@
     font-size: 13px;
   }
 
-  .on-workbench {
+  /* A switch of the view on show: a Filter's "On the Workbench", the Inbox's "Show muted". */
+  .switch {
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1665,6 +1680,11 @@
   .order {
     font-size: 12px;
     color: var(--fg-muted);
+  }
+
+  /* A row a Muted author wrote, which the Inbox shows (#825). */
+  .greyed {
+    opacity: 0.55;
   }
 
   ul {

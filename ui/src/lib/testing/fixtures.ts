@@ -5,12 +5,14 @@ import type {
   DiffFile_Serialize as DiffFile,
   DiffThread_Serialize as DiffThread,
   HourPoints_Serialize as HourPoints,
+  InboxCursor_Serialize as InboxCursor,
   LanguageServerSettings_Serialize as LanguageServerSettings,
   ListedItem_Serialize as ListedItem,
   LoadedSettings_Serialize as LoadedSettings,
   PrFiles_Serialize as PrFiles,
   RepositoryCheck_Serialize as RepositoryCheck,
   Settings_Serialize as Settings,
+  ShowMuted,
   Themes,
   ThemeView,
   WorkbenchRow_Serialize as WorkbenchRow,
@@ -27,6 +29,14 @@ export const refused = (message: string) => ({
   status: "error" as const,
   error: { kind: "internal" as const, message },
 });
+
+/** A page of the Inbox holding `items`, whose next older page starts at `older`, with "Show muted" as
+ * `show_muted` says. The items keep the caller's types, as in `workbenchPage`. */
+export const inboxPage = <Item>(
+  items: Item[],
+  older: InboxCursor | null = null,
+  show_muted: ShowMuted = "off",
+) => ok({ items, older, show_muted });
 
 /** The Workbench's answer, listing `items`, counting those that Need attention, with no folded Muted item,
  * no Review request, no Stale review and no Filter, unless `more` says otherwise. The items stay as loosely

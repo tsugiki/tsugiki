@@ -144,9 +144,9 @@ Every open item of a **Repository** that the user hasn't triaged, as a mail clie
 not yet filed: each open **Issue** with its PRs under it, merged and closed ones too, grouped as on the
 **Workbench**, and each **Standalone PR** with an open PR in its tree on its own, the latest update first. An
 item that closes leaves it. A PR that opens on an **Archived** Issue brings the Issue back to it, closed or
-not, until the user archives or mutes it. It starts with the last
-two days and reads older items from the cache as the user scrolls. It adds nothing to **Reach**. It is where
-the user finds an Issue to read, comment on or pin, or a PR to open.
+not, until the user archives or mutes it. It leaves out the rows **Muted authors** wrote until the user turns
+on "Show muted". It starts with the last two days and reads older items from the cache as the user scrolls.
+It adds nothing to **Reach**. It is where the user finds an Issue to read, comment on or pin, or a PR to open.
 _Avoid_: All issues, Issue browser, backlog
 
 **Peek**:
@@ -207,7 +207,8 @@ interest. Their Issues, **Standalone PRs** and **Standalone Backports** count as
 later too, and leave the **Workbench** the same way, with the same exceptions for a Review request or an
 assignment to the user. Muting the author marks their open items seen. Tsugiki works this out from the author
 and keeps no mute on each item, so unmuting the author brings their items back, and an item muted on its own
-stays Muted. Their PRs inside another author's Issue stay as they are. Kept in Tsugiki only.
+stays Muted. Their PRs inside another author's Issue stay as they are, apart from in the **Inbox**. Kept in
+Tsugiki only.
 _Avoid_: Blocked user, ignored user
 
 ### Reviewing

@@ -6,8 +6,10 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::{OpenStore, archived_on_closing};
 use crate::store::{Archiving, AuthorMuting, Muting, Opened};
-use crate::testing::{cpython, cpython_settings};
-use crate::workbench::testing::{ViewWorld, backport, fixing, issue, mine, outline_of, stranger};
+use crate::testing::{cpython, cpython_settings, me};
+use crate::workbench::testing::{
+    BOT, ViewWorld, assigned_issue, backport, fixing, issue, mine, outline_of, own, stranger,
+};
 
 /// A moment well after the epoch, so two days before it is too.
 fn now() -> OffsetDateTime {
@@ -365,8 +367,194 @@ fn mute_takes_an_item_out() {
     assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
 }
 
+/// `facts`, written by `login`.
+fn by(login: &str, facts: PullRequestFacts) -> PullRequestFacts {
+    PullRequestFacts {
+        author: Some(Login::new(login)),
+        ..facts
+    }
+}
+
+impl ViewWorld {
+    /// Mute author on `login`, from now.
+    fn mute_author(&self, login: &str) {
+        let muting = AuthorMuting {
+            author: Login::new(login),
+            marks: Vec::new(),
+        };
+        let store = &self.db.store;
+        store.mute_author(&cpython(), muting, now()).unwrap();
+    }
+
+    fn show_muted(&self, show: ShowMuted) {
+        self.db.store.switch_show_muted(&cpython(), show).unwrap();
+    }
+}
+
 #[test]
-fn a_muted_authors_items_stay_unless_muted_or_archived_on_their_own() {
+fn with_show_muted_off_no_row_by_a_muted_author_is_listed_and_on_they_come_back_in_place() {
+    let world = ViewWorld::new("inbox-show-muted");
+    world.has(
+        vec![
+            pr_at(10, Some(1), ago(1)),
+            by("other-author", pr_at(11, Some(1), ago(5))),
+            pr_at(20, None, ago(2)),
+            by("other-author", pr_at(21, None, ago(3))),
+            own(pr_at(22, None, ago(4))),
+        ],
+        vec![issue_at(1, ago(10))],
+    );
+    world.mute_author("some-author");
+    // A mute of the user's own login, made under another account, hides none of their rows (#494).
+    world.mute_author(me().as_str());
+
+    let hidden = read(&world, InboxPage::Latest);
+    world.show_muted(ShowMuted::On);
+    let shown = read(&world, InboxPage::Latest);
+    world.show_muted(ShowMuted::Off);
+    let unmuted = Login::new("some-author");
+    world.db.store.unmute_author(&cpython(), &unmuted).unwrap();
+    let back = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(
+        outline(&hidden),
+        [
+            ("issue", 1, vec![11]),
+            ("standalone", 21, vec![]),
+            ("standalone", 22, vec![])
+        ],
+        "a PR under someone else's Issue hides its own row alone, and the Issue keeps its place"
+    );
+    assert_eq!(hidden.show_muted, ShowMuted::Off);
+    let all = [
+        ("issue", 1, vec![10, 11]),
+        ("standalone", 20, vec![]),
+        ("standalone", 21, vec![]),
+        ("standalone", 22, vec![]),
+    ];
+    assert_eq!(outline(&shown), all);
+    assert_eq!(shown.show_muted, ShowMuted::On);
+    assert_eq!(outline(&back), all, "unmuting brings their rows back");
+}
+
+#[test]
+fn a_muted_authors_issue_stays_as_the_header_of_another_authors_pr_and_goes_with_the_last() {
+    let world = ViewWorld::new("inbox-muted-header");
+    world.has(
+        vec![
+            pr_at(10, Some(1), ago(1)),
+            by("issue-author", pr_at(12, Some(3), ago(3))),
+            in_state(PrState::Merged, pr_at(20, None, ago(24 * 20))),
+            by("issue-author", backport_at(21, 20, ago(4))),
+            by(
+                "issue-author",
+                in_state(PrState::Merged, pr_at(30, None, ago(24 * 20))),
+            ),
+            by(BOT, backport_at(31, 30, ago(5))),
+        ],
+        vec![
+            issue_at(1, ago(10)),
+            issue_at(2, ago(2)),
+            issue_at(3, ago(10)),
+        ],
+    );
+    world.mute_author("issue-author");
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(
+        outline(&latest),
+        [
+            ("issue", 1, vec![10]),
+            ("standalone", 20, vec![]),
+            ("standalone", 30, vec![31])
+        ],
+        "a row heads what stays under it: an Issue its PRs, a PR its Backports"
+    );
+    assert_eq!(latest.items[0].hidden, Some(Hidden::MutedAuthor));
+}
+
+#[test]
+fn a_muted_authors_backport_hides_its_own_row_under_an_issue_or_on_its_own() {
+    let world = ViewWorld::new("inbox-muted-backport");
+    // Backport 22 names Backport 21 as its Origin PR, and Backport 21 names a PR the cache lacks, so 22 heads
+    // a line and 21 sits under Issue 1 on its own.
+    let backport_of_backport = PullRequestFacts {
+        title: "[3.13] Fix it (GH-21)".to_owned(),
+        ..backport_at(22, 21, ago(1))
+    };
+    let older_backport = PullRequestFacts {
+        title: "[3.14] gh-1: Fix it (GH-20)".to_owned(),
+        ..backport_at(21, 20, ago(2))
+    };
+    world.has(
+        vec![older_backport, backport_of_backport],
+        vec![issue_at(1, ago(3))],
+    );
+    world.mute_author("some-author");
+
+    let hidden = read(&world, InboxPage::Latest);
+    world.show_muted(ShowMuted::On);
+    let shown = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&hidden), [("issue", 1, vec![])]);
+    assert_eq!(
+        outline(&shown),
+        [("standalone backport", 22, vec![]), ("issue", 1, vec![21])]
+    );
+}
+
+#[test]
+fn a_review_request_or_an_assignment_shows_a_muted_authors_item_with_show_muted_off() {
+    let world = ViewWorld::new("inbox-muted-asked");
+    let requested = PullRequestFacts {
+        review_requests: vec![me()],
+        ..pr_at(20, None, ago(2))
+    };
+    world.has(
+        vec![
+            pr_at(10, Some(1), ago(1)),
+            requested,
+            pr_at(21, None, ago(3)),
+        ],
+        vec![assigned_issue(1)],
+    );
+    world.mute_author("some-author");
+    world.mute_author("issue-author");
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(
+        outline(&latest),
+        [("issue", 1, vec![10]), ("standalone", 20, vec![])]
+    );
+}
+
+#[test]
+fn a_page_that_show_muted_empties_gives_way_to_the_next() {
+    let world = ViewWorld::new("inbox-muted-page");
+    world.has(
+        vec![
+            pr_at(20, None, ago(1)),
+            by("other-author", pr_at(21, None, ago(50))),
+        ],
+        vec![],
+    );
+    world.mute_author("some-author");
+
+    let latest = read(&world, InboxPage::Latest);
+    world.finish();
+
+    assert_eq!(outline(&latest), [("standalone", 21, vec![])]);
+    assert_eq!(latest.older, None);
+}
+
+#[test]
+fn a_muted_authors_items_stay_with_show_muted_on_unless_muted_or_archived_on_their_own() {
     let world = ViewWorld::new("inbox-muted-author");
     world.has(
         vec![
@@ -395,21 +583,12 @@ fn a_muted_authors_items_stay_unless_muted_or_archived_on_their_own() {
         .store
         .archive(&cpython(), archiving, now())
         .unwrap();
-    let author = stranger().author.unwrap();
-    let muting = AuthorMuting {
-        author,
-        marks: Vec::new(),
-    };
-    world
-        .db
-        .store
-        .mute_author(&cpython(), muting, now())
-        .unwrap();
+    world.mute_author("some-author");
+    world.show_muted(ShowMuted::On);
 
     let latest = read(&world, InboxPage::Latest);
     world.finish();
 
-    // #825 is to leave out a Muted author's items, behind a switch.
     assert_eq!(
         outline(&latest),
         [("standalone", 20, vec![]), ("issue", 1, vec![])]
@@ -751,6 +930,7 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
     let inbox = Inbox {
         items: vec![],
         older: Some(InboxCursor::at(now())),
+        show_muted: ShowMuted::On,
     };
 
     let sent = serde_json::to_value(&inbox).unwrap();
@@ -767,4 +947,5 @@ fn the_window_sends_a_page_and_gets_the_next_one_s_start_as_text() {
         sent["older"],
         serde_json::json!({ "updated_at": "1970-04-11T00:00:00Z", "number": 0 })
     );
+    assert_eq!(sent["show_muted"], "on");
 }

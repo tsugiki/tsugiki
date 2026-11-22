@@ -992,6 +992,32 @@ fn mute_author_and_unmute_author_tell_the_window() {
 }
 
 #[test]
+fn switch_show_muted_tells_the_window_and_the_inbox_says_it_stands() {
+    let (folders, _root) = temp_folders("wired-show-muted");
+    let wired = Wired::start(Ok(folders), no_network());
+
+    let switched = wired.ask(
+        "switch_show_muted",
+        json!({ "repository": CPYTHON, "show": "on" }),
+    );
+    let changed = wired.workbenches.recv_timeout(PLENTY).unwrap();
+    let inbox = wired.ask(
+        "inbox",
+        json!({ "repository": CPYTHON, "page": { "kind": "latest" } }),
+    );
+    let refused = wired.ask(
+        "switch_show_muted",
+        json!({ "repository": CPYTHON, "show": "maybe" }),
+    );
+    drop(wired.stop());
+
+    drop(switched.unwrap());
+    assert_eq!(changed, json!({ "repository": CPYTHON, "items": [] }));
+    assert_eq!(inbox.unwrap()["show_muted"], "on");
+    assert!(refused.is_err(), "a switch that is neither on nor off");
+}
+
+#[test]
 fn a_mark_seen_with_a_moment_or_a_commit_that_isnt_one_is_refused() {
     let (folders, _root) = temp_folders("wired-bad-mark");
     let wired = Wired::start(Ok(folders), no_network());

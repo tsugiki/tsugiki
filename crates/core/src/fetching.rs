@@ -18,7 +18,7 @@ use specta::Type;
 use time::OffsetDateTime;
 
 use crate::error::{Error, ErrorKind};
-use crate::facts::activity::{ItemKey, PutAway};
+use crate::facts::activity::{ItemKey, PutAway, ShowMuted};
 use crate::facts::patch_ids::PatchesOf;
 use crate::facts::pull_requests::{HeadInMirror, PrHead, ReviewedCommit};
 use crate::login::Login;
@@ -112,6 +112,11 @@ pub(crate) enum Marked {
         repository: RepositoryName,
         author: Login,
     },
+    /// "Show muted" on the Inbox of `repository` turned to `show` (#825).
+    ShowMuted {
+        repository: RepositoryName,
+        show: ShowMuted,
+    },
 }
 
 impl Marked {
@@ -142,7 +147,8 @@ impl Marked {
             Self::Seen { .. }
             | Self::Unseen { .. }
             | Self::Archived { .. }
-            | Self::Unarchived { .. } => false,
+            | Self::Unarchived { .. }
+            | Self::ShowMuted { .. } => false,
         }
     }
 
@@ -156,7 +162,8 @@ impl Marked {
             | Self::Muted { repository, .. }
             | Self::Unmuted { repository, .. }
             | Self::AuthorMuted { repository, .. }
-            | Self::AuthorUnmuted { repository, .. } => repository,
+            | Self::AuthorUnmuted { repository, .. }
+            | Self::ShowMuted { repository, .. } => repository,
         }
     }
 }
@@ -483,6 +490,12 @@ impl Fetching {
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
         let unmuted = Marked::AuthorUnmuted { repository, author };
         self.to_session(SessionMessage::Mark(unmuted));
+    }
+
+    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825).
+    pub fn switch_show_muted(&self, repository: RepositoryName, show: ShowMuted) {
+        let switched = Marked::ShowMuted { repository, show };
+        self.to_session(SessionMessage::Mark(switched));
     }
 
     /// Fetches Issue or PR `number` of `repository`, which the database lacks, and waits for the answer.

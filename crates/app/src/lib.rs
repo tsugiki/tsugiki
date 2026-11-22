@@ -27,7 +27,7 @@ use tsugiki_core::definitions::{
 use tsugiki_core::diff::{DiffOf, DiffRow, Found, HeadLine, PrAt};
 use tsugiki_core::error::{Error, ErrorKind};
 use tsugiki_core::facts::CommitSha;
-use tsugiki_core::facts::activity::ItemKey;
+use tsugiki_core::facts::activity::{ItemKey, ShowMuted};
 use tsugiki_core::filters::{FilterQuery, OnWorkbench};
 use tsugiki_core::github::in_flight::InFlight;
 use tsugiki_core::github::points::HourPoints;
@@ -379,6 +379,19 @@ fn mute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Resu
 #[specta::specta]
 fn unmute_author(repository: &str, author: Login, calls: State<'_, Calls>) -> Result<(), Error> {
     calls.unmute_author(RepositoryName::parse(repository)?, author);
+    Ok(())
+}
+
+/// Turns "Show muted" on the Inbox of `repository` to `show` (#825). Returns at once, and the `changed`
+/// event follows.
+#[tauri::command]
+#[specta::specta]
+fn switch_show_muted(
+    repository: &str,
+    show: ShowMuted,
+    calls: State<'_, Calls>,
+) -> Result<(), Error> {
+    calls.switch_show_muted(RepositoryName::parse(repository)?, show);
     Ok(())
 }
 
@@ -1074,6 +1087,7 @@ pub fn specta_builder<R: tauri::Runtime>() -> Builder<R> {
             unmute,
             mute_author,
             unmute_author,
+            switch_show_muted,
             settings,
             slow_commands::themes,
             slow_commands::preview_themes,

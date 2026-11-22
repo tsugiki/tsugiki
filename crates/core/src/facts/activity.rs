@@ -93,6 +93,16 @@ pub struct MutedAuthor {
     pub at: OffsetDateTime,
 }
 
+/// Whether a Repository's Inbox lists the rows Muted authors wrote: its "Show muted" switch (#825), which
+/// starts off.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ShowMuted {
+    #[default]
+    Off,
+    On,
+}
+
 /// The facts New activity and Needs attention read about a Repository's items, all in one go, so ranking a
 /// list costs no query for each item.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

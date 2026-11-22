@@ -18,7 +18,7 @@ use crate::definitions::{
 use crate::diff::{DiffOf, DiffRow, Diffs, Found, HeadLine, Highlighter};
 use crate::error::{Error, ErrorKind};
 use crate::facts::CommitSha;
-use crate::facts::activity::ItemKey;
+use crate::facts::activity::{ItemKey, ShowMuted};
 use crate::facts::pull_requests::HeadInMirror;
 use crate::fetching::{Fetched, Fetching, Item, NoHead, ScreenMove};
 pub use crate::fetching::{ItemFetch, ItemUnfetched, Queued};
@@ -431,6 +431,11 @@ impl Calls {
     /// Unmutes `author` in `repository`.
     pub fn unmute_author(&self, repository: RepositoryName, author: Login) {
         self.fetching.unmute_author(repository, author);
+    }
+
+    /// Turns "Show muted" on the Inbox of `repository` to `show` (#825).
+    pub fn switch_show_muted(&self, repository: RepositoryName, show: ShowMuted) {
+        self.fetching.switch_show_muted(repository, show);
     }
 
     /// Says the Repository the user typed is one Tsugiki has, or else asks GitHub what adding it would load,

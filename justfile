@@ -85,12 +85,13 @@ check: lint doc-width dupes svelte-check vitest rust-gates release-check
 # Like `check`, it skips Clippy and `rust-coverage` on a branch that changes only `ui/` and docs. It leaves
 # out the rest of `check`: ESLint, token-deps, deny, machete, release-check, e2e and pre-commit's hooks
 # besides typos: zizmor, actionlint and the workflow and Dependabot schema checks. Those read only
-# `.github/`, and a PR that changes it ships with `just ship --check`.
+# `.github/`: a PR that changes its workflows ships with `just ship --check`, and CI checks the rest.
 # Run the gates a first push most often fails on, one at a time, and stop at the first that fails
 preflight: quick svelte-check vitest
     node scripts/gates.ts clippy rust-coverage
 
 # `just ship` runs it before each push. Each of these failed CI on its own often enough to be worth seconds.
+# typos runs through pre-commit, which CONTRIBUTING.md says how to install. Its first run downloads the hook.
 # Run the gates that take seconds: Rust and Prettier formatting, line width, copied code and spelling
 quick: rustfmt prettier doc-width dupes typos
 

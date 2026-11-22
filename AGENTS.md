@@ -47,8 +47,7 @@ main.
 Before you build a ticket, read the tickets that settle rules for the same code, open or closed and in any
 milestone, the security milestone included, and grep the code and docs for comments that name a later
 ticket. Where one disagrees with the ticket, follow the later decision, and raise the conflict with the user
-before you build. A build of #820 reversed #919, settled after it, and #976 let code outside the token
-crate run `gh` with any arguments, which #912 rules out.
+before you build.
 
 Put a follow-up ticket that a review or a build files in the milestone of the release being built, the one
 `just next` lists, not in a later one.
@@ -56,25 +55,13 @@ Put a follow-up ticket that a review or a build files in the milestone of the re
 To build several tickets of a milestone at once, one background agent per ticket, use the `wave` skill in
 `.claude/skills/wave/`.
 
-`just preflight` runs the gates a first push most often fails on, one at a time, and stops at the first that
-fails; the `justfile` lists them. It runs the full Vitest and Rust suites with their coverage gates, which
-count every file, so a change can fail them in a file it never touched. Run it before a wave's first push,
-where a CI round trip costs more. It takes less time than `just check`, and catches nothing that only macOS
-fails on.
+Run `just preflight`, the gates a first push most often fails on, before a first push where a CI round trip
+costs more, such as a wave's.
 
-When the Rust coverage gate finds a file short of its lines, and the lines it lists as never ran don't make up
-the gap, look there for a closure whose `})?;` sits on a line of its own. The gate can count such a line as
-unrun although the closure ran, and its list of gaps skips a `?`. Put the `?` on the line of the call it ends:
-pass a named function, as `statement.query_map(asked, event_in)?` does in `store/activity.rs`.
-
-`just ship --check` runs `just check` before the push and stops on a failure, with the failed recipe and the
-log's tail. Use it for a PR that changes the gates themselves: the `justfile`, `scripts/` or
-`.github/workflows/`, a release PR included. A release PR that only sets the version ships with
-`just ship --release` (`docs/releasing.md`). `just next` lists the open tickets of the release being built.
-`just tree 393` draws the open tickets below #393 as a tree of blockers, with how deep each chain runs.
-
-A hook in `.claude/settings.json` refuses a shell command that rewrites code or docs in place, such as
-`sed -i` or a redirect into `crates/`. Edit those files with the Edit or Write tool.
+Ship a PR that changes the gates themselves, the `justfile`, `scripts/` or `.github/workflows/`, with
+`just ship --check`, which runs `just check` before the push. `just next` lists the open tickets of the
+release being built. `just tree 393` draws the open tickets below #393 as a tree of blockers, with how deep
+each chain runs.
 
 Put a `timeout` on a test run after you change what a parser requires: a session test can loop forever on a
 reply it can't parse.
@@ -84,10 +71,9 @@ PR, run it only when the PR changes `crates/app/src/startup.rs`, `crates/webview
 the Tauri version. Test everything else without a window: `wiring.rs` drives the commands and events on
 Tauri's mock runtime.
 
-Each push to a PR from a `release/` branch rehearses the release on CI, smoke test included, so ask before
-opening one or pushing to it. `just ship` refuses that branch, and `just ship --release` pushes it. A tag
-starts the release workflow, so ask before `just release` too. `docs/releasing.md` has the steps, from
-`just prepare-release X.Y.Z` on.
+Ask before opening or pushing to a PR from a `release/` branch, since each push rehearses the release on CI,
+smoke test included, and before `just release`, whose tag starts the release workflow. `docs/releasing.md`
+has the steps.
 
 ## Where tests go
 

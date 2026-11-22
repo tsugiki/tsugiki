@@ -4,7 +4,12 @@
 
 use std::io;
 
-use crate::{GhOutput, ReadEnv, RunGh, TokenFrom};
+use crate::{GhOutput, ReadEnv, RunGh, TokenFrom, checked_read};
+
+/// The reason `Https::post_graphql` would give for refusing `body`, or nothing when it would send it.
+pub fn refusal(body: &str) -> Option<String> {
+    checked_read(body).err().as_ref().map(ToString::to_string)
+}
 
 /// What a gh that worked and printed `stdout` gives.
 pub fn gh_prints(stdout: &str) -> io::Result<GhOutput> {

@@ -1,8 +1,8 @@
 //! Where Tsugiki's GitHub token comes from, the one place it goes, and how a secret is hidden (ADR 0019).
 //!
 //! Nothing outside this crate can read a [`Token`]'s string. It leaves only in the `Authorization` header
-//! of a request that [`Https`] sends to `api.github.com`. The README says this for someone who doesn't read
-//! Rust.
+//! of a request that [`Https`] sends to `api.github.com`, and that request can only read (ADR 0025). The
+//! README says this for someone who doesn't read Rust.
 
 #![forbid(unsafe_code)]
 
@@ -12,6 +12,8 @@ use std::fmt;
 use std::io;
 
 use rustls::CertificateError;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use url::Url;
 use url::form_urlencoded;
 
@@ -28,6 +30,9 @@ const GRAPHQL: &str = "https://api.github.com/graphql";
 const REST_ROOT: &str = "https://api.github.com";
 /// How GitHub's tokens start. [`Token::hide_in`] covers the token in use whatever its shape.
 const TOKEN_PREFIXES: [&str; 6] = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"];
+/// The keyword each GraphQL operation that writes starts with. [`checked_read`] refuses a query that holds it
+/// anywhere.
+const MUTATION: &str = "mutation";
 /// What `RestPath::parse` refuses: each could make the rest of an address name another host, or part of
 /// one.
 const NOT_IN_A_PATH: [char; 4] = ['@', '?', '#', '\\'];
@@ -224,6 +229,58 @@ fn is_github(url: &Url) -> bool {
         && url.password().is_none()
 }
 
+/// A GraphQL request as [`Https::post_graphql`] sends it. Serde refuses a body with any other key, or with
+/// one of these twice, so the request GitHub gets is the one [`checked_read`] looked at.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct GraphQl {
+    query: String,
+    variables: Value,
+}
+
+/// The reason [`checked_read`] refused a GraphQL body.
+#[derive(Debug, PartialEq, Eq)]
+enum NotARead {
+    /// The body isn't JSON of `query` and `variables` alone, each once. Serde's words say what it found.
+    Unparsed(String),
+    /// The query holds `mutation`, the keyword a write starts with.
+    Mutation,
+}
+
+impl NotARead {
+    fn unparsed(cause: serde_json::Error) -> Self {
+        Self::Unparsed(cause.to_string())
+    }
+}
+
+impl fmt::Display for NotARead {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unparsed(cause) => write!(
+                f,
+                "the GraphQL body isn't a query and its variables: {cause}"
+            ),
+            Self::Mutation => write!(
+                f,
+                "the GraphQL query holds `{MUTATION}`, and only a write needs it"
+            ),
+        }
+    }
+}
+
+/// `body`, a GraphQL request as JSON, written again from what was parsed, if it can only read. GraphQL
+/// writes only through an operation that starts with `mutation`. Its keywords are ASCII and case-sensitive,
+/// and it has no escape that spells one, so a query that holds the word nowhere writes nothing. The word
+/// counts in a string, a comment or a longer word alike: an alias that holds it is refused, and a new name
+/// fixes that.
+fn checked_read(body: &str) -> Result<String, NotARead> {
+    let request: GraphQl = serde_json::from_str(body).map_err(NotARead::unparsed)?;
+    if request.query.contains(MUTATION) {
+        return Err(NotARead::Mutation);
+    }
+    serde_json::to_string(&request).map_err(NotARead::unparsed)
+}
+
 /// What GitHub answered, as text. The core parses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reply {
@@ -243,8 +300,9 @@ pub struct Reply {
 /// inspects TLS, for example.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unreachable {
-    /// No network, no answer in time, an address that isn't GitHub's, or a connection that failed some other
-    /// way, a certificate that failed for a reason other than its dates among them.
+    /// No network, no answer in time, an address that isn't GitHub's, a GraphQL body that isn't a read, or a
+    /// connection that failed some other way, a certificate that failed for a reason other than its dates
+    /// among them.
     Offline(String),
     /// GitHub's certificate isn't valid at this computer's date and time. The clock may be wrong, or the
     /// certificate may have expired, and the check can't tell which.

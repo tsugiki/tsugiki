@@ -32,6 +32,24 @@ The token goes to one place: the `Authorization` header of a request to `https:/
 - takes a REST path only as a `RestPath`, which refuses `@`, `?`, `#` and `\`, the characters that could make
   a path name another host. A query is encoded on its own, so it can't either.
 
+## What Tsugiki may change on GitHub
+
+With gh's token, the default, Tsugiki could change each repository you can push to. This crate decides what
+it sends, so you can learn what Tsugiki may change without reading the rest of the app. The decision behind
+it is [ADR 0025](../../docs/adr/0025-tsugiki-token-lets-through-reads-and-the-writes-it-lists.md).
+
+- **GraphQL: reads only.** `Https::post_graphql` in [`src/live.rs`](src/live.rs) sends a body only after
+  `checked_read` in [`src/lib.rs`](src/lib.rs) has parsed it into its `query` and `variables`. A body with
+  another key, or with one of these twice, is refused, and so is a query that holds the word `mutation`
+  anywhere. GraphQL changes data only through an operation that starts with that word, and has no other way
+  to spell it. GitHub gets the crate's own copy of what it checked, never the text it was handed.
+- **REST: GET only.** `Https` has no other REST method.
+- **`gh`: one command.** Tsugiki runs `gh auth token --hostname github.com`, and nothing else.
+- **Writes.** Tsugiki sends none yet. Each write it may send will get a row here, and a new one changes this
+  crate.
+
+A refused request reaches no network, and Tsugiki says it can't reach GitHub.
+
 ## What Tsugiki asks without a token
 
 Tsugiki sends GitHub one request with no token: `GET /repos/tsugiki/tsugiki/releases/latest`, which asks for
@@ -65,8 +83,9 @@ sends this request.
 ## How to check it
 
 - The crate's dependencies are listed in [`Cargo.toml`](Cargo.toml): `ureq` (the HTTP client), `rustls`
-  (to tell an expired certificate from other failures) and `url`. `just lint` fails if one is added, so a new
-  one needs a reviewed change to that list.
+  (to tell an expired certificate from other failures), `url`, and `serde` and `serde_json` (to parse a
+  GraphQL body before it goes out). `just lint` fails if one is added, so a new one needs a reviewed change
+  to that list.
 - `cargo tree -i ureq` shows which crates use the HTTP client. `tsugiki-token` is the one on its first level,
   and the others reach it through `tsugiki-token`.
 - The token's text is the `String` inside `pub struct Token(String)` in [`src/lib.rs`](src/lib.rs). Search

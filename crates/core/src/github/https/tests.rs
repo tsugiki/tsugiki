@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use serde_json::{Value, json};
 use time::OffsetDateTime;
+use tsugiki_token::testing::refusal;
 
 use super::*;
 
@@ -33,6 +34,24 @@ fn a_graphql_body_holds_the_query_and_its_variables() {
         body,
         json!({ "query": "query Op($n: Int!) { a(n: $n) }", "variables": { "n": 3 } })
     );
+}
+
+#[test]
+fn each_recorded_query_passes_the_token_crates_check_for_a_read() {
+    let mut checked = 0;
+    for entry in std::fs::read_dir(crate::testing::recordings()).unwrap() {
+        let path = entry.unwrap().path();
+        let recording: Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let request = Request {
+            operation: "Recorded",
+            query: Cow::Owned(recording["query"].as_str().unwrap().to_owned()),
+            variables: json!({}),
+        };
+        assert_eq!(refusal(&graphql_body(&request)), None, "{path:?}");
+        checked += 1;
+    }
+    assert!(checked > 0);
 }
 
 #[test]

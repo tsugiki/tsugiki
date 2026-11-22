@@ -1,8 +1,11 @@
 // The rule behind `npm run token-deps`: the crate that holds the GitHub token may depend only on the crates
 // on its list (ADR 0019). A new one needs a reviewed change to `ALLOWED`.
 
-/** The direct dependencies `crates/token` may have: the HTTP client, its TLS errors and URLs. */
-export const ALLOWED = ["ureq", "rustls", "url"];
+/**
+ * The direct dependencies `crates/token` may have: the HTTP client, its TLS errors and URLs, and the JSON the
+ * crate checks before it sends (ADR 0025).
+ */
+export const ALLOWED = ["ureq", "rustls", "url", "serde", "serde_json"];
 
 /** A key at the start of a line, bare or quoted, before a `.` or an `=`. */
 const KEY = /^(["']?)([A-Za-z0-9_-]+)\1\s*[.=]/;

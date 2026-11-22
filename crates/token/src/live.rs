@@ -18,7 +18,8 @@ use ureq::typestate::WithoutBody;
 use ureq::{Agent, Body, RequestBuilder};
 
 use crate::{
-    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, unreachable,
+    API_HOST, GH_TOKEN, GRAPHQL, GhOutput, Reply, RestPath, Token, Unreachable, checked_read,
+    unreachable,
 };
 
 /// How long one request gets, from connecting to its last byte. GitHub ends a GraphQL query itself after
@@ -55,14 +56,17 @@ impl Https {
         }
     }
 
-    /// Sends `body`, a GraphQL request as JSON, with `token`.
-    pub fn post_graphql(&self, token: &Token, body: String) -> Result<Reply, Unreachable> {
+    /// Sends `body`, a GraphQL request as JSON, with `token`, if it can only read. GitHub gets the request as
+    /// [`checked_read`] wrote it again, never `body` itself. A body that isn't a read reaches no network.
+    pub fn post_graphql(&self, token: &Token, body: &str) -> Result<Reply, Unreachable> {
+        let read =
+            checked_read(body).map_err(|refused| Unreachable::Offline(refused.to_string()))?;
         let response = self
             .agent
             .post(GRAPHQL)
             .header("Authorization", token.bearer())
             .content_type("application/json")
-            .send(body)
+            .send(read)
             .map_err(|cause| unreachable(&cause))?;
         with_body(response)
     }

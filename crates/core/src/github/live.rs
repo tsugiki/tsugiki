@@ -26,7 +26,7 @@ use crate::token::Token;
 /// GitHub through the token crate's client. `https.rs` builds what it sends and reads what comes back.
 impl Transport for Https {
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
-        https::reply(self.post_graphql(token, https::graphql_body(request)))
+        https::reply(self.post_graphql(token, &https::graphql_body(request)))
     }
 
     fn get(

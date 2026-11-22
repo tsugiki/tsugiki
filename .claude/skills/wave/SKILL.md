@@ -36,7 +36,15 @@ for its **slot**, one that shares no lane with the other siblings. A ticket bloc
 branch off the sibling's, as [builder.md](builder.md) says; tell the user, since it takes about as long as
 the two in a row.
 
-Done when the user has agreed to the wave's tickets, each open and with no open blocker outside the wave.
+For each ticket, read the PR body of each blocker that merged since the ticket was filed, its "What stays
+open" part included, since a ticket filed before its blocker merged can ask for work the blocker did on the
+way. `gh api repos/tsugiki/tsugiki/issues/<n>/dependencies/blocked_by` lists the blockers, closed ones too,
+and `gh issue view <blocker> --json closedByPullRequestsReferences` names the PR. Where a blocker built part
+of the ticket, or moved the code the ticket names, tell the user and fill in the "What a blocker built"
+section of [builder.md](builder.md). A ticket its blockers finished goes back to the user, not to a builder.
+
+Done when the user has agreed to the wave's tickets, each open and with no open blocker outside the wave,
+and has heard what their merged blockers already built.
 
 ### 2. Make the worktrees
 

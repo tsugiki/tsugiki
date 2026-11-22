@@ -1,7 +1,8 @@
 # The builder's prompt
 
-Fill the placeholders and give each agent this prompt. Leave out the "Branch off a sibling" section unless
-the ticket starts on a sibling's branch.
+Fill the placeholders and give each agent this prompt. Leave out the "What a blocker built" section unless
+step 1 of [SKILL.md](SKILL.md) found a merged blocker that built part of the ticket or moved its code, and
+the "Branch off a sibling" section unless the ticket starts on a sibling's branch.
 
 ---
 
@@ -59,6 +60,12 @@ conflicts, then rerun the full `npm run vitest` and the tests of each crate eith
 with no conflict can still break: a function's new signature, a new argument, a test that mocks a command's
 old answer. If both branches changed the generated bindings, run `just bindings`. Report the conflicts and
 each break you fixed. Don't rerun `just preflight` unless the session asks: CI runs the gates on the push.
+
+### What a blocker built
+
+#<blocker> merged as #<blocker-pr> after this ticket was filed, and <what it built of the ticket, or where it
+moved the code the ticket names>. Read its PR body, `gh pr view <blocker-pr>`, before you start. Build what
+the ticket still lacks, and say in your PR body what #<blocker-pr> already did.
 
 ### Branch off a sibling
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type TreeTicket, ticketsFromPages, treeLines } from "./tree.ts";
+import { blockerLines, type TreeTicket, ticketsFromPages, treeLines } from "./tree.ts";
 
 function ticket(number: number, openBlockers: number[] = [], more: Partial<TreeTicket> = {}): TreeTicket {
   const title = `Ticket ${String(number)}`;
@@ -135,6 +135,81 @@ describe("treeLines", () => {
 
   it("prints nothing when no ticket is open", () => {
     expect(treeLines([], [])).toEqual([]);
+  });
+});
+
+describe("blockerLines", () => {
+  it("draws a chain of blockers upward, each ticket's open blockers under it", () => {
+    const tickets = [ticket(1, [], { milestone: "0.3.3" }), ticket(2, [1]), ticket(3, [2])];
+    expect(blockerLines(tickets, [3])).toEqual([
+      "#3 Ticket 3 (3)",
+      "└─ #2 Ticket 2 (2)",
+      "   └─ #1 [0.3.3] Ticket 1 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("prints a blocker of two tickets once, on the longest chain from the ticket named", () => {
+    // 2 blocks 4 and 3, and 3 blocks 4, so 2 goes under 3 and 4 names it.
+    expect(blockerLines([ticket(1), ticket(2, [1]), ticket(3, [2]), ticket(4, [2, 3])], [4])).toEqual([
+      "#4 Ticket 4 (4)  [also #2]",
+      "└─ #3 Ticket 3 (3)",
+      "   └─ #2 Ticket 2 (2)",
+      "      └─ #1 Ticket 1 (1)",
+      "max depth: 4",
+    ]);
+  });
+
+  it("puts a blocker under the lower number of two tickets as far from the one named", () => {
+    expect(blockerLines([ticket(1), ticket(2, [1]), ticket(3, [1]), ticket(4, [3, 2])], [4])).toEqual([
+      "#4 Ticket 4 (3)",
+      "├─ #2 Ticket 2 (2)",
+      "│  └─ #1 Ticket 1 (1)",
+      "└─ #3 Ticket 3 (2)  [also #1]",
+      "max depth: 3",
+    ]);
+  });
+
+  it("orders a ticket's blockers by depth, then number", () => {
+    const tickets = [ticket(5, [2, 4, 1]), ticket(2, [3]), ticket(3), ticket(4), ticket(1)];
+    expect(blockerLines(tickets, [5])).toEqual([
+      "#5 Ticket 5 (3)",
+      "├─ #1 Ticket 1 (1)",
+      "├─ #4 Ticket 4 (1)",
+      "└─ #2 Ticket 2 (2)",
+      "   └─ #3 Ticket 3 (1)",
+      "max depth: 3",
+    ]);
+  });
+
+  it("prints a ticket with no open blocker alone", () => {
+    expect(blockerLines([ticket(1), ticket(2, [1])], [1])).toEqual(["#1 Ticket 1 (1)", "max depth: 1"]);
+  });
+
+  it("stars a blocker GitHub didn't list and one in another repository", () => {
+    const tickets = [ticket(2, [50], { blockersElsewhere: ["other/repo#3"] })];
+    expect(blockerLines(tickets, [2])).toEqual([
+      "#2 Ticket 2 (2)  [also #50*, other/repo#3*]",
+      "max depth: 2",
+    ]);
+  });
+
+  it("prints each ticket named as its own tree, though it blocks another one named", () => {
+    expect(blockerLines([ticket(1), ticket(2, [1])], [2, 1, 2])).toEqual([
+      "#2 Ticket 2 (2)  [also #1]",
+      "#1 Ticket 1 (1)",
+      "max depth: 2",
+    ]);
+  });
+
+  it("drops the blocker that closes a cycle, as treeLines does, and still names it", () => {
+    const tickets = [ticket(1, [2]), ticket(2, [1])];
+    expect(blockerLines(tickets, [1])).toEqual([
+      "#1 Ticket 1 (2)",
+      "└─ #2 Ticket 2 (1)  [also #1]",
+      "max depth: 2",
+    ]);
+    expect(blockerLines(tickets, [2])).toEqual(["#2 Ticket 2 (1)  [also #1*]", "max depth: 1"]);
   });
 });
 

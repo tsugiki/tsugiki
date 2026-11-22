@@ -56,11 +56,15 @@ export function ticketsFromPages(reply: string): { tickets: TreeTicket[]; warnin
   return { tickets, warning: cutWarning(repositories.flatMap((repository) => repository.issues.nodes)) };
 }
 
-/**
- * The lines `just tree` prints for the open `tickets`: one tree for each ticket `named`, in that order, or
- * with none named, one for each ticket with no open blocker. Each ticket named must be in `tickets`.
- */
-export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
+/** The open tickets by number, each one's depth, and the open blockers each one hangs from. */
+interface Chains {
+  byNumber: Map<number, TreeTicket>;
+  depth: (number: number) => number;
+  /** Each ticket's open blockers in `tickets`, less the one that would close a cycle, in order of number. */
+  kept: Map<number, number[]>;
+}
+
+function chains(tickets: TreeTicket[]): Chains {
   const byNumber = new Map(tickets.map((ticket) => [ticket.number, ticket]));
 
   // Each ticket's depth: 1 plus the depth of its deepest open blocker, in the trees or not. A blocker in
@@ -96,7 +100,55 @@ export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
   for (const ticket of [...tickets].sort((a, b) => a.number - b.number)) {
     walk(ticket);
   }
-  const depth = (number: number): number => depths.get(number) as number;
+  return { byNumber, depth: (number) => depths.get(number) as number, kept };
+}
+
+/**
+ * A ticket's line: its milestone, its depth, and in `[also]` the open blockers `others` and those in other
+ * repositories, with a star on each one no tree `drawn` holds.
+ */
+function lineOf(ticket: TreeTicket, depth: number, others: number[], drawn: Set<number>): string {
+  const milestone = ticket.milestone === undefined ? "" : `[${ticket.milestone}] `;
+  const also = [
+    ...[...others]
+      .sort((a, b) => a - b)
+      .map((blocker) => `#${String(blocker)}${drawn.has(blocker) ? "" : "*"}`),
+    ...ticket.blockersElsewhere.map((blocker) => `${blocker}*`),
+  ];
+  const tail = also.length === 0 ? "" : `  [also ${also.join(", ")}]`;
+  return `#${String(ticket.number)} ${milestone}${ticket.title} (${String(depth)})${tail}`;
+}
+
+/** The lines of the trees whose tops are `roots`, with the children of each ticket, and the deepest last. */
+function drawTrees(
+  roots: number[],
+  children: Map<number, number[]>,
+  depth: (number: number) => number,
+  line: (number: number, above: number | undefined) => string,
+): string[] {
+  const lines: string[] = [];
+  let deepest = 0;
+  const print = (number: number, lead: string, indent: string, above?: number): void => {
+    lines.push(lead + line(number, above));
+    deepest = Math.max(deepest, depth(number));
+    const below = (children.get(number) ?? []).sort((a, b) => depth(a) - depth(b) || a - b);
+    below.forEach((child, at) => {
+      const last = at === below.length - 1;
+      print(child, `${indent}${last ? "└─ " : "├─ "}`, `${indent}${last ? "   " : "│  "}`, number);
+    });
+  };
+  for (const root of roots) {
+    print(root, "", "");
+  }
+  return lines.length === 0 ? [] : [...lines, `max depth: ${String(deepest)}`];
+}
+
+/**
+ * The lines `just tree` prints for the open `tickets`: one tree for each ticket `named`, in that order, or
+ * with none named, one for each ticket with no open blocker. Each ticket named must be in `tickets`.
+ */
+export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
+  const { byNumber, depth, kept } = chains(tickets);
   const dependents = new Map<number, number[]>();
   for (const [number, blockers] of kept) {
     for (const blocker of blockers) {
@@ -131,31 +183,55 @@ export function treeLines(tickets: TreeTicket[], named: number[]): string[] {
     }
   }
 
-  const lines: string[] = [];
-  let deepest = 0;
-  const line = (ticket: TreeTicket, above: number | undefined): string => {
-    const milestone = ticket.milestone === undefined ? "" : `[${ticket.milestone}] `;
-    const others = [
-      ...ticket.openBlockers
-        .filter((blocker) => blocker !== above)
-        .sort((a, b) => a - b)
-        .map((blocker) => `#${String(blocker)}${inTrees.has(blocker) ? "" : "*"}`),
-      ...ticket.blockersElsewhere.map((blocker) => `${blocker}*`),
-    ];
-    const also = others.length === 0 ? "" : `  [also ${others.join(", ")}]`;
-    return `#${String(ticket.number)} ${milestone}${ticket.title} (${String(depth(ticket.number))})${also}`;
-  };
-  const print = (number: number, lead: string, indent: string, above?: number): void => {
-    lines.push(lead + line(byNumber.get(number) as TreeTicket, above));
-    deepest = Math.max(deepest, depth(number));
-    const below = (children.get(number) ?? []).sort((a, b) => depth(a) - depth(b) || a - b);
-    below.forEach((child, at) => {
-      const last = at === below.length - 1;
-      print(child, `${indent}${last ? "└─ " : "├─ "}`, `${indent}${last ? "   " : "│  "}`, number);
-    });
-  };
-  for (const root of roots) {
-    print(root, "", "");
+  return drawTrees(roots, children, depth, (number, above) => {
+    const ticket = byNumber.get(number) as TreeTicket;
+    const others = ticket.openBlockers.filter((blocker) => blocker !== above);
+    return lineOf(ticket, depth(number), others, inTrees);
+  });
+}
+
+/**
+ * The lines `just tree --up` prints for the open `tickets`: one tree for each ticket `named`, in that order,
+ * with each ticket's open blockers under it. Each ticket named must be in `tickets`.
+ */
+export function blockerLines(tickets: TreeTicket[], named: number[]): string[] {
+  const { byNumber, depth, kept } = chains(tickets);
+  const roots = [...new Set(named)];
+  const isRoot = new Set(roots);
+  // `kept` holds each ticket in `tickets`, which holds each root and each blocker `kept` names.
+  const blockers = (number: number): number[] => kept.get(number) as number[];
+  const above = new Set(roots);
+  for (const number of above) {
+    for (const blocker of blockers(number)) {
+      above.add(blocker);
+    }
   }
-  return lines.length === 0 ? [] : [...lines, `max depth: ${String(deepest)}`];
+
+  // Each blocker goes under the ticket it blocks that sits furthest from a root, the lowest number on a tie,
+  // so the tree shows its longest chain. A blocker is shallower than each ticket `kept` hangs it from, so
+  // going from the deepest ticket down reaches each blocker after every ticket it blocks.
+  const distance = new Map(roots.map((root) => [root, 0]));
+  const parent = new Map<number, number>();
+  const fromDeepest = [...above].sort((a, b) => depth(b) - depth(a) || a - b);
+  for (const number of fromDeepest) {
+    // A root starts at 0, and each other ticket here took its distance from a deeper one that blocks it.
+    const reach = distance.get(number) as number;
+    for (const blocker of blockers(number)) {
+      if (!isRoot.has(blocker) && reach + 1 > (distance.get(blocker) ?? -1)) {
+        distance.set(blocker, reach + 1);
+        parent.set(blocker, number);
+      }
+    }
+  }
+  const children = new Map<number, number[]>();
+  for (const [blocker, number] of parent) {
+    children.set(number, [...(children.get(number) ?? []), blocker]);
+  }
+
+  return drawTrees(roots, children, depth, (number) => {
+    const ticket = byNumber.get(number) as TreeTicket;
+    const under = new Set(children.get(number) ?? []);
+    const others = ticket.openBlockers.filter((blocker) => !under.has(blocker));
+    return lineOf(ticket, depth(number), others, above);
+  });
 }

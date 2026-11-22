@@ -3,7 +3,7 @@
 // as it does when the token's mark on it changes, and each time the status changes, which can say Tsugiki
 // went offline or came back (ADR 0008).
 import { commands, events, type Connection, type ReadOnly, type RepositoryState } from "$lib/data/bindings";
-import { Followed } from "./followed.svelte";
+import { Followed, naming } from "./followed.svelte";
 
 export type { Connection, ReadOnly, RepositoryState };
 
@@ -11,13 +11,7 @@ export class RepositoryStateView extends Followed<RepositoryState> {
   constructor(repository: string) {
     super(
       () => commands.repositoryState(repository),
-      [
-        (again) =>
-          events.changed.listen(({ payload }) => {
-            if (payload.repository === repository) again();
-          }),
-        (again) => events.statusChanged.listen(again),
-      ],
+      [naming(events.changed, repository), (again) => events.statusChanged.listen(again)],
     );
   }
 }

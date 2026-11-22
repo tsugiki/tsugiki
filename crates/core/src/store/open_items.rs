@@ -18,19 +18,26 @@ pub(super) const SCHEMA: &str = "
     ) WITHOUT ROWID;
 ";
 
-/// Keeps `open` as what GitHub last counted in `repository`, in place of what it counted before.
+/// Keeps `open` as what GitHub last counted in `repository`, in place of what it counted before, and gives
+/// whether the two differ. The same count again writes nothing.
 pub(super) fn save(
-    connection: &Connection,
+    connection: &mut Connection,
     repository: &RepositoryName,
     open: OpenItems,
-) -> rusqlite::Result<()> {
-    connection
+) -> rusqlite::Result<bool> {
+    let transaction = connection.transaction()?;
+    if read(&transaction, repository)? == Some(open) {
+        return Ok(false);
+    }
+    transaction
         .execute(
             "INSERT OR REPLACE INTO open_items (repository, issues, prs)
              VALUES (:repository, :issues, :prs)",
             named_params! { ":repository": repository, ":issues": open.issues, ":prs": open.prs },
         )
-        .map(drop)
+        .map(drop)?;
+    transaction.commit()?;
+    Ok(true)
 }
 
 /// The open items GitHub last counted in `repository`, or nothing if no sync has counted them.

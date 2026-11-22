@@ -58,13 +58,22 @@ fn query(text: &str) -> FilterQuery {
     text.to_owned().try_into().unwrap()
 }
 
-/// A harness whose Repository finished a sync at `LAST_SYNC`, and whose user is `octocat`.
+/// A harness whose Repository finished a sync at `LAST_SYNC`, which counted the open items `polled` answers
+/// with, and whose user is `octocat`.
 fn after_a_sync(name: &str, replies: Vec<Result<Reply, Unreachable>>) -> Harness {
     let harness = Harness::new(name, replies);
     synced(&harness, ChangeCheck::Skipped);
     harness.db.store.remember_login(&me()).unwrap();
+    let counted = harness.db.store.save_open_items(&cpython(), POLLED_OPEN);
+    assert!(counted.unwrap());
     harness
 }
+
+/// The open items `polled` answers with.
+const POLLED_OPEN: OpenItems = OpenItems {
+    issues: 9_000,
+    prs: 0,
+};
 
 fn synced(harness: &Harness, check: ChangeCheck) {
     let state = SyncState {
@@ -188,7 +197,7 @@ fn issue_hit(number: u32) -> Value {
 
 /// An answer to a poll of a large Repository. `searches` holds one answer for each field `f<position>`.
 fn polled(issues: &Value, prs: &Value, searches: &[Value]) -> Result<Reply, Unreachable> {
-    polled_with_open(9_000, issues, prs, searches)
+    polled_with_open(POLLED_OPEN.issues, issues, prs, searches)
 }
 
 fn polled_with_open(
@@ -432,21 +441,22 @@ fn a_later_sync_asks_only_what_changed_since_the_last_one() {
 }
 
 #[test]
-fn a_refresh_keeps_what_github_counts_open_now() {
+fn a_refresh_keeps_a_new_count_of_the_open_items_and_says_the_repository_changed() {
     let harness = after_a_sync("poll-open-items", vec![quiet_poll()]);
     let held = OpenItems { issues: 1, prs: 1 };
-    harness.db.store.save_open_items(&cpython(), held).unwrap();
+    assert!(harness.db.store.save_open_items(&cpython(), held).unwrap());
     let mut syncs = refreshing(filtering(&[]));
 
-    drop(run(&mut syncs, &harness));
+    let changes = run(&mut syncs, &harness);
 
     let synced = harness.db.reader.repository_sync(&cpython()).unwrap();
-    let open = OpenItems {
-        issues: 9_000,
-        prs: 0,
-    };
-    assert_eq!(synced.open, Some(open));
+    assert_eq!(synced.open, Some(POLLED_OPEN));
     assert!(synced.last_sync > Some(moment(LAST_SYNC)));
+    let named_none = Change {
+        repository: cpython(),
+        items: Vec::new(),
+    };
+    assert_eq!(changes, [named_none]);
     harness.finish();
 }
 

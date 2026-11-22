@@ -889,7 +889,7 @@ fn a_repository_s_state_says_offline_once_github_cant_be_reached() {
 }
 
 #[test]
-fn a_repository_no_sync_reached_says_so_and_a_bad_name_is_refused() {
+fn a_repository_no_sync_has_reached_has_no_last_sync_or_counts_and_a_bad_name_is_refused() {
     let (folders, _root) = temp_folders("wired-repository-sync");
     let wired = Wired::start(Ok(folders), no_network());
 

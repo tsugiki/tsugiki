@@ -1,10 +1,23 @@
 // The core's answer to one question, asked once, then again each time one of the core's events says the
-// answer may have changed (ADR 0008). A Repository's state and its last sync are both read so.
+// answer may have changed (ADR 0008).
 import { type Answer, ask } from "./answer";
 
 /** Starts listening to an event and calls `again` each time it says the answer may have changed. Resolves to
  * what stops the listening. */
 export type Listen = (again: () => void) => Promise<() => void>;
+
+/** An event of the core whose payload names a Repository. */
+type RepositoryEvent = {
+  listen: (handler: (event: { payload: { repository: string } }) => void) => Promise<() => void>;
+};
+
+/** Listens to `event`, and asks again each time it names `repository`. */
+export const naming =
+  (event: RepositoryEvent, repository: string): Listen =>
+  (again) =>
+    event.listen(({ payload }) => {
+      if (payload.repository === repository) again();
+    });
 
 export class Followed<T> {
   /** Undefined until the core answers, and while it can't. */

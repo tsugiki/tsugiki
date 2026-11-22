@@ -6,7 +6,7 @@ use crate::github::{Reply, Unreachable};
 use crate::login::Login;
 use crate::repository::{FoundRepository, OpenItems, RepositoryCounts};
 use crate::repository_settings::{RepositoryCheck, RepositorySettings};
-use crate::status::SyncPart;
+use crate::status::{Change, SyncPart};
 use crate::store::FirstSyncPlace;
 use crate::sync::recovery::{Scenario, recovers_from_each_failure, resumes_after_each_step};
 use crate::sync::testing::{
@@ -1222,17 +1222,29 @@ fn a_large_repository_reads_only_the_window() {
 }
 
 #[test]
-fn a_first_sync_keeps_what_github_counted_open_before_it_finishes() {
+fn a_first_sync_keeps_what_github_counted_open_before_it_finishes_and_tells_the_window() {
     let (_, replies) = small_repository();
     let harness = Harness::scripted("queue-small-open-items", replies);
     let mut syncs = syncing();
 
-    drop(run_until_asked(&mut syncs, &harness, "WindowIssues"));
+    let mut told = None;
+    while !harness
+        .asked
+        .try_iter()
+        .any(|(name, _)| name == "CheckRepository")
+    {
+        told = syncs.step(&harness.github, &harness.db.store).unwrap();
+    }
     let counted = harness.db.reader.repository_sync(&cpython()).unwrap();
     drop(run_to_the_end(&mut syncs, &harness));
     let finished = harness.db.reader.repository_sync(&cpython()).unwrap();
 
     let open = Some(OpenItems { issues: 2, prs: 2 });
+    let named_none = Change {
+        repository: cpython(),
+        items: Vec::new(),
+    };
+    assert_eq!(told, Some(Progress::Changed(named_none)));
     assert_eq!((counted.last_sync, counted.open), (None, open));
     assert!(finished.last_sync.is_some());
     assert_eq!(finished.open, open);

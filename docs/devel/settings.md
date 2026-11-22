@@ -60,11 +60,13 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   open and the window stays where it is.
 - A Repository's page opens with a header: its `owner/name`, then Read-only or Can write, its open Issues
   and PRs, and its last sync, as "Can write · 1,204 open Issues · 342 open PRs · Synced 2 min ago". Read-only
-  follows the Repository's state, for any reason it holds, with the reasons in its tooltip, and changes as
-  the mark does. The counts are GitHub's as the last sync kept them ([sync.md](sync.md)), so a large
-  Repository counts all it has open, not the window Tsugiki holds; before a sync has counted them, they don't
-  show. The last sync says "Not synced yet" before the first one finishes, moves on each minute, and changes
-  when a sync of that Repository finishes. Each part waits for the core's answer. The page says
+  follows the Repository's state, for any reason it holds, says each reason as the Issue and PR views do
+  ("Read-only: your token can't write to python/cpython"), and changes as the mark does. The counts are
+  GitHub's as a sync last kept them ([sync.md](sync.md)), so a large Repository counts all it has open, not
+  the window Tsugiki holds. They change as soon as a sync saves new ones, a first sync included, and before
+  a sync has counted them they don't show. The last sync says "Not synced yet" before the first one
+  finishes, moves on each minute, and changes when a sync of that Repository finishes. Each part waits for
+  the core's answer, and the line shows once one has come. The page says
   "Nothing to set here yet." under the header for now: its groups come later, in this order: Conventions,
   First sync, Filters, Muted authors, On this machine, then Reset cache and Remove repository.
 - Keyboard lists every action with its key in force and where it works, and marks each key `[keys]` remaps

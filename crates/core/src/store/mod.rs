@@ -326,12 +326,13 @@ impl Store {
         saved.map_err(saying(CANT_WRITE))
     }
 
-    /// Keeps `open` as what GitHub last counted open in `repository` (#534).
+    /// Keeps `open` as what GitHub last counted open in `repository` (#534), and gives whether it differs
+    /// from what the store held. A count that matches writes nothing.
     pub fn save_open_items(
         &self,
         repository: &RepositoryName,
         open: OpenItems,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         let repository = repository.clone();
         let saved = self.call(move |connection| open_items::save(connection, &repository, open))?;
         saved.map_err(saying(CANT_WRITE))

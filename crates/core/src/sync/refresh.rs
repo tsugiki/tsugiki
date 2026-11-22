@@ -21,7 +21,7 @@ use crate::github::pull_requests::PrFetch;
 use crate::github::refresh::{ChangedPr, Etag, ListCheck, ListPlace, PollRequest};
 use crate::links::{BackportKind, MergeCommits, backport_of};
 use crate::login::Login;
-use crate::repository::RepositorySize;
+use crate::repository::{OpenItems, RepositorySize};
 use crate::repository_settings::RepositorySettings;
 use crate::store::{ChangeCheck, NarrowedResults, OVERLAP, SyncState};
 use crate::work::{conversations_to_read, reasons};
@@ -51,6 +51,8 @@ pub(super) struct Poll {
     moved_issues: BTreeSet<u32>,
     /// The items the searches merged so far found.
     hits: BTreeMap<u32, FilterHit>,
+    /// A new count of the open items the poll saved, until the window hears of it (#534).
+    untold_count: Option<OpenItems>,
 }
 
 impl Poll {
@@ -76,6 +78,7 @@ impl Default for Poll {
             changed_prs: Vec::new(),
             moved_issues: BTreeSet::new(),
             hits: BTreeMap::new(),
+            untold_count: None,
         }
     }
 }
@@ -198,7 +201,13 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
         }
         Err(problem) => return Err(problem),
     };
+    // The news of a new count waits in the poll for the step to end, so a save after it that fails, and the
+    // same step run again, which finds the count saved, don't lose it.
+    if (link.store).save_open_items(link.repository, answer.open)? {
+        poll.untold_count = Some(answer.open);
+    }
     let touched = save_moved_issues(link, (answer.issues, answer.issue_activity), poll)?;
+    let counted = poll.untold_count.take().is_some();
     poll.in_request.clear();
     poll.answers.extend(answer.filters);
     let settled = answer
@@ -209,13 +218,17 @@ fn read_page(link: &Link<'_>, poll: &mut Poll, check: &mut ChangeCheck) -> Resul
     poll.changed_prs.extend(answer.pull_requests);
     poll.issues = answer.next_issues;
     poll.pull_requests = answer.next_pull_requests;
-    link.keep_open_items(answer.open);
     *check = match (RepositorySize::of(answer.open.total()), poll.tag.clone()) {
         (RepositorySize::Large, _) => ChangeCheck::Skipped,
         (RepositorySize::Small, None) => ChangeCheck::Untagged,
         (RepositorySize::Small, Some(tag)) => ChangeCheck::Tagged(tag),
     };
-    Ok(Step::saved_if_any(touched))
+    let step = Step::saved_if_any(touched);
+    Ok(if counted {
+        step.with_counts_saved()
+    } else {
+        step
+    })
 }
 
 /// Saves each Issue Tsugiki holds that this answer changes. An Issue it doesn't hold isn't on any screen, and

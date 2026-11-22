@@ -1,12 +1,13 @@
 // The facts under a Repository's name atop its page in Settings (#534).
 import { counted } from "$lib/state/counted";
-import type { RepositoryState } from "$lib/state/repository-state.svelte";
+import { readOnlyWords, type RepositoryState } from "$lib/state/repository-state.svelte";
 import type { OpenItems } from "$lib/state/repository-sync.svelte";
 
-/** Whether Tsugiki can write to the Repository: Read-only for any reason, or nothing before the core says. */
-export function writeWords(state: RepositoryState | undefined): string | null {
+/** Whether Tsugiki can write to `repository`: Read-only with each reason, as the Issue and PR views say it,
+ * or Can write, or nothing before the core says. */
+export function writeWords(state: RepositoryState | undefined, repository: string): string | null {
   if (state === undefined) return null;
-  return state.read_only.length > 0 ? "Read-only" : "Can write";
+  return readOnlyWords(state, repository) ?? "Can write";
 }
 
 /** Its open Issues and PRs as GitHub last counted them, such as "1,204 open Issues · 1 open PR". */

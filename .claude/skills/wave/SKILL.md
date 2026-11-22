@@ -9,7 +9,7 @@ A **wave** is a set of tickets, three so far, that background agents build at th
 worktree of its own. A **lane** is a run of tickets that edit the same files, so they go one after another;
 a wave takes at most one ticket from each lane. The tickets of one wave are **siblings**.
 
-The milestone's description holds what belongs to that release: a `## Lanes` table, a `## Waves` list and a
+The milestone's description holds what belongs to that release: a `## Lanes` table, a `## Waves` table and a
 `## Wave log`. This skill holds the procedure. The session that runs the wave is the only one that edits the
 milestone's description.
 
@@ -18,9 +18,24 @@ milestone's description.
 
 ## Implement wave N
 
-A wave runs for hours and outlives a `/clear`, so keep its record in the milestone's `## Wave log`, not in
-the session: write each time and conflict into the wave's entry as it happens. A session that picks up a
-wave halfway reads the entry and goes on from there.
+A wave runs for hours and outlives a `/clear`, so keep its record in the milestone's description, not in
+the session: write each time and conflict into the wave's `## Wave log` entry as it happens. A session that
+picks up a wave halfway reads the entry and goes on from there.
+
+The wave's row in `## Waves` holds its tickets from the plan on, and the numbers that compare it with other
+waves. Step 3 writes its Start, and step 8 the other cells from the entry:
+
+- **Start**: when the agents start. **End**: the wave's last merge. Both in local time with the date, as
+  `11-23 10:05`, since a wave can run past midnight.
+- **Wall-clock**: End minus Start.
+- **Slowest build**: the longest time an agent took from its start to reporting its build.
+- **Slowest review**: the longest time from an agent reporting its build to its `just preflight` passing,
+  review rounds and fixes included.
+- **Rounds**: the most review rounds a ticket of the wave took.
+- **Waiting on merge**: Wall-clock minus Slowest build minus Slowest review, which leaves CI and the time
+  until the user merges.
+- **Conflicts**: how many merges of main conflicted, with the hardest in brackets, as `2 (1 moderate)`, or
+  `0`.
 
 Read and write the description with `gh api repos/tsugiki/tsugiki/milestones/<number> --jq .description`
 and `gh api -X PATCH repos/tsugiki/tsugiki/milestones/<number> -F description=@<file>`, from a file in
@@ -28,8 +43,8 @@ and `gh api -X PATCH repos/tsugiki/tsugiki/milestones/<number> -F description=@<
 
 ### 1. Check the wave
 
-Take wave N's tickets from `## Waves`. For each, check that it's open and list its open blockers with
-`just tree <n>`.
+Take the tickets from wave N's row in `## Waves`. For each, check that it's open and list its open blockers
+with `just tree <n>`.
 
 A ticket blocked by a ticket outside the wave can't start. Offer the user a ready ticket from a later wave
 for its **slot**, one that shares no lane with the other siblings. A ticket blocked by a sibling starts on a
@@ -54,18 +69,18 @@ ticket's title gives. It prints the worktree's path and branch, which the builde
 A ticket that starts on a sibling's branch gets its worktree the same way, then merges that branch:
 `git -C .temp/wt-<n> merge <sibling-branch>`. The worktrees share one repository, so the name is enough.
 
-Add the wave's entry to `## Wave log`, from the form in step 8, with the agents' start time.
+Add the wave's entry to `## Wave log`, from the form in step 8.
 
 Done when each ticket has a worktree with `node_modules` installed, and the log has the wave's entry.
 
 ### 3. Start the agents
 
 Start one background agent per ticket with the prompt in [builder.md](builder.md), its placeholders filled.
-Start them in one message so they run at the same time.
+Start them in one message so they run at the same time, and write the time into the row's Start.
 
 ### 4. Review each build
 
-Once an agent reports its build, write its build time into the log, and run `/code-review` on its branch's
+Once an agent reports its build, write its build time into the entry, and run `/code-review` on its branch's
 diff over `origin/main` in its worktree. Send the findings to that agent with SendMessage. It fixes each or
 declines it with a reason; judge the reasons, and send back any you don't accept.
 
@@ -102,9 +117,10 @@ and reading GraphQL's error for each alias replaced it with no new state.
 
 Then tell it to run its pre-push gates, `just preflight`. Let one agent run them at a time, since they run
 the full Vitest and Rust suites. `just preflight` runs no Playwright, so the builder also runs the e2e specs
-that drive what it changed, as [builder.md](builder.md) says.
+that drive what it changed, as [builder.md](builder.md) says. Once they pass, write into the entry the
+ticket's review time, from its build report to that pass, and its rounds.
 
-Done when the agent reports the review fixed and its gates passed.
+Done when the agent reports the review fixed and its gates passed, and the entry has its review time.
 
 ### 5. Ship
 
@@ -122,8 +138,9 @@ makes the run's Tsugiki exit at once with code 0, before any check.
 ### 6. After each merge
 
 Once the user says a PR merged, tell each sibling still open to merge `origin/main` and rerun its tests, as
-[builder.md](builder.md) says. Write into the log which files conflicted, how hard each was, and each break
-the tests found with no conflict.
+[builder.md](builder.md) says. Write into the entry one line for each sibling's merge of main: which files
+conflicted, how hard each was, and each break the tests found with no conflict. Step 8 counts the lines with
+a conflict for the row's Conflicts.
 
 Once those tests pass, push: CI runs the full gates on the push. Ask for `just preflight` again only when a
 resolution rewrote code, a moderate or hard conflict, where a failed CI round trip costs more than the run.
@@ -139,32 +156,35 @@ Done when `just dupes` passes on main.
 
 ### 8. Close the wave
 
-The wave's entry in `## Wave log` takes this form:
+The wave's entry in `## Wave log` keeps what its row leaves out, and takes this form:
 
 ```
-### Wave N: #a, #b, #c (YYYY-MM-DD)
+### Wave N: #a, #b, #c
 
 <A ticket that took another's slot, and why.>
 
-H h MM min from the agents' start to the last merge (#PRs). The agents took about A (#a), B (#b) and
-C (#c) minutes to build. <Review rounds and how many findings; findings an agent declined.>
+Build and review, in minutes: #a A + R, #b B + S, #c C + T. <For each ticket, its review rounds and how
+many findings each found; findings an agent declined.>
 
 CI: <which PRs passed on the first push; each failure and its cause.>
 
 Merge conflicts, merged in the order #x, #y, #z:
 
-- #y after #x: <files>, easy | moderate | hard. <Breaks with no conflict.>
+- #y after #x: <files>, none | easy | moderate | hard. <Breaks with no conflict.>
 
 Follow-ups: <tickets filed from the reviews, and their milestone.>
 ```
 
 After the last merge:
 
-1. Fill in the wall-clock time and the follow-ups, and cut the parts of the form the wave had nothing for.
-2. Update `## Waves` if a slot changed hands, and move a ticket the wave couldn't start to a later wave.
-3. If the wave taught something that holds for the next one, add it to this skill in a PR, as a rule with
+1. Fill in the follow-ups, and cut the parts of the form the wave had nothing for.
+2. Fill in the row's End, then its other cells from the entry, as the list under "Implement wave N" says.
+3. Update the row's Tickets if a slot changed hands, and move a ticket the wave couldn't start to a later
+   wave's row.
+4. If the wave taught something that holds for the next one, add it to this skill in a PR, as a rule with
    its reason in one clause. The story of how the wave learned it stays in the wave log.
-4. Remove each worktree with `just worktree-remove <n>`, which deletes its builds and, once its PR has
+5. Remove each worktree with `just worktree-remove <n>`, which deletes its builds and, once its PR has
    merged, its local branch.
 
-Done when the entry has every part of the form filled or cut, and no worktree of the wave is left.
+Done when the entry has every part of the form filled or cut, the row has every cell filled, and no
+worktree of the wave is left.

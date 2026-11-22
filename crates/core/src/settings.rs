@@ -160,7 +160,10 @@ pub struct SettingsChanges {
 }
 
 /// The choice of **Read-only** a Repository's page in Settings leaves, which Apply writes as the
-/// Repository's `read_only` (#915).
+/// Repository's `read_only` (#915). The page sends it only when the user switched it, so the page read the
+/// other value. The file holds that value, which Apply switches, or the one the page leaves, which a hand
+/// edit made while the dialog was open or an Apply whose answer the window missed wrote, and which Apply
+/// leaves be. So no hand edit is lost, and unlike `RepositoryFilters` it carries nothing the page read.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Type)]
 pub struct ReadOnlyChoice {
     pub repository: RepositoryName,
@@ -2000,8 +2003,9 @@ impl TomlEdit<'_, Settings> {
 
     /// Writes the choice of Read-only `choice` gives its Repository as its `read_only`, in the first table
     /// that names it, the one the settings read: `read_only = true`, or no key for one that can write, as
-    /// `append` writes them. A `read_only` the user commented on stays, at `false`. It refuses a Repository
-    /// the file doesn't hold.
+    /// `append` writes them. A `read_only` that says so already stays as the user wrote it, and one the user
+    /// commented on stays, at `false`. In a Repository written inline the rest of its table stays as the
+    /// user wrote it too. It refuses a Repository the file doesn't hold.
     fn put_read_only(&mut self, choice: &ReadOnlyChoice) -> Result<(), Error> {
         let name = &choice.repository;
         let repositories = self.document.get_mut(REPOSITORIES);
@@ -2010,18 +2014,45 @@ impl TomlEdit<'_, Settings> {
             .and_then(|repositories| repository_in_file(repositories, name, None))
             .ok_or_else(|| not_held(name))?;
         let wanted = toml_edit::value(choice.read_only);
+        let closing = inline.then(|| closing_space(repository)).flatten();
         merge_value(
             repository,
             READ_ONLY,
             &wanted,
             Some(&toml_edit::value(false)),
         );
-        // A key added to a Repository written inline would follow the space before its `}`, and one taken
-        // out would leave none there. An inline table holds no comments to lose.
-        if inline {
-            repository.fmt();
+        if let Some(closing) = closing {
+            keep_closing_space(repository, closing);
         }
         Ok(())
+    }
+}
+
+/// The last key of the inline table `table` and the space its value keeps before the `}`, if the user wrote
+/// one.
+fn closing_space(table: &dyn TableLike) -> Option<(String, RawString)> {
+    let (key, item) = table.iter().last()?;
+    let space = item.as_value()?.decor().suffix()?.clone();
+    Some((key.to_owned(), space))
+}
+
+/// Keeps the space `closing` says the user wrote before the `}` of the inline table `table` before its last
+/// key changed. A key added at its end would follow that space, as `{ name = "a/b" , read_only = true }`, and
+/// one taken out of its end would leave none, as `{ name = "a/b"}`. So the space moves to the last value
+/// now, and the rest of the table stays as the user wrote it, a list over several lines with its comments
+/// included.
+fn keep_closing_space(table: &mut dyn TableLike, closing: (String, RawString)) {
+    let (was_last, space) = closing;
+    let last = table.iter().last().map(|(key, _)| key.to_owned());
+    if last.as_deref() == Some(was_last.as_str()) {
+        return;
+    }
+    if let Some(value) = table.get_mut(&was_last).and_then(Item::as_value_mut) {
+        value.decor_mut().set_suffix("");
+    }
+    let last = last.and_then(|key| table.get_mut(&key)?.as_value_mut());
+    if let Some(value) = last {
+        value.decor_mut().set_suffix(space);
     }
 }
 

@@ -2005,6 +2005,34 @@ fn apply_writes_read_only_in_a_repository_written_inline_under_the_name_the_file
 }
 
 #[test]
+fn apply_of_read_only_leaves_the_rest_of_a_repository_written_inline_as_the_user_wrote_it() {
+    let before = "repositories = [{ name=\"a/b\",  filters = [\n    # Mine first.\n    \
+                  { name = \"Mine\", query = \"author:@me\" },\n] }]\n";
+    let (mut files, folders, _root) = settings_saying("read-only-inline-kept", before);
+
+    files.apply(read_only("a/b")).unwrap();
+    let chosen = fs::read_to_string(folders.settings_file()).unwrap();
+    files.apply(can_write("a/b")).unwrap();
+    let back = fs::read_to_string(folders.settings_file()).unwrap();
+
+    assert_eq!(chosen, before.replace("\n] }]", "\n], read_only = true }]"));
+    assert_eq!(back, before);
+}
+
+#[test]
+fn apply_of_read_only_leaves_be_a_hand_edit_that_made_the_same_choice() {
+    // The page sends a Repository's choice only when the user switched it, so it read the other value. The
+    // file holds that value, which Apply switches, or the one the page leaves, which a hand edit made
+    // while Settings was open or an Apply whose answer the window missed, and which Apply leaves be.
+    let before = "[[repositories]]\nname = \"a/b\"\nread_only   =   true # Mine.\n";
+    let (mut files, folders, _root) = settings_saying("read-only-same", before);
+
+    files.apply(read_only("a/b")).unwrap();
+
+    assert_eq!(fs::read_to_string(folders.settings_file()).unwrap(), before);
+}
+
+#[test]
 fn apply_keeps_a_read_only_the_user_commented_on_at_false() {
     let before = "[[repositories]]\nname = \"a/b\"\nread_only = true # Until I trust it.\n";
     let (mut files, folders, _root) = settings_saying("read-only-comment", before);

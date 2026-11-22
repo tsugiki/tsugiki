@@ -68,10 +68,12 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   finishes, moves on each minute, and changes when a sync of that Repository finishes, open or not. Each
   part waits for the core's answer, and the line shows once one has come. The page's first row, under the
   header, is the "Read-only" switch, which shows the Repository's `read_only` as the files hold it. Apply
-  saves it with the page's other rows, and Cancel puts it back; the header, the Issue and PR views and the
-  status bar change only once Apply has saved it. The switch waits for the files and is off while Apply
-  saves. The page's groups follow in this order: Conventions, First sync, Filters, Muted authors, On this
-  machine, then Reset cache and Remove repository. Only Filters is built so far.
+  saves it with the page's other rows, and Cancel puts it back. Nothing else shows the switch until Apply
+  has saved it. Then a Repository opened since launch hears of it: its Issue and PR views and the status
+  bar follow, and so does its header on a dialog Apply keeps open. A Repository not opened since launch
+  keeps the old word in that header until the page shows again (#1057). The switch waits for the files and
+  is off while Apply saves. The page's groups follow in this order: Conventions, First sync, Filters, Muted
+  authors, On this machine, then Reset cache and Remove repository. Only Filters is built so far.
 - A Repository's Filters group lists each Filter on a line of its own, in the order `settings.toml` gives
   and the Sidebar shows: its name and its search, each edited in place, ↑ and ↓, off at either end, and
   Delete. Add filter adds a Filter with a blank name and search at the end and puts the focus in its name. A
@@ -139,7 +141,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   repository's "Read-only" box, checked unless the user unchecks it, sets it on the Repository it adds
   ([repositories.md](repositories.md)), and the switch on the Repository's page sets it or takes it out.
   Apply writes it in the first table that names the Repository, the one the settings read, written inline
-  or not, and leaves a `read_only` the user commented on in place at `false`. The Issue and PR views say
+  or not, and leaves the rest of that table as the user wrote it. A `read_only` the user commented on stays
+  in place at `false`. The Issue and PR views say
   "Read-only: you chose it in this Repository's settings" atop, where "this Repository's settings" opens
   its page, and the status bar says "Read-only" as for the token ([status-bar.md](status-bar.md)).
 - Settings are kept in two TOML files, which Tsugiki reads when it starts and when the Settings dialog opens,

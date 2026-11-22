@@ -2883,7 +2883,10 @@ export type ReadOnly =
 
 /**
  *  The choice of **Read-only** a Repository's page in Settings leaves, which Apply writes as the
- *  Repository's `read_only` (#915).
+ *  Repository's `read_only` (#915). The page sends it only when the user switched it, so the page read the
+ *  other value. The file holds that value, which Apply switches, or the one the page leaves, which a hand
+ *  edit made while the dialog was open or an Apply whose answer the window missed wrote, and which Apply
+ *  leaves be. So no hand edit is lost, and unlike `RepositoryFilters` it carries nothing the page read.
  */
 export type ReadOnlyChoice = {
 	repository: RepositoryName,

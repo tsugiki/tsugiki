@@ -9,7 +9,10 @@ use serde_json::{Value, json};
 use tsugiki_token::hide_token_shapes;
 
 use super::activity::{APP_NAME_END, WEB_COMMITTER};
-use super::{ConditionalGet, ConditionalReply, Reply, Request, Transport, Unreachable};
+use super::{
+    ConditionalGet, ConditionalReply, Reply, Request, Selection, Transport, Unreachable, Write,
+    https,
+};
 use crate::conventions::{CPYTHON_BACKPORT_APP, CPYTHON_BOT_ACCOUNTS};
 use crate::token::Token;
 
@@ -272,17 +275,52 @@ impl Transport for Recorder {
         self.inner.get(token, request)
     }
 
-    #[expect(
-        clippy::expect_used,
-        clippy::unwrap_in_result,
-        reason = "a dev tool: a recording it can't write should stop it, and a failed request isn't one"
-    )]
     fn post(&self, token: &Token, request: &Request<'_>) -> Result<Reply, Unreachable> {
         let reply = self.inner.post(token, request)?;
+        let asked = Asked {
+            operation: request.operation,
+            query: &request.query,
+        };
+        self.record(token, asked, &reply);
+        Ok(reply)
+    }
+
+    /// Passes the write on, and records its answer by its operation as a read's. A selection the token
+    /// crate refuses goes nowhere, as from `Https`.
+    fn write(
+        &self,
+        token: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        let query = https::write_query(write, selection)?;
+        let reply = self.inner.write(token, write, selection)?;
+        let asked = Asked {
+            operation: write.operation(),
+            query: &query,
+        };
+        self.record(token, asked, &reply);
+        Ok(reply)
+    }
+}
+
+/// What a recording is named after and holds of the request: its operation and its query.
+struct Asked<'a> {
+    operation: &'a str,
+    query: &'a str,
+}
+
+impl Recorder {
+    /// Writes `reply`, GitHub's good answer to what was `asked`, to `<dir>/<operation>.json`, scrubbed.
+    #[expect(
+        clippy::expect_used,
+        reason = "a dev tool: a recording it can't write should stop it, and a failed request isn't one"
+    )]
+    fn record(&self, token: &Token, asked: Asked<'_>, reply: &Reply) {
         let text = scrub(&reply.body, token);
         let mut body = serde_json::from_str(&text).unwrap_or(Value::String(text));
         if reply.status != 200 || body.get("errors").is_some() {
-            return Ok(reply);
+            return;
         }
         keep_only_what_is_read(&mut body);
         let mut stand_ins = self.stand_ins.borrow_mut();
@@ -292,7 +330,7 @@ impl Transport for Recorder {
         stand_ins.replace_logins(&mut body);
         stand_ins.replace_in_strings(&mut body);
         let recording = json!({
-            "query": request.query,
+            "query": asked.query,
             "status": reply.status,
             "reset": reply.reset,
             "body": body,
@@ -300,9 +338,8 @@ impl Transport for Recorder {
         let pretty =
             serde_json::to_string_pretty(&recording).expect("JSON values always serialize");
         std::fs::create_dir_all(&self.dir).expect("create the fixtures folder");
-        let path = self.dir.join(format!("{}.json", request.operation));
+        let path = self.dir.join(format!("{}.json", asked.operation));
         std::fs::write(path, pretty + "\n").expect("write the recording");
-        Ok(reply)
     }
 }
 

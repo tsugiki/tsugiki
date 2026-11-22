@@ -38,7 +38,7 @@ use crate::github::pull_requests::RateLimit;
 use crate::login::Login;
 use crate::repository::{FoundRepository, RepositoryCounts, RepositoryName, WINDOW_DAYS};
 use crate::token::{Token, TokenFrom};
-pub use tsugiki_token::RestPath;
+pub use tsugiki_token::{RestPath, Selection, Write};
 
 /// One GraphQL request. `operation` names the query, and the replayer finds its recording by that name.
 pub struct Request<'a> {
@@ -86,8 +86,9 @@ pub enum Unreachable {
     /// GitHub's certificate isn't valid at this computer's date and time. The clock may be wrong, or the
     /// certificate may have expired, and the check can't tell which.
     CertificateDates,
-    /// `tsugiki-token` wouldn't send the request, as a GraphQL body that isn't a read (ADR 0025). Asking
-    /// again fails the same way, so it fails as a query GitHub refused does, and not as an outage.
+    /// `tsugiki-token` wouldn't send the request, as a GraphQL body that isn't a read, or a write whose
+    /// selection could add to it (ADR 0025). Asking again fails the same way, so it fails as a query GitHub
+    /// refused does, and not as an outage.
     Refused,
 }
 
@@ -118,6 +119,24 @@ pub trait Transport: Send {
         _token: &Token,
         _request: &ConditionalGet<'_>,
     ) -> Result<ConditionalReply, Unreachable> {
+        Err(Unreachable::Offline)
+    }
+
+    /// Sends `write`, its payload asked for `selection` (ADR 0025). A transport that doesn't write, as the
+    /// tests' that only read, counts as unreachable here. In tests each double checks the selection as
+    /// `Https` would, until the client sends writes and checks them beside `assert_read`.
+    #[cfg_attr(
+        not(any(test, feature = "testing")),
+        expect(unused_variables, reason = "only tests check a selection here")
+    )]
+    fn write(
+        &self,
+        _token: &Token,
+        write: &Write,
+        selection: Selection<'_>,
+    ) -> Result<Reply, Unreachable> {
+        #[cfg(any(test, feature = "testing"))]
+        https::assert_write(write, selection);
         Err(Unreachable::Offline)
     }
 }

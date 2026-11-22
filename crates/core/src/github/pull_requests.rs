@@ -494,7 +494,7 @@ impl GitHub {
         }
         let query = fetch_by_ids_query(why);
         let (data, asked_for): (Data, usize) = self.query_at_size(size.min(ids.len()), |size| {
-            let asked: Vec<&str> = ids.iter().take(size).map(NodeId::as_str).collect();
+            let asked: Vec<&NodeId> = ids.iter().take(size).collect();
             Request {
                 operation: why.name(),
                 query: query.as_str().into(),

@@ -7,7 +7,11 @@ use std::path::Path;
 use std::time::Duration;
 
 use tsugiki_core::error::{Error, ErrorKind};
-use tsugiki_core::github::{GitHub, GitHubAccess, Reply, Request, Transport, Unreachable};
+use tsugiki_core::facts::pull_requests::NodeId;
+use tsugiki_core::github::replay::Replayer;
+use tsugiki_core::github::{
+    GitHub, GitHubAccess, Reply, Request, Selection, Transport, Unreachable, Write,
+};
 use tsugiki_core::mirror::{Announce, Mirrors, Remotes};
 use tsugiki_core::session::{Connections, Intervals, Session};
 use tsugiki_core::settings::SettingsView;
@@ -97,6 +101,30 @@ fn a_gh_that_doesnt_answer_in_time_is_logged_as_stopped(path: &Path) {
     );
 }
 
+/// A write whose selection the token crate refuses leaves the reason in the log, and says nothing was sent.
+#[expect(
+    clippy::unwrap_used,
+    reason = "a test fails by panicking, and this helper sits outside any #[test] function"
+)]
+fn a_refused_write_says_why_though_nothing_was_sent(path: &Path, token: &Token) {
+    let comment = Write::AddComment {
+        subject: NodeId::new("I_1".to_owned()),
+        body: "Thanks".to_owned(),
+    };
+    let second_field = Selection {
+        payload: "{ clientMutationId } deleteRef(input: { refId: 1 }) { clientMutationId }",
+        fragments: "",
+    };
+    let no_recordings = path.with_file_name("no recordings");
+    let refused = Replayer::new(no_recordings).write(token, &comment, second_field);
+    assert_eq!(refused.unwrap_err(), Unreachable::Refused);
+    log::logger().flush();
+    let file = fs::read_to_string(path).unwrap();
+    let says =
+        "Tsugiki refused to send AddComment to GitHub: a write's payload isn't one selection set";
+    assert!(file.contains(says), "{file}");
+}
+
 #[test]
 fn the_log_keeps_causes_and_hides_the_token_in_use() {
     let folder = tsugiki_test_git::temp_path("logfile");
@@ -138,6 +166,8 @@ fn the_log_keeps_causes_and_hides_the_token_in_use() {
     let file = read_after_flush();
     let with_its_cause = format!("{}: ", problem.message);
     assert!(file.contains(&with_its_cause), "{file}");
+
+    a_refused_write_says_why_though_nothing_was_sent(&path, &token);
 
     // What a proxy said, which the status bar has no room for.
     assert!(GitHub::new(Box::new(Proxy), token).viewer().is_err());

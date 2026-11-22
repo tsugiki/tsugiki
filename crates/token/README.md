@@ -46,10 +46,21 @@ it is [ADR 0025](../../docs/adr/0025-tsugiki-token-lets-through-reads-and-the-wr
 - **REST: GET only.** `Https` has no other REST method.
 - **`gh`: one command.** Tsugiki runs `gh auth token --hostname github.com`, and nothing else:
   `gh_auth_token` in [`src/live.rs`](src/live.rs) takes no arguments and holds that command.
-- **Writes.** Tsugiki sends none yet. Each write it may send will get a row here, and a new one changes this
-  crate.
+- **Writes: only those listed below.** `Https::post_write` in [`src/live.rs`](src/live.rs) takes a `Write`,
+  an enum in [`src/lib.rs`](src/lib.rs) with one variant per write, and the crate holds each one's GraphQL
+  text. The rest of Tsugiki adds only what it wants back from GitHub's answer, such as the comment it made.
+  `checked_selection` refuses that part if it holds `mutation`, `"` or `#`, or if its braces would close the
+  write's field early, which is how a second write could sit beside the first. With no `"` or `#`, no brace
+  can hide in a string or a comment, so counting them is enough. A new write adds a variant and a row here,
+  so it changes this crate.
 
 A refused request reaches no network and fails on its own, and Tsugiki's log says why.
+
+These are the writes Tsugiki may send:
+
+| `Write` | GitHub mutation | What it changes |
+|---|---|---|
+| `AddComment` | [`addComment`](https://docs.github.com/en/graphql/reference/mutations#addcomment) | Adds a comment, as you, to an Issue or to a PR's Conversation. |
 
 ## What Tsugiki asks without a token
 
@@ -85,8 +96,8 @@ sends this request.
 
 - The crate's dependencies are listed in [`Cargo.toml`](Cargo.toml): `ureq` (the HTTP client), `rustls`
   (to tell an expired certificate from other failures), `url`, and `serde` and `serde_json` (to parse a
-  GraphQL body before it goes out). `just lint` fails if one is added, so a new one needs a reviewed change
-  to that list.
+  GraphQL body before it goes out, and to write a write's input). `just lint` fails if one is added, so a
+  new one needs a reviewed change to that list.
 - `cargo tree -i ureq` shows which crates use the HTTP client. `tsugiki-token` is the one on its first level,
   and the others reach it through `tsugiki-token`.
 - The token's text is the `String` inside `pub struct Token(String)` in [`src/lib.rs`](src/lib.rs). Search

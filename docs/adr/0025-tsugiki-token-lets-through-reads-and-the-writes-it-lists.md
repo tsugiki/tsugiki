@@ -16,8 +16,9 @@ So the crate decides what may change GitHub, as well as where the token goes:
 - A write goes through `post_write` and names a variant of `Write`, a closed enum with one variant per
   mutation and typed inputs. The crate holds each mutation's text. The core adds the selection set of the
   answer and its fragments, so a write's answer parses as a read's does. The crate refuses a selection with
-  `mutation`, `"` or `#` in it, or whose braces close past the field they open in, so the core can't add a
-  second mutation beside the first.
+  `mutation`, `"` or `#` in it, a payload that isn't one selection set, closed by its last `}`, or fragments
+  whose braces don't pair up, so the core can't add a second mutation beside the first. The node IDs a
+  write takes are the crate's `NodeId`, which the core parses GitHub's answers into.
 - REST stays GET only.
 
 The README lists each write in a table. A new write changes the crate, and a reviewer looks there.

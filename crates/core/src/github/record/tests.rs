@@ -1,7 +1,7 @@
 use super::*;
 use crate::github::RestPath;
 use crate::github::replay::Replayer;
-use crate::github::testing::Canned;
+use crate::github::testing::{COMMENT_ID, Canned, a_comment};
 use crate::testing::TempPath;
 use crate::token::read_token;
 use tsugiki_token::testing::{gh_alone, gh_prints};
@@ -77,6 +77,45 @@ fn a_recording_replays_with_the_token_scrubbed() {
     assert_eq!(replayed.body, r#"{"data":{"note":"[token]"}}"#);
     assert!(!on_disk.contains("secret-token-value"));
     assert!(on_disk.ends_with('\n'));
+}
+
+#[test]
+fn a_write_records_under_its_operation_and_replays_by_it() {
+    let dir = temp_dir("write");
+    let body = r#"{"data":{"addComment":{"commentEdge":{"node":{"id":"IC_1"}}}}}"#;
+    let recorder = Recorder::new(Box::new(Canned(Ok(reply(body)))), dir.to_path_buf());
+
+    let live = recorder.write(&token(), &a_comment(), COMMENT_ID).unwrap();
+    let replayed = Replayer::new(dir.to_path_buf())
+        .write(&token(), &a_comment(), COMMENT_ID)
+        .unwrap();
+    let on_disk: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("AddComment.json")).unwrap())
+            .unwrap();
+
+    assert_eq!(live.body, body);
+    assert_eq!(replayed.body, body);
+    assert_eq!(
+        on_disk["query"],
+        a_comment().query(COMMENT_ID).unwrap().as_str()
+    );
+}
+
+#[test]
+fn a_write_whose_selection_the_token_crate_refuses_is_refused_unsent_and_unrecorded() {
+    let dir = temp_dir("refused-write");
+    let recorder = Recorder::new(Box::new(Canned(Ok(reply("{}")))), dir.to_path_buf());
+    let second_field = Selection {
+        payload: "{ clientMutationId } deleteRef(input: { refId: 1 }) { clientMutationId }",
+        fragments: "",
+    };
+
+    let refused = recorder.write(&token(), &a_comment(), second_field);
+    let replayed = Replayer::new(dir.to_path_buf()).write(&token(), &a_comment(), second_field);
+
+    assert_eq!(refused.unwrap_err(), Unreachable::Refused);
+    assert_eq!(replayed.unwrap_err(), Unreachable::Refused);
+    assert!(!dir.exists());
 }
 
 #[test]

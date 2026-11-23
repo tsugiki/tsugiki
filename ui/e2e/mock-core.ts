@@ -130,7 +130,7 @@ export const changeAnswer = <C extends keyof CoreAnswers>(page: Page, command: C
     [command, answer] as const,
   );
 
-/** How many times the page has sent `command` so far. */
+/** How many times the page has sent `command` since it last loaded. */
 export const callsOf = (page: Page, command: keyof CoreAnswers) =>
   page.evaluate(
     (command) => (window as unknown as MockWindow).mockCalls.filter((name) => name === command).length,

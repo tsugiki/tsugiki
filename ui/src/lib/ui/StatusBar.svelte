@@ -183,8 +183,8 @@
   </footer>
   <!-- A Refresh reads the token, and the core says "Connecting…" until the read ends, which takes the button
        away. The minute's read leaves the problem up, and the GitHub thread, which waits on gh meanwhile,
-       hears no click until it ends: such a click adds no read, and from the read's third second the part on
-       the right says Tsugiki waits for gh. -->
+       hears no click until it ends: such a click adds no read, and on a bar the settings show, from the
+       read's third second, the part on the right says Tsugiki waits for gh. -->
   {#if noToken}
     <button onclick={onrefresh}>Try again</button>
   {/if}

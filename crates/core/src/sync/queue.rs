@@ -361,13 +361,21 @@ impl Syncs {
 
     /// Holds back the work whose step failed: all of it if the problem speaks for all of GitHub, or else that
     /// sync alone, so the other Repositories carry on. It waits until `next_refresh`, or for the rate limit
-    /// until GitHub's points come back. It also takes a sync that keeps failing out of the queue.
-    pub fn after_failure(&mut self, failure: &StepFailure, next_refresh: Instant) {
+    /// until GitHub's points come back. It also takes a sync that keeps failing out of the queue, and answers
+    /// with the news of a step it saved before its place failed to save, which the retry would have told.
+    #[must_use = "a given-up sync's news has to reach the window, which no retry will tell"]
+    pub fn after_failure(
+        &mut self,
+        failure: &StepFailure,
+        next_refresh: Instant,
+    ) -> Option<Progress> {
         let problem = &failure.problem;
         let hold = hold_after(problem, next_refresh);
-        if counts_toward_tries(problem.kind) {
-            self.count_failure(&failure.turn, problem);
-        }
+        let given_up = if counts_toward_tries(problem.kind) {
+            self.count_failure(&failure.turn, problem)
+        } else {
+            None
+        };
         match &failure.turn {
             Turn::Sync(repository) if !problem.kind.speaks_for_all_of_github() => {
                 if let Some(queued) = self.queued_mut(repository) {
@@ -377,6 +385,7 @@ impl Syncs {
             // A tree's or a fill's own trouble ends it in the step, so they fail only for all of GitHub.
             Turn::Sync(_) | Turn::Tree | Turn::Fill => self.not_before = Some(hold),
         }
+        given_up
     }
 
     /// Holds every step back after fetching an opened Issue failed, if `problem` speaks for all of GitHub. An
@@ -387,10 +396,13 @@ impl Syncs {
         }
     }
 
-    fn count_failure(&mut self, turn: &Turn, problem: &Error) {
+    /// Counts a failure of `turn`'s work towards [`TRIES`], and gives up on a sync that reaches it. Answers
+    /// with the news of the step that sync saved before its place failed to save, if it holds one.
+    fn count_failure(&mut self, turn: &Turn, problem: &Error) -> Option<Progress> {
         match turn {
             // A fill costs a request a try, and waits for the next refresh like the rest.
-            Turn::Fill => {}
+            Turn::Fill => None,
+            // A tree keeps no place, so it holds no step whose place failed to save.
             Turn::Tree => {
                 let gave_up = self.trees.front_mut().is_some_and(|tree| {
                     tree.failures += 1;
@@ -399,21 +411,21 @@ impl Syncs {
                 if gave_up && let Some(tree) = self.trees.pop_front() {
                     self.give_up_on(&tree, problem);
                 }
+                None
             }
             Turn::Sync(repository) => {
-                let Some(queued) = self.queued_mut(repository) else {
-                    return;
-                };
+                let queued = self.queued_mut(repository)?;
                 queued.failures += 1;
-                if queued.failures >= TRIES
-                    && let Some(queued) = self.take(repository)
-                {
-                    log::error!(
-                        "Tsugiki gave up syncing {}: {}",
-                        queued.sync.repository,
-                        problem.message
-                    );
+                if queued.failures < TRIES {
+                    return None;
                 }
+                let queued = self.take(repository)?;
+                log::error!(
+                    "Tsugiki gave up syncing {}: {}",
+                    queued.sync.repository,
+                    problem.message
+                );
+                news(queued.sync.repository, unfinished(queued.sync.unsaved?)?)
             }
         }
     }
@@ -603,11 +615,16 @@ impl Syncs {
         github: &GitHub,
     ) -> Option<Progress> {
         self.not_before = github.points_back().map(instant_of).map(points_hold);
-        match stepped {
-            Stepped::Nothing => None,
-            Stepped::Facts(items) => Some(Progress::Changed(Change { repository, items })),
-            Stepped::Count => Some(Progress::Recorded(repository)),
-        }
+        news(repository, stepped)
+    }
+}
+
+/// The news for the rest of the app of what a step of `repository`'s work saved, if it saved anything.
+fn news(repository: RepositoryName, stepped: Stepped) -> Option<Progress> {
+    match stepped {
+        Stepped::Nothing => None,
+        Stepped::Facts(items) => Some(Progress::Changed(Change { repository, items })),
+        Stepped::Count => Some(Progress::Recorded(repository)),
     }
 }
 

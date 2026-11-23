@@ -57,6 +57,7 @@ const item = (number: number): ListedItem => ({
   key: { kind: "pull_request", number },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
   kind: "standalone_pr",
   ...workbenchRow(number, { title: `PR ${String(number)}`, author: "octocat", reasons: ["own_pr"] }),
   backports: [],
@@ -88,6 +89,7 @@ const issueWith = (number: number, pr: number): ListedItem => ({
   key: { kind: "issue", number },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
   kind: "issue",
   number,
   title: `Issue ${String(number)}`,
@@ -199,6 +201,7 @@ describe("WorkbenchState", () => {
       key: { kind: "issue", number: 10 },
       hidden: null,
       outcomes: onWorkbench,
+      mute_author_rows: [],
       kind: "issue",
       number: 10,
       title: "Issue 10",
@@ -223,6 +226,7 @@ describe("WorkbenchState", () => {
       key: { kind: "pull_request", number: 30 },
       hidden: null,
       outcomes: onWorkbench,
+      mute_author_rows: [],
     };
     vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([tree, standalone, lone], { count: 3 }));
     const state = new WorkbenchState("python/cpython");
@@ -258,6 +262,7 @@ describe("WorkbenchState", () => {
       key: { kind: "issue", number },
       hidden: null,
       outcomes: onWorkbench,
+      mute_author_rows: [],
       kind: "issue",
       number,
       title: `Issue ${String(number)}`,
@@ -431,6 +436,7 @@ describe("WorkbenchState", () => {
       key: { kind: "issue", number: 10 },
       hidden: null,
       outcomes: onWorkbench,
+      mute_author_rows: [],
       kind: "issue",
       number: 10,
       title: "Issue 10",
@@ -1328,6 +1334,23 @@ describe("WorkbenchState", () => {
       state.stop();
     });
 
+    it("moves back at Mute author past a PR the author wrote in another's Issue, where the core says the list drops its row", async () => {
+      catchChanged();
+      vi.mocked(commands.muteAuthor).mockResolvedValue(done);
+      // The Inbox with "Show muted" off drops PR 9's row from Issue 4, which someone else opened.
+      const issue = { ...issueWith(4, 9), mute_author_rows: [{ number: 9, mute_author: "leaves" as const }] };
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(5)]));
+      const state = new WorkbenchState("python/cpython");
+      await state.load();
+      state.unfold(4);
+      state.moveTo(at(5));
+
+      await state.muteAuthor("pr-author", at(5));
+
+      expect(state.cursor).toEqual({ number: 4, kind: "issue", issue: undefined });
+      state.stop();
+    });
+
     it("moves on at Unarchive and at Mark Unseen of an Archived item only where the core says they take it out, as the Archived view", async () => {
       catchChanged();
       vi.mocked(commands.unarchive).mockResolvedValue(done);
@@ -1526,6 +1549,7 @@ describe("WorkbenchState", () => {
       key: { kind: "issue", number: 5 },
       hidden: null,
       outcomes: onWorkbench,
+      mute_author_rows: [],
       kind: "issue",
       number: 5,
       title: "Issue 5",

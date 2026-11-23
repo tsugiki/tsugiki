@@ -79,8 +79,9 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     only what waited held it there. Archive in a Filter's view, the Review requests or the Pinned issues,
     which keep the item drawn Archived, moves on but keeps the cursor on the item when it was last, and so
     does Mute where a Review request keeps the item in place. Mute author moves past the author's other
-    items it takes out too. `E` and `M` on a PR in a tree act on the Issue, so the cursor moves past the
-    Issue and its tree, and `Q` there is row 3.
+    items it takes out too, and past each PR of theirs that the Inbox drops from another author's Issue.
+    `E` and `M` on a PR in a tree act on the Issue, so the cursor moves past the Issue and its tree, and `Q`
+    there is row 3.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until nothing on it
     waits on the user or the user marks it seen, which drops the whole look. The preview says why in the

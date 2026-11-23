@@ -396,16 +396,17 @@ export class WorkbenchState {
    * item and the action finishes it (#1052): it `settles` what the item waits on, as Archive and Mute put it
    * away, or the core's outcome for it says it takes the item out of the list on show, as into the folded
    * Muted items. The cursor goes to the first line after the item's lines that the list shows, or else to
-   * the last line, which is the item's own while the item stays in the list. It skips the lines of each item
-   * the action `alsoTakes` out of the list too, as Mute author takes each item the author opened. With no
-   * other line, the cursor leaves the list. `landed` then hears where the cursor went. Nothing waits on the
-   * core, so a sync's answer or a failed action leaves the cursor where the keypress put it.
+   * the last line, which is the item's own while the item stays in the list. It skips each line of another
+   * item that the action `alsoTakes` out of the list too, as Mute author takes each item the author opened,
+   * and each PR they wrote that a list shows without them. With no other line, the cursor leaves the list.
+   * `landed` then hears where the cursor went. Nothing waits on the core, so a sync's answer or a failed
+   * action leaves the cursor where the keypress put it.
    */
   #finish(
     key: ItemKey | undefined,
     action: Finisher,
     settles: boolean,
-    alsoTakes: (other: ListedItem) => boolean = () => false,
+    alsoTakes: (other: ListedItem, stop: Stop) => boolean = () => false,
   ) {
     const was = this.cursor;
     const item = this.#selected;
@@ -417,9 +418,8 @@ export class WorkbenchState {
     if (outcome === "unchanged" || !(settles || out)) return;
     const open = this.#open();
     const lines = (items: ListedItem[]) =>
-      this.#lines(
-        items.filter((other) => !alsoTakes(other)),
-        (issue) => open?.has(issue) ?? false,
+      items.flatMap((other) =>
+        linesOf(other, (issue) => open?.has(issue) ?? false).filter((line) => !alsoTakes(other, line.stop)),
       );
     const next = lines(shown.slice(at + 1)).at(0)?.stop;
     if (!next && !out) return;
@@ -533,10 +533,15 @@ export class WorkbenchState {
    * wrong, if anything did. */
   async muteAuthor(login: string, stop: Stop | undefined) {
     const item = stop && this.#itemOf(stop, this.#everything);
-    const opened = (other: ListedItem) =>
-      other.mute_author.kind === "mute" && other.mute_author.login === login;
-    // The core judges Mute author on each item for the author who opened it, so for `login` on theirs.
-    const alsoTakes = (other: ListedItem) => opened(other) && this.#takesOut(other.outcomes.mute_author);
+    const by = (offered: MuteAuthor | undefined) => offered?.kind === "mute" && offered.login === login;
+    const opened = (other: ListedItem) => by(other.mute_author);
+    // The core judges Mute author on each item for the author who opened it, so for `login` on theirs, and on
+    // each PR in a tree for the PR's author.
+    const alsoTakes = (other: ListedItem, stop: Stop) => {
+      if (opened(other)) return this.#takesOut(other.outcomes.mute_author);
+      const row = other.mute_author_rows.find((row) => row.number === stop.number);
+      return row !== undefined && by(this.muteAuthorOf(stop)) && this.#takesOut(row.mute_author);
+    };
     this.#finish(item && opened(item) ? item.key : undefined, "mute_author", true, alsoTakes);
     return problemIn(commands.muteAuthor(this.#repository, login));
   }

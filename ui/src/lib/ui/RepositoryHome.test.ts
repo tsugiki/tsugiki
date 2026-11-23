@@ -160,6 +160,7 @@ const issue = {
   key: { kind: "issue", number: 112564 },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
 };
 
 const DEFAULT_LAYOUT = {
@@ -679,6 +680,7 @@ const standalone = {
   key: { kind: "pull_request", number: 5 },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
 };
 
 /** A window on two items: the Issue, which it unfolds, and a Standalone PR. */

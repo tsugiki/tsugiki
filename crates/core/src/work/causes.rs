@@ -13,7 +13,9 @@ use super::review_state::{SharedReviews, YourReview, can_wait_on, kept_finding, 
 use crate::activity::{NewActivity, News, WhatHappened, has_failed};
 use crate::conventions::Conventions;
 use crate::facts::WorkFacts;
-use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, Archive, ItemKey};
+use crate::facts::activity::{
+    Activity, ActivityFacts, ActivityKind, Archive, ItemKey, MutedAuthor,
+};
 use crate::facts::issues::{IssueFacts, IssueState};
 use crate::facts::patch_ids::{StaleFinding, StaleFound};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
@@ -21,7 +23,7 @@ use crate::login::Login;
 
 mod after;
 
-pub(crate) use after::Act;
+pub(crate) use after::{Act, Before};
 
 /// One reason an item Needs attention.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -120,8 +122,6 @@ pub(crate) struct Causes {
     muted_authors: Vec<Login>,
     /// The user's Pinned issues (#488).
     pinned: BTreeSet<u32>,
-    /// The Pinned issues that closed while pinned, whose closing waits for the unpin, which archives them.
-    held_closings: BTreeSet<u32>,
     /// The user signed in, whose own items Mute author leaves alone.
     viewer: Option<Login>,
     /// The Review request or the assignment to the user that stands on each Issue and PR, acknowledged or
@@ -150,69 +150,15 @@ impl Causes {
         let shared = SharedReviews::of(&facts.pull_requests, conventions);
         let reviews = your_reviews(facts, viewer, &shared);
         let stale_reviews = stale_reviews(facts, viewer, &reviews, &shared);
-        let stale_found = stale_found(facts, &reviews, &stale_reviews);
-        let judge = Judge {
-            news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
-            facts: &facts.activity,
+        let judging = Judging {
             viewer,
-            stale_reviews: &stale_reviews,
-            stale_found: &stale_found,
+            pull_requests: facts.pull_requests.iter().collect(),
+            issues: facts.issues.iter().collect(),
+            activity: &facts.activity,
+            kept: &facts.reviews.stale_found,
+            news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
         };
-        let on_pull_requests = facts.pull_requests.iter().map(|pr| {
-            let news = judge.news.on_pull_request(pr);
-            (pr.number, judge.on_pull_request(pr, &news), news)
-        });
-        let on_issues = facts.issues.iter().map(|issue| {
-            let news = judge.news.on_issue(issue.number);
-            (issue.number, judge.on_issue(issue, &news), news)
-        });
-        let mut with_news = BTreeSet::new();
-        let mut by_number = BTreeMap::new();
-        for (number, causes, news) in on_pull_requests.chain(on_issues) {
-            with_news.extend((!news.is_empty()).then_some(number));
-            if !causes.is_empty() {
-                by_number.extend([(number, causes)]);
-            }
-        }
-        let requested: BTreeSet<u32> = (facts.pull_requests.iter())
-            .filter(|pr| reasons(pr, viewer).contains(&WorkReason::ReviewRequest))
-            .map(|pr| pr.number)
-            .collect();
-        // GitHub keeps a closed Issue's assignees, but a closed Issue asks nothing of them.
-        let assigned = (facts.issues.iter())
-            .filter(|issue| matches!(issue.state, Some(IssueState::Open) | None))
-            .filter(|issue| issue.assignees.contains(viewer))
-            .map(|issue| (issue.number, Why::Assigned));
-        let asks: BTreeMap<u32, Ask> = (requested.iter())
-            .map(|number| (*number, Why::ReviewRequested))
-            .chain(assigned)
-            .map(|(number, why)| {
-                let started = judge.asked_at(number);
-                (number, Ask { why, started })
-            })
-            .collect();
-        Self {
-            by_number,
-            asks,
-            review_requests: requested,
-            stale_reviews,
-            stale_found,
-            with_news,
-            known_until: known_until(facts),
-            marked_unseen: facts.activity.marked_unseen.keys().copied().collect(),
-            reviews,
-            archived: facts.activity.archived.clone(),
-            closed: closed(facts),
-            muted: facts.activity.muted.clone(),
-            by_muted_authors: by_muted_authors(facts),
-            muted_authors: (facts.activity.muted_authors.iter())
-                .map(|muted| muted.login.clone())
-                .collect(),
-            pinned: facts.activity.pinned.clone(),
-            held_closings: facts.activity.held_closings.clone(),
-            viewer: Some(viewer.clone()),
-            acknowledged: facts.activity.acknowledged.clone(),
-        }
+        judging.causes(reviews, stale_reviews)
     }
 
     /// Whether the item `key` names is Muted: the user muted it on its own (#492), or its author (#494).
@@ -401,47 +347,44 @@ fn stale_reviews(
     waiting.map(|pr| pr.number).collect()
 }
 
-/// The finding the store kept of each of `stale_reviews`, where it kept the one the PR shows, as
-/// `kept_finding` matches it (#908).
+/// The finding the store kept of each of `stale_reviews` among `pull_requests`, where `kept` holds the one
+/// the PR shows, as `kept_finding` matches it (#908).
 fn stale_found(
-    facts: &WorkFacts,
+    pull_requests: &[&PullRequestFacts],
+    kept: &BTreeMap<u32, StaleFound>,
     reviews: &BTreeMap<u32, YourReview>,
     stale_reviews: &BTreeSet<u32>,
 ) -> BTreeMap<u32, StaleFound> {
-    let shown = (facts.pull_requests.iter()).filter(|pr| stale_reviews.contains(&pr.number));
+    let shown = (pull_requests.iter()).filter(|pr| stale_reviews.contains(&pr.number));
     let found = shown.filter_map(|pr| {
-        let found = kept_finding(reviews.get(&pr.number)?, pr, &facts.reviews)?;
+        let found = kept_finding(reviews.get(&pr.number)?, pr, kept)?;
         Some((pr.number, found.clone()))
     });
     found.collect()
 }
 
-/// The Issues and PRs `facts` hold closed or merged. An Issue saved before Tsugiki kept states counts as
-/// open, as it does for an assignment.
-fn closed(facts: &WorkFacts) -> BTreeSet<u32> {
-    let pull_requests = (facts.pull_requests.iter())
+/// The Issues and PRs of `pull_requests` and `issues` closed or merged. An Issue saved before Tsugiki kept
+/// states counts as open, as it does for an assignment.
+fn closed(pull_requests: &[&PullRequestFacts], issues: &[&IssueFacts]) -> BTreeSet<u32> {
+    let pull_requests = (pull_requests.iter())
         .filter(|pr| pr.state != PrState::Open)
         .map(|pr| pr.number);
-    let issues = (facts.issues.iter())
+    let issues = (issues.iter())
         .filter(|issue| !matches!(issue.state, Some(IssueState::Open) | None))
         .map(|issue| issue.number);
     pull_requests.chain(issues).collect()
 }
 
-/// The newest moment `facts` hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
+/// The newest moment the facts hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
 /// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be.
-fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
-    let updated = facts
-        .pull_requests
-        .iter()
+fn known_until(
+    pull_requests: &[&PullRequestFacts],
+    issues: &[&IssueFacts],
+    activity: &ActivityFacts,
+) -> BTreeMap<u32, OffsetDateTime> {
+    let updated = (pull_requests.iter())
         .map(|pr| (pr.number, pr.updated_at))
-        .chain(
-            facts
-                .issues
-                .iter()
-                .map(|issue| (issue.number, issue.updated_at)),
-        );
-    let activity = &facts.activity;
+        .chain(issues.iter().map(|issue| (issue.number, issue.updated_at)));
     let events = activity
         .events
         .iter()
@@ -458,21 +401,28 @@ fn known_until(facts: &WorkFacts) -> BTreeMap<u32, OffsetDateTime> {
     newest
 }
 
-/// The items a Muted author opened (#494): each Issue and PR `facts` hold whose author the user muted, with
-/// the moment of the mute, those they open after it too. A PR inside another author's Issue is no item, so
-/// nothing reads its key, and it stays as it is. The user's own items never count: a mute of their login,
-/// made under another account in the same data folder, would hide them where nothing offers Unmute author.
-fn by_muted_authors(facts: &WorkFacts) -> BTreeMap<ItemKey, OffsetDateTime> {
-    let muted = &facts.activity.muted_authors;
+/// The items a Muted author opened (#494): each of `issues` and `pull_requests` whose author `muted` names,
+/// with the moment of the mute, those they open after it too. A PR inside another author's Issue is no item,
+/// so nothing reads its key, and it stays as it is. The user's own items, `viewer`'s, never count: a mute of
+/// their login, made under another account in the same data folder, would hide them where nothing offers
+/// Unmute author.
+fn by_muted_authors<'a>(
+    viewer: Option<&Login>,
+    (issues, pull_requests): (
+        impl Iterator<Item = &'a IssueFacts>,
+        impl Iterator<Item = &'a PullRequestFacts>,
+    ),
+    muted: &[MutedAuthor],
+) -> BTreeMap<ItemKey, OffsetDateTime> {
     if muted.is_empty() {
         return BTreeMap::new();
     }
     let mute_of = |author: Option<&Login>| {
-        let author = author.filter(|author| facts.viewer.as_ref() != Some(*author))?;
+        let author = author.filter(|author| viewer != Some(*author))?;
         let found = muted.iter().find(|muted| muted.login == *author);
         found.map(|muted| muted.at)
     };
-    let issues = (facts.issues.iter()).filter_map(|issue| {
+    let issues = issues.filter_map(|issue| {
         let at = mute_of(issue.author.as_ref())?;
         Some((
             ItemKey::Issue {
@@ -481,7 +431,7 @@ fn by_muted_authors(facts: &WorkFacts) -> BTreeMap<ItemKey, OffsetDateTime> {
             at,
         ))
     });
-    let pull_requests = (facts.pull_requests.iter()).filter_map(|pr| {
+    let pull_requests = pull_requests.filter_map(|pr| {
         let at = mute_of(pr.author.as_ref())?;
         Some((ItemKey::PullRequest { number: pr.number }, at))
     });
@@ -492,7 +442,105 @@ fn by_muted_authors(facts: &WorkFacts) -> BTreeMap<ItemKey, OffsetDateTime> {
 /// `Causes::muted` names them, for a rule that reads the facts before the rest of `Causes` is built.
 pub(crate) fn muted_items(facts: &WorkFacts) -> BTreeSet<ItemKey> {
     let own = facts.activity.muted.keys().copied();
-    own.chain(by_muted_authors(facts).into_keys()).collect()
+    let by_authors = by_muted_authors(
+        facts.viewer.as_ref(),
+        (facts.issues.iter(), facts.pull_requests.iter()),
+        &facts.activity.muted_authors,
+    );
+    own.chain(by_authors.into_keys()).collect()
+}
+
+/// The facts `Causes` judges: a Repository's, or those of one item's tree once the store holds a user action
+/// on it (#1052).
+struct Judging<'a> {
+    viewer: &'a Login,
+    pull_requests: Vec<&'a PullRequestFacts>,
+    issues: Vec<&'a IssueFacts>,
+    activity: &'a ActivityFacts,
+    /// The last finding the store kept of each PR that the user's Review of it is stale.
+    kept: &'a BTreeMap<u32, StaleFound>,
+    news: News<'a>,
+}
+
+impl Judging<'_> {
+    /// The causes of the facts, where `reviews` and `stale_reviews` are the user's Reviews and Stale reviews
+    /// among them, which only the Repository's PRs together tell.
+    fn causes(self, reviews: BTreeMap<u32, YourReview>, stale_reviews: BTreeSet<u32>) -> Causes {
+        let Self {
+            viewer,
+            pull_requests,
+            issues,
+            activity,
+            kept,
+            news,
+        } = self;
+        let stale_found = stale_found(&pull_requests, kept, &reviews, &stale_reviews);
+        let judge = Judge {
+            news,
+            facts: activity,
+            viewer,
+            stale_reviews: &stale_reviews,
+            stale_found: &stale_found,
+        };
+        let on_pull_requests = pull_requests.iter().map(|pr| {
+            let news = judge.news.on_pull_request(pr);
+            (pr.number, judge.on_pull_request(pr, &news), news)
+        });
+        let on_issues = issues.iter().map(|issue| {
+            let news = judge.news.on_issue(issue.number);
+            (issue.number, judge.on_issue(issue, &news), news)
+        });
+        let mut with_news = BTreeSet::new();
+        let mut by_number = BTreeMap::new();
+        for (number, causes, news) in on_pull_requests.chain(on_issues) {
+            with_news.extend((!news.is_empty()).then_some(number));
+            if !causes.is_empty() {
+                by_number.extend([(number, causes)]);
+            }
+        }
+        let requested: BTreeSet<u32> = (pull_requests.iter())
+            .filter(|pr| reasons(pr, viewer).contains(&WorkReason::ReviewRequest))
+            .map(|pr| pr.number)
+            .collect();
+        // GitHub keeps a closed Issue's assignees, but a closed Issue asks nothing of them.
+        let assigned = (issues.iter())
+            .filter(|issue| matches!(issue.state, Some(IssueState::Open) | None))
+            .filter(|issue| issue.assignees.contains(viewer))
+            .map(|issue| (issue.number, Why::Assigned));
+        let asks: BTreeMap<u32, Ask> = (requested.iter())
+            .map(|number| (*number, Why::ReviewRequested))
+            .chain(assigned)
+            .map(|(number, why)| {
+                let started = judge.asked_at(number);
+                (number, Ask { why, started })
+            })
+            .collect();
+        Causes {
+            by_number,
+            asks,
+            review_requests: requested,
+            stale_reviews,
+            stale_found,
+            with_news,
+            known_until: known_until(&pull_requests, &issues, activity),
+            marked_unseen: activity.marked_unseen.keys().copied().collect(),
+            reviews,
+            archived: activity.archived.clone(),
+            closed: closed(&pull_requests, &issues),
+            muted: activity.muted.clone(),
+            by_muted_authors: by_muted_authors(
+                Some(viewer),
+                (issues.iter().copied(), pull_requests.iter().copied()),
+                &activity.muted_authors,
+            ),
+            muted_authors: (activity.muted_authors.iter())
+                .map(|muted| muted.login.clone())
+                .collect(),
+            pinned: activity.pinned.clone(),
+            viewer: Some(viewer.clone()),
+            acknowledged: activity.acknowledged.clone(),
+        }
+    }
 }
 
 /// Judges what on each Issue and PR waits on the user.

@@ -35,7 +35,7 @@ use time::{Duration, OffsetDateTime};
 use super::attention::summed;
 use super::backports::plant;
 use super::links::placed;
-use super::outcomes::{Pinning, Place, outcomes_of};
+use super::outcomes::{Acting, Pinning, Place, Shown};
 use super::trees::Trees;
 use super::{
     Hidden, ListedItem, Outcomes, PrTree, TreeEntry, WorkbenchItem, WorkbenchRow, candidates,
@@ -49,7 +49,7 @@ use crate::facts::pull_requests::{PrLinks, PrState};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
 use crate::store::{Snapshot, StoreReader, Updates};
-use crate::work::{Cause, Causes};
+use crate::work::{Before, Cause, Causes};
 
 /// How far back from now the first page reaches.
 const LATEST: Duration = Duration::days(2);
@@ -159,21 +159,32 @@ impl Inbox {
     fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
         let causes = Causes::of(&read.facts, repository.conventions);
         let grouped = candidates(
-            (read.facts, &read.links),
+            (&read.facts, &read.links),
             repository,
             &BTreeSet::new(),
             &causes,
         );
+        let acting = Acting::new(
+            Before::of(&read.facts, &causes, repository.conventions),
+            &grouped,
+        );
         let in_inbox = |causes: &Causes, item: &WorkbenchItem| {
             ListedItem::in_inbox(causes, item.clone(), show)
         };
-        let mut items: Vec<ListedItem> = (grouped.into_iter())
+        let mut items: Vec<ListedItem> = (grouped.iter())
             .filter_map(|item| {
-                let listed = in_inbox(&causes, &item)?;
-                let outcomes = outcomes_of(&causes, &item, listed.hidden, |causes| {
-                    in_inbox(causes, &item).map(|_| Place::Listed)
-                });
-                Some(ListedItem { outcomes, ..listed })
+                let listed = in_inbox(&causes, item)?;
+                // The Inbox shows the PRs of the item that it keeps, the Muted authors' gone as `show` says.
+                let (outcomes, mute_author_rows) =
+                    acting.outcomes_of(item, listed.hidden, |causes| {
+                        let kept = in_inbox(causes, item)?;
+                        Some(Shown::whole(Place::Listed, &kept.item))
+                    });
+                Some(ListedItem {
+                    outcomes,
+                    mute_author_rows,
+                    ..listed
+                })
             })
             .collect();
         let place_of =
@@ -218,6 +229,7 @@ impl ListedItem {
             key,
             item,
             outcomes: Outcomes::UNJUDGED,
+            mute_author_rows: Vec::new(),
         })
     }
 

@@ -23,6 +23,7 @@ const unmarked = {
   key: { kind: "issue", number: 1 } as const,
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
 };
 
 const REVIEWED = "1".repeat(40);

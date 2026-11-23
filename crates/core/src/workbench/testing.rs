@@ -6,22 +6,28 @@ use time::OffsetDateTime;
 
 use super::outcomes::Place;
 use super::{
-    Authored, IssueItem, ListedItem, Outcome, Outcomes, TreeEntry, Workbench, WorkbenchItem,
-    WorkbenchRow, WorkbenchView, authored_by, candidates_of,
+    Authored, IssueItem, ListedItem, MuteAuthor, Outcome, Outcomes, TreeEntry, Workbench,
+    WorkbenchItem, WorkbenchRow, WorkbenchView, authored_by, candidates_of,
 };
 use crate::conventions::Conventions;
 use crate::facts::activity::{
-    Activity, ActivityFacts, ActivityKind, ItemActivity, ItemKey, PutAway,
+    Activity, ActivityFacts, ActivityKind, ItemKey, PutAway,
 };
 use crate::facts::issues::IssueFacts;
-use crate::facts::patch_ids::ReviewFacts;
-use crate::facts::pull_requests::{OffDefault, PrState, PullRequestFacts};
+use crate::facts::patch_ids::{CommitPatches, FilePatch, PatchId, PatchesOf, ReviewFacts};
+use crate::facts::pull_request_content::{PullRequestContent, Review};
+use crate::facts::pull_requests::{
+    LatestReview, OffDefault, PrState, PullRequestFacts, ReviewState,
+};
 use crate::facts::{CommitSha, WorkFacts};
 use crate::login::Login;
 use crate::repository_settings::RepositorySettings;
+use crate::session::keep_checks;
 use crate::store::testing::OpenStore;
 use crate::store::{Archiving, AuthorMuting, Flagging, Muting, Seeing};
-use crate::testing::{cpython, cpython_settings, issue_facts, pr_facts};
+use crate::testing::{
+    cpython, cpython_settings, empty_conversation, hours_ago, issue_facts, pr_facts, sha_of,
+};
 use crate::work::{Causes, SeenMark, WorkReason, reasons};
 
 pub(crate) use crate::testing::me;
@@ -113,15 +119,25 @@ impl ViewWorld {
                 store.mute(&repository, muting, now)
             }
             Doing::MuteAuthor => {
-                let author = listed.item.mute_author_offered().unwrap().clone();
-                let facts = store.work_facts(&repository).unwrap();
-                let Authored { marks, .. } = authored_by(facts, &self.settings(), &author);
-                store.mute_author(&repository, AuthorMuting { author, marks }, now)
+                self.mute_author_as_drawn(listed.item.mute_author_offered().unwrap());
+                Ok(())
             }
             Doing::Pin => store.pin(&repository, key.number()),
             Doing::Unpin => store.unpin(&repository, key.number(), now),
         };
         done.unwrap();
+    }
+
+    /// Mute author on `author` as the session writes it, with Mark Seen on each open item they opened.
+    pub(crate) fn mute_author_as_drawn(&self, author: &Login) {
+        let store = &self.db.store;
+        let facts = store.work_facts(&cpython()).unwrap();
+        let Authored { marks, .. } = authored_by(facts, &self.settings(), author);
+        let muting = AuthorMuting {
+            author: author.clone(),
+            marks,
+        };
+        (store.mute_author(&cpython(), muting, OffsetDateTime::now_utc())).unwrap();
     }
 
     /// Each item `view` lists, as the store holds it now, with the place it gives the item.
@@ -134,10 +150,61 @@ impl ViewWorld {
     }
 }
 
-/// The outcome a list gives each action on each item it lists in the world `build` makes, but those that
-/// leave the item unchanged, each held against the list once a world built afresh takes the action through
-/// the store. `read` gives each item the list holds, with the place it gives the item. The world of each
-/// action takes `name` with the item's number and the action.
+/// An action whose outcome `outcomes_done` holds against the store: one of `Doing` on a listed item, or
+/// Mute author on the author of the row of PR `number` in the item's tree.
+#[derive(Debug, Clone, Copy)]
+enum Check {
+    Item(Doing),
+    Row(u32),
+}
+
+impl Check {
+    /// The outcome `listed` gives the action.
+    fn outcome(self, listed: &ListedItem) -> Outcome {
+        match self {
+            Self::Item(doing) => doing.in_outcomes(&listed.outcomes),
+            Self::Row(number) => (listed.mute_author_rows.iter())
+                .find(|row| row.number == number)
+                .map_or(Outcome::Unchanged, |row| row.mute_author),
+        }
+    }
+
+    /// Whether `listed` still shows what the action is on.
+    fn shows(self, listed: &ListedItem) -> bool {
+        match self {
+            Self::Item(_) => true,
+            Self::Row(number) => listed.item.rows().iter().any(|row| row.number == number),
+        }
+    }
+
+    /// The action on `listed`, as the window draws it, through `world`'s store.
+    fn take(self, world: &ViewWorld, listed: &ListedItem) {
+        match self {
+            Self::Item(doing) => world.act(listed, doing),
+            Self::Row(number) => {
+                let rows = listed.item.rows();
+                let row = rows.iter().find(|row| row.number == number).unwrap();
+                let MuteAuthor::Mute { login } = &row.mute_author else {
+                    panic!("no Mute author on PR {number}");
+                };
+                world.mute_author_as_drawn(login);
+            }
+        }
+    }
+
+    fn doing(self) -> Doing {
+        match self {
+            Self::Item(doing) => doing,
+            Self::Row(_) => Doing::MuteAuthor,
+        }
+    }
+}
+
+/// The outcome a list gives each action on each item it lists in the world `build` makes, and Mute author
+/// on each row of its tree, but those that leave the item unchanged, each held against the list once a
+/// world built afresh takes the action through the store. `read` gives each item the list holds, with the
+/// place it gives the item. The world of each action takes `name` with the item's number and the action.
+/// A row's outcome comes with the PR's number.
 pub(crate) fn outcomes_done(
     name: &str,
     build: &dyn Fn(&ViewWorld),
@@ -150,26 +217,26 @@ pub(crate) fn outcomes_done(
     let mut judged = Vec::new();
     for (item, _) in &listed {
         let number = item.key.number();
-        for doing in Doing::ALL {
-            let outcome = doing.in_outcomes(&item.outcomes);
-            if outcome == Outcome::Unchanged {
+        let rows = (item.mute_author_rows.iter()).map(|row| (row.number, Check::Row(row.number)));
+        let checks = Doing::ALL.map(|doing| (number, Check::Item(doing)));
+        for (on, check) in checks.into_iter().chain(rows) {
+            if check.outcome(item) == Outcome::Unchanged {
                 continue;
             }
-            let world = ViewWorld::new(&format!("{name}-{number}-{doing:?}"));
+            // The world built afresh holds its own moments, so the item and its mark are drawn there.
+            let world = ViewWorld::new(&format!("{name}-{number}-{check:?}"));
             build(&world);
             let place = |world: &ViewWorld| {
-                let found = read(world)
-                    .into_iter()
-                    .find(|(listed, _)| listed.key == item.key);
-                found.map(|(_, place)| place)
+                (read(world).into_iter()).find(|(listed, _)| listed.key == item.key)
             };
-            let before = place(&world);
-            world.act(item, doing);
-            let after = place(&world);
+            let (drawn, before) = place(&world).unwrap();
+            let outcome = check.outcome(&drawn);
+            check.take(&world, &drawn);
+            let after = place(&world).filter(|(listed, _)| check.shows(listed));
             world.finish();
-            let done = Outcome::between(before, after);
-            assert_eq!(outcome, done, "{doing:?} on {number} in {name}");
-            judged.push((number, doing, outcome));
+            let done = Outcome::between(Some(before), after.map(|(_, place)| place));
+            assert_eq!(outcome, done, "{check:?} on {number} in {name}");
+            judged.push((on, check.doing(), outcome));
         }
     }
     judged
@@ -365,12 +432,22 @@ impl ViewWorld {
             who: me(),
             at: *at,
         };
-        let events = events.iter().map(named).collect();
-        let activity = vec![ItemActivity { number, events }];
-        let store = &self.db.store;
-        store
-            .save_fetched_pull_requests(&cpython(), vec![], activity)
-            .unwrap();
+        self.db.happened(number, events.iter().map(named).collect());
+    }
+
+    /// The user reviewed `pull_request` at commit 1, and a push three hours ago moved it on to commit 2, a
+    /// change of its own, which no check has kept a finding of yet.
+    pub(crate) fn reviewed_and_pushed(&self, pull_request: PullRequestFacts) {
+        let number = pull_request.number;
+        let reviewed = PullRequestFacts {
+            latest_reviews: vec![LatestReview {
+                author: me(),
+                state: ReviewState::Commented,
+            }],
+            ..pull_request
+        };
+        self.db.reviewed_and_moved(reviewed, ('a', 'b'));
+        self.happened(number, &[(ActivityKind::Commit, hours_ago(3))]);
     }
 
     /// Mute on Issue `number`, whose tree holds `numbers`, from now.
@@ -469,7 +546,7 @@ pub(crate) fn grouped_whole(
 ) -> (Vec<WorkbenchItem>, Causes) {
     let facts = world.db.reader.work_facts(&settings.name).unwrap();
     let causes = Causes::of(&facts, settings.conventions);
-    let items = candidates_of(facts, settings, &BTreeSet::new(), &causes);
+    let items = candidates_of(&facts, settings, &BTreeSet::new(), &causes);
     (items, causes)
 }
 
@@ -480,4 +557,86 @@ pub(crate) fn under_each(settings: &RepositorySettings) -> Vec<RepositorySetting
         ..settings.clone()
     };
     vec![under(Conventions::Cpython), under(Conventions::Github)]
+}
+
+/// `Lib/ast.py` changed in the way `digit` names.
+fn ast_changed(digit: char) -> Vec<FilePatch> {
+    let id = PatchId::parse(&digit.to_string().repeat(40)).unwrap();
+    vec![FilePatch {
+        path: "Lib/ast.py".to_owned(),
+        verbatim: id.clone(),
+        loose: id,
+        generated: false,
+    }]
+}
+
+/// `commit` against `main`.
+pub(crate) fn on_main(commit: CommitSha) -> PatchesOf {
+    PatchesOf {
+        commit,
+        target_branch: "main".to_owned(),
+    }
+}
+
+impl OpenStore {
+    /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check has
+    /// read neither.
+    pub(crate) fn reviewed_and_moved_unread(&self, pull_request: PullRequestFacts) {
+        let number = pull_request.number;
+        let moved = PullRequestFacts {
+            head: Some(sha_of('2')),
+            ..pull_request
+        };
+        self.store
+            .save_pull_requests(&cpython(), vec![moved])
+            .unwrap();
+        let content = PullRequestContent {
+            conversation: empty_conversation(),
+            reviews: vec![Review {
+                id: None,
+                author: Some(me()),
+                state: ReviewState::Commented,
+                commit: Some(sha_of('1')),
+                submitted_at: hours_ago(50),
+                body_html: String::new(),
+                hidden: None,
+                threads: vec![],
+            }],
+            earlier_reviews: 0,
+            head: Some(sha_of('2')),
+            pending: vec![],
+        };
+        let saved = (content, OffsetDateTime::UNIX_EPOCH);
+        self.store
+            .save_pull_request_content(&cpython(), number, saved)
+            .unwrap();
+    }
+
+    /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check read
+    /// the change at commit 1 as `reviewed` and at commit 2 as `head`.
+    pub(crate) fn reviewed_and_moved(
+        &self,
+        pull_request: PullRequestFacts,
+        (reviewed, head): (char, char),
+    ) {
+        self.reviewed_and_moved_unread(pull_request);
+        self.check_read([(sha_of('1'), reviewed), (sha_of('2'), head)]);
+    }
+
+    /// The check read the change at each commit of `read` in the way its digit names.
+    pub(crate) fn check_read<const N: usize>(&self, read: [(CommitSha, char); N]) {
+        let patches = read.map(|(commit, digit)| CommitPatches {
+            of: on_main(commit),
+            files: ast_changed(digit),
+        });
+        self.store
+            .save_patch_ids(&cpython(), patches.to_vec())
+            .unwrap();
+    }
+
+    /// The session keeps what the checks found, as it does after each read and sync, at `now`.
+    pub(crate) fn checks_kept(&self, now: OffsetDateTime) {
+        let facts = self.store.work_facts(&cpython()).unwrap();
+        keep_checks(&self.store, &cpython(), &facts, now).unwrap();
+    }
 }

@@ -13,23 +13,19 @@ use crate::facts::CommitSha;
 use crate::facts::activity::{Activity, ActivityKind, ItemKey, PutAway};
 use crate::facts::filters::FilterResults;
 use crate::facts::issues::IssueFacts;
-use crate::facts::patch_ids::{
-    CantCheck, CommitPatches, FilePatch, PatchId, PatchesOf, UncheckedCommit,
-};
-use crate::facts::pull_request_content::{PullRequestContent, Review};
+use crate::facts::patch_ids::{CantCheck, UncheckedCommit};
 use crate::facts::pull_requests::{CiState, LatestReview, PrState, PullRequestFacts, ReviewState};
 use crate::fetching::Marked;
 use crate::filters::FilterQuery;
 use crate::login::Login;
 use crate::patch_ids::ChangedFile;
-use crate::session::{keep_checks, keep_mark};
+use crate::session::keep_mark;
 use crate::settings::ListOrder;
 use crate::store::Flagging;
 use crate::store::testing::{World, seeing};
-use crate::testing::{
-    cpython, cpython_settings, empty_conversation, hours_ago, issue_facts, me, pr_facts, sha_of,
-};
+use crate::testing::{cpython, cpython_settings, hours_ago, issue_facts, me, pr_facts, sha_of};
 use crate::work::{SeenMark, Why, YourReview};
+use crate::workbench::testing::on_main;
 use crate::workbench::{
     ListedItem, Seen, SeenState, TreeEntry, Workbench, WorkbenchItem, WorkbenchView,
 };
@@ -1194,42 +1190,17 @@ fn mark_seen_on_an_issue_acknowledges_what_stands_across_its_tree() {
     world.finish();
 }
 
-/// `Lib/ast.py` changed in the way `digit` names.
-fn ast_changed(digit: char) -> Vec<FilePatch> {
-    let id = PatchId::parse(&digit.to_string().repeat(40)).unwrap();
-    vec![FilePatch {
-        path: "Lib/ast.py".to_owned(),
-        verbatim: id.clone(),
-        loose: id,
-        generated: false,
-    }]
-}
-
 impl World {
-    /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check read
-    /// the change at commit 1 as `reviewed` and at commit 2 as `head`.
     fn reviewed_and_moved(&self, pull_request: PullRequestFacts, reviewed: char, head: char) {
-        self.reviewed_and_moved_unread(pull_request);
-        self.check_read([(sha_of('1'), reviewed), (sha_of('2'), head)]);
+        self.db.reviewed_and_moved(pull_request, (reviewed, head));
     }
 
-    /// The check read the change at each commit of `read` in the way its digit names.
     fn check_read<const N: usize>(&self, read: [(CommitSha, char); N]) {
-        let patches = read.map(|(commit, digit)| CommitPatches {
-            of: on_main(commit),
-            files: ast_changed(digit),
-        });
-        self.db
-            .store
-            .save_patch_ids(&cpython(), patches.to_vec())
-            .unwrap();
+        self.db.check_read(read);
     }
 
-    /// The session keeps what the checks found, as it does after each read and sync, at `now`.
     fn checks_kept(&self, now: OffsetDateTime) {
-        let store = &self.db.store;
-        let facts = store.work_facts(&cpython()).unwrap();
-        keep_checks(store, &cpython(), &facts, now).unwrap();
+        self.db.checks_kept(now);
     }
 
     /// A colleague pushed a commit made three hours ago to PR `number`. Tsugiki counts the push from when
@@ -1251,41 +1222,8 @@ fn a_minute_on() -> OffsetDateTime {
 }
 
 impl World {
-    /// The user reviewed PR `number` at commit 1, which has moved on to commit 2 since, and the check has
-    /// read neither.
     fn reviewed_and_moved_unread(&self, pull_request: PullRequestFacts) {
-        let number = pull_request.number;
-        self.has(vec![PullRequestFacts {
-            head: Some(sha_of('2')),
-            ..pull_request
-        }]);
-        let content = PullRequestContent {
-            conversation: empty_conversation(),
-            reviews: vec![Review {
-                id: None,
-                author: Some(me()),
-                state: ReviewState::Commented,
-                commit: Some(sha_of('1')),
-                submitted_at: hours_ago(50),
-                body_html: String::new(),
-                hidden: None,
-                threads: vec![],
-            }],
-            earlier_reviews: 0,
-            head: Some(sha_of('2')),
-            pending: vec![],
-        };
-        self.db
-            .store
-            .save_pull_request_content(&cpython(), number, (content, OffsetDateTime::UNIX_EPOCH))
-            .unwrap();
-    }
-}
-
-fn on_main(commit: CommitSha) -> PatchesOf {
-    PatchesOf {
-        commit,
-        target_branch: "main".to_owned(),
+        self.db.reviewed_and_moved_unread(pull_request);
     }
 }
 

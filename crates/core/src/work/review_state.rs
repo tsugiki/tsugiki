@@ -210,10 +210,10 @@ pub(super) fn can_wait_on(pull_request: &PullRequestFacts, viewer: &Login) -> bo
 pub(super) fn kept_finding<'a>(
     review: &YourReview,
     pull_request: &PullRequestFacts,
-    reviews: &'a ReviewFacts,
+    kept: &'a BTreeMap<u32, StaleFound>,
 ) -> Option<&'a StaleFound> {
     let (reviewed, head) = found_against(review, pull_request)?;
-    let kept = reviews.stale_found.get(&pull_request.number)?;
+    let kept = kept.get(&pull_request.number)?;
     let of_an_earlier_head = pull_request.head.as_ref() != Some(&head);
     (kept.reviewed == reviewed && (kept.head == head || of_an_earlier_head)).then_some(kept)
 }
@@ -310,7 +310,7 @@ fn standing<'a>(
     let Some(review) = checked(pull_request, reviews) else {
         return Standing::Waits(reviewed);
     };
-    if kept_finding(&review, pull_request, reviews).is_some() {
+    if kept_finding(&review, pull_request, &reviews.stale_found).is_some() {
         return Standing::Kept;
     }
     match found_against(&review, pull_request) {

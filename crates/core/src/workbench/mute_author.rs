@@ -68,22 +68,16 @@ pub(crate) fn authored_by(
         .map(|pr| pr.number);
     let mut numbers: BTreeSet<u32> = issues.chain(pull_requests).collect();
     let causes = Causes::of(&facts, repository.conventions);
-    let items = candidates_of(facts, repository, &BTreeSet::new(), &causes);
+    let items = candidates_of(&facts, repository, &BTreeSet::new(), &causes);
     // Issues and PRs share their numbers, so the number of an item's head says whether they opened it.
     let theirs: Vec<WorkbenchItem> = (items.into_iter())
         .filter(|item| numbers.contains(&item.key().number()))
         .collect();
-    let marks = (theirs.iter())
-        .filter(|item| item.is_open())
-        .map(|item| {
-            // These marks come from the facts, not from a page the window drew, so they acknowledge no
-            // finding of a Stale review (#908).
-            let SeenMark { numbers, up_to, .. } = item.seen().mark.clone();
-            Seeing {
-                numbers,
-                up_to,
-                findings: vec![],
-            }
+    let marks = (theirs.iter().filter_map(mark_of))
+        .map(|SeenMark { numbers, up_to, findings }| Seeing {
+            numbers,
+            up_to,
+            findings,
         })
         .collect();
     numbers.extend(theirs.iter().flat_map(WorkbenchItem::numbers));
@@ -91,6 +85,37 @@ pub(crate) fn authored_by(
         marks,
         numbers: numbers.into_iter().collect(),
     }
+}
+
+/// Mute author's Mark Seen on `item`, an item the author opened: on its tree, while it's open. The mark
+/// comes from the facts, not from a page the window drew, so it acknowledges no finding of a Stale review
+/// (#908).
+fn mark_of(item: &WorkbenchItem) -> Option<SeenMark> {
+    let SeenMark { numbers, up_to, .. } = item.seen().mark.clone();
+    item.is_open().then_some(SeenMark {
+        numbers,
+        up_to,
+        findings: vec![],
+    })
+}
+
+/// The marks Mute author makes on the items of each author `items` offer it for, as `authored_by` makes
+/// them, with the author.
+pub(crate) fn marks_by_author<'a>(
+    items: impl IntoIterator<Item = &'a WorkbenchItem>,
+) -> Vec<(Login, Vec<SeenMark>)> {
+    let mut marks: Vec<(Login, Vec<SeenMark>)> = Vec::new();
+    for item in items {
+        let Some(author) = item.mute_author_offered() else {
+            continue;
+        };
+        let mark = mark_of(item);
+        match marks.iter_mut().find(|(login, _)| login == author) {
+            Some((_, theirs)) => theirs.extend(mark),
+            None => marks.push((author.clone(), mark.into_iter().collect())),
+        }
+    }
+    marks
 }
 
 #[cfg(test)]

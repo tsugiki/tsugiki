@@ -84,7 +84,7 @@ impl IssueView {
         // A Matched PR is one any Filter found, on the Workbench or off it, as its view lists it first.
         let matched = FilterFacts::new(repository, filters).found();
         let causes = Causes::of(&facts, repository.conventions);
-        let found = candidates((facts, &links), repository, &BTreeSet::new(), &causes)
+        let found = candidates((&facts, &links), repository, &BTreeSet::new(), &causes)
             .into_iter()
             .find_map(|item| match item {
                 WorkbenchItem::Issue(issue) if issue.number == number => Some(issue),

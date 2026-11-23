@@ -6,7 +6,7 @@ use crate::facts::issues::IssueFacts;
 use crate::facts::pull_requests::{PrState, PullRequestFacts};
 use crate::store::testing::{OpenStore, archived_on_closing, seeing};
 use crate::store::{Archiving, AuthorMuting, Flagging, Muting, Opened};
-use crate::testing::{cpython, cpython_settings, me};
+use crate::testing::{cpython, cpython_settings, hours_ago, me};
 use crate::work::Why;
 use crate::workbench::outcomes::{Outcome, Place};
 use crate::workbench::testing::{
@@ -1180,16 +1180,48 @@ fn each_outcome_in_the_inbox_is_what_the_inbox_lists_once_the_store_holds_the_ac
     };
     let mut expected: BTreeMap<(u32, Doing), Outcome> =
         [item(1), item(2), item(20)].into_iter().flatten().collect();
-    // A pin takes an Issue out. Mute author leaves Issue 1 as the header of PR 10, which someone else wrote.
+    // A pin takes an Issue out. Mute author leaves Issue 1 as the header of PR 10, which someone else wrote,
+    // and Mute author on that someone takes PR 10's row out from under it.
     expected.extend([
         ((1, Pin), Leaves),
         ((2, Pin), Leaves),
         ((1, MuteAuthor), Stays),
+        ((10, MuteAuthor), Leaves),
     ]);
     assert_eq!(off, expected);
-    // With "Show muted" on, a Muted author's item stays.
-    expected.extend([((2, MuteAuthor), Stays), ((20, MuteAuthor), Stays)]);
+    // With "Show muted" on, a Muted author's item and row stay.
+    expected.extend([
+        ((2, MuteAuthor), Stays),
+        ((20, MuteAuthor), Stays),
+        ((10, MuteAuthor), Stays),
+    ]);
     assert_eq!(on, expected);
+}
+
+#[test]
+fn mute_author_with_show_muted_on_keeps_an_item_back_for_a_stale_review_its_marks_cant_acknowledge() {
+    let build = |world: &ViewWorld| {
+        let updated_at = hours_ago(1);
+        world.reviewed_and_pushed(by("other-author", pr_at(30, None, updated_at)));
+        let archiving = Archiving {
+            key: ItemKey::PullRequest { number: 30 },
+            numbers: vec![30],
+            up_to: Some(updated_at),
+            put_away: PutAway::Now,
+            findings: vec![],
+        };
+        let store = &world.db.store;
+        store.archive(&cpython(), archiving, updated_at).unwrap();
+        // The check found the Stale review after the archive, which brings PR 30 back, though before
+        // GitHub's last word on the PR.
+        world.db.checks_kept(hours_ago(2));
+        world.show_muted(ShowMuted::On);
+    };
+
+    let judged = judged("inbox-outcomes-stale-found", OffsetDateTime::now_utc(), &build);
+
+    // Mute author's marks come from the facts, not from the page, so they leave the finding standing.
+    assert_eq!(judged.get(&(30, Doing::MuteAuthor)), Some(&Outcome::Stays));
 }
 
 #[test]

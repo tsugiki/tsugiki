@@ -275,6 +275,14 @@ impl OpenStore {
         (marked(cpython()), marked(gcmon()))
     }
 
+    /// Each of `events` happened on CPython's Issue or PR `number`, as a fetch saves them.
+    pub(crate) fn happened(&self, number: u32, events: Vec<Activity>) {
+        let activity = vec![ItemActivity { number, events }];
+        (self.store)
+            .save_fetched_pull_requests(&cpython(), vec![], activity)
+            .unwrap();
+    }
+
     /// Closes the reader and the store, so the folder can go.
     pub(crate) fn close(self) {
         self.open.close();
@@ -342,10 +350,7 @@ impl World {
     }
 
     pub(crate) fn happened(&self, number: u32, events: Vec<Activity>) {
-        let activity = vec![ItemActivity { number, events }];
-        (self.db.store)
-            .save_fetched_pull_requests(&cpython(), vec![], activity)
-            .unwrap();
+        self.db.happened(number, events);
     }
 
     pub(crate) fn marked_seen(&self, number: u32, up_to: OffsetDateTime) {

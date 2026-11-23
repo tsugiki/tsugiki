@@ -85,6 +85,19 @@ pub enum PutAway {
     AsBefore,
 }
 
+/// The moment Archive or Mute hides an item from, once Mark Seen on its tree acknowledged it up to `up_to`:
+/// that moment, or `now` when the window drew no sync, or a later moment in `acknowledged`, when the user
+/// acknowledged one of the tree's Issues and PRs. One acknowledged later, as by Mark Seen on another Issue
+/// its PR fixes, would otherwise read as acknowledged after the archive, and so as come back.
+pub(crate) fn hidden_from(
+    up_to: Option<OffsetDateTime>,
+    now: OffsetDateTime,
+    acknowledged: impl IntoIterator<Item = OffsetDateTime>,
+) -> OffsetDateTime {
+    let start = up_to.unwrap_or(now);
+    acknowledged.into_iter().fold(start, OffsetDateTime::max)
+}
+
 /// A person or bot whose items the user muted in a Repository (#494).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutedAuthor {

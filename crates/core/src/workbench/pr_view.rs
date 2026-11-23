@@ -67,7 +67,7 @@ impl PrView {
         let causes = Causes::of(&facts, conventions);
         let shares_review_of =
             SharedReviews::of(&facts.pull_requests, conventions).origin_of(number);
-        let items = candidates((facts, &links), repository, &BTreeSet::new(), &causes);
+        let items = candidates((&facts, &links), repository, &BTreeSet::new(), &causes);
         let holds = |item: &WorkbenchItem| item.rows().iter().any(|row| row.number == number);
         let issues = (items.iter().filter(|item| holds(item)))
             .filter_map(|item| match item {

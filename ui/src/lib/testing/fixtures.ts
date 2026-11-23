@@ -132,6 +132,7 @@ export const listedIssue = (
   key: { kind: "issue", number },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
   ...overrides,
 });
 

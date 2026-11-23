@@ -2042,6 +2042,11 @@ export type ListedItem_Deserialize = {
 	hidden?: Hidden | null,
 	/**  The outcome of each user action that can finish the item, in the view that lists it (#1052). */
 	outcomes: Outcomes,
+	/**
+	 *  The outcome of Mute author on the author of each PR the view shows in the item's tree, where Mute
+	 *  author on the item's own author doesn't cover it.
+	 */
+	mute_author_rows: RowOutcome[],
 } & WorkbenchItem_Deserialize;
 
 /**  A top-level entry of the list, with why it Needs attention, if it does. */
@@ -2053,6 +2058,11 @@ export type ListedItem_Serialize = {
 	hidden: Hidden | null,
 	/**  The outcome of each user action that can finish the item, in the view that lists it (#1052). */
 	outcomes: Outcomes,
+	/**
+	 *  The outcome of Mute author on the author of each PR the view shows in the item's tree, where Mute
+	 *  author on the item's own author doesn't cover it.
+	 */
+	mute_author_rows: RowOutcome[],
 } & WorkbenchItem_Serialize;
 
 /**  A first sync's progress through its queue. It learns of more PRs as it reads, so `prs_known` grows. */
@@ -3302,6 +3312,15 @@ export type Review_Serialize = {
 	hidden: HiddenReason | null,
 	/**  A line for each thread it started, in the order GitHub gives them. */
 	threads: ThreadLine_Serialize[],
+};
+
+/**
+ *  The outcome of Mute author on the author of a PR in a listed item's tree, for that PR's row, in the
+ *  view that lists the item (#1052). The item's own `Outcomes` covers the item's own author.
+ */
+export type RowOutcome = {
+	number: number,
+	mute_author: Outcome,
 };
 
 /**  A script that ran in a long frame, as the browser names it. */

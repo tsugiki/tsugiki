@@ -26,6 +26,7 @@ const review: ListedItem = {
   key: { kind: "issue", number: 112564 },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",

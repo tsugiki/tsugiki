@@ -1,6 +1,6 @@
 //! The place each view of the Workbench gives an item, and the outcome there of each user action that can
 //! finish an item (#1052). An outcome compares where the view lists the item now with where it would once
-//! the store holds what the action writes, `Causes::after`, judged by the rule that builds the view's list:
+//! the store holds what the action writes, `Before::after`, judged by the rule that builds the view's list:
 //! `place` for the Workbench's views, and the Inbox's own for the Inbox. So no rule exists twice, and the
 //! window reads the outcome and keeps none of its own.
 
@@ -9,10 +9,11 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use specta::Type;
 
+use super::mute_author::marks_by_author;
 use super::{Attention, BackportRow, Hidden, ListedItem, MuteAuthor, PrTree, WorkbenchItem};
-use crate::facts::activity::ItemKey;
+use crate::facts::activity::PutAway;
 use crate::login::Login;
-use crate::work::{Act, Causes};
+use crate::work::{Act, Before, Causes, SeenMark};
 
 /// A user action's effect on a listed item in the view that lists it, which the window reads at the
 /// keypress to move the cursor on (#1052).
@@ -111,10 +112,7 @@ impl WorkbenchItem {
     /// The author Mute author on the item's own Issue or PR mutes, if it offers to: the user didn't open
     /// it, and the author isn't Muted yet.
     pub(crate) fn mute_author_offered(&self) -> Option<&Login> {
-        match self.own_mute_author() {
-            MuteAuthor::Mute { login } => Some(login),
-            MuteAuthor::Off | MuteAuthor::Unmute { .. } => None,
-        }
+        offered(self.own_mute_author())
     }
 
     fn own_mute_author(&self) -> &MuteAuthor {
@@ -123,24 +121,6 @@ impl WorkbenchItem {
             Self::StandalonePr(PrTree { row, .. })
             | Self::StandaloneBackport(BackportRow { row, .. }) => &row.mute_author,
         }
-    }
-
-    /// The key of each Issue and PR in the item's tree that `author` opened.
-    fn keys_by(&self, author: &Login) -> Vec<ItemKey> {
-        let by = |offered: &MuteAuthor| match offered {
-            MuteAuthor::Mute { login } | MuteAuthor::Unmute { login } => login == author,
-            MuteAuthor::Off => false,
-        };
-        let issue = match self {
-            Self::Issue(issue) => by(&issue.mute_author).then_some(ItemKey::Issue {
-                number: issue.number,
-            }),
-            Self::StandalonePr(_) | Self::StandaloneBackport(_) => None,
-        };
-        let prs = (self.rows().into_iter())
-            .filter(|row| by(&row.mute_author))
-            .map(|row| ItemKey::PullRequest { number: row.number });
-        issue.into_iter().chain(prs).collect()
     }
 }
 
@@ -202,50 +182,140 @@ pub(crate) fn place(
     listed.then_some(Place::Listed)
 }
 
-/// The outcome of each action on `item`, which a view draws hidden as `hidden` says. `listed` gives the
-/// place the view gives the item as the causes it gets judge it: `causes` for now, and for each action the
-/// causes once the store holds what the action writes.
-pub(crate) fn outcomes_of(
-    causes: &Causes,
-    item: &WorkbenchItem,
-    hidden: Option<Hidden>,
-    listed: impl Fn(&Causes) -> Option<Place>,
-) -> Outcomes {
-    let (key, numbers) = (item.key(), item.numbers());
-    let now = listed(causes);
-    let outcome = |act: Option<Act<'_>>| {
-        let Some(act) = act else {
-            return Outcome::Unchanged;
-        };
-        Outcome::between(now, listed(&causes.after(key, &numbers, act)))
-    };
-    let mark = &item.seen().mark;
-    let archived = hidden == Some(Hidden::Archived);
-    let muted = hidden.is_some_and(Hidden::is_muted);
-    let author = item.mute_author_offered();
-    let theirs = author
-        .map(|author| item.keys_by(author))
-        .unwrap_or_default();
-    let pinning = item.pinning(causes);
-    Outcomes {
-        mark_seen: outcome(Some(if archived {
-            Act::Archive(mark)
-        } else {
-            Act::MarkSeen(mark)
-        })),
-        // The window offers neither Archive nor Mute on a Muted item, which Unmute or Unmute author bring
-        // back (#492, #494), and Archive on an Archived one finds nothing to put away.
-        archive: outcome(hidden.is_none().then_some(Act::Archive(mark))),
-        unarchive: outcome(archived.then_some(Act::Unarchive)),
-        mute: outcome((!muted).then_some(Act::Mute(mark))),
-        mute_author: outcome(author.map(|author| Act::MuteAuthor {
-            author,
-            theirs: &theirs,
-            mark: item.is_open().then_some(mark),
-        })),
-        pin: outcome((pinning == Pinning::Unpinned).then_some(Act::Pin)),
-        unpin: outcome((pinning == Pinning::Pinned).then_some(Act::Unpin)),
+/// What the outcomes of a page's items are judged against: the facts and causes the page came from, and the
+/// marks Mute author makes on the items of each author the page offers it for.
+pub(crate) struct Acting<'a> {
+    before: Before<'a>,
+    marks: Vec<(Login, Vec<SeenMark>)>,
+}
+
+impl<'a> Acting<'a> {
+    /// The actions on `items`, every item of the page `before` holds the facts of, listed or not.
+    pub(crate) fn new<'b>(
+        before: Before<'a>,
+        items: impl IntoIterator<Item = &'b WorkbenchItem>,
+    ) -> Self {
+        Self {
+            before,
+            marks: marks_by_author(items),
+        }
     }
+
+    /// The outcome of each action on `item`, which a view draws hidden as `hidden` says, and of Mute author
+    /// on the author of each PR the view shows in its tree. `shown` gives what the view shows of the item
+    /// as the causes it gets judge it: the page's for now, and for each action the causes once the store
+    /// holds what the action writes.
+    pub(crate) fn outcomes_of(
+        &self,
+        item: &WorkbenchItem,
+        hidden: Option<Hidden>,
+        shown: impl Fn(&Causes) -> Option<Shown>,
+    ) -> (Outcomes, Vec<RowOutcome>) {
+        let causes = self.before.causes();
+        let (key, numbers) = (item.key(), item.numbers());
+        let now = shown(causes);
+        let place_now = now.as_ref().map(|now| now.place);
+        let after = |act: Act<'_>| shown(&self.before.after(key, &numbers, act));
+        let outcome = |act: Option<Act<'_>>| {
+            let Some(act) = act else {
+                return Outcome::Unchanged;
+            };
+            Outcome::between(place_now, after(act).map(|after| after.place))
+        };
+        let mark = &item.seen().mark;
+        let archived = hidden == Some(Hidden::Archived);
+        let muted = hidden.is_some_and(Hidden::is_muted);
+        let pinning = item.pinning(causes);
+        let own_author = item.mute_author_offered();
+        let outcomes = Outcomes {
+            mark_seen: outcome(Some(if archived {
+                Act::Archive(mark, PutAway::AsBefore)
+            } else {
+                Act::MarkSeen(mark)
+            })),
+            // The window offers neither Archive nor Mute on a Muted item, which Unmute or Unmute author
+            // bring back (#492, #494), and Archive on an Archived one finds nothing to put away.
+            archive: outcome(hidden.is_none().then_some(Act::Archive(mark, PutAway::Now))),
+            unarchive: outcome(archived.then_some(Act::Unarchive)),
+            mute: outcome((!muted).then_some(Act::Mute(mark))),
+            mute_author: outcome(own_author.map(|author| self.mute_author(author))),
+            pin: outcome((pinning == Pinning::Unpinned).then_some(Act::Pin)),
+            unpin: outcome((pinning == Pinning::Pinned).then_some(Act::Unpin)),
+        };
+        (outcomes, self.row_outcomes(item, now.as_ref(), after))
+    }
+
+    /// The outcome of Mute author on the author of each PR in `item`'s tree that the view shows, as `now`
+    /// says, where `after` gives what the view shows once the store holds an action. The item's own
+    /// `mute_author` covers the PRs of the item's own author.
+    fn row_outcomes(
+        &self,
+        item: &WorkbenchItem,
+        now: Option<&Shown>,
+        after: impl Fn(Act<'_>) -> Option<Shown>,
+    ) -> Vec<RowOutcome> {
+        let own_author = item.mute_author_offered();
+        let shown = now.map_or(&[][..], |now| now.rows.as_slice());
+        let by: Vec<(u32, &Login)> = (item.rows().into_iter())
+            .filter(|row| shown.contains(&row.number))
+            .filter_map(|row| Some((row.number, offered(&row.mute_author)?)))
+            .filter(|(_, author)| own_author != Some(*author))
+            .collect();
+        let mut muting: Vec<(&Login, Option<Shown>)> = Vec::new();
+        let mut rows = Vec::new();
+        for (number, author) in by {
+            if !muting.iter().any(|(muted, _)| *muted == author) {
+                muting.push((author, after(self.mute_author(author))));
+            }
+            let muted = muting.iter().find(|(muted, _)| *muted == author);
+            let kept = muted.and_then(|(_, after)| after.as_ref());
+            let place = kept.filter(|after| after.rows.contains(&number));
+            rows.push(RowOutcome {
+                number,
+                mute_author: Outcome::between(now.map(|now| now.place), place.map(|after| after.place)),
+            });
+        }
+        rows
+    }
+
+    /// Mute author on `author`, with the marks it makes on the page's items they opened.
+    fn mute_author<'b>(&'b self, author: &'b Login) -> Act<'b> {
+        let marks = (self.marks.iter()).find(|(login, _)| login == author);
+        Act::MuteAuthor {
+            author,
+            marks: marks.map_or(&[], |(_, marks)| marks.as_slice()),
+        }
+    }
+}
+
+/// The author Mute author mutes where `offered` offers it.
+fn offered(offered: &MuteAuthor) -> Option<&Login> {
+    match offered {
+        MuteAuthor::Mute { login } => Some(login),
+        MuteAuthor::Off | MuteAuthor::Unmute { .. } => None,
+    }
+}
+
+/// What a view shows of an item: its place, and each PR it shows in the item's tree.
+pub(crate) struct Shown {
+    pub(crate) place: Place,
+    pub(crate) rows: Vec<u32>,
+}
+
+impl Shown {
+    /// `item` in `place`, with each PR its tree holds.
+    pub(crate) fn whole(place: Place, item: &WorkbenchItem) -> Self {
+        let rows = item.rows().into_iter().map(|row| row.number).collect();
+        Self { place, rows }
+    }
+}
+
+/// The outcome of Mute author on the author of a PR in a listed item's tree, for that PR's row, in the
+/// view that lists the item (#1052). The item's own `Outcomes` covers the item's own author.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+pub struct RowOutcome {
+    pub number: u32,
+    pub mute_author: Outcome,
 }
 
 #[cfg(test)]

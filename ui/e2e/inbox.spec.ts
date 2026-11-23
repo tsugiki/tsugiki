@@ -3,7 +3,7 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { inboxPage, onWorkbench, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, listedIssue, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -13,18 +13,8 @@ const workbench = workbenchPage([] as ListedItem[]);
 const issue = (number: number): ListedItem => {
   const updated_at = new Date(Date.UTC(2026, 10, 4, 10, number)).toISOString();
   const pr = 100_000 + number;
-  return {
-    attention: null,
-    key: { kind: "issue", number },
-    hidden: null,
-    outcomes: onWorkbench,
-    kind: "issue",
-    number,
-    title: `Issue ${String(number)}`,
-    state: "OPEN",
+  return listedIssue(number, {
     people: ["issue-author"],
-    mute_author: { kind: "mute", login: "issue-author" },
-    pinned: false,
     updated_at,
     pull_requests: [
       {
@@ -34,7 +24,7 @@ const issue = (number: number): ListedItem => {
       },
     ],
     seen: { mark: { numbers: [number, pr], up_to: null, findings: [] }, state: "seen" },
-  };
+  });
 };
 
 /** Items `from` down to `to`, the latest update first. */

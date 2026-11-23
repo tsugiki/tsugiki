@@ -102,6 +102,20 @@ impl<'a> News<'a> {
         }
     }
 
+    /// The News of the same PRs, read from `facts` in place of the facts `self` reads: those of some of the
+    /// Repository's items once a user action changed them (#1052).
+    pub(crate) fn over<'b>(&self, facts: &'b ActivityFacts) -> News<'b>
+    where
+        'a: 'b,
+    {
+        News {
+            facts,
+            viewer: self.viewer,
+            conventions: self.conventions,
+            failed_backports: self.failed_backports.clone(),
+        }
+    }
+
     /// The moment after which something on item `number` is new: its Last seen, or the Repository's first
     /// sync when that's later, because nothing that a first sync found is news. Nothing, before a first
     /// sync finishes.

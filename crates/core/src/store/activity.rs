@@ -14,7 +14,7 @@ use super::failed_checks;
 use super::patch_ids::acknowledge_in;
 use crate::facts::activity::{
     Activity, ActivityFacts, ActivityKind, Archive, ItemActivity, ItemKey, MutedAuthor, PutAway,
-    ShowMuted,
+    ShowMuted, hidden_from,
 };
 use crate::facts::issues::IssueState;
 use crate::facts::patch_ids::StaleFinding;
@@ -416,8 +416,6 @@ pub(super) fn archive(
         findings,
     } = archiving;
     let transaction = connection.transaction()?;
-    // A number acknowledged later than `up_to`, as by Mark Seen on another Issue its PR fixes, would
-    // otherwise read as acknowledged after the archive, and so as come back.
     let at = hide(&transaction, repository, (numbers, *up_to, findings), now)?;
     let (kind, number) = key_columns(*key);
     let as_before = matches!(put_away, PutAway::AsBefore);
@@ -442,8 +440,7 @@ pub(super) fn archive(
 }
 
 /// Mark Seen on `numbers` up to `up_to`, acknowledging `findings`, as Archive and Mute do in `transaction`.
-/// Returns the moment the item they hide is hidden from: `up_to`, or `now` when the window drew no sync, or
-/// a later moment one of `numbers` was acknowledged at.
+/// Returns the moment the item they hide is hidden from, as `hidden_from` gives it.
 fn hide(
     transaction: &Transaction<'_>,
     repository: &RepositoryName,
@@ -452,9 +449,9 @@ fn hide(
 ) -> rusqlite::Result<i64> {
     mark_seen_in(transaction, repository, numbers, up_to)?;
     acknowledge_in(transaction, repository, findings)?;
-    let mut at = up_to.unwrap_or(now).unix_timestamp();
+    let mut acknowledged = Vec::new();
     for number in numbers {
-        let acknowledged: Option<i64> = transaction
+        let at: Option<UnixTime> = transaction
             .query_row(
                 "SELECT acknowledged_at FROM last_seen WHERE repository = :repository AND number = :number",
                 named_params! { ":repository": repository, ":number": number },
@@ -462,9 +459,9 @@ fn hide(
             )
             .optional()?
             .flatten();
-        at = at.max(acknowledged.unwrap_or(at));
+        acknowledged.extend(at.map(|UnixTime(at)| at));
     }
-    Ok(at)
+    Ok(hidden_from(up_to, now, acknowledged).unix_timestamp())
 }
 
 /// What Mute writes: the item `key` names, and Mark Seen on `numbers`, the item and its tree, up to `up_to`

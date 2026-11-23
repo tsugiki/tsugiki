@@ -41,6 +41,7 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   key: { kind: "issue", number: 7 },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
 };
 
 /** The user's own draft PR #157178 into 3.14, a Standalone PR with failed CI and nothing waiting. */
@@ -49,6 +50,7 @@ export const own: Extract<ListedItem, { kind: "standalone_pr" }> = {
   key: { kind: "pull_request", number: 157178 },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
   kind: "standalone_pr",
   ...workbenchRow(157178, {
     title: "GH-156425: Clear GC frame on early return",

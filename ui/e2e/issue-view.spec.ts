@@ -35,6 +35,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
   key: { kind: "issue", number },
   hidden: null,
   outcomes: onWorkbench,
+  mute_author_rows: [],
 });
 
 const listing = (waiting: boolean) => workbenchPage([issue(7, waiting), issue(8, false)]);

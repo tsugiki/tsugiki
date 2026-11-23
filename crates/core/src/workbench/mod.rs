@@ -21,7 +21,7 @@ pub use filters::FilterLine;
 pub use issues::IssueItem;
 pub use mute_author::MuteAuthor;
 pub(crate) use mute_author::{Authored, authored_by};
-pub use outcomes::{Outcome, Outcomes};
+pub use outcomes::{Outcome, Outcomes, RowOutcome};
 pub use rows::WorkbenchRow;
 
 use std::cmp::Reverse;
@@ -41,13 +41,13 @@ use crate::links::BackportKind;
 use crate::repository_settings::RepositorySettings;
 use crate::settings::ListOrder;
 use crate::store::StoreReader;
-use crate::work::{Causes, SeenMark, held_in_own_right};
+use crate::work::{Before, Causes, SeenMark, held_in_own_right};
 use attention::{attention_of, summed};
 use backports::{plant, standalone};
 use filters::FilterFacts;
 use issues::issue_item;
 use links::{link, links_of};
-use outcomes::{Listing, Place, outcomes_of, place, shown_on_workbench};
+use outcomes::{Acting, Listing, Place, Shown, place, shown_on_workbench};
 use rows::row;
 
 /// A Backport's line of the list.
@@ -205,6 +205,9 @@ pub struct ListedItem {
     pub hidden: Option<Hidden>,
     /// The outcome of each user action that can finish the item, in the view that lists it (#1052).
     pub outcomes: Outcomes,
+    /// The outcome of Mute author on the author of each PR the view shows in the item's tree, where Mute
+    /// author on the item's own author doesn't cover it.
+    pub mute_author_rows: Vec<RowOutcome>,
 }
 
 /// The user's own state that hides an item. A Muted item that is Archived too is Muted, which hides more.
@@ -255,6 +258,7 @@ impl ListedItem {
             key: item.key(),
             item,
             outcomes: Outcomes::UNJUDGED,
+            mute_author_rows: Vec::new(),
         }
     }
 
@@ -368,8 +372,12 @@ impl Workbench {
             Listing::ReviewRequests => &causes.review_requests,
             Listing::StaleReviews => &causes.stale_reviews,
         };
-        let listed: Vec<ListedItem> = candidates_of(facts, repository, first, &causes)
-            .into_iter()
+        let candidates = candidates_of(&facts, repository, first, &causes);
+        let acting = Acting::new(
+            Before::of(&facts, &causes, repository.conventions),
+            &candidates,
+        );
+        let listed: Vec<ListedItem> = (candidates.into_iter())
             .map(|item| ListedItem::of(&causes, item))
             .collect();
         let requested = |listed: &ListedItem| listed.item.is_reached_by(&causes.review_requests);
@@ -401,10 +409,16 @@ impl Workbench {
                 Some(Place::Folded) => &mut muted,
                 None => continue,
             };
-            let outcomes = outcomes_of(&causes, &listed.item, listed.hidden, |causes| {
-                placed(causes, &listed.item)
+            let (outcomes, mute_author_rows) =
+                acting.outcomes_of(&listed.item, listed.hidden, |causes| {
+                    let place = placed(causes, &listed.item)?;
+                    Some(Shown::whole(place, &listed.item))
+                });
+            into.push(ListedItem {
+                outcomes,
+                mute_author_rows,
+                ..listed
             });
-            into.push(ListedItem { outcomes, ..listed });
         }
         let items = match view {
             WorkbenchView::Archived => last_archived_first(items, &causes),
@@ -465,7 +479,7 @@ fn count_of<T>(items: impl Iterator<Item = T>) -> u32 {
 /// Each item the Repository's facts could show, on the Workbench or not, linked by the link rules as they
 /// read the facts.
 fn candidates_of(
-    facts: WorkFacts,
+    facts: &WorkFacts,
     repository: &RepositorySettings,
     first: &BTreeSet<u32>,
     causes: &Causes,
@@ -478,21 +492,20 @@ fn candidates_of(
 /// `first`, the Matched PRs of the view on show, comes first in its Issue's tree. `causes` are the facts'
 /// own, and give each item and PR its part in Mark Seen.
 fn candidates(
-    (facts, links): (WorkFacts, &BTreeMap<u32, PrLinks>),
+    (facts, links): (&WorkFacts, &BTreeMap<u32, PrLinks>),
     repository: &RepositorySettings,
     first: &BTreeSet<u32>,
     causes: &Causes,
 ) -> Vec<WorkbenchItem> {
-    let Some(viewer) = facts.viewer else {
+    let Some(viewer) = facts.viewer.as_ref() else {
         return Vec::new();
     };
-    let linked = link(facts.pull_requests, links, repository.conventions, |pr| {
-        row(pr, &viewer, causes)
+    let pull_requests = facts.pull_requests.clone();
+    let linked = link(pull_requests, links, repository.conventions, |pr| {
+        row(pr, viewer, causes)
     });
-    let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = facts
-        .issues
-        .into_iter()
-        .map(|issue| (issue.number, (issue, Vec::new())))
+    let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = (facts.issues.iter())
+        .map(|issue| (issue.number, (issue.clone(), Vec::new())))
         .collect();
     let mut items = Vec::new();
     for top in plant(linked) {

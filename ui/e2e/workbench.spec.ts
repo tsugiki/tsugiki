@@ -5,6 +5,7 @@ import {
   HOUR_POINTS,
   OCTOCAT_ONLINE,
   ok,
+  onWorkbench,
   refused,
   workbenchPage,
   workbenchRow,
@@ -24,7 +25,7 @@ const review: ListedItem = {
   attention: { since: "2026-11-04T10:00:00Z", why: [{ kind: "review_requested" }] },
   key: { kind: "issue", number: 112564 },
   hidden: null,
-  unpin: "stays",
+  outcomes: onWorkbench,
   kind: "issue",
   number: 112564,
   title: "GIL drop during collection",
@@ -302,6 +303,7 @@ const thirty = Array.from({ length: 30 }, (_, at): ListedItem => {
   return {
     ...own,
     number,
+    key: { kind: "pull_request", number },
     title: `Item ${String(number)}`,
     seen: { ...own.seen, mark: { numbers: [number], up_to: null, findings: [] } },
   };

@@ -497,27 +497,24 @@
 
   /**
    * Follows the cursor once the user's own action finished the selected item and moved the cursor on at the
-   * keypress, as `landing` says (#1052). While the Detail pane shows that item, or a PR in its tree, it
-   * opens the line the cursor moved to, as `Enter` does, or shows nothing open once the cursor left the
-   * list. Focus in the Detail pane stays there, in the item it opens, or goes to the cursor's row when the
-   * pane goes with nothing open.
+   * keypress, as `landing` says (#1052). The Detail pane opens the line the cursor moved to, as `Enter`
+   * does, whatever it showed, or shows nothing open once the cursor left the list. Focus in the Detail pane
+   * stays there, in the item it opens, or goes to the cursor's row when the pane goes with nothing open.
    *
    * Focus on a row of the list, or on none, goes with the cursor, and once the cursor left the list it
    * stays on the list, which takes the keys while nothing holds the focus. Focus anywhere else, such as in a
    * text box or on the list's header, stays put. The list scrolls as little as it takes to bring the
    * cursor's row back on the screen, as `keepOnScreen` says.
    */
-  function cursorLanded({ from, was, to }: Landing) {
+  function cursorLanded({ was, to }: Landing) {
     const focused = document.activeElement;
     const left = rowOf(was);
     const keep = left && keepOnScreen(left.box, left.scroller);
     const follows = followsCursor(focused);
-    if (detailIn(from)) {
-      const inDetail = inDetailPane(focused);
-      if (to) open(to);
-      else swap(undefined);
-      if (inDetail) focusDetail();
-    }
+    const inDetail = inDetailPane(focused);
+    if (to) open(to);
+    else swap(undefined);
+    if (inDetail) focusDetail();
     void tick().then(() => {
       const moved = cursorRow();
       if (moved && keep) keep(moved.box);
@@ -525,13 +522,6 @@
       if (moved) moved.line.focus({ preventScroll: true });
       else if (focused instanceof HTMLElement && focused !== document.body) focused.blur();
     });
-  }
-
-  /** Whether the Detail pane shows a line of the item `key` names, while the list holds that line. */
-  function detailIn(key: ItemKey): boolean {
-    const line = detailLine();
-    const shown = line && workbench.hidingBy(line)?.key;
-    return shown?.kind === key.kind && shown.number === key.number;
   }
 
   /** Gives the focus to the Detail pane once it shows the view it's about to, or to the cursor's row when

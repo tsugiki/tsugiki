@@ -3,7 +3,7 @@ import type {
   InboxCursor_Serialize as InboxCursor,
   ListedItem_Serialize as ListedItem,
 } from "../src/lib/data/bindings.ts";
-import { inboxPage, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { inboxPage, onWorkbench, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { home, palette, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -17,7 +17,7 @@ const issue = (number: number): ListedItem => {
     attention: null,
     key: { kind: "issue", number },
     hidden: null,
-    unpin: "stays",
+    outcomes: onWorkbench,
     kind: "issue",
     number,
     title: `Issue ${String(number)}`,

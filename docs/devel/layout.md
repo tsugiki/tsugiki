@@ -59,20 +59,27 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
     left, it stays on the list with no row selected. Focus anywhere else, as in the Detail pane, a text box
     or the list's header, stays where it is, and focus in the Detail pane stays there in the item it opens.
     The list scrolls as little as it takes to bring the cursor's row back on the screen, and leaves the rest
-    to the browser, also when the user had scrolled that row away. Row 1 moves the pane only when it showed
-    the selected item, and opening the next row leaves that row's Last seen alone; with no other row left,
-    the pane shows nothing open, and `Alt+←` goes back to the item the user finished with. A user action
-    that fails keeps the row it took at the keypress, and nothing waits on an answer from the core. A change
-    of view or order is neither: the cursor stays on the item wherever the new list puts it, and where it
-    was when the list leaves the item out. Revise the whole table for a later action that fits neither
-    "finishes" nor "keeps", or a core change that fits neither core row.
+    to the browser, also when the user had scrolled that row away. Row 1 opens the next row whatever the
+    pane showed, and leaves that row's Last seen alone; with no other row left, the pane shows nothing open,
+    and `Alt+←` goes back to the item the user finished with. "Stays on the item" means on the same row of
+    it, or on the item's own row once that row has gone, as a PR merged out of an Issue's tree; a row of the
+    same PR under another Issue doesn't count. A user action that fails keeps the row it took at the
+    keypress, and nothing waits on an answer from the core. A change of view or order is neither: the
+    cursor stays on the item wherever the new list puts it, and where it was when the list leaves the item
+    out. Revise the whole table for a later action that fits neither "finishes" nor "keeps", or a core
+    change that fits neither core row.
 
-    Today, row 1 takes Mark Seen on the item's own row while the item waits or has something new, By last
-    update too; Archive and Mute; Mute author on an item its author opened; Unarchive, and Mark Unseen of an
-    Archived item, in the Archived view; and the Pin and Unpin moves [workbench.md](workbench.md) names.
-    Archive in a Filter's view or the Review requests, which can keep the item drawn Archived, moves on but
-    keeps the cursor on the item when it was last. `E` and `M` on a PR in a tree act on the Issue, so the
-    cursor moves past the Issue and its tree, and `Q` there is row 3.
+    The core judges, for each item a view lists, whether each action that can finish it would keep it in
+    that view, fold it into the view's Muted items, or take it out, by the same rule that builds the view,
+    and the window reads that at the keypress. Today, row 1 takes Mark Seen on the item, from its own row or
+    the Detail pane, while the item waits or has something new, By last update too; Archive and Mute; Mute
+    author on an item its author opened; and Unarchive, Mark Unseen of an Archived item, a pin and an unpin
+    where they take the item out, as [workbench.md](workbench.md) says. Mark Seen takes an item out of the
+    Stale reviews, and off the Workbench when only what waited held it there. Archive in a Filter's view,
+    the Review requests or the Pinned issues, which keep the item drawn Archived, moves on but keeps the
+    cursor on the item when it was last, and so does Mute where a Review request keeps the item in place.
+    `E` and `M` on a PR in a tree act on the Issue, so the cursor moves past the Issue and its tree, and `Q`
+    there is row 3.
 
     An item that Needs attention is marked the way unread mail is, and keeps that look until nothing on it
     waits on the user or the user marks it seen, which drops the whole look. The preview says why in the

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CantCheck, IssueItem, WorkbenchRow, Why, YourReview } from "$lib/state/workbench.svelte";
-import { workbenchRow } from "$lib/testing/fixtures";
+import { onWorkbench, workbenchRow } from "$lib/testing/fixtures";
 import {
   ago,
   backportWords,
@@ -22,7 +22,7 @@ const unmarked = {
   attention: null,
   key: { kind: "issue", number: 1 } as const,
   hidden: null,
-  unpin: "stays" as const,
+  outcomes: onWorkbench,
 };
 
 const REVIEWED = "1".repeat(40);

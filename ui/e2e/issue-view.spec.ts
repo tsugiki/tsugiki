@@ -4,7 +4,7 @@ import type {
   ListedItem_Serialize as ListedItem,
   TreeEntry_Serialize as TreeEntry,
 } from "../src/lib/data/bindings.ts";
-import { done, ok, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { done, ok, onWorkbench, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
 import { dragEdge, home, palette } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 import { cspViolations, imageHosts, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
@@ -34,7 +34,7 @@ const issue = (number: number, waiting: boolean, pullRequests: TreeEntry[] = [])
     : null,
   key: { kind: "issue", number },
   hidden: null,
-  unpin: "stays",
+  outcomes: onWorkbench,
 });
 
 const listing = (waiting: boolean) => workbenchPage([issue(7, waiting), issue(8, false)]);

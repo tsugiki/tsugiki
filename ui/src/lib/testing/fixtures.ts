@@ -99,8 +99,21 @@ export const workbenchRow = (
   ...overrides,
 });
 
+/** The outcomes of an item on the Workbench that a Filter or the user's own PR holds there, as the core
+ * judges them (#1052): Mark Seen and a pin keep it, Archive, Mute and Mute author take it out, and Unarchive
+ * and an unpin do nothing to it. */
+export const onWorkbench: ListedItem["outcomes"] = {
+  mark_seen: "stays",
+  archive: "leaves",
+  unarchive: "unchanged",
+  mute: "leaves",
+  mute_author: "leaves",
+  pin: "stays",
+  unpin: "unchanged",
+};
+
 /** Issue `number` as a list holds it: open, with no PRs, seen, nothing that Needs attention, and not
- * hidden, with what `overrides` says instead. */
+ * hidden, held on the Workbench, with what `overrides` says instead. */
 export const listedIssue = (
   number: number,
   overrides: Omit<Partial<ListedItem & { kind: "issue" }>, "kind" | "number"> = {},
@@ -118,7 +131,7 @@ export const listedIssue = (
   attention: null,
   key: { kind: "issue", number },
   hidden: null,
-  unpin: "stays",
+  outcomes: onWorkbench,
   ...overrides,
 });
 

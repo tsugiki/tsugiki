@@ -9,7 +9,16 @@ import type { Peek, PeekLayout } from "$lib/state/peek";
 import { PrFilesState, type FilesMode } from "$lib/state/pr-files.svelte";
 import { PrViewState } from "$lib/state/pr-view.svelte";
 import type { MuteAuthor } from "$lib/state/workbench.svelte";
-import { done, inboxPage, ok, readyFiles, refused, workbenchPage, workbenchRow } from "$lib/testing/fixtures";
+import {
+  done,
+  inboxPage,
+  ok,
+  onWorkbench,
+  readyFiles,
+  refused,
+  workbenchPage,
+  workbenchRow,
+} from "$lib/testing/fixtures";
 import { keydown, nextTask, pressed } from "$lib/testing/helpers";
 import RepositoryHome from "./RepositoryHome.svelte";
 
@@ -150,6 +159,7 @@ const issue = {
   pinned: false,
   key: { kind: "issue", number: 112564 },
   hidden: null,
+  outcomes: onWorkbench,
 };
 
 const DEFAULT_LAYOUT = {
@@ -668,6 +678,7 @@ const standalone = {
   backports: [],
   key: { kind: "pull_request", number: 5 },
   hidden: null,
+  outcomes: onWorkbench,
 };
 
 /** A window on two items: the Issue, which it unfolds, and a Standalone PR. */
@@ -2400,19 +2411,18 @@ it("shows nothing open, with no row under the cursor, once the user takes the on
   expect(await screen.findByRole("heading", { name: /PR 5/ })).toBeTruthy();
 });
 
-it("leaves the Detail pane as it is on Q on a row it doesn't show", async () => {
-  const { marked, markedSeen } = await threeAlone();
+it("opens the next row's item on Q on a row the Detail pane doesn't show, which it leaves for it (#1052)", async () => {
+  const { marked } = await threeAlone();
   marked.focus();
   await fireEvent.keyDown(marked, { key: "ArrowDown" });
   const other = screen.getByRole("button", { name: "#6 Next" });
   await rowFocused("#6 Next");
 
   await fireEvent.keyDown(other, { key: "q" });
-  markedSeen([6]);
 
   await rowFocused("#8 Last");
   expect(core.markSeen).toHaveBeenCalledOnce();
-  expect(screen.getByRole("heading", { name: /PR 5/ })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: /PR 8/ })).toBeTruthy();
 });
 
 it("opens the next item once Archive takes the item off the list, though a sync answered between the core's reply and its write", async () => {
@@ -3312,7 +3322,14 @@ it("offers no Mark Seen in the view of a PR whose item is Muted, as the view say
  * cursor on the Issue. */
 const archivedView = async () => {
   const changed = catchEveryListener();
-  const items = [issue, standalone].map((item) => ({ ...item, attention: null, hidden: "archived" }));
+  // The Archived view lists what the user archived, which Unarchive and a pin take out.
+  const outcomes = { ...onWorkbench, archive: "unchanged", unarchive: "leaves", pin: "leaves" };
+  const items = [issue, standalone].map((item) => ({
+    ...item,
+    attention: null,
+    hidden: "archived",
+    outcomes,
+  }));
   core.workbench.mockResolvedValue(workbenchPage(items));
   const { component } = render(RepositoryHome, {
     name: "python/cpython",
@@ -3427,10 +3444,19 @@ it("offers the palette Pinned Issues, which shows the list with that view, and n
 
 it("opens the next item once the Issue on show, unpinned from its view, leaves the Pinned issues", async () => {
   const changed = catchEveryListener();
-  const kept = { ...issue, number: 7, title: "Kept", key: { kind: "issue", number: 7 }, pinned: true };
+  // The Pinned issues list each pin, which an unpin takes out.
+  const outcomes = { ...onWorkbench, unpin: "leaves" };
+  const kept = {
+    ...issue,
+    number: 7,
+    title: "Kept",
+    key: { kind: "issue", number: 7 },
+    pinned: true,
+    outcomes,
+  };
   core.workbench.mockResolvedValue(
     workbenchPage([
-      { ...issue, attention: null, pinned: true },
+      { ...issue, attention: null, pinned: true, outcomes },
       { ...kept, attention: null },
     ]),
   );
@@ -5088,7 +5114,8 @@ it("opens the next item once the Issue on show, pinned from its view, leaves the
   core.workbench.mockResolvedValue(workbenchPage([]));
   core.inbox.mockResolvedValue(
     pageOf([
-      { ...issue, attention: null },
+      // The Inbox lists no pin, so a pin takes an Issue out.
+      { ...issue, attention: null, outcomes: { ...onWorkbench, pin: "leaves" } },
       { ...standalone, attention: null },
     ]),
   );

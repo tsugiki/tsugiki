@@ -6,7 +6,7 @@ import type {
   PrView_Serialize as PrView,
   Review_Serialize as Review,
 } from "../src/lib/data/bindings.ts";
-import { openOn, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { onWorkbench, openOn, workbenchRow } from "../src/lib/testing/fixtures.ts";
 
 // What the specs share: the Repository they open, the items they list, and the moves they make with the
 // mouse and the palette. What the core answers is built in src/lib/testing/fixtures.ts, which the unit tests
@@ -40,7 +40,7 @@ export const issue: Extract<ListedItem, { kind: "issue" }> = {
   attention: null,
   key: { kind: "issue", number: 7 },
   hidden: null,
-  unpin: "stays",
+  outcomes: onWorkbench,
 };
 
 /** The user's own draft PR #157178 into 3.14, a Standalone PR with failed CI and nothing waiting. */
@@ -48,7 +48,7 @@ export const own: Extract<ListedItem, { kind: "standalone_pr" }> = {
   attention: null,
   key: { kind: "pull_request", number: 157178 },
   hidden: null,
-  unpin: "stays",
+  outcomes: onWorkbench,
   kind: "standalone_pr",
   ...workbenchRow(157178, {
     title: "GH-156425: Clear GC frame on early return",

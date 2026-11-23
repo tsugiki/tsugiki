@@ -123,9 +123,8 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
   pinning takes the Issue out of the Inbox; with the Inbox or Archived on show, the cursor and the Detail
   pane move on to the next item at the keypress, as on Archive. An unpin on the Workbench moves them on the
   same way when only the pin kept the Issue there, or when the unpin archives it, as below; in the Stale
-  reviews, only when it archives it. The core says which of each Pinned issue it lists, so the window
-  decides at the keypress ([#1052](https://github.com/tsugiki/tsugiki/issues/1052)). A Pinned issue the
-  user mutes stays hidden while Muted.
+  reviews, only when it archives it. The core judges this for each item it lists, so the window decides at
+  the keypress ([layout.md](layout.md)). A Pinned issue the user mutes stays hidden while Muted.
   An Issue that closes while pinned keeps its closing for the unpin, which archives it at once: the pin had
   kept the Issue on the Workbench, so its closing means it's done, whatever a Filter finds. An Issue that
   closed before the pin, or that Tsugiki first saw closed, stays where it is when unpinned. A pin whose

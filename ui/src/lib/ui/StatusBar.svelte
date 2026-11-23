@@ -119,8 +119,8 @@
   // The core ends the hour at its reset by GitHub's clock, so the part goes then.
   const points = $derived(visible ? hourPoints : null);
   const account = $derived(status?.account);
-  // An unread status may be out of date, so nothing of it shows beside why it can't be read.
-  const problem = $derived(error ? undefined : status?.problem);
+  // An unread status may be out of date, so the bar then says only why it can't be read, and no problem.
+  const problem = $derived(status?.problem);
   const offline = $derived(account?.state === "offline" || account?.state === "offline_as");
   // Asking GitHub again after being offline, which the bar showed, so it goes on showing while it asks.
   const reconnecting = $derived(account?.state === "reconnecting" || account?.state === "reconnecting_as");

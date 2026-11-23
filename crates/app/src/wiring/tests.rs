@@ -676,7 +676,7 @@ fn an_apply_tells_the_window_of_a_repository_it_never_opened() {
     drop(wired.heard_until_marked(1));
     let writes = wired.ask("repository_state", json!({ "repository": peps }));
     let switch = json!({ "read_only": [{ "repository": peps, "read_only": true }] });
-    drop(wired.ask("apply_settings", json!({ "changes": switch })).unwrap());
+    wired.call("apply_settings", json!({ "changes": switch }));
     let heard = wired.heard_until_marked(2);
     let chosen = wired.ask("repository_state", json!({ "repository": peps }));
     drop(wired.stop());

@@ -10,7 +10,16 @@ import {
   type Settings as Values,
 } from "$lib/state/settings.svelte";
 import { type DarkQuery, ThemeState, type Themes, type ThemeView } from "$lib/state/theme.svelte";
-import { defaultSettings, NO_SERVERS, ok, openOn, refused, repositoryCheck } from "$lib/testing/fixtures";
+import {
+  defaultSettings,
+  NO_SERVERS,
+  OCTOCAT_ONLINE,
+  ok,
+  openOn,
+  refused,
+  repositoryCheck,
+  statusOf,
+} from "$lib/testing/fixtures";
 import { nextTask } from "$lib/testing/helpers";
 import { LIGHT_SIDE } from "$lib/testing/state";
 import Settings from "./Settings.svelte";
@@ -61,7 +70,7 @@ vi.mock("$lib/state/browser", () => ({ openLink: vi.fn() }));
 
 const README = "https://github.com/tsugiki/tsugiki/blob/v0.3.1/crates/token/README.md";
 const about = { name: "Tsugiki", version: "0.3.1", build: "release", source_ref: "v0.3.1" } as const;
-const online = { state: "online", login: "octocat" } as const;
+const online = OCTOCAT_ONLINE;
 
 /** The defaults, with `change` made to them. */
 const settingsWith = (change: (settings: Values) => void = () => {}): Values => {
@@ -1056,7 +1065,7 @@ describe("Settings › Account", () => {
   it("says when the login is last time's, and why it names nobody", async () => {
     const { rerender } = await onAccount({
       ...props(),
-      status: { state: "offline_as", last_login: "octocat" },
+      status: statusOf({ state: "offline_as", last_login: "octocat" }),
     });
     expect(value("Signed in as")).toBe("octocat Signed in last time. GitHub can't be reached now.");
 

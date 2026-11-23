@@ -904,6 +904,11 @@ fn a_switch_opens_the_repository_syncs_it_and_a_restart_reopens_it() {
     assert_eq!(reopened, opened);
 }
 
+/// The status of a session whose GitHub can't be reached and that knows nobody, with no problem.
+fn offline_status() -> Value {
+    json!({ "account": { "state": "offline" }, "problem": null })
+}
+
 #[test]
 fn a_window_that_loads_after_an_announcement_gets_the_same_status() {
     let (folders, _root) = temp_folders("wired-status");
@@ -913,7 +918,7 @@ fn a_window_that_loads_after_an_announcement_gets_the_same_status() {
     let asked = wired.ask("status", json!({})).unwrap();
     drop(wired.stop());
 
-    assert_eq!(announced, json!({ "state": "offline" }));
+    assert_eq!(announced, offline_status());
     assert_eq!(asked, announced);
 }
 
@@ -925,7 +930,7 @@ fn a_repository_s_state_says_offline_once_github_cant_be_reached() {
 
     assert_eq!(
         wired.statuses.recv_timeout(PLENTY).unwrap(),
-        json!({ "state": "offline" })
+        offline_status()
     );
     let state = wired.ask("repository_state", cpython);
     drop(wired.stop());
@@ -955,7 +960,7 @@ fn a_repository_no_sync_has_reached_has_no_last_sync_or_counts_and_a_bad_name_is
 fn a_refresh_while_offline_tells_the_window_connecting_then_offline() {
     let (folders, _root) = temp_folders("wired-refresh-offline");
     let wired = Wired::start(Ok(folders), no_network());
-    let offline = json!({ "state": "offline" });
+    let offline = offline_status();
     assert_eq!(wired.statuses.recv_timeout(PLENTY).unwrap(), offline);
 
     let clicked = wired.ask("refresh", json!({}));
@@ -966,7 +971,10 @@ fn a_refresh_while_offline_tells_the_window_connecting_then_offline() {
     assert_eq!(clicked, Ok(Value::Null));
     assert_eq!(
         (connecting, after),
-        (json!({ "state": "reconnecting" }), offline)
+        (
+            json!({ "account": { "state": "reconnecting" }, "problem": null }),
+            offline
+        )
     );
 }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { commands, events } from "$lib/data/bindings";
-import { ok, refused } from "$lib/testing/fixtures";
+import { ok, refused, statusOf } from "$lib/testing/fixtures";
 import { catchChanged } from "$lib/testing/state";
 import {
   readOnlyPieces,
@@ -24,7 +24,7 @@ const catchStatus = () => {
   const send = vi.fn();
   vi.mocked(events.statusChanged.listen).mockImplementation(async (callback) => {
     send.mockImplementation(() => {
-      callback({ event: "statusChanged", id: 1, payload: { state: "offline" } });
+      callback({ event: "statusChanged", id: 1, payload: statusOf({ state: "offline" }) });
     });
     return stop;
   });

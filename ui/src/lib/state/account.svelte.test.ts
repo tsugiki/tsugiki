@@ -1,49 +1,63 @@
 import { describe, expect, it, vi } from "vitest";
 import { commands } from "$lib/data/bindings";
+import { OCTOCAT_ONLINE, statusOf } from "$lib/testing/fixtures";
 import { AccountState, signedIn, tokenReadme } from "./account.svelte";
 
 vi.mock("$lib/data/bindings", () => ({ commands: { tokenSource: vi.fn() } }));
 
 describe("signedIn", () => {
   it("names the login GitHub confirmed", () => {
-    expect(signedIn({ state: "online", login: "octocat" })).toEqual({ login: "octocat" });
+    expect(signedIn(OCTOCAT_ONLINE)).toEqual({ login: "octocat" });
   });
 
   it("names last time's login, and says so, while GitHub hasn't answered or can't be reached", () => {
-    expect(signedIn({ state: "connecting_as", last_login: "octocat" })).toEqual({
+    expect(signedIn(statusOf({ state: "connecting_as", last_login: "octocat" }))).toEqual({
       login: "octocat",
       note: "Signed in last time. GitHub hasn't answered yet.",
     });
-    expect(signedIn({ state: "offline_as", last_login: "octocat" })).toEqual({
+    expect(signedIn(statusOf({ state: "offline_as", last_login: "octocat" }))).toEqual({
       login: "octocat",
       note: "Signed in last time. GitHub can't be reached now.",
     });
-    expect(signedIn({ state: "reconnecting_as", last_login: "octocat" })).toEqual({
+    expect(signedIn(statusOf({ state: "reconnecting_as", last_login: "octocat" }))).toEqual({
       login: "octocat",
       note: "Signed in last time. GitHub hasn't answered yet.",
     });
   });
 
   it("says why it names nobody", () => {
-    expect(signedIn(undefined)).toEqual({ note: "Not known yet: GitHub hasn't answered." });
-    expect(signedIn({ state: "connecting" })).toEqual({ note: "Not known yet: GitHub hasn't answered." });
-    expect(signedIn({ state: "reconnecting" })).toEqual({ note: "Not known yet: GitHub hasn't answered." });
-    expect(signedIn({ state: "offline" })).toEqual({ note: "Not known: GitHub can't be reached." });
+    const notYet = { note: "Not known yet: GitHub hasn't answered." };
+    expect(signedIn(undefined)).toEqual(notYet);
+    expect(signedIn(statusOf({ state: "connecting" }))).toEqual(notYet);
+    expect(signedIn(statusOf({ state: "reconnecting" }))).toEqual(notYet);
+    expect(signedIn(statusOf({ state: "offline" }))).toEqual({ note: "Not known: GitHub can't be reached." });
+    expect(signedIn(statusOf({ state: "unconfirmed" }))).toEqual({
+      note: "Not known: GitHub's last answer didn't say.",
+    });
+    expect(signedIn(statusOf({ state: "stopped" }))).toEqual({
+      note: "Not known: Tsugiki stopped asking GitHub. The status bar says why.",
+    });
   });
 
-  it("says what a problem is only when it is the token's", () => {
-    expect(
-      signedIn({ state: "problem", problem: { kind: "unauthorized", message: "Run gh auth login." } }),
-    ).toEqual({ note: "Run gh auth login." });
-    expect(signedIn({ state: "problem", problem: { kind: "no_token", message: "Install gh." } })).toEqual({
+  it("names who was signed in last time when GitHub's last answer didn't say who is now", () => {
+    expect(signedIn(statusOf({ state: "unconfirmed_as", last_login: "octocat" }))).toEqual({
+      login: "octocat",
+      note: "Signed in last time. GitHub's last answer didn't say who is now.",
+    });
+  });
+
+  it("says what is wrong with the token in the core's words", () => {
+    expect(signedIn(statusOf({ state: "refused", message: "Run gh auth login." }))).toEqual({
+      note: "Run gh auth login.",
+    });
+    expect(signedIn(statusOf({ state: "no_token", message: "Install gh." }))).toEqual({
       note: "Install gh.",
     });
-    expect(
-      signedIn({
-        state: "problem",
-        problem: { kind: "internal", message: "Tsugiki can't read its database." },
-      }),
-    ).toEqual({ note: "Not known: GitHub hasn't said who is signed in." });
+  });
+
+  it("names the login whatever problem shows beside it", () => {
+    const problem = { kind: "internal", message: "Tsugiki can't read its database." } as const;
+    expect(signedIn({ ...OCTOCAT_ONLINE, problem })).toEqual({ login: "octocat" });
   });
 });
 

@@ -9,9 +9,11 @@ import {
   done,
   listedIssue,
   loadedSettings,
+  OCTOCAT_ONLINE,
   ok,
   openOn,
   readyFiles,
+  statusOf,
   workbenchPage,
   workbenchRow,
 } from "$lib/testing/fixtures";
@@ -100,7 +102,7 @@ vi.mock("$lib/data/bindings", async () => {
       windowLoaded: async () => null,
       windowHidden: async () => null,
       windowShown: async () => null,
-      status: async () => ({ state: "online", login: "octocat" }),
+      status: async () => OCTOCAT_ONLINE,
       lastSync: async () => ({ repository: "some-maintainer/gcmon", at: null }),
       syncActivity: async () => null,
       hourPoints: async () => null,
@@ -336,7 +338,7 @@ it("says a Read-only Repository is so in the status bar and atop its Issue view,
 
   // The status can say Tsugiki went offline or came back, so the state is asked for again.
   core.repositoryState.mockResolvedValue(state([]));
-  statuses.changed({ state: "online", login: "octocat" });
+  statuses.changed(OCTOCAT_ONLINE);
   await vi.waitFor(() => {
     expect(screen.queryByText(words)).toBeNull();
   });
@@ -830,7 +832,7 @@ describe("quick open", () => {
 
     it("offers it in the browser in place of a fetch while GitHub can't be reached", async () => {
       await browsingTwelve(() => {
-        statuses.changed({ state: "offline_as", last_login: "octocat" });
+        statuses.changed(statusOf({ state: "offline_as", last_login: "octocat" }));
       });
     });
 

@@ -1,10 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
-import { loadedSettings } from "../src/lib/testing/fixtures.ts";
+import { loadedSettings, OCTOCAT_ONLINE } from "../src/lib/testing/fixtures.ts";
 import { type CoreAnswers, mockCore } from "./mock-core.ts";
 
 const core: CoreAnswers = {
   settings: loadedSettings(),
-  status: { state: "online", login: "octocat" },
+  status: OCTOCAT_ONLINE,
 };
 
 /** A key pressed before the page has mounted reaches no guard, so wait for the page to say something. */

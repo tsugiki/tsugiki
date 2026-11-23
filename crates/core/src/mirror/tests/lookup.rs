@@ -154,7 +154,7 @@ fn the_checkout_holds_a_prs_base_and_added_files_moves_on_and_goes_with_the_repo
     let first_commit = checked_out(&first.folder);
     let first_news = fs::read_to_string(first.folder.join("NEWS")).unwrap();
     // The next move needs only what the mirror holds, so GitHub can be out of reach.
-    mirrors.requests().follow(&Status::Offline);
+    mirrors.requests().follow(&Account::Offline);
     let gone = place.remotes.with_file_name("remotes-gone");
     fs::rename(&place.remotes, &gone).unwrap();
     let at_two = LookupAt {
@@ -226,7 +226,7 @@ fn with_no_network_the_checkout_still_moves() {
     let (mirrors, starts) = place.start_faked();
     let requests = mirrors.requests();
 
-    requests.follow(&Status::Offline);
+    requests.follow(&Account::Offline);
     requests.look_up(cpython.clone(), fake_at(1));
     let moved = end_move(&starts, &folder);
     let checkout = requests.lookup_checkout(cpython.clone());

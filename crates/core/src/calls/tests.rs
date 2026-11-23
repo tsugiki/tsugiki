@@ -17,7 +17,7 @@ use crate::mirror_source::MirrorSources;
 use crate::read_only::{ReadOnly, TokenSeen};
 use crate::repository_settings::RepositorySettings;
 use crate::settings::SettingsFiles;
-use crate::status::{ItemUnread, Status};
+use crate::status::{Account, ItemUnread};
 use crate::store::testing::OpenStore;
 use crate::testing::{cpython, cpython_settings, gcmon, listing, one_folder, temp_path};
 use crate::token::TokenKind;
@@ -95,10 +95,10 @@ impl Setup {
     }
 }
 
-/// The status board's copy of `status`, with the gate open, and its writer.
-fn shown(status: Status) -> (LatestWriter<Shown>, LatestReader<Shown>) {
+/// The status board's copy of `account`, with the gate open, and its writer.
+fn shown(account: Account) -> (LatestWriter<Shown>, LatestReader<Shown>) {
     latest::channel(Shown {
-        status,
+        account,
         points_back: None,
     })
 }
@@ -111,7 +111,7 @@ fn a_repository_s_state_says_whether_the_token_can_write_there_and_whether_githu
     let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
     let (fetching, _session, _heard, _headless) = handle_with_headless();
     let db = OpenStore::new("calls-repository-state-store");
-    let online = Status::Online {
+    let online = Account::Online {
         login: Login::new("octocat"),
     };
     let (mut status, copy) = shown(online);
@@ -130,7 +130,7 @@ fn a_repository_s_state_says_whether_the_token_can_write_there_and_whether_githu
     let writable = calls.repository_state(&cpython()).unwrap();
     let read_only = calls.repository_state(&gcmon()).unwrap();
     status.set(&Shown {
-        status: Status::Offline,
+        account: Account::Offline,
         points_back: None,
     });
     let offline = calls.repository_state(&cpython()).unwrap();
@@ -155,7 +155,7 @@ fn a_repository_s_state_gives_the_users_choice_of_read_only_and_the_tokens_each_
     let settings = SettingsOwner::start(Ok(SettingsFiles::load(folders.clone())));
     let (fetching, _session, _heard, _headless) = handle_with_headless();
     let db = OpenStore::new("calls-repository-state-chosen-store");
-    let online = Status::Online {
+    let online = Account::Online {
         login: Login::new("octocat"),
     };
     let (_status, copy) = shown(online);
@@ -239,7 +239,7 @@ fn the_handle_syncs_the_open_repository_and_clones_its_mirror_first_and_hands_th
     let calls = Calls::launched(
         fetching,
         db.reader.clone(),
-        shown(Status::Connecting).1,
+        shown(Account::Connecting).1,
         parts,
     );
     let at_launch = (synced_and_saved(&session), heard.clones());
@@ -286,7 +286,7 @@ fn the_window_tells_the_session_what_the_user_did_with_an_item_and_with_itself()
     let calls = Calls::launched(
         fetching,
         db.reader.clone(),
-        shown(Status::Connecting).1,
+        shown(Account::Connecting).1,
         parts,
     );
     let cpython = || RepositoryName::parse("python/cpython").unwrap();

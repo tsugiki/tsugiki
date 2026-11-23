@@ -147,12 +147,13 @@ fn several_refresh_clicks_while_offline_ask_github_once_and_a_click_after_offlin
     assert_eq!(
         statuses,
         [
-            Status::Offline,
-            Status::Reconnecting,
-            Status::Offline,
-            Status::Reconnecting,
-            Status::Offline,
+            Account::Offline,
+            Account::Reconnecting,
+            Account::Offline,
+            Account::Reconnecting,
+            Account::Offline,
         ]
+        .map(Status::from)
     );
     let left: Vec<Heard> = heard.try_iter().collect();
     let asked_after: Vec<String> = held.asked.try_iter().collect();

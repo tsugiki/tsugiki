@@ -413,6 +413,49 @@ export type About = {
 };
 
 /**
+ *  Who Tsugiki asks GitHub as, and whether it can: what reads of the token and GitHub's answers say. A
+ *  problem the session reports never changes it.
+ */
+export type Account = 
+/**  Nobody is known yet, and GitHub hasn't answered. */
+{ state: "connecting" } | 
+/**  GitHub hasn't answered yet, and this is who was signed in last time. */
+{ state: "connecting_as"; last_login: Login } | 
+/**  GitHub confirmed this login just now. */
+{ state: "online"; login: Login } | 
+/**  Nobody is known, and GitHub can't be reached. */
+{ state: "offline" } | 
+/**  GitHub can't be reached, and this is who was signed in last time. */
+{ state: "offline_as"; last_login: Login } | 
+/**
+ *  Nobody is known, and GitHub, which couldn't be reached, is being asked again. A status bar the
+ *  settings hide still shows it, as it showed being offline.
+ */
+{ state: "reconnecting" } | 
+/**  GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time. */
+{ state: "reconnecting_as"; last_login: Login } | 
+/**
+ *  A read of the token found none, so Tsugiki asks GitHub nothing until one does, and the status bar
+ *  offers Try again, which reads it at once. `message` says what happened, what Tsugiki does next and
+ *  what the user can do.
+ */
+{ state: "no_token"; message: string } | 
+/**  GitHub refused the token, in `message`'s words. */
+{ state: "refused"; message: string } | 
+/**
+ *  Nobody is known, and GitHub answered without saying who is signed in, such as with an answer Tsugiki
+ *  couldn't parse. The problem beside it says what went wrong, and the next status check asks again.
+ */
+{ state: "unconfirmed" } | 
+/**  GitHub answered without saying who is signed in, and this is who was signed in last time. */
+{ state: "unconfirmed_as"; last_login: Login } | 
+/**
+ *  Tsugiki asks GitHub nothing more this run: its database didn't open, or a thread of the session
+ *  stopped. The problem beside it says why, and the status bar shows it alone (#1070).
+ */
+{ state: "stopped" };
+
+/**
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
  *  `local_mark`.
  */
@@ -3691,7 +3734,10 @@ export type StaleFinding_Serialize = {
 	found_at: string,
 };
 
-/**  The app's state, shown in the status bar. */
+/**
+ *  The app's state, shown in the status bar: the account, and a problem after it, each a part of its own,
+ *  so a problem can't hide who is signed in or why there is no token (#1062).
+ */
 export type Status = Status_Serialize | Status_Deserialize;
 
 export type StatusBarSettings = StatusBarSettings_Serialize | StatusBarSettings_Deserialize;
@@ -3715,49 +3761,31 @@ export type StatusChanged_Deserialize = Status_Deserialize;
 /**  Sent whenever the app-wide state changes (ADR 0008). */
 export type StatusChanged_Serialize = Status_Serialize;
 
-/**  The app's state, shown in the status bar. */
-export type Status_Deserialize = 
-/**  Nobody is known yet, and GitHub hasn't answered. */
-{ state: "connecting" } | 
-/**  GitHub hasn't answered yet, and this is who was signed in last time. */
-{ state: "connecting_as"; last_login: Login } | 
-/**  GitHub confirmed this login just now. */
-{ state: "online"; login: Login } | 
-/**  Nobody is known, and GitHub can't be reached. */
-{ state: "offline" } | 
-/**  GitHub can't be reached, and this is who was signed in last time. */
-{ state: "offline_as"; last_login: Login } | 
 /**
- *  Nobody is known, and GitHub, which couldn't be reached, is being asked again. A status bar the
- *  settings hide still shows it, as it showed being offline.
+ *  The app's state, shown in the status bar: the account, and a problem after it, each a part of its own,
+ *  so a problem can't hide who is signed in or why there is no token (#1062).
  */
-{ state: "reconnecting" } | 
-/**  GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time. */
-{ state: "reconnecting_as"; last_login: Login } | 
-/**  Something stops Tsugiki reading, such as a refused token. */
-{ state: "problem"; problem: Error_Deserialize };
+export type Status_Deserialize = {
+	account: Account,
+	/**
+	 *  Something else that stops Tsugiki reading, such as a store write that failed. Each finished status
+	 *  check or read of the token clears it or sets a new one.
+	 */
+	problem?: Error_Deserialize | null,
+};
 
-/**  The app's state, shown in the status bar. */
-export type Status_Serialize = 
-/**  Nobody is known yet, and GitHub hasn't answered. */
-{ state: "connecting" } | 
-/**  GitHub hasn't answered yet, and this is who was signed in last time. */
-{ state: "connecting_as"; last_login: Login } | 
-/**  GitHub confirmed this login just now. */
-{ state: "online"; login: Login } | 
-/**  Nobody is known, and GitHub can't be reached. */
-{ state: "offline" } | 
-/**  GitHub can't be reached, and this is who was signed in last time. */
-{ state: "offline_as"; last_login: Login } | 
 /**
- *  Nobody is known, and GitHub, which couldn't be reached, is being asked again. A status bar the
- *  settings hide still shows it, as it showed being offline.
+ *  The app's state, shown in the status bar: the account, and a problem after it, each a part of its own,
+ *  so a problem can't hide who is signed in or why there is no token (#1062).
  */
-{ state: "reconnecting" } | 
-/**  GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time. */
-{ state: "reconnecting_as"; last_login: Login } | 
-/**  Something stops Tsugiki reading, such as a refused token. */
-{ state: "problem"; problem: Error_Serialize };
+export type Status_Serialize = {
+	account: Account,
+	/**
+	 *  Something else that stops Tsugiki reading, such as a store write that failed. Each finished status
+	 *  check or read of the token clears it or sets a new one.
+	 */
+	problem: Error_Serialize | null,
+};
 
 /**  A thread's subject: a whole file, or a line on one side of the diff. */
 export type Subject = Subject_Serialize | Subject_Deserialize;

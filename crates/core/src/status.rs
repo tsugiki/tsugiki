@@ -14,10 +14,11 @@ use crate::latest::{self, LatestReader, LatestWriter};
 use crate::login::Login;
 use crate::repository::RepositoryName;
 
-/// The app's state, shown in the status bar.
+/// Who Tsugiki asks GitHub as, and whether it can: what reads of the token and GitHub's answers say. A
+/// problem the session reports never changes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub enum Status {
+pub enum Account {
     /// Nobody is known yet, and GitHub hasn't answered.
     #[default]
     Connecting,
@@ -34,11 +35,23 @@ pub enum Status {
     Reconnecting,
     /// GitHub, which couldn't be reached, is being asked again, and this is who was signed in last time.
     ReconnectingAs { last_login: Login },
-    /// Something stops Tsugiki reading, such as a refused token.
-    Problem { problem: Error },
+    /// A read of the token found none, so Tsugiki asks GitHub nothing until one does, and the status bar
+    /// offers Try again, which reads it at once. `message` says what happened, what Tsugiki does next and
+    /// what the user can do.
+    NoToken { message: String },
+    /// GitHub refused the token, in `message`'s words.
+    Refused { message: String },
+    /// Nobody is known, and GitHub answered without saying who is signed in, such as with an answer Tsugiki
+    /// couldn't parse. The problem beside it says what went wrong, and the next status check asks again.
+    Unconfirmed,
+    /// GitHub answered without saying who is signed in, and this is who was signed in last time.
+    UnconfirmedAs { last_login: Login },
+    /// Tsugiki asks GitHub nothing more this run: its database didn't open, or a thread of the session
+    /// stopped. The problem beside it says why, and the status bar shows it alone (#1070).
+    Stopped,
 }
 
-impl Status {
+impl Account {
     /// Whether it says GitHub can't be reached, or hasn't answered since it couldn't be, so git stays held
     /// back while Tsugiki asks again. A rate limit is a problem of the API's alone.
     pub(crate) fn is_offline(&self) -> bool {
@@ -50,12 +63,16 @@ impl Status {
             Self::Connecting
             | Self::ConnectingAs { .. }
             | Self::Online { .. }
-            | Self::Problem { .. } => false,
+            | Self::NoToken { .. }
+            | Self::Refused { .. }
+            | Self::Unconfirmed
+            | Self::UnconfirmedAs { .. }
+            | Self::Stopped => false,
         }
     }
 
     /// What it says while GitHub is asked again after it couldn't be reached, keeping who was signed in last
-    /// time. Any other status stays until the answer.
+    /// time. Any other account stays until the answer.
     fn asking_again(&self) -> Option<Self> {
         match self {
             Self::Offline => Some(Self::Reconnecting),
@@ -67,7 +84,52 @@ impl Status {
             | Self::Reconnecting
             | Self::ReconnectingAs { .. }
             | Self::Online { .. }
-            | Self::Problem { .. } => None,
+            | Self::NoToken { .. }
+            | Self::Refused { .. }
+            | Self::Unconfirmed
+            | Self::UnconfirmedAs { .. }
+            | Self::Stopped => None,
+        }
+    }
+
+    /// What it said before a click on Refresh asked GitHub again, for an answer that says nothing of the
+    /// account: offline again, so the next click asks again too. Any other account is as it was.
+    pub(crate) fn before_asking_again(&self) -> Self {
+        match self {
+            Self::Reconnecting => Self::Offline,
+            Self::ReconnectingAs { last_login } => Self::OfflineAs {
+                last_login: last_login.clone(),
+            },
+            Self::Connecting
+            | Self::ConnectingAs { .. }
+            | Self::Online { .. }
+            | Self::Offline
+            | Self::OfflineAs { .. }
+            | Self::NoToken { .. }
+            | Self::Refused { .. }
+            | Self::Unconfirmed
+            | Self::UnconfirmedAs { .. }
+            | Self::Stopped => self.clone(),
+        }
+    }
+}
+
+/// The app's state, shown in the status bar: the account, and a problem after it, each a part of its own,
+/// so a problem can't hide who is signed in or why there is no token (#1062).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Type)]
+pub struct Status {
+    pub account: Account,
+    /// Something else that stops Tsugiki reading, such as a store write that failed. Each finished status
+    /// check or read of the token clears it or sets a new one.
+    pub problem: Option<Error>,
+}
+
+impl From<Account> for Status {
+    /// The account with no problem beside it.
+    fn from(account: Account) -> Self {
+        Self {
+            account,
+            problem: None,
         }
     }
 }
@@ -221,7 +283,7 @@ impl Changes {
 /// which answers at once what it can't ask.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Shown {
-    pub(crate) status: Status,
+    pub(crate) account: Account,
     pub(crate) points_back: Option<PointsBack>,
 }
 
@@ -229,7 +291,7 @@ impl Shown {
     /// Whether a request now would only wait for its failure: GitHub can't be reached, or the rate limit's
     /// gate holds every request until the reset.
     pub(crate) fn refuses_requests(&self) -> bool {
-        self.status.is_offline() || self.points_back.is_some()
+        self.account.is_offline() || self.points_back.is_some()
     }
 }
 
@@ -376,7 +438,7 @@ impl StatusBoard {
 
     fn now_shown(&self) -> Shown {
         Shown {
-            status: self.current.clone(),
+            account: self.current.account.clone(),
             points_back: self.points_back,
         }
     }
@@ -416,27 +478,61 @@ impl StatusBoard {
         (self.announce_repository_sync)(repository);
     }
 
-    /// Whether the status says GitHub can't be reached, or hasn't answered since it couldn't be.
+    /// Whether the account says GitHub can't be reached, or hasn't answered since it couldn't be.
     pub(crate) fn is_offline(&self) -> bool {
-        self.current.is_offline()
+        self.current.account.is_offline()
     }
 
-    /// Says "Connecting…" while GitHub is asked again, if the status says it can't be reached, so a click on
-    /// Refresh shows it was heard. Returns whether it did.
-    #[must_use = "only a status that said offline is asked again"]
+    /// The status the status bar shows now.
+    pub(crate) fn status(&self) -> &Status {
+        &self.current
+    }
+
+    /// Says "Connecting…" while GitHub is asked again, if the account says it can't be reached, so a click
+    /// on Refresh shows it was heard. Returns whether it did.
+    #[must_use = "only an account that said offline is asked again"]
     pub(crate) fn asking_again(&mut self) -> bool {
-        match self.current.asking_again() {
+        match self.current.account.asking_again() {
             Some(asking) => {
-                self.set(asking);
+                self.account(asking);
                 true
             }
             None => false,
         }
     }
 
+    /// Changes the account, and keeps the problem beside it.
+    pub(crate) fn account(&mut self, account: Account) {
+        self.set(Status {
+            account,
+            problem: self.current.problem.clone(),
+        });
+    }
+
+    /// Shows `problem` after the account, which stays as it is.
+    pub(crate) fn problem(&mut self, problem: Error) {
+        self.set(Status {
+            account: self.current.account.clone(),
+            problem: Some(problem),
+        });
+    }
+
+    /// Says Tsugiki asks GitHub nothing more this run, and `problem` why, after a start that failed for good
+    /// or a thread that stopped (#1070).
+    pub(crate) fn stopped(&mut self, problem: Error) {
+        self.set(Status {
+            account: Account::Stopped,
+            problem: Some(problem),
+        });
+    }
+
+    /// Shows `status`, the account and the problem both, as a finished status check or read of the token
+    /// says them.
     pub(crate) fn set(&mut self, status: Status) {
         if self.current != status {
-            if let Status::Problem { problem } = &status {
+            if let Some(problem) = &status.problem
+                && self.current.problem.as_ref() != Some(problem)
+            {
                 log::error!("The status bar says: {}", problem.message);
             }
             self.current = status;

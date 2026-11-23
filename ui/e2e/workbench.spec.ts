@@ -1,6 +1,14 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import type { ListedItem_Serialize as ListedItem } from "../src/lib/data/bindings.ts";
-import { done, HOUR_POINTS, ok, refused, workbenchPage, workbenchRow } from "../src/lib/testing/fixtures.ts";
+import {
+  done,
+  HOUR_POINTS,
+  OCTOCAT_ONLINE,
+  ok,
+  refused,
+  workbenchPage,
+  workbenchRow,
+} from "../src/lib/testing/fixtures.ts";
 import { grabEdge, home, own, repository } from "./fixtures.ts";
 import { changeAnswer, emitFromCore, mockCore } from "./mock-core.ts";
 
@@ -439,7 +447,7 @@ test("the status bar says when the Repository last synced, and a click asks agai
   await mockCore(page, {
     home,
     workbench: workbenchPage([]),
-    status: { state: "online", login: "octocat" },
+    status: OCTOCAT_ONLINE,
     lastSync: { repository: repository.name, at: null },
   });
   await page.goto("/");
@@ -459,7 +467,7 @@ test("the status bar shows the hour's points from GitHub's first answer, and eac
   await mockCore(page, {
     home,
     workbench: workbenchPage([]),
-    status: { state: "online", login: "octocat" },
+    status: OCTOCAT_ONLINE,
   });
   await page.goto("/");
   // The status comes after the page listens for the core's events.

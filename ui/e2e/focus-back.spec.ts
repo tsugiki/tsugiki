@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { workbenchPage } from "../src/lib/testing/fixtures.ts";
+import { OCTOCAT_ONLINE, workbenchPage } from "../src/lib/testing/fixtures.ts";
 import { home, own } from "./fixtures.ts";
 import { mockCore } from "./mock-core.ts";
 
@@ -9,7 +9,7 @@ import { mockCore } from "./mock-core.ts";
 /** Opens the app on a Repository with one row. */
 async function openApp(page: Page): Promise<void> {
   await mockCore(page, {
-    status: { state: "online", login: "octocat" },
+    status: OCTOCAT_ONLINE,
     home,
     workbench: workbenchPage([own], { count: 1 }),
   });

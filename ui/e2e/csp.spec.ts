@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loadedSettings } from "../src/lib/testing/fixtures.ts";
+import { loadedSettings, OCTOCAT_ONLINE } from "../src/lib/testing/fixtures.ts";
 import { mockCore } from "./mock-core.ts";
 import { cspViolations, serveUnderTauriCsp, watchCspViolations } from "./tauri-csp.ts";
 
@@ -10,7 +10,7 @@ test("the window keeps the status bar at its foot under Tauri's CSP, which the p
 }) => {
   await watchCspViolations(page);
   await serveUnderTauriCsp(page);
-  await mockCore(page, { settings, status: { state: "online", login: "octocat" } });
+  await mockCore(page, { settings, status: OCTOCAT_ONLINE });
   await page.setViewportSize({ width: 900, height: 600 });
   await page.goto("/");
 

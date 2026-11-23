@@ -1,5 +1,7 @@
 //! A GitHub username, which `github` reads and the modules above it compare.
 
+use std::cmp::Ordering;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -16,6 +18,21 @@ impl PartialEq for Login {
 }
 
 impl Eq for Login {}
+
+/// The order ignores case as `eq` does, so a map keyed by login holds one entry for each user.
+impl Ord for Login {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let (ours, theirs) = (self.0.bytes(), other.0.bytes());
+        ours.map(|byte| byte.to_ascii_lowercase())
+            .cmp(theirs.map(|byte| byte.to_ascii_lowercase()))
+    }
+}
+
+impl PartialOrd for Login {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl Login {
     pub fn new(login: &str) -> Self {

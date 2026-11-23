@@ -4,7 +4,7 @@
 //! `place` for the Workbench's views, and the Inbox's own for the Inbox. So no rule exists twice, and the
 //! window reads the outcome and keeps none of its own.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use specta::Type;
@@ -36,6 +36,8 @@ pub struct Outcomes {
     pub mark_seen: Outcome,
     pub archive: Outcome,
     pub unarchive: Outcome,
+    /// Mark Unseen, which unarchives an item the window draws Archived (#491).
+    pub mark_unseen: Outcome,
     pub mute: Outcome,
     /// Mute author on the author of the item's own Issue or PR (#494).
     pub mute_author: Outcome,
@@ -61,6 +63,7 @@ impl Outcomes {
         mark_seen: Outcome::Unchanged,
         archive: Outcome::Unchanged,
         unarchive: Outcome::Unchanged,
+        mark_unseen: Outcome::Unchanged,
         mute: Outcome::Unchanged,
         mute_author: Outcome::Unchanged,
         pin: Outcome::Unchanged,
@@ -115,7 +118,7 @@ impl WorkbenchItem {
         offered(self.own_mute_author())
     }
 
-    fn own_mute_author(&self) -> &MuteAuthor {
+    pub(super) fn own_mute_author(&self) -> &MuteAuthor {
         match self {
             Self::Issue(issue) => &issue.mute_author,
             Self::StandalonePr(PrTree { row, .. })
@@ -183,21 +186,31 @@ pub(crate) fn place(
 }
 
 /// What the outcomes of a page's items are judged against: the facts and causes the page came from, and the
-/// marks Mute author makes on the items of each author the page offers it for.
+/// marks Mute author makes on the items of each author the page's listed items offer it for.
 pub(crate) struct Acting<'a> {
     before: Before<'a>,
-    marks: Vec<(Login, Vec<SeenMark>)>,
+    marks: BTreeMap<Login, Vec<SeenMark>>,
 }
 
 impl<'a> Acting<'a> {
-    /// The actions on `items`, every item of the page `before` holds the facts of, listed or not.
+    /// The actions on `listed`, the items a view lists of `items`, every item of the page `before` holds the
+    /// facts of. Each item adds at most one mark, so the cost stays in proportion to the page.
     pub(crate) fn new<'b>(
         before: Before<'a>,
         items: impl IntoIterator<Item = &'b WorkbenchItem>,
+        listed: impl IntoIterator<Item = &'b WorkbenchItem>,
     ) -> Self {
+        let authors = (listed.into_iter())
+            .flat_map(|item| {
+                let rows = item.rows().into_iter();
+                let rows = rows.filter_map(|row| offered(&row.mute_author));
+                item.mute_author_offered().into_iter().chain(rows)
+            })
+            .cloned()
+            .collect();
         Self {
             before,
-            marks: marks_by_author(items),
+            marks: marks_by_author(items, authors),
         }
     }
 
@@ -234,9 +247,10 @@ impl<'a> Acting<'a> {
                 Act::MarkSeen(mark)
             })),
             // The window offers neither Archive nor Mute on a Muted item, which Unmute or Unmute author
-            // bring back (#492, #494), and Archive on an Archived one finds nothing to put away.
-            archive: outcome(hidden.is_none().then_some(Act::Archive(mark, PutAway::Now))),
+            // bring back (#492, #494).
+            archive: outcome((!muted).then_some(Act::Archive(mark, PutAway::Now))),
             unarchive: outcome(archived.then_some(Act::Unarchive)),
+            mark_unseen: outcome(Some(Act::MarkUnseen)),
             mute: outcome((!muted).then_some(Act::Mute(mark))),
             mute_author: outcome(own_author.map(|author| self.mute_author(author))),
             pin: outcome((pinning == Pinning::Unpinned).then_some(Act::Pin)),
@@ -261,18 +275,19 @@ impl<'a> Acting<'a> {
             .filter_map(|row| Some((row.number, offered(&row.mute_author)?)))
             .filter(|(_, author)| own_author != Some(*author))
             .collect();
-        let mut muting: Vec<(&Login, Option<Shown>)> = Vec::new();
+        let mut muting: BTreeMap<&Login, Option<Shown>> = BTreeMap::new();
         let mut rows = Vec::new();
         for (number, author) in by {
-            if !muting.iter().any(|(muted, _)| *muted == author) {
-                muting.push((author, after(self.mute_author(author))));
-            }
-            let muted = muting.iter().find(|(muted, _)| *muted == author);
-            let kept = muted.and_then(|(_, after)| after.as_ref());
+            let kept = (muting.entry(author))
+                .or_insert_with(|| after(self.mute_author(author)))
+                .as_ref();
             let place = kept.filter(|after| after.rows.contains(&number));
             rows.push(RowOutcome {
                 number,
-                mute_author: Outcome::between(now.map(|now| now.place), place.map(|after| after.place)),
+                mute_author: Outcome::between(
+                    now.map(|now| now.place),
+                    place.map(|after| after.place),
+                ),
             });
         }
         rows
@@ -280,10 +295,9 @@ impl<'a> Acting<'a> {
 
     /// Mute author on `author`, with the marks it makes on the page's items they opened.
     fn mute_author<'b>(&'b self, author: &'b Login) -> Act<'b> {
-        let marks = (self.marks.iter()).find(|(login, _)| login == author);
         Act::MuteAuthor {
             author,
-            marks: marks.map_or(&[], |(_, marks)| marks.as_slice()),
+            marks: self.marks.get(author).map_or(&[], Vec::as_slice),
         }
     }
 }

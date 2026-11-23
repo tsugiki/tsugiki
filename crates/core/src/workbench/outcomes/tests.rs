@@ -3,11 +3,13 @@ use std::collections::BTreeMap;
 use time::{Duration, OffsetDateTime};
 
 use super::*;
+use crate::conventions::CPYTHON_BACKPORT_BOT;
 use crate::facts::activity::{ActivityKind, ItemKey, PutAway};
 use crate::facts::filters::FilterResults;
 use crate::facts::issues::{IssueFacts, IssueState};
-use crate::facts::pull_requests::PullRequestFacts;
+use crate::facts::pull_requests::{CiState, OffDefault, PrState, PullRequestFacts};
 use crate::filters::FilterQuery;
+use crate::login::Login;
 use crate::store::testing::archived_on_closing;
 use crate::store::{Archiving, Flagging, Muting};
 use crate::testing::{cpython, cpython_settings, hours_ago, me};
@@ -74,22 +76,26 @@ fn each_outcome_on_the_workbench_is_what_the_workbench_lists_once_the_store_hold
         // Only the flag holds Issue 1, which Mark Seen clears. The pin holds it as well as the flag does.
         ((1, MarkSeen), Leaves),
         ((1, Archive), Leaves),
+        ((1, MarkUnseen), Stays),
         ((1, Mute), Leaves),
         ((1, MuteAuthor), Leaves),
         ((1, Pin), Stays),
         // Only the pin holds Issue 2.
         ((2, MarkSeen), Stays),
         ((2, Archive), Leaves),
+        ((2, MarkUnseen), Stays),
         ((2, Mute), Leaves),
         ((2, MuteAuthor), Leaves),
         ((2, Unpin), Leaves),
         // The user's own PR, whose author Mute author leaves alone.
         ((10, MarkSeen), Stays),
         ((10, Archive), Leaves),
+        ((10, MarkUnseen), Stays),
         ((10, Mute), Leaves),
         // Mark Seen acknowledges the request that brought the Muted PR back, which then leaves. Archive
         // and Mute do nothing to it.
         ((20, MarkSeen), Leaves),
+        ((20, MarkUnseen), Stays),
         ((20, MuteAuthor), Leaves),
     ]);
     assert_eq!(judged, expected);
@@ -135,15 +141,19 @@ fn the_pinned_issues_keep_a_pin_through_archive_and_let_it_go_at_the_unpin() {
 
     use Doing::*;
     use Outcome::*;
-    // Archive keeps Issue 2 there drawn Archived, and Mark Seen keeps the Archived Issue 3 Archived.
+    // Archive keeps Issue 2 there drawn Archived, and Mark Seen and Archive keep the Archived Issue 3
+    // Archived.
     let expected = BTreeMap::from([
         ((2, MarkSeen), Stays),
         ((2, Archive), Stays),
+        ((2, MarkUnseen), Stays),
         ((2, Mute), Leaves),
         ((2, MuteAuthor), Leaves),
         ((2, Unpin), Leaves),
         ((3, MarkSeen), Stays),
+        ((3, Archive), Stays),
         ((3, Unarchive), Stays),
+        ((3, MarkUnseen), Stays),
         ((3, Mute), Leaves),
         ((3, MuteAuthor), Leaves),
         ((3, Unpin), Leaves),
@@ -237,10 +247,11 @@ fn each_view_gives_each_action_the_outcome_the_view_shows_once_the_store_holds_i
         ("pinned", WorkbenchView::Pinned),
     ];
     let judged: BTreeMap<&str, BTreeMap<(u32, Doing), Outcome>> = (views.iter())
-        .map(|(name, view)| (*name, judged_wider(&format!("outcomes-{name}"), view)))
+        .map(|(name, view)| (*name, judged_wider(&format!("outcomes-wider-{name}"), view)))
         .collect();
 
-    let outcome = |name: &str, number: u32, doing: Doing| judged[name].get(&(number, doing)).copied();
+    let outcome =
+        |name: &str, number: u32, doing: Doing| judged[name].get(&(number, doing)).copied();
     // The unpin of Issue 5, closed while pinned, archives it (#820).
     assert_eq!(outcome("whole", 5, Doing::Unpin), Some(Outcome::Leaves));
     // A pin unarchives the Archived Issue 6, which a Filter's view lists either way.
@@ -249,4 +260,46 @@ fn each_view_gives_each_action_the_outcome_the_view_shows_once_the_store_holds_i
     // A Filter's view folds an item the user mutes (#824).
     assert_eq!(outcome("filter", 1, Doing::Mute), Some(Outcome::Folds));
     assert_eq!(outcome("stale", 30, Doing::Archive), Some(Outcome::Leaves));
+}
+
+#[test]
+fn mark_seen_keeps_an_issue_whose_pr_has_a_bot_backport_under_another_issue_that_failed_ci_later() {
+    // The user's merged PR 1 under Issue 5, which only the failed CI of PR 1's Bot backport PR 4 holds on
+    // the Workbench. PR 4 names Issue 7 alone, so it sits in Issue 7's tree and not in Issue 5's, and its
+    // CI finished after anything in Issue 5's tree, which Issue 5's mark covers.
+    let build = |world: &ViewWorld| {
+        world.db.finishes_its_first_sync();
+        let origin = PullRequestFacts {
+            state: PrState::Merged,
+            updated_at: hours_ago(10),
+            ..fixing(1, 5)
+        };
+        let bot = Login::new(CPYTHON_BACKPORT_BOT);
+        let backport = PullRequestFacts {
+            number: 4,
+            title: "[3.14] gh-7: Fix it (GH-1)".to_owned(),
+            author: Some(bot.clone()),
+            target_branch: "3.14".to_owned(),
+            off_default: Some(OffDefault {
+                committers: vec![Some(bot)],
+                ..OffDefault::described("")
+            }),
+            updated_at: hours_ago(10),
+            ..stranger()
+        };
+        world.has(vec![origin, backport.clone()], vec![issue(5), issue(7)]);
+        let failed = PullRequestFacts {
+            ci: Some(CiState::Failure),
+            ..backport
+        };
+        world.has(vec![failed], vec![]);
+    };
+    let read = |world: &ViewWorld| world.placed_in(&WorkbenchView::Whole);
+
+    let judged = outcomes_done("outcomes-backport-elsewhere", &build, &read);
+
+    assert!(
+        judged.contains(&(5, Doing::MarkSeen, Outcome::Stays)),
+        "{judged:?}"
+    );
 }

@@ -1351,12 +1351,39 @@ describe("WorkbenchState", () => {
       state.stop();
     });
 
+    it("keeps the cursor on a PR's row at Mute author on the PR's author in another's Issue, and goes to the Issue's line once the list drops the row", async () => {
+      const { send } = catchChanged();
+      vi.mocked(commands.muteAuthor).mockResolvedValue(done);
+      // The Issue stays, as its own author is someone else, so the action keeps it: the cursor stays on the
+      // item, on its own line once the PR's row has gone.
+      const issue = { ...issueWith(4, 9), mute_author_rows: [{ number: 9, mute_author: "leaves" as const }] };
+      vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([issue, item(5)]));
+      const state = new WorkbenchState("python/cpython");
+      await state.load();
+      state.unfold(4);
+      const pr = { number: 9, kind: "pull_request" as const, issue: 4 };
+      state.moveTo(pr);
+
+      await state.muteAuthor("pr-author", pr);
+      const atKeypress = state.cursor;
+      vi.mocked(commands.workbench).mockResolvedValue(
+        workbenchPage([{ ...issue, pull_requests: [] }, item(5)]),
+      );
+      send("python/cpython");
+      await vi.waitFor(() => {
+        expect(state.items?.[0]?.kind === "issue" && state.items[0].pull_requests).toEqual([]);
+      });
+
+      expect([atKeypress, state.cursor]).toEqual([pr, { number: 4, kind: "issue", issue: undefined }]);
+      state.stop();
+    });
+
     it("moves on at Unarchive and at Mark Unseen of an Archived item only where the core says they take it out, as the Archived view", async () => {
       catchChanged();
       vi.mocked(commands.unarchive).mockResolvedValue(done);
       vi.mocked(commands.markUnseen).mockResolvedValue(done);
       const archived = (number: number) => ({
-        ...judged(item(number), { unarchive: "stays" }),
+        ...judged(item(number), { unarchive: "stays", mark_unseen: "stays" }),
         hidden: "archived" as const,
       });
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([archived(5), archived(6)]));
@@ -1367,7 +1394,8 @@ describe("WorkbenchState", () => {
       // A Filter's view keeps the item it brings back.
       await state.unarchive(item(5).key);
       const onWorkbench = state.cursor;
-      const out = (number: number) => judged(archived(number), { unarchive: "leaves" });
+      const out = (number: number) =>
+        judged(archived(number), { unarchive: "leaves", mark_unseen: "leaves" });
       vi.mocked(commands.workbench).mockResolvedValue(workbenchPage([out(7), out(8), out(9)]));
       await state.select({ kind: "archived" });
       state.moveTo(at(7));

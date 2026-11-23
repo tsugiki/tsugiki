@@ -1,6 +1,9 @@
 //! New activity: what happened on an Issue or a PR after the user's Last seen. It says nothing about review
 //! state, and its words are the glossary's.
 
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
 use time::OffsetDateTime;
 
 use crate::conventions::Conventions;
@@ -71,11 +74,13 @@ fn what_happened(
 
 /// The New activity of a Repository's items, as one user reads it.
 pub struct News<'a> {
+    /// The activity facts, of which `News` reads Last seen from `last_seen` alone.
     facts: &'a ActivityFacts,
+    last_seen: &'a BTreeMap<u32, OffsetDateTime>,
     viewer: &'a Login,
     conventions: Conventions,
     /// Each open Bot backport whose CI failed, with its Origin PR's number. Nobody can act on a closed one.
-    failed_backports: Vec<(u32, &'a PullRequestFacts)>,
+    failed_backports: Rc<[(u32, &'a PullRequestFacts)]>,
 }
 
 impl<'a> News<'a> {
@@ -96,23 +101,21 @@ impl<'a> News<'a> {
             .collect();
         Self {
             facts,
+            last_seen: &facts.last_seen,
             viewer,
             conventions,
             failed_backports,
         }
     }
 
-    /// The News of the same PRs, read from `facts` in place of the facts `self` reads: those of some of the
-    /// Repository's items once a user action changed them (#1052).
-    pub(crate) fn over<'b>(&self, facts: &'b ActivityFacts) -> News<'b>
-    where
-        'a: 'b,
-    {
+    /// The News of the same facts once Last seen is `last_seen`, as a user action would leave it (#1052).
+    pub(crate) fn over<'b>(&'b self, last_seen: &'b BTreeMap<u32, OffsetDateTime>) -> News<'b> {
         News {
-            facts,
+            facts: self.facts,
+            last_seen,
             viewer: self.viewer,
             conventions: self.conventions,
-            failed_backports: self.failed_backports.clone(),
+            failed_backports: Rc::clone(&self.failed_backports),
         }
     }
 
@@ -121,7 +124,7 @@ impl<'a> News<'a> {
     /// sync finishes.
     fn starts(&self, number: u32) -> Option<OffsetDateTime> {
         let first_sync = self.facts.first_sync?;
-        let last_seen = self.facts.last_seen.get(&number).copied();
+        let last_seen = self.last_seen.get(&number).copied();
         Some(last_seen.map_or(first_sync, |seen| seen.max(first_sync)))
     }
 

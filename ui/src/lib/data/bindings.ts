@@ -2562,6 +2562,8 @@ export type Outcomes = {
 	mark_seen: Outcome,
 	archive: Outcome,
 	unarchive: Outcome,
+	/**  Mark Unseen, which unarchives an item the window draws Archived (#491). */
+	mark_unseen: Outcome,
 	mute: Outcome,
 	/**  Mute author on the author of the item's own Issue or PR (#494). */
 	mute_author: Outcome,

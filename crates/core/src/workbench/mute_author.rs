@@ -1,7 +1,7 @@
 //! Mute author (#494): what each row offers for its author, and what muting or unmuting an author covers.
 //! A Muted author's items count as Muted from the author each holds, as `work` works them out.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use specta::Type;
@@ -74,11 +74,17 @@ pub(crate) fn authored_by(
         .filter(|item| numbers.contains(&item.key().number()))
         .collect();
     let marks = (theirs.iter().filter_map(mark_of))
-        .map(|SeenMark { numbers, up_to, findings }| Seeing {
-            numbers,
-            up_to,
-            findings,
-        })
+        .map(
+            |SeenMark {
+                 numbers,
+                 up_to,
+                 findings,
+             }| Seeing {
+                numbers,
+                up_to,
+                findings,
+            },
+        )
         .collect();
     numbers.extend(theirs.iter().flat_map(WorkbenchItem::numbers));
     Authored {
@@ -99,20 +105,21 @@ fn mark_of(item: &WorkbenchItem) -> Option<SeenMark> {
     })
 }
 
-/// The marks Mute author makes on the items of each author `items` offer it for, as `authored_by` makes
-/// them, with the author.
+/// The marks Mute author on each of `authors` makes on those of `items` they opened, as `authored_by` makes
+/// them.
 pub(crate) fn marks_by_author<'a>(
     items: impl IntoIterator<Item = &'a WorkbenchItem>,
-) -> Vec<(Login, Vec<SeenMark>)> {
-    let mut marks: Vec<(Login, Vec<SeenMark>)> = Vec::new();
+    authors: BTreeSet<Login>,
+) -> BTreeMap<Login, Vec<SeenMark>> {
+    let mut marks: BTreeMap<Login, Vec<SeenMark>> = (authors.into_iter())
+        .map(|author| (author, Vec::new()))
+        .collect();
     for item in items {
-        let Some(author) = item.mute_author_offered() else {
-            continue;
-        };
-        let mark = mark_of(item);
-        match marks.iter_mut().find(|(login, _)| login == author) {
-            Some((_, theirs)) => theirs.extend(mark),
-            None => marks.push((author.clone(), mark.into_iter().collect())),
+        let theirs = item
+            .mute_author_offered()
+            .and_then(|author| marks.get_mut(author));
+        if let Some(theirs) = theirs {
+            theirs.extend(mark_of(item));
         }
     }
     marks

@@ -144,21 +144,31 @@ struct Ask {
 impl Causes {
     /// No viewer means nobody has signed in yet, so nothing waits on anyone.
     pub(crate) fn of(facts: &WorkFacts, conventions: Conventions) -> Self {
+        Self::with_news(facts, conventions).0
+    }
+
+    /// The causes of `facts`, with the News they were judged by. No viewer, no News.
+    pub(crate) fn with_news(
+        facts: &WorkFacts,
+        conventions: Conventions,
+    ) -> (Self, Option<News<'_>>) {
         let Some(viewer) = facts.viewer.as_ref() else {
-            return Self::default();
+            return (Self::default(), None);
         };
         let shared = SharedReviews::of(&facts.pull_requests, conventions);
         let reviews = your_reviews(facts, viewer, &shared);
         let stale_reviews = stale_reviews(facts, viewer, &reviews, &shared);
+        let news = News::new(&facts.activity, &facts.pull_requests, viewer, conventions);
+        let state = State::of(facts);
         let judging = Judging {
             viewer,
             pull_requests: facts.pull_requests.iter().collect(),
             issues: facts.issues.iter().collect(),
             activity: &facts.activity,
-            kept: &facts.reviews.stale_found,
-            news: News::new(&facts.activity, &facts.pull_requests, viewer, conventions),
+            state,
+            news: news.over(state.last_seen),
         };
-        judging.causes(reviews, stale_reviews)
+        (judging.causes(reviews, stale_reviews), Some(news))
     }
 
     /// Whether the item `key` names is Muted: the user muted it on its own (#492), or its author (#494).
@@ -375,8 +385,9 @@ fn closed(pull_requests: &[&PullRequestFacts], issues: &[&IssueFacts]) -> BTreeS
     pull_requests.chain(issues).collect()
 }
 
-/// The newest moment the facts hold on each Issue and PR, which Mark Seen moves Last seen to. It covers what
-/// isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays seen once it would be.
+/// The newest moment the facts hold on each of `pull_requests` and `issues`, which Mark Seen moves Last seen
+/// to. It covers what isn't New activity yet, such as CI on a PR the user hasn't reviewed, so that stays
+/// seen once it would be.
 fn known_until(
     pull_requests: &[&PullRequestFacts],
     issues: &[&IssueFacts],
@@ -385,16 +396,11 @@ fn known_until(
     let updated = (pull_requests.iter())
         .map(|pr| (pr.number, pr.updated_at))
         .chain(issues.iter().map(|issue| (issue.number, issue.updated_at)));
-    let events = activity
-        .events
-        .iter()
-        .flat_map(|(number, events)| events.iter().map(|event| (*number, event.at)));
-    let ci = activity
-        .ci_finished
-        .iter()
-        .map(|(number, at)| (*number, *at));
     let mut newest = BTreeMap::new();
-    for (number, at) in updated.chain(events).chain(ci) {
+    for (number, updated_at) in updated {
+        let events = activity.events.get(&number).into_iter().flatten();
+        let ci = activity.ci_finished.get(&number).copied();
+        let at = (events.map(|event| event.at).chain(ci)).fold(updated_at, OffsetDateTime::max);
         let known = newest.entry(number).or_insert(at);
         *known = (*known).max(at);
     }
@@ -450,15 +456,49 @@ pub(crate) fn muted_items(facts: &WorkFacts) -> BTreeSet<ItemKey> {
     own.chain(by_authors.into_keys()).collect()
 }
 
+/// The user's own state among the facts, which their actions write, and the findings of Stale reviews the
+/// store kept, which their marks acknowledge (#1052). `Causes` reads these from here, and the rest of the
+/// activity facts, which no user action writes, from the facts.
+#[derive(Clone, Copy)]
+struct State<'a> {
+    last_seen: &'a BTreeMap<u32, OffsetDateTime>,
+    acknowledged: &'a BTreeMap<u32, OffsetDateTime>,
+    marked_unseen: &'a BTreeMap<u32, OffsetDateTime>,
+    archived: &'a BTreeMap<ItemKey, Archive>,
+    muted: &'a BTreeMap<ItemKey, OffsetDateTime>,
+    muted_authors: &'a [MutedAuthor],
+    pinned: &'a BTreeSet<u32>,
+    /// The last finding the store kept of each PR that the user's Review of it is stale.
+    kept: &'a BTreeMap<u32, StaleFound>,
+}
+
+impl<'a> State<'a> {
+    /// The user's state as `facts` hold it.
+    fn of(facts: &'a WorkFacts) -> Self {
+        let activity = &facts.activity;
+        Self {
+            last_seen: &activity.last_seen,
+            acknowledged: &activity.acknowledged,
+            marked_unseen: &activity.marked_unseen,
+            archived: &activity.archived,
+            muted: &activity.muted,
+            muted_authors: &activity.muted_authors,
+            pinned: &activity.pinned,
+            kept: &facts.reviews.stale_found,
+        }
+    }
+}
+
 /// The facts `Causes` judges: a Repository's, or those of one item's tree once the store holds a user action
 /// on it (#1052).
 struct Judging<'a> {
     viewer: &'a Login,
     pull_requests: Vec<&'a PullRequestFacts>,
     issues: Vec<&'a IssueFacts>,
+    /// The activity facts, of which `Judging` reads only those no user action writes.
     activity: &'a ActivityFacts,
-    /// The last finding the store kept of each PR that the user's Review of it is stale.
-    kept: &'a BTreeMap<u32, StaleFound>,
+    state: State<'a>,
+    /// The News, as `state`'s Last seen gives it.
     news: News<'a>,
 }
 
@@ -471,13 +511,14 @@ impl Judging<'_> {
             pull_requests,
             issues,
             activity,
-            kept,
+            state,
             news,
         } = self;
-        let stale_found = stale_found(&pull_requests, kept, &reviews, &stale_reviews);
+        let stale_found = stale_found(&pull_requests, state.kept, &reviews, &stale_reviews);
         let judge = Judge {
             news,
             facts: activity,
+            state,
             viewer,
             stale_reviews: &stale_reviews,
             stale_found: &stale_found,
@@ -523,22 +564,22 @@ impl Judging<'_> {
             stale_found,
             with_news,
             known_until: known_until(&pull_requests, &issues, activity),
-            marked_unseen: activity.marked_unseen.keys().copied().collect(),
+            marked_unseen: state.marked_unseen.keys().copied().collect(),
             reviews,
-            archived: activity.archived.clone(),
+            archived: state.archived.clone(),
             closed: closed(&pull_requests, &issues),
-            muted: activity.muted.clone(),
+            muted: state.muted.clone(),
             by_muted_authors: by_muted_authors(
                 Some(viewer),
                 (issues.iter().copied(), pull_requests.iter().copied()),
-                &activity.muted_authors,
+                state.muted_authors,
             ),
-            muted_authors: (activity.muted_authors.iter())
+            muted_authors: (state.muted_authors.iter())
                 .map(|muted| muted.login.clone())
                 .collect(),
-            pinned: activity.pinned.clone(),
+            pinned: state.pinned.clone(),
             viewer: Some(viewer.clone()),
-            acknowledged: activity.acknowledged.clone(),
+            acknowledged: state.acknowledged.clone(),
         }
     }
 }
@@ -546,7 +587,9 @@ impl Judging<'_> {
 /// Judges what on each Issue and PR waits on the user.
 struct Judge<'a> {
     news: News<'a>,
+    /// The activity facts, of which `Judge` reads only those no user action writes.
     facts: &'a ActivityFacts,
+    state: State<'a>,
     viewer: &'a Login,
     stale_reviews: &'a BTreeSet<u32>,
     stale_found: &'a BTreeMap<u32, StaleFound>,
@@ -597,7 +640,7 @@ impl Judge<'_> {
         started: Option<OffsetDateTime>,
         why: Why,
     ) -> Option<Cause> {
-        let acknowledged = self.facts.acknowledged.get(&pull_request.number);
+        let acknowledged = self.state.acknowledged.get(&pull_request.number);
         let before = |acknowledged: &OffsetDateTime| started.is_none_or(|at| at <= *acknowledged);
         (!acknowledged.is_some_and(before)).then(|| Cause {
             at: started.unwrap_or(pull_request.updated_at),
@@ -655,7 +698,7 @@ impl Judge<'_> {
 
     /// Marked unseen, from the moment of the flag, whatever the user's part in the item.
     fn flag(&self, number: u32) -> Option<Cause> {
-        let at = *self.facts.marked_unseen.get(&number)?;
+        let at = *self.state.marked_unseen.get(&number)?;
         Some(Cause {
             at,
             why: Why::MarkedUnseen,

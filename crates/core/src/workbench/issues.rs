@@ -36,7 +36,7 @@ pub struct IssueItem {
 /// The Issue `issue` with its tree `pull_requests`, its part in Mark Seen and Mute author as `causes` judge
 /// them.
 pub(super) fn issue_item(
-    issue: IssueFacts,
+    issue: &IssueFacts,
     pull_requests: Vec<TreeEntry>,
     conventions: Conventions,
     causes: &Causes,
@@ -47,7 +47,7 @@ pub(super) fn issue_item(
     let seen = seen_of(causes, std::iter::once(issue.number).chain(tree).collect());
     let mute_author = MuteAuthor::of(causes, issue.author.as_ref());
     let pinned = causes.is_pinned(issue.number);
-    let people = people(&issue, &pull_requests, conventions);
+    let people = people(issue, &pull_requests, conventions);
     let updated_at = pull_requests
         .iter()
         .flat_map(TreeEntry::rows)
@@ -55,7 +55,7 @@ pub(super) fn issue_item(
         .fold(issue.updated_at, Ord::max);
     WorkbenchItem::Issue(IssueItem {
         number: issue.number,
-        title: issue.title,
+        title: issue.title.clone(),
         state: issue.state,
         people,
         updated_at,

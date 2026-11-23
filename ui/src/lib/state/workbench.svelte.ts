@@ -498,7 +498,7 @@ export class WorkbenchState {
    * archived (#491), which finishes the item where the unarchive takes it out (#1052). Says what went wrong,
    * if anything did. */
   async markUnseen(number: number, archived?: ItemKey) {
-    this.#finish(archived, "unarchive", false);
+    this.#finish(archived, "mark_unseen", false);
     return problemIn(commands.markUnseen(this.#repository, number, archived ?? null));
   }
 
@@ -529,8 +529,9 @@ export class WorkbenchState {
   }
 
   /** Mute author on `login`, the author of line `stop` if the list holds one (#494). Their items leave the
-   * list, and Mute author finishes the item that holds the line when they opened it (#1052). Says what went
-   * wrong, if anything did. */
+   * list, and Mute author finishes the item that holds the line when they opened it (#1052). On a PR they
+   * wrote in another's Issue it keeps the Issue, so the cursor stays on the PR's row, and goes to the Issue's
+   * own line once the list drops the row. Says what went wrong, if anything did. */
   async muteAuthor(login: string, stop: Stop | undefined) {
     const item = stop && this.#itemOf(stop, this.#everything);
     const by = (offered: MuteAuthor | undefined) => offered?.kind === "mute" && offered.login === login;

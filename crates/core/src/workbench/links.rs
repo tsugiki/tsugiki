@@ -48,18 +48,18 @@ pub(super) fn links_of(
 /// Links each of `pull_requests` by what `links` says of it, with the kind of each Backport, and draws its
 /// line with `row`. A PR that `links` lacks links nothing.
 pub(super) fn link<R>(
-    pull_requests: Vec<PullRequestFacts>,
+    pull_requests: &[PullRequestFacts],
     links: &BTreeMap<u32, PrLinks>,
     conventions: Conventions,
-    row: impl Fn(PullRequestFacts) -> R,
+    row: impl Fn(&PullRequestFacts) -> R,
 ) -> Vec<Linked<R, crate::links::BackportKind>> {
     pull_requests
-        .into_iter()
+        .iter()
         .map(|facts| {
             let found = links.get(&facts.number);
             let backport = (found.and_then(|links| links.origin)).map(|origin| BackportLink {
                 origin,
-                kind: crate::links::backport_kind(&facts, conventions),
+                kind: crate::links::backport_kind(facts, conventions),
             });
             Linked {
                 number: facts.number,

@@ -143,13 +143,8 @@ fn each_pin_says_what_an_unpin_and_archive_do_to_the_issue_in_the_view_that_list
             .collect::<Vec<_>>()
     );
     let archive = |outcomes: &Outcomes| outcomes.archive;
-    let kept = [
-        (1, Outcome::Stays),
-        (2, Outcome::Stays),
-        (3, Outcome::Stays),
-        (4, Outcome::Unchanged),
-    ];
-    assert_eq!(of(&pinned, archive), kept);
+    let kept = (1..=4).map(|number| (number, Outcome::Stays));
+    assert_eq!(of(&pinned, archive), kept.collect::<Vec<_>>());
 }
 
 #[test]

@@ -1174,6 +1174,7 @@ fn each_outcome_in_the_inbox_is_what_the_inbox_lists_once_the_store_holds_the_ac
         [
             ((number, MarkSeen), Stays),
             ((number, Archive), Leaves),
+            ((number, MarkUnseen), Stays),
             ((number, Mute), Leaves),
             ((number, MuteAuthor), Leaves),
         ]
@@ -1199,7 +1200,8 @@ fn each_outcome_in_the_inbox_is_what_the_inbox_lists_once_the_store_holds_the_ac
 }
 
 #[test]
-fn mute_author_with_show_muted_on_keeps_an_item_back_for_a_stale_review_its_marks_cant_acknowledge() {
+fn mute_author_with_show_muted_on_keeps_an_item_back_for_a_stale_review_its_marks_cant_acknowledge()
+{
     let build = |world: &ViewWorld| {
         let updated_at = hours_ago(1);
         world.reviewed_and_pushed(by("other-author", pr_at(30, None, updated_at)));
@@ -1218,7 +1220,11 @@ fn mute_author_with_show_muted_on_keeps_an_item_back_for_a_stale_review_its_mark
         world.show_muted(ShowMuted::On);
     };
 
-    let judged = judged("inbox-outcomes-stale-found", OffsetDateTime::now_utc(), &build);
+    let judged = judged(
+        "inbox-outcomes-stale-found",
+        OffsetDateTime::now_utc(),
+        &build,
+    );
 
     // Mute author's marks come from the facts, not from the page, so they leave the finding standing.
     assert_eq!(judged.get(&(30, Doing::MuteAuthor)), Some(&Outcome::Stays));

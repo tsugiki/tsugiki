@@ -100,12 +100,13 @@ export const workbenchRow = (
 });
 
 /** The outcomes of an item on the Workbench that a Filter or the user's own PR holds there, as the core
- * judges them (#1052): Mark Seen and a pin keep it, Archive, Mute and Mute author take it out, and Unarchive
- * and an unpin do nothing to it. */
+ * judges them (#1052): Mark Seen, Mark Unseen and a pin keep it, Archive, Mute and Mute author take it out,
+ * and Unarchive and an unpin do nothing to it. */
 export const onWorkbench: ListedItem["outcomes"] = {
   mark_seen: "stays",
   archive: "leaves",
   unarchive: "unchanged",
+  mark_unseen: "stays",
   mute: "leaves",
   mute_author: "leaves",
   pin: "stays",

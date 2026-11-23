@@ -3344,8 +3344,14 @@ it("offers no Mark Seen in the view of a PR whose item is Muted, as the view say
  * cursor on the Issue. */
 const archivedView = async () => {
   const changed = catchEveryListener();
-  // The Archived view lists what the user archived, which Unarchive and a pin take out.
-  const outcomes = { ...onWorkbench, archive: "unchanged", unarchive: "leaves", pin: "leaves" };
+  // The Archived view lists what the user archived, which Unarchive, Mark Unseen and a pin take out.
+  const outcomes = {
+    ...onWorkbench,
+    archive: "stays",
+    unarchive: "leaves",
+    mark_unseen: "leaves",
+    pin: "leaves",
+  };
   const items = [issue, standalone].map((item) => ({
     ...item,
     attention: null,

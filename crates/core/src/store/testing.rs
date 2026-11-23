@@ -275,6 +275,18 @@ impl OpenStore {
         (marked(cpython()), marked(gcmon()))
     }
 
+    /// CPython's first sync finished, three days ago, so what happens from then on is news.
+    pub(crate) fn finishes_its_first_sync(&self) {
+        let started_at = crate::testing::hours_ago(72);
+        let state = SyncState {
+            started_at,
+            finished_at: started_at,
+            check: ChangeCheck::Skipped,
+            refresh_under_way: false,
+        };
+        self.store.save_sync_state(&cpython(), state).unwrap();
+    }
+
     /// Each of `events` happened on CPython's Issue or PR `number`, as a fetch saves them.
     pub(crate) fn happened(&self, number: u32, events: Vec<Activity>) {
         let activity = vec![ItemActivity { number, events }];
@@ -333,14 +345,7 @@ impl World {
     }
 
     pub(crate) fn finishes_its_first_sync(&self) {
-        let started_at = crate::testing::hours_ago(72);
-        let state = SyncState {
-            started_at,
-            finished_at: started_at,
-            check: ChangeCheck::Skipped,
-            refresh_under_way: false,
-        };
-        self.db.store.save_sync_state(&cpython(), state).unwrap();
+        self.db.finishes_its_first_sync();
     }
 
     pub(crate) fn has(&self, pull_requests: Vec<PullRequestFacts>) {

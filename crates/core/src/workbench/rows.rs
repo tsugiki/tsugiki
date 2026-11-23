@@ -35,18 +35,18 @@ pub struct WorkbenchRow {
 
 /// The PR's line of the list, whatever it has to do with `viewer`, with its review state, its part in Mark
 /// Seen and Mute author as `causes` judge them.
-pub(super) fn row(facts: PullRequestFacts, viewer: &Login, causes: &Causes) -> WorkbenchRow {
-    let reasons = reasons(&facts, viewer);
+pub(super) fn row(facts: &PullRequestFacts, viewer: &Login, causes: &Causes) -> WorkbenchRow {
+    let reasons = reasons(facts, viewer);
     let your_review = causes.review_of(facts.number);
     let seen = seen_of(causes, vec![facts.number]);
     let mute_author = MuteAuthor::of(causes, facts.author.as_ref());
     WorkbenchRow {
         number: facts.number,
-        title: facts.title,
-        author: facts.author,
+        title: facts.title.clone(),
+        author: facts.author.clone(),
         state: facts.state,
         is_draft: facts.is_draft,
-        target_branch: facts.target_branch,
+        target_branch: facts.target_branch.clone(),
         ci: facts.ci,
         updated_at: facts.updated_at,
         reasons,

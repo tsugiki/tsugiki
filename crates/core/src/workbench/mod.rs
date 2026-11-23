@@ -352,9 +352,9 @@ impl Workbench {
         repository: &RepositorySettings,
         view: &WorkbenchView,
     ) -> Self {
-        let causes = Causes::of(&facts, repository.conventions);
         let held = held_in_own_right(&facts, repository);
         let filters = FilterFacts::new(repository, std::mem::take(&mut facts.filters));
+        let (causes, news) = Causes::with_news(&facts, repository.conventions);
         let matched = filters.matched();
         let listing = match view {
             WorkbenchView::Whole => Listing::Whole,
@@ -373,10 +373,6 @@ impl Workbench {
             Listing::StaleReviews => &causes.stale_reviews,
         };
         let candidates = candidates_of(&facts, repository, first, &causes);
-        let acting = Acting::new(
-            Before::of(&facts, &causes, repository.conventions),
-            &candidates,
-        );
         let listed: Vec<ListedItem> = (candidates.into_iter())
             .map(|item| ListedItem::of(&causes, item))
             .collect();
@@ -402,9 +398,19 @@ impl Workbench {
         let review_requests = count_of(listed.iter().filter(|listed| requested(listed)));
         let stale_reviews = prs_of(&unhidden, &causes.stale_reviews);
         let placed = |causes: &Causes, item: &WorkbenchItem| place(&listing, &held, causes, item);
+        let places: Vec<Option<Place>> = (listed.iter())
+            .map(|listed| placed(&causes, &listed.item))
+            .collect();
+        let acting = Acting::new(
+            Before::of(&facts, &causes, news),
+            listed.iter().map(|listed| &listed.item),
+            (listed.iter().zip(&places))
+                .filter(|(_, place)| place.is_some())
+                .map(|(listed, _)| &listed.item),
+        );
         let (mut items, mut muted) = (Vec::new(), Vec::new());
-        for listed in listed {
-            let into = match placed(&causes, &listed.item) {
+        for (listed, place) in listed.into_iter().zip(places) {
+            let into = match place {
                 Some(Place::Listed) => &mut items,
                 Some(Place::Folded) => &mut muted,
                 None => continue,
@@ -500,12 +506,11 @@ fn candidates(
     let Some(viewer) = facts.viewer.as_ref() else {
         return Vec::new();
     };
-    let pull_requests = facts.pull_requests.clone();
-    let linked = link(pull_requests, links, repository.conventions, |pr| {
+    let linked = link(&facts.pull_requests, links, repository.conventions, |pr| {
         row(pr, viewer, causes)
     });
-    let mut issues: BTreeMap<u32, (IssueFacts, Vec<TreeEntry>)> = (facts.issues.iter())
-        .map(|issue| (issue.number, (issue.clone(), Vec::new())))
+    let mut issues: BTreeMap<u32, (&IssueFacts, Vec<TreeEntry>)> = (facts.issues.iter())
+        .map(|issue| (issue.number, (issue, Vec::new())))
         .collect();
     let mut items = Vec::new();
     for top in plant(linked) {

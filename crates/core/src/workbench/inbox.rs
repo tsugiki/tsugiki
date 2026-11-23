@@ -157,34 +157,37 @@ impl Inbox {
     /// The page `read` holds, Archived and Muted items and Pinned issues left out, and the rows Muted authors
     /// wrote as `show` says.
     fn listed(read: PageRead, repository: &RepositorySettings, show: ShowMuted) -> Self {
-        let causes = Causes::of(&read.facts, repository.conventions);
+        let (causes, news) = Causes::with_news(&read.facts, repository.conventions);
         let grouped = candidates(
             (&read.facts, &read.links),
             repository,
             &BTreeSet::new(),
             &causes,
         );
-        let acting = Acting::new(
-            Before::of(&read.facts, &causes, repository.conventions),
-            &grouped,
-        );
         let in_inbox = |causes: &Causes, item: &WorkbenchItem| {
             ListedItem::in_inbox(causes, item.clone(), show)
         };
-        let mut items: Vec<ListedItem> = (grouped.iter())
-            .filter_map(|item| {
-                let listed = in_inbox(&causes, item)?;
+        let kept: Vec<(&WorkbenchItem, ListedItem)> = (grouped.iter())
+            .filter_map(|item| Some((item, in_inbox(&causes, item)?)))
+            .collect();
+        let acting = Acting::new(
+            Before::of(&read.facts, &causes, news),
+            &grouped,
+            kept.iter().map(|(_, listed)| &listed.item),
+        );
+        let mut items: Vec<ListedItem> = (kept.into_iter())
+            .map(|(item, listed)| {
                 // The Inbox shows the PRs of the item that it keeps, the Muted authors' gone as `show` says.
                 let (outcomes, mute_author_rows) =
                     acting.outcomes_of(item, listed.hidden, |causes| {
                         let kept = in_inbox(causes, item)?;
                         Some(Shown::whole(Place::Listed, &kept.item))
                     });
-                Some(ListedItem {
+                ListedItem {
                     outcomes,
                     mute_author_rows,
                     ..listed
-                })
+                }
             })
             .collect();
         let place_of =

@@ -10,9 +10,7 @@ use super::{
     WorkbenchItem, WorkbenchRow, WorkbenchView, authored_by, candidates_of,
 };
 use crate::conventions::Conventions;
-use crate::facts::activity::{
-    Activity, ActivityFacts, ActivityKind, ItemKey, PutAway,
-};
+use crate::facts::activity::{Activity, ActivityFacts, ActivityKind, ItemKey, PutAway};
 use crate::facts::issues::IssueFacts;
 use crate::facts::patch_ids::{CommitPatches, FilePatch, PatchId, PatchesOf, ReviewFacts};
 use crate::facts::pull_request_content::{PullRequestContent, Review};
@@ -44,6 +42,7 @@ pub(crate) enum Doing {
     MarkSeen,
     Archive,
     Unarchive,
+    MarkUnseen,
     Mute,
     MuteAuthor,
     Pin,
@@ -51,10 +50,11 @@ pub(crate) enum Doing {
 }
 
 impl Doing {
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::MarkSeen,
         Self::Archive,
         Self::Unarchive,
+        Self::MarkUnseen,
         Self::Mute,
         Self::MuteAuthor,
         Self::Pin,
@@ -67,10 +67,27 @@ impl Doing {
             Self::MarkSeen => outcomes.mark_seen,
             Self::Archive => outcomes.archive,
             Self::Unarchive => outcomes.unarchive,
+            Self::MarkUnseen => outcomes.mark_unseen,
             Self::Mute => outcomes.mute,
             Self::MuteAuthor => outcomes.mute_author,
             Self::Pin => outcomes.pin,
             Self::Unpin => outcomes.unpin,
+        }
+    }
+
+    /// Whether the window offers this action on `listed`, as its keys and buttons do: Archive and Mute on
+    /// no Muted item (#492, #494), Unarchive on an Archived one (#491), Mute author where the item's author
+    /// isn't Muted and isn't the user, and a pin or an unpin on an Issue as it stands (#488).
+    fn offered(self, listed: &ListedItem) -> bool {
+        let muted = listed.hidden.is_some_and(super::Hidden::is_muted);
+        let issue = matches!(listed.item, WorkbenchItem::Issue(_));
+        match self {
+            Self::MarkSeen | Self::MarkUnseen => true,
+            Self::Archive | Self::Mute => !muted,
+            Self::Unarchive => listed.is_archived(),
+            Self::MuteAuthor => matches!(listed.item.own_mute_author(), MuteAuthor::Mute { .. }),
+            Self::Pin => issue && !listed.item.is_pinned(),
+            Self::Unpin => issue && listed.item.is_pinned(),
         }
     }
 }
@@ -109,6 +126,13 @@ impl ViewWorld {
             ),
             Doing::Archive => store.archive(&repository, archiving(PutAway::Now), now),
             Doing::Unarchive => store.unarchive(&repository, key),
+            Doing::MarkUnseen => {
+                let flagging = Flagging {
+                    number: key.number(),
+                    archived: listed.is_archived().then_some(key),
+                };
+                store.mark_unseen(&repository, flagging, now)
+            }
             Doing::Mute => {
                 let muting = Muting {
                     key,
@@ -169,6 +193,26 @@ impl Check {
         }
     }
 
+    /// Whether the window offers the action on `listed`: Mute author on a row where the PR's author isn't
+    /// Muted, the user or the item's own author, whose outcome the item's own carries.
+    fn offered(self, listed: &ListedItem) -> bool {
+        match self {
+            Self::Item(doing) => doing.offered(listed),
+            Self::Row(number) => {
+                let rows = listed.item.rows();
+                let row = rows.iter().find(|row| row.number == number);
+                let own = match listed.item.own_mute_author() {
+                    MuteAuthor::Mute { login } => Some(login),
+                    MuteAuthor::Off | MuteAuthor::Unmute { .. } => None,
+                };
+                row.is_some_and(|row| match &row.mute_author {
+                    MuteAuthor::Mute { login } => own != Some(login),
+                    MuteAuthor::Off | MuteAuthor::Unmute { .. } => false,
+                })
+            }
+        }
+    }
+
     /// Whether `listed` still shows what the action is on.
     fn shows(self, listed: &ListedItem) -> bool {
         match self {
@@ -200,11 +244,11 @@ impl Check {
     }
 }
 
-/// The outcome a list gives each action on each item it lists in the world `build` makes, and Mute author
-/// on each row of its tree, but those that leave the item unchanged, each held against the list once a
-/// world built afresh takes the action through the store. `read` gives each item the list holds, with the
-/// place it gives the item. The world of each action takes `name` with the item's number and the action.
-/// A row's outcome comes with the PR's number.
+/// The outcome a list gives each action the window offers on each item it lists in the world `build` makes,
+/// and Mute author on each row of its tree, each held against the list once a world built afresh takes the
+/// action through the store. Each action the window doesn't offer comes Unchanged. `read` gives each item
+/// the list holds, with the place it gives the item. The world of each action takes `name` with the item's
+/// number and the action. A row's outcome comes with the PR's number.
 pub(crate) fn outcomes_done(
     name: &str,
     build: &dyn Fn(&ViewWorld),
@@ -217,10 +261,16 @@ pub(crate) fn outcomes_done(
     let mut judged = Vec::new();
     for (item, _) in &listed {
         let number = item.key.number();
-        let rows = (item.mute_author_rows.iter()).map(|row| (row.number, Check::Row(row.number)));
+        let rows = (item.item.rows().into_iter()).map(|row| (row.number, Check::Row(row.number)));
         let checks = Doing::ALL.map(|doing| (number, Check::Item(doing)));
         for (on, check) in checks.into_iter().chain(rows) {
-            if check.outcome(item) == Outcome::Unchanged {
+            if !check.offered(item) {
+                let outcome = check.outcome(item);
+                assert_eq!(
+                    outcome,
+                    Outcome::Unchanged,
+                    "{check:?} on {number} in {name}"
+                );
                 continue;
             }
             // The world built afresh holds its own moments, so the item and its mark are drawn there.

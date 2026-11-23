@@ -91,6 +91,27 @@ impl Account {
             | Self::Stopped => None,
         }
     }
+
+    /// What it said before a click on Refresh asked GitHub again, for an answer that says nothing of the
+    /// account: offline again, so the next click asks again too. Any other account is as it was.
+    pub(crate) fn before_asking_again(&self) -> Self {
+        match self {
+            Self::Reconnecting => Self::Offline,
+            Self::ReconnectingAs { last_login } => Self::OfflineAs {
+                last_login: last_login.clone(),
+            },
+            Self::Connecting
+            | Self::ConnectingAs { .. }
+            | Self::Online { .. }
+            | Self::Offline
+            | Self::OfflineAs { .. }
+            | Self::NoToken { .. }
+            | Self::Refused { .. }
+            | Self::Unconfirmed
+            | Self::UnconfirmedAs { .. }
+            | Self::Stopped => self.clone(),
+        }
+    }
 }
 
 /// The app's state, shown in the status bar: the account, and a problem after it, each a part of its own,

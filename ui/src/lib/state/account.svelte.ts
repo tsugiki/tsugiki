@@ -24,7 +24,10 @@ export function signedIn(status: Status | undefined): SignedIn {
     case "offline":
       return { note: "Not known: GitHub can't be reached." };
     case "unconfirmed_as":
-      return { login: account.last_login, note: "Signed in last time. GitHub's last answer didn't say who is now." };
+      return {
+        login: account.last_login,
+        note: "Signed in last time. GitHub's last answer didn't say who is now.",
+      };
     case "unconfirmed":
       return { note: "Not known: GitHub's last answer didn't say." };
     case "stopped":

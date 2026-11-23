@@ -314,60 +314,150 @@ fn a_status_check_github_answers_without_a_login_shows_the_last_login_alone() {
 /// What the status bar says after a job's request failed with `kind`, from `account` with `earlier` beside
 /// it, when octocat signed in last time.
 fn after_a_job_failed(account: Account, earlier: Option<Error>, kind: ErrorKind) -> Status {
+    after_a_job_failed_with(&store_remembering("octocat"), account, earlier, kind)
+}
+
+/// What the status bar says after a job's request failed with `kind`, from `account` with `earlier` beside
+/// it, with what `store` holds.
+fn after_a_job_failed_with(
+    store: &Store,
+    account: Account,
+    earlier: Option<Error>,
+    kind: ErrorKind,
+) -> Status {
     let mut board = quiet_board();
     board.set(Status {
         account,
         problem: earlier,
     });
-    tell_problem(
-        &mut board,
-        Error::new(kind, "It failed."),
-        &store_remembering("octocat"),
-    );
+    tell_problem(&mut board, Error::new(kind, "It failed."), store);
     board.status().clone()
 }
 
-fn refused() -> Account {
-    Account::Refused {
+/// Each account, octocat's where it names a login, beside what it becomes after a failure GitHub answered
+/// and after a certificate this computer's clock doesn't accept, when octocat signed in last time.
+fn accounts_after_failures() -> Vec<(Account, Account, Account)> {
+    let octocat = || Login::new("octocat");
+    let unconfirmed_as = || Account::UnconfirmedAs {
+        last_login: octocat(),
+    };
+    let no_token = Account::NoToken {
+        message: "Install gh.".to_owned(),
+    };
+    let refused = Account::Refused {
         message: "GitHub refused the token.".to_owned(),
-    }
+    };
+    let offline_as = Account::OfflineAs {
+        last_login: octocat(),
+    };
+    let stays = |account: Account| (account.clone(), unconfirmed_as(), account);
+    let kept = |account: Account| (account.clone(), account.clone(), account);
+    vec![
+        stays(Account::Connecting),
+        stays(Account::ConnectingAs {
+            last_login: octocat(),
+        }),
+        kept(Account::Online { login: octocat() }),
+        stays(Account::Offline),
+        stays(offline_as.clone()),
+        // A click on Refresh asked again, and a certificate says nothing of the account, so it is
+        // offline again, and the next click asks again too.
+        (Account::Reconnecting, unconfirmed_as(), Account::Offline),
+        (
+            Account::ReconnectingAs {
+                last_login: octocat(),
+            },
+            unconfirmed_as(),
+            offline_as,
+        ),
+        stays(no_token),
+        stays(refused),
+        kept(Account::Unconfirmed),
+        kept(Account::UnconfirmedAs {
+            last_login: Login::new("hubot"),
+        }),
+        kept(Account::Stopped),
+    ]
 }
 
 #[test]
 fn a_failure_github_answered_leaves_the_last_login_unconfirmed_and_no_longer_offline() {
-    let octocat_last_time = Account::OfflineAs {
-        last_login: Login::new("octocat"),
-    };
-    for account in [Account::Offline, octocat_last_time, refused()] {
-        let after = after_a_job_failed(account, None, ErrorKind::NotFound);
-
-        let unconfirmed = Account::UnconfirmedAs {
-            last_login: Login::new("octocat"),
-        };
-        assert_eq!(after.account, unconfirmed);
-        assert!(!after.account.is_offline());
-        assert_eq!(problem_kind(after), Some(ErrorKind::NotFound));
-    }
-}
-
-#[test]
-fn a_login_github_confirmed_stays_beside_a_failure_github_answered() {
-    let after = after_a_job_failed(octocat().account, None, ErrorKind::Internal);
-
-    assert_eq!(after.account, octocat().account);
-    assert_eq!(problem_kind(after), Some(ErrorKind::Internal));
-}
-
-#[test]
-fn a_request_that_never_reached_github_leaves_the_account_as_it_was() {
-    for kind in [ErrorKind::QueryRefused, ErrorKind::CertificateDates] {
-        for account in [Account::Offline, refused(), octocat().account] {
+    let answered = [
+        ErrorKind::QueryRefused,
+        ErrorKind::WriteRefused,
+        ErrorKind::NotFound,
+        ErrorKind::Conflict,
+        ErrorKind::Internal,
+    ];
+    for kind in answered {
+        for (account, expected, _) in accounts_after_failures() {
             let after = after_a_job_failed(account.clone(), None, kind);
 
-            assert_eq!(after.account, account);
+            assert_eq!(after.account, expected, "from {account:?} after {kind:?}");
+            assert!(!after.account.is_offline());
             assert_eq!(problem_kind(after), Some(kind));
         }
     }
+}
+
+#[test]
+fn a_failure_github_answered_with_no_last_login_leaves_nobody_unconfirmed() {
+    for account in [Account::Connecting, Account::Offline, Account::Reconnecting] {
+        let after = after_a_job_failed_with(&empty_store(), account, None, ErrorKind::Internal);
+
+        assert_eq!(after.account, Account::Unconfirmed);
+    }
+}
+
+#[test]
+fn a_certificate_the_clock_doesnt_accept_leaves_the_account_as_it_was_before_any_click() {
+    for (account, _, expected) in accounts_after_failures() {
+        let after = after_a_job_failed(account.clone(), None, ErrorKind::CertificateDates);
+
+        assert_eq!(after.account, expected, "from {account:?}");
+        assert_eq!(problem_kind(after), Some(ErrorKind::CertificateDates));
+    }
+}
+
+#[test]
+fn a_refresh_offline_whose_check_fails_on_the_certificate_is_offline_again_and_asks_again() {
+    let (threads, requests) = two_threads(HOURLY, mirrors());
+    let on_status = move |shown| match shown {
+        1 => requests.refresh(),
+        3 => {
+            requests.refresh();
+            requests.stop_session();
+        }
+        _ => {}
+    };
+    let (mut board, heard) = heard_board(on_status, |_| {});
+    let access = replying(vec![
+        Err(Unreachable::Offline),
+        Err(Unreachable::CertificateDates),
+        Err(Unreachable::Offline),
+    ]);
+
+    threads.watch(&mut board, &empty_store(), access);
+
+    let words =
+        "GitHub's certificate isn't valid by this computer's clock. Check the date and time.";
+    let certificate = Status {
+        account: Account::Offline,
+        problem: Some(Error::new(ErrorKind::CertificateDates, words)),
+    };
+    assert_eq!(
+        heard.try_iter().collect::<Vec<_>>(),
+        [
+            Heard::Status(Account::Offline.into()),
+            Heard::Status(Account::Reconnecting.into()),
+            Heard::Status(certificate.clone()),
+            Heard::Status(Status {
+                account: Account::Reconnecting,
+                ..certificate
+            }),
+            Heard::Status(Account::Offline.into()),
+        ]
+    );
 }
 
 #[test]

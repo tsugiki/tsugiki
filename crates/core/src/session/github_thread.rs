@@ -945,9 +945,9 @@ pub(super) fn tell_problem(board: &mut StatusBoard, problem: Error, store: &Stor
 
 /// The status bar's words after GitHub didn't answer as it should, from the `account` it says now. Being
 /// offline and the token's problems are the account's, and any other failure is a problem beside it. A
-/// failure GitHub answered also leaves who is signed in unconfirmed. A request that never reached GitHub,
-/// one `tsugiki-token` refused to send or one whose certificate this computer's clock doesn't accept, says
-/// nothing of the account, so it stays.
+/// failure GitHub answered, a refused query included, also leaves who is signed in unconfirmed. A
+/// certificate this computer's clock doesn't accept stops the request before GitHub answers, so it says
+/// nothing of the account, which stays as it was before any click on Refresh asked again.
 fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
     match problem.kind {
         ErrorKind::Offline => match store.last_login() {
@@ -964,11 +964,12 @@ fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
         ErrorKind::Unauthorized => Status::from(Account::Refused {
             message: problem.message,
         }),
-        ErrorKind::CertificateDates | ErrorKind::QueryRefused => Status {
-            account: account.clone(),
+        ErrorKind::CertificateDates => Status {
+            account: account.before_asking_again(),
             problem: Some(problem),
         },
-        ErrorKind::WriteRefused
+        ErrorKind::QueryRefused
+        | ErrorKind::WriteRefused
         | ErrorKind::RateLimited { .. }
         | ErrorKind::NotFound
         | ErrorKind::Conflict
@@ -981,11 +982,14 @@ fn status_after(problem: Error, store: &Store, account: &Account) -> Status {
 
 /// The account after GitHub answered without saying who is signed in: it isn't offline, nor did it refuse
 /// the token, but who is signed in waits for the next status check, so the status bar shows the last login,
-/// if the store says, without "Connecting…". A login GitHub confirmed stays, and so does a session that
-/// stopped.
+/// if the store says, without "Connecting…". A login GitHub confirmed stays, and so does an account already
+/// unconfirmed and a session that stopped.
 fn unconfirmed(account: &Account, store: &Store) -> Account {
     match account {
-        Account::Online { .. } | Account::Stopped => account.clone(),
+        Account::Online { .. }
+        | Account::Unconfirmed
+        | Account::UnconfirmedAs { .. }
+        | Account::Stopped => account.clone(),
         Account::Connecting
         | Account::ConnectingAs { .. }
         | Account::Offline
@@ -993,9 +997,7 @@ fn unconfirmed(account: &Account, store: &Store) -> Account {
         | Account::Reconnecting
         | Account::ReconnectingAs { .. }
         | Account::NoToken { .. }
-        | Account::Refused { .. }
-        | Account::Unconfirmed
-        | Account::UnconfirmedAs { .. } => match store.last_login() {
+        | Account::Refused { .. } => match store.last_login() {
             Ok(Some(last_login)) => Account::UnconfirmedAs { last_login },
             Ok(None) | Err(_) => Account::Unconfirmed,
         },

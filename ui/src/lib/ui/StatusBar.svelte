@@ -148,8 +148,11 @@
   // account can't take it away (#1062).
   const noToken = $derived(!error && account?.state === "no_token");
   // An unread status says nothing of the open Repository, so Read-only waits for a status. A hidden bar shows
-  // a token's problem alone, as Read-only matters only once Tsugiki reads.
-  const readOnlyShown = $derived(readOnly && (visible || offline || reconnecting) && !error);
+  // a token's problem alone, as Read-only matters only once Tsugiki reads, and so does a session that
+  // stopped: the problem says why it asks GitHub nothing more (#1070).
+  const readOnlyShown = $derived(
+    readOnly && (visible || offline || reconnecting) && account?.state !== "stopped" && !error,
+  );
   // Who is signed in, or why nobody is, then Read-only, as it says more of the open Repository, then the
   // problem beside the account.
   const statusWords = $derived(

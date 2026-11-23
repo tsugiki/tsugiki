@@ -120,7 +120,7 @@ describe("StatusBar", () => {
   // Nothing will connect, so the problem says why alone, as it did before the account had a part (#1070).
   it("shows only the problem once Tsugiki stops asking GitHub, and no Try again", () => {
     const problem = { kind: "internal", message: "Tsugiki stopped checking GitHub." } as const;
-    render(StatusBar, { status: statusOf({ state: "stopped" }, problem) });
+    render(StatusBar, { status: statusOf({ state: "stopped" }, problem), readOnly: true });
     expect(bar().textContent?.trim()).toBe("Tsugiki stopped checking GitHub.");
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(bar().classList.contains("offline")).toBe(false);

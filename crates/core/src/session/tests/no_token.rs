@@ -267,14 +267,15 @@ fn a_problem_while_tsugiki_waits_for_a_token_shows_after_the_account() {
         _ => vec![],
     });
 
+    // A status holds a login or a token message, which a test mustn't log, so a failure gives the count.
     let [found_none, troubled, clicked, read_again] = &heard[..] else {
-        panic!("{heard:?}");
+        panic!("{} statuses", heard.len());
     };
     let beside = |account: &Account| Status {
         account: account.clone(),
         problem: Some(database_problem()),
     };
-    assert!(says(found_none, "Install `gh`"), "{found_none:?}");
+    assert!(says(found_none, "Install `gh`"));
     assert_eq!(found_none.problem, None);
     assert_eq!(troubled, &beside(&found_none.account));
     assert_eq!(clicked, &beside(&Account::Connecting));

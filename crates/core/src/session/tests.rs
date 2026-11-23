@@ -335,8 +335,10 @@ fn after_a_job_failed_with(
 }
 
 /// Each account, octocat's where it names a login, beside what it becomes after a failure GitHub answered
-/// and after a certificate this computer's clock doesn't accept, when octocat signed in last time.
-fn accounts_after_failures() -> Vec<(Account, Account, Account)> {
+/// and after a certificate this computer's clock doesn't accept, when octocat signed in last time. Each row
+/// starts with the variant's name, which a failed assertion prints, as an account holds a login or a token
+/// message, which a test mustn't log.
+fn accounts_after_failures() -> Vec<(&'static str, Account, Account, Account)> {
     let octocat = || Login::new("octocat");
     let unconfirmed_as = || Account::UnconfirmedAs {
         last_login: octocat(),
@@ -350,33 +352,45 @@ fn accounts_after_failures() -> Vec<(Account, Account, Account)> {
     let offline_as = Account::OfflineAs {
         last_login: octocat(),
     };
-    let stays = |account: Account| (account.clone(), unconfirmed_as(), account);
-    let kept = |account: Account| (account.clone(), account.clone(), account);
+    let stays = |name, account: Account| (name, account.clone(), unconfirmed_as(), account);
+    let kept = |name, account: Account| (name, account.clone(), account.clone(), account);
     vec![
-        stays(Account::Connecting),
-        stays(Account::ConnectingAs {
-            last_login: octocat(),
-        }),
-        kept(Account::Online { login: octocat() }),
-        stays(Account::Offline),
-        stays(offline_as.clone()),
+        stays("Connecting", Account::Connecting),
+        stays(
+            "ConnectingAs",
+            Account::ConnectingAs {
+                last_login: octocat(),
+            },
+        ),
+        kept("Online", Account::Online { login: octocat() }),
+        stays("Offline", Account::Offline),
+        stays("OfflineAs", offline_as.clone()),
         // A click on Refresh asked again, and a certificate says nothing of the account, so it is
         // offline again, and the next click asks again too.
-        (Account::Reconnecting, unconfirmed_as(), Account::Offline),
         (
+            "Reconnecting",
+            Account::Reconnecting,
+            unconfirmed_as(),
+            Account::Offline,
+        ),
+        (
+            "ReconnectingAs",
             Account::ReconnectingAs {
                 last_login: octocat(),
             },
             unconfirmed_as(),
             offline_as,
         ),
-        stays(no_token),
-        stays(refused),
-        kept(Account::Unconfirmed),
-        kept(Account::UnconfirmedAs {
-            last_login: Login::new("hubot"),
-        }),
-        kept(Account::Stopped),
+        stays("NoToken", no_token),
+        stays("Refused", refused),
+        kept("Unconfirmed", Account::Unconfirmed),
+        kept(
+            "UnconfirmedAs",
+            Account::UnconfirmedAs {
+                last_login: Login::new("hubot"),
+            },
+        ),
+        kept("Stopped", Account::Stopped),
     ]
 }
 
@@ -390,10 +404,10 @@ fn a_failure_github_answered_leaves_the_last_login_unconfirmed_and_no_longer_off
         ErrorKind::Internal,
     ];
     for kind in answered {
-        for (account, expected, _) in accounts_after_failures() {
-            let after = after_a_job_failed(account.clone(), None, kind);
+        for (name, account, expected, _) in accounts_after_failures() {
+            let after = after_a_job_failed(account, None, kind);
 
-            assert_eq!(after.account, expected, "from {account:?} after {kind:?}");
+            assert!(after.account == expected, "from {name} after {kind:?}");
             assert!(!after.account.is_offline());
             assert_eq!(problem_kind(after), Some(kind));
         }
@@ -411,10 +425,10 @@ fn a_failure_github_answered_with_no_last_login_leaves_nobody_unconfirmed() {
 
 #[test]
 fn a_certificate_the_clock_doesnt_accept_leaves_the_account_as_it_was_before_any_click() {
-    for (account, _, expected) in accounts_after_failures() {
-        let after = after_a_job_failed(account.clone(), None, ErrorKind::CertificateDates);
+    for (name, account, _, expected) in accounts_after_failures() {
+        let after = after_a_job_failed(account, None, ErrorKind::CertificateDates);
 
-        assert_eq!(after.account, expected, "from {account:?}");
+        assert!(after.account == expected, "from {name}");
         assert_eq!(problem_kind(after), Some(ErrorKind::CertificateDates));
     }
 }
@@ -633,13 +647,11 @@ fn a_refused_token_stays_in_the_account_when_a_problem_comes() {
         _ => vec![],
     });
 
+    // A status holds a login or a token message, which a test mustn't log, so a failure gives the count.
     let [refused, troubled] = &heard[..] else {
-        panic!("{heard:?}");
+        panic!("{} statuses", heard.len());
     };
-    assert!(
-        matches!(refused.account, Account::Refused { .. }),
-        "{refused:?}"
-    );
+    assert!(matches!(refused.account, Account::Refused { .. }));
     assert_eq!(refused.problem, None);
     assert_eq!(troubled.account, refused.account);
     assert_eq!(troubled.problem, Some(database_problem()));

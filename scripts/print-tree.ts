@@ -1,7 +1,8 @@
 // `just tree 393` prints #393 and every open ticket it blocks, itself or through other tickets, as a tree of
 // their blockers. `just tree 393 398` prints one tree per ticket named, and `just tree` one per open ticket
-// with no open blocker. `just tree --up 914` prints #914 and every open ticket that blocks it, itself or
-// through other tickets, with each ticket's open blockers under it. `tree.ts` holds the layout.
+// with no open blocker, and one per cycle no other ticket blocks. `just tree --up 914` prints #914 and every
+// open ticket that blocks it, itself or through other tickets, with each ticket's open blockers under it.
+// `tree.ts` holds the layout.
 import { execFileSync } from "node:child_process";
 
 import { stop } from "./run.ts";

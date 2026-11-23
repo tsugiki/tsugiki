@@ -615,23 +615,11 @@ pub(super) fn watch(
                 syncs.wait_until(due.status);
             }
             Turn::SyncStep => match syncs.step(&github, store) {
-                Ok(Some(Progress::Changed(change))) => {
-                    if !change.items.is_empty() {
-                        hand_over_heads(&refreshes.fetching, &syncs, &change);
-                    }
-                    board.changed(&change);
-                }
-                Ok(Some(Progress::Finished(last_sync))) => {
-                    board.repository_sync_changed(&last_sync.repository);
-                    board.last_sync(&last_sync);
-                }
-                Ok(Some(Progress::Recorded(repository))) => {
-                    board.repository_sync_changed(&repository)
-                }
-                Ok(None) => {}
+                Ok(progress) => tell_progress(board, &refreshes.fetching, &syncs, progress),
                 // The next refresh shows whether GitHub is back, and the sync carries on from there.
                 Err(failure) => {
-                    syncs.after_failure(&failure, due.status);
+                    let given_up = syncs.after_failure(&failure, due.status);
+                    tell_progress(board, &refreshes.fetching, &syncs, given_up);
                     tell_problem(board, failure.problem, store);
                 }
             },
@@ -648,6 +636,30 @@ pub(super) fn watch(
             },
             &refreshes.listed(),
         );
+    }
+}
+
+/// Tells the window and the Mirror worker what the sync queue's `progress` says, if anything. A step's news
+/// comes this way, and so does that of a step a given-up sync saved before its place failed to save.
+fn tell_progress(
+    board: &mut StatusBoard,
+    fetching: &Fetching,
+    syncs: &Syncs,
+    progress: Option<Progress>,
+) {
+    match progress {
+        Some(Progress::Changed(change)) => {
+            if !change.items.is_empty() {
+                hand_over_heads(fetching, syncs, &change);
+            }
+            board.changed(&change);
+        }
+        Some(Progress::Finished(last_sync)) => {
+            board.repository_sync_changed(&last_sync.repository);
+            board.last_sync(&last_sync);
+        }
+        Some(Progress::Recorded(repository)) => board.repository_sync_changed(&repository),
+        None => {}
     }
 }
 

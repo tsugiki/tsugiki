@@ -4,13 +4,16 @@
 import type {
   DiffFile_Serialize as DiffFile,
   DiffThread_Serialize as DiffThread,
+  Home_Serialize as Home,
   HourPoints_Serialize as HourPoints,
   InboxCursor_Serialize as InboxCursor,
   LanguageServerSettings_Serialize as LanguageServerSettings,
   ListedItem_Serialize as ListedItem,
   LoadedSettings_Serialize as LoadedSettings,
+  Opened_Serialize as Opened,
   PrFiles_Serialize as PrFiles,
   RepositoryCheck_Serialize as RepositoryCheck,
+  RepositorySettings_Serialize as RepositorySettings,
   Settings_Serialize as Settings,
   ShowMuted,
   Themes,
@@ -286,6 +289,19 @@ export const loadedSettings = (more: Partial<Settings> = {}): LoadedSettings => 
   settings: defaultSettings(more),
   language_servers: NO_SERVERS,
   problems: [],
+});
+
+/** What `home` answers with the window open on `repository`, and `others` below it in the picker, each
+ * named, or named with when the user opened it. With no time given, none was opened at a time. */
+export const openOn = (
+  repository: RepositorySettings,
+  others: readonly (string | Opened)[] = [],
+  openedAt: string | null = null,
+): Extract<Home, { screen: "repository" }> => ({
+  screen: "repository",
+  repository,
+  opened_at: openedAt,
+  others: others.map((other) => (typeof other === "string" ? { name: other, opened_at: null } : other)),
 });
 
 /** The core's check of a small Repository named `name`, as Add Repository shows it. */

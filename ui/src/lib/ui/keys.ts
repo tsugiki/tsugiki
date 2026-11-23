@@ -54,6 +54,7 @@ const IN_TEXT_BOX: ReadonlySet<Action> = new Set([
   "command_palette",
   "quick_open",
   "switch_repository",
+  "go_home",
   "open_settings",
   "toggle_hud",
   "pick_theme",

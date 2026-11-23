@@ -258,6 +258,37 @@ kbd {
   color: var(--fg-muted);
 }
 
+/* A list of rows in a box, each row a button across it: Settings › Repositories and the Home page. Under
+   `:where`, so the page's own rule for a row's layout wins over the `all: unset` here. */
+:where(.row-list) {
+  margin: 0 0 10px;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+:where(.row-list > li + li) {
+  border-top: 1px solid var(--border);
+}
+
+:where(.row-list > li > button) {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  cursor: pointer;
+}
+
+:where(.row-list > li > button:hover) {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+:where(.row-list > li > button:focus-visible) {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 /* A review's or a thread's state, or a label. One that sets a state's colour takes it on its border too. */
 .chip {
   display: inline-block;

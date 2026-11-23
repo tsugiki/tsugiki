@@ -549,6 +549,7 @@ table! {
     GoForward: "Go Forward", (Alt ArrowRight), Anywhere;
     OpenOnGithub: "Open on GitHub", (CtrlShift 'g'), Anywhere;
     SwitchRepository: "Switch Repository", (Ctrl 'r'), Anywhere;
+    GoHome: "Go to Home", (), Anywhere;
     ResetLayout: "Reset Layout", (), Anywhere;
     Archive: "Archive", (Plain 'e'), Anywhere;
     Mute: "Mute", (Plain 'm'), Anywhere;

@@ -6,7 +6,7 @@ import type {
   PrView_Serialize as PrView,
   Review_Serialize as Review,
 } from "../src/lib/data/bindings.ts";
-import { workbenchRow } from "../src/lib/testing/fixtures.ts";
+import { openOn, workbenchRow } from "../src/lib/testing/fixtures.ts";
 
 // What the specs share: the Repository they open, the items they list, and the moves they make with the
 // mouse and the palette. What the core answers is built in src/lib/testing/fixtures.ts, which the unit tests
@@ -20,7 +20,7 @@ export const repository = {
 } as const;
 
 /** What `home` answers when the app opens on `repository`, with no other Repository added. */
-export const home = { screen: "repository", repository, others: [] as string[] } as const;
+export const home = openOn(repository);
 
 /** PR #10's row: open and unreviewed, its CI passed, seen. */
 export const row = workbenchRow(10);

@@ -416,7 +416,7 @@ export type About = {
  *  An action the user can bind a key to, named in `[keys]` as serde names it: `archive`,
  *  `local_mark`.
  */
-export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "reset_layout" | "archive" | "mute" | "mute_author" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
+export type Action = "command_palette" | "quick_open" | "go_to_definition" | "peek_definition" | "next_change" | "previous_change" | "next_thread" | "previous_thread" | "find_in_diff" | "toggle_sidebar" | "toggle_issue_list" | "unfold" | "fold" | "toggle_detail_only" | "toggle_diff_view" | "toggle_files_mode" | "unfold_unchanged" | "toggle_rail_files" | "search_in_rail" | "next_tab" | "previous_tab" | "next_file" | "previous_file" | "send_comment" | "open_in_editor" | "local_mark" | "pin" | "pick_theme" | "reload_themes" | "go_back" | "go_forward" | "open_on_github" | "switch_repository" | "go_home" | "reset_layout" | "archive" | "mute" | "mute_author" | "mark_seen" | "mark_unseen" | "open_settings" | "zoom_in" | "zoom_out" | "zoom_reset" | "toggle_hud" | "open_devtools" | "show_keys";
 
 /**  Whether the code under a thread has changed since it began. */
 export type Anchor = "current" | "outdated";
@@ -1343,12 +1343,14 @@ export type Home_Deserialize =
 { screen: "onboarding"; token: TokenSource } | 
 /**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
 { screen: "repository"; repository: RepositorySettings_Deserialize; 
+/**  The time the user last opened it on this machine, if `recent` says. */
+opened_at: string | null; 
 /**
- *  The names of the other Repositories the settings hold, in the order the Repository picker lists
- *  them below the open one: those opened on this machine first, most recently opened first, and then
- *  the rest in the settings' order.
+ *  The other Repositories the settings hold, in the order the Repository picker and the Home page
+ *  list them below the open one: those opened on this machine first, most recently opened first,
+ *  and then the rest in the settings' order.
  */
-others: RepositoryName[] };
+others: Opened_Deserialize[] };
 
 /**  What the window opens on. */
 export type Home_Serialize = 
@@ -1356,12 +1358,14 @@ export type Home_Serialize =
 { screen: "onboarding"; token: TokenSource } | 
 /**  The Repository opened most recently on this machine that the settings still hold, or else the first. */
 { screen: "repository"; repository: RepositorySettings_Serialize; 
+/**  The time the user last opened it on this machine, if `recent` says. */
+opened_at: string | null; 
 /**
- *  The names of the other Repositories the settings hold, in the order the Repository picker lists
- *  them below the open one: those opened on this machine first, most recently opened first, and then
- *  the rest in the settings' order.
+ *  The other Repositories the settings hold, in the order the Repository picker and the Home page
+ *  list them below the open one: those opened on this machine first, most recently opened first,
+ *  and then the rest in the settings' order.
  */
-others: RepositoryName[] };
+others: Opened_Serialize[] };
 
 /**
  *  The hour's points, as GitHub's last answer counted them, with the points Tsugiki's answers cost. It lives
@@ -2439,6 +2443,30 @@ export type OpenSync_Serialize = {
 	pages: number,
 	/**  Its progress through the queue, once it gets there. */
 	load: LoadProgress_Serialize | null,
+};
+
+/**
+ *  A Repository, and when the user last opened it on this machine: nothing for one `recent` doesn't hold,
+ *  or holds with no time, as a 0.2.0 `last_repository` became.
+ */
+export type Opened = Opened_Serialize | Opened_Deserialize;
+
+/**
+ *  A Repository, and when the user last opened it on this machine: nothing for one `recent` doesn't hold,
+ *  or holds with no time, as a 0.2.0 `last_repository` became.
+ */
+export type Opened_Deserialize = {
+	name: RepositoryName,
+	opened_at: string | null,
+};
+
+/**
+ *  A Repository, and when the user last opened it on this machine: nothing for one `recent` doesn't hold,
+ *  or holds with no time, as a 0.2.0 `last_repository` became.
+ */
+export type Opened_Serialize = {
+	name: RepositoryName,
+	opened_at: string | null,
 };
 
 /**  The start of a thread's line: the first words of its first comment, or the reason that comment is hidden. */

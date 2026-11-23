@@ -33,6 +33,7 @@ Part of [what v1 does](../scope.md). Terms in **bold** are defined in [CONTEXT.m
 | Back / forward | `Alt+←` / `Alt+→` |
 | Open on GitHub | `Ctrl+Shift+G` |
 | Switch Repository | `Ctrl+R`, or the command palette |
+| Go to the Home page | the command palette, or the Repository picker's first row |
 | Reset the layout | the command palette |
 | Archive, the row under the cursor or the Detail pane's item, by focus | `E` |
 | Mute, the row under the cursor or the Detail pane's item, by focus | `M` |

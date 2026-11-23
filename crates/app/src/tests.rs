@@ -26,6 +26,7 @@ pub(crate) fn cpython() -> Home {
             filters: Filter::starters(),
             read_only: false,
         },
+        opened_at: None,
         others: Vec::new(),
     }
 }

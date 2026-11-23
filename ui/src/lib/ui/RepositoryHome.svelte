@@ -1174,6 +1174,11 @@
     return screenAction(at);
   }
 
+  /** Whether `action` is one of the screen's own, as Go Back is, which runs through the screen's history. */
+  export function owns(action: Action): boolean {
+    return action in SCREEN_ACTIONS;
+  }
+
   /** Which keys of the screen work for a press `at`, for the `?` list: the list's while the press goes to
    * the list, as `inList` says, and the diff's while the Files tab shows. Of the screen's actions, those
    * that would run; the page decides on its own. */

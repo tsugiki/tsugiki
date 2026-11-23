@@ -4387,6 +4387,88 @@ fn a_panic_in_the_github_thread_says_tsugiki_stopped_checking() {
     assert_eq!(stopped_by(showing(&seen)), Some(stopped_checking().message));
 }
 
+/// A session whose GitHub thread panicked at its first status and said Tsugiki stopped checking, with what
+/// the session asked of the Mirror worker, which isn't there.
+fn github_stopped(name: &str) -> (Session, HeardRequests, TempPath) {
+    let (folders, folder) = temp_folders(name);
+    let (board, seen) = panicking_once();
+    let (requests, mirrors) = HeardRequests::new();
+    let connections = Connections {
+        mirrors: requests,
+        ..reaching(octocat_answers())
+    };
+    let session = Session::start(board, Ok(folders), connections, HOURLY);
+    let stopped = seen.recv_timeout(PLENTY).unwrap();
+    // The message prints nothing of the status, which CodeQL reads as holding the login.
+    assert!(
+        stopped_by(stopped) == Some(stopped_checking().message),
+        "the status says Tsugiki stopped checking"
+    );
+    (session, mirrors, folder)
+}
+
+/// The kind and the words of the failure in `answer`, or nothing when it succeeded.
+fn failure_of<T>(answer: Result<T, Error>) -> Option<(ErrorKind, String)> {
+    answer.err().map(|problem| (problem.kind, problem.message))
+}
+
+/// What `fetching::answered` says once the thread it asks has stopped.
+fn not_connected() -> Option<(ErrorKind, String)> {
+    Some((
+        ErrorKind::Offline,
+        crate::fetching::NOT_CONNECTED.to_owned(),
+    ))
+}
+
+/// Runs `ask` on a thread of its own and waits up to `PLENTY` for its answer, so a call that would wait for
+/// good fails the test in place of hanging it.
+fn beside<T: Send + 'static>(
+    ask: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, RecvTimeoutError> {
+    let (answer, answered) = mpsc::channel();
+    #[expect(
+        unused_results,
+        reason = "it ends with the answer, or never, which the wait gives up on"
+    )]
+    thread::spawn(move || answer.send(ask()));
+    answered.recv_timeout(PLENTY)
+}
+
+/// The GitHub thread owns its queue, so the queue goes when the thread stops, and a request sent after
+/// fails at once (#1076).
+#[test]
+fn once_the_github_thread_stopped_the_mirrors_size_check_says_at_once_it_isnt_connected() {
+    let (session, mirrors, _folder) = github_stopped("github-stopped-size");
+    let mut size_of = mirrors.sizes();
+
+    let size = beside(move || size_of(&gcmon()));
+    session.stop(PLENTY);
+
+    assert_eq!(failure_of(size.unwrap()), not_connected());
+}
+
+#[test]
+fn once_the_github_thread_stopped_add_repositorys_check_says_at_once_it_isnt_connected() {
+    let (session, _mirrors, _folder) = github_stopped("github-stopped-check");
+    let fetching = session.fetching();
+
+    let checked = beside(move || fetching.check(gcmon()));
+    session.stop(PLENTY);
+
+    assert_eq!(failure_of(checked.unwrap()), not_connected());
+}
+
+#[test]
+fn once_the_github_thread_stopped_a_fetch_of_an_unstored_item_answers_offline_at_once() {
+    let (session, _mirrors, _folder) = github_stopped("github-stopped-fetch");
+    let fetching = session.fetching();
+
+    let fetched = beside(move || fetching.fetch_unstored(gcmon(), 7));
+    session.stop(PLENTY);
+
+    assert_eq!(fetched, Ok(UNFETCHED_OFFLINE));
+}
+
 #[test]
 fn a_panic_in_the_sessions_thread_has_the_github_thread_say_tsugiki_stopped_checking() {
     let (folders, _folder) = temp_folders("session-panic");
